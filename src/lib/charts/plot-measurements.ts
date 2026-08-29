@@ -24,6 +24,10 @@ import {
   commitChatEdit,
   type TurnEditItem,
 } from "@/lib/ai/chat/commit-edit";
+import {
+  buildSuggestionRecord,
+  withSuggestionRecord,
+} from "@/lib/suggestions/suggestion-record";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 import type { AuditActorSnapshot } from "@/lib/audit";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
@@ -410,14 +414,34 @@ async function persistChartEdit(args: {
     reportId: args.ctx.reportId,
     sectionId: args.loaded.sectionId,
     section: args.input.section,
-    content: serializeAiFixCommentContent({
-      deleteText: "",
-      insertText: "",
-      insertImage: args.insertImage,
-      removeImage: args.removeImage,
-      reasoning: args.input.reasoning,
-      contentHashAtSuggestion: args.hash,
-    }),
+    content: serializeAiFixCommentContent(
+      withSuggestionRecord(
+        {
+          deleteText: "",
+          insertText: "",
+          insertImage: args.insertImage,
+          removeImage: args.removeImage,
+          reasoning: args.input.reasoning,
+          contentHashAtSuggestion: args.hash,
+        },
+        buildSuggestionRecord({
+          sectionContent: args.loaded.content,
+          section: args.input.section,
+          targetField: args.resolvedField,
+          documentType: args.ctx.documentType,
+          input: {
+            kind: "located",
+            edit: {
+              anchorText: args.anchorText,
+              deleteText: "",
+              insertText: "",
+              insertImage: args.insertImage,
+              removeImage: args.removeImage,
+            },
+          },
+        })
+      )
+    ),
     anchorText: args.anchorText,
     contentPath: args.resolvedField,
   });

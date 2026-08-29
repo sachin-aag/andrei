@@ -39,6 +39,10 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import {
+  buildSuggestionRecord,
+  withSuggestionRecord,
+} from "@/lib/suggestions/suggestion-record";
+import {
   flushLangfuseTraces,
   isLangfuseEnabled,
   observeRouteHandler,
@@ -250,15 +254,33 @@ async function handleSuggestionsPost(
         }
       : undefined;
 
-    const payload: ParsedAiFixPayload = {
-      deleteText: s.deleteText,
-      insertText,
-      reasoning: s.reasoning,
-      scope: s.scope,
-      second,
-      contentHashAtSuggestion: suggestionContentHash,
-      evidenceSources: s.evidenceSources,
-    };
+    const payload: ParsedAiFixPayload = withSuggestionRecord(
+      {
+        deleteText: s.deleteText,
+        insertText,
+        reasoning: s.reasoning,
+        scope: s.scope,
+        second,
+        contentHashAtSuggestion: suggestionContentHash,
+        evidenceSources: s.evidenceSources,
+      },
+      buildSuggestionRecord({
+        sectionContent: workingContent,
+        section,
+        targetField: s.targetField,
+        documentType: report.documentType,
+        input: {
+          kind: "located",
+          edit: {
+            anchorText: s.anchorText,
+            deleteText: s.deleteText,
+            insertText,
+            scope: s.scope,
+            second,
+          },
+        },
+      })
+    );
 
     await db.insert(comments).values({
       id: suggestionId,
@@ -309,14 +331,31 @@ async function handleSuggestionsPost(
     }
 
     const suggestionId = createId();
-    const payload: ParsedAiFixPayload = {
-      deleteText: s.deleteText,
-      insertText,
-      reasoning: s.reasoning,
-      second,
-      contentHashAtSuggestion: suggestionContentHash,
-      evidenceSources: s.evidenceSources,
-    };
+    const payload: ParsedAiFixPayload = withSuggestionRecord(
+      {
+        deleteText: s.deleteText,
+        insertText,
+        reasoning: s.reasoning,
+        second,
+        contentHashAtSuggestion: suggestionContentHash,
+        evidenceSources: s.evidenceSources,
+      },
+      buildSuggestionRecord({
+        sectionContent: workingContent,
+        section,
+        targetField: s.targetField,
+        documentType: report.documentType,
+        input: {
+          kind: "located",
+          edit: {
+            anchorText: s.anchorText,
+            deleteText: s.deleteText,
+            insertText,
+            second,
+          },
+        },
+      })
+    );
 
     await db.insert(comments).values({
       id: suggestionId,
