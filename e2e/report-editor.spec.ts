@@ -10,6 +10,7 @@ import {
   createReport,
   deleteReport,
   seedDefineForEvaluation,
+  seedDefineWithTwoColumnTable,
 } from "./helpers/reports";
 import {
   collapseReportSidebar,
@@ -67,6 +68,54 @@ test.describe("report editor", () => {
     await expect(
       page.getByRole("heading", { name: /approvals \(qc \/ qa\)/i })
     ).toHaveCount(0);
+  });
+
+  test("wraps prose and 2-column table cells instead of growing the editor", async ({
+    page,
+  }) => {
+    await seedDefineWithTwoColumnTable(page, reportId!);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const editor = defineEditor(page);
+    await expect(editor).toBeVisible({ timeout: 30_000 });
+    await expect(
+      editor.getByText(/this test report applies to solea model 3/i)
+    ).toBeVisible();
+
+    const metrics = await editor.evaluate((root) => {
+      const field = root.closest("[data-field-anchor]");
+      const paragraph = root.querySelector("p");
+      const firstCol = root.querySelector("th:first-child, td:first-child");
+      const secondCol = root.querySelector("td:nth-child(2)");
+      if (!field || !paragraph || !firstCol || !secondCol) {
+        return null;
+      }
+      return {
+        fieldWidth: field.getBoundingClientRect().width,
+        editorWidth: root.getBoundingClientRect().width,
+        paragraphWidth: paragraph.getBoundingClientRect().width,
+        paragraphScrollWidth: paragraph.scrollWidth,
+        firstColWidth: firstCol.getBoundingClientRect().width,
+        secondColWidth: secondCol.getBoundingClientRect().width,
+        secondColScrollWidth: (secondCol as HTMLElement).scrollWidth,
+        secondColClientWidth: (secondCol as HTMLElement).clientWidth,
+      };
+    });
+
+    expect(metrics).toBeTruthy();
+    expect(metrics!.editorWidth).toBeLessThan(metrics!.fieldWidth + 24);
+    expect(metrics!.paragraphWidth).toBeLessThan(metrics!.fieldWidth + 24);
+    expect(metrics!.paragraphScrollWidth).toBeLessThanOrEqual(
+      metrics!.paragraphWidth + 4
+    );
+    // Was a 4.5rem (72px) cap that stacked every word in column 1.
+    expect(metrics!.firstColWidth).toBeGreaterThan(80);
+    expect(metrics!.secondColScrollWidth).toBeLessThanOrEqual(
+      metrics!.secondColClientWidth + 4
+    );
   });
 
   test("typing triggers auto-save status", async ({ page }) => {

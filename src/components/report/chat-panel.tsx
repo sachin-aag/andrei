@@ -746,7 +746,10 @@ const MessageTurn = memo(function MessageTurn({
   });
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]">
+      <div
+        className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]"
+        aria-label="Assistant message"
+      >
         <Sparkles className="size-3 text-[var(--primary)]" />
         Assistant
       </div>

@@ -19,6 +19,11 @@ export function chatUserMessage(
     .filter({ hasText: text });
 }
 
+/** Assistant turn header — not the sidebar Assistant tab button. */
+export function chatAssistantMessage(page: Page) {
+  return reportSidebar(page).getByLabel("Assistant message");
+}
+
 export function reviewMargin(page: Page) {
   return page.getByRole("complementary", { name: "Review margin" });
 }

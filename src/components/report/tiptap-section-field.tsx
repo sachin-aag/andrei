@@ -90,6 +90,7 @@ import {
   suggestionApplyModeFor,
 } from "@/lib/document-types";
 import { afterPaint } from "@/lib/suggestions/apply-transition";
+import { setRichEditorContentPreservingViewport } from "@/lib/suggestions/preserve-suggestion-viewport";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
@@ -692,13 +693,17 @@ export function TiptapSectionField({
             result.nextSection as unknown
           );
           if (editor && !editor.isDestroyed && isRichField) {
-            editor.commands.setContent(
+            setRichEditorContentPreservingViewport(
+              editor,
               getRichFieldValue(
                 result.nextSection,
                 contentPath,
                 richFieldOptions
               ) as Content,
-              { emitUpdate: false }
+              {
+                pinSuggestionId: suggestionId,
+                pinKind: mode === "dismiss" ? "delete" : "insert",
+              }
             );
           }
         }
@@ -834,10 +839,24 @@ export function TiptapSectionField({
     ) {
       return;
     }
-    currentEditor.commands.setContent(incoming as Content, { emitUpdate: false });
-  }, [editor, value, isSuggestionPreviewHeld, section, richFieldOptions]);
+    const transition = suggestionApplyTransition[section];
+    const pinSuggestionId = isSuggestionPreviewHeld(section)
+      ? (transition?.gutterAnchorCommentId ?? null)
+      : null;
+    setRichEditorContentPreservingViewport(currentEditor, incoming as Content, {
+      pinSuggestionId,
+      pinKind: transition?.mode === "dismiss" ? "delete" : "insert",
+    });
+  }, [
+    editor,
+    value,
+    isSuggestionPreviewHeld,
+    section,
+    richFieldOptions,
+    suggestionApplyTransition,
+  ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyExternalValueToEditor();
   }, [applyExternalValueToEditor]);
 
@@ -884,7 +903,7 @@ export function TiptapSectionField({
       if (suggestionApplyTransition[section]?.bridge) {
         json = stripPendingSuggestionsExcept(json, null);
         if (JSON.stringify(json) === before) return;
-        editor.commands.setContent(json as Content, { emitUpdate: false });
+        setRichEditorContentPreservingViewport(editor, json as Content);
         return;
       }
       if (isBulkSuggestionApply(suggestionApplyTransition[section]?.mode)) {
@@ -900,7 +919,13 @@ export function TiptapSectionField({
       const lockedId = suggestionApplyTransition[section]?.gutterAnchorCommentId ?? null;
       json = stripPendingSuggestionsExcept(json, lockedId);
       if (JSON.stringify(json) === before) return;
-      editor.commands.setContent(json as Content, { emitUpdate: false });
+      setRichEditorContentPreservingViewport(editor, json as Content, {
+        pinSuggestionId: lockedId,
+        pinKind:
+          suggestionApplyTransition[section]?.mode === "dismiss"
+            ? "delete"
+            : "insert",
+      });
       return;
     }
 
@@ -1020,7 +1045,7 @@ export function TiptapSectionField({
 
     if (JSON.stringify(json) === before) return;
 
-    editor.commands.setContent(json as Content, { emitUpdate: false });
+    setRichEditorContentPreservingViewport(editor, json as Content);
     // Suggestion preview marks are editor-local UI. Persisting them into section
     // state makes the external-value sync immediately re-run this effect.
   }, [
