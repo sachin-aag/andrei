@@ -4,6 +4,10 @@ import {
   type DocxPageSetup,
 } from "@/lib/export/docx-page-setup";
 import { readRasterDimensions } from "@/lib/export/raster-dimensions";
+import {
+  IMAGE_INLINE_MAX_WIDTH_PX,
+  IMAGE_INLINE_MIN_WIDTH_PX,
+} from "@/lib/tiptap/image-inline-dimensions";
 
 export type DocxMediaAsset = {
   relId: string;
@@ -26,8 +30,6 @@ export type DocxCommentExportEntry = {
   content: string;
 };
 
-const MIN_INLINE_EXPORT_WIDTH_PX = 96;
-const MAX_INLINE_EXPORT_WIDTH_PX = 600;
 const EMU_PER_PX = 9525;
 
 export type DocxParagraphAlign = "left" | "center" | "right" | "both";
@@ -207,10 +209,10 @@ export function registerInlineImage(
   const intrinsicHeight = dims?.height ?? null;
 
   let width = widthPx ?? intrinsicWidth ?? 400;
-  if (intrinsicWidth && width < MIN_INLINE_EXPORT_WIDTH_PX) {
-    width = Math.min(intrinsicWidth, MAX_INLINE_EXPORT_WIDTH_PX);
+  if (intrinsicWidth && width < IMAGE_INLINE_MIN_WIDTH_PX) {
+    width = Math.min(intrinsicWidth, IMAGE_INLINE_MAX_WIDTH_PX);
   }
-  width = Math.max(1, Math.min(width, MAX_INLINE_EXPORT_WIDTH_PX));
+  width = Math.max(1, Math.min(width, IMAGE_INLINE_MAX_WIDTH_PX));
 
   const height =
     intrinsicWidth && intrinsicHeight
