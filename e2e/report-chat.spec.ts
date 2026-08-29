@@ -97,9 +97,8 @@ test.describe("report chat", () => {
     await expect(chatUserMessage(page, "help me start this report")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(sidebar.getByText(/^assistant$/i)).toBeVisible({
-      timeout: 30_000,
-    });
+    // Do not match /^assistant$/i — the sidebar tab button and the reply
+    // author label both say "Assistant" (strict-mode flake on Firefox).
     await expect(sidebar.getByText(/out-of-spec dissolution result/i)).toBeVisible({
       timeout: 30_000,
     });
