@@ -43,8 +43,9 @@ test.describe("document revisions", () => {
     await setReportChrome(page, "agent");
     await expandWorkProductPanel(page);
     await page.getByTestId("document-revision-history").click();
-    await expect(page.getByText("Version 1")).toBeVisible();
-    await expect(page.getByText("Version 2")).toBeVisible();
+    const historyMenu = page.getByTestId("document-revision-history-menu");
+    await expect(historyMenu.getByText("Version 1")).toBeVisible();
+    await expect(historyMenu.getByText("Version 2")).toBeVisible();
     await page.getByTestId("document-revision-compare").click();
 
     await expect(page.getByTestId("work-product-tab-history")).toBeVisible();
@@ -97,8 +98,9 @@ test.describe("document revisions", () => {
     await setReportChrome(page, "agent");
     await expandWorkProductPanel(page);
     await page.getByTestId("document-revision-history").click();
-    await expect(page.getByText("Version 3")).toBeVisible();
-    await expect(page.getByText("Edits")).toBeVisible();
-    await expect(page.getByText("Edited Define")).toBeVisible();
+    const historyMenu = page.getByTestId("document-revision-history-menu");
+    await expect(historyMenu.getByText("Version 3")).toBeVisible();
+    await expect(historyMenu.getByText(/· Edits/)).toBeVisible();
+    await expect(historyMenu.getByText("Edited Define")).toBeVisible();
   });
 });
