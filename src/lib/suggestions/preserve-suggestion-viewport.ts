@@ -240,6 +240,10 @@ export function restoreSuggestionViewportPin(
  * the end; a focused contenteditable then scrolls that caret into view.
  * Overflow anchoring can also latch onto the following section heading
  * while the editor is briefly empty.
+ *
+ * Do not focus the editor unless it already had focus. Chat-generated
+ * previews rewrite an unfocused field; focusing would steal the composer
+ * and skip painting suggestion marks.
  */
 export function setRichEditorContentPreservingViewport(
   editor: Editor,
@@ -259,14 +263,20 @@ export function setRichEditorContentPreservingViewport(
   const previousOverflowAnchor = pin?.previousOverflowAnchor ?? scroller.style.overflowAnchor;
   const previousScrollTop = pin?.previousScrollTop ?? scroller.scrollTop;
   const previousSelectionFrom = editor.state.selection.from;
+  // Apply/dismiss from the inline widget already has focus; a chat-generated
+  // preview does not. Focusing here stole the composer, collapsed Document
+  // chrome chat, and skipped painting `.suggestion-insert` marks.
+  const hadFocus = editor.view.hasFocus();
   scroller.style.overflowAnchor = "none";
 
   editor.commands.setContent(content, { emitUpdate: false });
 
-  if (pin?.mappedPos != null) {
-    placeSelectionWithoutScroll(editor, pin.mappedPos);
-  } else {
-    placeSelectionWithoutScroll(editor, previousSelectionFrom);
+  if (hadFocus) {
+    if (pin?.mappedPos != null) {
+      placeSelectionWithoutScroll(editor, pin.mappedPos);
+    } else {
+      placeSelectionWithoutScroll(editor, previousSelectionFrom);
+    }
   }
   if (pin) {
     restoreSuggestionViewportPin(editor, pin);

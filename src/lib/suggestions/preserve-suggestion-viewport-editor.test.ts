@@ -14,8 +14,10 @@ import type { JSONContent } from "@tiptap/core";
 const MARK_ID = "sug-large";
 
 function makeEditor(content: JSONContent) {
+  const element = document.createElement("div");
+  document.body.appendChild(element);
   return new Editor({
-    element: document.createElement("div"),
+    element,
     extensions: [
       StarterKit.configure({ heading: false }),
       SuggestionInsert,
@@ -83,6 +85,7 @@ describe("setRichEditorContentPreservingViewport", () => {
   it("places the caret on the green insert, not at the end of the field", () => {
     const preview = previewDoc();
     const editor = makeEditor(preview);
+    editor.view.dom.focus();
     const accepted = acceptSuggestionMarksById(preview, MARK_ID);
 
     setRichEditorContentPreservingViewport(editor, accepted, {
@@ -102,6 +105,7 @@ describe("setRichEditorContentPreservingViewport", () => {
   it("keeps a prior caret when rewriting without a pin id", () => {
     const preview = previewDoc();
     const editor = makeEditor(preview);
+    editor.view.dom.focus();
     const insertPos = 1 + "OLD ".repeat(40).length + 2;
     editor.commands.setTextSelection(insertPos);
     const accepted = acceptSuggestionMarksById(preview, MARK_ID);
@@ -127,6 +131,23 @@ describe("setRichEditorContentPreservingViewport", () => {
     expect(editor.state.selection.from).toBeGreaterThan(
       editor.state.doc.content.size - 5
     );
+
+    editor.destroy();
+  });
+
+  it("does not steal focus when rewriting an unfocused editor", () => {
+    const preview = previewDoc();
+    const editor = makeEditor(preview);
+    const accepted = acceptSuggestionMarksById(preview, MARK_ID);
+
+    expect(editor.view.hasFocus()).toBe(false);
+    setRichEditorContentPreservingViewport(editor, accepted, {
+      pinSuggestionId: MARK_ID,
+      pinKind: "insert",
+    });
+
+    expect(editor.view.hasFocus()).toBe(false);
+    expect(editor.getText()).toContain("NEW green insert");
 
     editor.destroy();
   });
