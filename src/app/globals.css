@@ -531,6 +531,17 @@ html[data-customer="convergent"] {
 }
 
 /*
+ * While a suggestion apply rewrites the editor, disable overflow anchoring.
+ * A wholesale setContent briefly empties the field; the next section heading
+ * can become the scroll anchor and the viewport lands there after a large
+ * insert. JS restore pins the caret to the green run — this keeps the
+ * browser from fighting that restore.
+ */
+body:has([data-suggestion-preview-held]) {
+  overflow-anchor: none;
+}
+
+/*
  * While a suggestion is being applied, calm the diff down to a plain preview
  * of the result: the deleted run fades out and the inserted run sheds its
  * highlight, so what's left reads as ordinary text.
