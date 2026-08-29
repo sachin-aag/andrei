@@ -53,6 +53,13 @@ import {
   recordAiUsage,
 } from "@/lib/ai/usage";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
+import {
+  buildAnalyticsMentionBlock,
+  mentionedAnalyticsAttachmentIds,
+  parseAnalyticsChatMentions,
+  primaryTaggedSheetId,
+  resolveAnalyticsChatMentions,
+} from "@/lib/statistical-analysis/mentions";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
@@ -94,6 +101,7 @@ export async function POST(
     sessionId?: string;
     pace?: unknown;
     mode?: unknown;
+    mentions?: unknown;
   };
   const messages = sanitizeChatMessagesForModel(
     Array.isArray(body.messages) ? body.messages : []
@@ -150,6 +158,15 @@ export async function POST(
     getOrCreateReportAnalytics(reportId),
   ]);
 
+  const requestedMentions = parseAnalyticsChatMentions(body.mentions);
+  const mentions = resolveAnalyticsChatMentions(
+    requestedMentions,
+    documents,
+    analytics
+  );
+  const pinnedAttachmentIds = mentionedAnalyticsAttachmentIds(mentions);
+  const focusedSheetId = primaryTaggedSheetId(mentions);
+
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const canWrite = mode === "agent" && canEdit;
   const searchGate = createAnalyticsSearchGate();
@@ -160,12 +177,15 @@ export async function POST(
     analytics,
     canEdit,
     mode,
+    mentionBlock: buildAnalyticsMentionBlock(mentions),
   });
   const tools = buildAnalyticsChatTools({
     reportId,
     canEdit: canWrite,
     documentType: report.documentType,
     searchGate,
+    pinnedAttachmentIds,
+    focusedSheetId,
   });
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
@@ -226,6 +246,9 @@ export async function POST(
           chatModelId: paceConfig.modelId,
           chatThinkingLevel: paceConfig.thinkingLevel,
           chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
+          taggedDocuments: mentions.documents.length,
+          taggedSheets: mentions.sheets.length,
+          taggedAnalyses: mentions.analyses.length,
         },
       }),
     });

@@ -21,7 +21,7 @@ import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { DocumentsPanel } from "./documents/documents-panel";
 import { AttachmentViewer } from "./attachment-viewer";
-import { StatisticalWorkspace } from "@/components/statistical-analysis/workspace";
+import { StatisticalWorkspace, type AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { DocumentType, SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
@@ -260,6 +260,7 @@ export function ReportWorkspace({
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [analyticsReloadEpoch, setAnalyticsReloadEpoch] = useState(0);
   const [analyticsAgentBusy, setAnalyticsAgentBusy] = useState(false);
+  const analyticsFocusRef = useRef<AnalyticsFocusApi | null>(null);
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});
@@ -746,6 +747,7 @@ export function ReportWorkspace({
                   readOnly={!analyticsCanEdit}
                   reloadEpoch={analyticsReloadEpoch}
                   agentBusy={analyticsAgentBusy}
+                  focusApiRef={analyticsFocusRef}
                 />
               </div>
               {viewingDocument ? <AttachmentCanvas /> : null}
@@ -839,6 +841,13 @@ export function ReportWorkspace({
               setAnalyticsReloadEpoch((epoch) => epoch + 1)
             }
             onAnalyticsAgentBusy={setAnalyticsAgentBusy}
+            onAnalyticsFocusSheet={(sheetId) =>
+              analyticsFocusRef.current?.focusSheet(sheetId)
+            }
+            onAnalyticsFocusAnalysis={(analysisId) =>
+              analyticsFocusRef.current?.focusAnalysis(analysisId)
+            }
+            analyticsReloadEpoch={analyticsReloadEpoch}
           />
           {sidebarCollapsed ? null : (
             <WorkspaceResizeHandle

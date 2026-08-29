@@ -5,8 +5,8 @@ import type { ChatMentionType } from "@/lib/ai/chat/mentions";
 const MAX_MENTION_QUERY_CHARS = 60;
 
 export type MentionCandidate = {
-  type: ChatMentionType;
-  /** Attachment id, or section type for section mentions. */
+  type: ChatMentionType | string;
+  /** Attachment id, section type, sheet id, or analysis id. */
   id: string;
   /** Filename or section name — inserted into the text for the engineer. */
   label: string;
@@ -76,7 +76,7 @@ export function applyMentionToInput(
   return { text: next, caret: range.start + inserted.length };
 }
 
-export function mentionKey(type: ChatMentionType, id: string): string {
+export function mentionKey(type: string, id: string): string {
   return `${type}:${id}`;
 }
 

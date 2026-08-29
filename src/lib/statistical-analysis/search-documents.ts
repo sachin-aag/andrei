@@ -57,52 +57,74 @@ function hasSearchQuery(value: {
 export function buildAnalyticsSearchDocumentsTool(opts: {
   reportId: string;
   searchGate?: AnalyticsSearchGate;
+  pinnedAttachmentIds?: readonly string[];
 }) {
   const { reportId, searchGate } = opts;
+  const pinnedAttachmentIds = Array.from(
+    new Set((opts.pinnedAttachmentIds ?? []).filter((id) => id.trim().length > 0))
+  );
+  const tagged = pinnedAttachmentIds.length;
+
+  const inputSchema = z
+    .object({
+      query: z
+        .string()
+        .min(1)
+        .max(500)
+        .optional()
+        .describe("One locator, e.g. Conductivity or TABLE NO 01."),
+      queries: z
+        .array(z.string().min(1).max(500))
+        .max(SEARCH_DOCUMENTS_MAX_QUERIES)
+        .optional()
+        .describe("Optional extra locators. Prefer one query, then read."),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(SEARCH_DOCUMENTS_MAX_LIMIT)
+        .default(SEARCH_DOCUMENTS_DEFAULT_LIMIT),
+      mode: z
+        .enum(["hybrid", "keyword"])
+        .default("keyword")
+        .describe(
+          "keyword = lexical grep (default). hybrid = semantic + keyword; use only when keyword would have no tokens."
+        ),
+      excludePages: z
+        .array(
+          z.object({
+            attachmentId: z.string().min(1),
+            pageNumber: z.number().int().min(1),
+          })
+        )
+        .max(80)
+        .optional()
+        .describe(
+          "Pages already seen. Pass nextExcludePages only on the second (last) search."
+        ),
+      scope: z
+        .enum(["tagged", "all"])
+        .optional()
+        .describe(
+          tagged > 0
+            ? 'Where to look: "tagged" prefers the engineer\'s @ mentions, "all" searches every attachment.'
+            : "Ignored when no documents are tagged."
+        ),
+    })
+    .refine(hasSearchQuery, { message: "Provide query or queries." });
+
+  const description =
+    tagged > 0
+      ? `Locate a table or measurement series in ready attachments. Default mode is keyword. At most two calls this turn. Defaults to the ${tagged} document(s) the engineer tagged with @; pass scope="all" to search every attachment. As soon as a hit has a page number, stop searching and scan, read, or extract. truncated is not a reason to grep again. Prefer scan_attachments when the engineer named a file family. Cite as [filename, p. N].`
+      : "Locate a table or measurement series in ready attachments. Default mode is keyword (assay, table title, filename). At most two calls this turn. As soon as a hit has a page number, stop searching and scan, read, or extract. truncated is not a reason to grep again. Prefer scan_attachments when the engineer named a file family. Cite as [filename, p. N].";
 
   return tool({
-    description:
-      "Locate a table or measurement series in ready attachments. Default mode is keyword (assay, table title, filename). At most two calls this turn. As soon as a hit has a page number, stop searching and scan, read, or extract. truncated is not a reason to grep again. Prefer scan_attachments when the engineer named a file family. Cite as [filename, p. N].",
-    inputSchema: z
-      .object({
-        query: z
-          .string()
-          .min(1)
-          .max(500)
-          .optional()
-          .describe("One locator, e.g. Conductivity or TABLE NO 01."),
-        queries: z
-          .array(z.string().min(1).max(500))
-          .max(SEARCH_DOCUMENTS_MAX_QUERIES)
-          .optional()
-          .describe("Optional extra locators. Prefer one query, then read."),
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(SEARCH_DOCUMENTS_MAX_LIMIT)
-          .default(SEARCH_DOCUMENTS_DEFAULT_LIMIT),
-        mode: z
-          .enum(["hybrid", "keyword"])
-          .default("keyword")
-          .describe(
-            "keyword = lexical grep (default). hybrid = semantic + keyword; use only when keyword would have no tokens."
-          ),
-        excludePages: z
-          .array(
-            z.object({
-              attachmentId: z.string().min(1),
-              pageNumber: z.number().int().min(1),
-            })
-          )
-          .max(80)
-          .optional()
-          .describe(
-            "Pages already seen. Pass nextExcludePages only on the second (last) search."
-          ),
-      })
-      .refine(hasSearchQuery, { message: "Provide query or queries." }),
-    execute: async ({ query, queries, limit, mode, excludePages }) => {
+    description,
+    inputSchema,
+    execute: async ({ query, queries, limit, mode, excludePages, scope }) => {
+      const searchedScope = scope === "all" ? "all" : "tagged";
+      const attachmentIds =
+        tagged > 0 && searchedScope === "tagged" ? pinnedAttachmentIds : undefined;
       if (searchGate?.closed) {
         return {
           status: "search_closed" as const,
@@ -127,6 +149,7 @@ export function buildAnalyticsSearchDocumentsTool(opts: {
             limit,
             mode: resolved.mode,
             excludePages,
+            attachmentIds,
           });
           return { hits, resolved };
         })
@@ -163,6 +186,9 @@ export function buildAnalyticsSearchDocumentsTool(opts: {
         coverageHint: ANALYTICS_SEARCH_COVERAGE_HINT,
         citationRule: ANALYTICS_SEARCH_CITATION_RULE,
         trustBoundary: TRUST_BOUNDARY,
+        ...(tagged > 0
+          ? { searchedScope, taggedDocumentCount: tagged }
+          : {}),
       };
     },
   });

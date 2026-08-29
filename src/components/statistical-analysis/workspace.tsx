@@ -66,6 +66,11 @@ import {
 } from "@/components/statistical-analysis/worksheet-grid";
 import { WorkspaceMenubar } from "@/components/statistical-analysis/workspace-menubar";
 
+export type AnalyticsFocusApi = {
+  focusSheet: (sheetId: string) => void;
+  focusAnalysis: (analysisId: string) => void;
+};
+
 function saveLabel(status: SaveStatus): string {
   switch (status) {
     case "idle":
@@ -88,11 +93,13 @@ export function StatisticalWorkspace({
   readOnly,
   reloadEpoch,
   agentBusy = false,
+  focusApiRef,
 }: {
   reportId: string;
   readOnly: boolean;
   reloadEpoch: number;
   agentBusy?: boolean;
+  focusApiRef?: React.MutableRefObject<AnalyticsFocusApi | null>;
 }) {
   const [worksheet, setWorksheet] = useState(createEmptyWorksheet);
   const [persistedWorksheet, setPersistedWorksheet] = useState(createEmptyWorksheet);
@@ -102,6 +109,24 @@ export function StatisticalWorkspace({
   );
   const [tab, setTab] = useState("worksheet");
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!focusApiRef) return;
+    focusApiRef.current = {
+      focusSheet: (sheetId) => {
+        setWorksheet((current) => switchWorksheetTab(current, sheetId));
+        setTab("worksheet");
+      },
+      focusAnalysis: (analysisId) => {
+        setSelectedAnalysisId(analysisId);
+        setTab("results");
+      },
+    };
+    return () => {
+      focusApiRef.current = null;
+    };
+  }, [focusApiRef]);
+
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [analyzeColumnId, setAnalyzeColumnId] = useState("");
   const [analyzeRowStart, setAnalyzeRowStart] = useState<number | null>(null);
