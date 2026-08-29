@@ -377,6 +377,18 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "qra_residual_risk",
       "qra_post_conclusion",
     ],
+    examplePrompts: {
+      plan: [
+        "What does the evidence say about the failure modes?",
+        "Which quality criteria is Objective still missing?",
+        "Summarize the process and equipment from the attachments.",
+      ],
+      agent: [
+        "Draft the Objective from the process we discussed.",
+        "Tighten the system boundary in Scope.",
+        "Propose clearer failure modes and ratings in Risk Identification and Evaluation.",
+      ],
+    },
     inventorySections: ["qra_fmea"],
     sectionIntentPatterns: [
       ["qra_fmea", [/fmea/i, /failure mode/i, /rpn/i, /rpr/i]],
