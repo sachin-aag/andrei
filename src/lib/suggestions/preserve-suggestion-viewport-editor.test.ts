@@ -119,6 +119,26 @@ describe("setRichEditorContentPreservingViewport", () => {
     editor.destroy();
   });
 
+  it("does not steal focus when rewriting an unfocused editor", () => {
+    const preview = previewDoc();
+    const editor = makeEditor(preview);
+    const other = document.createElement("textarea");
+    document.body.append(other);
+    other.focus();
+    expect(document.activeElement).toBe(other);
+
+    setRichEditorContentPreservingViewport(editor, preview, {
+      pinSuggestionId: MARK_ID,
+      pinKind: "insert",
+    });
+
+    expect(document.activeElement).toBe(other);
+    expect(editor.view.hasFocus()).toBe(false);
+
+    editor.destroy();
+    other.remove();
+  });
+
   it("plain setContent maps the caret to the end of a large replace", () => {
     const preview = previewDoc();
     const editor = makeEditor(preview);
@@ -131,23 +151,6 @@ describe("setRichEditorContentPreservingViewport", () => {
     expect(editor.state.selection.from).toBeGreaterThan(
       editor.state.doc.content.size - 5
     );
-
-    editor.destroy();
-  });
-
-  it("does not steal focus when rewriting an unfocused editor", () => {
-    const preview = previewDoc();
-    const editor = makeEditor(preview);
-    const accepted = acceptSuggestionMarksById(preview, MARK_ID);
-
-    expect(editor.view.hasFocus()).toBe(false);
-    setRichEditorContentPreservingViewport(editor, accepted, {
-      pinSuggestionId: MARK_ID,
-      pinKind: "insert",
-    });
-
-    expect(editor.view.hasFocus()).toBe(false);
-    expect(editor.getText()).toContain("NEW green insert");
 
     editor.destroy();
   });

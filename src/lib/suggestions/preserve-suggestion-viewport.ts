@@ -160,7 +160,11 @@ function clampPos(doc: PMNode, pos: number): number {
   return Math.max(1, Math.min(pos, max));
 }
 
-function placeSelectionWithoutScroll(editor: Editor, pos: number): void {
+function placeSelectionWithoutScroll(
+  editor: Editor,
+  pos: number,
+  options?: { focus?: boolean }
+): void {
   const { state, view } = editor;
   if (view.isDestroyed) return;
   const safe = clampPos(state.doc, pos);
@@ -170,7 +174,12 @@ function placeSelectionWithoutScroll(editor: Editor, pos: number): void {
   } catch {
     // Doc may be empty or the pos may not resolve; leave the mapped selection.
   }
-  if (typeof view.dom.focus === "function") {
+  // Never focus an unfocused editor. Injecting a chat suggestion uses this
+  // helper; focusing Define while the engineer is in the composer makes
+  // `shouldSkipSuggestionDocSync` treat the field as locally dirty and skip
+  // the green insert (CI: "keeps the document assistant open after a
+  // generated suggestion lands").
+  if (options?.focus && typeof view.dom.focus === "function") {
     view.dom.focus({ preventScroll: true });
   }
 }
@@ -263,20 +272,21 @@ export function setRichEditorContentPreservingViewport(
   const previousOverflowAnchor = pin?.previousOverflowAnchor ?? scroller.style.overflowAnchor;
   const previousScrollTop = pin?.previousScrollTop ?? scroller.scrollTop;
   const previousSelectionFrom = editor.state.selection.from;
-  // Apply/dismiss from the inline widget already has focus; a chat-generated
-  // preview does not. Focusing here stole the composer, collapsed Document
-  // chrome chat, and skipped painting `.suggestion-insert` marks.
   const hadFocus = editor.view.hasFocus();
   scroller.style.overflowAnchor = "none";
 
   editor.commands.setContent(content, { emitUpdate: false });
 
-  if (hadFocus) {
-    if (pin?.mappedPos != null) {
-      placeSelectionWithoutScroll(editor, pin.mappedPos);
-    } else {
-      placeSelectionWithoutScroll(editor, previousSelectionFrom);
-    }
+  // Dispatching a TextSelection can focus the view. Pin the caret after Apply
+  // even if the field was not focused; restore a prior caret only when it was.
+  // Chat inject (no pin, composer focused) must not steal Define's focus or
+  // `shouldSkipSuggestionDocSync` skips the green insert.
+  if (pin?.mappedPos != null) {
+    placeSelectionWithoutScroll(editor, pin.mappedPos, { focus: hadFocus });
+  } else if (hadFocus) {
+    placeSelectionWithoutScroll(editor, previousSelectionFrom, {
+      focus: true,
+    });
   }
   if (pin) {
     restoreSuggestionViewportPin(editor, pin);
