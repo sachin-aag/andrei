@@ -2,10 +2,14 @@
 
 import { toPng } from "html-to-image";
 import type { ChartSpec } from "@/lib/charts/chart-spec";
-import { CHAT_SECTION_IMAGE_MAX_DATA_URL_CHARS } from "@/lib/ai/chat/section-images";
 import { CHART_DISPLAY_WIDTH_PX } from "@/lib/charts/chart-dimensions";
-import { isValidSuggestionImageSrc } from "@/lib/suggestions/image-insert";
+import {
+  ANALYTICS_PREVIEW_MAX_DATA_URL_CHARS,
+  isValidAnalysisPreviewSrc,
+} from "./preview-image";
 import type { AnalysisPreviewImage } from "./types";
+
+const PIXEL_RATIOS = [2, 1] as const;
 
 export async function captureAnalysisPreviewFromElement(
   element: HTMLElement,
@@ -17,26 +21,29 @@ export async function captureAnalysisPreviewFromElement(
   if (width <= 0 || height <= 0) return null;
 
   try {
-    const dataUrl = await toPng(element, {
-      pixelRatio: 2,
-      cacheBust: true,
-      backgroundColor: "#f4f6f9",
-    });
-    if (
-      !isValidSuggestionImageSrc(dataUrl) ||
-      dataUrl.length > CHAT_SECTION_IMAGE_MAX_DATA_URL_CHARS
-    ) {
-      return null;
+    for (const pixelRatio of PIXEL_RATIOS) {
+      const dataUrl = await toPng(element, {
+        pixelRatio,
+        cacheBust: true,
+        backgroundColor: "#f4f6f9",
+      });
+      if (
+        !isValidAnalysisPreviewSrc(dataUrl) ||
+        dataUrl.length > ANALYTICS_PREVIEW_MAX_DATA_URL_CHARS
+      ) {
+        continue;
+      }
+      const widthPx = CHART_DISPLAY_WIDTH_PX;
+      const heightPx = Math.max(1, Math.round((widthPx * height) / width));
+      return {
+        dataUrl,
+        widthPx,
+        heightPx,
+        alt,
+        chartSpec,
+      };
     }
-    const widthPx = CHART_DISPLAY_WIDTH_PX;
-    const heightPx = Math.max(1, Math.round((widthPx * height) / width));
-    return {
-      dataUrl,
-      widthPx,
-      heightPx,
-      alt,
-      chartSpec,
-    };
+    return null;
   } catch {
     return null;
   }
