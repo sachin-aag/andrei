@@ -25,6 +25,12 @@ async function commitWorksheetCell(
   await page.keyboard.press("Enter");
 }
 
+async function openNormalSixpackDialog(page: Page): Promise<void> {
+  await page.getByTestId("worksheet-stat-menu").click();
+  await page.getByTestId("stat-normal-sixpack").click();
+  await expect(page.getByTestId("capability-dialog")).toBeVisible();
+}
+
 const SAMPLE_MOISTURE = [
   "4.12",
   "4.08",

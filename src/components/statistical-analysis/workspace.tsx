@@ -30,7 +30,6 @@ import {
   deleteDataSheet,
   dropSpecRow,
   insertColumn,
-  insertRow,
   mergeDirtyWorksheet,
   normalizeWorksheet,
   specRowForColumn,
