@@ -508,12 +508,22 @@ function ToolChip({
         </ToolLine>
       );
     }
+    if (info.output?.status === "not_a_rewrite") {
+      return (
+        <ToolLine icon={<FileText className="size-3.5" />}>
+          Switching to a targeted edit on {section}
+          {field ? ` · ${field}` : ""}…
+        </ToolLine>
+      );
+    }
     const message =
       typeof info.output?.message === "string"
         ? info.output.message
-        : info.errorText
-          ? info.errorText
-          : "Could not create this draft.";
+        : typeof info.output?.hint === "string"
+          ? info.output.hint
+          : info.errorText
+            ? info.errorText
+            : "Could not create this draft.";
     return (
       <ToolLine icon={<FileText className="size-3.5 text-amber-500" />} tone="warn">
         Draft not created: {message}

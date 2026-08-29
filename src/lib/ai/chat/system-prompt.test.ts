@@ -18,9 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v55-review-followup"
-    );
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v56-redraft-scope");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -186,6 +184,13 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
     expect(prompt).not.toContain("Mode: ASK");
+  });
+
+  it("sends a small change in a filled field back to propose_edit", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("not_a_rewrite");
+    expect(prompt).toContain("The two tools meet at half the field");
+    expect(prompt).toContain("Call it once per changed span");
   });
 
   it("routes existing table changes to edit_table instead of draft_field", () => {

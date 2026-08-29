@@ -43,7 +43,13 @@ import {
   markdownHasImage,
   markdownHasTable,
   markdownToDoc,
+  markdownToPlainText,
 } from "@/lib/tiptap/markdown-to-doc";
+import {
+  classifyRedraftScope,
+  docHasTable,
+  redraftTooSmallHint,
+} from "@/lib/ai/chat/redraft-scope";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   type ChatSectionScope,
@@ -227,6 +233,7 @@ export type DraftFieldResult =
   | { status: "table_not_supported"; message: string }
   | { status: "figures_not_supported"; message: string }
   | { status: "review_incomplete"; message: string }
+  | { status: typeof NOT_A_REWRITE_STATUS; hint: string; coverage: number }
   | {
       status: "inventory_mismatch";
       message: string;
@@ -627,6 +634,8 @@ const SECTION_CHANGED_MESSAGE =
 
 const FIELD_FILLED_MESSAGE =
   "This field is already filled. Use propose_edit or edit_table for a targeted change, or pass replaceFilledField: true to replace the whole field.";
+
+const NOT_A_REWRITE_STATUS = "not_a_rewrite" as const;
 
 function proposedWithSupersession<T extends { status: string }>(
   result: T,
@@ -2167,8 +2176,31 @@ export function buildChatTools(opts: {
         const staleDraft = unchangedOrStale(section, resolvedField, loaded.content);
         if (staleDraft) return staleDraft;
         const fill = fieldFillState(loaded.content, section, resolvedField);
-        if (fill === "filled" && replaceFilledField !== true) {
-          return { status: "field_filled", message: FIELD_FILLED_MESSAGE };
+        if (fill === "filled") {
+          if (replaceFilledField !== true) {
+            return { status: "field_filled", message: FIELD_FILLED_MESSAGE };
+          }
+          // A replacement that leaves most of the field intact is a targeted
+          // edit; draft_field would strike the whole field in review.
+          const scope = classifyRedraftScope({
+            currentText: sectionFieldPlainText(
+              loaded.content,
+              section,
+              resolvedField
+            ),
+            nextText: markdownToPlainText(markdown),
+            currentHasTable: isRichTargetField(section, resolvedField)
+              ? docHasTable(getRichFieldValue(loaded.content, resolvedField))
+              : false,
+            nextHasTable: markdownHasTable(markdown),
+          });
+          if (scope.kind === "targeted_edit") {
+            return {
+              status: NOT_A_REWRITE_STATUS,
+              hint: redraftTooSmallHint(scope.coverage),
+              coverage: scope.coverage,
+            };
+          }
         }
 
         const suggestionId = createId();

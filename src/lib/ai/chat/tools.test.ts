@@ -1014,6 +1014,34 @@ describe("buildChatTools propose vs commit", () => {
     expect(dbInsertMock).toHaveBeenCalled();
   });
 
+  it("refuses a draft_field replacement that keeps most of a filled field", async () => {
+    const filled =
+      "During routine testing the tablet batch failed dissolution at 68 percent, well below the 80 percent specification, triggering this deviation investigation. The batch was quarantined pending review.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: filled }] }],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: filled.replace(" at 68 percent", ""),
+        reasoning: "Remove the measured percentage.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "not_a_rewrite" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(commitChatEditMock).not.toHaveBeenCalled();
+  });
+
   it("returns section_changed when the field moved after read_section", async () => {
     const tools = buildChatTools({
       reportId: "report-1",
