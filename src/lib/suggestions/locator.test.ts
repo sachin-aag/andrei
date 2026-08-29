@@ -541,6 +541,136 @@ describe("locator — scoped edits", () => {
     expect(flattenForAnchor(out).text).not.toContain("*");
   });
 
+  it("keeps mid-sentence **bold** as an inline splice", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "See the result." }],
+        },
+      ],
+    };
+    const { status, doc: out } = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "See the result.",
+        deleteText: "",
+        insertText: " **critical**",
+      },
+      ATTRS
+    );
+    expect(status).toBe("located");
+    expect(out.content).toHaveLength(1);
+    expect(out.content![0]!.type).toBe("paragraph");
+    const bold = (out.content![0]!.content ?? []).find((n) =>
+      n.marks?.some((m) => m.type === "bold")
+    );
+    expect(bold?.text).toBe("critical");
+    expect(flattenForAnchor(out).text).toContain("critical");
+    expect(flattenForAnchor(out).text).not.toContain("**");
+  });
+
+  it("appends markdown bullets as a list, not a literal dash paragraph", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Existing sentence." }],
+        },
+      ],
+    };
+    const { status, doc: out } = applyEditToRichDoc(
+      doc,
+      { anchorText: "", deleteText: "", insertText: "- first\n- second" },
+      ATTRS
+    );
+    expect(status).toBe("append");
+    expect(out.content?.map((n) => n.type)).toEqual(["paragraph", "bulletList"]);
+    expect(flattenForAnchor(out).text).toContain("first");
+    expect(flattenForAnchor(out).text).not.toContain("- first");
+  });
+
+  it("appends an ordered list as orderedList nodes", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Steps." }],
+        },
+      ],
+    };
+    const { status, doc: out } = applyEditToRichDoc(
+      doc,
+      { anchorText: "", deleteText: "", insertText: "1. one\n2. two" },
+      ATTRS
+    );
+    expect(status).toBe("append");
+    expect(out.content?.some((n) => n.type === "orderedList")).toBe(true);
+  });
+
+  it("inserts an ATX heading as a bold block, not a hash prefix", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Intro." }],
+        },
+      ],
+    };
+    const { status, doc: out } = applyEditToRichDoc(
+      doc,
+      { anchorText: "Intro.", deleteText: "", insertText: "## Methods" },
+      ATTRS
+    );
+    expect(status).toBe("located");
+    const heading = out.content?.[1];
+    expect(heading?.type).toBe("paragraph");
+    expect(heading?.content?.[0]?.text).toBe("Methods");
+    expect(heading?.content?.[0]?.marks?.some((m) => m.type === "bold")).toBe(true);
+    expect(flattenForAnchor(out).text).not.toContain("##");
+  });
+
+  it("adds a bullet onto an existing list of the same kind", () => {
+    const doc = listDoc(["First"]);
+    const { status, doc: out } = applyEditToRichDoc(
+      doc,
+      { anchorText: "First", deleteText: "", insertText: "- Second" },
+      ATTRS
+    );
+    expect(status).toBe("located");
+    expect(out.content).toHaveLength(1);
+    expect(out.content![0]!.type).toBe("bulletList");
+    expect(out.content![0]!.content).toHaveLength(2);
+    expect(flattenForAnchor(out).text).toBe("First\nSecond");
+  });
+
+  it("refuses a GFM table in insertText", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Intro." }],
+        },
+      ],
+    };
+    expect(
+      applyEditToRichDoc(
+        doc,
+        {
+          anchorText: "",
+          deleteText: "",
+          insertText: "| A | B |\n| --- | --- |\n| 1 | 2 |",
+        },
+        ATTRS
+      ).status
+    ).toBe("not_found");
+  });
+
   it("strips *italic* markers when applying to plain text", () => {
     const { status, text } = applyEditToPlainText("See the reference.", {
       anchorText: "See the reference.",

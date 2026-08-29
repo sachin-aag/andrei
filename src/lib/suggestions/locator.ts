@@ -25,6 +25,10 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 import { finalizeNarrativeDocAfterSuggestion } from "@/lib/tiptap/finalize-narrative-doc";
 import {
+  classifyMarkdownInsert,
+  insertMarkdownBlocks,
+} from "@/lib/suggestions/insert-markdown";
+import {
   acceptPendingImageSuggestions,
   dropPendingImageSuggestions,
   insertPendingImageAfterDeletionMark,
@@ -1066,31 +1070,51 @@ function applySingleEditToRichDoc(
     let raw = normalizeSuggestionInsertText(edit.insertText ?? "");
     if (isCitationAppendInsert(raw)) {
       raw = normalizeCitationAppendInsert(index.text, raw);
-    }
-    const paragraphs = raw
-      .split(/\n+/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (paragraphs.length === 0 && !edit.insertImage) {
-      return { status: "empty_edit", doc: cloned };
-    }
-    const lastBlock = cloned.content?.[cloned.content.length - 1];
-    if (
-      paragraphs[0] &&
-      isCitationListHeading(paragraphs[0]) &&
-      lastBlock &&
-      !isEmptyParagraphBlock(lastBlock)
-    ) {
-      cloned.content = [...(cloned.content ?? []), { type: "paragraph" }];
-    }
-    let inserted: JSONContent | null = null;
-    for (const paragraph of paragraphs) {
-      inserted = insertAfterRef(cloned, null, paragraph, attrs);
+      const paragraphs = raw
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (paragraphs.length === 0 && !edit.insertImage) {
+        return { status: "empty_edit", doc: cloned };
+      }
+      const lastBlock = cloned.content?.[cloned.content.length - 1];
+      if (
+        paragraphs[0] &&
+        isCitationListHeading(paragraphs[0]) &&
+        lastBlock &&
+        !isEmptyParagraphBlock(lastBlock)
+      ) {
+        cloned.content = [...(cloned.content ?? []), { type: "paragraph" }];
+      }
+      let inserted = false;
+      for (const paragraph of paragraphs) {
+        if (insertAfterRef(cloned, null, paragraph, attrs)) inserted = true;
+      }
+      if (!inserted && !edit.insertImage) {
+        return { status: "empty_edit", doc: cloned };
+      }
+    } else {
+      const classified = classifyMarkdownInsert(raw);
+      if (classified.kind === "table") {
+        return { status: "not_found", doc };
+      }
+      if (classified.kind === "empty" && !edit.insertImage) {
+        return { status: "empty_edit", doc: cloned };
+      }
+      if (classified.kind === "blocks") {
+        insertMarkdownBlocks(cloned, null, classified.content, attrs);
+      } else if (classified.kind === "inline") {
+        if (
+          !insertAfterRef(cloned, null, classified.text, attrs) &&
+          !edit.insertImage
+        ) {
+          return { status: "empty_edit", doc: cloned };
+        }
+      }
     }
     if (edit.insertImage) {
-      inserted = insertImageAfterRef(cloned, null, edit.insertImage, attrs.id);
+      insertImageAfterRef(cloned, null, edit.insertImage, attrs.id);
     }
-    if (!inserted) return { status: "empty_edit", doc: cloned };
     cleanupMarks(cloned);
     return { status: "append", doc: cloned };
   }
@@ -1190,11 +1214,24 @@ function applySingleEditToRichDoc(
   }
 
   if (insertText) {
-    const inserted = insertAfterRef(cloned, insertAfter, insertText, attrs);
-    if (inserted && insertAfter) {
-      const idx = insertAfter.parentArr.indexOf(inserted);
-      if (idx >= 0) {
-        insertAfter = { ...insertAfter, indexInParent: idx, node: inserted };
+    const classified = classifyMarkdownInsert(insertText);
+    if (classified.kind === "table") {
+      return { status: "not_found", doc };
+    }
+    if (classified.kind === "blocks") {
+      insertMarkdownBlocks(
+        cloned,
+        insertAfter?.node ?? null,
+        classified.content,
+        attrs
+      );
+    } else if (classified.kind === "inline") {
+      const inserted = insertAfterRef(cloned, insertAfter, classified.text, attrs);
+      if (inserted && insertAfter) {
+        const idx = insertAfter.parentArr.indexOf(inserted);
+        if (idx >= 0) {
+          insertAfter = { ...insertAfter, indexInParent: idx, node: inserted };
+        }
       }
     }
   }
