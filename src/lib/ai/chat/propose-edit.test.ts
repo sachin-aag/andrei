@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   checkProposedEdit,
   proposedEditHint,
-  REDRAFT_COVERAGE_THRESHOLD,
 } from "@/lib/ai/chat/propose-edit";
 
 const FIELD =
@@ -42,16 +41,13 @@ describe("checkProposedEdit", () => {
     ).toEqual({ status: "ambiguous" });
   });
 
-  it("flags a delete covering more than half the field as too_large", () => {
+  it("accepts a uniquely located rewrite of most of the field (coverage classifies, never rejects)", () => {
     const result = checkProposedEdit(FIELD, {
       anchorText: "",
       deleteText: FIELD,
       insertText: "A complete rewrite of the field.",
     });
-    expect(result.status).toBe("too_large");
-    if (result.status === "too_large") {
-      expect(result.coverage).toBeGreaterThan(REDRAFT_COVERAGE_THRESHOLD);
-    }
+    expect(result.status).toBe("ok");
   });
 
   it("does not flag a small delete as too_large", () => {
@@ -99,7 +95,6 @@ describe("proposedEditHint", () => {
     expect(proposedEditHint({ status: "ok" })).toBe("");
     expect(proposedEditHint({ status: "ambiguous" })).toMatch(/unique/i);
     expect(proposedEditHint({ status: "not_found" })).toMatch(/read_section/i);
-    expect(proposedEditHint({ status: "too_large", coverage: 0.9 })).toMatch(/smaller/i);
   });
 
   it("routes markdown-pipe table misses to edit_table", () => {

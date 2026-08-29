@@ -10,7 +10,6 @@ import {
   serializeAiRedraftCommentContent,
   parseAiFixCommentContent,
 } from "@/lib/ai/suggestion-gating";
-import { sectionContentHash } from "@/lib/ai/suggestion-gating";
 
 function aiFixComment(
   overrides: Partial<CommentRecord> & { content: string }
@@ -190,15 +189,13 @@ describe("validateSuggestionLocate", () => {
     expect(v.canPreview).toBe(true);
   });
 
-  it("flags documentChanged when content hash differs from snapshot", () => {
-    const hash = sectionContentHash("define", sectionContent);
+  it("flags documentChanged when the frozen span no longer locates", () => {
     const comment = aiFixComment({
       anchorText: "hello",
       content: serializeAiFixCommentContent({
         deleteText: "",
         insertText: " there",
         reasoning: "",
-        contentHashAtSuggestion: hash,
       }),
     });
     const edited = {
@@ -301,7 +298,7 @@ describe("validateSuggestionLocate — ai_redraft", () => {
       correctiveActions: "CA-1: Retrain operator. CA-2: Update SOP.",
     };
     const v = validateSuggestionLocate(comment, "improve", targetFieldEdited);
-    expect(v.documentChanged).toBe(true);
+    expect(v.documentChanged).toBe(false);
     expect(v.canApply).toBe(true);
   });
 });

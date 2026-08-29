@@ -6,18 +6,10 @@ import {
   type EditScope,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
-import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 import type {
   SuggestionImageInsert,
   SuggestionImageRemove,
 } from "@/lib/suggestions/image-insert";
-
-/**
- * Fraction of a field a single `propose_edit` may delete before it should be
- * routed to a block-level redraft instead of an inline word-diff. Tunable
- * safety valve — not a UX toggle (see Tier-2 `draft_section`).
- */
-export const REDRAFT_COVERAGE_THRESHOLD = 0.5;
 
 export type ProposedEditInput = {
   anchorText: string;
@@ -34,20 +26,12 @@ export type ProposedEditCheck =
   | { status: "not_found" }
   | { status: "ambiguous" }
   | { status: "cross_cell" }
-  | { status: "bad_scope" }
-  | { status: "too_large"; coverage: number };
+  | { status: "bad_scope" };
 
 /**
- * Validate a proposed targeted edit against the current field:
- * 1. It must locate uniquely (delegates to the shared suggestion locator).
- * 2. A delete must not cover more than {@link REDRAFT_COVERAGE_THRESHOLD} of
- *    the field — larger changes are rewrites and belong to a block redraft.
- *
- * When `fieldDoc` is supplied (rich fields), validation runs against the doc so
- * a structural `scope` resolves and cross-cell / bad-coordinate edits are caught
- * at propose time rather than silently failing at accept time.
- *
- * Pure + DB-free so it is unit-testable in isolation.
+ * Validate a proposed targeted edit against the current field.
+ * Coverage classifies later (edit vs rewrite); this check never rejects
+ * a uniquely located span for size.
  */
 export function checkProposedEdit(
   fieldPlainText: string,
@@ -72,18 +56,6 @@ export function checkProposedEdit(
     if (status === "cross_cell") return { status: "cross_cell" };
     if (status === "bad_scope") return { status: "bad_scope" };
     return { status: "not_found" };
-  }
-
-  // A scoped edit replaces at most one cell / list item, which is a small part
-  // of the whole field even when it rewrites that cell — skip the coverage
-  // guard (it exists to catch whole-field rewrites masquerading as edits).
-  const del = collapseWhitespace(edit.deleteText ?? "");
-  if (!edit.scope && del.length > 0) {
-    const fieldLen = Math.max(1, collapseWhitespace(fieldPlainText).length);
-    const coverage = del.length / fieldLen;
-    if (coverage > REDRAFT_COVERAGE_THRESHOLD) {
-      return { status: "too_large", coverage };
-    }
   }
 
   return { status: "ok" };
@@ -119,8 +91,6 @@ export function proposedEditHint(
       return "The edit spans more than one table cell. Use edit_table (edit_cells) instead of propose_edit.";
     case "bad_scope":
       return "The `scope` coordinate does not exist in this field. For tables, call read_section then edit_table. For lists, re-read and use a valid item index.";
-    case "too_large":
-      return "This change rewrites most of the field. Make a smaller, targeted edit, or use draft_field for an explicit full replacement.";
     default: {
       const _exhaustive: never = check;
       return _exhaustive;

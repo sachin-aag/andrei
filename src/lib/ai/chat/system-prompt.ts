@@ -19,7 +19,7 @@ import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v53-drop-section-switch";
+export const CHAT_PROMPT_VERSION = "chat-v54-three-way-merge";
 
 export type ChatMode = "plan" | "agent";
 
@@ -253,15 +253,14 @@ ${searchFirst}
 Editing rules:
 1. Read before you edit. When the context map marks the section filled or partial, call read_section before searching or drafting. Call read_section immediately before edit_table or propose_edit so coordinates and anchors match the current text. draft_field replaces the whole field, so reading first is required to preserve existing facts — do not use it on a filled field unless they asked to replace it.
 2. Any change to an existing table uses edit_table. Row 0 is the header; the first data row is row 1. For insert_rows, omit afterRow to append. For delete_rows, omit expectedCells — the server captures the exact current row before proposing the edit. When adding systems, UUTs, or other equipment, insert every distinct matching unit from the source in one edit_table call — never a single representative row. When changing or moving values across columns, put every affected cell in one edit_cells call (source and destination together). Do not split a same-kind change into two suggestions, and do not list cells whose insertText matches expectedText. Do not quote a markdown pipe table as propose_edit anchorText. If propose_edit fails on a table (not_found / ambiguous / cross_cell), call edit_table — do not fall through to draft_field.
-3. propose_edit remains for prose and list edits. anchorText must be UNIQUE in the field. On "ambiguous" quote more words; on "not_found" re-read and re-quote. If propose_edit fails twice on the same prose spot, switch to draft_field for that field. That fallback is for prose only — never for tables.
+3. propose_edit remains for prose and list edits. anchorText must be UNIQUE in the field. On "ambiguous" quote more words; on "not_found" re-read and re-quote. A large rewrite is stored as a rewrite, not refused — do not switch to draft_field just because the span is long.
 4. If edit_table fails, re-read the field and retry once. If the retry fails, stop and explain the problem. "Never call edit_table more than twice" is a failed-retry cap, not a budget of two successful proposals — one successful edit_cells is the whole request. draft_field creates a new table or performs an explicitly requested full replacement only; it is not a recovery path for a failed table edit.
 5. To change ONE list item, use propose_edit with "scope" from the field's structuredText (an item tagged [i] → scope {"kind":"listItem","index":i}).
-6. propose_edit refuses changes that rewrite most of a field ("too_large") — that is the signal to use draft_field.
-7. Never invent regulated facts (batch numbers, dates, results, equipment IDs, requirement IDs, ECO/DCR). Search the attachments first; use a bracketed placeholder only after a search does not contain the fact. Do not copy document topics/summaries into the draft.
-8. After ${committing ? "applying" : "proposing"}, briefly summarize what you ${committing ? "changed" : "drafted"}, list placeholders to complete, and name any sections you deliberately skipped and why.${
+6. Never invent regulated facts (batch numbers, dates, results, equipment IDs, requirement IDs, ECO/DCR). Search the attachments first; use a bracketed placeholder only after a search does not contain the fact. Do not copy document topics/summaries into the draft.
+7. After ${committing ? "applying" : "proposing"}, briefly summarize what you ${committing ? "changed" : "drafted"}, list placeholders to complete, and name any sections you deliberately skipped and why.${
     opts.citationsAtEndOfSection
       ? `
-9. Put source citations as [filename, p. N] immediately after the claim or cell they support. The server numbers them and parks the sources under a trailing "Citations:" heading. A split propose_edit (primary + second) still works. Do not invent citation numbers. draft_field and edit_table follow the same rule.`
+8. Put source citations as [filename, p. N] immediately after the claim or cell they support. The server numbers them and parks the sources under a trailing "Citations:" heading. A split propose_edit (primary + second) still works. Do not invent citation numbers. draft_field and edit_table follow the same rule.`
       : ""
   }`;
 }

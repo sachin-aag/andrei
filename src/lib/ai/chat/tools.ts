@@ -15,13 +15,12 @@ import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
   serializeAiFixCommentContent,
   serializeAiRedraftCommentContent,
-  sectionContentHash,
 } from "@/lib/ai/suggestion-gating";
 import {
   isRichTargetField,
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
-import { parseEditScope } from "@/lib/ai/suggestion-gating";
+import { parseEditScope, isAiSuggestionKind, parseAiFixCommentContent, parseAiRedraftCommentContent } from "@/lib/ai/suggestion-gating";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { listInlineImagesInDoc } from "@/lib/suggestions/image-insert";
 import {
@@ -36,7 +35,6 @@ import {
 } from "@/lib/ai/chat/insert-image";
 import { executePlotMeasurements } from "@/lib/charts/plot-measurements";
 import type { ChartSpec } from "@/lib/charts/chart-spec";
-import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
 import {
   markdownHasImage,
   markdownHasTable,
@@ -103,6 +101,12 @@ type ReadSectionSuccess = {
     imageCount: number;
   }>;
   images: ReadSectionImageRef[];
+  pendingSuggestions?: Array<{
+    id: string;
+    kind: string;
+    targetField: string;
+    preview: string;
+  }>;
   imageNote?: string;
   /** Request-local key — vision bytes live in `sectionImageStore`, not the tool JSON. */
   imageResultId?: string;
@@ -818,6 +822,43 @@ export function buildChatTools(opts: {
           mediaType: img.mediaType,
         }));
 
+        const pendingRows = await db
+          .select({
+            id: comments.id,
+            kind: comments.kind,
+            content: comments.content,
+            contentPath: comments.contentPath,
+            status: comments.status,
+          })
+          .from(comments)
+          .where(
+            and(eq(comments.reportId, reportId), eq(comments.section, section))
+          );
+        const pendingSuggestions = pendingRows.flatMap((row) => {
+          if (row.status !== "open" || !isAiSuggestionKind(row.kind)) return [];
+          const targetField = row.contentPath ?? "narrative";
+          let preview = "";
+          if (row.kind === "ai_redraft") {
+            preview = parseAiRedraftCommentContent(row.content).markdown;
+          } else {
+            const payload = parseAiFixCommentContent(row.content);
+            preview =
+              payload.insertText ||
+              payload.deleteText ||
+              (payload.tableOperation
+                ? JSON.stringify(payload.tableOperation)
+                : "");
+          }
+          return [
+            {
+              id: row.id,
+              kind: row.kind,
+              targetField,
+              preview: preview.replace(/\s+/g, " ").trim().slice(0, 400),
+            },
+          ];
+        });
+
         let imageResultId: string | undefined;
         if (collected.length > 0) {
           imageResultId = createId();
@@ -828,6 +869,7 @@ export function buildChatTools(opts: {
           section,
           fields: fieldResults,
           images: imageRefs,
+          ...(pendingSuggestions.length > 0 ? { pendingSuggestions } : {}),
           ...(imageResultId ? { imageResultId } : {}),
           ...(collected.length > 0
             ? {
@@ -860,6 +902,9 @@ export function buildChatTools(opts: {
           section: result.section,
           fields: result.fields,
           images: result.images,
+          ...(result.pendingSuggestions
+            ? { pendingSuggestions: result.pendingSuggestions }
+            : {}),
           ...(result.imageNote ? { imageNote: result.imageNote } : {}),
         };
 
@@ -1247,7 +1292,6 @@ export function buildChatTools(opts: {
                 reasoning,
                 scope: prepared.scope,
                 second,
-                contentHashAtSuggestion: sectionContentHash(section, loaded.content),
               },
               loaded.content as Record<string, unknown>,
               section,
@@ -1556,7 +1600,6 @@ export function buildChatTools(opts: {
                 insertText: "",
                 insertImage,
                 reasoning,
-                contentHashAtSuggestion: sectionContentHash(section, loaded.content),
               },
               loaded.content as Record<string, unknown>,
               section,
@@ -1819,7 +1862,6 @@ export function buildChatTools(opts: {
                   insertText: "",
                   removeImage,
                   reasoning,
-                  contentHashAtSuggestion: sectionContentHash(section, loaded.content),
                 },
                 loaded.content as Record<string, unknown>,
                 section,
@@ -1990,7 +2032,6 @@ export function buildChatTools(opts: {
                 reasoning,
                 tableOperation: stripped.operation,
                 second,
-                contentHashAtSuggestion: sectionContentHash(section, loaded.content),
               },
               loaded.content as Record<string, unknown>,
               section,
@@ -2119,11 +2160,6 @@ export function buildChatTools(opts: {
               {
                 markdown: draftMarkdown,
                 reasoning,
-                fieldHashAtSuggestion: fieldContentHash(
-                  section,
-                  loaded.content,
-                  resolvedField
-                ),
               },
               loaded.content as Record<string, unknown>,
               section,

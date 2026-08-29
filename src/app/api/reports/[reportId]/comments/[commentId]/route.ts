@@ -10,6 +10,15 @@ import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 const patchSchema = z.object({
   status: z.enum(["open", "resolved", "dismissed"]).optional(),
   content: z.string().optional(),
+  operations: z
+    .array(
+      z.object({
+        opIndex: z.number(),
+        coverage: z.number(),
+        classification: z.enum(["edit", "rewrite"]),
+      })
+    )
+    .optional(),
 });
 
 function canResolveThread(user: { id: string; role: string }, report: { authorId: string }) {
@@ -120,6 +129,22 @@ export async function PATCH(
           aiContent: row.content,
         },
       });
+      for (const op of parse.data.operations ?? []) {
+        await recordAuditEvent({
+          actor: auditActorFromUser(user),
+          action: "suggestion_operation_applied",
+          entityType: "suggestion",
+          entityId: threadRootId,
+          reportId,
+          summary: `Suggestion operation ${op.opIndex} (${op.classification}, coverage ${op.coverage.toFixed(2)}) applied`,
+          newValue: {
+            commentId: threadRootId,
+            opIndex: op.opIndex,
+            coverage: op.coverage,
+            classification: op.classification,
+          },
+        });
+      }
     } else {
       await recordAuditEvent({
         actor: auditActorFromUser(user),

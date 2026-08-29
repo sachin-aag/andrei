@@ -332,9 +332,6 @@ function checkStatusResult(
   anchorText: string
 ): PlotMeasurementsResult | null {
   if (check.status === "ok") return null;
-  if (check.status === "too_large") {
-    return { status: "too_large", message: "The proposed chart edit is too large for this field." };
-  }
   const hint = proposedEditHint(check, { anchorText, fieldDoc });
   if (check.status === "not_found") {
     return { status: "not_found_anchor", hint };
@@ -422,7 +419,6 @@ async function persistChartEdit(args: {
           insertImage: args.insertImage,
           removeImage: args.removeImage,
           reasoning: args.input.reasoning,
-          contentHashAtSuggestion: args.hash,
         },
         buildSuggestionRecord({
           sectionContent: args.loaded.content,
@@ -592,7 +588,6 @@ export async function executePlotMeasurements(
         insertImage,
         removeImage,
         reasoning: input.reasoning,
-        contentHashAtSuggestion: hash,
       });
       if (existing) {
         await deps.updateComment({ id: existing.comment.id, content });

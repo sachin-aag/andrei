@@ -71,8 +71,10 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 - **Untrusted PDF/DOCX text** (`documentSummary`, `pageContext`, filenames,
   descriptions) goes through `sanitizePromptMetadata` before any prompt.
 - **Bump versions** when prompts change: `PROMPT_VERSION` (eval),
-  `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`,
-  `ANALYTICS_CHAT_PROMPT_VERSION`.
+ `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`,
+ `ANALYTICS_CHAT_PROMPT_VERSION`. Chat suggestions persist `suggestionBase`
+ + `suggestionIntent` and merge at apply (`mergeField`); do not restore a
+ frozen-diff hash or a `too_large` → `draft_field` funnel.
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
   are silently missing in Plan.

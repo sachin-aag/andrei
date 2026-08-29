@@ -81,6 +81,8 @@ import {
 } from "@/lib/ai/suggestion-gating";
 import { buildInactiveSuggestionCss } from "@/lib/tiptap/inactive-suggestion-css";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
+import { injectMergePreview, resolveSuggestionMerge } from "@/lib/suggestions/resolve-merge";
+import { readSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import {
@@ -912,7 +914,29 @@ export function TiptapSectionField({
           sectionContent,
           contentPath
         );
-        if (validation.canPreview && comment.kind === "ai_redraft") {
+        if (validation.canPreview) {
+          const record = readSuggestionRecord(comment.content);
+          if (record && typeof record.intent !== "string") {
+            const resolved = resolveSuggestionMerge({
+              section,
+              comment,
+              sectionContent: sectionContent as Record<string, unknown>,
+              fieldContentPath: contentPath,
+            });
+            json = injectMergePreview({
+              current: json,
+              intent: record.intent,
+              operations: resolved.operations,
+              wholeField: resolved.wholeField,
+              attrs: {
+                id: activeSuggestionId,
+                authorId: AI_AUTHOR_ID,
+                status: "pending",
+                createdAt: comment.createdAt,
+                kind: resolved.wholeField ? "redraft" : "fix",
+              },
+            });
+          } else if (comment.kind === "ai_redraft") {
           // Full-field redraft: current content struck through, replacement
           // highlighted. Same mark machinery as fixes handles accept/dismiss.
           const redraft = parseAiRedraftCommentContent(comment.content);
@@ -990,6 +1014,7 @@ export function TiptapSectionField({
             if (injected.located) {
               json = normalizeRichField(injected.doc, richFieldOptions);
             }
+          }
           }
         }
       }

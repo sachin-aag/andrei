@@ -51,6 +51,7 @@ export const SuggestionInsert = Mark.create({
       status: { default: "pending" as SuggestionStatus },
       createdAt: { default: "" },
       kind: { default: "fix" as SuggestionKind },
+      opIndex: { default: null as number | null },
     };
   },
   parseHTML() {
@@ -60,6 +61,7 @@ export const SuggestionInsert = Mark.create({
     const kind = (HTMLAttributes.kind as SuggestionKind) ?? "fix";
     const isAi = HTMLAttributes.authorId === "ai";
     const evalId = HTMLAttributes.id as string | null | undefined;
+    const opIndex = HTMLAttributes.opIndex as number | null | undefined;
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
@@ -67,6 +69,7 @@ export const SuggestionInsert = Mark.create({
         "data-suggestion-kind": kind,
         "data-suggestion-author": isAi ? "ai" : "human",
         ...(evalId ? { "data-eval-id": String(evalId) } : {}),
+        ...(opIndex != null ? { "data-op-index": String(opIndex) } : {}),
         class: `suggestion-insert suggestion-insert-${kind}${
           isAi ? " suggestion-insert-ai" : ""
         }`,
@@ -86,6 +89,7 @@ export const SuggestionDelete = Mark.create({
       status: { default: "pending" as SuggestionStatus },
       createdAt: { default: "" },
       kind: { default: "fix" as SuggestionKind },
+      opIndex: { default: null as number | null },
     };
   },
   parseHTML() {
@@ -95,6 +99,7 @@ export const SuggestionDelete = Mark.create({
     const kind = (HTMLAttributes.kind as SuggestionKind) ?? "fix";
     const isAi = HTMLAttributes.authorId === "ai";
     const evalId = HTMLAttributes.id as string | null | undefined;
+    const opIndex = HTMLAttributes.opIndex as number | null | undefined;
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
@@ -102,6 +107,7 @@ export const SuggestionDelete = Mark.create({
         "data-suggestion-kind": kind,
         "data-suggestion-author": isAi ? "ai" : "human",
         ...(evalId ? { "data-eval-id": String(evalId) } : {}),
+        ...(opIndex != null ? { "data-op-index": String(opIndex) } : {}),
         class: `suggestion-delete suggestion-delete-${kind}${
           isAi ? " suggestion-delete-ai" : ""
         }`,

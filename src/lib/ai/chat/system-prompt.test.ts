@@ -19,7 +19,7 @@ describe("isChatMode", () => {
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v53-drop-section-switch"
+      "chat-v54-three-way-merge"
     );
   });
 
@@ -193,7 +193,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("edit_table");
     expect(prompt).toContain("Any change to an existing table uses edit_table");
     expect(prompt).toContain("do not fall through to draft_field");
-    expect(prompt).toContain("That fallback is for prose only — never for tables");
+    expect(prompt).not.toContain("That fallback is for prose only — never for tables");
+    expect(prompt).not.toContain("too_large");
+    expect(prompt).toContain("A large rewrite is stored as a rewrite, not refused");
     expect(prompt).toContain("Row 0 is the header; the first data row is row 1");
     expect(prompt).toContain("never a single representative row");
     expect(prompt).toContain(

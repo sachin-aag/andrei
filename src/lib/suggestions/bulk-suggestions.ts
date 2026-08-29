@@ -7,7 +7,6 @@ import {
   stripSuggestionFromContent,
 } from "@/lib/suggestions/accept-suggestion";
 import { patchCommentStatuses } from "@/lib/suggestions/persist-comment-status";
-import { partitionBulkApplies } from "@/lib/suggestions/suggestion-overlap";
 import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
 
 export type BulkSuggestionResult = {
@@ -65,6 +64,10 @@ function applyOneInMemory(args: {
     args.skippedIds.push(args.comment.id);
     return args.sectionContent;
   }
+  if (result.remainder === "conflict") {
+    args.skippedIds.push(args.comment.id);
+    return result.nextSection;
+  }
   args.appliedIds.push(args.comment.id);
   return result.nextSection;
 }
@@ -85,40 +88,12 @@ export async function acceptAllSuggestions(args: {
   /** Fired with in-memory applied content before the section PATCH. */
   onPreview?: (nextSection: Record<string, unknown>) => void;
 }): Promise<BulkSuggestionResult> {
-  const partition = partitionBulkApplies({
-    section: args.section,
-    comments: args.comments,
-    sectionContent: args.sectionContent,
-  });
-
   let current = args.sectionContent;
   const appliedIds: string[] = [];
-  const skippedIds: string[] = [...partition.unlocatableIds];
-  const applied = new Set<string>(partition.unlocatableIds);
-  const overlappingIds = new Set(
-    partition.overlapping.flatMap((group) => group.map((c) => c.id))
-  );
+  const skippedIds: string[] = [];
+  const applied = new Set<string>();
 
   for (const comment of args.comments) {
-    if (applied.has(comment.id)) continue;
-    if (overlappingIds.has(comment.id)) {
-      const cluster = partition.overlapping.find((group) =>
-        group.some((c) => c.id === comment.id)
-      );
-      if (!cluster) continue;
-      for (const member of cluster) {
-        current = applyOneInMemory({
-          section: args.section,
-          comment: member,
-          sectionContent: current,
-          applyMode: args.applyMode,
-          applied,
-          appliedIds,
-          skippedIds,
-        });
-      }
-      continue;
-    }
     current = applyOneInMemory({
       section: args.section,
       comment,

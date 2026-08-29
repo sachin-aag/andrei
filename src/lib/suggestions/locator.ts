@@ -175,6 +175,8 @@ export type InjectAttrs = {
   status: SuggestionStatus;
   createdAt: string;
   kind: SuggestionKind;
+  /** Per-operation index. `id` stays the comment id (data-eval-id). */
+  opIndex?: number | null;
 };
 
 /** Containers whose children are separated by a newline in the canonical string. */
@@ -1472,6 +1474,7 @@ export function applyAndAcceptRichEdit(
     status: "pending",
     createdAt: attrs?.createdAt ?? new Date().toISOString(),
     kind: attrs?.kind ?? "fix",
+    ...(attrs?.opIndex != null ? { opIndex: attrs.opIndex } : {}),
   };
   const applied = applyEditToRichDoc(doc, edit, fullAttrs);
   if (applied.status !== "located" && applied.status !== "append") {

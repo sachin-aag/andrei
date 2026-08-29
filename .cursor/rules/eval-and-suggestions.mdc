@@ -36,11 +36,15 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - Entry: `generateSuggestionsForSection()`. Gate ≡ apply via
   `probeRichEdit` / `probePlainEdit` in `src/lib/suggestions/locator.ts`.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
-- Accept/dismiss always: locate → apply → PATCH section → flip comment.
-  Never resolve a suggestion without a successful apply.
-- Bulk apply locates overlapping edits in a section and applies those
-  recursively; non-overlapping edits persist as one section PATCH.
-  Preview the applied section content before that PATCH so insert text
-  does not vanish during save.
+- Accept/dismiss: three-way merge when `suggestionBase`/`suggestionIntent`
+  are stored (`mergeField` in `three-way-merge.ts`); otherwise locate the
+  frozen span. PATCH section → flip comment. Never resolve without a
+  successful apply. Zero-ops dismiss (`already_present`), not resolve.
+- Bulk apply re-merges each open suggestion against the in-memory doc in
+  queue order, then PATCHes the section once. Preview applied wording
+  before that PATCH so insert text does not vanish during save.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
-- Whole-field rewrites are redrafts (`apply-redraft.ts`), not anchored edits.
+  Bump `CHAT_PROMPT_VERSION` when chat edit-tool copy changes.
+- Whole-field is derived: planned operations cover every merge block
+  (`operationsCoverWholeField`), plus `ai_redraft`. Coverage classifies
+  edit vs rewrite; `propose_edit` does not refuse large spans.

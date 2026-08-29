@@ -31,17 +31,28 @@ import {
   CommentPersistError,
   patchCommentStatus,
 } from "@/lib/suggestions/persist-comment-status";
+import { withResolutionReason } from "@/lib/suggestions/resolution-reason";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { suggestionEditFromComment } from "@/lib/suggestions/validate-suggestion";
+import type { PlannedOperation } from "@/lib/suggestions/diff-plan";
+import {
+  persistMergedAsTrackedChange,
+  resolveSuggestionMerge,
+  writeMergedField,
+} from "@/lib/suggestions/resolve-merge";
 
 export type AcceptSuggestionResult =
-  | { ok: true; nextSection: Record<string, unknown> }
+  | {
+      ok: true;
+      nextSection: Record<string, unknown>;
+      remainder?: "conflict";
+    }
   | {
       ok: false;
-      reason: LocateStatus | "save_failed" | "status_failed";
+      reason: LocateStatus | "noop" | "save_failed" | "status_failed";
       error?: unknown;
     };
 
@@ -68,8 +79,13 @@ export type ApplySuggestionToContentArgs = {
 };
 
 export type ApplySuggestionToContentResult =
-  | { ok: true; nextSection: Record<string, unknown> }
-  | { ok: false; reason: LocateStatus };
+  | {
+      ok: true;
+      nextSection: Record<string, unknown>;
+      remainder?: "conflict";
+      operations?: PlannedOperation[];
+    }
+  | { ok: false; reason: LocateStatus | "noop" };
 
 /**
  * Locate and apply one suggestion in memory. No network. Bulk apply uses this
@@ -91,6 +107,48 @@ export function applySuggestionToContent(
     comment.contentPath,
     fieldContentPath ?? comment.contentPath ?? "narrative"
   );
+
+  const resolved = resolveSuggestionMerge({
+    section,
+    comment,
+    sectionContent,
+    fieldContentPath,
+  });
+  if (resolved.merge) {
+    if (resolved.merge.status === "noop") {
+      return { ok: false, reason: "noop" };
+    }
+    const merged = resolved.merge.merged;
+    let nextSection = writeMergedField({
+      sectionContent,
+      section,
+      path: resolved.path,
+      merged,
+    });
+    if (
+      persistAsTrackedChange &&
+      isRichTargetField(section, resolved.path) &&
+      typeof resolved.current !== "string" &&
+      typeof merged !== "string"
+    ) {
+      nextSection = setRichFieldValue(
+        sectionContent,
+        resolved.path,
+        persistMergedAsTrackedChange({
+          current: resolved.current,
+          merged,
+          commentId: comment.id,
+          createdAt: comment.createdAt,
+        })
+      );
+    }
+    return {
+      ok: true,
+      nextSection,
+      remainder: resolved.merge.status === "conflict" ? "conflict" : undefined,
+      operations: resolved.operations,
+    };
+  }
 
   if (comment.kind === "ai_redraft") {
     const redraft = parseAiRedraftCommentContent(comment.content);
@@ -276,14 +334,47 @@ export async function acceptSuggestion(args: {
   applyMode?: SuggestionApplyMode;
 }): Promise<AcceptSuggestionResult> {
   const applied = applySuggestionToContent(args);
-  if (!applied.ok) return applied;
+  if (!applied.ok) {
+    if (applied.reason === "noop") {
+      try {
+        await patchCommentStatus(
+          args.reportId,
+          args.comment.id,
+          "dismissed",
+          {
+            content: withResolutionReason(
+              args.comment.content,
+              "already_present"
+            ),
+          }
+        );
+      } catch (error) {
+        return { ok: false, reason: "status_failed", error };
+      }
+      return { ok: true, nextSection: args.sectionContent };
+    }
+    return applied;
+  }
   try {
     await patchSection(args.reportId, args.section, applied.nextSection);
   } catch (error) {
     return { ok: false, reason: "save_failed", error };
   }
+  if (applied.remainder === "conflict") {
+    return {
+      ok: true,
+      nextSection: applied.nextSection,
+      remainder: "conflict",
+    };
+  }
   try {
-    await patchCommentStatus(args.reportId, args.comment.id, "resolved");
+    await patchCommentStatus(args.reportId, args.comment.id, "resolved", {
+      operations: applied.operations?.map((op) => ({
+        opIndex: op.opIndex,
+        coverage: op.coverage,
+        classification: op.classification,
+      })),
+    });
   } catch (error) {
     return { ok: false, reason: "status_failed", error };
   }
