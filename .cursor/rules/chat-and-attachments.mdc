@@ -41,7 +41,9 @@ that plumbing (`body.sectionScope`, `parseChat*`, switch-section tools,
 mismatch banners) — not hiding the dropdown. Scope is `@` mentions
 (`sectionScopeFromMentions`, analytics mention block). Bump
 `CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION` when prompt copy
-changes.
+changes. Empty-state Document chips are `chat.examplePrompts` on the
+document type (not DMAIC-hardcoded); Analytics chips stay in
+`ANALYTICS_EXAMPLE_PROMPTS`.
 
 ## Prompt / tools
 
