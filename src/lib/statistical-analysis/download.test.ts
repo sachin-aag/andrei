@@ -8,6 +8,7 @@ import { computeXyScatter } from "./xy-scatter";
 import { createEmptyWorksheet, pasteTsv } from "./worksheet";
 import {
   analysisDownloadFilename,
+  analysisImageDownloadFilename,
   analysisToCsv,
 } from "./download";
 
@@ -55,6 +56,9 @@ describe("analysis download", () => {
     const analysis = sampleAnalysis();
     expect(analysisDownloadFilename(analysis)).toBe(
       "Assay-rows-1-5-capability-sixpack.csv"
+    );
+    expect(analysisImageDownloadFilename(analysis)).toBe(
+      "Assay-rows-1-5-capability-sixpack.png"
     );
     expect(
       analysisDownloadFilename({ ...analysis, title: "  " })

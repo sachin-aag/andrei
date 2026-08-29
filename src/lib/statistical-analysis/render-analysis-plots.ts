@@ -1,5 +1,11 @@
+import {
+  CHART_DISPLAY_WIDTH_PX,
+  CHART_LOGICAL_HEIGHT,
+  CHART_LOGICAL_WIDTH,
+} from "@/lib/charts/chart-dimensions";
 import { renderChartPng } from "@/lib/charts/render-chart";
 import { resolveCustomerId } from "@/lib/customers/resolve";
+import { pngBufferFromDataUrl } from "./preview-image";
 import { renderAnovaIntervalPlotPng } from "./render-anova-png";
 import { renderSixpackPng } from "./render-sixpack-png";
 import {
@@ -13,7 +19,15 @@ import {
 export type AnalysisPlotImage = {
   title: string;
   buffer: Buffer;
+  width: number;
+  height: number;
 };
+
+const FALLBACK_CHART_HEIGHT_PX = Math.round(
+  (CHART_DISPLAY_WIDTH_PX * CHART_LOGICAL_HEIGHT) / CHART_LOGICAL_WIDTH
+);
+const SIXPACK_DISPLAY_WIDTH_PX = 720;
+const SIXPACK_DISPLAY_HEIGHT_PX = 360;
 
 function dataUrlToBuffer(dataUrl: string): Buffer {
   const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
@@ -38,6 +52,8 @@ export async function renderAnalysisPlotImages(
       images.push({
         title: spec.title,
         buffer: dataUrlToBuffer(rendered.dataUrl),
+        width: rendered.widthPx,
+        height: rendered.heightPx,
       });
     }
     return images;
@@ -46,15 +62,53 @@ export async function renderAnalysisPlotImages(
   if (isAnovaAnalysis(analysis)) {
     const buffer = renderAnovaIntervalPlotPng(analysis, { packId });
     if (typeof buffer === "object" && "error" in buffer) return [];
-    return [{ title: analysis.title, buffer }];
+    return [
+      {
+        title: analysis.title,
+        buffer,
+        width: CHART_DISPLAY_WIDTH_PX,
+        height: FALLBACK_CHART_HEIGHT_PX,
+      },
+    ];
   }
 
   if (isSixpackAnalysis(analysis)) {
     const buffer = renderSixpackPng(analysis, { packId });
     if (typeof buffer === "object" && "error" in buffer) return [];
-    return [{ title: analysis.title, buffer }];
+    return [
+      {
+        title: analysis.title,
+        buffer,
+        width: SIXPACK_DISPLAY_WIDTH_PX,
+        height: SIXPACK_DISPLAY_HEIGHT_PX,
+      },
+    ];
   }
 
   const exhaustive: never = analysis;
   return exhaustive;
+}
+
+/**
+ * Prefer the captured Analytics preview (same PNG as document insert /
+ * Download). Fall back to a server-side raster when the plot was never opened.
+ */
+export async function plotImagesForExport(
+  analysis: StatisticalAnalysisSummary
+): Promise<AnalysisPlotImage[]> {
+  const preview = analysis.previewImage;
+  if (preview) {
+    const buffer = pngBufferFromDataUrl(preview.dataUrl);
+    if (buffer) {
+      return [
+        {
+          title: preview.alt || analysis.title,
+          buffer,
+          width: Math.max(1, preview.widthPx),
+          height: Math.max(1, preview.heightPx),
+        },
+      ];
+    }
+  }
+  return renderAnalysisPlotImages(analysis);
 }

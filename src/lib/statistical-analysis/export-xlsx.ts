@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { formatPValue, formatPpm, formatStat } from "./format";
-import { renderAnalysisPlotImages } from "./render-analysis-plots";
+import { plotImagesForExport } from "./render-analysis-plots";
 import {
   formatRowSelection,
   normalizeRowSelection,
@@ -290,33 +290,38 @@ async function addAnalysisSheet(
   includePlots: boolean
 ): Promise<void> {
   const sheet = workbook.addWorksheet(safeSheetName(analysis.title, usedNames));
+
+  if (includePlots) {
+    const plots = await plotImagesForExport(analysis);
+    let nextRow = 0;
+    for (const plot of plots) {
+      const imageId = workbook.addImage({
+        base64: plot.buffer.toString("base64"),
+        extension: "png",
+      });
+      sheet.addImage(imageId, {
+        tl: { col: 0, row: nextRow },
+        ext: { width: plot.width, height: plot.height },
+      });
+      nextRow += excelRowsForImageHeight(plot.height);
+    }
+    while (sheet.rowCount < nextRow) {
+      sheet.addRow([]);
+    }
+    if (plots.length > 0) {
+      sheet.addRow([]);
+    }
+  }
+
   for (const section of analysisSections(analysis)) {
     addRows(sheet, section);
     sheet.addRow([]);
   }
+}
 
-  if (!includePlots) return;
-
-  const plots = await renderAnalysisPlotImages(analysis);
-  if (plots.length === 0) return;
-
-  sheet.addRow(["Plots"]);
-  let anchorRow = sheet.rowCount;
-  for (const plot of plots) {
-    const imageId = workbook.addImage({
-      base64: plot.buffer.toString("base64"),
-      extension: "png",
-    });
-    sheet.addImage(imageId, {
-      tl: { col: 0, row: anchorRow },
-      ext: { width: 720, height: 540 },
-    });
-    anchorRow += 30;
-    if (plots.length > 1) {
-      sheet.addRow([plot.title]);
-      anchorRow += 1;
-    }
-  }
+/** Excel default row is 15pt ≈ 20px at 96dpi. `tl.row` is 0-based. */
+function excelRowsForImageHeight(heightPx: number): number {
+  return Math.max(4, Math.ceil(heightPx / 20) + 1);
 }
 
 export function analyticsExportFilename(documentNo: string | null): string {

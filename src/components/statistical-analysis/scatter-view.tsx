@@ -9,11 +9,7 @@ import type {
 import { isXyScatterAnalysis } from "@/lib/statistical-analysis/types";
 import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import { formatStat } from "@/lib/statistical-analysis/format";
-import {
-  analysisDownloadFilename,
-  analysisToCsv,
-  downloadTextFile,
-} from "@/lib/statistical-analysis/download";
+import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import {
   formatChartProvenance,
   layoutPoints,
@@ -324,10 +320,7 @@ export function ScatterView({
           size="sm"
           data-testid="download-analysis"
           onClick={() => {
-            downloadTextFile(
-              analysisDownloadFilename(analysis),
-              analysisToCsv(analysis)
-            );
+            void downloadAnalysisFigure(analysis, captureRef.current);
           }}
         >
           Download

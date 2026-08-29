@@ -310,7 +310,9 @@ test.describe("report analytics", () => {
     const downloadPromise = page.waitForEvent("download");
     await page.getByTestId("download-analysis").click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/capability-sixpack\.csv$/);
+    expect(download.suggestedFilename()).toMatch(
+      /capability-sixpack\.(png|csv)$/
+    );
   });
 
   test("marks a sixpack stale after the source column changes", async ({

@@ -12,6 +12,13 @@ import {
 } from "./types";
 import { createEmptyWorksheet } from "./worksheet";
 
+const TINY_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const TINY_PNG_BYTES = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64"
+);
+
 function sampleAnalytics(): ReportAnalyticsView {
   const outcome = computeCapabilitySixpackFromValues(
     [10, 12, 11, 13, 14, 11, 12, 13],
@@ -133,5 +140,40 @@ describe("buildAnalyticsXlsx", () => {
     const scatter = workbook.getWorksheet("Torque scatter");
     expect(sixpack?.getImages().length).toBeGreaterThan(0);
     expect(scatter?.getImages().length).toBeGreaterThan(0);
+    expect(sixpack?.getImages()[0]?.range.tl.nativeRow).toBe(0);
+    expect(sixpack?.getCell("A1").value).not.toBe("Plots");
+  });
+
+  it("embeds the captured preview at the top of the analysis sheet", async () => {
+    const analytics = sampleAnalytics();
+    const sixpackAnalysis = analytics.analyses[0]!;
+    analytics.analyses[0] = {
+      ...sixpackAnalysis,
+      previewImage: {
+        dataUrl: TINY_PNG,
+        widthPx: 40,
+        heightPx: 40,
+        alt: "Assay sixpack",
+        chartSpec: null,
+      },
+    };
+
+    const buffer = await buildAnalyticsXlsx(analytics, { includePlots: true });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    const sixpack = workbook.getWorksheet("Assay sixpack");
+    const images = sixpack?.getImages() ?? [];
+    expect(images).toHaveLength(1);
+    expect(images[0]?.range.tl.nativeRow).toBe(0);
+    expect(images[0]?.range.tl.nativeCol).toBe(0);
+    expect(sixpack?.getCell("A1").value).not.toBe("Plots");
+    expect(sixpack?.getCell("A1").value).not.toBe("Field");
+
+    const imageId = images[0]?.imageId;
+    expect(imageId).toBeDefined();
+    const embedded = workbook.getImage(Number(imageId));
+    const bytes = embedded.buffer ?? Buffer.from(embedded.base64 ?? "", "base64");
+    expect(bytes).toEqual(TINY_PNG_BYTES);
   });
 });

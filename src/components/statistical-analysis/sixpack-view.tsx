@@ -27,11 +27,7 @@ import {
   type ControlLimitInput,
   type SpecLimitInput,
 } from "@/lib/statistical-analysis/spec-limit-labels";
-import {
-  analysisDownloadFilename,
-  analysisToCsv,
-  downloadTextFile,
-} from "@/lib/statistical-analysis/download";
+import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
@@ -609,10 +605,7 @@ export function SixpackView({
           size="sm"
           data-testid="download-analysis"
           onClick={() => {
-            downloadTextFile(
-              analysisDownloadFilename(analysis),
-              analysisToCsv(analysis)
-            );
+            void downloadAnalysisFigure(analysis, captureRef.current);
           }}
         >
           Download
