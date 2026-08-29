@@ -171,6 +171,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | Test | What it verifies |
 |------|------------------|
 | shows all DMAIC and structural sections | Define–Control + Documents / Attachments / Approvals |
+| wraps prose and 2-column table cells instead of growing the editor | Mixed paragraph + label/description table stays within the field; col 1 is not a 4.5rem strip |
 | typing triggers auto-save status | Saving… → Saved |
 | sidebar tabs switch panels | Placeholders, Criteria (stub eval), Comments |
 | collapses and expands sidebar | Collapse / expand controls |

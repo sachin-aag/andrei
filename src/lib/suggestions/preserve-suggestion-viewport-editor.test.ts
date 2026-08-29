@@ -102,6 +102,8 @@ describe("setRichEditorContentPreservingViewport", () => {
   it("keeps a prior caret when rewriting without a pin id", () => {
     const preview = previewDoc();
     const editor = makeEditor(preview);
+    document.body.append(editor.view.dom);
+    editor.view.dom.focus();
     const insertPos = 1 + "OLD ".repeat(40).length + 2;
     editor.commands.setTextSelection(insertPos);
     const accepted = acceptSuggestionMarksById(preview, MARK_ID);
@@ -113,6 +115,26 @@ describe("setRichEditorContentPreservingViewport", () => {
     );
 
     editor.destroy();
+  });
+
+  it("does not steal focus when rewriting an unfocused editor", () => {
+    const preview = previewDoc();
+    const editor = makeEditor(preview);
+    document.body.append(editor.view.dom);
+    const other = document.createElement("textarea");
+    document.body.append(other);
+    other.focus();
+    expect(document.activeElement).toBe(other);
+
+    setRichEditorContentPreservingViewport(editor, preview, {
+      pinSuggestionId: MARK_ID,
+      pinKind: "insert",
+    });
+
+    expect(document.activeElement).toBe(other);
+
+    editor.destroy();
+    other.remove();
   });
 
   it("plain setContent maps the caret to the end of a large replace", () => {
