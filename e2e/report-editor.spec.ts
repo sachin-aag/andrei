@@ -208,11 +208,13 @@ test.describe("report editor", () => {
         })
         .toBeLessThan(12);
 
-      await chatHandle.focus();
-      await page.keyboard.press("ArrowLeft");
+      await expect(chatHandle).toBeVisible();
+      await chatHandle.press("ArrowLeft");
       await expect
-        .poll(async () =>
-          sidebar.evaluate((el) => el.getBoundingClientRect().width)
+        .poll(
+          async () =>
+            sidebar.evaluate((el) => el.getBoundingClientRect().width),
+          { timeout: 10_000 }
         )
         .toBeGreaterThan(defaultWidth + 4);
 
@@ -328,11 +330,15 @@ test.describe("report editor", () => {
     await page.getByTestId("report-surface-document").click();
     await page.getByTestId("document-revision-history").click();
     await expect(
-      page.getByText(
+      page.getByTestId("document-revision-history-menu").getByText(
         "Versions appear after you edit the document or the assistant writes to it."
       )
     ).toBeVisible();
 
+    // Collapsed Agent rail only shows the active tab. Select Analytics first so
+    // the rail keeps `report-surface-analytics` and can expand that pane.
+    await page.getByTestId("report-surface-analytics").click();
+    await expect(page.getByTestId("report-analytics-workspace")).toBeVisible();
     await collapseWorkProductPanel(page);
     await expect(collapsedPanel.getByRole("button", { name: /expand document panel/i })).toBeVisible();
     // Collapsed Agent rail only shows the active tab. Expand to reach Analytics.

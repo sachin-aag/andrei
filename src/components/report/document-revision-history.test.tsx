@@ -135,10 +135,11 @@ describe("DocumentRevisionHistory", () => {
       />
     );
     await user.click(screen.getByTestId("document-revision-history"));
-    expect(screen.getByText("Version 1")).toBeInTheDocument();
-    expect(screen.getByText("Version 2")).toBeInTheDocument();
-    expect(screen.getByText(/Agent/)).toBeInTheDocument();
-    expect(screen.getByText(/Edits/)).toBeInTheDocument();
+    const menu = screen.getByTestId("document-revision-history-menu");
+    expect(menu).toHaveTextContent("Version 1");
+    expect(menu).toHaveTextContent("Version 2");
+    expect(menu).toHaveTextContent("Agent");
+    expect(menu).toHaveTextContent("Edits");
     await user.click(screen.getByTestId("document-revision-compare"));
     expect(onCompare).toHaveBeenCalledWith({ from: 1, to: 2 });
   });

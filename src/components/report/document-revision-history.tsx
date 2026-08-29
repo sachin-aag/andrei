@@ -126,7 +126,10 @@ export function DocumentRevisionHistory({
         History
       </button>
       {open ? (
-        <div className="absolute right-0 top-8 z-40 w-80 rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-xl">
+        <div
+          data-testid={`${historyTestId}-menu`}
+          className="absolute right-0 top-8 z-40 w-80 rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-xl"
+        >
           {revisions.length === 0 ? (
             <p className="text-xs text-[var(--muted-foreground)]">{emptyCopy}</p>
           ) : (
