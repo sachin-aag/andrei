@@ -24,6 +24,7 @@ import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
 import {
   agentChatTargetOnEnter,
+  shouldCollapseAssistantOnSuggestionFocus,
   shouldRevealCriteriaTab,
   type WorkspaceChrome,
   type WorkProductView,
@@ -598,9 +599,13 @@ export function ReportWorkspace({
     queueMicrotask(() => {
       if (cancelled) return;
       setCriteriaFocusSection(section);
-      // Keep the assistant collapsed so the document has room; do not auto-show
-      // the review margin — inline suggestion ticks remain available.
-      setSidebarCollapsed(true);
+      // Leave the assistant as the engineer left it. Collapsing it after
+      // Suggest fixes or a document-chrome chat proposal hid the thread as
+      // soon as the edit landed. Review margin stays opt-in (Comments switch
+      // + collapsed chat); inline suggestion marks remain in the document.
+      if (shouldCollapseAssistantOnSuggestionFocus()) {
+        setSidebarCollapsed(true);
+      }
     });
     const timeouts: Array<ReturnType<typeof setTimeout>> = [];
     const retryDelaysMs = [0, 50, 100, 200];
@@ -634,37 +639,14 @@ export function ReportWorkspace({
       attempt(0);
     };
 
-    const gutterAlreadyVisible = isReviewGutterVisible(
-      commentsGutterVisible,
-      sidebarCollapsed,
-      viewingDocument
-    );
-    if (gutterScrollTimeoutRef.current != null) {
-      clearTimeout(gutterScrollTimeoutRef.current);
-      gutterScrollTimeoutRef.current = null;
-    }
-    if (gutterAlreadyVisible) {
-      let innerFrame = 0;
-      const outerFrame = requestAnimationFrame(() => {
-        innerFrame = requestAnimationFrame(start);
-      });
-      return () => {
-        cancelled = true;
-        cancelAnimationFrame(outerFrame);
-        cancelAnimationFrame(innerFrame);
-        for (const id of timeouts) clearTimeout(id);
-      };
-    }
-    gutterScrollTimeoutRef.current = setTimeout(() => {
-      gutterScrollTimeoutRef.current = null;
-      start();
-    }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
+    let innerFrame = 0;
+    const outerFrame = requestAnimationFrame(() => {
+      innerFrame = requestAnimationFrame(start);
+    });
     return () => {
       cancelled = true;
-      if (gutterScrollTimeoutRef.current != null) {
-        clearTimeout(gutterScrollTimeoutRef.current);
-        gutterScrollTimeoutRef.current = null;
-      }
+      cancelAnimationFrame(outerFrame);
+      cancelAnimationFrame(innerFrame);
       for (const id of timeouts) clearTimeout(id);
     };
   }, [
@@ -673,9 +655,6 @@ export function ReportWorkspace({
     jumpToSection,
     comments,
     requestCommentFocus,
-    sidebarCollapsed,
-    commentsGutterVisible,
-    viewingDocument,
   ]);
 
   const jumpToComment = useCallback(

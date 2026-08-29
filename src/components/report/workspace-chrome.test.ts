@@ -2,8 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   agentChatTargetOnEnter,
   chatWorkProductTarget,
+  shouldCollapseAssistantOnSuggestionFocus,
   shouldRevealCriteriaTab,
 } from "./workspace-chrome";
+
+describe("shouldCollapseAssistantOnSuggestionFocus", () => {
+  it("does not close the assistant when a suggestion finishes generating", () => {
+    expect(shouldCollapseAssistantOnSuggestionFocus()).toBe(false);
+  });
+});
 
 describe("shouldRevealCriteriaTab", () => {
   it("reveals Criteria when an Agent-chrome eval finishes on the report", () => {
