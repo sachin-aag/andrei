@@ -547,3 +547,7 @@ Workflow: `.github/workflows/ci.yml`
 | Full user journey | `e2e/*.spec.ts` — use `e2e/helpers/` |
 
 E2E patterns: unique deviation numbers (`uniqueDeviationNo`), `loginAsEngineer` / `loginAsManager`, `createReport` / `deleteReport` in `afterEach`.
+
+Colocate and name the test file after the source module. When you rename, split, or delete `foo.ts`, do the same to `foo.test.ts` — do not leave `section-scope.test.ts` after `section-scope.ts` is gone. Assert the current contract (e.g. `@` tags set scope). Do not keep tombstone tests (`not.toContain("old dropdown")`).
+
+Removals: grep the old symbol in `src/**/*.test.*` and `e2e/` before calling the change done. Chat/workspace counterparts: Document **and** Agent chrome, Report chat **and** Analytics chat. Update existing Playwright specs rather than inventing a new suite unless a gap remains. Stub chat cannot assert tool selection (`e2e/report-chat.spec.ts` is stream + persist only).
