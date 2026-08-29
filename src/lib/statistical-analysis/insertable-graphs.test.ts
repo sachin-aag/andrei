@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import {
   isInsertableGraphAnalysis,
+  listGraphAnalyses,
   listInsertableGraphAnalyses,
 } from "./insertable-graphs";
 import type { StatisticalAnalysisSummary } from "./types";
@@ -87,6 +88,11 @@ describe("insertable-graphs", () => {
     expect(listInsertableGraphAnalyses([sixpack, scatter, anova, legacySixpack])).toEqual([
       sixpack,
       scatter,
+    ]);
+    expect(listGraphAnalyses([sixpack, scatter, anova, legacySixpack])).toEqual([
+      sixpack,
+      scatter,
+      legacySixpack,
     ]);
   });
 });

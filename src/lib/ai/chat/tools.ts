@@ -25,7 +25,10 @@ import { parseEditScope } from "@/lib/ai/suggestion-gating";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { dismissSuggestionsSupersededBy } from "@/lib/suggestions/persist-supersession";
-import { listInlineImagesInDoc } from "@/lib/suggestions/image-insert";
+import {
+  listInlineImagesInDoc,
+  type SuggestionImageInsert,
+} from "@/lib/suggestions/image-insert";
 import {
   countImagesInDoc,
   MAX_IMAGES_PER_SECTION,
@@ -33,11 +36,12 @@ import {
 import {
   resolveChatImage,
   resolveSectionImageLocator,
+  resolveAnalyticsImage,
   sectionImageNotFoundMessage,
   type InsertImageSource,
 } from "@/lib/ai/chat/insert-image";
 import { executePlotMeasurements } from "@/lib/charts/plot-measurements";
-import type { ChartSpec } from "@/lib/charts/chart-spec";
+import { getReportAnalytics } from "@/lib/statistical-analysis/store";
 import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
 import {
   markdownHasImage,
@@ -64,7 +68,6 @@ import {
   dataUrlToBase64,
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
-import { isDocumentChatPlotMeasurementsEnabled } from "@/lib/customers/packs";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import {
@@ -686,7 +689,7 @@ export function buildChatTools(opts: {
   citationsAtEndOfSection?: boolean;
   /** Current chat messages — used to resolve chat-attached images. */
   messages?: UIMessage[];
-  /** Document-chat scatter plots. Off for Convergent (plots live in Analytics). */
+  /** Document-chat scatter plots from attachments. Off when embedding Document tools in Analytics chat. */
   includePlotMeasurements?: boolean;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
@@ -803,8 +806,7 @@ export function buildChatTools(opts: {
   const citationsAtEndOfSection =
     opts.citationsAtEndOfSection ?? citationsAtEndOfSectionFor(documentType);
   const messages = opts.messages ?? [];
-  const includePlotMeasurements =
-    opts.includePlotMeasurements ?? isDocumentChatPlotMeasurementsEnabled();
+  const includePlotMeasurements = opts.includePlotMeasurements ?? true;
   const citationRule = documentCitationRule(citationsAtEndOfSection);
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
   const pinnedAttachmentIds = Array.from(
@@ -1381,7 +1383,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. For source=section, set image.section to the section the figure is in NOW (required when copying between sections) and pass image.id from read_section (e.g. 'narrative#1') or image.index. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
+        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. source=chat uses an attached photo (index). source=section copies a figure already in a report field (image.section + image.id from read_section). source=analytics copies a saved Analytics plot (analysisId from the context map or a tagged @ plot). Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a NEW chart from attachments, not to recreate a plot already in Analytics" : ""}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1419,6 +1421,15 @@ export function buildChatTools(opts: {
               .optional()
               .describe(
                 "Image id from read_section (images[].id), e.g. 'narrative#1'. Prefer this after reading the source section."
+              ),
+          }),
+          z.object({
+            source: z.literal("analytics"),
+            analysisId: z
+              .string()
+              .min(1)
+              .describe(
+                "Saved Analytics plot id from the context map or a tagged @ plot."
               ),
           }),
         ]),
@@ -1511,18 +1522,17 @@ export function buildChatTools(opts: {
           };
         }
 
-        let resolved: ReturnType<typeof resolveChatImage> | {
-          ok: true;
-          image: {
-            src: string;
-            alt: string | null;
-            width: number | null;
-            mediaId: string | null;
-            chartSpec?: ChartSpec | null;
-          };
-        };
+        let resolved:
+          | { ok: true; image: SuggestionImageInsert }
+          | { ok: false; message: string };
         if (source.source === "chat") {
           resolved = resolveChatImage(messages, source.index);
+        } else if (source.source === "analytics") {
+          const analytics = await getReportAnalytics(reportId);
+          const analysis = analytics?.analyses.find(
+            (item) => item.id === source.analysisId.trim()
+          );
+          resolved = resolveAnalyticsImage(analysis, source.analysisId);
         } else {
           const locator = resolveSectionImageLocator({
             destSection: section,
@@ -1683,7 +1693,7 @@ export function buildChatTools(opts: {
           return {
             status: "image_not_found",
             message:
-              "Could not insert this image. Call insert_image with source=section, image.section set to the section the figure is in now, and image.id from read_section (e.g. 'narrative#1'). Do not put markdown image syntax in draft_field.",
+              "Could not insert this image. Call insert_image with source=chat, source=section (image.id from read_section), or source=analytics (analysisId from the context map). Do not put markdown image syntax in draft_field.",
           };
         }
       },

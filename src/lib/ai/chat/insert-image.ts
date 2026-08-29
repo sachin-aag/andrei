@@ -1,5 +1,10 @@
 import type { UIMessage } from "ai";
 import { isChatImageFilePart } from "@/lib/ai/chat/image-parts";
+import {
+  isGraphAnalysisKind,
+  isInsertableGraphAnalysis,
+} from "@/lib/statistical-analysis/insertable-graphs";
+import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
 import { isValidSuggestionImageSrc } from "@/lib/suggestions/image-insert";
 import type { SuggestionImageInsert } from "@/lib/suggestions/image-insert";
 
@@ -121,7 +126,67 @@ export function sectionImageNotFoundMessage(opts: {
   return `No image at index ${opts.index}. ${opts.sourceSection} ${opts.sourceField} has ${opts.listedCount} image${opts.listedCount === 1 ? "" : "s"} (index 1–${opts.listedCount}).`;
 }
 
-export type InsertImageSource = ChatImageSource | SectionImageSource;
+export type AnalyticsImageSource = {
+  source: "analytics";
+  /** Saved Analytics plot id (context map / @ mention). */
+  analysisId: string;
+};
+
+export type InsertImageSource =
+  | ChatImageSource
+  | SectionImageSource
+  | AnalyticsImageSource;
+
+export function resolveAnalyticsImage(
+  analysis: StatisticalAnalysisSummary | undefined,
+  analysisId: string
+):
+  | { ok: true; image: SuggestionImageInsert }
+  | { ok: false; message: string } {
+  const id = analysisId.trim();
+  if (!id) {
+    return {
+      ok: false,
+      message:
+        "Provide image.analysisId from the context map Analytics plots list (or a tagged @ plot).",
+    };
+  }
+  if (!analysis) {
+    return {
+      ok: false,
+      message: `No Analytics plot with id '${id}'. Use analysisId from the context map Analytics plots list, or tag the plot with @.`,
+    };
+  }
+  if (!isGraphAnalysisKind(analysis.kind)) {
+    return {
+      ok: false,
+      message: `'${analysis.title}' (${analysis.kind}) is not a figure you can insert. insert_image source=analytics copies a sixpack, measurement scatter, or XY scatter.`,
+    };
+  }
+  if (!isInsertableGraphAnalysis(analysis) || !analysis.previewImage) {
+    return {
+      ok: false,
+      message: `'${analysis.title}' has no captured preview yet. Open it in Analytics so the preview can be saved, then retry insert_image with source=analytics.`,
+    };
+  }
+  const preview = analysis.previewImage;
+  if (!isValidSuggestionImageSrc(preview.dataUrl)) {
+    return {
+      ok: false,
+      message: `The stored preview for '${analysis.title}' is not a usable image. Open the plot in Analytics and retry.`,
+    };
+  }
+  return {
+    ok: true,
+    image: {
+      src: preview.dataUrl,
+      alt: preview.alt || analysis.title,
+      width: preview.widthPx,
+      mediaId: null,
+      chartSpec: preview.chartSpec,
+    },
+  };
+}
 
 export type ListedChatImage = {
   index: number;

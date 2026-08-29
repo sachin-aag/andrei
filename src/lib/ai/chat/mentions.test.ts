@@ -3,12 +3,47 @@ import {
   CHAT_MAX_DOCUMENT_MENTIONS,
   buildMentionBlock,
   mentionedAttachmentIds,
+  mentionedAnalysisIds,
   mentionedSections,
   parseChatMentions,
   resolveChatMentions,
   sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
+import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
+
+function readyPlot(
+  id: string,
+  overrides: Partial<StatisticalAnalysisSummary> = {}
+): StatisticalAnalysisSummary {
+  return {
+    id,
+    workspaceId: "ws",
+    title: "Torque scatter",
+    kind: "measurement_scatter",
+    sourceHash: "h",
+    stale: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    previewImage: {
+      dataUrl: "data:image/png;base64,AAAA",
+      widthPx: 600,
+      heightPx: 400,
+      alt: "Torque scatter",
+      chartSpec: null,
+    },
+    config: {
+      query: "torque",
+      title: "Torque scatter",
+      xLabel: "Unit",
+      yLabel: "Torque",
+      layout: { mode: "combined", seriesBy: "none", xAxis: "sequential", yRange: null },
+      lsl: null,
+      usl: null,
+    },
+    results: { specs: [], n: 0, uom: "Nm" },
+    ...overrides,
+  } as StatisticalAnalysisSummary;
+}
 
 function readyDoc(
   attachmentId: string,
@@ -31,10 +66,12 @@ describe("parseChatMentions", () => {
       parseChatMentions([
         { type: "document", id: "att_1" },
         { type: "section", id: "analyze" },
+        { type: "analysis", id: "anl_1" },
       ])
     ).toEqual([
       { type: "document", id: "att_1" },
       { type: "section", id: "analyze" },
+      { type: "analysis", id: "anl_1" },
     ]);
   });
 
@@ -161,11 +198,45 @@ describe("resolveChatMentions", () => {
     expect(mentionedSections(resolved)).toEqual(["analyze"]);
     expect(resolved.sections[0]?.label).toBe("Analyze");
   });
+
+  it("resolves tagged Analytics plots and drops ANOVA or unknown ids", () => {
+    const resolved = resolveChatMentions(
+      [
+        { type: "analysis", id: "anl_1" },
+        { type: "analysis", id: "anl_anova" },
+        { type: "analysis", id: "anl_missing" },
+      ],
+      [],
+      [
+        readyPlot("anl_1"),
+        readyPlot("anl_anova", {
+          title: "ANOVA",
+          kind: "one_way_anova",
+          previewImage: null,
+          config: {
+            responseColumnId: "r",
+            responseColumnName: "Response",
+            factorColumnId: "f",
+            factorColumnName: "Factor",
+            title: "ANOVA",
+          },
+          results: {} as never,
+        }),
+      ]
+    );
+
+    expect(mentionedAnalysisIds(resolved)).toEqual(["anl_1"]);
+    expect(resolved.analyses[0]).toMatchObject({
+      analysisId: "anl_1",
+      insertable: true,
+    });
+    expect(resolved.droppedCount).toBe(2);
+  });
 });
 
 describe("buildMentionBlock", () => {
   it("is empty when nothing was tagged", () => {
-    expect(buildMentionBlock({ documents: [], sections: [], droppedCount: 0 })).toBe("");
+    expect(buildMentionBlock({ documents: [], sections: [], analyses: [], droppedCount: 0 })).toBe("");
   });
 
   it("lists tagged documents as an index without document text", () => {
@@ -222,6 +293,21 @@ describe("buildMentionBlock", () => {
 
     expect(block).toContain("read_section");
     expect(block).toContain("Measure [measure]");
+  });
+
+  it("lists tagged Analytics plots with analysisId", () => {
+    const block = buildMentionBlock(
+      resolveChatMentions(
+        [{ type: "analysis", id: "anl_1" }],
+        [],
+        [readyPlot("anl_1")]
+      )
+    );
+
+    expect(block).toContain("insert_image source=analytics");
+    expect(block).toContain("[anl_1]");
+    expect(block).toContain("kind=measurement_scatter");
+    expect(block).not.toContain("no preview yet");
   });
 
   it("surfaces dropped mentions so the model asks instead of guessing", () => {

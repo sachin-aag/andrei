@@ -21,6 +21,11 @@ import {
 } from "@/lib/analyze/method";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import { getDocumentType } from "@/lib/document-types";
+import {
+  isGraphAnalysisKind,
+  isInsertableGraphAnalysis,
+} from "@/lib/statistical-analysis/insertable-graphs";
+import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
 
 export type ContextMapReport = {
   documentNo: string;
@@ -53,6 +58,8 @@ export type BuildContextMapInput = {
   comments: ContextMapComment[];
   documents?: ReadyDocumentIndexItem[];
   documentType?: DocumentType;
+  /** Saved Analytics plots the document chat can copy in with insert_image. */
+  analyticsPlots?: StatisticalAnalysisSummary[];
 };
 
 function summarize(text: string, max = 140): string {
@@ -153,6 +160,24 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     }
     if (section === "analyze") {
       lines.push(analyzeMethodLine(content, report.toolsUsed));
+    }
+  }
+
+  const plots = (input.analyticsPlots ?? []).filter((item) =>
+    isGraphAnalysisKind(item.kind)
+  );
+  if (plots.length > 0) {
+    lines.push(
+      "Analytics plots (insert with insert_image source=analytics; analysisId is the id in brackets). Do not recreate an existing plot with plot_measurements:"
+    );
+    for (const plot of plots) {
+      const title = sanitizePromptMetadata(plot.title, 180) || "untitled plot";
+      const previewNote = isInsertableGraphAnalysis(plot)
+        ? ""
+        : " — no preview yet; open it in Analytics first";
+      lines.push(
+        `- ${quotePromptMetadata(title)} [${plot.id}] kind=${plot.kind}${previewNote}`
+      );
     }
   }
 

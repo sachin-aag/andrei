@@ -161,6 +161,7 @@ import {
   type AnalyticsMentionSheet,
 } from "@/lib/statistical-analysis/mentions";
 import { analysisListSubtitle } from "@/lib/statistical-analysis/stale";
+import { listGraphAnalyses } from "@/lib/statistical-analysis/insertable-graphs";
 import type { ReportAnalyticsView } from "@/lib/statistical-analysis/types";
 import { dataSheets } from "@/lib/statistical-analysis/worksheet";
 
@@ -853,16 +854,20 @@ function emptyChatIntro(args: {
 function composerPlaceholder(args: {
   targetingAnalytics: boolean;
   mode: ChatMode;
+  statsEnabled: boolean;
 }): string {
   if (args.targetingAnalytics) {
     return args.mode === "plan"
       ? "Ask about measurements in the attachments… type @ to tag a sheet or plot"
       : "Extract numbers, run a sixpack or ANOVA, or plot… type @ to tag a sheet or plot";
   }
+  const tags = args.statsEnabled
+    ? "a document, section, or plot"
+    : "a document or section";
   if (args.mode === "plan") {
-    return "Ask about the report or attachments… type @ to tag a document or section";
+    return `Ask about the report or attachments… type @ to tag ${tags}`;
   }
-  return "Ask the assistant to draft or improve a section… type @ to tag a document or section";
+  return `Ask the assistant to draft or improve a section… type @ to tag ${tags}`;
 }
 
 function subscribeNoop() {
@@ -1128,12 +1133,21 @@ export function ChatPanel({
       id: section,
       label: sectionLabel(section),
     }));
-    return [...documents, ...sections];
+    const analyses = statsEnabled
+      ? listGraphAnalyses(analyticsSnapshot?.analyses ?? []).map((item) => ({
+          type: "analysis" as const,
+          id: item.id,
+          label: item.title,
+          sublabel: analysisListSubtitle(item),
+        }))
+      : [];
+    return [...documents, ...sections, ...analyses];
   }, [
     analyticsSnapshot,
     attachments,
     mentionSheets,
     report.documentType,
+    statsEnabled,
     targetingAnalytics,
   ]);
   const labeledMentions = syncMentionCandidateLabels(
@@ -2006,6 +2020,7 @@ export function ChatPanel({
               placeholder={composerPlaceholder({
                 targetingAnalytics,
                 mode,
+                statsEnabled,
               })}
               className="min-h-[4.5rem] max-h-40 w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm outline-none placeholder:text-[var(--muted-foreground)] disabled:opacity-50"
             />

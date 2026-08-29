@@ -16,6 +16,7 @@ const {
   dbInsertMock,
   dbUpdateMock,
   commitChatEditMock,
+  getReportAnalyticsMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
   listReadyDocumentsForReportMock: vi.fn(),
@@ -24,6 +25,7 @@ const {
   dbInsertMock: vi.fn(),
   dbUpdateMock: vi.fn(),
   commitChatEditMock: vi.fn(),
+  getReportAnalyticsMock: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -54,6 +56,10 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
       listDocumentPagesForReviewMock(...(args as [])),
   };
 });
+
+vi.mock("@/lib/statistical-analysis/store", () => ({
+  getReportAnalytics: (...args: unknown[]) => getReportAnalyticsMock(...args),
+}));
 
 type ZodToolSchema = z.ZodType<Record<string, unknown>>;
 
@@ -325,6 +331,14 @@ describe("buildChatTools insert_image", () => {
         },
       })
     ).toBe(true);
+    expect(
+      accepts(tools, "insert_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy the Analytics scatter",
+        image: { source: "analytics", analysisId: "anl_1" },
+      })
+    ).toBe(true);
   });
 });
 
@@ -354,7 +368,12 @@ describe("buildChatTools plot_measurements", () => {
     ).toBe(false);
   });
 
-  it("omits the document-chat plot tool when Analytics owns plots", () => {
+  it("includes plot_measurements by default", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(tools).toHaveProperty("plot_measurements");
+  });
+
+  it("omits plot_measurements when the flag is off", () => {
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -909,6 +928,8 @@ describe("buildChatTools propose vs commit", () => {
     dbInsertMock.mockReset();
     dbUpdateMock.mockReset();
     commitChatEditMock.mockReset();
+    getReportAnalyticsMock.mockReset();
+    getReportAnalyticsMock.mockResolvedValue(null);
     mockDefineSectionSelect();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
     dbUpdateMock.mockReturnValue({
@@ -1132,6 +1153,120 @@ describe("buildChatTools propose vs commit", () => {
     });
     const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
     expect(result).toMatchObject({ status: "section_changed" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("proposes insert_image from a saved Analytics plot", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_1",
+          workspaceId: "ws",
+          title: "Torque scatter",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Torque scatter",
+            chartSpec: null,
+          },
+          config: {
+            query: "torque",
+            title: "Torque scatter",
+            xLabel: "Unit",
+            yLabel: "Torque",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "Nm" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the torque scatter to Define.",
+        image: { source: "analytics", analysisId: "anl_1" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("refuses an Analytics plot with no captured preview", async () => {
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_1",
+          workspaceId: "ws",
+          title: "Torque scatter",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: null,
+          config: {
+            query: "torque",
+            title: "Torque scatter",
+            xLabel: "Unit",
+            yLabel: "Torque",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "Nm" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the torque scatter to Define.",
+        image: { source: "analytics", analysisId: "anl_1" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "image_not_found" });
+    expect((result as { message: string }).message).toContain("no captured preview");
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 });

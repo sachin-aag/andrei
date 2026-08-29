@@ -3,6 +3,7 @@ import type { UIMessage } from "ai";
 import {
   listLatestUserChatImages,
   parseSectionImageId,
+  resolveAnalyticsImage,
   resolveChatImage,
   resolveSectionImageLocator,
   sectionImageNotFoundMessage,
@@ -133,5 +134,65 @@ describe("sectionImageNotFoundMessage", () => {
         sourceSectionOmitted: true,
       })
     ).toContain("defaults to the destination");
+  });
+});
+
+describe("resolveAnalyticsImage", () => {
+  const plot = {
+    id: "anl_1",
+    workspaceId: "ws",
+    title: "Torque scatter",
+    kind: "measurement_scatter" as const,
+    sourceHash: "h",
+    stale: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    previewImage: {
+      dataUrl: PNG,
+      widthPx: 600,
+      heightPx: 400,
+      alt: "Torque scatter",
+      chartSpec: null,
+    },
+    config: {
+      query: "torque",
+      title: "Torque scatter",
+      xLabel: "Unit",
+      yLabel: "Torque",
+      layout: {
+        mode: "combined" as const,
+        seriesBy: "none" as const,
+        xAxis: "sequential" as const,
+        yRange: null,
+      },
+      lsl: null,
+      usl: null,
+    },
+    results: { specs: [], n: 3, uom: "Nm" },
+  };
+
+  it("copies a saved plot preview", () => {
+    const result = resolveAnalyticsImage(plot, "anl_1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.image.src).toBe(PNG);
+    expect(result.image.alt).toBe("Torque scatter");
+    expect(result.image.width).toBe(600);
+  });
+
+  it("explains a missing analysisId", () => {
+    const result = resolveAnalyticsImage(undefined, "anl_missing");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("anl_missing");
+  });
+
+  it("asks the engineer to open Analytics when the preview is missing", () => {
+    const result = resolveAnalyticsImage(
+      { ...plot, previewImage: null },
+      "anl_1"
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("no captured preview");
   });
 });

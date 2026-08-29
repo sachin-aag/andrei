@@ -122,7 +122,7 @@ and Convergent (`statisticalAnalysisEnabled`). Analytics chat uses the same
 shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep; Ask
 searches/extracts only; Agent fills the worksheet and runs plots when the
 report is writable). `@` tags set scope (sections in Document chat; sheets,
-plots, and files in Analytics) — there is no section/sheet dropdown.
+plots, and files in Analytics; Document chat can also tag saved plots) — there is no section/sheet dropdown.
 Scatters are one series, one color (`plot_xy_scatter` needs two numeric
 columns; `plot_measurements` is vs observation index). Do not substitute
 sixpack/ANOVA for a scatter, and do not color by group.
@@ -130,8 +130,8 @@ Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
 assistant write; Agent `write_column` / `manage_worksheet` refresh the grid
 mid-turn. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy.
-Convergent Document chat does not propose measurement plots; use Analytics
-instead.
+Document chat copies a saved Analytics plot with `insert_image` (`source=analytics`)
+and can propose attachment `plot_measurements` figures on every pack.
 
 - `pnpm db:ensure-workspace-users` is Neon HTTP — **skip on local Docker**
   (`127.0.0.1` → `https://api.0.0.1/sql`). Create users with

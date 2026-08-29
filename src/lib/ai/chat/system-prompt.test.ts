@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v57-structured-edit");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v58-analytics-insert");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -149,10 +149,12 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("insert_image");
     expect(prompt).toContain("source=chat");
+    expect(prompt).toContain("source=analytics");
     expect(prompt).toContain("Do not invent or generate pixels — use plot_measurements");
     expect(prompt).toContain("Never volunteer");
     expect(prompt).toContain('image: { source: "section", section: "purpose"');
     expect(prompt).toContain("id: \"narrative#1\"");
+    expect(prompt).toContain('source: "analytics"');
     expect(prompt).not.toContain("Mode: ASK");
   });
 
@@ -254,7 +256,15 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("[measure]:");
   });
 
-  it("sends Convergent document chat to Analytics instead of plot_measurements", () => {
+  it("includes plot_measurements by default, including Convergent", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("- plot_measurements — extract cited numeric measurements");
+    expect(prompt).not.toContain("Measurement charts belong in Analytics, not Document chat");
+    expect(prompt).not.toContain("Tell the engineer to open Analytics");
+  });
+
+  it("omits plot_measurements copy when the tool is disabled", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
@@ -262,7 +272,7 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("use insert_image / remove_image");
     expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image");
-    expect(prompt).toContain("Measurement charts belong in Analytics, not Document chat");
+    expect(prompt).toContain("Measurement plots — not available in Document chat");
     expect(prompt).toContain("Tell the engineer to open Analytics");
     expect(prompt).not.toContain("- plot_measurements — extract cited numeric measurements");
   });

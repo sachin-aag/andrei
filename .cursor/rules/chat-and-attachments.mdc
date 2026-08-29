@@ -32,8 +32,8 @@ system prompt when kickoff retrieval hits.
 ## Spectrum
 
 Document and Agent share `ChatPanel` + `StatisticalWorkspace`. Document
-`/chat` and Analytics `/analytics/chat` are counterparts (section `@` vs
-sheet/plot `@`). A composer, mention, or tool change that only lands on one
+`/chat` and Analytics `/analytics/chat` are counterparts (section `@` plus
+saved-plot `@` vs sheet/plot `@`). A composer, mention, or tool change that only lands on one
 chrome or one surface is incomplete. Walk UI → request body → route parser →
 prompt → tools → `PLAN_MODE_CHAT_TOOL_NAMES` → retrieval-policy /
 already-drafted / stub → tests → docs. Removing a control means deleting
