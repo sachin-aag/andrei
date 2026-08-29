@@ -97,8 +97,9 @@ test.describe("document revisions", () => {
     await setReportChrome(page, "agent");
     await expandWorkProductPanel(page);
     await page.getByTestId("document-revision-history").click();
-    await expect(page.getByText("Version 3")).toBeVisible();
-    await expect(page.getByText("Edits")).toBeVisible();
-    await expect(page.getByText("Edited Define")).toBeVisible();
+    const version3 = page.locator("li").filter({ hasText: "Version 3" });
+    await expect(version3).toBeVisible();
+    await expect(version3.getByText("Edits")).toBeVisible();
+    await expect(version3.getByText("Edited Define")).toBeVisible();
   });
 });

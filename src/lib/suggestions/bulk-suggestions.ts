@@ -108,7 +108,11 @@ export async function acceptAllSuggestions(args: {
 
   let current = args.sectionContent;
   const appliedIds: string[] = [];
-  const skippedIds: string[] = [...partition.unlocatableIds];
+  // Unlocatable leftovers used to stay `open`, which left Apply all N on
+  // screen with no gutter cards (anchors are gone). Dismiss them instead.
+  const skippedIds: string[] = partition.unlocatableIds.filter(
+    (id) => !supersededIds.has(id)
+  );
   const applied = new Set<string>([
     ...partition.unlocatableIds,
     ...supersededIds,
@@ -150,7 +154,11 @@ export async function acceptAllSuggestions(args: {
   }
 
   const dismissedIds = [...supersededIds];
-  if (appliedIds.length === 0 && dismissedIds.length === 0) {
+  if (
+    appliedIds.length === 0 &&
+    dismissedIds.length === 0 &&
+    skippedIds.length === 0
+  ) {
     return {
       appliedIds,
       skippedIds,
@@ -207,6 +215,9 @@ export async function acceptAllSuggestions(args: {
       "dismissed",
       dismissContent
     );
+  }
+  if (skippedIds.length > 0) {
+    await patchCommentStatuses(args.reportId, skippedIds, "dismissed");
   }
   const failed = new Set(failedIds);
   return {
@@ -358,7 +369,9 @@ async function runReportBulk(
   for (const queue of queues) {
     const sectionContent = args.sectionContentFor(queue.section);
     if (!sectionContent) {
-      skippedIds.push(...queue.comments.map((c) => c.id));
+      const missing = queue.comments.map((c) => c.id);
+      skippedIds.push(...missing);
+      await patchCommentStatuses(args.reportId, missing, "dismissed");
       continue;
     }
 
@@ -398,15 +411,15 @@ export function formatBulkApplyToast(
   if (applied === 0 && skipped === 0) return "No suggestions to apply.";
   if (applied === 0) {
     return skipped === 1
-      ? "This suggestion no longer fits. Dismiss it or run Suggest fixes again."
-      : "None of these suggestions could be applied. Dismiss them or run Suggest fixes again.";
+      ? "This suggestion no longer fits and was dismissed."
+      : "None of these suggestions could be applied. They were dismissed.";
   }
   const appliedText =
     applied === 1 ? "Applied 1 suggestion" : `Applied ${applied} suggestions`;
   if (skipped === 0) return appliedText;
   return skipped === 1
-    ? `${appliedText}. 1 no longer fits and was left open.`
-    : `${appliedText}. ${skipped} no longer fit and were left open.`;
+    ? `${appliedText}. 1 no longer fits and was dismissed.`
+    : `${appliedText}. ${skipped} no longer fit and were dismissed.`;
 }
 
 export function formatBulkDismissToast(

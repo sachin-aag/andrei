@@ -22,7 +22,9 @@ open suggestion on that field. Incremental `edit_table` is not whole-field.
 
 **D-A3.** A superseded suggestion goes to `dismissed` with payload
 `resolutionReason: "superseded_by:<id>"` plus an audit event. Do not use
-`resolved`. Dismissals survive a git revert and must be reopenable.
+`resolved`. The newer card is the only one shown; the older row stays in the
+DB for audit but is hidden from the workspace (no reopen / revert-to-previous
+card).
 
 **D-A4.** Fill state is per field (`empty | partial | filled`). `draft_field`
 refuses a filled field unless `replaceFilledField: true`.

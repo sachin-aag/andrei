@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import {
   comments,
@@ -6,7 +6,6 @@ import {
   reports,
   reportSections,
 } from "@/db/schema";
-import { commentsVisibleToWorkspaceWhere } from "@/lib/suggestions/visible-comments";
 import type { ReportBundle } from "@/types/report";
 import { listActiveAttachments } from "@/lib/attachments/list-active";
 import { listAttachmentFolders } from "@/lib/attachments/folders";
@@ -20,9 +19,9 @@ import { sourceDocxFilenameFor } from "@/lib/reports/persist-source-docx";
 // Split out from loadReportBundle so callers that authorize on the report row
 // first (e.g. the GET route) can reuse the same fetch without re-querying.
 //
-// Ordinary dismissals stay in the DB but are excluded here so ignored AI
-// suggestions and dismissed human threads do not clutter the gutter.
-// Superseded dismissals stay visible so the engineer can reopen them.
+// Dismissed comments stay in the DB but are excluded here so ignored AI
+// suggestions and dismissed human threads do not clutter the gutter or the
+// highlight overlay.
 export async function loadReportSubtables(reportId: string) {
   const [sections, evaluations, commentRows, attachments, attachmentFolders] =
     await Promise.all([
@@ -37,7 +36,9 @@ export async function loadReportSubtables(reportId: string) {
       db
         .select()
         .from(comments)
-        .where(commentsVisibleToWorkspaceWhere(reportId)),
+        .where(
+          and(eq(comments.reportId, reportId), ne(comments.status, "dismissed"))
+        ),
       listActiveAttachments(reportId),
       listAttachmentFolders(reportId),
     ]);

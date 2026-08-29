@@ -100,19 +100,13 @@ export function ReportBulkSuggestionActions() {
       });
 
       const applied = new Set(result.appliedIds);
-      const dismissed = new Set(result.dismissedIds);
+      const hide = new Set([...result.dismissedIds, ...result.skippedIds]);
       setComments((prev) =>
-        prev.map((c) => {
-          if (applied.has(c.id)) return { ...c, status: "resolved" as const };
-          if (dismissed.has(c.id)) {
-            return {
-              ...c,
-              status: "dismissed" as const,
-              content: result.dismissedContent[c.id] ?? c.content,
-            };
-          }
-          return c;
-        })
+        prev
+          .map((c) =>
+            applied.has(c.id) ? { ...c, status: "resolved" as const } : c
+          )
+          .filter((c) => !hide.has(c.id))
       );
       for (const id of result.appliedIds) {
         captureEvent("ai_suggestion_accepted", { suggestionId: id, bulk: true });

@@ -43,7 +43,8 @@ DV mixes LLM criteria with deterministic `check()` functions.
   recursively; non-overlapping edits persist as one section PATCH.
   Preview the applied section content before that PATCH so insert text
   does not vanish during save. Range-contained siblings are dismissed, not
-  applied into an overwrite.
+  applied into an overwrite. Suggestions that no longer locate are dismissed
+  (not left open) so Apply all / Dismiss all cannot linger on a ghost queue.
 - `draft_field` refuses a filled field unless `replaceFilledField: true`.
   After a redraft, filled `[Label: value]` placeholders must be preserved
   unless the caller opted into replacing them.

@@ -335,6 +335,8 @@ test.describe("report editor", () => {
 
     await collapseWorkProductPanel(page);
     await expect(collapsedPanel.getByRole("button", { name: /expand document panel/i })).toBeVisible();
+    // Collapsed Agent rail only shows the active tab. Expand to reach Analytics.
+    await expandWorkProductPanel(page);
     await page.getByTestId("report-surface-analytics").click();
     await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
       timeout: 30_000,

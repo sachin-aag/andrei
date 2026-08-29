@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { comments, reports } from "@/db/schema";
@@ -7,7 +7,6 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { isValidSection } from "@/lib/document-types";
-import { commentsVisibleToWorkspaceWhere } from "@/lib/suggestions/visible-comments";
 
 export async function GET(
   req: Request,
@@ -20,15 +19,14 @@ export async function GET(
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  // Ordinary dismissals are kept in the DB for audit / undo but excluded from
-  // the UI by default. Superseded dismissals stay visible so they can be
-  // reopened. Pass ?include=dismissed when you genuinely need every row.
+  // Dismissed comments are kept in the DB for audit / undo but excluded from
+  // the UI by default. Pass ?include=dismissed when you genuinely need them.
   const url = new URL(req.url);
   const includeDismissed = url.searchParams.get("include") === "dismissed";
 
   const where = includeDismissed
     ? eq(comments.reportId, reportId)
-    : commentsVisibleToWorkspaceWhere(reportId);
+    : and(eq(comments.reportId, reportId), ne(comments.status, "dismissed"));
 
   const rows = await db
     .select()

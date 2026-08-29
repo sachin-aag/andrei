@@ -60,12 +60,9 @@ import {
   PLACEHOLDER_CONFLICT_MESSAGE,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
-import { patchCommentStatus } from "@/lib/suggestions/persist-comment-status";
 import {
   formatSupersedesBadge,
-  isSupersededDismissal,
   suggestionsSupersededBy,
-  stripResolutionReason,
 } from "@/lib/suggestions/supersession";
 import {
   isSuggestionTargetInViewport,
@@ -716,13 +713,6 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     });
   }, [liveCard, section, comments, sections]);
   const supersedesBadge = formatSupersedesBadge(supersededByActive.length);
-  const supersededDismissals = useMemo(
-    () =>
-      comments.filter(
-        (c) => c.section === section && !c.parentId && isSupersededDismissal(c)
-      ),
-    [comments, section]
-  );
 
   const sectionContent = sections[section];
 
@@ -926,11 +916,13 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       replaceSection(section, result.nextSection as unknown);
 
       setComments((prev) =>
-        prev.map((c) => {
-          if (c.id === commentId) return { ...c, status: "resolved" as const };
-          const dismissed = result.dismissed.find((row) => row.id === c.id);
-          return dismissed ?? c;
-        })
+        prev
+          .map((c) => {
+            if (c.id === commentId) return { ...c, status: "resolved" as const };
+            const dismissed = result.dismissed.find((row) => row.id === c.id);
+            return dismissed ?? c;
+          })
+          .filter((c) => c.status !== "dismissed")
       );
       setPhase("applied");
       await delay(SUGGESTION_APPLY_SETTLE_MS);
@@ -1092,39 +1084,6 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     endSuggestionApplyTransition,
   ]);
 
-  const handleReopen = useCallback(
-    async (comment: CommentRecord) => {
-      if (pending || !canResolve) return;
-      setPending(true);
-      try {
-        await patchCommentStatus(report.id, comment.id, "open");
-        setComments((prev) =>
-          prev.map((c) =>
-            c.id === comment.id
-              ? {
-                  ...c,
-                  status: "open" as const,
-                  content: stripResolutionReason(c.content),
-                }
-              : c
-          )
-        );
-        toast.success("Suggestion reopened");
-      } catch (err) {
-        console.error(err);
-        toast.error(
-          err instanceof CommentPersistError
-            ? err.message
-            : "Could not reopen suggestion"
-        );
-        await refresh();
-      } finally {
-        setPending(false);
-      }
-    },
-    [pending, canResolve, report.id, setComments, refresh]
-  );
-
   if (showBridge && bridgeNext) {
     const nextSection =
       typeof bridgeNext.section === "string" ? bridgeNext.section : null;
@@ -1151,39 +1110,6 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   }
 
   if (!liveCard && !exitingCard && !frozenCard) {
-    if (supersededDismissals.length > 0) {
-      return (
-        <div className="space-y-2 px-1 py-2">
-          <p className="text-[11px] text-[var(--muted-foreground)]">
-            No pending suggestions for this section. A newer suggestion superseded
-            these — reopen if you still want them.
-          </p>
-          {supersededDismissals.map((comment) => (
-            <div
-              key={comment.id}
-              className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-2 py-1.5"
-            >
-              <span className="text-[11px] text-[var(--muted-foreground)]">
-                Superseded suggestion
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 text-xs"
-                disabled={pending || !canResolve}
-                data-testid="suggestion-reopen"
-                onClick={() => {
-                  void handleReopen(comment);
-                }}
-              >
-                Reopen
-              </Button>
-            </div>
-          ))}
-        </div>
-      );
-    }
     return (
       <p className="text-[11px] text-[var(--muted-foreground)] px-1 py-2">
         No pending suggestions for this section. Run criteria, then use Suggest fixes

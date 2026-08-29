@@ -84,9 +84,12 @@ describe("formatBulkApplyToast", () => {
     expect(formatBulkApplyToast(3, 0)).toBe("Applied 3 suggestions");
   });
 
-  it("reports skipped leftovers", () => {
+  it("reports skipped leftovers as dismissed", () => {
     expect(formatBulkApplyToast(2, 1)).toBe(
-      "Applied 2 suggestions. 1 no longer fits and was left open."
+      "Applied 2 suggestions. 1 no longer fits and was dismissed."
+    );
+    expect(formatBulkApplyToast(0, 2)).toBe(
+      "None of these suggestions could be applied. They were dismissed."
     );
   });
 });
@@ -121,6 +124,51 @@ describe("acceptAllSuggestions", () => {
     const text = JSON.stringify(result.nextSection);
     expect(text).toContain("on line FL-02");
     expect(text).toContain("by 12%");
+  });
+
+  it("dismisses unlocatable leftovers instead of leaving them open", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [stale, first],
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(result.appliedIds).toEqual(["c1"]);
+    expect(result.skippedIds).toEqual(["c3"]);
+    expect(urls.some((url) => url.includes("/comments/c3"))).toBe(true);
+  });
+
+  it("dismisses a queue that is entirely unlocatable", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [stale],
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(result.appliedIds).toEqual([]);
+    expect(result.skippedIds).toEqual(["c3"]);
+    expect(urls.filter((url) => url.includes("/sections/"))).toHaveLength(0);
+    expect(urls.some((url) => url.includes("/comments/c3"))).toBe(true);
   });
 
   it("PATCHes the section once for non-overlapping suggestions", async () => {

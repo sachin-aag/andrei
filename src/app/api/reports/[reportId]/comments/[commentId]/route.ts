@@ -6,7 +6,6 @@ import { comments, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
-import { stripResolutionReason } from "@/lib/suggestions/supersession";
 
 const patchSchema = z.object({
   status: z.enum(["open", "resolved", "dismissed"]).optional(),
@@ -98,20 +97,9 @@ export async function PATCH(
   }
 
   if (parse.data.status != null) {
-    const reopenSuperseded =
-      parse.data.status === "open" &&
-      row.status === "dismissed" &&
-      isAiSuggestionKind(row.kind) &&
-      parse.data.content == null;
-    const statusPatch: { status: typeof parse.data.status; content?: string } = {
-      status: parse.data.status,
-    };
-    if (reopenSuperseded) {
-      statusPatch.content = stripResolutionReason(row.content);
-    }
     const [updated] = await db
       .update(comments)
-      .set(statusPatch)
+      .set({ status: parse.data.status })
       .where(and(eq(comments.id, threadRootId), eq(comments.reportId, reportId)))
       .returning();
 
