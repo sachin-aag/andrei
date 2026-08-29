@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { chatWorkProductTarget, shouldRevealCriteriaTab } from "./workspace-chrome";
+import {
+  agentChatTargetOnEnter,
+  chatWorkProductTarget,
+  shouldRevealCriteriaTab,
+} from "./workspace-chrome";
 
 describe("shouldRevealCriteriaTab", () => {
   it("reveals Criteria when an Agent-chrome eval finishes on the report", () => {
@@ -81,6 +85,32 @@ describe("chatWorkProductTarget", () => {
         chrome: "agent",
         workProductView: "analytics",
         agentTarget: "analytics",
+        statsEnabled: false,
+      })
+    ).toBe("report");
+  });
+});
+
+describe("agentChatTargetOnEnter", () => {
+  it("copies the focused Document pane into Agent", () => {
+    expect(
+      agentChatTargetOnEnter({
+        workProductView: "analytics",
+        statsEnabled: true,
+      })
+    ).toBe("analytics");
+    expect(
+      agentChatTargetOnEnter({
+        workProductView: "report",
+        statsEnabled: true,
+      })
+    ).toBe("report");
+  });
+
+  it("stays on report when Statistical Analysis is off", () => {
+    expect(
+      agentChatTargetOnEnter({
+        workProductView: "analytics",
         statsEnabled: false,
       })
     ).toBe("report");

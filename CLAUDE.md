@@ -290,7 +290,7 @@ Sessions created before type-generic Improve AI (Convergent Review 404) re-run e
 **Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR), attachment measurement scatter, worksheet XY scatter, and one-way ANOVA. Lives on the report **Analytics** tab (same attachments as the document). On for demo, MJ, and Convergent (`statisticalAnalysisEnabled`). Not a document type, not TipTap, and not DMAIC chat. Convergent Document chat does **not** propose `plot_measurements` figures — those plots live in Analytics.
 
 **Entry points:**
-- Report workspace header: Document | Agent switch (`data-testid="report-chrome-switch"`, `data-current-chrome`). Chrome is persisted per user + report in localStorage (`workspaceChrome:v1`). Analytics is a work-product pane (`data-testid="report-surface-analytics"`), not a third chrome.
+- Report workspace header: Document | Agent switch (`data-testid="report-chrome-switch"`, `data-current-chrome`). Chrome is persisted per user + report in localStorage (`workspaceChrome:v1`). Switching to Agent seeds the composer Report | Analytics target from the focused pane. Analytics is a work-product pane (`data-testid="report-surface-analytics"`), not a third chrome.
 - `GET/PATCH/POST /api/reports/[reportId]/analytics` (`POST` aliases `PATCH` for autosave beacons)
 - `POST .../analytics/analyses` creates a sixpack (default), `kind: "measurement_scatter"`, `kind: "xy_scatter"`, or `kind: "one_way_anova"`; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
 - `POST /api/reports/[reportId]/analytics/chat` — stats-only assistant (`ANALYTICS_CHAT_PROMPT_VERSION`, surface `analytics`)

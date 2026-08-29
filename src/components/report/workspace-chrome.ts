@@ -11,7 +11,8 @@ export function isWorkProductView(value: unknown): value is WorkProductView {
 
 /**
  * Document chrome follows the focused work-product pane. Agent chrome uses
- * the composer's explicit Report | Analytics dropdown.
+ * the composer's Report | Analytics dropdown. Switching Document → Agent
+ * seeds that dropdown from the focused pane (`agentChatTargetOnEnter`).
  */
 export function chatWorkProductTarget(args: {
   chrome: WorkspaceChrome;
@@ -21,6 +22,15 @@ export function chatWorkProductTarget(args: {
 }): WorkProductView {
   if (!args.statsEnabled) return "report";
   if (args.chrome === "agent") return args.agentTarget;
+  return args.workProductView;
+}
+
+/** Composer Report | Analytics when entering Agent from Document chrome. */
+export function agentChatTargetOnEnter(args: {
+  workProductView: WorkProductView;
+  statsEnabled: boolean;
+}): WorkProductView {
+  if (!args.statsEnabled) return "report";
   return args.workProductView;
 }
 
