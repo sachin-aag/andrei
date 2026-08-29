@@ -274,12 +274,14 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - `POST /api/improve-ai/sessions/[id]/complete` — mark session as reviewed
 
 **Data flow:**
-1. Session created → status `evaluating` → background evaluation runs `evaluateSection()` for investigation `EVALUATABLE_SECTIONS` (`evaluateReportCriteria` is not yet type-generic)
+1. Session created → status `evaluating` → `evaluateReportCriteria()` runs `evaluateSection()` for the report's `getEvaluatableSections()` (investigation DMAIC, Convergent/demo DV, mechanical DV, QRA)
 2. Status transitions to `ready_for_review`; engineer reviews per-criterion AI verdicts in `/improve-ai/[sessionId]`
 3. For each criterion the user records agreement + optional comment → upserted into `aiFeedbackResponses`
 4. `POST .../complete` marks session `reviewed`
 
-**Staleness:** `src/lib/improve-ai/session-staleness.ts` detects when the underlying report has changed since the session was created, prompting a re-run dialog.
+Sessions created before type-generic Improve AI (Convergent Review 404) re-run evaluation when Review opens if the report has evaluable content and the session has no reviewable criteria.
+
+**Staleness:** `src/lib/improve-ai/session-staleness.ts` detects when the underlying report has changed since the session was created, prompting a re-run dialog. Empty feedback rows with section content are stale so DV sessions can be re-evaluated.
 
 ## Subsystem: Statistical Analysis
 

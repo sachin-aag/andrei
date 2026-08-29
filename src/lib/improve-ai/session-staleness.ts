@@ -1,5 +1,6 @@
 import type { SectionType } from "@/db/schema";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
+import { hasExtractedSectionContent } from "@/lib/ai/section-context";
 import { sectionContentHash } from "@/lib/ai/suggestion-gating";
 import type { aiFeedbackResponses, criteriaEvaluations } from "@/db/schema";
 
@@ -11,7 +12,14 @@ export function isImproveAiSessionStale(params: {
   evaluations: EvaluationRow[];
   sectionContents: AllSectionsContent;
 }): boolean {
-  if (params.responses.length === 0) return false;
+  if (params.responses.length === 0) {
+    // Sessions created when Improve AI only walked DMAIC sections land here
+    // for DV/QRA reports: ready_for_review, no feedback rows. Treat as stale
+    // so Evaluate report / Review can re-run against the real document type.
+    return Object.entries(params.sectionContents).some(([section, content]) =>
+      hasExtractedSectionContent(section as SectionType, content)
+    );
+  }
 
   const evalByKey = new Map(
     params.evaluations.map((row) => [row.criterionKey, row])
