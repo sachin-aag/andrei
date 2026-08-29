@@ -162,6 +162,7 @@ export function ReportWorkspaceHeader({
           reportId={report.id}
           sourceDocxFilename={report.sourceDocxFilename}
           documentType={report.documentType}
+          surface={surface}
         />
 
         {!isViewMode && documentSurface ? <ReportBulkSuggestionActions /> : null}
