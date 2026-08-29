@@ -249,6 +249,10 @@ export function restoreSuggestionViewportPin(
  * the end; a focused contenteditable then scrolls that caret into view.
  * Overflow anchoring can also latch onto the following section heading
  * while the editor is briefly empty.
+ *
+ * Do not focus the editor unless it already had focus. Chat-generated
+ * previews rewrite an unfocused field; focusing would steal the composer
+ * and skip painting suggestion marks.
  */
 export function setRichEditorContentPreservingViewport(
   editor: Editor,

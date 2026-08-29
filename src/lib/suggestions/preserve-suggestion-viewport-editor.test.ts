@@ -14,8 +14,10 @@ import type { JSONContent } from "@tiptap/core";
 const MARK_ID = "sug-large";
 
 function makeEditor(content: JSONContent) {
+  const element = document.createElement("div");
+  document.body.appendChild(element);
   return new Editor({
-    element: document.createElement("div"),
+    element,
     extensions: [
       StarterKit.configure({ heading: false }),
       SuggestionInsert,
@@ -83,6 +85,7 @@ describe("setRichEditorContentPreservingViewport", () => {
   it("places the caret on the green insert, not at the end of the field", () => {
     const preview = previewDoc();
     const editor = makeEditor(preview);
+    editor.view.dom.focus();
     const accepted = acceptSuggestionMarksById(preview, MARK_ID);
 
     setRichEditorContentPreservingViewport(editor, accepted, {
@@ -102,7 +105,6 @@ describe("setRichEditorContentPreservingViewport", () => {
   it("keeps a prior caret when rewriting without a pin id", () => {
     const preview = previewDoc();
     const editor = makeEditor(preview);
-    document.body.append(editor.view.dom);
     editor.view.dom.focus();
     const insertPos = 1 + "OLD ".repeat(40).length + 2;
     editor.commands.setTextSelection(insertPos);
@@ -120,7 +122,6 @@ describe("setRichEditorContentPreservingViewport", () => {
   it("does not steal focus when rewriting an unfocused editor", () => {
     const preview = previewDoc();
     const editor = makeEditor(preview);
-    document.body.append(editor.view.dom);
     const other = document.createElement("textarea");
     document.body.append(other);
     other.focus();
@@ -132,6 +133,7 @@ describe("setRichEditorContentPreservingViewport", () => {
     });
 
     expect(document.activeElement).toBe(other);
+    expect(editor.view.hasFocus()).toBe(false);
 
     editor.destroy();
     other.remove();

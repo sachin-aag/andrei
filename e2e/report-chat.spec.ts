@@ -5,6 +5,7 @@ import { loginAsEngineer } from "./helpers/auth";
 import { reloadWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport, seedDefineForEvaluation } from "./helpers/reports";
 import {
+  chatAssistantMessage,
   chatUserMessage,
   collapseReportSidebar,
   defineEditor,
@@ -97,8 +98,11 @@ test.describe("report chat", () => {
     await expect(chatUserMessage(page, "help me start this report")).toBeVisible({
       timeout: 15_000,
     });
-    // Do not match /^assistant$/i — the sidebar tab button and the reply
-    // author label both say "Assistant" (strict-mode flake on Firefox).
+    // Use the turn's aria-label — the sidebar tab button also says "Assistant"
+    // (strict-mode flake on Firefox/WebKit for /^assistant$/i).
+    await expect(chatAssistantMessage(page)).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(sidebar.getByText(/out-of-spec dissolution result/i)).toBeVisible({
       timeout: 30_000,
     });
