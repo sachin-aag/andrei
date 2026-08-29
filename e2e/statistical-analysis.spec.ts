@@ -26,9 +26,18 @@ async function commitWorksheetCell(
 }
 
 async function openNormalSixpackDialog(page: Page): Promise<void> {
-  await page.getByTestId("worksheet-stat-menu").click();
+  await page.getByTestId("worksheet-plot-menu").click();
   await page.getByTestId("stat-normal-sixpack").click();
   await expect(page.getByTestId("capability-dialog")).toBeVisible();
+}
+
+async function openAnalyzeDialogForColumn(
+  page: Page,
+  columnId = "c1"
+): Promise<void> {
+  await page.getByTestId(`column-header-${columnId}`).click({ button: "right" });
+  await page.getByTestId(`column-analyze-${columnId}`).click();
+  await expect(page.getByTestId("analyze-dialog")).toBeVisible();
 }
 
 const SAMPLE_MOISTURE = [
@@ -160,12 +169,8 @@ test.describe("report analytics", () => {
       timeout: 30_000,
     });
     await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
-    await expect(page.getByTestId("analyze-selected-column")).toHaveText(
-      /analyze assay/i
-    );
 
-    await page.getByTestId("analyze-selected-column").click();
-    await expect(page.getByTestId("analyze-dialog")).toBeVisible();
+    await openAnalyzeDialogForColumn(page, "c1");
     await expect(page.getByTestId("analyze-plot-type")).toContainText(
       /normal capability sixpack/i
     );
@@ -246,12 +251,8 @@ test.describe("report analytics", () => {
       "data-row-end",
       "9"
     );
-    await expect(page.getByTestId("analyze-selected-column")).toHaveText(
-      /analyze assay rows 1–10/i
-    );
 
-    await page.getByTestId("analyze-selected-column").click();
-    await expect(page.getByTestId("analyze-dialog")).toBeVisible();
+    await openAnalyzeDialogForColumn(page, "c1");
     await expect(page.getByTestId("sixpack-row-start")).toHaveValue("1");
     await expect(page.getByTestId("sixpack-row-end")).toHaveValue("10");
     await page.getByTestId("sixpack-lsl").fill("90");
@@ -309,7 +310,9 @@ test.describe("report analytics", () => {
     const downloadPromise = page.waitForEvent("download");
     await page.getByTestId("download-analysis").click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/capability-sixpack\.csv$/);
+    expect(download.suggestedFilename()).toMatch(
+      /capability-sixpack\.(png|csv)$/
+    );
   });
 
   test("marks a sixpack stale after the source column changes", async ({
@@ -354,7 +357,7 @@ test.describe("report analytics", () => {
 
     await page.getByTestId("workspace-tab-results").click();
     await expect(page.getByTestId("sixpack-stale-badge")).toBeVisible();
-    await page.getByRole("button", { name: /^recompute$/i }).click();
+    await page.getByTestId("recompute-analysis").click();
     await expect(page.getByTestId("sixpack-stale-badge")).toHaveCount(0, {
       timeout: 30_000,
     });
@@ -404,7 +407,7 @@ test.describe("report analytics", () => {
     await page.getByTestId("column-specs-save").click();
     await expect(page.getByTestId("column-specs-dialog")).toHaveCount(0);
 
-    await page.getByTestId("worksheet-stat-menu").click();
+    await page.getByTestId("worksheet-plot-menu").click();
     await page.getByTestId("stat-plot-measurements").click();
     await expect(page.getByTestId("plot-measurements-dialog")).toBeVisible();
     await expect(page.getByTestId("plot-measurements-submit")).toBeDisabled();
@@ -415,6 +418,34 @@ test.describe("report analytics", () => {
     await page.getByTestId("plot-usl").fill("6");
     await page.getByTestId("plot-measurements-submit").click();
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("renames the active data sheet from the tab and Data menu", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText(
+      "Data"
+    );
+
+    await page.getByTestId("worksheet-sheet-tab-data-1").dblclick();
+    const renameInput = page.getByTestId("worksheet-sheet-rename-data-1");
+    await expect(renameInput).toBeVisible();
+    await renameInput.fill("Assay");
+    await renameInput.press("Enter");
+    await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText(
+      "Assay"
+    );
+
+    await page.getByTestId("worksheet-data-menu").click();
+    await page.getByTestId("rename-data-sheet").click();
+    await expect(page.getByTestId("worksheet-sheet-rename-data-1")).toBeVisible();
+    await page.getByTestId("worksheet-sheet-rename-data-1").fill("Moisture");
+    await page.getByTestId("worksheet-sheet-rename-data-1").press("Enter");
+    await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText(
+      "Moisture"
+    );
   });
 
   test("row headers select the whole row and the row menu inserts, clears, and deletes", async ({
@@ -558,7 +589,7 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
     await expect(page.getByTestId("column-header-c2")).toHaveText("Lot");
 
-    await page.getByTestId("worksheet-stat-menu").click();
+    await page.getByTestId("worksheet-plot-menu").click();
     await page.getByTestId("stat-one-way-anova").click();
     await expect(page.getByTestId("anova-dialog")).toBeVisible();
     await expect(page.getByTestId("anova-response")).toContainText("Assay");

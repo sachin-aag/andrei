@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CONVERGENT_PACK, DEMO_PACK, getCustomerPack } from "@/lib/customers/packs";
 import { ReportExportButton, exportHref } from "./report-export-button";
+import { analyticsExportHref } from "@/lib/statistical-analysis/analytics-export-href";
 
 vi.mock("@/lib/customers/packs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/customers/packs")>();
@@ -90,6 +91,25 @@ describe("ReportExportButton", () => {
     expect(
       screen.getByRole("menuitem", { name: /export without citations/i })
     ).toHaveAttribute("href", "/api/reports/report-1/export?omitCitations=1");
+  });
+
+  it("shows Export XLSX on the analytics surface", () => {
+    render(<ReportExportButton reportId="report-1" surface="analytics" />);
+
+    expect(screen.getByRole("link", { name: /export xlsx/i })).toHaveAttribute(
+      "href",
+      analyticsExportHref("report-1", false)
+    );
+  });
+
+  it("offers export with plots on the analytics surface", async () => {
+    const user = userEvent.setup();
+    render(<ReportExportButton reportId="report-1" surface="analytics" />);
+
+    await user.click(screen.getByRole("button", { name: /more export options/i }));
+    expect(
+      screen.getByRole("menuitem", { name: /export with plots/i })
+    ).toHaveAttribute("href", analyticsExportHref("report-1", true));
   });
 });
 

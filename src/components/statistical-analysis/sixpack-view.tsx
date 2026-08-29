@@ -27,13 +27,10 @@ import {
   type ControlLimitInput,
   type SpecLimitInput,
 } from "@/lib/statistical-analysis/spec-limit-labels";
-import {
-  analysisDownloadFilename,
-  analysisToCsv,
-  downloadTextFile,
-} from "@/lib/statistical-analysis/download";
+import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
 
 function domain(values: number[], pad = 0.08): [number, number] {
   if (values.length === 0) return [-1, 1];
@@ -566,17 +563,21 @@ export function SixpackView({
   analysis,
   reportId,
   onPreviewUploaded,
+  onEdit,
   onRecompute,
   onDelete,
-  recomputing,
+  editing = false,
+  recomputing = false,
   readOnly = false,
 }: {
   analysis: SixpackAnalysisSummary;
   reportId: string;
   onPreviewUploaded: (analytics: ReportAnalyticsView) => void;
+  onEdit: () => void;
   onRecompute: () => void;
   onDelete: () => void;
-  recomputing: boolean;
+  editing?: boolean;
+  recomputing?: boolean;
   readOnly?: boolean;
 }) {
   const { results, config, stale, title } = analysis;
@@ -604,24 +605,27 @@ export function SixpackView({
           size="sm"
           data-testid="download-analysis"
           onClick={() => {
-            downloadTextFile(
-              analysisDownloadFilename(analysis),
-              analysisToCsv(analysis)
-            );
+            void downloadAnalysisFigure(analysis, captureRef.current);
           }}
         >
           Download
         </Button>
         {readOnly ? null : (
           <>
+            <AnalysisRecomputeButton
+              onClick={onRecompute}
+              recomputing={recomputing}
+              disabled={editing}
+            />
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={recomputing}
-              onClick={onRecompute}
+              data-testid="edit-analysis"
+              disabled={editing}
+              onClick={onEdit}
             >
-              {recomputing ? "Recomputing…" : "Recompute"}
+              {editing ? "Opening…" : "Edit"}
             </Button>
             <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
               Delete
@@ -637,7 +641,7 @@ export function SixpackView({
           role="status"
         >
           Worksheet data changed after this analysis. Recompute to refresh the
-          sixpack; the stored result is unchanged until you do.
+          plot with current data, or Edit to change the analysis settings.
         </p>
       ) : null}
 
@@ -660,64 +664,64 @@ export function SixpackView({
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <Panel title="I Chart">
-          <ControlChart
-            series={results.individuals}
-            xLabel="Observation"
-            yLabel="Individual"
-            ariaLabel="Individuals control chart"
-            chartTestId="ichart"
-          />
-        </Panel>
-        <Panel title="Last 25 Observations">
-          <ControlChart
-            series={{
-              values: results.lastObservations,
-              center: results.mean,
-              ucl: results.individuals.ucl,
-              lcl: results.individuals.lcl,
-              outOfControl: [],
-            }}
-            xOffset={Math.max(1, results.n - results.lastObservations.length + 1)}
-            xLabel="Observation"
-            yLabel="Value"
-            ariaLabel="Last 25 observations"
-            chartTestId="last25"
-          />
-        </Panel>
-        <Panel title="Capability Histogram">
-          <HistogramChart
-            bins={results.histogram.bins}
-            overallCurve={results.histogram.overallCurve}
-            withinCurve={results.histogram.withinCurve}
-            lsl={results.capability.lsl}
-            usl={results.capability.usl}
-          />
-        </Panel>
-        <Panel title="Moving Range Chart">
-          <ControlChart
-            series={results.movingRange}
-            xOffset={2}
-            xLabel="Observation"
-            yLabel="Moving range"
-            ariaLabel="Moving range control chart"
-            chartTestId="mr"
-          />
-        </Panel>
-        <Panel title="Normal Probability Plot">
-          <NormalPlot
-            points={results.normalPlot.points}
-            lineStart={results.normalPlot.lineStart}
-            lineEnd={results.normalPlot.lineEnd}
-            lowerBand={results.normalPlot.lowerBand}
-            upperBand={results.normalPlot.upperBand}
-            ad={results.normalPlot.ad}
-            pValue={results.normalPlot.pValue}
-          />
-        </Panel>
-        <Panel title="Process Capability">
-          <CapabilitySummary result={results} />
-        </Panel>
+          <Panel title="I Chart">
+            <ControlChart
+              series={results.individuals}
+              xLabel="Observation"
+              yLabel="Individual"
+              ariaLabel="Individuals control chart"
+              chartTestId="ichart"
+            />
+          </Panel>
+          <Panel title="Last 25 Observations">
+            <ControlChart
+              series={{
+                values: results.lastObservations,
+                center: results.mean,
+                ucl: results.individuals.ucl,
+                lcl: results.individuals.lcl,
+                outOfControl: [],
+              }}
+              xOffset={Math.max(1, results.n - results.lastObservations.length + 1)}
+              xLabel="Observation"
+              yLabel="Value"
+              ariaLabel="Last 25 observations"
+              chartTestId="last25"
+            />
+          </Panel>
+          <Panel title="Capability Histogram">
+            <HistogramChart
+              bins={results.histogram.bins}
+              overallCurve={results.histogram.overallCurve}
+              withinCurve={results.histogram.withinCurve}
+              lsl={results.capability.lsl}
+              usl={results.capability.usl}
+            />
+          </Panel>
+          <Panel title="Moving Range Chart">
+            <ControlChart
+              series={results.movingRange}
+              xOffset={2}
+              xLabel="Observation"
+              yLabel="Moving range"
+              ariaLabel="Moving range control chart"
+              chartTestId="mr"
+            />
+          </Panel>
+          <Panel title="Normal Probability Plot">
+            <NormalPlot
+              points={results.normalPlot.points}
+              lineStart={results.normalPlot.lineStart}
+              lineEnd={results.normalPlot.lineEnd}
+              lowerBand={results.normalPlot.lowerBand}
+              upperBand={results.normalPlot.upperBand}
+              ad={results.normalPlot.ad}
+              pValue={results.normalPlot.pValue}
+            />
+          </Panel>
+          <Panel title="Process Capability">
+            <CapabilitySummary result={results} />
+          </Panel>
         </div>
       </div>
     </div>

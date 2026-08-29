@@ -12,3 +12,16 @@ export function nextAnalysisTitle(
   }
   return `${trimmed} (${Date.now()})`;
 }
+
+/** Title for in-place analysis edits — skips collision with the row being updated. */
+export function titleForUpdate(
+  existingTitles: readonly string[],
+  currentTitle: string,
+  requested: string | undefined,
+  fallback: string
+): string {
+  const base = requested?.trim() || fallback.trim() || currentTitle.trim() || "Analysis";
+  if (base === currentTitle) return currentTitle;
+  const otherTitles = existingTitles.filter((title) => title !== currentTitle);
+  return nextAnalysisTitle(otherTitles, base);
+}

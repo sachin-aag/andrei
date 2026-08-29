@@ -13,6 +13,7 @@ vi.mock("@/hooks/use-analysis-preview-capture", () => ({
 const viewProps = {
   reportId: "report-1",
   onPreviewUploaded: () => {},
+  onEdit: () => {},
   onRecompute: () => {},
   onDelete: () => {},
   recomputing: false,

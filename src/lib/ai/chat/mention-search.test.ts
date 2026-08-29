@@ -3,6 +3,7 @@ import {
   applyMentionToInput,
   filterMentionCandidates,
   findMentionQuery,
+  syncMentionCandidateLabels,
   type MentionCandidate,
 } from "@/lib/ai/chat/mention-search";
 
@@ -68,6 +69,30 @@ describe("filterMentionCandidates", () => {
 
   it("respects the limit", () => {
     expect(filterMentionCandidates(candidates, "", 2)).toHaveLength(2);
+  });
+});
+
+describe("syncMentionCandidateLabels", () => {
+  it("updates chip labels when a sheet is renamed", () => {
+    const mentions: MentionCandidate[] = [
+      { type: "sheet", id: "sheet-1", label: "Data", sublabel: "1 column" },
+    ];
+    const candidates: MentionCandidate[] = [
+      { type: "sheet", id: "sheet-1", label: "Fermenter A", sublabel: "3 columns" },
+    ];
+
+    expect(syncMentionCandidateLabels(mentions, candidates)).toEqual([
+      { type: "sheet", id: "sheet-1", label: "Fermenter A", sublabel: "3 columns" },
+    ]);
+  });
+
+  it("returns the same array reference when nothing changed", () => {
+    const mentions: MentionCandidate[] = [
+      { type: "sheet", id: "sheet-1", label: "Assay", sublabel: "2 columns" },
+    ];
+    const candidates: MentionCandidate[] = [...mentions];
+
+    expect(syncMentionCandidateLabels(mentions, candidates)).toBe(mentions);
   });
 });
 

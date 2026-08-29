@@ -53,8 +53,11 @@ export function XyScatterDialog({
   open,
   worksheet,
   defaultYColumnId,
+  defaultXColumnId,
   defaultRowStart = null,
   defaultRowEnd = null,
+  defaultTitle = "",
+  editMode = false,
   submitting,
   error,
   onOpenChange,
@@ -63,8 +66,11 @@ export function XyScatterDialog({
   open: boolean;
   worksheet: WorksheetData;
   defaultYColumnId: string;
+  defaultXColumnId?: string;
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
+  defaultTitle?: string;
+  editMode?: boolean;
   submitting: boolean;
   error: string | null;
   onOpenChange: (open: boolean) => void;
@@ -74,9 +80,9 @@ export function XyScatterDialog({
   const fallbackY = defaultYColumnId || worksheet.columns[0]?.id || "";
   const [yColumnId, setYColumnId] = useState(fallbackY);
   const [xColumnId, setXColumnId] = useState(
-    () => suggestXColumn(worksheet, fallbackY) ?? ""
+    () => defaultXColumnId ?? suggestXColumn(worksheet, fallbackY) ?? ""
   );
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(
     defaultRowStart != null ? String(defaultRowStart) : ""
   );
@@ -243,7 +249,13 @@ export function XyScatterDialog({
               })
             }
           >
-            {submitting ? "Plotting…" : "OK"}
+            {submitting
+              ? editMode
+                ? "Updating…"
+                : "Plotting…"
+              : editMode
+                ? "Update"
+                : "OK"}
           </Button>
         </DialogFooter>
       </DialogContent>

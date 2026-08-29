@@ -20,7 +20,9 @@ import {
   BarChart3,
   Check,
   ChartScatter,
+  ClipboardList,
   FileSearch,
+  FileText,
   History,
   ImagePlus,
   LayoutList,
@@ -81,6 +83,24 @@ import {
 } from "@/lib/ai/chat/composer-prefs";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
+import {
+  applyMentionToInput,
+  filterMentionCandidates,
+  findMentionQuery,
+  mentionKey,
+  syncMentionCandidateLabels,
+  type MentionCandidate,
+  type MentionQuery,
+} from "@/lib/ai/chat/mention-search";
+import { getReportAnalytics } from "@/lib/statistical-analysis/client";
+import {
+  analyticsSheetMentionCandidates,
+  type AnalyticsMentionSheet,
+} from "@/lib/statistical-analysis/mentions";
+import { analysisListSubtitle } from "@/lib/statistical-analysis/stale";
+import type { ReportAnalyticsView } from "@/lib/statistical-analysis/types";
+import { dataSheets } from "@/lib/statistical-analysis/worksheet";
+import { useReportAttachments } from "@/providers/report-attachments-provider";
 
 const ANALYTICS_EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
   plan: [
@@ -559,15 +579,134 @@ function subscribeNoop() {
   return () => {};
 }
 
+type AnalyticsMentionCandidate = MentionCandidate;
+
+function analyticsMentionIcon(type: AnalyticsMentionCandidate["type"]) {
+  switch (type) {
+    case "document":
+      return FileText;
+    case "sheet":
+      return Table2;
+    case "analysis":
+      return LineChart;
+    default:
+      return ClipboardList;
+  }
+}
+
+function AnalyticsMentionChips({
+  mentions,
+  onRemove,
+}: {
+  mentions: AnalyticsMentionCandidate[];
+  onRemove: (candidate: AnalyticsMentionCandidate) => void;
+}) {
+  if (mentions.length === 0) return null;
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {mentions.map((mention) => {
+        const Icon = analyticsMentionIcon(mention.type);
+        return (
+          <span
+            key={mentionKey(mention.type, mention.id)}
+            className="flex max-w-full items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--secondary)]/50 py-0.5 pl-2 pr-1 text-[11px]"
+          >
+            <Icon className="size-3 shrink-0 text-[var(--primary)]" aria-hidden="true" />
+            <span
+              className={cn(
+                "max-w-40 truncate",
+                mention.type === "document" && "font-mono tracking-tight"
+              )}
+              title={mention.label}
+            >
+              {mention.label}
+            </span>
+            <button
+              type="button"
+              onClick={() => onRemove(mention)}
+              aria-label={`Remove ${mention.label} tag`}
+              className="flex size-4 shrink-0 items-center justify-center rounded-full text-[var(--muted-foreground)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+            >
+              <X className="size-3" aria-hidden="true" />
+            </button>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function AnalyticsMentionMenu({
+  matches,
+  activeIndex,
+  onSelect,
+}: {
+  matches: AnalyticsMentionCandidate[];
+  activeIndex: number;
+  onSelect: (candidate: AnalyticsMentionCandidate) => void;
+}) {
+  return (
+    <div
+      id="analytics-chat-mention-menu"
+      role="listbox"
+      aria-label="Tag a document, data sheet, or plot"
+      className="absolute bottom-full left-0 z-50 mb-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-xl"
+    >
+      {matches.map((candidate, index) => {
+        const Icon = analyticsMentionIcon(candidate.type);
+        return (
+          <button
+            key={mentionKey(candidate.type, candidate.id)}
+            id={`analytics-chat-mention-option-${index}`}
+            type="button"
+            role="option"
+            aria-selected={index === activeIndex}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onSelect(candidate);
+            }}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--secondary)]",
+              index === activeIndex && "bg-[var(--secondary)]"
+            )}
+          >
+            <Icon
+              className="size-3.5 shrink-0 text-[var(--primary)]"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{candidate.label}</span>
+              {candidate.sublabel ? (
+                <span className="block truncate text-[11px] text-[var(--muted-foreground)]">
+                  {candidate.sublabel}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AnalyticsChatPanel({
   onWorksheetChanged,
   onAgentBusyChange,
+  onFocusSheet,
+  onFocusAnalysis,
+  analyticsReloadEpoch = 0,
+  mentionSheets = [],
 }: {
   onWorksheetChanged: () => void;
   onAgentBusyChange?: (busy: boolean) => void;
+  onFocusSheet?: (sheetId: string) => void;
+  onFocusAnalysis?: (analysisId: string) => void;
+  analyticsReloadEpoch?: number;
+  mentionSheets?: AnalyticsMentionSheet[];
 }) {
   const { report, currentUserId, currentUserRole, currentUserEmail } =
     useReportData();
+  const { attachments } = useReportAttachments();
   const accessUser = {
     id: currentUserId,
     role: currentUserRole,
@@ -582,12 +721,19 @@ export function AnalyticsChatPanel({
   const [initializing, setInitializing] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [input, setInput] = useState("");
+  const [mentions, setMentions] = useState<AnalyticsMentionCandidate[]>([]);
+  const [mentionRange, setMentionRange] = useState<MentionQuery | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [analyticsSnapshot, setAnalyticsSnapshot] =
+    useState<ReportAnalyticsView | null>(null);
   const showUploadingNotice = useDocumentUploadingNotice(input);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pendingCaretRef = useRef<number | null>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
   const currentSessionIdRef = useRef<string | null>(null);
   const seenWriteIdsRef = useRef(new Set<string>());
@@ -619,6 +765,126 @@ export function AnalyticsChatPanel({
       ? "plan"
       : storedComposerPrefs.mode;
   const pace = storedComposerPrefs.pace;
+
+  const loadAnalyticsSnapshot = useCallback(async () => {
+    try {
+      const analytics = await getReportAnalytics(report.id);
+      setAnalyticsSnapshot(analytics);
+    } catch {
+      setAnalyticsSnapshot(null);
+    }
+  }, [report.id]);
+
+  useEffect(() => {
+    void loadAnalyticsSnapshot();
+  }, [analyticsReloadEpoch, loadAnalyticsSnapshot]);
+
+  const mentionCandidates = useMemo<AnalyticsMentionCandidate[]>(() => {
+    const documents = attachments
+      .filter((attachment) => attachment.processingStatus === "ready")
+      .map((attachment) => {
+        const description = attachment.description?.trim();
+        const pages =
+          typeof attachment.pageCount === "number" && attachment.pageCount > 0
+            ? `${attachment.pageCount} page${attachment.pageCount === 1 ? "" : "s"}`
+            : undefined;
+        return {
+          type: "document" as const,
+          id: attachment.id,
+          label: attachment.filename,
+          sublabel: description || pages,
+        };
+      });
+    const sheets =
+      mentionSheets.length > 0
+        ? analyticsSheetMentionCandidates(mentionSheets)
+        : analyticsSnapshot
+          ? analyticsSheetMentionCandidates(
+              dataSheets(analyticsSnapshot.worksheet).map((sheet) => ({
+                sheetId: sheet.id,
+                name: sheet.name,
+                columnCount: sheet.columns.length,
+              }))
+            )
+          : [];
+    const analyses = (analyticsSnapshot?.analyses ?? []).map((item) => ({
+      type: "analysis" as const,
+      id: item.id,
+      label: item.title,
+      sublabel: analysisListSubtitle(item),
+    }));
+    return [...sheets, ...analyses, ...documents];
+  }, [analyticsSnapshot, attachments, mentionSheets]);
+
+  useEffect(() => {
+    setMentions((current) => syncMentionCandidateLabels(current, mentionCandidates));
+  }, [mentionCandidates]);
+
+  const mentionMatches = mentionRange
+    ? filterMentionCandidates(mentionCandidates, mentionRange.query)
+    : [];
+  const mentionMenuOpen = mentionMatches.length > 0;
+  const activeMentionIndex = Math.min(
+    mentionIndex,
+    Math.max(mentionMatches.length - 1, 0)
+  );
+
+  useEffect(() => {
+    const caret = pendingCaretRef.current;
+    if (caret == null) return;
+    pendingCaretRef.current = null;
+    const element = textareaRef.current;
+    if (!element) return;
+    element.focus();
+    element.setSelectionRange(caret, caret);
+  }, [input]);
+
+  const updateMentionQuery = useCallback((value: string, caret: number) => {
+    setMentionRange(findMentionQuery(value, caret));
+    setMentionIndex(0);
+  }, []);
+
+  const applyMentionFocus = useCallback(
+    (candidate: AnalyticsMentionCandidate) => {
+      if (candidate.type === "sheet") onFocusSheet?.(candidate.id);
+      if (candidate.type === "analysis") onFocusAnalysis?.(candidate.id);
+    },
+    [onFocusAnalysis, onFocusSheet]
+  );
+
+  const selectMention = useCallback(
+    (candidate: AnalyticsMentionCandidate) => {
+      if (!mentionRange) return;
+      setInput((current) => {
+        const next = applyMentionToInput(current, mentionRange, candidate);
+        pendingCaretRef.current = next.caret;
+        return next.text;
+      });
+      setMentions((prev) =>
+        prev.some(
+          (mention) =>
+            mentionKey(mention.type, mention.id) ===
+            mentionKey(candidate.type, candidate.id)
+        )
+          ? prev
+          : [...prev, candidate]
+      );
+      applyMentionFocus(candidate);
+      setMentionRange(null);
+      setMentionIndex(0);
+    },
+    [applyMentionFocus, mentionRange]
+  );
+
+  const removeMention = useCallback((candidate: AnalyticsMentionCandidate) => {
+    setMentions((prev) =>
+      prev.filter(
+        (mention) =>
+          mentionKey(mention.type, mention.id) !==
+          mentionKey(candidate.type, candidate.id)
+      )
+    );
+  }, []);
 
   const {
     messages,
@@ -709,6 +975,7 @@ export function AnalyticsChatPanel({
     setRuntime(IDLE_CHAT_RUNTIME);
     setInput("");
     setPendingImages([]);
+    setMentions([]);
     setHistoryOpen(false);
   }, [createSession]);
 
@@ -757,8 +1024,9 @@ export function AnalyticsChatPanel({
 
   const onFinishTurn = useCallback(() => {
     void loadSessions();
+    void loadAnalyticsSnapshot();
     onWorksheetChanged();
-  }, [loadSessions, onWorksheetChanged]);
+  }, [loadAnalyticsSnapshot, loadSessions, onWorksheetChanged]);
 
   const onTurnCompleted = useCallback(() => {}, []);
 
@@ -892,7 +1160,19 @@ export function AnalyticsChatPanel({
       if (sessionRuntime.busy) return;
       setInput("");
       setPendingImages([]);
-      const body = { sessionId, mode, pace };
+      setMentionRange(null);
+      const tagsForRequest = mentions;
+      setMentions([]);
+      for (const mention of tagsForRequest) {
+        applyMentionFocus(mention);
+      }
+      const body: Record<string, unknown> = { sessionId, mode, pace };
+      if (tagsForRequest.length > 0) {
+        body.mentions = tagsForRequest.map((mention) => ({
+          type: mention.type,
+          id: mention.id,
+        }));
+      }
       if (trimmed && files.length > 0) {
         void sessionRuntime.sendMessage({ text: trimmed, files }, { body });
       } else if (files.length > 0) {
@@ -910,6 +1190,8 @@ export function AnalyticsChatPanel({
       mode,
       pace,
       pendingImages,
+      mentions,
+      applyMentionFocus,
     ]
   );
 
@@ -1092,6 +1374,7 @@ export function AnalyticsChatPanel({
           </p>
         ) : null}
         {showUploadingNotice ? <DocumentUploadingNotice /> : null}
+        <AnalyticsMentionChips mentions={mentions} onRemove={removeMention} />
         {pendingImages.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-2">
             {pendingImages.map((image) => (
@@ -1145,34 +1428,84 @@ export function AnalyticsChatPanel({
               <ImagePlus className="size-4" />
             )}
           </button>
-          <textarea
-            data-testid="analytics-chat-input"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onPaste={(event) => {
-              const files = Array.from(event.clipboardData.items)
-                .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-                .map((item) => item.getAsFile())
-                .filter((file): file is File => file != null);
-              if (files.length === 0) return;
-              event.preventDefault();
-              void addImageFiles(files);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void send(input);
+          <div className="relative flex-1">
+            {mentionMenuOpen ? (
+              <AnalyticsMentionMenu
+                matches={mentionMatches}
+                activeIndex={activeMentionIndex}
+                onSelect={selectMention}
+              />
+            ) : null}
+            <textarea
+              ref={textareaRef}
+              data-testid="analytics-chat-input"
+              value={input}
+              role="combobox"
+              aria-expanded={mentionMenuOpen}
+              aria-controls={
+                mentionMenuOpen ? "analytics-chat-mention-menu" : undefined
               }
-            }}
-            rows={2}
-            disabled={initializing}
-            placeholder={
-              mode === "plan"
-                ? "Ask about measurements in the attachments…"
-                : "Extract numbers, run a sixpack or ANOVA, or plot an XY/measurement scatter…"
-            }
-            className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
-          />
+              aria-activedescendant={
+                mentionMenuOpen
+                  ? `analytics-chat-mention-option-${activeMentionIndex}`
+                  : undefined
+              }
+              onChange={(event) => {
+                const value = event.target.value;
+                setInput(value);
+                updateMentionQuery(value, event.target.selectionStart ?? value.length);
+              }}
+              onPaste={(event) => {
+                const files = Array.from(event.clipboardData.items)
+                  .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+                  .map((item) => item.getAsFile())
+                  .filter((file): file is File => file != null);
+                if (files.length === 0) return;
+                event.preventDefault();
+                void addImageFiles(files);
+              }}
+              onKeyDown={(event) => {
+                if (mentionMenuOpen) {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setMentionIndex((index) => (index + 1) % mentionMatches.length);
+                    return;
+                  }
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setMentionIndex(
+                      (index) =>
+                        (index - 1 + mentionMatches.length) % mentionMatches.length
+                    );
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === "Tab") {
+                    event.preventDefault();
+                    const candidate = mentionMatches[activeMentionIndex];
+                    if (candidate) selectMention(candidate);
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setMentionRange(null);
+                    return;
+                  }
+                }
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void send(input);
+                }
+              }}
+              rows={2}
+              disabled={initializing}
+              placeholder={
+                mode === "plan"
+                  ? "Ask about measurements in the attachments… type @ to tag a sheet or plot"
+                  : "Extract numbers, run a sixpack or ANOVA, or plot… type @ to tag a sheet or plot"
+              }
+              className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
+            />
+          </div>
           {busy ? (
             <button
               type="button"

@@ -9,11 +9,7 @@ import type {
 import { isXyScatterAnalysis } from "@/lib/statistical-analysis/types";
 import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import { formatStat } from "@/lib/statistical-analysis/format";
-import {
-  analysisDownloadFilename,
-  analysisToCsv,
-  downloadTextFile,
-} from "@/lib/statistical-analysis/download";
+import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import {
   formatChartProvenance,
   layoutPoints,
@@ -31,6 +27,7 @@ import {
 } from "@/lib/statistical-analysis/spec-limit-labels";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
 
 const WIDTH = 960;
 const HEIGHT = 720;
@@ -266,17 +263,21 @@ export function ScatterView({
   analysis,
   reportId,
   onPreviewUploaded,
+  onEdit,
   onRecompute,
   onDelete,
-  recomputing,
+  editing = false,
+  recomputing = false,
   readOnly = false,
 }: {
   analysis: ScatterAnalysisSummary | XyScatterAnalysisSummary;
   reportId: string;
   onPreviewUploaded: (analytics: ReportAnalyticsView) => void;
+  onEdit: () => void;
   onRecompute: () => void;
   onDelete: () => void;
-  recomputing: boolean;
+  editing?: boolean;
+  recomputing?: boolean;
   readOnly?: boolean;
 }) {
   const spec = analysis.results.specs[0];
@@ -319,28 +320,27 @@ export function ScatterView({
           size="sm"
           data-testid="download-analysis"
           onClick={() => {
-            downloadTextFile(
-              analysisDownloadFilename(analysis),
-              analysisToCsv(analysis)
-            );
+            void downloadAnalysisFigure(analysis, captureRef.current);
           }}
         >
           Download
         </Button>
         {readOnly ? null : (
           <>
+            <AnalysisRecomputeButton
+              onClick={onRecompute}
+              recomputing={recomputing}
+              disabled={editing}
+            />
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={recomputing}
-              onClick={onRecompute}
+              data-testid="edit-analysis"
+              disabled={editing}
+              onClick={onEdit}
             >
-              {recomputing
-                ? xy
-                  ? "Recomputing…"
-                  : "Extracting…"
-                : "Recompute"}
+              {editing ? "Opening…" : "Edit"}
             </Button>
             <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
               Delete

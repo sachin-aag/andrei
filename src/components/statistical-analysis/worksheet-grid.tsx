@@ -6,10 +6,12 @@ import { MIN_VISIBLE_ROWS } from "@/lib/statistical-analysis/types";
 import {
   clampSelection,
   collapseSelection,
+  focusColumn,
   isCellInSelection,
   isRowSelection,
   moveSelection,
   rowIsInSelection,
+  rowRangeFromGridSelection,
   selectRows,
   selectionBounds,
   type GridSelection,
@@ -54,7 +56,11 @@ type WorksheetGridProps = {
   onSelectionChange: (selection: GridSelection) => void;
   onChange: (worksheet: WorksheetData) => void;
   readOnly?: boolean;
-  onColumnMenuAction?: (action: ColumnMenuAction, colIndex: number) => void;
+  onColumnMenuAction?: (
+    action: ColumnMenuAction,
+    colIndex: number,
+    analyzeRowRange?: { start: number; end: number } | null
+  ) => void;
 };
 
 const EXTRA_EMPTY_ROWS = 8;
@@ -104,6 +110,7 @@ function WorksheetColumnHeader({
   headerInputRef,
   readOnly,
   onSelect,
+  onMenuOpen,
   onBeginRename,
   onHeaderDraftChange,
   onCommitHeader,
@@ -117,6 +124,7 @@ function WorksheetColumnHeader({
   headerInputRef: React.RefObject<HTMLInputElement | null>;
   readOnly: boolean;
   onSelect: () => void;
+  onMenuOpen?: () => void;
   onBeginRename: () => void;
   onHeaderDraftChange: (value: string) => void;
   onCommitHeader: () => void;
@@ -174,7 +182,10 @@ function WorksheetColumnHeader({
     <th scope="col" className={headerClass}>
       <ContextMenu
         onOpenChange={(open) => {
-          if (open) onSelect();
+          if (open) {
+            onMenuOpen?.();
+            onSelect();
+          }
         }}
       >
         <ContextMenuTrigger asChild>
@@ -324,6 +335,7 @@ export function WorksheetGrid({
   const inputRef = useRef<HTMLInputElement>(null);
   const headerInputRef = useRef<HTMLInputElement>(null);
   const rowMenuRangeRef = useRef({ start: 0, end: 0 });
+  const columnAnalyzeRangeRef = useRef<ReturnType<typeof rowRangeFromGridSelection>>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [editingHeader, setEditingHeader] = useState<number | null>(null);
@@ -567,9 +579,11 @@ export function WorksheetGrid({
                 headerDraft={headerDraft}
                 headerInputRef={headerInputRef}
                 readOnly={readOnly}
-                onSelect={() =>
-                  select(collapseSelection(colIndex, selection.row))
-                }
+                onSelect={() => select(focusColumn(selection, colIndex))}
+                onMenuOpen={() => {
+                  columnAnalyzeRangeRef.current =
+                    rowRangeFromGridSelection(selection);
+                }}
                 onBeginRename={() => {
                   if (readOnly) return;
                   setEditingHeader(colIndex);
@@ -583,7 +597,17 @@ export function WorksheetGrid({
                 }}
                 onMenuAction={
                   onColumnMenuAction
-                    ? (action) => onColumnMenuAction(action, colIndex)
+                    ? (action) => {
+                        if (action === "analyze") {
+                          onColumnMenuAction(
+                            action,
+                            colIndex,
+                            columnAnalyzeRangeRef.current
+                          );
+                          return;
+                        }
+                        onColumnMenuAction(action, colIndex);
+                      }
                     : undefined
                 }
               />
