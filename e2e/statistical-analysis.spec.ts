@@ -26,9 +26,18 @@ async function commitWorksheetCell(
 }
 
 async function openNormalSixpackDialog(page: Page): Promise<void> {
-  await page.getByTestId("worksheet-stat-menu").click();
+  await page.getByTestId("worksheet-plot-menu").click();
   await page.getByTestId("stat-normal-sixpack").click();
   await expect(page.getByTestId("capability-dialog")).toBeVisible();
+}
+
+async function openAnalyzeDialogForColumn(
+  page: Page,
+  columnId = "c1"
+): Promise<void> {
+  await page.getByTestId(`column-header-${columnId}`).click({ button: "right" });
+  await page.getByTestId(`column-analyze-${columnId}`).click();
+  await expect(page.getByTestId("analyze-dialog")).toBeVisible();
 }
 
 const SAMPLE_MOISTURE = [
@@ -160,12 +169,8 @@ test.describe("report analytics", () => {
       timeout: 30_000,
     });
     await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
-    await expect(page.getByTestId("analyze-selected-column")).toHaveText(
-      /analyze assay/i
-    );
 
-    await page.getByTestId("analyze-selected-column").click();
-    await expect(page.getByTestId("analyze-dialog")).toBeVisible();
+    await openAnalyzeDialogForColumn(page, "c1");
     await expect(page.getByTestId("analyze-plot-type")).toContainText(
       /normal capability sixpack/i
     );
@@ -246,12 +251,8 @@ test.describe("report analytics", () => {
       "data-row-end",
       "9"
     );
-    await expect(page.getByTestId("analyze-selected-column")).toHaveText(
-      /analyze assay rows 1–10/i
-    );
 
-    await page.getByTestId("analyze-selected-column").click();
-    await expect(page.getByTestId("analyze-dialog")).toBeVisible();
+    await openAnalyzeDialogForColumn(page, "c1");
     await expect(page.getByTestId("sixpack-row-start")).toHaveValue("1");
     await expect(page.getByTestId("sixpack-row-end")).toHaveValue("10");
     await page.getByTestId("sixpack-lsl").fill("90");
@@ -404,7 +405,7 @@ test.describe("report analytics", () => {
     await page.getByTestId("column-specs-save").click();
     await expect(page.getByTestId("column-specs-dialog")).toHaveCount(0);
 
-    await page.getByTestId("worksheet-stat-menu").click();
+    await page.getByTestId("worksheet-plot-menu").click();
     await page.getByTestId("stat-plot-measurements").click();
     await expect(page.getByTestId("plot-measurements-dialog")).toBeVisible();
     await expect(page.getByTestId("plot-measurements-submit")).toBeDisabled();
@@ -586,7 +587,7 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
     await expect(page.getByTestId("column-header-c2")).toHaveText("Lot");
 
-    await page.getByTestId("worksheet-stat-menu").click();
+    await page.getByTestId("worksheet-plot-menu").click();
     await page.getByTestId("stat-one-way-anova").click();
     await expect(page.getByTestId("anova-dialog")).toBeVisible();
     await expect(page.getByTestId("anova-response")).toContainText("Assay");

@@ -393,11 +393,7 @@ export function StatisticalWorkspace({
   const selectedColumn =
     worksheet.columns[selection.col] ?? worksheet.columns[0] ?? null;
   const selectedColumnId = selectedColumn?.id ?? "";
-  const selectedColumnName = selectedColumn?.name ?? "column";
   const selectedRowRange = rowRangeFromGridSelection(selection);
-  const analyzeLabel = selectedRowRange
-    ? `Analyze ${selectedColumnName} rows ${selectedRowRange.start}–${selectedRowRange.end}`
-    : `Analyze ${selectedColumnName}`;
   const specsColumn =
     worksheet.columns.find((column) => column.id === specsColumnId) ?? null;
 
@@ -571,6 +567,7 @@ export function StatisticalWorkspace({
   const handleColumnMenuAction = (action: ColumnMenuAction, colIndex: number) => {
     const column = worksheet.columns[colIndex];
     if (!column) return;
+    const analyzeRowRange = rowRangeFromGridSelection(selection);
     setSelection((sel) => collapseSelection(colIndex, sel.row));
     switch (action) {
       case "insert-left":
@@ -590,7 +587,7 @@ export function StatisticalWorkspace({
         return;
       case "analyze":
         window.setTimeout(() => {
-          void openAnalyzeForColumn(column.id, null);
+          void openAnalyzeForColumn(column.id, analyzeRowRange);
         }, 0);
         return;
       default: {
@@ -663,19 +660,6 @@ export function StatisticalWorkspace({
               }}
               onRenameDataSheet={() => beginRenameSheet(worksheet.activeSheetId)}
             />
-            {readOnly ? null : (
-              <Button
-                type="button"
-                size="sm"
-                data-testid="analyze-selected-column"
-                disabled={!selectedColumnId}
-                onClick={() =>
-                  void openAnalyzeForColumn(selectedColumnId, selectedRowRange)
-                }
-              >
-                {analyzeLabel}
-              </Button>
-            )}
           </div>
         </div>
       </header>
@@ -796,11 +780,11 @@ export function StatisticalWorkspace({
           {displayedAnalyses.length === 0 ? (
             <div className="flex flex-1 items-center justify-center p-8 text-center">
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
-                Select a worksheet column — or Shift+arrow a row range — and
-                click <strong>Analyze {selectedColumnName}</strong>, use{" "}
-                <strong>Stat → One-Way ANOVA</strong>,{" "}
-                <strong>Stat → Scatter</strong> for two worksheet columns, or{" "}
-                <strong>Stat → Plot measurements</strong> for an attachment
+                Right-click a column and choose <strong>Analyze data…</strong>,
+                or use <strong>Plot → Normal Capability Sixpack</strong>,{" "}
+                <strong>Plot → One-Way ANOVA</strong>,{" "}
+                <strong>Plot → Scatter</strong> for two worksheet columns, or{" "}
+                <strong>Plot → Plot measurements</strong> for an attachment
                 scatter. Each run is saved as its own result.
               </p>
             </div>
