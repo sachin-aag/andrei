@@ -18,7 +18,7 @@ import {
 } from "ai";
 import { formatDistanceToNow } from "date-fns";
 import {
-  Send,
+  ArrowUp,
   Sparkles,
   PencilLine,
   Table2,
@@ -30,9 +30,9 @@ import {
   ClipboardList,
   Wrench,
   Check,
-  ArrowRightLeft,
   ImagePlus,
   ImageMinus,
+  LineChart,
   Square,
   X,
 } from "lucide-react";
@@ -44,31 +44,30 @@ import {
   type AskUserQuestionInput,
 } from "@/components/report/chat-ask-user-form";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  ChatBusyStatus,
+  ANALYTICS_CHAT_MODE_OPTIONS,
   CHAT_PACE_OPTIONS,
+  CHAT_WORK_PRODUCT_OPTIONS,
+  ChatBusyStatus,
   ComposerSelect,
   DOCUMENT_CHAT_MODE_OPTIONS,
 } from "@/components/report/chat-composer-controls";
-import { useReportData } from "@/providers/report-provider";
+import {
+  chatWorkProductTarget,
+  isWorkProductView,
+  type WorkProductView,
+  type WorkspaceChrome,
+} from "@/components/report/workspace-chrome";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
+import { useReportData } from "@/providers/report-provider";
 import {
   aiSuggestionLockReason,
   canSaveReportSection,
 } from "@/lib/reports/access";
 import type { DocumentType, SectionType } from "@/db/schema";
 import {
-  CHAT_SECTION_SCOPE_ALL,
   chatEditableSections,
   sectionLabel as chatSectionLabel,
-  type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
@@ -77,7 +76,10 @@ import {
   subscribeChatComposerPrefs,
   writeChatComposerPrefs,
 } from "@/lib/ai/chat/composer-prefs";
-import { examplePromptsForMode } from "@/lib/ai/chat/example-prompts";
+import {
+  examplePromptsForMode,
+  analyticsExamplePromptsForMode,
+} from "@/lib/ai/chat/example-prompts";
 import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
 import {
   CHAT_IMAGE_MAX_BYTES,
@@ -99,10 +101,6 @@ import {
   waitForValue,
   type MountedChatSession,
 } from "@/lib/ai/chat/session-runtime";
-import {
-  detectSectionScopeMismatch,
-  type SectionScopeMismatch,
-} from "@/lib/ai/chat/section-intent";
 import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
 import {
   buildChatSessionTabItems,
@@ -115,6 +113,7 @@ import {
   filterMentionCandidates,
   findMentionQuery,
   mentionKey,
+  syncMentionCandidateLabels,
   type MentionCandidate,
   type MentionQuery,
 } from "@/lib/ai/chat/mention-search";
@@ -151,6 +150,18 @@ import {
   shouldShowAgentDonePendingHint,
   unlockAgentDoneAudio,
 } from "@/lib/notifications/notify-agent-done";
+import {
+  AnalyticsChatToolChip,
+  isAnalyticsWorksheetMutationTool,
+} from "@/components/statistical-analysis/analytics-chat-tool-chip";
+import { getReportAnalytics } from "@/lib/statistical-analysis/client";
+import {
+  analyticsSheetMentionCandidates,
+  type AnalyticsMentionSheet,
+} from "@/lib/statistical-analysis/mentions";
+import { analysisListSubtitle } from "@/lib/statistical-analysis/stale";
+import type { ReportAnalyticsView } from "@/lib/statistical-analysis/types";
+import { dataSheets } from "@/lib/statistical-analysis/worksheet";
 
 type PendingChatImage = {
   id: string;
@@ -180,6 +191,7 @@ function announceCompletedAssistantTurn(
 type ToolPartInfo = {
   toolName: string;
   state: string;
+  toolCallId: string | undefined;
   input: Record<string, unknown> | undefined;
   output: Record<string, unknown> | undefined;
   errorText: string | undefined;
@@ -190,6 +202,7 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
   const p = part as unknown as {
     type: string;
     state?: string;
+    toolCallId?: string;
     input?: Record<string, unknown>;
     output?: Record<string, unknown>;
     errorText?: string;
@@ -197,6 +210,7 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
   return {
     toolName: p.type.slice("tool-".length),
     state: p.state ?? "",
+    toolCallId: typeof p.toolCallId === "string" ? p.toolCallId : undefined,
     input: p.input,
     output: p.output,
     errorText: p.errorText,
@@ -257,59 +271,40 @@ function parseAskUserQuestions(input: Record<string, unknown> | undefined): AskU
   });
 }
 
+function appliedEditsFromParts(
+  parts: UIMessage["parts"] | undefined
+): Array<{ section: string; targetField: string; reasoning: string }> {
+  const items: Array<{ section: string; targetField: string; reasoning: string }> =
+    [];
+  for (const part of parts ?? []) {
+    const tool = readToolPart(part as UIMessagePart<never, never>);
+    if (!tool?.output) continue;
+    const status = tool.output.status;
+    if (status !== "applied") continue;
+    const section =
+      typeof tool.output.section === "string" ? tool.output.section : "";
+    const targetField =
+      typeof tool.output.targetField === "string" ? tool.output.targetField : "";
+    const reasoning =
+      typeof tool.output.summary === "string" ? tool.output.summary : "";
+    if (!section) continue;
+    items.push({ section, targetField, reasoning });
+  }
+  return items;
+}
+
 function ToolChip({
   info,
-  onSwitchSectionScope,
   askUserActive,
   onAnswerQuestions,
 }: {
   info: ToolPartInfo;
-  onSwitchSectionScope?: (section: SectionType) => void;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
 }) {
   const pending = info.state === "input-streaming" || info.state === "input-available";
 
   if (isDocumentReviewToolName(info.toolName)) return null;
-
-  if (info.toolName === "suggest_section_scope") {
-    const suggested = info.output?.suggestedSection ?? info.input?.suggestedSection;
-    const reason =
-      typeof info.output?.reason === "string"
-        ? info.output.reason
-        : typeof info.input?.reason === "string"
-          ? info.input.reason
-          : "This question may fit another section better.";
-    const suggestedLabel = sectionLabel(suggested);
-
-    if (pending) {
-      return (
-        <ToolLine icon={<ArrowRightLeft className="size-3.5" />}>
-          Checking section focus…
-        </ToolLine>
-      );
-    }
-
-    return (
-      <div className="rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-2.5 py-2 text-[11px] text-[var(--foreground)]">
-        <div className="flex items-start gap-2">
-          <ArrowRightLeft className="mt-0.5 size-3.5 shrink-0 text-[var(--primary)]" />
-          <div className="min-w-0 space-y-1.5">
-            <p className="leading-relaxed">{reason}</p>
-            {typeof suggested === "string" && onSwitchSectionScope && (
-              <button
-                type="button"
-                onClick={() => onSwitchSectionScope(suggested as SectionType)}
-                className="rounded-md border border-[var(--primary)]/40 bg-[var(--card)] px-2 py-1 text-[11px] font-medium text-[var(--primary)] transition-colors hover:bg-[var(--secondary)]"
-              >
-                Switch to {suggestedLabel}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (info.toolName === "read_section") {
     const section = sectionLabel(info.input?.section);
@@ -331,6 +326,14 @@ function ToolChip({
       );
     }
     const status = info.output?.status;
+    if (status === "applied") {
+      return (
+        <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
+          Applied to {section}
+          {field ? ` · ${field}` : ""}
+        </ToolLine>
+      );
+    }
     if (status === "proposed") {
       return (
         <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
@@ -361,6 +364,14 @@ function ToolChip({
       return (
         <ToolLine icon={<ImagePlus className="size-3.5" />}>
           Inserting image in {section}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "applied") {
+      return (
+        <ToolLine icon={<ImagePlus className="size-3.5 text-emerald-500" />} tone="success">
+          Applied image in {section}
+          {field ? ` · ${field}` : ""}
         </ToolLine>
       );
     }
@@ -397,6 +408,14 @@ function ToolChip({
         </ToolLine>
       );
     }
+    if (info.output?.status === "applied") {
+      return (
+        <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
+          Removed figure in {section}
+          {field ? ` · ${field}` : ""}
+        </ToolLine>
+      );
+    }
     if (info.output?.status === "proposed") {
       return (
         <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
@@ -427,6 +446,14 @@ function ToolChip({
       return (
         <ToolLine icon={<Table2 className="size-3.5" />}>
           Editing table in {section}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "applied") {
+      return (
+        <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
+          Applied table edit to {section}
+          {field ? ` · ${field}` : ""}
         </ToolLine>
       );
     }
@@ -464,6 +491,14 @@ function ToolChip({
         </ToolLine>
       );
     }
+    if (info.output?.status === "applied") {
+      return (
+        <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
+          Applied draft to {section}
+          {field ? ` · ${field}` : ""}
+        </ToolLine>
+      );
+    }
     if (info.output?.status === "drafted") {
       return (
         <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
@@ -497,6 +532,9 @@ function ToolChip({
     );
   }
 
+  const analyticsChip = AnalyticsChatToolChip({ info });
+  if (analyticsChip) return analyticsChip;
+
   return <ToolLine icon={<Wrench className="size-3.5" />}>{info.toolName}</ToolLine>;
 }
 
@@ -527,39 +565,17 @@ function ToolLine({
   );
 }
 
-function ScopeMismatchBanner({
-  mismatch,
-  onSwitch,
-  onDismiss,
-}: {
-  mismatch: SectionScopeMismatch;
-  onSwitch: (section: SectionType) => void;
-  onDismiss: () => void;
-}) {
-  return (
-    <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-2.5 py-2 text-[11px] text-[var(--foreground)]">
-      <ArrowRightLeft className="size-3.5 shrink-0 text-[var(--primary)]" />
-      <span className="min-w-0 flex-1 leading-relaxed">{mismatch.reason}</span>
-      <button
-        type="button"
-        onClick={() => onSwitch(mismatch.suggestedSection)}
-        className="rounded-md border border-[var(--primary)]/40 bg-[var(--card)] px-2 py-1 font-medium text-[var(--primary)] transition-colors hover:bg-[var(--secondary)]"
-      >
-        Switch to {sectionLabel(mismatch.suggestedSection)}
-      </button>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="rounded-md px-2 py-1 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
-      >
-        Keep {sectionLabel(mismatch.currentSection)}
-      </button>
-    </div>
-  );
-}
-
 function mentionIcon(type: MentionCandidate["type"]) {
-  return type === "document" ? FileText : ClipboardList;
+  switch (type) {
+    case "document":
+      return FileText;
+    case "sheet":
+      return Table2;
+    case "analysis":
+      return LineChart;
+    default:
+      return ClipboardList;
+  }
 }
 
 function MentionChips({
@@ -663,13 +679,11 @@ function MentionMenu({
 
 const MessageTurn = memo(function MessageTurn({
   message,
-  onSwitchSectionScope,
   askUserActive,
   onAnswerQuestions,
   streaming = false,
 }: {
   message: UIMessage;
-  onSwitchSectionScope?: (section: SectionType) => void;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
@@ -741,7 +755,6 @@ const MessageTurn = memo(function MessageTurn({
               <ToolChip
                 key={i}
                 info={tool}
-                onSwitchSectionScope={onSwitchSectionScope}
                 askUserActive={askUserActive}
                 onAnswerQuestions={onAnswerQuestions}
               />
@@ -750,67 +763,130 @@ const MessageTurn = memo(function MessageTurn({
           return null;
         })
       )}
+      <TurnChangeSummary
+        parts={parts}
+        metadata={
+          "metadata" in message
+            ? (message as { metadata?: unknown }).metadata
+            : undefined
+        }
+      />
     </div>
   );
 });
 
-function scopeDescription(scope: ChatSectionScope): string {
-  return scope === CHAT_SECTION_SCOPE_ALL
-    ? "all sections"
-    : sectionLabel(scope);
+function TurnChangeSummary({
+  parts,
+  metadata,
+}: {
+  parts: UIMessage["parts"];
+  metadata: unknown;
+}) {
+  const items = appliedEditsFromParts(parts);
+  if (items.length === 0) return null;
+  const revisionNo =
+    metadata &&
+    typeof metadata === "object" &&
+    "changeSummary" in metadata &&
+    metadata.changeSummary &&
+    typeof metadata.changeSummary === "object" &&
+    "revisionNo" in metadata.changeSummary &&
+    typeof metadata.changeSummary.revisionNo === "number"
+      ? metadata.changeSummary.revisionNo
+      : null;
+  return (
+    <div
+      data-testid="chat-change-summary"
+      className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/40 px-3 py-2"
+    >
+      <p className="text-[11px] font-semibold text-[var(--foreground)]">
+        Changes this turn
+      </p>
+      <ul className="mt-1 space-y-0.5 text-xs text-[var(--muted-foreground)]">
+        {items.map((item, i) => (
+          <li key={`${item.section}-${item.targetField}-${i}`}>
+            {sectionLabel(item.section)}
+            {item.targetField ? ` · ${item.targetField}` : ""}
+            {item.reasoning ? ` — ${item.reasoning}` : ""}
+          </li>
+        ))}
+      </ul>
+      {revisionNo != null ? (
+        <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+          Saved as version {revisionNo}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
-function SectionScopeSelect({
-  value,
-  onChange,
-  disabled,
-  documentType,
-}: {
-  value: ChatSectionScope;
-  onChange: (scope: ChatSectionScope) => void;
-  disabled?: boolean;
-  documentType: DocumentType;
-}) {
-  const sections = chatEditableSections(documentType);
-  return (
-    <Select
-      value={value}
-      onValueChange={(next) => {
-        if (next !== CHAT_SECTION_SCOPE_ALL && !sections.includes(next as SectionType)) {
-          return;
-        }
-        onChange(next as ChatSectionScope);
-      }}
-      disabled={disabled}
-    >
-      <SelectTrigger
-        className="h-7 w-[7.5rem] border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium"
-        aria-label="Section focus"
-        title="Choose which report section to focus on"
-      >
-        <SelectValue placeholder="Section" />
-      </SelectTrigger>
-      {/* Opens upward: the control strip sits at the bottom of the panel. */}
-      <SelectContent side="top" sideOffset={6} className="text-[11px]">
-        <SelectItem className="text-[11px]" value={CHAT_SECTION_SCOPE_ALL}>
-          All sections
-        </SelectItem>
-        {sections.map((section) => (
-          <SelectItem className="text-[11px]" key={section} value={section}>
-            {sectionLabel(section)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
+function emptyChatIntro(args: {
+  targetingAnalytics: boolean;
+  mode: ChatMode;
+  workspaceChrome: WorkspaceChrome;
+}): string {
+  if (args.targetingAnalytics) {
+    if (args.mode === "plan") {
+      return "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document. Type @ to tag a sheet, plot, or file.";
+    }
+    return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document. Type @ to tag a sheet, plot, or file.";
+  }
+  if (args.mode === "plan") {
+    return "I'll answer questions about your deviation investigation using the report and attachments. I won't edit the document in Ask mode. Type @ to tag a document or section.";
+  }
+  return args.workspaceChrome === "agent"
+    ? "Ask me to draft or improve any section. I'll apply edits directly to the document. Type @ to tag a document or section."
+    : "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject. Type @ to tag a document or section.";
+}
+
+function composerPlaceholder(args: {
+  targetingAnalytics: boolean;
+  mode: ChatMode;
+}): string {
+  if (args.targetingAnalytics) {
+    return args.mode === "plan"
+      ? "Ask about measurements in the attachments… type @ to tag a sheet or plot"
+      : "Extract numbers, run a sixpack or ANOVA, or plot… type @ to tag a sheet or plot";
+  }
+  if (args.mode === "plan") {
+    return "Ask about the report or attachments… type @ to tag a document or section";
+  }
+  return "Ask the assistant to draft or improve a section… type @ to tag a document or section";
 }
 
 function subscribeNoop() {
   return () => {};
 }
 
-export function ChatPanel() {
-  const { report, refresh, readOnly, currentUserId } = useReportData();
+export function ChatPanel({
+  workspaceChrome = "document",
+  workProductView = "report",
+  statsEnabled = false,
+  onWorksheetChanged,
+  onAgentBusyChange,
+  onAnalyticsFocusSheet,
+  onAnalyticsFocusAnalysis,
+  analyticsReloadEpoch = 0,
+  mentionSheets = [],
+}: {
+  workspaceChrome?: WorkspaceChrome;
+  workProductView?: WorkProductView;
+  statsEnabled?: boolean;
+  onWorksheetChanged?: () => void;
+  onAgentBusyChange?: (busy: boolean) => void;
+  onAnalyticsFocusSheet?: (sheetId: string) => void;
+  onAnalyticsFocusAnalysis?: (analysisId: string) => void;
+  analyticsReloadEpoch?: number;
+  mentionSheets?: AnalyticsMentionSheet[];
+}) {
+  const {
+    report,
+    refresh,
+    readOnly,
+    currentUserId,
+    flushPendingSectionSaves,
+    setAgentCommitInFlight,
+  } = useReportData();
   const { getUser } = useUserDirectory();
   const user = getUser(currentUserId);
   const role = user?.role;
@@ -824,27 +900,14 @@ export function ChatPanel() {
     accessUser != null
       ? aiSuggestionLockReason(accessUser, report)
       : "You can't propose edits on this report right now.";
-  // When Agent is unavailable the item still lists, disabled, with the lock
-  // reason standing in for its description — a missing option explains nothing.
-  const modeOptions = useMemo(
-    () =>
-      DOCUMENT_CHAT_MODE_OPTIONS.map((option) =>
-        option.value === "agent" && !canProposeAiEdits
-          ? {
-              ...option,
-              disabled: true,
-              description: editLockReason ?? option.description,
-            }
-          : option
-      ),
-    [canProposeAiEdits, editLockReason]
-  );
   const { attachments } = useReportAttachments();
   const [input, setInput] = useState("");
   const showUploadingNotice = useDocumentUploadingNotice(input);
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
   const [mentionRange, setMentionRange] = useState<MentionQuery | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [analyticsSnapshot, setAnalyticsSnapshot] =
+    useState<ReportAnalyticsView | null>(null);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
   const storedComposerPrefs = useSyncExternalStore(
@@ -857,14 +920,48 @@ export function ChatPanel() {
   );
   const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
   const composerPrefsReady = isClient && currentUserId != null;
+  const agentChatTarget =
+    storedComposerPrefs.chatTarget ?? workProductView;
+  const chatTarget = chatWorkProductTarget({
+    chrome: workspaceChrome,
+    workProductView,
+    agentTarget: agentChatTarget,
+    statsEnabled,
+  });
+  const targetingAnalytics = chatTarget === "analytics";
+  useEffect(() => {
+    if (!statsEnabled) return;
+    let cancelled = false;
+    void getReportAnalytics(report.id)
+      .then((snapshot) => {
+        if (!cancelled) setAnalyticsSnapshot(snapshot);
+      })
+      .catch(() => {
+        if (!cancelled) setAnalyticsSnapshot(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [analyticsReloadEpoch, report.id, statsEnabled]);
+  const modeOptions = useMemo(() => {
+    const source = targetingAnalytics
+      ? ANALYTICS_CHAT_MODE_OPTIONS
+      : DOCUMENT_CHAT_MODE_OPTIONS;
+    return source.map((option) =>
+      option.value === "agent" && !canProposeAiEdits
+        ? {
+            ...option,
+            disabled: true,
+            description: editLockReason ?? option.description,
+          }
+        : option
+    );
+  }, [canProposeAiEdits, editLockReason, targetingAnalytics]);
   const mode =
     role != null && !canProposeAiEdits && storedComposerPrefs.mode === "agent"
       ? "plan"
       : storedComposerPrefs.mode;
   const pace = storedComposerPrefs.pace;
-  const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
-  const [clientScopeSuggestion, setClientScopeSuggestion] =
-    useState<SectionScopeMismatch | null>(null);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [mountedSessions, setMountedSessions] = useState<MountedChatSession[]>(
@@ -903,6 +1000,8 @@ export function ChatPanel() {
   const pendingCaretRef = useRef<number | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
+  const lastSendTargetRef = useRef<WorkProductView>("report");
+  const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
   const {
@@ -928,6 +1027,52 @@ export function ChatPanel() {
     busy
   );
 
+  const appliedEditCount = useMemo(
+    () =>
+      messages.reduce(
+        (sum, message) =>
+          sum + appliedEditsFromParts(message.parts).length,
+        0
+      ),
+    [messages]
+  );
+  const appliedEditCountRef = useRef(0);
+  useEffect(() => {
+    if (!busy) {
+      setAgentCommitInFlight(false);
+    }
+  }, [busy, setAgentCommitInFlight]);
+  useEffect(() => {
+    onAgentBusyChange?.(busy && lastSendTargetRef.current === "analytics");
+  }, [busy, onAgentBusyChange]);
+  useEffect(() => {
+    return () => onAgentBusyChange?.(false);
+  }, [onAgentBusyChange]);
+  useEffect(() => {
+    if (!onWorksheetChanged) return;
+    let found = false;
+    for (const message of messages) {
+      for (const part of message.parts ?? []) {
+        const info = readToolPart(part as UIMessagePart<never, never>);
+        if (!info || info.state !== "output-available") continue;
+        if (!isAnalyticsWorksheetMutationTool(info.toolName)) continue;
+        const id = info.toolCallId ?? `${info.toolName}:${JSON.stringify(info.output)}`;
+        if (seenWriteIdsRef.current.has(id)) continue;
+        seenWriteIdsRef.current.add(id);
+        found = true;
+      }
+    }
+    if (found) onWorksheetChanged();
+  }, [messages, onWorksheetChanged]);
+  useEffect(() => {
+    if (appliedEditCount <= appliedEditCountRef.current) {
+      appliedEditCountRef.current = appliedEditCount;
+      return;
+    }
+    appliedEditCountRef.current = appliedEditCount;
+    void refresh();
+  }, [appliedEditCount, refresh]);
+
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.
   const mentionCandidates = useMemo<MentionCandidate[]>(() => {
@@ -946,13 +1091,47 @@ export function ChatPanel() {
           sublabel: description || pages,
         };
       });
+    if (targetingAnalytics) {
+      const sheets =
+        mentionSheets.length > 0
+          ? analyticsSheetMentionCandidates(mentionSheets)
+          : analyticsSnapshot
+            ? analyticsSheetMentionCandidates(
+                dataSheets(analyticsSnapshot.worksheet).map((sheet) => ({
+                  sheetId: sheet.id,
+                  name: sheet.name,
+                  columnCount: sheet.columns.length,
+                }))
+              )
+            : [];
+      const analyses = (analyticsSnapshot?.analyses ?? []).map((item) => ({
+        type: "analysis" as const,
+        id: item.id,
+        label: item.title,
+        sublabel: analysisListSubtitle(item),
+      }));
+      return [...sheets, ...analyses, ...documents];
+    }
     const sections = chatEditableSections(report.documentType).map((section) => ({
       type: "section" as const,
       id: section,
       label: sectionLabel(section),
     }));
     return [...documents, ...sections];
-  }, [attachments, report.documentType]);
+  }, [
+    analyticsSnapshot,
+    attachments,
+    mentionSheets,
+    report.documentType,
+    targetingAnalytics,
+  ]);
+  const labeledMentions = syncMentionCandidateLabels(
+    mentions,
+    mentionCandidates
+  );
+  if (labeledMentions !== mentions) {
+    setMentions(labeledMentions);
+  }
 
   const mentionMatches = mentionRange
     ? filterMentionCandidates(mentionCandidates, mentionRange.query)
@@ -964,11 +1143,23 @@ export function ChatPanel() {
   );
 
   const persistComposerPrefs = useCallback(
-    (next: { mode: ChatMode; pace: ChatPace }) => {
+    (next: {
+      mode: ChatMode;
+      pace: ChatPace;
+      chatTarget?: WorkProductView;
+    }) => {
       if (!currentUserId) return;
-      writeChatComposerPrefs(currentUserId, report.id, next);
+      writeChatComposerPrefs(currentUserId, report.id, {
+        mode: next.mode,
+        pace: next.pace,
+        ...(next.chatTarget
+          ? { chatTarget: next.chatTarget }
+          : storedComposerPrefs.chatTarget
+            ? { chatTarget: storedComposerPrefs.chatTarget }
+            : {}),
+      });
     },
-    [currentUserId, report.id]
+    [currentUserId, report.id, storedComposerPrefs.chatTarget]
   );
 
   const setMode = useCallback(
@@ -985,6 +1176,26 @@ export function ChatPanel() {
       persistComposerPrefs({ mode: storedComposerPrefs.mode, pace: next });
     },
     [persistComposerPrefs, storedComposerPrefs.mode]
+  );
+
+  const setAgentChatTarget = useCallback(
+    (next: WorkProductView) => {
+      if (!isWorkProductView(next)) return;
+      persistComposerPrefs({
+        mode: storedComposerPrefs.mode,
+        pace: storedComposerPrefs.pace,
+        chatTarget: next,
+      });
+    },
+    [persistComposerPrefs, storedComposerPrefs.mode, storedComposerPrefs.pace]
+  );
+
+  const applyMentionFocus = useCallback(
+    (candidate: MentionCandidate) => {
+      if (candidate.type === "sheet") onAnalyticsFocusSheet?.(candidate.id);
+      if (candidate.type === "analysis") onAnalyticsFocusAnalysis?.(candidate.id);
+    },
+    [onAnalyticsFocusAnalysis, onAnalyticsFocusSheet]
   );
 
   // Restore the caret after a mention replaces the in-progress @ token.
@@ -1006,6 +1217,7 @@ export function ChatPanel() {
   const selectMention = useCallback(
     (candidate: MentionCandidate) => {
       if (!mentionRange) return;
+      applyMentionFocus(candidate);
       setInput((current) => {
         const next = applyMentionToInput(current, mentionRange, candidate);
         pendingCaretRef.current = next.caret;
@@ -1023,7 +1235,7 @@ export function ChatPanel() {
       setMentionRange(null);
       setMentionIndex(0);
     },
-    [mentionRange]
+    [applyMentionFocus, mentionRange]
   );
 
   const removeMention = useCallback((candidate: MentionCandidate) => {
@@ -1050,11 +1262,15 @@ export function ChatPanel() {
   }, [base]);
 
   const onFinishTurn = useCallback(() => {
-    // Pull newly-proposed ai_fix comments into report state (inline diff +
-    // gutter card), and refresh session titles/order.
+    setAgentCommitInFlight(false);
+    // Pull newly-proposed ai_fix comments (document chrome) or committed
+    // section content (agent chrome) into report state.
     void refresh();
     void loadSessions();
-  }, [loadSessions, refresh]);
+    if (lastSendTargetRef.current === "analytics") {
+      onWorksheetChanged?.();
+    }
+  }, [loadSessions, onWorksheetChanged, refresh, setAgentCommitInFlight]);
 
   const onTurnCompleted = useCallback(
     (startedAt: number | null) => {
@@ -1272,16 +1488,6 @@ export function ChatPanel() {
     return () => document.removeEventListener("mousedown", onClick);
   }, [historyOpen]);
 
-  const applySectionScope = useCallback((section: SectionType) => {
-    setSectionScope(section);
-    setClientScopeSuggestion(null);
-  }, []);
-
-  const changeSectionScope = useCallback((scope: ChatSectionScope) => {
-    setSectionScope(scope);
-    setClientScopeSuggestion(null);
-  }, []);
-
   const addImageFiles = useCallback(
     async (files: File[]) => {
       const imageFiles = files.filter((file) => isAllowedChatImageMediaType(file.type));
@@ -1379,23 +1585,36 @@ export function ChatPanel() {
         return;
       }
       if (sessionRuntime.busy) return;
+      lastSendTargetRef.current = chatTarget;
+      if (
+        workspaceChrome === "agent" &&
+        mode === "agent" &&
+        chatTarget !== "analytics"
+      ) {
+        try {
+          await flushPendingSectionSaves();
+        } catch {
+          toast.error(
+            "Could not save your latest edits before the assistant ran."
+          );
+          return;
+        }
+        setAgentCommitInFlight(true);
+      }
       setInput("");
       setPendingImages([]);
       setMentionRange(null);
       const tagsForRequest = mentions;
       setMentions([]);
-      if (trimmed) {
-        setClientScopeSuggestion(
-          detectSectionScopeMismatch(sectionScope, trimmed, report.documentType)
-        );
-      } else {
-        setClientScopeSuggestion(null);
+      for (const mention of tagsForRequest) {
+        applyMentionFocus(mention);
       }
       const body: Record<string, unknown> = {
         sessionId,
         mode,
         pace,
-        sectionScope,
+        workspaceChrome,
+        chatTarget,
       };
       if (tagsForRequest.length > 0) {
         body.mentions = tagsForRequest.map((mention) => ({
@@ -1420,11 +1639,14 @@ export function ChatPanel() {
       mountSession,
       mode,
       pace,
-      sectionScope,
+      chatTarget,
       pendingImages,
       mentions,
-      report.documentType,
+      applyMentionFocus,
       currentUserId,
+      workspaceChrome,
+      flushPendingSectionSaves,
+      setAgentCommitInFlight,
     ]
   );
 
@@ -1566,16 +1788,17 @@ export function ChatPanel() {
         {messages.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
-              {mode === "plan"
-                ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "I'll answer questions about your deviation investigation using the report and attachments. I won't edit the document in Ask mode."
-                  : `Focused on ${scopeDescription(sectionScope)} — I'll answer questions about that section. I won't edit the document in Ask mode.`
-                : sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."
-                  : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
+              {emptyChatIntro({
+                targetingAnalytics,
+                mode,
+                workspaceChrome,
+              })}
             </p>
             <div className="space-y-1.5">
-              {examplePromptsForMode(mode).map((p) => (
+              {(targetingAnalytics
+                ? analyticsExamplePromptsForMode(mode)
+                : examplePromptsForMode(mode)
+              ).map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -1593,7 +1816,6 @@ export function ChatPanel() {
             <MessageTurn
               key={m.id}
               message={m}
-              onSwitchSectionScope={applySectionScope}
               askUserActive={
                 visibleStartIndex + i === messages.length - 1 &&
                 !busy &&
@@ -1633,50 +1855,26 @@ export function ChatPanel() {
           void send(input);
         }}
       >
-        {clientScopeSuggestion && (
-          <ScopeMismatchBanner
-            mismatch={clientScopeSuggestion}
-            onSwitch={applySectionScope}
-            onDismiss={() => setClientScopeSuggestion(null)}
-          />
-        )}
-        <div className="mb-2 flex items-center gap-1.5">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {composerPrefsReady ? (
-              <>
-                <ComposerSelect
-                  value={mode}
-                  options={modeOptions}
-                  onChange={setMode}
-                  disabled={busy}
-                  ariaLabel="Assistant mode"
-                  className="w-[6rem]"
-                />
-                <ComposerSelect
-                  value={pace}
-                  options={CHAT_PACE_OPTIONS}
-                  onChange={setPace}
-                  disabled={busy}
-                  ariaLabel="Answer depth"
-                  className="w-[6rem]"
-                />
-              </>
-            ) : null}
-            <SectionScopeSelect
-              value={sectionScope}
-              onChange={changeSectionScope}
+        {workspaceChrome === "agent" && statsEnabled ? (
+          <div className="mb-2 flex items-center gap-1.5">
+            <ComposerSelect
+              value={agentChatTarget}
+              options={CHAT_WORK_PRODUCT_OPTIONS}
+              onChange={setAgentChatTarget}
               disabled={busy}
-              documentType={report.documentType}
+              ariaLabel="Work product"
+              className="w-[7.5rem]"
+              testId="chat-work-product-target"
             />
           </div>
-        </div>
+        ) : null}
         {!canProposeAiEdits ? (
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
-            {editLockReason ??
-              "You can't propose edits on this report right now."}{" "}
-            Ask mode can still discuss the report.
+            {targetingAnalytics
+              ? `${editLockReason ?? "You can't change the worksheet on this report right now."} Ask mode can still search attachments.`
+              : `${editLockReason ?? "You can't propose edits on this report right now."} Ask mode can still discuss the report.`}
           </p>
-        ) : readOnly && mode === "agent" ? (
+        ) : readOnly && mode === "agent" && !targetingAnalytics ? (
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
             This report is read-only — the assistant can still discuss it, but proposed
             edits cannot be accepted.
@@ -1684,59 +1882,45 @@ export function ChatPanel() {
         ) : null}
         {showUploadingNotice ? <DocumentUploadingNotice /> : null}
         <MentionChips mentions={mentions} onRemove={removeMention} />
-        {pendingImages.length > 0 ? (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {pendingImages.map((image) => (
-              <div
-                key={image.id}
-                className="relative size-16 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--secondary)]/40"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews */}
-                <img
-                  src={image.part.url}
-                  alt={image.part.filename ?? "Attached image"}
-                  className="size-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => removePendingImage(image.id)}
-                  aria-label={`Remove ${image.part.filename ?? "image"}`}
-                  className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80"
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            event.target.value = "";
+            if (files.length > 0) void addImageFiles(files);
+          }}
+        />
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] focus-within:ring-1 focus-within:ring-[var(--ring)]">
+          {pendingImages.length > 0 ? (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {pendingImages.map((image) => (
+                <div
+                  key={image.id}
+                  className="relative size-16 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--secondary)]/40"
                 >
-                  <X className="size-3" aria-hidden="true" />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="flex items-end gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              const files = Array.from(event.target.files ?? []);
-              event.target.value = "";
-              if (files.length > 0) void addImageFiles(files);
-            }}
-          />
-          <button
-            type="button"
-            disabled={busy || initializing || attaching || !hostReady}
-            aria-label="Attach image"
-            title="Attach image"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex size-9 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] disabled:opacity-40"
-          >
-            {attaching ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <ImagePlus className="size-4" aria-hidden="true" />
-            )}
-          </button>
-          <div className="relative flex-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews */}
+                  <img
+                    src={image.part.url}
+                    alt={image.part.filename ?? "Attached image"}
+                    className="size-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePendingImage(image.id)}
+                    aria-label={`Remove ${image.part.filename ?? "image"}`}
+                    className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80"
+                  >
+                    <X className="size-3" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="relative">
             {mentionMenuOpen ? (
               <MentionMenu
                 matches={mentionMatches}
@@ -1747,6 +1931,7 @@ export function ChatPanel() {
             <textarea
               ref={textareaRef}
               value={input}
+              data-testid={targetingAnalytics ? "analytics-chat-input" : undefined}
               role="combobox"
               aria-expanded={mentionMenuOpen}
               aria-controls={mentionMenuOpen ? "chat-mention-menu" : undefined}
@@ -1804,45 +1989,84 @@ export function ChatPanel() {
                   void send(input);
                 }
               }}
-              rows={2}
+              rows={3}
               disabled={initializing}
-              placeholder={
-                mode === "plan"
-                  ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                    ? "Ask about the report or attachments… type @ to tag a document or section"
-                    : `Ask about ${scopeDescription(sectionScope)}… type @ to tag a document`
-                  : sectionScope === CHAT_SECTION_SCOPE_ALL
-                    ? "Ask the assistant to draft or improve a section… type @ to tag a document"
-                    : `Ask the assistant to draft or improve ${scopeDescription(sectionScope)}… @ to tag a document`
-              }
-              className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
+              placeholder={composerPlaceholder({
+                targetingAnalytics,
+                mode,
+              })}
+              className="min-h-[4.5rem] max-h-40 w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm outline-none placeholder:text-[var(--muted-foreground)] disabled:opacity-50"
             />
           </div>
-          {busy ? (
-            <button
-              type="button"
-              onClick={stopTurn}
-              aria-label="Stop generating"
-              title="Stop generating"
-              className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
-            >
-              <Square className="size-3.5 fill-current" />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={
-                initializing ||
-                attaching ||
-                !hostReady ||
-                (!input.trim() && pendingImages.length === 0)
-              }
-              aria-label="Send message"
-              className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              <Send className="size-4" />
-            </button>
-          )}
+          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+            <div className="flex min-w-0 items-center gap-0.5">
+              {composerPrefsReady ? (
+                <>
+                  <ComposerSelect
+                    value={mode}
+                    options={modeOptions}
+                    onChange={setMode}
+                    disabled={busy}
+                    ariaLabel="Assistant mode"
+                    variant="pill"
+                    testId={targetingAnalytics ? "analytics-chat-mode" : undefined}
+                  />
+                  <ComposerSelect
+                    value={pace}
+                    options={CHAT_PACE_OPTIONS}
+                    onChange={setPace}
+                    disabled={busy}
+                    ariaLabel="Answer depth"
+                    variant="ghost"
+                    showIcon={false}
+                    testId={targetingAnalytics ? "analytics-chat-pace" : undefined}
+                  />
+                </>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                disabled={busy || initializing || attaching || !hostReady}
+                aria-label="Attach image"
+                title="Attach image"
+                data-testid={targetingAnalytics ? "analytics-chat-attach-image" : undefined}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] disabled:opacity-40"
+              >
+                {attaching ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <ImagePlus className="size-3.5" aria-hidden="true" />
+                )}
+              </button>
+              {busy ? (
+                <button
+                  type="button"
+                  onClick={stopTurn}
+                  aria-label="Stop generating"
+                  title="Stop generating"
+                  className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90"
+                >
+                  <Square className="size-2.5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={
+                    initializing ||
+                    attaching ||
+                    !hostReady ||
+                    (!input.trim() && pendingImages.length === 0)
+                  }
+                  aria-label="Send message"
+                  className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  <ArrowUp className="size-3.5" strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </form>
     </div>

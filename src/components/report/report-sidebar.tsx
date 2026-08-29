@@ -15,11 +15,10 @@ import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
 import { ChatPanel } from "./chat-panel";
-import { AnalyticsChatPanel } from "@/components/statistical-analysis/analytics-chat-panel";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
-import type { ReportWorkspaceSurface } from "./report-workspace-header";
+import type { WorkProductView, WorkspaceChrome } from "./workspace-chrome";
 import { getEvaluatableSections } from "@/lib/document-types";
 
 export type SidebarTab =
@@ -36,9 +35,11 @@ type Props = {
   onJumpToSection: (section: SectionType) => void;
   onJumpToPlaceholder: (p: Placeholder) => void;
   onJumpToComment: (commentId: string) => void;
+  hideCollapse?: boolean;
+  chrome?: WorkspaceChrome;
   initialCriteriaSection?: SectionType;
-  surface?: ReportWorkspaceSurface;
-  analyticsOpen?: boolean;
+  workProductView?: WorkProductView;
+  statsEnabled?: boolean;
   onAnalyticsSettled?: () => void;
   onAnalyticsAgentBusy?: (busy: boolean) => void;
   onAnalyticsFocusSheet?: (sheetId: string) => void;
@@ -62,9 +63,11 @@ export function ReportSidebar({
   onJumpToSection,
   onJumpToPlaceholder,
   onJumpToComment,
+  hideCollapse = false,
+  chrome = "document",
   initialCriteriaSection,
-  surface = "document",
-  analyticsOpen = false,
+  workProductView = "report",
+  statsEnabled = false,
   onAnalyticsSettled,
   onAnalyticsAgentBusy,
   onAnalyticsFocusSheet,
@@ -72,7 +75,7 @@ export function ReportSidebar({
   analyticsReloadEpoch,
   analyticsMentionSheets,
 }: Props) {
-  const analyticsSurface = surface === "analytics";
+  const analyticsSurface = workProductView === "analytics";
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
   const { report } = useReportData();
@@ -107,38 +110,44 @@ export function ReportSidebar({
     <aside
       id="report-chat-sidebar"
       aria-label="Report sidebar"
-      className="flex h-full w-full min-w-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--card)]"
+      className={cn(
+        "flex h-full w-full min-w-0 flex-col overflow-hidden bg-[var(--card)]",
+        chrome === "agent"
+          ? "border-x border-[var(--border)]"
+          : "border-l border-[var(--border)]"
+      )}
     >
-      {/* Collapse toggle */}
-      <div
-        className={cn(
-          "border-b border-[var(--border)] shrink-0",
-          collapsed ? "px-1 py-2 flex justify-center" : "px-3 py-2",
-        )}
-      >
-        <button
-          type="button"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!collapsed}
-          onClick={onToggleCollapse}
+      {hideCollapse ? null : (
+        <div
           className={cn(
-            "flex items-center gap-2 rounded-md text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
-            collapsed
-              ? "size-9 justify-center"
-              : "w-full px-2 py-1.5",
+            "border-b border-[var(--border)] shrink-0",
+            collapsed ? "px-1 py-2 flex justify-center" : "px-3 py-2",
           )}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {collapsed ? (
-            <PanelRightClose className="size-4" />
-          ) : (
-            <>
-              <PanelRightOpen className="size-4" />
-              <span className="text-xs">Collapse</span>
-            </>
-          )}
-        </button>
-      </div>
+          <button
+            type="button"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            onClick={onToggleCollapse}
+            className={cn(
+              "flex items-center gap-2 rounded-md text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
+              collapsed
+                ? "size-9 justify-center"
+                : "w-full px-2 py-1.5",
+            )}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? (
+              <PanelRightClose className="size-4" />
+            ) : (
+              <>
+                <PanelRightOpen className="size-4" />
+                <span className="text-xs">Collapse</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Tab buttons — expanded shows all tabs; collapsed shows the active tab only */}
       {analyticsSurface ? null : collapsed ? (
@@ -207,37 +216,30 @@ export function ReportSidebar({
         </div>
       )}
 
-      {/* ChatPanel stays mounted across collapse and tab changes so the
-          thread, composer prefs, and rendered markdown are not reset.
-          Hide with CSS instead of unmounting — remount refetches and
-          re-parses the whole conversation. Assistant manages its own
-          scroll/input, so it gets a full-height container without the
-          shared padding. */}
+      {/* ChatPanel stays mounted across collapse, tab, and work-product
+          changes so the thread, composer prefs, and rendered markdown are
+          not reset. Hide with CSS instead of unmounting. Assistant manages
+          its own scroll/input, so it gets a full-height container without
+          the shared padding. */}
       <div
         className={cn(
           "min-h-0 flex-1",
-          (collapsed || analyticsSurface || activeTab !== "assistant") && "hidden"
+          (collapsed || (!analyticsSurface && activeTab !== "assistant")) &&
+            "hidden"
         )}
       >
-        <ChatPanel />
+        <ChatPanel
+          workspaceChrome={chrome}
+          workProductView={workProductView}
+          statsEnabled={statsEnabled}
+          onWorksheetChanged={() => onAnalyticsSettled?.()}
+          onAgentBusyChange={onAnalyticsAgentBusy}
+          onAnalyticsFocusSheet={onAnalyticsFocusSheet}
+          onAnalyticsFocusAnalysis={onAnalyticsFocusAnalysis}
+          analyticsReloadEpoch={analyticsReloadEpoch}
+          mentionSheets={analyticsMentionSheets}
+        />
       </div>
-      {analyticsOpen ? (
-        <div
-          className={cn(
-            "min-h-0 flex-1",
-            (collapsed || !analyticsSurface) && "hidden"
-          )}
-        >
-          <AnalyticsChatPanel
-            onWorksheetChanged={() => onAnalyticsSettled?.()}
-            onAgentBusyChange={onAnalyticsAgentBusy}
-            onFocusSheet={onAnalyticsFocusSheet}
-            onFocusAnalysis={onAnalyticsFocusAnalysis}
-            analyticsReloadEpoch={analyticsReloadEpoch}
-            mentionSheets={analyticsMentionSheets}
-          />
-        </div>
-      ) : null}
       {!collapsed && !analyticsSurface && activeTab !== "assistant" ? (
         <div className="flex-1 overflow-y-auto p-4 min-w-0">
           {activeTab === "placeholders" && (

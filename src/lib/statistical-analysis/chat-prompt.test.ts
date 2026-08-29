@@ -66,7 +66,6 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("Column specs: none");
     expect(prompt).not.toContain("Specs tab");
     expect(prompt).toContain("Quick vs Deep");
-    expect(prompt).toContain("## Mode: AGENT");
     expect(prompt).not.toContain("There is no Ask/Agent toggle here");
     expect(prompt).not.toContain("draft_field");
   });

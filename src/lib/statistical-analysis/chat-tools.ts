@@ -25,6 +25,8 @@ import {
 import { buildAnalyticsSearchDocumentsTool } from "./search-documents";
 import { runScanAttachments } from "./scan-attachments";
 import { capabilitySixpackInputSchema, measurementScatterToolInputSchema, oneWayAnovaBodySchema, xyScatterBodySchema } from "./schemas";
+import { tryRecordAnalyticsChange } from "@/lib/analytics-revisions/record-change";
+import type { AuditActorSnapshot } from "@/lib/audit";
 import {
   createAnalysisForReport,
   getOrCreateReportAnalytics,
@@ -483,6 +485,21 @@ async function resolveExtractPages(input: {
   return listed.slice(0, MAX_EXTRACT_PAGES).map((page) => page.pageNumber);
 }
 
+function worksheetWithPreferredSheet(
+  worksheet: WorksheetData,
+  preferredSheetId?: string
+): WorksheetData {
+  if (preferredSheetId) {
+    const sheet = findSheet(worksheet, preferredSheetId);
+    if (sheet) return switchWorksheetTab(worksheet, sheet.id);
+  }
+  if (isSpecsTab(worksheet)) {
+    const first = dataSheets(worksheet)[0];
+    if (first) return switchWorksheetTab(worksheet, first.id);
+  }
+  return worksheet;
+}
+
 export function buildAnalyticsChatTools(opts: {
   reportId: string;
   canEdit: boolean;
@@ -490,8 +507,47 @@ export function buildAnalyticsChatTools(opts: {
   searchGate?: AnalyticsSearchGate;
   pinnedAttachmentIds?: readonly string[];
   focusedSheetId?: string;
+  actor?: AuditActorSnapshot;
 }): ToolSet {
-  const { reportId, canEdit, documentType, searchGate, focusedSheetId } = opts;
+  const { reportId, canEdit, documentType, searchGate, focusedSheetId, actor } =
+    opts;
+
+  async function persistAndRecord(
+    worksheet: WorksheetData,
+    expectedVersion?: number
+  ): Promise<UpdateReportAnalyticsResult> {
+    const result = await persistWorksheet(reportId, worksheet, expectedVersion);
+    if (result.ok && actor) {
+      await tryRecordAnalyticsChange({
+        reportId,
+        analytics: result.analytics,
+        actor,
+        action: "worksheet_updated",
+        summary: "Edited worksheet",
+        entityId: result.analytics.id,
+        historySource: "agent_turn",
+        historySummary: "Edited worksheet",
+      });
+    }
+    return result;
+  }
+
+  async function createAnalysisAndRecord(input: unknown) {
+    const result = await createAnalysisForReport(reportId, input);
+    if (result.ok && actor) {
+      await tryRecordAnalyticsChange({
+        reportId,
+        analytics: result.analytics,
+        actor,
+        action: "analysis_created",
+        summary: `Created ${result.analysis.title}`,
+        entityId: result.analysis.id,
+        historySource: "agent_turn",
+        historySummary: `Created ${result.analysis.title}`,
+      });
+    }
+    return result;
+  }
   const pinnedAttachmentIds = Array.from(
     new Set((opts.pinnedAttachmentIds ?? []).filter((id) => id.trim().length > 0))
   );
@@ -876,7 +932,7 @@ export function buildAnalyticsChatTools(opts: {
             usl: optionalSpecString(usl),
             target: optionalSpecString(target),
           });
-          await persistWorksheet(reportId, withSpecs, analytics.version);
+          await persistAndRecord(withSpecs, analytics.version);
         }
 
         return {
@@ -926,15 +982,10 @@ export function buildAnalyticsChatTools(opts: {
           }));
         }
         const analytics = await getOrCreateReportAnalytics(reportId);
-        let worksheet = analytics.worksheet;
-        if (isSpecsTab(worksheet)) {
-          const first = dataSheets(worksheet)[0];
-          if (first) worksheet = switchWorksheetTab(worksheet, first.id);
-        }
-        if (focusedSheetId) {
-          const focused = findSheet(worksheet, focusedSheetId);
-          if (focused) worksheet = switchWorksheetTab(worksheet, focused.id);
-        }
+        const worksheet = worksheetWithPreferredSheet(
+          analytics.worksheet,
+          focusedSheetId
+        );
         const applied = applyWriteColumnEntries(worksheet, entries);
         if (!applied.ok) {
           return {
@@ -943,8 +994,7 @@ export function buildAnalyticsChatTools(opts: {
             name: applied.name,
           };
         }
-        const savedResult = await persistWorksheet(
-          reportId,
+        const savedResult = await persistAndRecord(
           applied.worksheet,
           analytics.version
         );
@@ -1017,8 +1067,7 @@ export function buildAnalyticsChatTools(opts: {
           focusedSheetId &&
           !operations.some((operation) => operation.sheetId?.trim())
         ) {
-          const focused = findSheet(worksheet, focusedSheetId);
-          if (focused) worksheet = switchWorksheetTab(worksheet, focused.id);
+          worksheet = worksheetWithPreferredSheet(worksheet, focusedSheetId);
         }
         const applied: Array<{
           status: "ok";
@@ -1035,11 +1084,7 @@ export function buildAnalyticsChatTools(opts: {
           worksheet = appliedStep.worksheet;
           applied.push(appliedStep.result);
         }
-        const saved = await persistWorksheet(
-          reportId,
-          worksheet,
-          analytics.version
-        );
+        const saved = await persistAndRecord(worksheet, analytics.version);
         if (!saved.ok) {
           return {
             status: "error" as const,
@@ -1077,7 +1122,7 @@ export function buildAnalyticsChatTools(opts: {
         ) {
           // Still run; the engine enforces MIN_VALUES_FOR_SIXPACK.
         }
-        const result = await createAnalysisForReport(reportId, input);
+        const result = await createAnalysisAndRecord(input);
         if (!result.ok) {
           return {
             status: "error" as const,
@@ -1116,7 +1161,7 @@ export function buildAnalyticsChatTools(opts: {
         "Compute and save a one-way ANOVA (F/p table, not a scatter) for a numeric response column by a factor column on the same worksheet sheet. Call only when they asked to compare groups statistically — not when they asked for a scatter or colored overlay. Optional rowStart/rowEnd (1-based inclusive) or rows (1-based row numbers) limits the rows. Pairwise tests are Bonferroni t-tests using the ANOVA MSE. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
       inputSchema: oneWayAnovaBodySchema,
       execute: async (input) => {
-        const result = await createAnalysisForReport(reportId, {
+        const result = await createAnalysisAndRecord({
           kind: ONE_WAY_ANOVA,
           ...input,
         });
@@ -1156,7 +1201,7 @@ export function buildAnalyticsChatTools(opts: {
         "Plot two numeric worksheet columns as an XY scatter (Y vs X) and save it on the Results tab. Both columns must be numeric — a serial-number / factor column cannot be X. One series, one color; cannot overlay or color by a third grouping column. Use when they asked to plot A vs B, Y against X, a correlation plot, or a scatter of two columns. Output variable is Y. Optional rowStart/rowEnd or rows limits the paired rows. Reports Pearson r; does not fit a regression line. Tell them to open Results.",
       inputSchema: xyScatterBodySchema,
       execute: async (input) => {
-        const result = await createAnalysisForReport(reportId, {
+        const result = await createAnalysisAndRecord({
           kind: XY_SCATTER,
           ...input,
         });
@@ -1195,7 +1240,7 @@ export function buildAnalyticsChatTools(opts: {
         "Extract cited numeric measurements from this report's attachments and save a scatter of those values vs observation index on the Results tab. One series, one color — cannot color by serial number or overlay groups. Call when they asked for a measurement plot or requirement chart from attachments (e.g. M3-SYS-FN-037). Do not use this for two worksheet columns — that is plot_xy_scatter. Optional lsl/usl override extracted acceptance limits; omit them to keep cited limits. Does not insert into the document. Tell them to open Results. Never invent data points.",
       inputSchema: measurementScatterToolInputSchema,
       execute: async (input) => {
-        const result = await createAnalysisForReport(reportId, {
+        const result = await createAnalysisAndRecord({
           kind: MEASUREMENT_SCATTER,
           ...input,
         });

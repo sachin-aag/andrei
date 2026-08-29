@@ -58,23 +58,19 @@ export function DocumentsPanel({
   );
   const showContentsTab = tableOfContents != null;
   const [activeTab, setActiveTab] = useState<LeftPanelTab>("attachments");
+  const resolvedTab =
+    showContentsTab || activeTab !== "contents" ? activeTab : "attachments";
 
   useEffect(() => {
     warmupPdfjsPreview({ whenIdle: true });
   }, []);
-
-  useEffect(() => {
-    if (!showContentsTab && activeTab === "contents") {
-      setActiveTab("attachments");
-    }
-  }, [showContentsTab, activeTab]);
 
   const visibleTabs = showContentsTab
     ? LEFT_PANEL_TABS
     : LEFT_PANEL_TABS.filter((tab) => tab.value === "attachments");
 
   const activeTabDef =
-    visibleTabs.find((tab) => tab.value === activeTab) ?? visibleTabs[0]!;
+    visibleTabs.find((tab) => tab.value === resolvedTab) ?? visibleTabs[0]!;
 
   if (collapsed) {
     const ActiveIcon = activeTabDef.icon;
@@ -103,7 +99,7 @@ export function DocumentsPanel({
           className="relative mt-1 flex size-9 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
         >
           <ActiveIcon className="size-4" aria-hidden="true" />
-          {activeTab === "attachments" && attachments.length > 0 ? (
+          {resolvedTab === "attachments" && attachments.length > 0 ? (
             <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
               {attachments.length}
             </span>
@@ -118,7 +114,7 @@ export function DocumentsPanel({
       <ExpandedDocumentsPanel
         onToggleCollapse={onToggleCollapse}
         showContentsTab={showContentsTab}
-        activeTab={activeTab}
+        activeTab={resolvedTab}
         onTabChange={setActiveTab}
         tableOfContents={tableOfContents}
         onJumpToSection={onJumpToSection}

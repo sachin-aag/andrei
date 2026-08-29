@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
+  ArrowLeftRight,
   CheckCircle2,
   ChevronLeft,
   Loader2,
@@ -20,16 +21,32 @@ import { ReportBulkSuggestionActions } from "./report-bulk-suggestion-actions";
 import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
-import { cn } from "@/lib/utils";
+import type { WorkspaceChrome, WorkProductView } from "./workspace-chrome";
 
-export type ReportWorkspaceSurface = "document" | "analytics";
+function oppositeWorkspaceChrome(chrome: WorkspaceChrome): WorkspaceChrome {
+  switch (chrome) {
+    case "document":
+      return "agent";
+    case "agent":
+      return "document";
+    default: {
+      const _exhaustive: never = chrome;
+      return _exhaustive;
+    }
+  }
+}
+
+const CHROME_SWITCH_NOUN: Record<WorkspaceChrome, string> = {
+  document: "Document",
+  agent: "Agent",
+};
 
 type ReportWorkspaceHeaderProps = {
   report: ReportRecord;
   mode: WorkspaceMode;
-  surface?: ReportWorkspaceSurface;
-  onSurfaceChange?: (surface: ReportWorkspaceSurface) => void;
-  showAnalyticsToggle?: boolean;
+  chrome: WorkspaceChrome;
+  onChromeChange: (chrome: WorkspaceChrome) => void;
+  workProductView: WorkProductView;
   authorName?: string;
   managerNames?: string[];
   canSubmit: boolean;
@@ -52,6 +69,9 @@ type ReportWorkspaceHeaderProps = {
 export function ReportWorkspaceHeader({
   report,
   mode,
+  chrome,
+  onChromeChange,
+  workProductView,
   authorName,
   managerNames = [],
   canSubmit,
@@ -69,14 +89,14 @@ export function ReportWorkspaceHeader({
   onEditDetails,
   showExpertReview = false,
   onExpertReview,
-  surface = "document",
-  onSurfaceChange,
-  showAnalyticsToggle = false,
 }: ReportWorkspaceHeaderProps) {
   const title = report.documentNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
   const isViewMode = mode === "view";
-  const documentSurface = surface === "document";
+  const showRunCriteria = !isViewMode && workProductView === "report";
+  const showBulkSuggestions = showRunCriteria && chrome === "document";
+  const nextChrome = oppositeWorkspaceChrome(chrome);
+  const switchLabel = `Switch to ${CHROME_SWITCH_NOUN[nextChrome]}`;
 
   return (
     <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">
@@ -118,63 +138,36 @@ export function ReportWorkspaceHeader({
           {managerNames.length > 0 ? ` → ${managerNames.join(", ")}` : ""}
         </span>
       </div>
-      {showAnalyticsToggle && onSurfaceChange ? (
-        <div
-          role="tablist"
-          aria-label="Report workspace"
-          className="flex shrink-0 rounded-md border border-[var(--border)] p-0.5"
-        >
-          <button
-            type="button"
-            role="tab"
-            data-testid="report-surface-document"
-            aria-selected={documentSurface}
-            onClick={() => onSurfaceChange("document")}
-            className={cn(
-              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-              documentSurface
-                ? "bg-[var(--secondary)] text-[var(--foreground)]"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            )}
-          >
-            Document
-          </button>
-          <button
-            type="button"
-            role="tab"
-            data-testid="report-surface-analytics"
-            aria-selected={!documentSurface}
-            onClick={() => onSurfaceChange("analytics")}
-            className={cn(
-              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-              !documentSurface
-                ? "bg-[var(--secondary)] text-[var(--foreground)]"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            )}
-          >
-            Analytics
-          </button>
-        </div>
-      ) : null}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="shrink-0"
+        data-testid="report-chrome-switch"
+        data-current-chrome={chrome}
+        onClick={() => onChromeChange(nextChrome)}
+      >
+        <ArrowLeftRight className="size-3.5" aria-hidden="true" />
+        {switchLabel}
+      </Button>
 
       <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
         <ReportExportButton
           reportId={report.id}
           sourceDocxFilename={report.sourceDocxFilename}
           documentType={report.documentType}
-          surface={surface}
+          surface={workProductView === "analytics" ? "analytics" : "document"}
         />
 
-        {!isViewMode && documentSurface ? <ReportBulkSuggestionActions /> : null}
-
-        {!isViewMode && documentSurface ? <RunAllEvaluationButton /> : null}
+        {showRunCriteria ? <RunAllEvaluationButton /> : null}
+        {showBulkSuggestions ? <ReportBulkSuggestionActions /> : null}
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>
             {submitting ? (
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             ) : (
-              <Send className="size-4" aria-hidden="true" />
+              <Send className="size-4" />
             )}
             Submit for review
           </Button>
@@ -191,7 +184,7 @@ export function ReportWorkspaceHeader({
               {sendingFeedback ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : (
-                <MessageSquare className="size-4" aria-hidden="true" />
+                <MessageSquare className="size-4" />
               )}
               Return with feedback
             </Button>
@@ -204,7 +197,7 @@ export function ReportWorkspaceHeader({
               {approving ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : (
-                <CheckCircle2 className="size-4" aria-hidden="true" />
+                <CheckCircle2 className="size-4" />
               )}
               Approve
             </Button>

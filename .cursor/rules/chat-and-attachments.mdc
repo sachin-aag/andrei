@@ -4,7 +4,12 @@ globs:
   - src/lib/ai/chat/**/*.ts
   - src/lib/attachments/**/*.ts
   - src/app/api/reports/**/chat/**/*.ts
+  - src/app/api/reports/**/analytics/chat/**/*.ts
   - src/app/api/reports/**/attachments/**/*.ts
+  - src/components/report/chat-*.tsx
+  - src/lib/statistical-analysis/chat-*.ts
+  - src/lib/statistical-analysis/mentions.ts
+  - src/lib/statistical-analysis/worksheet-sheet-options.ts
 alwaysApply: false
 ---
 
@@ -24,15 +29,33 @@ not quiz them for facts already in the section or that you would put in
 (filename/topics) is not evidence. Evidence preview is already in the
 system prompt when kickoff retrieval hits.
 
+## Spectrum
+
+Document and Agent share `ChatPanel` + `StatisticalWorkspace`. Document
+`/chat` and Analytics `/analytics/chat` are counterparts (section `@` vs
+sheet/plot `@`). A composer, mention, or tool change that only lands on one
+chrome or one surface is incomplete. Walk UI → request body → route parser →
+prompt → tools → `PLAN_MODE_CHAT_TOOL_NAMES` → retrieval-policy /
+already-drafted / stub → tests → docs. Removing a control means deleting
+that plumbing (`body.sectionScope`, `parseChat*`, switch-section tools,
+mismatch banners) — not hiding the dropdown. Scope is `@` mentions
+(`sectionScopeFromMentions`, analytics mention block). Bump
+`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION` when prompt copy
+changes.
+
 ## Prompt / tools
 
 - Untrusted metadata (`filename`, `description`, `documentSummary`,
   `pageContext`) → `sanitizePromptMetadata` in chat/tools. Never import that
   helper from `src/lib/attachments/`.
 - New tools: register in `buildChatTools` **and** add to the Plan allowlist in
-  `src/app/api/reports/[reportId]/chat/route.ts` (`mode === "plan"` object).
-  Missing from the allowlist = silent Plan-mode gap.
-- Bump `CHAT_PROMPT_VERSION` when `DOCUMENT_RULES` / plan-agent policy changes.
+  `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
+  Missing from the allowlist = silent Plan-mode gap. Analytics tools stay
+  off that list.
+- Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
+  + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
+  `ai_fix` comments). Document chrome **proposes**. Do not trust a client
+  `editPolicy` on a locked report. Plan-mode allowlist does not gain edit tools.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.
 

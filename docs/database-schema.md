@@ -52,6 +52,7 @@ npm run db:migrate
 | `section_type` | `define`, `measure`, `analyze`, `improve`, `control`, `documents_reviewed`, `attachments` |
 | `criterion_status` | `met`, `partially_met`, `not_met`, `not_evaluated` |
 | `comment_status` | `open`, `resolved` |
+| `document_revision_source` | `agent_turn` |
 
 ## Tables
 
@@ -139,12 +140,45 @@ Threaded comments; optional anchor to a section field and ProseMirror range for 
 | `status` | `comment_status` | Default `open` |
 | `created_at` | `timestamptz` | Default `now()` |
 
+### `document_revisions`
+
+One product History version of a report. Created after an Agent-chrome chat turn that wrote `report_sections`. Not the audit table (`section_content_versions`), which records every PATCH including human autosave.
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | `text` | Primary key |
+| `report_id` | `text` | FK → `reports.id`, cascade |
+| `revision_no` | `integer` | Per-report sequence; unique with `report_id` |
+| `source` | `document_revision_source` | v1: `agent_turn` |
+| `chat_session_id` | `text` | FK → `chat_sessions.id`, set null |
+| `chat_message_id` | `text` | FK → `chat_messages.id`, set null |
+| `summary` | `text` | One-line change summary from the turn |
+| `created_by` | `text` | Nullable actor id |
+| `created_at` | `timestamptz` | Default `now()` |
+
+**Indexes:** unique (`report_id`, `revision_no`); (`report_id`, `created_at`).
+
+### `document_revision_sections`
+
+Frozen section JSON for one History version, plus `reports.metadata` stored under section key `metadata`.
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | `text` | Primary key |
+| `revision_id` | `text` | FK → `document_revisions.id`, cascade |
+| `section` | `text` | Workspace section key or `metadata` |
+| `content` | `jsonb` | Snapshot of that section |
+| `content_hash` | `text` | `hashSectionContent` |
+
+**Index:** unique (`revision_id`, `section`).
+
 ## Relationship summary
 
 - `reports` 1 — * `report_sections`; deleting a report deletes its sections.
 - `reports` 1 — 0..1 `report_source_docx`; deleting a report deletes its stored import file.
 - `reports` 1 — * `criteria_evaluations` and `comments`.
 - `report_sections` 1 — * `criteria_evaluations` and optionally `comments` (via `section_id`).
+- `reports` 1 — * `document_revisions`; each revision 1 — * `document_revision_sections`.
 
 ## Related project files
 

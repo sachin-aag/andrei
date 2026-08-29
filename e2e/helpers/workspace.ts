@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { gotoWithNavigationRetry } from "./navigation";
 
 export function primaryNav(page: Page) {
   return page.getByRole("complementary", { name: "Primary navigation" });
@@ -102,10 +103,109 @@ export async function openReportAssistant(page: Page): Promise<void> {
 }
 
 export async function openReportAnalytics(page: Page): Promise<void> {
-  await page.getByTestId("report-surface-analytics").click();
+  const tab = page.getByTestId("report-surface-analytics");
+  await expect(tab).toBeVisible({ timeout: 30_000 });
+  await tab.click();
   await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
     timeout: 30_000,
   });
+}
+
+/** Report workspace shell + Define section are mounted in Document chrome. */
+export async function waitForReportEditor(page: Page): Promise<void> {
+  const chromeSwitch = page.getByTestId("report-chrome-switch");
+  await expect(chromeSwitch).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(async () => chromeSwitch.getAttribute("data-current-chrome"))
+    .toMatch(/^(document|agent)$/);
+
+  if ((await chromeSwitch.getAttribute("data-current-chrome")) !== "document") {
+    await setReportChrome(page, "document");
+  }
+
+  const defineHeading = page.getByRole("heading", { name: /^define$/i });
+  await expect(defineHeading).toBeVisible({ timeout: 30_000 });
+  await defineSection(page).scrollIntoViewIfNeeded();
+  await expect(defineEditor(page)).toBeVisible({ timeout: 30_000 });
+}
+
+export async function openReportEditor(
+  page: Page,
+  reportId: string,
+  opts?: { mode?: "edit" | "review" }
+): Promise<void> {
+  const mode = opts?.mode ?? "edit";
+  await gotoWithNavigationRetry(page, `/reports/${reportId}/${mode}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForReportEditor(page);
+}
+
+export async function expandWorkProductPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("report-work-product");
+  const expand = panel.getByRole("button", { name: /expand document panel/i });
+  if (await expand.isVisible()) {
+    await expand.click();
+  }
+  await expect(
+    panel.getByRole("button", { name: /collapse document panel/i })
+  ).toBeVisible();
+  // report-workspace animates width for 200ms when the Agent rail expands.
+  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBeGreaterThan(
+    52
+  );
+}
+
+/** Resize handle is absolutely positioned on the work-product column's left edge. */
+export async function expectDocumentPanelResizeHandleAligned(
+  page: Page
+): Promise<void> {
+  const panel = page.getByTestId("report-work-product");
+  const handle = page.getByRole("separator", {
+    name: /resize document panel/i,
+  });
+  await expect(handle).toBeVisible();
+  await expect.poll(async () => {
+    const [panelBox, handleBox] = await Promise.all([
+      panel.boundingBox(),
+      handle.boundingBox(),
+    ]);
+    if (!panelBox || !handleBox) return Number.POSITIVE_INFINITY;
+    return Math.abs(handleBox.x + handleBox.width / 2 - panelBox.x);
+  }).toBeLessThan(16);
+}
+
+export async function collapseWorkProductPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("report-work-product");
+  const collapse = panel.getByRole("button", {
+    name: /collapse document panel/i,
+  });
+  if (await collapse.isVisible()) {
+    await collapse.click();
+  }
+  await expect(
+    panel.getByRole("button", { name: /expand document panel/i })
+  ).toBeVisible();
+}
+
+export async function setReportChrome(
+  page: Page,
+  chrome: "document" | "agent"
+): Promise<void> {
+  const switchBtn = page.getByTestId("report-chrome-switch");
+  await expect(switchBtn).toBeVisible({ timeout: 30_000 });
+  if ((await switchBtn.getAttribute("data-current-chrome")) === chrome) {
+    return;
+  }
+  await switchBtn.click();
+  await expect(switchBtn).toHaveAttribute("data-current-chrome", chrome, {
+    timeout: 15_000,
+  });
+  if (chrome === "document") {
+    await expect(page.getByTestId("report-work-product")).toBeVisible({
+      timeout: 30_000,
+    });
+  }
 }
 
 /** Collapse the assistant so the review margin (suggestions/comments) can show. */
@@ -113,6 +213,7 @@ export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const collapse = sidebar.getByRole("button", { name: /collapse sidebar/i });
   if (await collapse.isVisible()) {
+    await expect(collapse).toBeEnabled({ timeout: 15_000 });
     await collapse.click();
     await expect(sidebar.getByRole("button", { name: /expand sidebar/i })).toBeVisible();
   }

@@ -5,7 +5,7 @@ This project uses three layers of quality checks:
 | Layer | Tool | Location | Count (approx.) |
 |-------|------|----------|-----------------|
 | **Unit / integration** | Vitest | `src/**/*.test.ts(x)` | ~76 files, ~345 tests |
-| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 10 spec files, ~42 cases × 3 browsers |
+| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 11 spec files, ~43 cases × 3 browsers |
 | **Manual** | Checklist | [docs/manual-test-cases.md](docs/manual-test-cases.md) | 6 release-candidate cases |
 
 `pnpm precommit` runs **lint + typecheck + Vitest only** (no E2E). CI runs Vitest and Playwright in separate jobs.
@@ -117,7 +117,7 @@ Documented in `.env.example` (local / CI only):
 
 | Variable | Effect |
 |----------|--------|
-| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login` and `POST /api/test/seed-auth-users` |
+| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login`, `POST /api/test/seed-auth-users`, `POST /api/test/seed-ai-suggestion`, and `POST /api/test/seed-document-revisions` |
 | `TEST_AUTH_EMAIL` | Default engineer email for test login (default: `test.engineer@mjbiopharm.com`) |
 | `ALLOW_TEST_SKIP_EVALUATION=true` | Stub all `evaluateSection()` calls (report editor AI Check) via `src/lib/ai/fixtures/stub-evaluations.json` |
 | `ALLOW_TEST_SKIP_SUGGESTIONS=true` | Stub AI suggestions with `src/lib/ai/fixtures/stub-suggestions.json` |
@@ -178,6 +178,17 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |
 | opens the assistant at the default width on a new report and after reload | Width is not kept across reports or reloads |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
+| Agent chrome puts chat in the center and work product on the right | Column order `docs.x < chat.x < canvas.x`; Analytics stays on the right; History on Report and Analytics (pane-scoped) |
+
+</details>
+
+<details>
+<summary><strong>document-revisions.spec.ts</strong> — History compare</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| compares two seeded versions inline and exits back to the live report | `POST /api/test/seed-document-revisions` (no Gemini); History → Compare shows ins/del; Exit restores Define |
+| records a coalesced manual version after a section save | PATCH Define after the two seeded Agent versions; History shows Version 3 · Edits |
 
 </details>
 
@@ -258,7 +269,8 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 
 | Test | What it verifies |
 |------|------------------|
-| opens the Analytics tab with an empty worksheet | `/reports/:id/edit` → Analytics → grid, Define hidden |
+| opens the Analytics tab with an empty worksheet | `/reports/:id/edit` → Analytics → grid, Define hidden; History is visible |
+| autosave settles to Saved and keeps later cell edits | Two cells persist; History shows Version 1 · Edits (Analytics compare is a cell/plot list, not a live grid overlay) |
 | loads sample assay and runs a Normal Capability Sixpack | Data menu sample → flattened Stat menu → Cp/Cpk sixpack |
 | saves a sixpack per column and switches between them | Analyze selected column + column context menu; Analyze data popup defaults to sixpack with Specs then min/max form defaults; two Results entries |
 | shift+arrow selects rows and runs a sixpack on that range | Range highlight, Analyze label, Sample N matches the span |
@@ -523,3 +535,7 @@ Workflow: `.github/workflows/ci.yml`
 | Full user journey | `e2e/*.spec.ts` — use `e2e/helpers/` |
 
 E2E patterns: unique deviation numbers (`uniqueDeviationNo`), `loginAsEngineer` / `loginAsManager`, `createReport` / `deleteReport` in `afterEach`.
+
+Colocate and name the test file after the source module. When you rename, split, or delete `foo.ts`, do the same to `foo.test.ts` — do not leave `section-scope.test.ts` after `section-scope.ts` is gone. Assert the current contract (e.g. `@` tags set scope). Do not keep tombstone tests (`not.toContain("old dropdown")`).
+
+Removals: grep the old symbol in `src/**/*.test.*` and `e2e/` before calling the change done. Chat/workspace counterparts: Document **and** Agent chrome, Report chat **and** Analytics chat. Update existing Playwright specs rather than inventing a new suite unless a gap remains. Stub chat cannot assert tool selection (`e2e/report-chat.spec.ts` is stream + persist only).

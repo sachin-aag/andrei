@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   hasPendingAttachments,
@@ -34,16 +34,10 @@ export function useDocumentUploadingNotice(input: string): boolean {
   const { attachments } = useReportAttachments();
   const pending = hasPendingAttachments(attachments);
   const [typedDuringPending, setTypedDuringPending] = useState(false);
+  const latched = pending && (typedDuringPending || input.length > 0);
+  if (latched !== typedDuringPending) {
+    setTypedDuringPending(latched);
+  }
 
-  useEffect(() => {
-    if (!pending) {
-      setTypedDuringPending(false);
-      return;
-    }
-    if (input.length > 0) {
-      setTypedDuringPending(true);
-    }
-  }, [input, pending]);
-
-  return shouldShowDocumentUploadingNotice(pending, typedDuringPending);
+  return shouldShowDocumentUploadingNotice(pending, latched);
 }

@@ -22,6 +22,13 @@ export const CHAT_FUNCTION_MAX_DURATION_SEC = 300;
 /** Must stay below `CHAT_FUNCTION_MAX_DURATION_SEC` so persist can run. */
 export const CHAT_SERVER_ABORT_MS = 270_000;
 
+/**
+ * Bound `consumeStream()` so Next `after()` can still `clearAssistantTurn`
+ * before Vercel kills the isolate. The SDK timeout does not always stop
+ * consume after a tool-call parse error.
+ */
+export const CHAT_CONSUME_STREAM_BUDGET_MS = CHAT_SERVER_ABORT_MS + 15_000;
+
 /** Show a still-working hint after this long with no new visible part. */
 export const CHAT_CLIENT_STALE_MS = 25_000;
 
@@ -305,6 +312,35 @@ export function formatChatLlmError(error: unknown): string {
     return JSON.stringify(error);
   } catch {
     return "unknown error";
+  }
+}
+
+/**
+ * Wait for the SDK stream to drain, but never past the isolate budget.
+ * A hung consume after `NoSuchToolError` used to pin `after()` until
+ * Vercel killed the function, so `onFinish` never cleared the turn.
+ */
+export async function consumeAssistantStreamWithBudget(
+  consume: () => PromiseLike<void>,
+  budgetMs = CHAT_CONSUME_STREAM_BUDGET_MS
+): Promise<"completed" | "timed_out"> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const consumePromise = Promise.resolve(consume()).then(
+    () => "completed" as const
+  );
+  try {
+    const outcome = await Promise.race([
+      consumePromise,
+      new Promise<"timed_out">((resolve) => {
+        timeoutId = setTimeout(() => resolve("timed_out"), budgetMs);
+      }),
+    ]);
+    if (outcome === "timed_out") {
+      void consumePromise.catch(() => undefined);
+    }
+    return outcome;
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
 }
 

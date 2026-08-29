@@ -339,6 +339,10 @@ export function TiptapSectionField({
     acknowledgeCommentFocus,
   } = useReportComments();
   const { focusedPanelPlaceholderId } = useReportPlaceholders();
+  const focusedPanelPlaceholderIdRef = useRef(focusedPanelPlaceholderId);
+  useEffect(() => {
+    focusedPanelPlaceholderIdRef.current = focusedPanelPlaceholderId;
+  }, [focusedPanelPlaceholderId]);
   const { registerEditor, setActiveEditor, activeEditorKey } = useReportEditors();
   const isRichField = isRichTargetField(section, contentPath);
   const thisEditorKey = editorRegistryKey(section, contentPath);
@@ -386,13 +390,18 @@ export function TiptapSectionField({
     []
   );
 
+  // Keep this extension identity stable. `useEditor` rebuilds the whole
+  // ProseMirror view when an extension object changes; doing that on panel
+  // fill-input focus leaves a ghost caret (input looks focused, keys go
+  // nowhere). Decorations refresh via `placeholderRefreshMeta` below.
   const placeholderHighlightExtension = useMemo(
     () =>
       createPlaceholderHighlightExtension(
-        () => focusedPanelPlaceholderId,
+        // eslint-disable-next-line react-hooks/refs -- ProseMirror calls this getter on refresh, not during render
+        () => focusedPanelPlaceholderIdRef.current,
         { section, contentPath }
       ),
-    [focusedPanelPlaceholderId, section, contentPath]
+    [section, contentPath]
   );
 
   const citationsAtEndOfSection = citationsAtEndOfSectionFor(report.documentType);
@@ -466,6 +475,7 @@ export function TiptapSectionField({
   const editor = useEditor(
     {
       immediatelyRender: false,
+      autofocus: false,
       extensions: [
         StarterKit.configure({
           heading: headingEnabled ? { levels: [1, 2, 3] } : false,

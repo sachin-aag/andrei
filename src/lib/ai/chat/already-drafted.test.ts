@@ -51,7 +51,7 @@ describe("detectAlreadyDraftedSection", () => {
     expect(found).toEqual({ section: "testers_dates", fillState: "filled" });
   });
 
-  it("uses the section dropdown when the message says draft this section", () => {
+  it("uses the tagged section when the message says draft this section", () => {
     const found = detectAlreadyDraftedSection({
       userText: "draft this section",
       sectionScope: "testers_dates",

@@ -18,6 +18,30 @@ describe("parseChatComposerPrefs", () => {
     });
   });
 
+  it("keeps an Agent-chrome Report | Analytics target", () => {
+    expect(
+      parseChatComposerPrefs({
+        mode: "agent",
+        pace: "quick",
+        chatTarget: "analytics",
+      })
+    ).toEqual({
+      mode: "agent",
+      pace: "quick",
+      chatTarget: "analytics",
+    });
+    expect(
+      parseChatComposerPrefs({
+        mode: "agent",
+        pace: "quick",
+        chatTarget: "worksheet",
+      })
+    ).toEqual({
+      mode: "agent",
+      pace: "quick",
+    });
+  });
+
   it("rejects missing, unknown, or garbage values", () => {
     expect(parseChatComposerPrefs(null)).toBeNull();
     expect(parseChatComposerPrefs("deep")).toBeNull();

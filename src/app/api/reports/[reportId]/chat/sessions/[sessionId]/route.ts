@@ -14,7 +14,7 @@ export async function GET(
   const access = await loadAccessibleReport(reportId, user);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const view = await loadSessionView(reportId, sessionId, "report");
+  const view = await loadSessionView(reportId, sessionId);
   if (!view) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   return NextResponse.json(view);

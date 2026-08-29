@@ -11,13 +11,32 @@ const {
   readDocumentOutlineMock,
   listReadyDocumentsForReportMock,
   listDocumentPagesForReviewMock,
+  dbSelectMock,
+  dbInsertMock,
+  commitChatEditMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
   listReadyDocumentsForReportMock: vi.fn(),
   listDocumentPagesForReviewMock: vi.fn(),
+  dbSelectMock: vi.fn(),
+  dbInsertMock: vi.fn(),
+  commitChatEditMock: vi.fn(),
 }));
 
-vi.mock("@/db", () => ({ db: {} }));
+vi.mock("@/db", () => ({
+  db: {
+    select: (...args: unknown[]) => dbSelectMock(...args),
+    insert: (...args: unknown[]) => dbInsertMock(...args),
+  },
+}));
+
+vi.mock("@/lib/ai/chat/commit-edit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ai/chat/commit-edit")>();
+  return {
+    ...actual,
+    commitChatEdit: (...args: unknown[]) => commitChatEditMock(...args),
+  };
+});
 
 vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/attachments/retrieval")>();
@@ -90,7 +109,7 @@ describe("collectSearchQueries", () => {
 });
 
 describe("buildChatTools search_documents scoping", () => {
-  it("has no scope switch when nothing is tagged", () => {
+  it("leaves search scope unset when nothing is tagged", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
 
     expect(
@@ -828,5 +847,107 @@ describe("buildChatTools document review", () => {
         })
       );
     });
+  });
+});
+
+const DEFINE_NARRATIVE = {
+  type: "doc",
+  content: [
+    {
+      type: "paragraph",
+      content: [
+        { type: "text", text: "The assay failed due to temperature drift." },
+      ],
+    },
+  ],
+};
+
+function mockDefineSectionSelect() {
+  const where = vi.fn().mockResolvedValue([
+    {
+      id: "sec-1",
+      reportId: "report-1",
+      section: "define",
+      content: { narrative: DEFINE_NARRATIVE },
+    },
+  ]);
+  dbSelectMock.mockReturnValue({ from: () => ({ where }) });
+}
+
+describe("buildChatTools propose vs commit", () => {
+  const actor = {
+    id: "engineer-1",
+    name: "Engineer",
+    role: "engineer" as const,
+  };
+
+  beforeEach(() => {
+    dbSelectMock.mockReset();
+    dbInsertMock.mockReset();
+    commitChatEditMock.mockReset();
+    mockDefineSectionSelect();
+    dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+    commitChatEditMock.mockResolvedValue({
+      status: "applied",
+      section: "define",
+      targetField: "narrative",
+      summary: "Name the actual cause.",
+    });
+  });
+
+  const editInput = {
+    section: "define" as const,
+    targetField: "narrative",
+    anchorText: "temperature drift",
+    deleteText: "temperature drift",
+    insertText: "humidity excursion",
+    reasoning: "Name the actual cause.",
+  };
+
+  it("inserts an ai_fix comment in propose mode and does not commit", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+    expect(commitChatEditMock).not.toHaveBeenCalled();
+  });
+
+  it("commits in agent chrome and never inserts a suggestion comment", async () => {
+    const turnEdits: Array<{
+      section: string;
+      targetField: string;
+      reasoning: string;
+    }> = [];
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "commit",
+      turnEdits,
+    });
+    const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    expect(result).toMatchObject({
+      status: "applied",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(commitChatEditMock).toHaveBeenCalledTimes(1);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(turnEdits).toEqual([
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Name the actual cause.",
+      },
+    ]);
   });
 });

@@ -1,4 +1,4 @@
-import type { DocumentType, SectionType } from "@/db/schema";
+import type { DocumentType } from "@/db/schema";
 import type { ChatSectionScope } from "@/lib/ai/chat/fields";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import { requirementIds } from "@/lib/attachments/ocr-quality";
@@ -58,7 +58,7 @@ const FALLBACK_INVENTORY_SECTIONS = new Set<string>([
 export type ClassifyRetrievalPolicyInput = {
   userText: string;
   recentUserTexts?: readonly string[];
-  sectionScope?: ChatSectionScope | SectionType | "all";
+  sectionScope?: ChatSectionScope;
   documentType?: DocumentType;
   mentionedPageCount?: number;
   totalReadyPages?: number;

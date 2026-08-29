@@ -77,6 +77,7 @@ type ReportAttachmentsContextValue = {
   activePage: number;
   openDocument: (id: string, page?: number) => void;
   closeDocument: () => void;
+  documentOpenEpoch: number;
   uploadFiles: (files: FileList, folderId?: FolderId) => Promise<void>;
   removeAttachment: (id: string) => Promise<void>;
   retryAttachment: (id: string) => Promise<void>;
@@ -124,6 +125,7 @@ export function ReportAttachmentsProvider({
   >({});
   const [activeAttachment, setActiveAttachment] =
     useState<ActiveAttachment | null>(null);
+  const [documentOpenEpoch, setDocumentOpenEpoch] = useState(0);
   const [quotaWarning, setQuotaWarning] = useState<string | null>(null);
   const quotaWarningShownRef = useRef(false);
   const rateSamplesRef = useRef(new Map<string, RateSample[]>());
@@ -179,6 +181,7 @@ export function ReportAttachmentsProvider({
 
   const openDocument = useCallback((id: string, page = 1) => {
     setActiveAttachment({ id, page: Math.max(1, page) });
+    setDocumentOpenEpoch((epoch) => epoch + 1);
   }, []);
 
   const closeDocument = useCallback(() => {
@@ -655,6 +658,7 @@ export function ReportAttachmentsProvider({
       activePage: activeAttachment?.page ?? 1,
       openDocument,
       closeDocument,
+      documentOpenEpoch,
       uploadFiles,
       removeAttachment,
       retryAttachment,
@@ -676,6 +680,7 @@ export function ReportAttachmentsProvider({
       activeAttachmentRecord,
       openDocument,
       closeDocument,
+      documentOpenEpoch,
       uploadFiles,
       removeAttachment,
       retryAttachment,

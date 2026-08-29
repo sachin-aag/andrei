@@ -28,6 +28,11 @@ import {
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
 import { sourceDocxFilenameFor } from "@/lib/reports/persist-source-docx";
+import { DOCUMENT_REVISION_METADATA_SECTION } from "@/lib/document-revisions/constants";
+import {
+  manualRevisionSummary,
+  tryRecordManualDocumentRevision,
+} from "@/lib/document-revisions/snapshot";
 import {
   investigationOtherTools,
   investigationToolsUsed,
@@ -234,6 +239,25 @@ export async function PATCH(
       assignedManagerIds: updatedWithManagers.assignedManagerIds,
     },
   });
+
+  const documentContentChanged =
+    parsed.date !== undefined ||
+    parsed.metadata !== undefined ||
+    parsed.documentNo !== undefined ||
+    parsed.deviationNo !== undefined ||
+    parsed.toolsUsed !== undefined ||
+    parsed.otherTools !== undefined;
+  if (documentContentChanged) {
+    await tryRecordManualDocumentRevision({
+      reportId,
+      documentType: existingReport.documentType,
+      createdBy: user.id,
+      summary: manualRevisionSummary(
+        existingReport.documentType,
+        DOCUMENT_REVISION_METADATA_SECTION
+      ),
+    });
+  }
 
   return NextResponse.json({ report: updatedWithManagers });
 }

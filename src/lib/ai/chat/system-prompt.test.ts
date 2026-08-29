@@ -17,9 +17,9 @@ describe("isChatMode", () => {
 });
 
 describe("buildChatSystemPrompt", () => {
-  it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
+  it("pins the current chat prompt version", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v50-already-drafted-gap-hints"
+      "chat-v53-drop-section-switch"
     );
   });
 
@@ -239,6 +239,7 @@ describe("buildChatSystemPrompt", () => {
       includePlotMeasurements: true,
     });
     expect(prompt).toContain("Section focus: Define [define]");
+    expect(prompt).toContain("The engineer tagged **Define**");
     expect(prompt).toContain('on section "define"');
     expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image");
     expect(prompt).toContain("DEFINE_ONLY");
@@ -274,39 +275,6 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("ask whether they want a specific change");
     expect(prompt).toContain("partial: Date range");
     expect(prompt).toContain("Material gap only");
-  });
-
-  it("omits review-first guidance when a scope mismatch is pending", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "agent",
-      sectionScope: "purpose",
-      documentType: "mechanical_design_verification",
-      alreadyDrafted: { section: "testers_dates", fillState: "filled" },
-      scopeMismatch: {
-        currentSection: "purpose",
-        suggestedSection: "testers_dates",
-        reason: "Looks like Testers/Dates.",
-      },
-    });
-    expect(prompt).toContain("Section scope mismatch (detected)");
-    expect(prompt).not.toContain("Already drafted (review first)");
-  });
-
-  it("includes scope mismatch guidance when detected", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "plan",
-      sectionScope: "define",
-      scopeMismatch: {
-        currentSection: "define",
-        suggestedSection: "analyze",
-        reason: "Looks like Analyze.",
-      },
-    });
-    expect(prompt).toContain("Section scope mismatch (detected)");
-    expect(prompt).toContain('suggest_section_scope');
-    expect(prompt).toContain("Analyze");
   });
 
   it("includes the report context and criteria in both modes", () => {
@@ -456,5 +424,26 @@ describe("buildChatSystemPrompt", () => {
       sectionScope: "define",
     });
     expect(planDefine).not.toContain("## Analyze questions");
+  });
+
+  it("tells the model edits apply immediately when editPolicy is commit", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      editPolicy: "commit",
+    });
+    expect(prompt).toContain("apply edits immediately");
+    expect(prompt).toContain("written to the document immediately");
+    expect(prompt).not.toContain("nothing is applied until they accept it");
+  });
+
+  it("keeps propose-and-review copy when editPolicy is propose", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      editPolicy: "propose",
+    });
+    expect(prompt).toContain("nothing is applied until they accept it");
+    expect(prompt).not.toContain("written to the document immediately");
   });
 });

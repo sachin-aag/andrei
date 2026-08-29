@@ -5,7 +5,6 @@ import { Separator } from "@/components/ui/separator";
 import { useReportData, useReportEditors } from "@/providers/report-provider";
 import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 import { AdvancedFormattingToolbar } from "@/components/report/advanced-formatting-toolbar";
-import { CommentsGutterToggle } from "@/components/report/comments-gutter-toggle";
 import { TrackChangesToggle } from "@/components/report/track-changes-toggle";
 import {
   FontColorToolbar,
@@ -44,15 +43,7 @@ function activeFieldLabel(activeFieldKey: string | null): string | null {
   return FIELD_LABELS[activeFieldKey] ?? activeFieldKey.replace(":", " · ");
 }
 
-type Props = {
-  commentsGutterVisible: boolean;
-  onCommentsGutterVisibleChange: (next: boolean) => void;
-};
-
-export function ReportEditorToolbar({
-  commentsGutterVisible,
-  onCommentsGutterVisibleChange,
-}: Props) {
+export function ReportEditorToolbar() {
   const { report, readOnly, trackChangesMode, setTrackChangesMode, workspaceMode } =
     useReportData();
   const { activeFieldKey, activeFieldKind, getActiveEditor } = useReportEditors();
@@ -130,11 +121,6 @@ export function ReportEditorToolbar({
           Plain text — formatting, tables, and equations are not available in this field.
         </span>
       ) : null}
-
-      <CommentsGutterToggle
-        checked={commentsGutterVisible}
-        onCheckedChange={onCommentsGutterVisibleChange}
-      />
     </div>
   );
 }

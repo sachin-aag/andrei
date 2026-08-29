@@ -58,16 +58,18 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 ### Key directories
 
-- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, and `export`/`complete-export` (DOCX).
+- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, `revisions` (product History snapshots + inline diff), and `export`/`complete-export` (DOCX).
 - `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
 - `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `reports/[reportId]/{purge,source-docx}`.
 - `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Currently backed by `src/lib/insights/mock-data.ts`.
 - `src/app/api/site-access/` — Site-wide password gate (see Site Access subsystem).
 - `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
-- `src/components/report/` — Editor UI: `report-workspace.tsx` (header + Document/Analytics toggle + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results + analytics chat), `review-rail/` (manager comment margin UI).
+- `src/components/report/` — Editor UI: `report-workspace.tsx` (header Document | Agent chrome + work-product Report | Analytics pane + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results + analytics chat), `review-rail/` (manager comment margin UI), History compare (`document-revision-history.tsx` / `document-revision-diff.tsx` / `analytics-revision-diff.tsx`).
 - `src/components/statistical-analysis/` — Report Analytics worksheet grid, Stat menu, sixpack/scatter SVG, capability and plot-measurements dialogs, stats chat panel.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
-- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
+- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, `documentRevisions`/`documentRevisionSections` (document History — not the audit chain), `analyticsRevisions` (Analytics History), plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
+- `src/lib/document-revisions/` — Document product History snapshots (`snapshot.ts`) and inline compare (`inline-diff.ts`). One row per Agent-chrome report turn, or one coalesced row per human editing burst (30s idle). Compare diffs prose, every table by index, and added/removed figures. Worksheet writes are `analyticsRevisions`, not document versions.
+- `src/lib/analytics-revisions/` — Analytics product History (worksheet + plots snapshot, idle-coalesced). Compare is a cell/plot list, not TipTap.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
 - `src/lib/document-types/` — Registry for `investigation_report`, `design_verification`, `mechanical_design_verification`, `quality_risk_assessment`, and `generic_document` (sections, criteria, prompts, chat persona, merge).
 - `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
@@ -264,7 +266,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 **Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR), attachment measurement scatter, worksheet XY scatter, and one-way ANOVA. Lives on the report **Analytics** tab (same attachments as the document). On for demo, MJ, and Convergent (`statisticalAnalysisEnabled`). Not a document type, not TipTap, and not DMAIC chat. Convergent Document chat does **not** propose `plot_measurements` figures — those plots live in Analytics.
 
 **Entry points:**
-- Report workspace header: Document | Analytics (`data-testid="report-surface-analytics"`)
+- Report workspace header: Document | Agent switch (`data-testid="report-chrome-switch"`, `data-current-chrome`). Chrome is persisted per user + report in localStorage (`workspaceChrome:v1`). Switching to Agent seeds the composer Report | Analytics target from the focused pane. Analytics is a work-product pane (`data-testid="report-surface-analytics"`), not a third chrome.
 - `GET/PATCH/POST /api/reports/[reportId]/analytics` (`POST` aliases `PATCH` for autosave beacons)
 - `POST .../analytics/analyses` creates a sixpack (default), `kind: "measurement_scatter"`, `kind: "xy_scatter"`, or `kind: "one_way_anova"`; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
 - `POST /api/reports/[reportId]/analytics/chat` — stats-only assistant (`ANALYTICS_CHAT_PROMPT_VERSION`, surface `analytics`)
@@ -278,9 +280,9 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 6. `Stat → One-Way ANOVA…` (or analytics `run_one_way_anova`) compares a numeric response by a factor column on the same sheet. Pairwise tests are Bonferroni t-tests using the ANOVA MSE (not Tukey). Each run **inserts** a new Results row.
 7. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks a sixpack, ANOVA, or XY scatter **stale** (`sourceHash`); attachment measurement scatter is not worksheet-stale. Recompute refreshes only that row. **Download** saves a CSV.
 
-**Chat:** Tools are search/outline/scan/page/extract/worksheet (`read_worksheet`, `write_column`, `manage_worksheet` for sheets/columns/rows)/sixpack/ANOVA/XY scatter/attachment scatter. Analytics `search_documents` is keyword-first and must not reuse Document-chat grep-loop copy (`truncated` is not a reason to search again). After a cited page, a page read/scan/extract, or two empty greps, search is hidden for the rest of the turn. Images, Quick/Deep, and Ask vs Agent match Document chat. Ask searches and extracts only; Agent can `manage_worksheet`, `write_column`, run a sixpack, run one-way ANOVA, plot two worksheet columns (`plot_xy_scatter`), and plot measurements when the report is writable. Scatters are one series, one color: `plot_xy_scatter` needs two numeric columns (a label/serial column cannot be X); `plot_measurements` is one attachment series vs observation index. Do not substitute sixpack/ANOVA for a scatter, and do not overlay or color by group. No `propose_edit` / `draft_field`. Do not add those tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
+**Chat:** Same shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep) in both chromes. `@` tags sheets, plots, and files; `worksheet-sheet-options.ts` only lists data sheets for those chips — there is no sheet-scope dropdown. Tools are search/outline/scan/page/extract/worksheet (`read_worksheet`, `write_column`, `manage_worksheet` for sheets/columns/rows)/sixpack/ANOVA/XY scatter/attachment scatter. Analytics `search_documents` is keyword-first and must not reuse Document-chat grep-loop copy (`truncated` is not a reason to search again). After a cited page, a page read/scan/extract, or two empty greps, search is hidden for the rest of the turn. Images, Quick/Deep, and Ask vs Agent match Document chat. Ask searches and extracts only; Agent can `manage_worksheet`, `write_column`, run a sixpack, run one-way ANOVA, plot two worksheet columns (`plot_xy_scatter`), and plot measurements when the report is writable. Scatters are one series, one color: `plot_xy_scatter` needs two numeric columns (a label/serial column cannot be X); `plot_measurements` is one attachment series vs observation index. Do not substitute sixpack/ANOVA for a scatter, and do not overlay or color by group. No `propose_edit` / `draft_field`. Do not add those tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`). Bump `ANALYTICS_CHAT_PROMPT_VERSION` when analytics prompt copy changes.
 
-**Key invariant:** Analyses do not silently change when the worksheet changes, and a new run never overwrites an earlier sixpack. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave). Worksheet PATCH is version-guarded (`statistical_workspaces.version`); a 409 returns the current analytics so the grid can reload instead of last-write-wins. Chat `write_column` / `manage_worksheet` retry once on conflict. `write_column` reports `nonNumericCells` instead of implying a full numeric fill.
+**Key invariant:** Analyses do not silently change when the worksheet changes, and a new run never overwrites an earlier sixpack. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave). Worksheet PATCH is version-guarded (`statistical_workspaces.version`); a 409 returns the current analytics so the grid can reload instead of last-write-wins. Chat `write_column` / `manage_worksheet` retry once on conflict. `write_column` reports `nonNumericCells` instead of implying a full numeric fill. Product History for Analytics is `analyticsRevisions` (idle-coalesced worksheet bursts; each plot create/recompute/delete is its own version). Audit events `worksheet_updated` / `analysis_*` use entity `analytics`. Do not fold worksheet JSON into `documentRevisions`.
 
 ## Subsystem: Audit Trail & E-Signatures
 
@@ -294,24 +296,27 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - `verify-password-for-signing.ts` + `workflow-sign.ts` — re-authenticate the user's password before a signed transition; `handleWorkflowSignRequest()` (`workflow-handler.ts`) is the signed submit/approve/feedback handler.
 - Export/review: `export.ts` + `audit-csv.ts` (CSV export), viewed in `src/app/admin/audit/`.
 
-**Key invariant:** The chain is append-only; content edits go through `hashSectionContent()` and version snapshots, never in-place history rewrites.
+**Key invariant:** The audit chain is append-only; content edits go through `hashSectionContent()` and version snapshots, never in-place rewrites of `sectionContentVersions`. Do not use that table as the product History UI — it records every PATCH including human autosave. Document History is `documentRevisions`. Analytics History is `analyticsRevisions`; worksheet/plot mutations also append `worksheet_updated` / `analysis_*` audit events (entity `analytics`). An open `manual` document History row may be updated in place during a typing burst; Agent rows and idle-closed manual rows are never rewritten.
 
 ## Subsystem: AI Chat
 
-**Purpose:** Per-report conversational assistant that can read report context, search attachments, and propose edits.
+**Purpose:** Per-report conversational assistant that can read report context, search attachments, and propose or commit edits.
 
-**Entry point:** `POST /api/reports/[reportId]/chat` — `streamText()` (via `resolveChatLanguageModel()`) with tools from `buildChatTools()`, streamed back with `toUIMessageStreamResponse()`. Sessions/messages persist in `chatSessions`/`chatMessages` and are managed under `chat/sessions/[sessionId]`.
+**Entry point:** `POST /api/reports/[reportId]/chat` — `streamText()` (via `resolveChatLanguageModel()`) with tools from `buildChatTools()`, streamed back with `toUIMessageStreamResponse()`. Sessions/messages persist in `chatSessions`/`chatMessages` and are managed under `chat/sessions/[sessionId]`. Body includes `workspaceChrome`; the server derives `editPolicy` (`propose` in Document chrome, `commit` in Agent chrome when `canSaveReportSection`). Do not trust a client `editPolicy`.
 
 **Logic in `src/lib/ai/chat/`:**
-- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`
+- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`; commit copy when `editPolicy` is `commit`
+- `edit-policy.ts` / `commit-edit.ts` — Agent chrome writes `report_sections` in a `FOR UPDATE` transaction; Document chrome still inserts suggestion comments
 - `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
 - `context-map.ts` — serializes report state + ready docs (sanitized `summary=`)
 - `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools, pack-gated `plot_measurements` (off for Convergent Document chat); sanitizes untrusted metadata here (not in `src/lib/attachments/`)
-- `fields.ts` / `section-scope.ts` — type-specific editable sections (`chatEditableSections`)
-- `mentions.ts` — `@` documents/sections
+- `fields.ts` — type-specific editable sections (`chatEditableSections`); tagged `@` sections set chat scope. Do not keep investigation-only constants like `CHAT_EDITABLE_SECTIONS`.
+- `mentions.ts` — `@` documents/sections. Scope is `sectionScopeFromMentions` (one tagged section focuses prompt/tools; none tagged = all). There is no composer section dropdown and no `body.sectionScope`.
 - `propose-edit.ts`, `session-title.ts`, `access.ts`
 
-**Plan-mode allowlist** in `chat/route.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, optional `suggest_section_scope`. New tools must be added here or they are silently missing in Plan.
+**Plan-mode allowlist** in `src/lib/ai/chat/document-review.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, plus document-review tools. New tools must be added here or they are silently missing in Plan. Analytics worksheet/plot tools stay off this list.
+
+**Spectrum:** Document and Agent share `ChatPanel`. Composer/scope/tool changes must cover Document | Agent chrome, `/chat` **and** `/analytics/chat`, prompt versions (`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`), Plan allowlist, retrieval-policy, already-drafted, stub model, colocated tests, and `AGENTS.md` / this file / `.cursor/rules/chat-and-attachments.mdc`. Removing a control means deleting parsers, prompt copy, switch-section tools, and tests for it — not hiding the UI.
 
 **Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
 
@@ -347,7 +352,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 - Vitest config: `vitest.config.ts`, environment `node`, setup file `src/test/setup.ts` (imports `@testing-library/jest-dom/vitest`). Mock `@/db` when a module loads `DATABASE_URL` at import time.
 - E2E: Playwright with chromium, base URL `http://127.0.0.1:3000`, config in `playwright.config.ts`. Local `reuseExistingServer` is on — see gotchas.
-- Test files live alongside source: `*.test.ts` / `*.test.tsx`.
+- Test files live alongside source: `*.test.ts` / `*.test.tsx`. Rename, split, or delete the test file when the source module changes; do not keep tombstone `not.toContain("old UI")` tests. Removals: grep the old symbol in tests and `e2e/` first.
 - Full E2E details, artifact locations, and test catalog: `TESTING.md`.
 - `pnpm precommit` runs lint + typecheck + Vitest only (no E2E). CI runs them in separate jobs.
 

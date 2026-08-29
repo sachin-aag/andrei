@@ -11,6 +11,7 @@ export {
   CHAT_TURN_STALE_MS,
   isAssistantTurnStale,
   isChatAssistantTurnActive,
+  isChatAssistantTurnInFlight,
   type ChatAssistantTurnStatus,
   type ChatSessionTurnState,
 } from "@/lib/ai/chat/background-turn-status";
@@ -91,9 +92,46 @@ export async function tryMarkAssistantTurnRunning(
   return Boolean(row);
 }
 
+/**
+ * Clear a `running` / `cancel_requested` row whose isolate is gone
+ * (missing start, or older than the function budget). A fresh
+ * `cancel_requested` is left alone so the live isolate can still abort.
+ */
+export async function reclaimStaleAssistantTurn(
+  sessionId: string,
+  now = new Date()
+): Promise<boolean> {
+  const staleBefore = new Date(now.getTime() - CHAT_TURN_STALE_MS);
+  const [row] = await db
+    .update(chatSessions)
+    .set({
+      assistantTurnStatus: "idle",
+      assistantTurnStartedAt: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        or(
+          eq(chatSessions.assistantTurnStatus, "running"),
+          eq(chatSessions.assistantTurnStatus, "cancel_requested")
+        ),
+        or(
+          isNull(chatSessions.assistantTurnStartedAt),
+          lt(chatSessions.assistantTurnStartedAt, staleBefore)
+        )
+      )
+    )
+    .returning({ id: chatSessions.id });
+  return Boolean(row);
+}
+
 export async function requestAssistantTurnCancel(
   sessionId: string
 ): Promise<boolean> {
+  if (await reclaimStaleAssistantTurn(sessionId)) {
+    return true;
+  }
   const now = new Date();
   const [row] = await db
     .update(chatSessions)

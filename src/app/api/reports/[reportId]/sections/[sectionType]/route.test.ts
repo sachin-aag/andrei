@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
+import { tryRecordManualDocumentRevision } from "@/lib/document-revisions/snapshot";
 import { PATCH } from "@/app/api/reports/[reportId]/sections/[sectionType]/route";
 
 vi.mock("@/db", () => ({
@@ -22,6 +23,13 @@ vi.mock("@/lib/audit", () => ({
     role: user.role,
   })),
   recordSectionVersion: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@/lib/document-revisions/snapshot", () => ({
+  manualRevisionSummary: vi.fn(
+    (_type: string, section: string) => `Edited ${section}`
+  ),
+  tryRecordManualDocumentRevision: vi.fn().mockResolvedValue(null),
 }));
 
 const engineer = {
@@ -142,6 +150,14 @@ describe("PATCH /api/reports/[reportId]/sections/[sectionType]", () => {
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toEqual({ section: updated });
       expect(db.update).toHaveBeenCalled();
+      expect(tryRecordManualDocumentRevision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reportId: "report-1",
+          documentType: "investigation_report",
+          createdBy: manager.id,
+          summary: "Edited define",
+        })
+      );
     }
   );
 

@@ -53,6 +53,11 @@ import {
   type WorksheetData,
 } from "@/lib/statistical-analysis/types";
 import { analysisListSubtitle, withLocalStale } from "@/lib/statistical-analysis/stale";
+import { chatSheetOptionsFromWorksheet } from "@/lib/statistical-analysis/worksheet-sheet-options";
+import {
+  publishWorksheetSheets,
+  unpublishLiveWorksheetSheets,
+} from "@/lib/statistical-analysis/worksheet-sheets-store";
 import { AnalyzeDialog } from "@/components/statistical-analysis/analyze-dialog";
 import { CapabilityDialog } from "@/components/statistical-analysis/capability-dialog";
 import { AnovaDialog } from "@/components/statistical-analysis/anova-dialog";
@@ -186,6 +191,18 @@ export function StatisticalWorkspace({
   useLayoutEffect(() => {
     versionRef.current = version;
   }, [version]);
+  useEffect(() => {
+    publishWorksheetSheets(
+      reportId,
+      chatSheetOptionsFromWorksheet(worksheet),
+      { live: true }
+    );
+  }, [reportId, worksheet]);
+  useEffect(() => {
+    return () => {
+      unpublishLiveWorksheetSheets(reportId);
+    };
+  }, [reportId]);
 
   const applyAnalytics = useCallback((
     next: ReportAnalyticsView,

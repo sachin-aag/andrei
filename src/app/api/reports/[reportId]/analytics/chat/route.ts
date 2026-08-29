@@ -10,6 +10,7 @@ import { requireAnalyticsAccess } from "@/lib/statistical-analysis/access";
 import { buildAnalyticsChatSystemPrompt } from "@/lib/statistical-analysis/chat-prompt";
 import { ANALYTICS_CHAT_PROMPT_VERSION } from "@/lib/statistical-analysis/chat-prompt";
 import { buildAnalyticsChatTools } from "@/lib/statistical-analysis/chat-tools";
+import { auditActorFromUser } from "@/lib/audit";
 import {
   ANALYTICS_CHAT_STEP_BUDGET,
   createAnalyticsSearchGate,
@@ -29,7 +30,6 @@ import {
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
 import {
-  ANALYTICS_CHAT_SURFACE,
   createChatSession,
   findChatSession,
   touchChatSession,
@@ -61,9 +61,11 @@ import {
   resolveAnalyticsChatMentions,
 } from "@/lib/statistical-analysis/mentions";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   CHAT_SERVER_ABORT_MS,
+  consumeAssistantStreamWithBudget,
   formatChatLlmError,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
@@ -114,13 +116,12 @@ export async function POST(
   if (sessionId) {
     const found = await findChatSession(
       reportId,
-      sessionId,
-      ANALYTICS_CHAT_SURFACE
+      sessionId
     );
     if (!found) sessionId = "";
   }
   if (!sessionId) {
-    sessionId = (await createChatSession(reportId, ANALYTICS_CHAT_SURFACE)).id;
+    sessionId = (await createChatSession(reportId)).id;
   }
 
   const claimed = await tryMarkAssistantTurnRunning(sessionId);
@@ -166,7 +167,6 @@ export async function POST(
   );
   const pinnedAttachmentIds = mentionedAnalyticsAttachmentIds(mentions);
   const focusedSheetId = primaryTaggedSheetId(mentions);
-
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const canWrite = mode === "agent" && canEdit;
   const searchGate = createAnalyticsSearchGate();
@@ -186,6 +186,7 @@ export async function POST(
     searchGate,
     pinnedAttachmentIds,
     focusedSheetId,
+    actor: auditActorFromUser(user),
   });
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
@@ -212,6 +213,7 @@ export async function POST(
       system,
       messages: await convertToModelMessages(messages),
       tools,
+      experimental_repairToolCall: repairChatToolCall,
       stopWhen: async ({ steps }) => {
         if (await isAssistantTurnCancelRequested(sessionId)) return true;
         if (steps.length >= ANALYTICS_CHAT_STEP_BUDGET) {
@@ -271,8 +273,15 @@ export async function POST(
 
   after(async () => {
     try {
-      await result.consumeStream();
-      if (!isTestStubChat()) {
+      const outcome = await consumeAssistantStreamWithBudget(() =>
+        result.consumeStream()
+      );
+      if (outcome === "timed_out") {
+        console.error("analytics-chat: consumeStream exceeded budget", {
+          reportId,
+          sessionId,
+        });
+      } else if (!isTestStubChat()) {
         const usage = await result.totalUsage;
         await recordAiUsage({
           feature: "analytics_chat",
@@ -285,6 +294,7 @@ export async function POST(
       await flushLangfuseTraces();
     } finally {
       stopCancelPoll();
+      await clearAssistantTurn(sessionId);
     }
   });
 

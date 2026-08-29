@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { auditActorFromUser } from "@/lib/audit";
+import { tryRecordAnalyticsChange } from "@/lib/analytics-revisions/record-change";
 import { requireAnalyticsAccess } from "@/lib/statistical-analysis/access";
 import { patchAnalyticsBodySchema } from "@/lib/statistical-analysis/schemas";
 import {
@@ -43,6 +45,16 @@ export async function PATCH(request: Request, context: RouteContext) {
     { expectedVersion: parsed.data.version }
   );
   if (result.ok) {
+    await tryRecordAnalyticsChange({
+      reportId,
+      analytics: result.analytics,
+      actor: auditActorFromUser(access.user),
+      action: "worksheet_updated",
+      summary: "Edited worksheet",
+      entityId: result.analytics.id,
+      historySource: "manual",
+      historySummary: "Edited worksheet",
+    });
     return NextResponse.json({ analytics: result.analytics });
   }
   if (result.reason === "conflict") {

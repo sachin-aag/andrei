@@ -23,12 +23,48 @@ export function isChatAssistantTurnActive(
   return status === "running" || status === "cancel_requested";
 }
 
+export function isAssistantTurnStale(
+  startedAt: Date | null,
+  now = Date.now()
+): boolean {
+  if (startedAt == null) return true;
+  return now - startedAt.getTime() >= CHAT_TURN_STALE_MS;
+}
+
+function startedAtDate(startedAt: Date | string | null): Date | null {
+  if (startedAt == null) return null;
+  return startedAt instanceof Date ? startedAt : new Date(startedAt);
+}
+
+/**
+ * True while a live isolate may still be generating. A `running` /
+ * `cancel_requested` row with a missing or expired start is abandoned
+ * (crashed isolate) and must not keep the composer busy.
+ */
+export function isChatAssistantTurnInFlight(
+  status: ChatAssistantTurnStatus,
+  startedAt: Date | string | null,
+  now = Date.now()
+): boolean {
+  if (!isChatAssistantTurnActive(status)) return false;
+  return !isAssistantTurnStale(startedAtDate(startedAt), now);
+}
+
 /** Client hydrate/poll: keep the composer busy while the server is still on the turn. */
-export function backgroundTurnFromSessionView(view: {
-  assistantTurnStatus: ChatAssistantTurnStatus;
-  assistantTurnStartedAt: string | null;
-}): { backgroundTurn: boolean; startedAt: number | null } {
-  if (!isChatAssistantTurnActive(view.assistantTurnStatus)) {
+export function backgroundTurnFromSessionView(
+  view: {
+    assistantTurnStatus: ChatAssistantTurnStatus;
+    assistantTurnStartedAt: string | null;
+  },
+  now = Date.now()
+): { backgroundTurn: boolean; startedAt: number | null } {
+  if (
+    !isChatAssistantTurnInFlight(
+      view.assistantTurnStatus,
+      view.assistantTurnStartedAt,
+      now
+    )
+  ) {
     return { backgroundTurn: false, startedAt: null };
   }
   return {
@@ -37,12 +73,4 @@ export function backgroundTurnFromSessionView(view: {
       ? new Date(view.assistantTurnStartedAt).getTime()
       : null,
   };
-}
-
-export function isAssistantTurnStale(
-  startedAt: Date | null,
-  now = Date.now()
-): boolean {
-  if (startedAt == null) return true;
-  return now - startedAt.getTime() >= CHAT_TURN_STALE_MS;
 }

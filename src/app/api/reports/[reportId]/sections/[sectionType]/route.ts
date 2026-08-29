@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { reportSections, reports } from "@/db/schema";
+import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
-import { auditActorFromUser, recordSectionVersion } from "@/lib/audit";
+import { persistSectionContent } from "@/lib/reports/persist-section";
 import { isValidSection } from "@/lib/document-types";
+import {
+  manualRevisionSummary,
+  tryRecordManualDocumentRevision,
+} from "@/lib/document-revisions/snapshot";
 import { canSaveReportSection } from "@/lib/reports/access";
+import { auditActorFromUser } from "@/lib/audit";
 
 /** PATCH and POST use the same body; POST exists for `navigator.sendBeacon` (always POST). */
 async function saveSection(
@@ -36,54 +41,21 @@ async function saveSection(
   }
   const content = "content" in body ? body.content : body;
 
-  const [existing] = await db
-    .select()
-    .from(reportSections)
-    .where(
-      and(
-        eq(reportSections.reportId, reportId),
-        eq(reportSections.section, sectionType)
-      )
-    );
-
-  if (!existing) {
-    const [inserted] = await db
-      .insert(reportSections)
-      .values({
-        reportId,
-        section: sectionType,
-        content: content as Record<string, unknown>,
-      })
-      .returning();
-
-    await recordSectionVersion({
-      actor: auditActorFromUser(user),
-      reportId,
-      sectionId: inserted.id,
-      section: sectionType,
-      previousContent: {},
-      newContent: content,
-    });
-
-    return NextResponse.json({ section: inserted });
-  }
-
-  await recordSectionVersion({
+  const saved = await persistSectionContent({
     actor: auditActorFromUser(user),
     reportId,
-    sectionId: existing.id,
     section: sectionType,
-    previousContent: existing.content,
-    newContent: content,
+    content: content as Record<string, unknown>,
   });
 
-  const [updated] = await db
-    .update(reportSections)
-    .set({ content: content as Record<string, unknown>, updatedAt: new Date() })
-    .where(eq(reportSections.id, existing.id))
-    .returning();
+  await tryRecordManualDocumentRevision({
+    reportId,
+    documentType: report.documentType,
+    createdBy: user.id,
+    summary: manualRevisionSummary(report.documentType, sectionType),
+  });
 
-  return NextResponse.json({ section: updated });
+  return NextResponse.json({ section: saved });
 }
 
 export async function PATCH(

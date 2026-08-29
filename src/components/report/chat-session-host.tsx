@@ -8,6 +8,10 @@ import {
   type FileUIPart,
   type UIMessage,
 } from "ai";
+import {
+  readJsonBody,
+  resolveChatTurnUrl,
+} from "@/lib/ai/chat/chat-turn-url";
 import { toast } from "sonner";
 import { useChatWatchdog } from "@/hooks/use-chat-watchdog";
 import {
@@ -18,7 +22,6 @@ import {
 import {
   CHAT_TURN_POLL_MS,
   backgroundTurnFromSessionView,
-  isChatAssistantTurnActive,
 } from "@/lib/ai/chat/background-turn-status";
 import {
   isChatSessionBusy,
@@ -117,7 +120,13 @@ export function ChatSessionHost({
 
   const { messages, sendMessage, setMessages, status, error, stop } = useChat({
     id: reportChatInstanceId(reportId, sessionId),
-    transport: new DefaultChatTransport({ api }),
+    transport: new DefaultChatTransport({
+      api,
+      fetch: (input, init) => {
+        const url = resolveChatTurnUrl(reportId, api, readJsonBody(init));
+        return fetch(url, init);
+      },
+    }),
     onFinish: ({ message, isAbort, isDisconnect, isError }) => {
       finishTurnRef.current();
       if (isAbort) {
@@ -157,6 +166,8 @@ export function ChatSessionHost({
       agentRunStartedAtRef.current = null;
       setBackgroundTurn(false);
       onTurnCompletedRef.current(startedAt);
+      // Pick up persisted metadata (change summary / document version).
+      void hydrateFromServer();
     },
     onError: (err) => {
       console.error("chat error", err);
@@ -238,7 +249,8 @@ export function ChatSessionHost({
         if (!res.ok || cancelled) return;
         const view = (await res.json()) as ChatSessionView;
         if (cancelled) return;
-        if (isChatAssistantTurnActive(view.assistantTurnStatus)) return;
+        const next = backgroundTurnFromSessionView(view);
+        if (next.backgroundTurn) return;
         setMessages(view.messages ?? []);
         setBackgroundTurn(false);
         const startedAt = agentRunStartedAtRef.current;

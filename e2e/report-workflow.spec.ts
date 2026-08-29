@@ -10,6 +10,7 @@ import { createReport, deleteReport } from "./helpers/reports";
 import {
   defineEditor,
   defineSection,
+  openReportEditor,
   postReviewMarginNote,
 } from "./helpers/workspace";
 import {
@@ -49,7 +50,7 @@ test.describe("report workflow", () => {
     reportId = created.id;
     deviationNo = created.deviationNo;
 
-    await page.goto(`/reports/${reportId}/edit`);
+    await openReportEditor(page, reportId);
     await signWorkflowAction(page, /submit for review/i);
     await expect(page.getByText(/submitted/i).first()).toBeVisible({
       timeout: 15_000,
@@ -65,8 +66,8 @@ test.describe("report workflow", () => {
   test("manager reviews and returns feedback", async ({ page }) => {
     test.skip(!reportId, "prior step did not create report");
     await loginAsManager(page);
-    await page.goto(`/reports/${reportId}/review`);
     await page.setViewportSize({ width: 1280, height: 900 });
+    await openReportEditor(page, reportId!, { mode: "review" });
     await expect(page.getByText(/submitted|in review/i).first()).toBeVisible();
 
     await postReviewMarginNote(
@@ -93,7 +94,7 @@ test.describe("report workflow", () => {
   test("engineer resubmits after feedback", async ({ page }) => {
     test.skip(!reportId, "prior step did not create report");
     await loginAsEngineer(page);
-    await page.goto(`/reports/${reportId}/edit`);
+    await openReportEditor(page, reportId!);
     await expect(page.getByRole("button", { name: /submit for review/i })).toBeVisible({
       timeout: 30_000,
     });
@@ -116,7 +117,7 @@ test.describe("report workflow", () => {
       email: TEST_APPROVER_EMAIL,
       role: "manager",
     });
-    await page.goto(`/reports/${reportId}/review`);
+    await openReportEditor(page, reportId!, { mode: "review" });
     await signWorkflowAction(page, /^approve$/i, TEST_APPROVER_EMAIL);
     await expect(page.getByText(/approved/i).first()).toBeVisible({
       timeout: 15_000,
@@ -126,10 +127,7 @@ test.describe("report workflow", () => {
   test("approved report is read-only for engineer", async ({ page }) => {
     test.skip(!reportId, "prior step did not create report");
     await loginAsEngineer(page);
-    await page.goto(`/reports/${reportId}/edit`);
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, reportId!);
     await expect(page.locator("#define [contenteditable='true']")).toHaveCount(0);
   });
 });

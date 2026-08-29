@@ -71,10 +71,18 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 - **Untrusted PDF/DOCX text** (`documentSummary`, `pageContext`, filenames,
   descriptions) goes through `sanitizePromptMetadata` before any prompt.
 - **Bump versions** when prompts change: `PROMPT_VERSION` (eval),
-  `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`.
+  `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`,
+  `ANALYTICS_CHAT_PROMPT_VERSION`.
 - New chat tools must be added to the **Plan-mode allowlist** in
-  `src/app/api/reports/[reportId]/chat/route.ts` or they are silently missing
-  in Plan.
+  `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
+  are silently missing in Plan.
+- Chat/workspace changes walk the **full spectrum**, not just the control you
+  clicked: Document **and** Agent chrome, Report chat **and** Analytics chat,
+  then UI → request body → route parser → prompt → tools → Plan allowlist →
+  tests → `AGENTS.md` / `CLAUDE.md` / matching `.cursor/rules`. Removing a
+  composer control means deleting that plumbing (`body.sectionScope`,
+  `parseChat*`, “switch section” tools, mismatch banners). Scope is `@` tags
+  (`sectionScopeFromMentions` / analytics mentions), not dropdowns.
 - **PRs:** every PR description needs a collapsed **What's new (plain
   language)** fold for the CEO, a **detailed Summary** (problem → change →
   who it affects, not a title restatement), plus a living **Test plan**
@@ -108,11 +116,13 @@ NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 ```
 
 They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
-`docs/whitelabel-vercel-deploy.md`. Statistical Analysis (report Analytics tab:
-worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + one-way ANOVA) is on for demo, MJ,
+`docs/whitelabel-vercel-deploy.md`. Report workspace chrome is Document | Agent. Switching to Agent seeds the composer Report | Analytics target from the focused pane. Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. History is on Report and Analytics (pane-scoped compare). Report compare diffs prose, every table, and added/removed figures; Analytics compare is a cell/plot list. Worksheet versions are `analyticsRevisions`, not `documentRevisions`. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent).
+Statistical Analysis lives on the work-product **Analytics** pane (worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + one-way ANOVA) and is on for demo, MJ,
 and Convergent (`statisticalAnalysisEnabled`). Analytics chat uses the same
-Ask/Agent + Quick/Deep composer as Document chat (Ask searches/extracts only;
-Agent fills the worksheet and runs plots when the report is writable).
+shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep; Ask
+searches/extracts only; Agent fills the worksheet and runs plots when the
+report is writable). `@` tags set scope (sections in Document chat; sheets,
+plots, and files in Analytics) — there is no section/sheet dropdown.
 Scatters are one series, one color (`plot_xy_scatter` needs two numeric
 columns; `plot_measurements` is vs observation index). Do not substitute
 sixpack/ANOVA for a scatter, and do not color by group.
@@ -133,8 +143,6 @@ instead.
   the query byte-for-byte or Postgres ignores it.
 - Localhost and Postgres down → `pnpm db:local:up` (Docker). Do not assume a
   native `pg_ctlcluster`.
-
-### Tests
 
 ## Auth
 
@@ -175,6 +183,9 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   The report body is **not** chunk-indexed; use `read_section`.
 - Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
+- Composer scope is `@` tags (`sectionScopeFromMentions` / analytics mentions),
+  not dropdowns. Document and Analytics share `ChatPanel`; a composer or tool
+  change must land on both surfaces and both chromes (Hard rules spectrum).
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 
@@ -186,7 +197,11 @@ optionally `rm -rf .next`. Not a code bug.
 
 ## Tests
 
-- Vitest: `pnpm test` — mocked env, no DB.
+- Vitest: `pnpm test` — mocked env, no DB. Colocate `*.test.ts(x)` next to
+  source. When a module is renamed, split, or deleted, rename/split/delete
+  its test file — do not leave `section-scope.test.ts` after `section-scope.ts`
+  is gone, and do not keep tombstone `not.toContain("old dropdown")` tests.
+  Grep the old symbol in `*.test.*` and `e2e/` before calling a removal done.
 - Playwright: `pnpm test:e2e` — needs `DATABASE_URL`, serves
   `http://127.0.0.1:3000` with stub flags. Catalog: `TESTING.md`.
 - Local `reuseExistingServer` is on. Whatever already owns port 3000 is reused

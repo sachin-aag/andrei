@@ -15,7 +15,7 @@ export async function POST(
   const access = await loadAccessibleReport(reportId, user);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const session = await findChatSession(reportId, sessionId, "report");
+  const session = await findChatSession(reportId, sessionId);
   if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const requested = await requestAssistantTurnCancel(sessionId);

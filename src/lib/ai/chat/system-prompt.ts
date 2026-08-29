@@ -1,5 +1,4 @@
 import type { DocumentType, SectionType } from "@/db/schema";
-import type { SectionScopeMismatch } from "@/lib/ai/chat/section-intent";
 import {
   type ChatSectionScope,
   chatSectionsInScope,
@@ -17,9 +16,10 @@ import {
   alreadyDraftedBlock,
 } from "@/lib/ai/chat/already-drafted";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
+import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v50-already-drafted-gap-hints";
+export const CHAT_PROMPT_VERSION = "chat-v53-drop-section-switch";
 
 export type ChatMode = "plan" | "agent";
 
@@ -74,16 +74,9 @@ The engineer has not narrowed scope. Answer questions about any section unless t
     ? `draft_field / edit_table / propose_edit / ${figures} / select_analyze_method`
     : `draft_field / edit_table / propose_edit / ${figures}`;
   return `## Section focus: ${label} [${scope}]
-The engineer selected **${label}** for this conversation. Focus Ask questions and Agent edits on this section only.
-- Ask mode: answer questions about ${label}; do not address other sections unless they change the section dropdown.
-- Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}
-- If the request clearly belongs elsewhere, call suggest_section_scope before answering substantively — do not edit other sections.`;
-}
-
-function scopeMismatchBlock(mismatch: SectionScopeMismatch): string {
-  return `## Section scope mismatch (detected)
-The engineer's latest message appears to be about **${sectionLabel(mismatch.suggestedSection)}** [${mismatch.suggestedSection}], but the section dropdown is set to **${sectionLabel(mismatch.currentSection)}** [${mismatch.currentSection}].
-Call suggest_section_scope with suggestedSection="${mismatch.suggestedSection}" and a brief reason BEFORE answering substantively. You may add a short note in prose, but do not read or edit the out-of-scope section until they switch or confirm keeping the current focus.`;
+The engineer tagged **${label}** for this conversation. Focus Ask questions and Agent edits on this section only.
+- Ask mode: answer questions about ${label}; do not address other sections unless they tag a different @ section.
+- Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}`;
 }
 
 const QUESTION_RULES = `## Asking questions
@@ -202,6 +195,7 @@ function agentRules(opts: {
   retrievalPolicy: RetrievalPolicy;
   citationsAtEndOfSection: boolean;
   includePlotMeasurements: boolean;
+  editPolicy: ChatEditPolicy;
 }): string {
   const priority = draftPriorityPhrase(opts.draftOrder);
   const analyzeToolLine = opts.analyzeInScope
@@ -230,16 +224,17 @@ function agentRules(opts: {
     }
   }
 
-  return `## Mode: AGENT (draft and propose edits)
-You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing is applied until they accept it.
+  const committing = opts.editPolicy === "commit";
+  return `## Mode: AGENT (${committing ? "apply edits immediately" : "draft and propose edits"})
+You are in Agent mode. Use the tools to read sections and ${committing ? "apply changes. Successful edits are written to the document immediately — do not wait for the engineer to accept them, and do not mention review bubbles." : "propose changes. Every proposal goes to the engineer for review — nothing is applied until they accept it."}
 
 Choosing the right tool:
 - edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells.
 - draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial prose rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it for incremental table edits — accepting a draft overwrites every cell, including filled placeholders. draft_field cannot insert or remove figures; use ${figureEditTools(opts.includePlotMeasurements)}. A full rewrite of a field that already has images will drop those images.
 - propose_edit — one small targeted change inside existing prose, or a list item (targeted with "scope"). Never use it for tables, and never quote a markdown pipe table as anchorText. Never put image markdown in insertText.
-- insert_image — place one existing image (chat attachment or a figure already in a section) into a rich field. The engineer reviews it like any other suggestion. Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}.
-${opts.includePlotMeasurements ? "- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec." : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
-- remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
+- insert_image — place one existing image (chat attachment or a figure already in a section) into a rich field. ${committing ? "It is applied immediately." : "The engineer reviews it like any other suggestion."} Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}.
+${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric measurements from attachments and ${committing ? "insert" : "propose"} a scatter plot as a ${committing ? "figure in the document" : "reviewable figure"}. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec.` : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
+- remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). ${committing ? "The removal is applied immediately." : "The engineer reviews it like any other suggestion."} Do not rewrite the field with draft_field just to drop a figure.
 - search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is already filled or partial, call read_section first and only grep for a gap you found.
 - document_outline — list per-page context for one attachment so you can pick which pages to read. Not a substitute for search_documents.
 - read_document_page — read bounded transcript/visual context for one page from a retrieved attachment.
@@ -263,7 +258,7 @@ Editing rules:
 5. To change ONE list item, use propose_edit with "scope" from the field's structuredText (an item tagged [i] → scope {"kind":"listItem","index":i}).
 6. propose_edit refuses changes that rewrite most of a field ("too_large") — that is the signal to use draft_field.
 7. Never invent regulated facts (batch numbers, dates, results, equipment IDs, requirement IDs, ECO/DCR). Search the attachments first; use a bracketed placeholder only after a search does not contain the fact. Do not copy document topics/summaries into the draft.
-8. After proposing, briefly summarize what you drafted, list placeholders to complete, and name any sections you deliberately skipped and why.${
+8. After ${committing ? "applying" : "proposing"}, briefly summarize what you ${committing ? "changed" : "drafted"}, list placeholders to complete, and name any sections you deliberately skipped and why.${
     opts.citationsAtEndOfSection
       ? `
 9. Put source citations as [filename, p. N] immediately after the claim or cell they support. The server numbers them and parks the sources under a trailing "Citations:" heading. A split propose_edit (primary + second) still works. Do not invent citation numbers. draft_field and edit_table follow the same rule.`
@@ -308,7 +303,6 @@ export function buildChatSystemPrompt(opts: {
   mode: ChatMode;
   sectionScope?: ChatSectionScope;
   documentType?: DocumentType;
-  scopeMismatch?: SectionScopeMismatch | null;
   /** When the requested section is already filled/partial, inject review-first. */
   alreadyDrafted?: AlreadyDraftedSection | null;
   /** Cached AI Check gap hints for alreadyDrafted.section. */
@@ -321,6 +315,8 @@ export function buildChatSystemPrompt(opts: {
   citationsAtEndOfSection?: boolean;
   /** Document-chat measurement plots. Off for Convergent (plots live in Analytics). */
   includePlotMeasurements?: boolean;
+  /** Server-derived. `commit` applies report edits immediately. */
+  editPolicy?: ChatEditPolicy;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
@@ -343,18 +339,15 @@ export function buildChatSystemPrompt(opts: {
           retrievalPolicy,
           citationsAtEndOfSection,
           includePlotMeasurements,
+          editPolicy: opts.editPolicy ?? "propose",
         });
-  const mismatchBlock = opts.scopeMismatch
-    ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}`
+  const draftedBlock = opts.alreadyDrafted
+    ? `\n\n${alreadyDraftedBlock(
+        opts.alreadyDrafted,
+        mode,
+        opts.alreadyDraftedGapHints ?? { kind: "not_evaluated" }
+      )}`
     : "";
-  const draftedBlock =
-    opts.alreadyDrafted && !opts.scopeMismatch
-      ? `\n\n${alreadyDraftedBlock(
-          opts.alreadyDrafted,
-          mode,
-          opts.alreadyDraftedGapHints ?? { kind: "not_evaluated" }
-        )}`
-      : "";
   const mentions = opts.mentionBlock?.trim()
     ? `\n\n${opts.mentionBlock.trim()}`
     : "";
@@ -371,7 +364,7 @@ export function buildChatSystemPrompt(opts: {
 
   return `${chat.persona}
 
-${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${mismatchBlock}${draftedBlock}${mentions}
+${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${draftedBlock}${mentions}
 
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope, documentType)}

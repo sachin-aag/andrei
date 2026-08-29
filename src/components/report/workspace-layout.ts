@@ -1,11 +1,15 @@
 /**
- * Desktop report workspace column sizes. Chat and documents are independently
- * resizable; the document canvas takes leftover space down to a floor.
+ * Desktop report workspace column sizes. Attachments are independently
+ * resizable in both chromes. In document chrome, chat is sized and the
+ * work-product canvas takes leftover space. In agent chrome the work-product
+ * column is sized and chat takes leftover space.
  *
  * Bounds mix an absolute px floor/ceiling (so panels stay usable) with a
  * viewport fraction (so a 1280px laptop and a 1920px display get different
  * ranges). Collapsed rails stay a fixed icon strip.
  */
+
+import type { WorkspaceChrome } from "./workspace-chrome";
 
 export const COLLAPSED_RAIL_PX = 48;
 
@@ -19,13 +23,14 @@ export const REVIEW_GUTTER_GRID_COLS =
 
 export const CHAT_DEFAULT_PX = 400;
 export const DOCS_DEFAULT_PX = 300;
+export const PREVIEW_DEFAULT_PX = 480;
 
 const CHAT_ABS_MIN_PX = 280;
-const CHAT_ABS_MAX_PX = 720;
+const CHAT_ABS_MAX_PX = 960;
 const CHAT_MIN_VIEWPORT_FRACTION = 0.2;
-const CHAT_MAX_VIEWPORT_FRACTION = 0.42;
+const CHAT_MAX_VIEWPORT_FRACTION = 0.55;
 const CHAT_MIN_CAP_PX = 360;
-const CHAT_MAX_FLOOR_PX = 420;
+const CHAT_MAX_FLOOR_PX = 560;
 
 const DOCS_ABS_MIN_PX = 200;
 const DOCS_ABS_MAX_PX = 480;
@@ -34,9 +39,16 @@ const DOCS_MAX_VIEWPORT_FRACTION = 0.28;
 const DOCS_MIN_CAP_PX = 240;
 const DOCS_MAX_FLOOR_PX = 300;
 
+const PREVIEW_ABS_MIN_PX = 320;
+const PREVIEW_ABS_MAX_PX = 960;
+const PREVIEW_MIN_VIEWPORT_FRACTION = 0.22;
+const PREVIEW_MAX_VIEWPORT_FRACTION = 0.55;
+const PREVIEW_MIN_CAP_PX = 400;
+const PREVIEW_MAX_FLOOR_PX = 480;
+
 const MAIN_ABS_MIN_PX = 360;
 const MAIN_MIN_VIEWPORT_FRACTION = 0.28;
-const MAIN_MIN_CAP_PX = 560;
+const MAIN_MIN_CAP_PX = 420;
 
 export const WORKSPACE_LAYOUT_STORAGE_KEY = "workspaceLayout:v1";
 
@@ -68,22 +80,27 @@ export type PanelWidthBounds = {
 export type StoredWorkspaceLayout = {
   chatWidth: number;
   docsWidth: number;
+  previewWidth: number;
 };
 
 export type WorkspaceColumnIntent = {
+  chrome?: WorkspaceChrome;
   chatWidth: number;
   docsWidth: number;
+  previewWidth?: number;
   chatCollapsed: boolean;
   docsCollapsed: boolean;
+  previewCollapsed?: boolean;
 };
 
 export type AllocatedWorkspaceColumns = {
   chatWidth: number;
   docsWidth: number;
+  previewWidth: number;
   mainWidth: number;
 };
 
-export type OverflowProtect = "chat" | "docs" | "none";
+export type OverflowProtect = "chat" | "docs" | "preview" | "none";
 
 export function clamp(value: number, min: number, max: number): number {
   if (min > max) return min;
@@ -143,44 +160,58 @@ export function mainMinWidth(viewportWidth: number): number {
   );
 }
 
-function shrinkForOverflow(
-  chat: number,
-  docs: number,
-  chatMin: number,
-  docsMin: number,
-  overflow: number,
-  protect: OverflowProtect
-): { chat: number; docs: number } {
-  if (overflow <= 0) return { chat, docs };
+/** Work-product column min/max (agent chrome right panel). */
+export function previewWidthBounds(viewportWidth: number): PanelWidthBounds {
+  const min = viewportBound(
+    viewportWidth,
+    PREVIEW_MIN_VIEWPORT_FRACTION,
+    PREVIEW_ABS_MIN_PX,
+    PREVIEW_MIN_CAP_PX
+  );
+  const max = viewportBound(
+    viewportWidth,
+    PREVIEW_MAX_VIEWPORT_FRACTION,
+    PREVIEW_MAX_FLOOR_PX,
+    PREVIEW_ABS_MAX_PX
+  );
+  return { min, max: Math.max(min, max) };
+}
 
-  const extraChat = Math.max(0, chat - chatMin);
-  const extraDocs = Math.max(0, docs - docsMin);
+function shrinkTwo(
+  a: number,
+  b: number,
+  aMin: number,
+  bMin: number,
+  overflow: number,
+  protect: "a" | "b" | "none"
+): { a: number; b: number } {
+  if (overflow <= 0) return { a, b };
+
+  const extraA = Math.max(0, a - aMin);
+  const extraB = Math.max(0, b - bMin);
 
   switch (protect) {
-    case "chat": {
-      const fromDocs = Math.min(overflow, extraDocs);
-      docs -= fromDocs;
-      overflow -= fromDocs;
-      chat -= Math.min(overflow, extraChat);
-      return { chat, docs };
+    case "a": {
+      const fromB = Math.min(overflow, extraB);
+      b -= fromB;
+      overflow -= fromB;
+      a -= Math.min(overflow, extraA);
+      return { a, b };
     }
-    case "docs": {
-      const fromChat = Math.min(overflow, extraChat);
-      chat -= fromChat;
-      overflow -= fromChat;
-      docs -= Math.min(overflow, extraDocs);
-      return { chat, docs };
+    case "b": {
+      const fromA = Math.min(overflow, extraA);
+      a -= fromA;
+      overflow -= fromA;
+      b -= Math.min(overflow, extraB);
+      return { a, b };
     }
     case "none": {
-      const extra = extraChat + extraDocs;
-      if (extra <= 0) return { chat, docs };
-      const takeChat = Math.min(
-        extraChat,
-        Math.round(overflow * (extraChat / extra))
-      );
-      chat -= takeChat;
-      docs -= Math.min(extraDocs, overflow - takeChat);
-      return { chat, docs };
+      const extra = extraA + extraB;
+      if (extra <= 0) return { a, b };
+      const takeA = Math.min(extraA, Math.round(overflow * (extraA / extra)));
+      a -= takeA;
+      b -= Math.min(extraB, overflow - takeA);
+      return { a, b };
     }
     default: {
       const _exhaustive: never = protect;
@@ -199,36 +230,72 @@ export function allocateWorkspaceColumns(
   desired: WorkspaceColumnIntent,
   protect: OverflowProtect = "none"
 ): AllocatedWorkspaceColumns {
+  const chrome = desired.chrome ?? "document";
   const chatBounds = chatWidthBounds(viewportWidth);
   const docsBounds = docsWidthBounds(viewportWidth);
+  const previewBounds = previewWidthBounds(viewportWidth);
   const mainMin = mainMinWidth(viewportWidth);
+  const storedPreview = desired.previewWidth ?? PREVIEW_DEFAULT_PX;
+
+  const docs = desired.docsCollapsed
+    ? COLLAPSED_RAIL_PX
+    : clamp(desired.docsWidth, docsBounds.min, docsBounds.max);
+  const docsMin = desired.docsCollapsed ? COLLAPSED_RAIL_PX : docsBounds.min;
+  const previewCollapsed = desired.previewCollapsed ?? false;
+  const preview = previewCollapsed
+    ? COLLAPSED_RAIL_PX
+    : clamp(storedPreview, previewBounds.min, previewBounds.max);
+  const previewMin = previewCollapsed ? COLLAPSED_RAIL_PX : previewBounds.min;
+
+  if (chrome === "agent") {
+    const chatMin = desired.chatCollapsed ? COLLAPSED_RAIL_PX : chatBounds.min;
+    let previewW = preview;
+    let docsW = docs;
+    const overflow = previewW + docsW + chatMin - containerWidth;
+    if (overflow > 0) {
+      const side =
+        protect === "preview" ? "a" : protect === "docs" ? "b" : "none";
+      const next = shrinkTwo(
+        previewW,
+        docsW,
+        previewMin,
+        docsMin,
+        overflow,
+        side
+      );
+      previewW = next.a;
+      docsW = next.b;
+    }
+    const chatW = desired.chatCollapsed
+      ? COLLAPSED_RAIL_PX
+      : Math.max(0, containerWidth - previewW - docsW);
+    return {
+      chatWidth: chatW,
+      docsWidth: docsW,
+      previewWidth: previewW,
+      mainWidth: previewW,
+    };
+  }
 
   let chat = desired.chatCollapsed
     ? COLLAPSED_RAIL_PX
     : clamp(desired.chatWidth, chatBounds.min, chatBounds.max);
-  let docs = desired.docsCollapsed
-    ? COLLAPSED_RAIL_PX
-    : clamp(desired.docsWidth, docsBounds.min, docsBounds.max);
-
+  let docsW = docs;
   const chatMin = desired.chatCollapsed ? COLLAPSED_RAIL_PX : chatBounds.min;
-  const docsMin = desired.docsCollapsed ? COLLAPSED_RAIL_PX : docsBounds.min;
-
-  const overflow = chat + docs + mainMin - containerWidth;
+  const overflow = chat + docsW + mainMin - containerWidth;
   if (overflow > 0) {
-    const next = shrinkForOverflow(
-      chat,
-      docs,
-      chatMin,
-      docsMin,
-      overflow,
-      protect
-    );
-    chat = next.chat;
-    docs = next.docs;
+    const side = protect === "chat" ? "a" : protect === "docs" ? "b" : "none";
+    const next = shrinkTwo(chat, docsW, chatMin, docsMin, overflow, side);
+    chat = next.a;
+    docsW = next.b;
   }
 
-  const mainWidth = Math.max(0, containerWidth - chat - docs);
-  return { chatWidth: chat, docsWidth: docs, mainWidth };
+  return {
+    chatWidth: chat,
+    docsWidth: docsW,
+    previewWidth: preview,
+    mainWidth: Math.max(0, containerWidth - chat - docsW),
+  };
 }
 
 export function parseStoredWorkspaceLayout(
@@ -246,7 +313,15 @@ export function parseStoredWorkspaceLayout(
     if (typeof docsWidth !== "number" || !Number.isFinite(docsWidth)) {
       return null;
     }
-    return { chatWidth, docsWidth };
+    const previewWidth = (parsed as { previewWidth?: unknown }).previewWidth;
+    return {
+      chatWidth,
+      docsWidth,
+      previewWidth:
+        typeof previewWidth === "number" && Number.isFinite(previewWidth)
+          ? previewWidth
+          : PREVIEW_DEFAULT_PX,
+    };
   } catch {
     return null;
   }
@@ -258,6 +333,7 @@ export function serializeStoredWorkspaceLayout(
   return JSON.stringify({
     chatWidth: Math.round(layout.chatWidth),
     docsWidth: Math.round(layout.docsWidth),
+    previewWidth: Math.round(layout.previewWidth),
   });
 }
 
@@ -269,6 +345,7 @@ export function serializeStoredWorkspaceLayout(
 const DEFAULT_WORKSPACE_LAYOUT: StoredWorkspaceLayout = Object.freeze({
   chatWidth: CHAT_DEFAULT_PX,
   docsWidth: DOCS_DEFAULT_PX,
+  previewWidth: PREVIEW_DEFAULT_PX,
 });
 
 export function defaultWorkspaceLayout(): StoredWorkspaceLayout {

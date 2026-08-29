@@ -11,6 +11,7 @@ import {
   expandDocumentsPanel,
   expandReportSidebar,
   openReportAssistant,
+  openReportEditor,
   reportSidebar,
 } from "./helpers/workspace";
 
@@ -57,10 +58,7 @@ test.describe("report chat", () => {
     await loginAsEngineer(page);
     const created = await createReport(page);
     reportId = created.id;
-    await page.goto(`/reports/${reportId}/edit`);
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, reportId);
   });
 
   test.afterEach(async ({ page }) => {

@@ -13,11 +13,19 @@ import {
 } from "./helpers/reports";
 import {
   collapseReportSidebar,
+  collapseWorkProductPanel,
   defineEditor,
   defineSection,
+  documentsPanel,
+  expandDocumentsPanel,
   expandReportSidebar,
+  expandWorkProductPanel,
+  expectDocumentPanelResizeHandleAligned,
+  openReportAnalytics,
+  openReportEditor,
   reportSidebar,
   reviewMargin,
+  setReportChrome,
 } from "./helpers/workspace";
 import {
   signedWorkflowPayload,
@@ -34,10 +42,7 @@ test.describe("report editor", () => {
     await loginAsEngineer(page);
     const created = await createReport(page);
     reportId = created.id;
-    await page.goto(`/reports/${reportId}/edit`);
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, reportId);
   });
 
   test.afterEach(async ({ page }) => {
@@ -251,5 +256,88 @@ test.describe("report editor", () => {
     });
     await expect(page.getByRole("button", { name: /submit for review/i })).toHaveCount(0);
     await expect(page.locator("#define [contenteditable='true']")).toHaveCount(0);
+  });
+
+  test("Agent chrome puts chat in the center and work product on the right", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await expandDocumentsPanel(page);
+    await expandReportSidebar(page);
+    await setReportChrome(page, "agent");
+
+    const collapsedPanel = page.getByTestId("report-work-product");
+    await expect(
+      collapsedPanel.getByRole("button", { name: /expand document panel/i })
+    ).toBeVisible();
+    const collapsedBox = await collapsedPanel.boundingBox();
+    expect(collapsedBox).toBeTruthy();
+    expect(collapsedBox!.width).toBeLessThanOrEqual(52);
+
+    const previewHandle = page.getByRole("separator", {
+      name: /resize document panel/i,
+    });
+    await expectDocumentPanelResizeHandleAligned(page);
+
+    await expandWorkProductPanel(page);
+    await expect(page.getByRole("switch", { name: /comments/i })).toHaveCount(0);
+
+    const docsBox = await documentsPanel(page).boundingBox();
+    const chatBox = await reportSidebar(page).boundingBox();
+    const canvasBox = await page.getByTestId("report-work-product").boundingBox();
+    expect(docsBox).toBeTruthy();
+    expect(chatBox).toBeTruthy();
+    expect(canvasBox).toBeTruthy();
+    expect(docsBox!.x).toBeLessThan(chatBox!.x);
+    expect(chatBox!.x).toBeLessThan(canvasBox!.x);
+
+    await expectDocumentPanelResizeHandleAligned(page);
+    const widthBefore = await page
+      .getByTestId("report-work-product")
+      .evaluate((el) => el.getBoundingClientRect().width);
+    await previewHandle.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect
+      .poll(async () =>
+        page
+          .getByTestId("report-work-product")
+          .evaluate((el) => el.getBoundingClientRect().width)
+      )
+      .toBeGreaterThan(widthBefore);
+
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("analytics-revision-history")).toBeVisible();
+    const analytics = page.getByTestId("report-analytics-workspace");
+    await expect(analytics).toBeVisible();
+    const analyticsBox = await analytics.boundingBox();
+    const chatAfter = await reportSidebar(page).boundingBox();
+    expect(analyticsBox).toBeTruthy();
+    expect(chatAfter).toBeTruthy();
+    expect(chatAfter!.x).toBeLessThan(analyticsBox!.x);
+
+    await setReportChrome(page, "document");
+    const canvasAfter = await page.getByTestId("report-work-product").boundingBox();
+    const chatRight = await reportSidebar(page).boundingBox();
+    expect(canvasAfter).toBeTruthy();
+    expect(chatRight).toBeTruthy();
+    expect(canvasAfter!.x).toBeLessThan(chatRight!.x);
+
+    await setReportChrome(page, "agent");
+    await expandWorkProductPanel(page);
+    await expect(page.getByTestId("analytics-revision-history")).toBeVisible();
+    await page.getByTestId("report-surface-document").click();
+    await page.getByTestId("document-revision-history").click();
+    await expect(
+      page.getByText(
+        "Versions appear after you edit the document or the assistant writes to it."
+      )
+    ).toBeVisible();
+
+    await collapseWorkProductPanel(page);
+    await expect(collapsedPanel.getByRole("button", { name: /expand document panel/i })).toBeVisible();
+    await page.getByTestId("report-surface-analytics").click();
+    await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
+      timeout: 30_000,
+    });
   });
 });

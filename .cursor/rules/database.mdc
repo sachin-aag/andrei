@@ -25,3 +25,12 @@ alwaysApply: false
 - Attachment tables: `reportAttachments`, `attachmentIngestRuns`,
   `documentPages`, `documentChunks` (pgvector 768). Soft-delete via
   `deletedAt`; retrieval joins `activeIngestRunId`.
+- Product History: `documentRevisions` + `documentRevisionSections` (one
+  snapshot per Agent-chrome report turn, plus idle-coalesced human edits).
+  Do not reuse `sectionContentVersions` for that UI — the audit table records
+  every PATCH including human autosave. Analytics History is
+  `analyticsRevisions` (worksheet + plots; idle-coalesce worksheet bursts only;
+  each plot create/recompute/delete inserts). Audit actions
+  `worksheet_updated` / `analysis_*` use entity `analytics`. An open `manual`
+  document History row may be updated in place during a typing burst
+  (`MANUAL_REVISION_IDLE_MS`); Agent rows are never rewritten.

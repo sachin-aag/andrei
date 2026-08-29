@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
+import { openReportEditor } from "./helpers/workspace";
 
 test.describe("docx export", () => {
   let reportId: string | null = null;
@@ -19,7 +20,7 @@ test.describe("docx export", () => {
   });
 
   test("export triggers docx download", async ({ page }) => {
-    await page.goto(`/reports/${reportId}/edit`);
+    await openReportEditor(page, reportId!);
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("link", { name: /export docx/i }).click();
     const download = await downloadPromise;

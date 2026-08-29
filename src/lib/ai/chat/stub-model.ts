@@ -2,7 +2,6 @@ import type { LanguageModel } from "ai";
 import type { SectionType } from "@/db/schema";
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 import { sectionLabel } from "@/lib/ai/chat/fields";
-import type { SectionScopeMismatch } from "@/lib/ai/chat/section-intent";
 
 export type StubChatPlan = {
   mode: ChatMode;
@@ -10,7 +9,6 @@ export type StubChatPlan = {
   targetField: string;
   insertText: string;
   reasoning: string;
-  scopeMismatch?: SectionScopeMismatch | null;
 };
 
 /**
@@ -21,7 +19,6 @@ export type StubChatPlan = {
  *
  * - Ask mode: replies with follow-up questions (no edit tool call).
  * - Agent mode: calls `propose_edit`, then replies with a summary.
- * - Scope mismatch: calls `suggest_section_scope` before substantive reply.
  */
 export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageModel> {
   const { MockLanguageModelV3, convertArrayToReadableStream } = await import("ai/test");
@@ -42,47 +39,12 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
     `I drafted an addition to the **${label}** section — review the highlighted insertion in the document and accept or reject it. ` +
     `Replace any \`[bracketed placeholders]\` with the real values. I skipped sections I had too little information for.`;
 
-  const mismatch = plan.scopeMismatch;
-  const mismatchFollowUp = mismatch
-    ? `Switch the section dropdown to ${sectionLabel(mismatch.suggestedSection)} and ask again, or keep ${sectionLabel(mismatch.currentSection)} if you meant that section.`
-    : "";
-
   const doStream = async () => {
     const stubDelayMs = Number.parseInt(process.env.CHAT_STUB_DELAY_MS ?? "", 10);
     if (Number.isFinite(stubDelayMs) && stubDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, stubDelayMs));
     }
     const step = call++;
-
-    if (mismatch && step === 0) {
-      return {
-        stream: convertArrayToReadableStream([
-          { type: "stream-start", warnings: [] },
-          {
-            type: "tool-call",
-            toolCallId: `stub-scope-${Date.now()}`,
-            toolName: "suggest_section_scope",
-            input: JSON.stringify({
-              suggestedSection: mismatch.suggestedSection,
-              reason: mismatch.reason,
-            }),
-          },
-          { type: "finish", finishReason: "tool-calls", usage },
-        ]),
-      };
-    }
-
-    if (mismatch && step === 1) {
-      return {
-        stream: convertArrayToReadableStream([
-          { type: "stream-start", warnings: [] },
-          { type: "text-start", id: "t1" },
-          { type: "text-delta", id: "t1", delta: mismatchFollowUp },
-          { type: "text-end", id: "t1" },
-          { type: "finish", finishReason: "stop", usage },
-        ]),
-      };
-    }
 
     if (plan.mode === "plan") {
       return {

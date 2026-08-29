@@ -236,47 +236,51 @@ export function AnovaView({
             MSE · α = {formatStat(results.alpha, 3)}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {stale ? (
-            <Badge data-testid="anova-stale-badge" variant="warning">
-              Stale
-            </Badge>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            data-testid="download-analysis"
-            onClick={() => {
-              downloadTextFile(
-                analysisDownloadFilename(analysis),
-                analysisToCsv(analysis)
-              );
-            }}
-          >
-            Download
-          </Button>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 sm:min-w-[18rem]">
+          <div className="flex flex-wrap items-center gap-2">
+            {stale ? (
+              <Badge data-testid="anova-stale-badge" variant="warning">
+                Stale
+              </Badge>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="download-analysis"
+              onClick={() => {
+                downloadTextFile(
+                  analysisDownloadFilename(analysis),
+                  analysisToCsv(analysis)
+                );
+              }}
+            >
+              Download
+            </Button>
+            {readOnly ? null : (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="edit-analysis"
+                  disabled={editing}
+                  onClick={onEdit}
+                >
+                  {editing ? "Opening…" : "Edit"}
+                </Button>
+                <AnalysisRecomputeButton
+                  onClick={onRecompute}
+                  recomputing={recomputing}
+                  disabled={editing}
+                />
+              </>
+            )}
+          </div>
           {readOnly ? null : (
-            <>
-              <AnalysisRecomputeButton
-                onClick={onRecompute}
-                recomputing={recomputing}
-                disabled={editing}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                data-testid="edit-analysis"
-                disabled={editing}
-                onClick={onEdit}
-              >
-                {editing ? "Opening…" : "Edit"}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
-                Delete
-              </Button>
-            </>
+            <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
+              Delete
+            </Button>
           )}
         </div>
       </div>
