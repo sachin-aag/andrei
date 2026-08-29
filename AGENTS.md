@@ -188,6 +188,8 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 - Composer scope is `@` tags (`sectionScopeFromMentions` / analytics mentions),
   not dropdowns. Document and Analytics share `ChatPanel`; a composer or tool
   change must land on both surfaces and both chromes (Hard rules spectrum).
+  Empty-state Document chips are `chat.examplePrompts` on the document type
+  (not DMAIC-hardcoded). Analytics chips stay worksheet/plot copy.
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 

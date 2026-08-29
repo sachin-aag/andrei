@@ -437,6 +437,18 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "appendices",
       "approval_signoff",
     ],
+    examplePrompts: {
+      plan: [
+        "What does the evidence say about the verification objectives?",
+        "Which quality criteria is Purpose & Scope still missing?",
+        "Summarize the pass/fail results from the attachments.",
+      ],
+      agent: [
+        "Draft Purpose & Scope from the protocol and design outputs.",
+        "Tighten the verification objectives and in-scope design outputs in Purpose & Scope.",
+        "Propose a clearer requirement-to-test traceability matrix.",
+      ],
+    },
     inventorySections: ["traceability", "test_results"],
     sectionIntentPatterns: [
       [
