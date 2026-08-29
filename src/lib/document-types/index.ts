@@ -188,6 +188,7 @@ export type {
   CriterionDefinition,
   DocumentTypeDefinition,
   DocumentTypeChatConfig,
+  DocumentChatExamplePrompts,
   SectionDefinition,
   EvaluationContext,
   EditorProfile,

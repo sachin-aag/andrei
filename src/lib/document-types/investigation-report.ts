@@ -147,6 +147,18 @@ export function buildInvestigationReportDefinition(
           ],
         ] as const
       ).filter(([key]) => !hidden.has(key)),
+      examplePrompts: {
+        plan: [
+          "What does the evidence say about the root cause?",
+          "Which quality criteria is the Define section still missing?",
+          "Summarize what the batch record says about the out-of-spec result.",
+        ],
+        agent: [
+          "Draft the Define section from what we discussed.",
+          "Tighten the problem statement and scope in Define.",
+          "Propose a clearer root cause and impact assessment in Analyze.",
+        ],
+      },
     },
     suggestTargetFieldPatterns: SUGGEST_TARGET_FIELD_PATTERNS as Record<
       string,

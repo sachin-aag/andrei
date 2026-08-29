@@ -432,6 +432,18 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "testers_dates",
       "conclusion",
     ],
+    examplePrompts: {
+      plan: [
+        "What does the evidence say about which protocol was executed?",
+        "Which quality criteria is Purpose still missing?",
+        "Summarize Results and Discussion from the attachments.",
+      ],
+      agent: [
+        "Draft Purpose from the protocol and executions we discussed.",
+        "Tighten what is in and out of scope in Scope.",
+        "Propose a clearer Results and Discussion with pass/fail per requirement.",
+      ],
+    },
     inventorySections: ["results_and_discussions"],
     sectionIntentPatterns: [
       ["purpose", [/\bpurpose\b/i, /\bobjective\b/i, /\bverification objective\b/i]],
