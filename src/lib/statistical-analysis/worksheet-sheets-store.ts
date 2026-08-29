@@ -1,4 +1,4 @@
-import type { ChatSheetOption } from "@/lib/statistical-analysis/chat-sheet-scope";
+import type { ChatSheetOption } from "@/lib/statistical-analysis/worksheet-sheet-options";
 
 /**
  * Stable empty snapshot for `useSyncExternalStore`. React 19 re-reads
@@ -37,7 +37,7 @@ export function worksheetSheetsAreLive(reportId: string): boolean {
 }
 
 /**
- * The open worksheet publishes here so the composer dropdown can list tabs
+ * The open worksheet publishes here so Analytics chat @ mentions can list tabs
  * the instant they are added, including unsaved local sheets.
  */
 export function publishWorksheetSheets(

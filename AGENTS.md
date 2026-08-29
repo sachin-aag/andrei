@@ -73,8 +73,8 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 - **Bump versions** when prompts change: `PROMPT_VERSION` (eval),
   `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`.
 - New chat tools must be added to the **Plan-mode allowlist** in
-  `src/app/api/reports/[reportId]/chat/route.ts` or they are silently missing
-  in Plan.
+  `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
+  are silently missing in Plan.
 - **PRs:** every PR description needs a collapsed **What's new (plain
   language)** fold for the CEO, a **detailed Summary** (problem → change →
   who it affects, not a title restatement), plus a living **Test plan**

@@ -109,7 +109,7 @@ describe("collectSearchQueries", () => {
 });
 
 describe("buildChatTools search_documents scoping", () => {
-  it("has no scope switch when nothing is tagged", () => {
+  it("leaves search scope unset when nothing is tagged", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
 
     expect(

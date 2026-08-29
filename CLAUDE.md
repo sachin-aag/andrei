@@ -333,7 +333,7 @@ Sessions created before type-generic Improve AI (Convergent Review 404) re-run e
 - `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
 - `context-map.ts` — serializes report state + ready docs (sanitized `summary=`)
 - `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools, pack-gated `plot_measurements` (off for Convergent Document chat); sanitizes untrusted metadata here (not in `src/lib/attachments/`)
-- `fields.ts` / `section-scope.ts` — type-specific editable sections (`chatEditableSections`)
+- `fields.ts` — type-specific editable sections (`chatEditableSections`); tagged `@` sections set chat scope
 - `mentions.ts` — `@` documents/sections
 - `propose-edit.ts`, `session-title.ts`, `access.ts`
 

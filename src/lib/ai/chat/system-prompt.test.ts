@@ -17,7 +17,7 @@ describe("isChatMode", () => {
 });
 
 describe("buildChatSystemPrompt", () => {
-  it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
+  it("pins the current chat prompt version", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
       "chat-v53-drop-section-switch"
     );
@@ -240,8 +240,6 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("Section focus: Define [define]");
     expect(prompt).toContain("The engineer tagged **Define**");
-    expect(prompt).not.toContain("section dropdown");
-    expect(prompt).not.toContain("suggest_section_scope");
     expect(prompt).toContain('on section "define"');
     expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image");
     expect(prompt).toContain("DEFINE_ONLY");

@@ -1,19 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCriteriaOutline } from "./criteria-outline";
-import { chatEditableSections, parseChatSectionScope } from "./fields";
+import { chatEditableSections } from "./fields";
 import { detectSectionIntentFromText } from "./section-intent";
-
-describe("parseChatSectionScope", () => {
-  it("defaults unknown values to all", () => {
-    expect(parseChatSectionScope(undefined)).toBe("all");
-    expect(parseChatSectionScope("bogus")).toBe("all");
-  });
-
-  it("accepts all and editable section ids", () => {
-    expect(parseChatSectionScope("all")).toBe("all");
-    expect(parseChatSectionScope("analyze")).toBe("analyze");
-  });
-});
 
 describe("detectSectionIntentFromText", () => {
   it("detects analyze intent from root cause phrasing", () => {
@@ -62,15 +49,5 @@ describe("detectSectionIntentFromText", () => {
     expect(
       detectSectionIntentFromText("Draft define section", "design_verification")
     ).toBeNull();
-  });
-});
-
-describe("buildCriteriaOutline scope", () => {
-  it("filters to a single section when scoped", () => {
-    const scoped = buildCriteriaOutline("define");
-    const all = buildCriteriaOutline("all");
-    expect(scoped).toContain("[define]:");
-    expect(scoped).not.toContain("[measure]:");
-    expect(all).toContain("[measure]:");
   });
 });

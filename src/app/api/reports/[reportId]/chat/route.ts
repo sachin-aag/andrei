@@ -44,11 +44,7 @@ import {
   type ChatPace,
 } from "@/lib/ai/chat/pace";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
-import {
-  parseChatSectionScope,
-  primaryFieldForSection,
-  type ChatSectionScope,
-} from "@/lib/ai/chat/fields";
+import { primaryFieldForSection } from "@/lib/ai/chat/fields";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
@@ -154,7 +150,6 @@ export async function POST(
     sessionId?: string;
     mode?: string;
     pace?: string;
-    sectionScope?: string;
     mentions?: unknown;
     workspaceChrome?: unknown;
   };
@@ -173,15 +168,10 @@ export async function POST(
     body.mentions,
     accessEarly.report.documentType
   );
-  const mentionScope = sectionScopeFromMentions(
+  const sectionScope = sectionScopeFromMentions(
     requestedMentions,
     accessEarly.report.documentType
   );
-  const sectionScope: ChatSectionScope = requestedMentions.some(
-    (mention) => mention.type === "section"
-  )
-    ? mentionScope
-    : parseChatSectionScope(body.sectionScope, accessEarly.report.documentType);
 
   const access = accessEarly;
   const { report } = access;

@@ -30,7 +30,7 @@ system prompt when kickoff retrieval hits.
   `pageContext`) → `sanitizePromptMetadata` in chat/tools. Never import that
   helper from `src/lib/attachments/`.
 - New tools: register in `buildChatTools` **and** add to the Plan allowlist in
-  `src/app/api/reports/[reportId]/chat/route.ts` (`mode === "plan"` object).
+  `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
   Missing from the allowlist = silent Plan-mode gap.
 - Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
   + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no

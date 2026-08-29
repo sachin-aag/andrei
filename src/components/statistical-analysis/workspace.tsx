@@ -53,7 +53,7 @@ import {
   type WorksheetData,
 } from "@/lib/statistical-analysis/types";
 import { analysisListSubtitle, withLocalStale } from "@/lib/statistical-analysis/stale";
-import { chatSheetOptionsFromWorksheet } from "@/lib/statistical-analysis/chat-sheet-scope";
+import { chatSheetOptionsFromWorksheet } from "@/lib/statistical-analysis/worksheet-sheet-options";
 import {
   publishWorksheetSheets,
   unpublishLiveWorksheetSheets,
