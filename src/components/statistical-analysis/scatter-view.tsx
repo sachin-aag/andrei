@@ -28,6 +28,7 @@ import {
 } from "@/lib/statistical-analysis/spec-limit-labels";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
 
 const WIDTH = 960;
 const HEIGHT = 720;
@@ -262,14 +263,18 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
 export function ScatterView({
   analysis,
   onEdit,
+  onRecompute,
   onDelete,
   editing = false,
+  recomputing = false,
   readOnly = false,
 }: {
   analysis: ScatterAnalysisSummary | XyScatterAnalysisSummary;
   onEdit: () => void;
+  onRecompute: () => void;
   onDelete: () => void;
   editing?: boolean;
+  recomputing?: boolean;
   readOnly?: boolean;
 }) {
   const spec = analysis.results.specs[0];
@@ -319,6 +324,11 @@ export function ScatterView({
           </Button>
           {readOnly ? null : (
             <>
+              <AnalysisRecomputeButton
+                onClick={onRecompute}
+                recomputing={recomputing}
+                disabled={editing}
+              />
               <Button
                 type="button"
                 variant="outline"

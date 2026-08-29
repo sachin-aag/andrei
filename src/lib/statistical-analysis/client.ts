@@ -169,7 +169,7 @@ async function postAnalysis(
   return { analytics: body.analytics, analysisId };
 }
 
-export async function recomputeCapabilitySixpack(
+export async function recomputeAnalysis(
   reportId: string,
   analysisId: string
 ): Promise<ReportAnalyticsView> {

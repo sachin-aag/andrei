@@ -32,6 +32,7 @@ import {
 } from "@/lib/statistical-analysis/download";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
 
 function domain(values: number[], pad = 0.08): [number, number] {
   if (values.length === 0) return [-1, 1];
@@ -563,14 +564,18 @@ function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
 export function SixpackView({
   analysis,
   onEdit,
+  onRecompute,
   onDelete,
   editing = false,
+  recomputing = false,
   readOnly = false,
 }: {
   analysis: SixpackAnalysisSummary;
   onEdit: () => void;
+  onRecompute: () => void;
   onDelete: () => void;
   editing?: boolean;
+  recomputing?: boolean;
   readOnly?: boolean;
 }) {
   const { results, config, stale, title } = analysis;
@@ -612,6 +617,11 @@ export function SixpackView({
           </Button>
           {readOnly ? null : (
             <>
+              <AnalysisRecomputeButton
+                onClick={onRecompute}
+                recomputing={recomputing}
+                disabled={editing}
+              />
               <Button
                 type="button"
                 variant="outline"
@@ -636,8 +646,8 @@ export function SixpackView({
           className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-950"
           role="status"
         >
-          Worksheet data changed after this analysis. Edit the analysis to
-          refresh the sixpack; the stored result is unchanged until you do.
+          Worksheet data changed after this analysis. Recompute to refresh the
+          plot with current data, or Edit to change the analysis settings.
         </p>
       ) : null}
 

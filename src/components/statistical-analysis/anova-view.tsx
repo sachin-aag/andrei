@@ -18,6 +18,7 @@ import {
 import { chartBrandColors, seriesFill } from "@/lib/charts/brand-colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
 
 const WIDTH = 960;
 const HEIGHT = 420;
@@ -200,14 +201,18 @@ function Td({
 export function AnovaView({
   analysis,
   onEdit,
+  onRecompute,
   onDelete,
   editing = false,
+  recomputing = false,
   readOnly = false,
 }: {
   analysis: AnovaAnalysisSummary;
   onEdit: () => void;
+  onRecompute: () => void;
   onDelete: () => void;
   editing?: boolean;
+  recomputing?: boolean;
   readOnly?: boolean;
 }) {
   const { results, config, stale, title } = analysis;
@@ -253,6 +258,11 @@ export function AnovaView({
           </Button>
           {readOnly ? null : (
             <>
+              <AnalysisRecomputeButton
+                onClick={onRecompute}
+                recomputing={recomputing}
+                disabled={editing}
+              />
               <Button
                 type="button"
                 variant="outline"

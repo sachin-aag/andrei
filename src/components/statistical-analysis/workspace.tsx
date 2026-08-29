@@ -18,6 +18,7 @@ import {
   deleteCapabilitySixpack,
   getReportAnalytics,
   patchReportAnalytics,
+  recomputeAnalysis,
   updateAnalysis,
   AnalyticsConflictError,
 } from "@/lib/statistical-analysis/client";
@@ -134,6 +135,9 @@ export function StatisticalWorkspace({
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetNameDraft, setSheetNameDraft] = useState("");
   const [editingAnalysisId, setEditingAnalysisId] = useState<string | null>(null);
+  const [recomputingAnalysisId, setRecomputingAnalysisId] = useState<string | null>(
+    null
+  );
   const sheetNameInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -432,6 +436,28 @@ export function StatisticalWorkspace({
   const clearAnalysisEdit = useCallback(() => {
     setEditingAnalysisId(null);
   }, []);
+
+  const recomputeSelectedAnalysis = useCallback(
+    async (analysis: StatisticalAnalysisSummary) => {
+      if (readOnly) return;
+      setRecomputingAnalysisId(analysis.id);
+      try {
+        await flush().catch(() => undefined);
+        const next = await recomputeAnalysis(reportId, analysis.id);
+        applyAnalytics(next, { selectAnalysisId: analysis.id });
+        toast.success("Analysis recomputed.");
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not recompute the analysis."
+        );
+      } finally {
+        setRecomputingAnalysisId(null);
+      }
+    },
+    [applyAnalytics, flush, readOnly, reportId]
+  );
 
   useEffect(() => {
     if (editingSheetId !== null) sheetNameInputRef.current?.focus();
@@ -832,6 +858,8 @@ export function StatisticalWorkspace({
                     analysis={selectedAnalysis}
                     readOnly={readOnly}
                     editing={Boolean(editingAnalysisId)}
+                    recomputing={recomputingAnalysisId === selectedAnalysis.id}
+                    onRecompute={() => void recomputeSelectedAnalysis(selectedAnalysis)}
                     onEdit={() => openAnalysisEdit(selectedAnalysis)}
                     onDelete={async () => {
                       try {
@@ -854,6 +882,8 @@ export function StatisticalWorkspace({
                     analysis={selectedAnalysis}
                     readOnly={readOnly}
                     editing={Boolean(editingAnalysisId)}
+                    recomputing={recomputingAnalysisId === selectedAnalysis.id}
+                    onRecompute={() => void recomputeSelectedAnalysis(selectedAnalysis)}
                     onEdit={() => openAnalysisEdit(selectedAnalysis)}
                     onDelete={async () => {
                       try {
@@ -876,6 +906,8 @@ export function StatisticalWorkspace({
                     analysis={selectedAnalysis}
                     readOnly={readOnly}
                     editing={Boolean(editingAnalysisId)}
+                    recomputing={recomputingAnalysisId === selectedAnalysis.id}
+                    onRecompute={() => void recomputeSelectedAnalysis(selectedAnalysis)}
                     onEdit={() => openAnalysisEdit(selectedAnalysis)}
                     onDelete={async () => {
                       try {
