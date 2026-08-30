@@ -134,7 +134,7 @@ Required in `.env.local` (see `.env.example` for all options):
 | `AUTH_RESEND_KEY` | Resend API key for magic-link emails |
 | `AI_GATEWAY_API_KEY` | Vercel AI Gateway key. AI Check / suggestions / chat can use this **or** `GOOGLE_GENERATIVE_AI_API_KEY`. |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini key (alternative to gateway for eval/suggest/chat) |
-| `GOOGLE_VERTEX_PROJECT` | **Required for PDF/DOCX ingest + embeddings** (Vertex-only; gateway is not a fallback). Pair with WIF (`GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`) on Vercel. |
+| `GOOGLE_VERTEX_PROJECT` | **Required for PDF/DOCX ingest + embeddings and composer voice dictation** (Vertex/Speech; gateway is not a fallback). Pair with WIF (`GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`) on Vercel. |
 | `GCS_BUCKET` | Production attachment bytes. Local: `ATTACHMENT_STORAGE_BACKEND=local` **and** `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`. |
 | `SITE_ACCESS_PASSWORD` | Optional. When set, enables the site-wide password gate at `/unlock`. Unset = gate disabled. |
 | `ANDREI_CUSTOMER` | Customer pack: `demo` (default), `mj`, or `convergent`. Must agree with `NEXT_PUBLIC_ANDREI_CUSTOMER` and `ANDREI_VERCEL_DEPLOY_SCOPE`. |
@@ -152,6 +152,7 @@ Required in `.env.local` (see `.env.example` for all options):
 | `ALLOW_TEST_STUB_MATH_EXTRACTION=true` | Stubs WMF/EMF vision LLM calls |
 | `ALLOW_TEST_STUB_DOCUMENT_INGEST=true` | Stubs Vertex extract/embed; fixture must still insert pages + chunks |
 | `ALLOW_TEST_STUB_CHAT=true` | Deterministic `buildStubChatModel` (cannot assert tool selection) |
+| `ALLOW_TEST_STUB_SPEECH=true` | Streams canned composer dictation instead of Cloud Speech-to-Text |
 
 Playwright sets these automatically in `webServer.env` — do not add them to production Vercel env.
 
@@ -163,7 +164,7 @@ Playwright sets these automatically in `webServer.env` — do not add them to pr
 
 **Turbopack route registration bug:** In `pnpm dev`, a newly-added API route can fail to register on its first on-demand compile and return Next's HTML 404 page for every method. Fix: restart the dev server (optionally `rm -rf .next` first). This is a dev-server state issue, not a code bug.
 
-**AI credentials are not interchangeable:** Core flows (login, report CRUD, editor, manager review, DOCX export) work without AI keys. "Run AI Check" / suggestions / chat need `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY`. PDF/DOCX ingest + embeddings need **Vertex** (`GOOGLE_VERTEX_PROJECT`).
+**AI credentials are not interchangeable:** Core flows (login, report CRUD, editor, manager review, DOCX export) work without AI keys. "Run AI Check" / suggestions / chat need `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY`. PDF/DOCX ingest + embeddings need **Vertex** (`GOOGLE_VERTEX_PROJECT`). Composer voice dictation needs the same project plus Speech-to-Text (`roles/speech.client`; `infra/speech`).
 
 **Creating a workspace user locally:**
 ```bash
@@ -305,6 +306,8 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Entry point:** `POST /api/reports/[reportId]/chat` — `streamText()` (via `resolveChatLanguageModel()`) with tools from `buildChatTools()`, streamed back with `toUIMessageStreamResponse()`. Sessions/messages persist in `chatSessions`/`chatMessages` and are managed under `chat/sessions/[sessionId]`. Body includes `workspaceChrome`; the server derives `editPolicy` (`propose` in Document chrome, `commit` in Agent chrome when `canSaveReportSection`). Do not trust a client `editPolicy`.
 
+**Voice dictation:** Mic to the right of the image-attach icon (`ChatVoiceButton` in shared `ChatPanel`). Click to start, click to stop (no VAD). Browser PCM → `POST /api/reports/[reportId]/chat/transcribe` (duplex streaming body + SSE). Speech-to-Text v2 Chirp 3 via WIF (`GOOGLE_VERTEX_PROJECT`). MJ languages: `en-IN`, `hi-IN`, `mr-IN` in native script (Devanagari is fine). Demo/Convergent: `en-US`. Do **not** translate STT to English. The assistant still replies in English (`LANGUAGE_RULES` in `CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`). Composer typing is locked only while recording. Stub: `ALLOW_TEST_STUB_SPEECH`. Terraform: `infra/speech`.
+
 **Logic in `src/lib/ai/chat/`:**
 - `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`; commit copy when `editPolicy` is `commit`
 - `edit-policy.ts` / `commit-edit.ts` — Agent chrome writes `report_sections` in a `FOR UPDATE` transaction; Document chrome still inserts suggestion comments
@@ -318,7 +321,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Plan-mode allowlist** in `src/lib/ai/chat/document-review.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, plus document-review tools. New tools must be added here or they are silently missing in Plan. Analytics worksheet/plot tools stay off this list.
 
-**Spectrum:** Document and Agent share `ChatPanel`. Composer/scope/tool changes must cover Document | Agent chrome, `/chat` **and** `/analytics/chat`, prompt versions (`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`), Plan allowlist, retrieval-policy, already-drafted, stub model, colocated tests, and `AGENTS.md` / this file / `.cursor/rules/chat-and-attachments.mdc`. Removing a control means deleting parsers, prompt copy, switch-section tools, and tests for it — not hiding the UI. Empty-state Document chips are `chat.examplePrompts` on the document type (Purpose & Scope on DV, Define on investigation); Analytics chips stay in `ANALYTICS_EXAMPLE_PROMPTS`.
+**Spectrum:** Document and Agent share `ChatPanel`. Composer/scope/tool changes must cover Document | Agent chrome, `/chat` **and** `/analytics/chat`, prompt versions (`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`), Plan allowlist, retrieval-policy, already-drafted, stub model, colocated tests, and `AGENTS.md` / this file / `.cursor/rules/chat-and-attachments.mdc`. Voice dictation is that same shared composer control. Removing a control means deleting parsers, prompt copy, switch-section tools, and tests for it — not hiding the UI. Empty-state Document chips are `chat.examplePrompts` on the document type (Purpose & Scope on DV, Define on investigation); Analytics chips stay in `ANALYTICS_EXAMPLE_PROMPTS`.
 
 **Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Comprehensive page review is for inventories / open-set drafts, not sentence rewrites; `finish_document_review` caps findings and follow-up turns strip prior findings arrays (`compactChatToolHistoryForModel`). Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
 

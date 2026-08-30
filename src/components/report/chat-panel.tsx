@@ -38,7 +38,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ChatMarkdown } from "@/components/report/chat-markdown";
+import { ChatVoiceButton } from "@/components/report/chat-voice-button";
+import { useVoiceDictation } from "@/hooks/use-voice-dictation";
 import { ChatMessageTargetTag } from "@/components/report/chat-message-target-tag";
 import {
   chatMessageTargetLabel,
@@ -993,6 +994,8 @@ export function ChatPanel({
       : "You can't propose edits on this report right now.";
   const { attachments } = useReportAttachments();
   const [input, setInput] = useState("");
+  const inputRef = useRef(input);
+  inputRef.current = input;
   const showUploadingNotice = useDocumentUploadingNotice(input);
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
   const [mentionRange, setMentionRange] = useState<MentionQuery | null>(null);
@@ -1115,6 +1118,13 @@ export function ChatPanel({
     silentMs,
   } = runtime;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
+  const voice = useVoiceDictation({
+    reportId: report.id,
+    getPrefix: () => inputRef.current,
+    onComposerValue: setInput,
+    disabled: busy || initializing || attaching || !hostReady,
+  });
+  const voiceLock = voice.recording || voice.status === "requesting";
   const watchdog = chatWatchdogPhase({
     busy: streamBusy,
     elapsedMs,
@@ -1740,7 +1750,13 @@ export function ChatPanel({
       const attached = images ?? pendingImages;
       const trimmed = text.trim();
       const files = attached.map((image) => image.part);
-      if ((!trimmed && files.length === 0) || busy || initializing || attaching) {
+      if (
+        (!trimmed && files.length === 0) ||
+        busy ||
+        initializing ||
+        attaching ||
+        voiceLock
+      ) {
         return;
       }
       const agentDonePrefs = readAgentDonePrefs(currentUserId);
@@ -1824,6 +1840,7 @@ export function ChatPanel({
       attaching,
       busy,
       initializing,
+      voiceLock,
       currentSessionId,
       createSession,
       mountSession,
@@ -1994,7 +2011,7 @@ export function ChatPanel({
                 <button
                   key={p}
                   type="button"
-                  disabled={busy || initializing || !hostReady}
+                  disabled={busy || initializing || voiceLock || !hostReady}
                   onClick={() => void send(p, [])}
                   className="w-full rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 text-left text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] disabled:opacity-50"
                 >
@@ -2045,6 +2062,7 @@ export function ChatPanel({
         className="border-t border-[var(--border)] p-3"
         onSubmit={(e) => {
           e.preventDefault();
+          if (voiceLock) return;
           void send(input);
         }}
       >
@@ -2134,6 +2152,7 @@ export function ChatPanel({
                   : undefined
               }
               onChange={(e) => {
+                if (voiceLock) return;
                 const value = e.target.value;
                 setInput(value);
                 updateMentionQuery(value, e.target.selectionStart ?? value.length);
@@ -2177,6 +2196,10 @@ export function ChatPanel({
                     return;
                   }
                 }
+                if (voiceLock) {
+                  e.preventDefault();
+                  return;
+                }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   void send(input);
@@ -2184,6 +2207,7 @@ export function ChatPanel({
               }}
               rows={3}
               disabled={initializing}
+              readOnly={voiceLock}
               placeholder={composerPlaceholder({
                 targetingAnalytics,
                 mode,
@@ -2221,7 +2245,7 @@ export function ChatPanel({
             <div className="flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                disabled={busy || initializing || attaching || !hostReady}
+                disabled={busy || initializing || attaching || voiceLock || !hostReady}
                 aria-label="Attach image"
                 title="Attach image"
                 data-testid={targetingAnalytics ? "analytics-chat-attach-image" : undefined}
@@ -2234,6 +2258,14 @@ export function ChatPanel({
                   <ImagePlus className="size-3.5" aria-hidden="true" />
                 )}
               </button>
+              <ChatVoiceButton
+                recording={voice.recording}
+                requesting={voice.status === "requesting"}
+                level={voice.level}
+                disabled={busy || initializing || attaching || !hostReady}
+                targetingAnalytics={targetingAnalytics}
+                onToggle={voice.toggle}
+              />
               {busy ? (
                 <button
                   type="button"
@@ -2250,6 +2282,7 @@ export function ChatPanel({
                   disabled={
                     initializing ||
                     attaching ||
+                    voiceLock ||
                     !hostReady ||
                     (!input.trim() && pendingImages.length === 0)
                   }

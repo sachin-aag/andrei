@@ -82,6 +82,7 @@ export default defineConfig({
       ALLOW_TEST_STUB_MATH_EXTRACTION: "true",
       ALLOW_TEST_STUB_DOCUMENT_INGEST: "true",
       ALLOW_TEST_STUB_CHAT: "true",
+      ALLOW_TEST_STUB_SPEECH: "true",
       ATTACHMENT_STORAGE_BACKEND: "local",
       ALLOW_LOCAL_ATTACHMENT_STORAGE: "true",
       AUTH_URL: playwrightAuthUrl,

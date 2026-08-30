@@ -67,8 +67,18 @@ export type CustomerPack = {
    * On for demo, MJ, and Convergent.
    */
   statisticalAnalysisEnabled: boolean;
+  /**
+   * Spoken locales for composer voice dictation (Speech-to-Text v2 Chirp 3).
+   * MJ includes Hindi and Marathi; other packs are English-only. Transcripts
+   * stay in the spoken script (Devanagari is fine). The assistant still
+   * replies in English.
+   */
+  voiceInputLanguageCodes: readonly string[];
   branding: CustomerBranding;
 };
+
+export const VOICE_INPUT_ENGLISH_CODES = ["en-US"] as const;
+export const VOICE_INPUT_MJ_CODES = ["en-IN", "hi-IN", "mr-IN"] as const;
 
 const ANDREI_BRANDING: CustomerBranding = {
   productName: "Andrei",
@@ -160,6 +170,7 @@ export const DEMO_PACK: CustomerPack = {
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
+  voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
   branding: ANDREI_BRANDING,
 };
 
@@ -180,6 +191,7 @@ export const CONVERGENT_PACK: CustomerPack = {
   citationsAtEndOfSection: true,
   expertReviewEnabled: true,
   statisticalAnalysisEnabled: true,
+  voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
   branding: CONVERGENT_BRANDING,
 };
 
@@ -196,6 +208,7 @@ export const MJ_PACK: CustomerPack = {
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
+  voiceInputLanguageCodes: VOICE_INPUT_MJ_CODES,
   branding: MJ_BRANDING,
 };
 
@@ -225,4 +238,10 @@ export function isStatisticalAnalysisEnabled(
   pack: CustomerPack = getCustomerPack()
 ): boolean {
   return pack.statisticalAnalysisEnabled;
+}
+
+export function voiceInputLanguageCodes(
+  pack: CustomerPack = getCustomerPack()
+): readonly string[] {
+  return pack.voiceInputLanguageCodes;
 }

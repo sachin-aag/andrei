@@ -19,6 +19,7 @@ import {
   setChatWorkProductTarget,
   setReportChrome,
 } from "./helpers/workspace";
+import { installFakeMicrophone, STUB_VOICE_FINAL } from "./helpers/voice";
 
 test.describe.configure({ mode: "serial" });
 
@@ -59,6 +60,7 @@ test.describe("report chat", () => {
   let reportId: string | null = null;
 
   test.beforeEach(async ({ page }) => {
+    await installFakeMicrophone(page);
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAsEngineer(page);
     const created = await createReport(page);
@@ -441,5 +443,39 @@ test.describe("report chat", () => {
     await expect(chatUserMessage(page, "analytics history ping")).toBeVisible();
     await expect(chatMessageTargetTag(page, "report")).toHaveCount(2);
     await expect(chatMessageTargetTag(page, "analytics")).toHaveCount(2);
+  });
+
+  test("streams stub dictation into Document and Analytics composers", async ({
+    page,
+  }) => {
+    await openReportAssistant(page);
+    const sidebar = reportSidebar(page);
+    await setReportChrome(page, "document");
+    const reportMic = sidebar.getByTestId("chat-voice-input");
+    await expect(reportMic).toBeVisible({ timeout: 15_000 });
+    const reportComposer = sidebar.getByPlaceholder(
+      /ask about the report or attachments/i
+    );
+    await expect(reportComposer).toBeEnabled({ timeout: 15_000 });
+    await reportComposer.fill("Prefix ");
+    await reportMic.click();
+    await expect(reportComposer).toHaveValue(
+      new RegExp(`Prefix\\s+${STUB_VOICE_FINAL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+      { timeout: 15_000 }
+    );
+
+    await setReportChrome(page, "agent");
+    await openReportAssistant(page);
+    await expect(sidebar.getByTestId("chat-voice-input")).toBeVisible();
+
+    await setChatWorkProductTarget(page, "analytics");
+    const analyticsComposer = sidebar.getByTestId("analytics-chat-input");
+    await expect(analyticsComposer).toBeEnabled({ timeout: 15_000 });
+    await expect(sidebar.getByTestId("analytics-chat-voice-input")).toBeVisible();
+    await analyticsComposer.fill("");
+    await sidebar.getByTestId("analytics-chat-voice-input").click();
+    await expect(analyticsComposer).toHaveValue(STUB_VOICE_FINAL, {
+      timeout: 15_000,
+    });
   });
 });

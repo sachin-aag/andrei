@@ -21,7 +21,11 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v26";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v27-voice-english";
+
+const LANGUAGE_RULES = `## Language
+The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
+Reply only in English. Worksheet names, column headers you write, questions, and user-visible tool arguments must be English. Quoted source text and proper names may stay in the original language.`;
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -205,6 +209,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
   const mentionBlock = input.mentionBlock?.trim();
   return [
     "You are Andrei's Statistical Analysis assistant for this report.",
+    LANGUAGE_RULES,
     editLine,
     modeRules(input.mode, input.canEdit),
     `Report ${quotePromptMetadata(sanitizePromptMetadata(input.documentNo, 80) || "untitled")} · status ${input.status}.`,

@@ -18,7 +18,14 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v67-plot-confirm");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v68-voice-english");
+  });
+
+  it("understands native-script dictation and replies in English", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("## Language");
+    expect(prompt).toContain("Devanagari");
+    expect(prompt).toContain("Reply only in English");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
