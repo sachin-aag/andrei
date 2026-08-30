@@ -7,10 +7,12 @@ import {
   listInsertableGraphAnalyses,
 } from "@/lib/statistical-analysis/insertable-graphs";
 import {
+  BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
+  isBoxplotAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -298,6 +300,8 @@ function graphKindLabel(kind: AnalysisKind): string {
       return "measurement scatter";
     case XY_SCATTER:
       return "XY scatter";
+    case BOXPLOT:
+      return "boxplot";
     case ONE_WAY_ANOVA:
       return "ANOVA";
     default: {
@@ -346,6 +350,14 @@ function analysisIdentityTokens(
       analysis.config.title,
       "scatter",
       "xy"
+    );
+  } else if (isBoxplotAnalysis(analysis)) {
+    parts.push(
+      analysis.config.yColumnName,
+      ...analysis.config.categoryColumnNames,
+      analysis.config.title,
+      "boxplot",
+      "box"
     );
   }
   return [...new Set(tokenizePlotName(parts.join(" ")))];

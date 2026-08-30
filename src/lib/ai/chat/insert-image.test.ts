@@ -309,4 +309,38 @@ describe("resolveNamedAnalyticsPlot", () => {
     });
     expect(result).toEqual({ ok: true, analysisId: assay.id });
   });
+
+  it("matches a boxplot by Y column and lists it as a boxplot", () => {
+    const boxplot = {
+      ...assay,
+      id: "anl_box",
+      title: "Boxplot of Assay by Lot",
+      kind: "boxplot" as const,
+      previewImage: {
+        ...assay.previewImage,
+        alt: "Boxplot of Assay by Lot",
+      },
+      config: {
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        categoryColumnIds: ["c2"],
+        categoryColumnNames: ["Lot"],
+        title: "Boxplot of Assay by Lot",
+      },
+      results: { n: 10, skipped: 0, groups: [] },
+    } satisfies StatisticalAnalysisSummary;
+
+    expect(plotMatchesNamedTokens(boxplot, ["assay", "lot"])).toBe(true);
+    expect(plotMatchesNamedTokens(boxplot, ["torque"])).toBe(false);
+
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay, boxplot],
+      userText: "insert the torque plot",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("Boxplot of Assay by Lot");
+    expect(result.message).toContain("(boxplot)");
+  });
 });
