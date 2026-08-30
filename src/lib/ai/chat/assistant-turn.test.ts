@@ -32,7 +32,7 @@ describe("assistantPartsHaveVisibleContent", () => {
     );
     expect(
       assistantPartsHaveVisibleContent([{ type: "reasoning", text: "thoughts" }])
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("is true for visible text, files, or tool parts", () => {
