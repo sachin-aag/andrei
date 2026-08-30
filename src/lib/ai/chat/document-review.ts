@@ -24,6 +24,7 @@ import {
 } from "@/lib/ai/chat/document-review-ui";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
+import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 
 export { DOCUMENT_REVIEW_TOOL_NAMES, type DocumentReviewToolName };
 
@@ -656,6 +657,13 @@ async function extractReviewBatchWithLlm(input: {
       `Objective: ${input.objective || "inventory requirements, configurations, and results"}`,
       pageBlock,
     ].join("\n\n"),
+    ...langfuseGenerateTextTelemetry({
+      functionId: "document-review-extract",
+      metadata: {
+        feature: "document_review_extract",
+        pageCount: input.pages.length,
+      },
+    }),
   });
 
   await recordAiUsage({
