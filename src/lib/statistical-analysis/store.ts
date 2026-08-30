@@ -849,7 +849,7 @@ export async function recomputeAnalysisForReport(
         seriesBy: existing.config.layout.seriesBy,
         xAxis:
           existing.config.layout.xAxis === "replicate" ? "replicate" : "sequential",
-        yMax: existing.config.layout.yRange?.max,
+        yMax: existing.config.layout.yRange?.max ?? undefined,
       },
       lsl: existing.config.lsl,
       usl: existing.config.usl,
