@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
+import { voiceInputLanguageCodes } from "@/lib/customers";
 import { encodeVoiceSse } from "@/lib/voice/events";
+import { resolveVoiceLanguageCodes } from "@/lib/voice/languages";
 import {
   createVoiceSession,
   getVoiceSession,
@@ -110,14 +112,20 @@ export async function POST(request: Request, context: RouteContext) {
 
   let action: "start" | "stop" = "start";
   let sessionId: string | null = null;
+  let languageCodes: readonly string[] = voiceInputLanguageCodes();
   if (contentType.includes("application/json")) {
     try {
       const body = (await request.json()) as {
         action?: string;
         sessionId?: string;
+        languageCodes?: unknown;
       };
       if (body.action === "stop") action = "stop";
       if (typeof body.sessionId === "string") sessionId = body.sessionId;
+      languageCodes = resolveVoiceLanguageCodes(
+        body.languageCodes,
+        voiceInputLanguageCodes()
+      );
     } catch {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
@@ -132,6 +140,6 @@ export async function POST(request: Request, context: RouteContext) {
     return new NextResponse(null, { status: 204 });
   }
 
-  const session = createVoiceSession(reportId, auth.user.id);
+  const session = createVoiceSession(reportId, auth.user.id, languageCodes);
   return NextResponse.json({ sessionId: session.id });
 }

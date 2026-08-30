@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { VOICE_MAX_DURATION_MS, VOICE_SAMPLE_RATE_HZ } from "@/lib/voice/constants";
+import { voiceInputLanguageCodes } from "@/lib/customers";
+import { VOICE_MAX_DURATION_MS } from "@/lib/voice/constants";
 import { parseVoiceSseBlock } from "@/lib/voice/events";
+import {
+  languageCodesForPreference,
+  readStoredVoiceLanguage,
+} from "@/lib/voice/languages";
 import { PCM_CAPTURE_WORKLET } from "@/lib/voice/pcm-worklet";
 import {
   applyVoiceTranscript,
@@ -11,6 +16,7 @@ import {
   voiceComposerValue,
   type VoiceTranscriptState,
 } from "@/lib/voice/transcript";
+import { voiceUserErrorMessage } from "@/lib/voice/user-error";
 
 export type VoiceDictationStatus =
   | "idle"
@@ -74,11 +80,14 @@ export function useVoiceDictation({
     setLevel(0);
   }, []);
 
+  const stopRef = useRef<() => Promise<void>>(async () => {});
+
   const applyEvent = useCallback((raw: string) => {
     const event = parseVoiceSseBlock(raw);
     if (!event) return;
     if (event.type === "error") {
-      toast.error(event.message);
+      toast.error(voiceUserErrorMessage(event.message));
+      void stopRef.current();
       return;
     }
     if (event.type === "transcript") {
@@ -190,6 +199,7 @@ export function useVoiceDictation({
     transcriptRef.current = null;
     setStatus("idle");
   }, [reportId, tearDownAudio]);
+  stopRef.current = stop;
 
   const start = useCallback(async () => {
     if (disabled || statusRef.current !== "idle") return;
@@ -197,11 +207,16 @@ export function useVoiceDictation({
     transcriptRef.current = createVoiceTranscriptState(getPrefixRef.current());
 
     try {
+      const allowed = voiceInputLanguageCodes();
+      const languageCodes = languageCodesForPreference(
+        readStoredVoiceLanguage(allowed),
+        allowed
+      );
       const startResponse = await fetch(transcribeUrl(reportId), {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "start" }),
+        body: JSON.stringify({ action: "start", languageCodes }),
       });
       if (!startResponse.ok) {
         throw new Error("Could not start voice input.");
@@ -272,9 +287,7 @@ export function useVoiceDictation({
 
       void ssePromise.catch((error) => {
         if (sseAbort.signal.aborted) return;
-        const message =
-          error instanceof Error ? error.message : "Voice input failed.";
-        toast.error(message);
+        toast.error(voiceUserErrorMessage(error));
         void stop();
       });
     } catch (error) {
@@ -289,9 +302,7 @@ export function useVoiceDictation({
         toast.error("Microphone access is required for voice input.");
         return;
       }
-      const message =
-        error instanceof Error ? error.message : "Could not start the microphone.";
-      toast.error(message);
+      toast.error(voiceUserErrorMessage(error));
     }
   }, [disabled, enqueueAudio, listenSse, reportId, stop, tearDownAudio]);
 

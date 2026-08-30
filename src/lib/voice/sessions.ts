@@ -8,6 +8,7 @@ import {
   type SpeechStream,
 } from "@/lib/voice/speech-stream";
 import { streamStubVoiceEvents } from "@/lib/voice/stub-stream";
+import { voiceUserErrorMessage } from "@/lib/voice/user-error";
 
 export type VoiceSession = {
   id: string;
@@ -101,7 +102,11 @@ async function runStub(session: VoiceSession): Promise<void> {
   }
 }
 
-export function createVoiceSession(reportId: string, userId: string): VoiceSession {
+export function createVoiceSession(
+  reportId: string,
+  userId: string,
+  languageCodes: readonly string[] = voiceInputLanguageCodes()
+): VoiceSession {
   const session: VoiceSession = {
     id: randomUUID(),
     reportId,
@@ -118,10 +123,10 @@ export function createVoiceSession(reportId: string, userId: string): VoiceSessi
     void runStub(session);
   } else {
     session.speech = openSpeechRecognizeStream({
-      languageCodes: voiceInputLanguageCodes(),
+      languageCodes,
       onTranscript: (event) => emit(session, event),
       onError: (error) => {
-        emit(session, { type: "error", message: error.message });
+        emit(session, { type: "error", message: voiceUserErrorMessage(error) });
         finish(session);
       },
       onEnd: () => finish(session),
