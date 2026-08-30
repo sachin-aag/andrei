@@ -3,7 +3,9 @@ import {
   CHAT_NEAR_BOTTOM_PX,
   captureChatScrollPosition,
   isChatScrollerLaidOut,
+  pinChatScrollerToBottom,
   restoreChatScrollPosition,
+  shouldReapplyChatScroll,
   shouldStickChatToBottom,
 } from "@/components/report/chat-scroll-position";
 
@@ -68,6 +70,43 @@ describe("captureChatScrollPosition", () => {
   });
 });
 
+describe("shouldReapplyChatScroll", () => {
+  it("reapplies when the panel becomes laid out or its width changes", () => {
+    expect(
+      shouldReapplyChatScroll({
+        wasLaidOut: false,
+        nowLaidOut: true,
+        previousWidth: 0,
+        currentWidth: 360,
+      })
+    ).toBe(true);
+    expect(
+      shouldReapplyChatScroll({
+        wasLaidOut: true,
+        nowLaidOut: true,
+        previousWidth: 48,
+        currentWidth: 360,
+      })
+    ).toBe(true);
+    expect(
+      shouldReapplyChatScroll({
+        wasLaidOut: true,
+        nowLaidOut: true,
+        previousWidth: 360,
+        currentWidth: 360,
+      })
+    ).toBe(false);
+    expect(
+      shouldReapplyChatScroll({
+        wasLaidOut: true,
+        nowLaidOut: false,
+        previousWidth: 360,
+        currentWidth: 0,
+      })
+    ).toBe(false);
+  });
+});
+
 describe("shouldStickChatToBottom", () => {
   it("sticks when the last position is unknown or already at the bottom", () => {
     expect(shouldStickChatToBottom(null)).toBe(true);
@@ -75,6 +114,26 @@ describe("shouldStickChatToBottom", () => {
     expect(shouldStickChatToBottom({ kind: "offset", fromBottom: 120 })).toBe(
       false
     );
+  });
+});
+
+describe("pinChatScrollerToBottom", () => {
+  it("pins instantly and skips a zero-height box", () => {
+    const el = scroller({
+      scrollTop: 80,
+      scrollHeight: 1000,
+      clientHeight: 400,
+    });
+    pinChatScrollerToBottom(el);
+    expect(el.scrollTop).toBe(1000);
+
+    const hidden = scroller({
+      scrollTop: 12,
+      scrollHeight: 0,
+      clientHeight: 0,
+    });
+    pinChatScrollerToBottom(hidden);
+    expect(hidden.scrollTop).toBe(12);
   });
 });
 
