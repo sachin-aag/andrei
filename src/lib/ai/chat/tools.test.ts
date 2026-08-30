@@ -1836,7 +1836,85 @@ describe("buildChatTools propose vs commit", () => {
     expect((result as { message: string }).message).toContain(
       "create additional plots in Analytics"
     );
+    expect((result as { message: string }).message).toContain(
+      "Do not call insert_image again this turn"
+    );
     expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("proposes the only Analytics plot when they confirm insert that one", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "yes insert that one in",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "measure",
+        targetField: "narrative",
+        reasoning: "Add the Assay scatter to Measure.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "measure",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
   });
 
   it("pairs an empty-anchor propose_edit lead-in with create_table", async () => {

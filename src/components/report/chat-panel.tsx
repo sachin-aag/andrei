@@ -311,6 +311,22 @@ function appliedEditsFromParts(
   return items;
 }
 
+/** Document proposals and Agent commits — refresh report state as soon as a card exists. */
+function persistedEditCountFromParts(
+  parts: UIMessage["parts"] | undefined
+): number {
+  let count = 0;
+  for (const part of parts ?? []) {
+    const tool = readToolPart(part as UIMessagePart<never, never>);
+    if (!tool?.output) continue;
+    const status = tool.output.status;
+    if (status === "applied" || status === "proposed" || status === "drafted") {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function ToolChip({
   info,
   askUserActive,
@@ -1081,16 +1097,15 @@ export function ChatPanel({
     busy
   );
 
-  const appliedEditCount = useMemo(
+  const persistedEditCount = useMemo(
     () =>
       messages.reduce(
-        (sum, message) =>
-          sum + appliedEditsFromParts(message.parts).length,
+        (sum, message) => sum + persistedEditCountFromParts(message.parts),
         0
       ),
     [messages]
   );
-  const appliedEditCountRef = useRef(0);
+  const persistedEditCountRef = useRef(0);
   useEffect(() => {
     if (!busy) {
       setAgentCommitInFlight(false);
@@ -1119,13 +1134,13 @@ export function ChatPanel({
     if (found) onWorksheetChanged();
   }, [messages, onWorksheetChanged]);
   useEffect(() => {
-    if (appliedEditCount <= appliedEditCountRef.current) {
-      appliedEditCountRef.current = appliedEditCount;
+    if (persistedEditCount <= persistedEditCountRef.current) {
+      persistedEditCountRef.current = persistedEditCount;
       return;
     }
-    appliedEditCountRef.current = appliedEditCount;
+    persistedEditCountRef.current = persistedEditCount;
     void refresh();
-  }, [appliedEditCount, refresh]);
+  }, [persistedEditCount, refresh]);
 
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.

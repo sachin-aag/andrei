@@ -6,6 +6,7 @@ import {
   listGraphAnalyses,
   listInsertableGraphAnalyses,
 } from "@/lib/statistical-analysis/insertable-graphs";
+import { SECTION_LABELS } from "@/types/sections";
 import {
   BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
@@ -285,12 +286,97 @@ const PLOT_NAME_STOPWORDS = new Set([
   "just",
   "here",
   "there",
+  "yes",
+  "yeah",
+  "yep",
+  "yup",
+  "ok",
+  "okay",
+  "sure",
+  "thanks",
+  "thank",
+  "no",
+  "not",
+  "dont",
+  "didnt",
+  "doesnt",
+  "isnt",
+  "wasnt",
+  "wont",
+  "cant",
+  "cannot",
+  "still",
+  "see",
+  "saw",
+  "look",
+  "looking",
+  "find",
+  "found",
+  "show",
+  "showing",
+  "shown",
+  "visible",
+  "missing",
+  "appear",
+  "appears",
+  "where",
+  "why",
+  "how",
+  "what",
+  "which",
+  "did",
+  "does",
+  "was",
+  "were",
+  "been",
+  "have",
+  "has",
+  "had",
+  "try",
+  "trying",
+  "tried",
+  "again",
+  "really",
+  "actually",
+  "maybe",
+  "perhaps",
+  "hello",
+  "hey",
+  "wait",
+  "hmm",
+  "nope",
+  "nah",
+  "both",
+  "them",
+  "method",
+  "methods",
+  "measurement",
+  "measurements",
+  "protocol",
+  "protocols",
+  "test",
+  "tests",
+  "testing",
 ]);
+
+function rawPlotNameTokens(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) ?? []).filter(
+    (token) => token.length >= 2
+  );
+}
+
+const PLOT_NAME_STOPWORDS_ALL: ReadonlySet<string> = (() => {
+  const words = new Set(PLOT_NAME_STOPWORDS);
+  for (const label of Object.values(SECTION_LABELS)) {
+    for (const token of rawPlotNameTokens(label)) words.add(token);
+  }
+  return words;
+})();
 
 const ANALYTICS_CREATE_COPY =
   "They can create additional plots in Analytics (Document | Analytics at the top of the report).";
 const RELAY_AVAILABLE_PLOTS_COPY =
-  "Reply in prose with those titles. Do not insert a different plot. Do not call plot_measurements as a substitute.";
+  "Reply in prose with those titles once. Do not call insert_image again this turn. Do not insert a different plot. Do not call plot_measurements as a substitute.";
 
 function graphKindLabel(kind: AnalysisKind): string {
   switch (kind) {
@@ -312,8 +398,8 @@ function graphKindLabel(kind: AnalysisKind): string {
 }
 
 export function tokenizePlotName(text: string): string[] {
-  return (text.toLowerCase().match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) ?? []).filter(
-    (token) => token.length >= 2 && !PLOT_NAME_STOPWORDS.has(token)
+  return rawPlotNameTokens(text).filter(
+    (token) => !PLOT_NAME_STOPWORDS_ALL.has(token)
   );
 }
 
@@ -404,6 +490,26 @@ function availablePlotsMessage(opts: {
   return `No Analytics plot matches "${requested}". Available plots: ${listed}. Tell the engineer those titles are available. ${ANALYTICS_CREATE_COPY} ${RELAY_AVAILABLE_PLOTS_COPY}`;
 }
 
+function userMessageText(message: UIMessage): string {
+  const texts: string[] = [];
+  for (const part of message.parts ?? []) {
+    if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
+      texts.push(part.text);
+    }
+  }
+  return texts.join("\n");
+}
+
+/** Most recent user turn only — confirmation ("yes, that one") must not inherit an earlier named miss. */
+export function latestUserMessageText(messages: UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role !== "user") continue;
+    return userMessageText(message);
+  }
+  return "";
+}
+
 /** Latest user turns, oldest-first among the slice, for plot-name matching. */
 export function recentUserMessageText(
   messages: UIMessage[],
@@ -415,13 +521,8 @@ export function recentUserMessageText(
     const message = messages[i];
     if (message?.role !== "user") continue;
     seen += 1;
-    const texts: string[] = [];
-    for (const part of message.parts ?? []) {
-      if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
-        texts.push(part.text);
-      }
-    }
-    if (texts.length > 0) chunks.push(texts.join("\n"));
+    const text = userMessageText(message);
+    if (text) chunks.push(text);
   }
   return chunks.reverse().join("\n");
 }
@@ -433,6 +534,8 @@ export type NamedAnalyticsPlotResolution =
 /**
  * Match the engineer's named plot against saved Analytics figures. A named
  * miss lists what is available instead of inserting a different plot.
+ * Destination-section wording and confirmation ("yes, that one") are not
+ * plot names — those follow analysisId or the only saved figure.
  */
 export function resolveNamedAnalyticsPlot(input: {
   analysisId: string;
@@ -444,7 +547,7 @@ export function resolveNamedAnalyticsPlot(input: {
   const graphs = listGraphAnalyses(input.analyses);
   const insertable = listInsertableGraphAnalyses(input.analyses);
 
-  if (namedTokens.length === 0) {
+  const pickUnnamed = (): NamedAnalyticsPlotResolution => {
     if (requestedId) {
       const requested = graphs.find((analysis) => analysis.id === requestedId);
       if (requested) {
@@ -454,13 +557,20 @@ export function resolveNamedAnalyticsPlot(input: {
     if (insertable.length === 1) {
       return { ok: true, analysisId: insertable[0]!.id };
     }
+    if (graphs.length === 1) {
+      return { ok: true, analysisId: graphs[0]!.id };
+    }
     return {
       ok: false,
       message: availablePlotsMessage({
         analyses: input.analyses,
-        unspecified: insertable.length > 1,
+        unspecified: insertable.length > 1 || graphs.length > 1,
       }),
     };
+  };
+
+  if (namedTokens.length === 0) {
+    return pickUnnamed();
   }
 
   const matches = graphs.filter((analysis) =>

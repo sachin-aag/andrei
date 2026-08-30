@@ -265,6 +265,11 @@ describe("resolveNamedAnalyticsPlot", () => {
     expect(
       tokenizePlotName("insert the torque plot into the purpose section")
     ).toEqual(["torque"]);
+    expect(
+      tokenizePlotName("insert the plot into the methods of measurement section")
+    ).toEqual([]);
+    expect(tokenizePlotName("yes insert that one in")).toEqual([]);
+    expect(tokenizePlotName("i dont see it")).toEqual([]);
     expect(plotMatchesNamedTokens(assay, ["torque"])).toBe(false);
     expect(plotMatchesNamedTokens(assay, ["assay"])).toBe(true);
   });
@@ -290,6 +295,7 @@ describe("resolveNamedAnalyticsPlot", () => {
     if (result.ok) return;
     expect(result.message).toContain("Assay sixpack");
     expect(result.message).toContain("create additional plots in Analytics");
+    expect(result.message).toContain("Do not call insert_image again this turn");
   });
 
   it("inserts the named plot even if analysisId pointed at a different figure", () => {
@@ -301,11 +307,29 @@ describe("resolveNamedAnalyticsPlot", () => {
     expect(result).toEqual({ ok: true, analysisId: torque.id });
   });
 
-  it("keeps an explicit analysisId when they did not name a series", () => {
+  it("inserts the only saved plot when they name the destination, not a series", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: "wrong-id",
+      analyses: [assay],
+      userText: "insert the plot into the methods of measurement section",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
+  });
+
+  it("inserts the listed plot when they confirm without repeating the title", () => {
     const result = resolveNamedAnalyticsPlot({
       analysisId: assay.id,
       analyses: [assay, torque],
-      userText: "insert this into purpose",
+      userText: "yes insert that one in",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
+  });
+
+  it("does not treat I don't see it as a named miss", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay],
+      userText: "i dont see it",
     });
     expect(result).toEqual({ ok: true, analysisId: assay.id });
   });

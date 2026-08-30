@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v65-table-cell-edit");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v66-insert-plot");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -159,6 +159,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain('source: "analytics"');
     expect(prompt).toContain("name the plots that are available");
     expect(prompt).toContain("create additional ones in Analytics");
+    expect(prompt).toContain("Do not call insert_image again this turn");
+    expect(prompt).toContain("Do not call insert_image repeatedly to list plots");
+    expect(prompt).toContain("call read_section on the destination");
     expect(prompt).not.toContain("Mode: ASK");
   });
 
