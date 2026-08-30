@@ -94,7 +94,6 @@ import {
   coerceTableOperationInput,
   parseTableOperation,
   summarizeTableOperation,
-  tableOperationHint,
   tableOperationInvalidHint,
 } from "@/lib/suggestions/table-operation";
 import {
