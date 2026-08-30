@@ -436,11 +436,7 @@ export function ReportWorkspace({
 
   const showReviewGutter =
     reportSurface &&
-    isReviewGutterVisible(
-      commentsGutterVisible,
-      sidebarCollapsed,
-      false
-    );
+    isReviewGutterVisible(commentsGutterVisible, false);
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -607,8 +603,8 @@ export function ReportWorkspace({
       setCriteriaFocusSection(section);
       // Leave the assistant as the engineer left it. Collapsing it after
       // Suggest fixes or a document-chrome chat proposal hid the thread as
-      // soon as the edit landed. Review margin stays opt-in (Comments switch
-      // + collapsed chat); inline suggestion marks remain in the document.
+      // soon as the edit landed. Review margin stays opt-in via the Comments
+      // switch; inline suggestion marks remain in the document.
       if (shouldCollapseAssistantOnSuggestionFocus()) {
         setSidebarCollapsed(true);
       }
@@ -690,13 +686,11 @@ export function ReportWorkspace({
 
       const gutterAlreadyVisible = isReviewGutterVisible(
         commentsGutterVisible,
-        sidebarCollapsed,
         false
       );
       setWorkProductView("report");
       setActiveTabId("report");
       setCommentsGutterVisible(true);
-      setSidebarCollapsed(true);
       if (gutterScrollTimeoutRef.current != null) {
         clearTimeout(gutterScrollTimeoutRef.current);
         gutterScrollTimeoutRef.current = null;
@@ -705,13 +699,13 @@ export function ReportWorkspace({
         scrollToCard();
         return;
       }
-      // Wait for the assistant to collapse and the gutter to mount/measure.
+      // Wait for the gutter to mount/measure.
       gutterScrollTimeoutRef.current = setTimeout(() => {
         gutterScrollTimeoutRef.current = null;
         scrollToCard();
       }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
     },
-    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed, commentsGutterVisible]
+    [comments, jumpToSection, requestCommentFocus, commentsGutterVisible]
   );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {

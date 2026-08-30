@@ -109,16 +109,14 @@ export const WORKSPACE_PANEL_WIDTH_TRANSITION_MS = 200;
 
 /**
  * Inline suggestions and comments live in the review margin. The gutter is
- * opt-in (`commentsGutterEnabled`) and only mounts while the assistant is
- * collapsed so the two surfaces never compete. Hidden while a PDF/Word preview
- * fills the canvas.
+ * opt-in via the Comments switch on the Report tab. Hidden while a PDF/Word
+ * preview fills the canvas.
  */
 export function isReviewGutterVisible(
   commentsGutterEnabled: boolean,
-  chatCollapsed: boolean,
   viewingDocument = false
 ): boolean {
-  return commentsGutterEnabled && chatCollapsed && !viewingDocument;
+  return commentsGutterEnabled && !viewingDocument;
 }
 
 export type PanelWidthBounds = {

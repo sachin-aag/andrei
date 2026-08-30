@@ -213,7 +213,7 @@ export async function setReportChrome(
   }
 }
 
-/** Collapse the assistant so the review margin (suggestions/comments) can show. */
+/** Collapse the assistant sidebar. */
 export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const collapse = sidebar.getByRole("button", { name: /collapse sidebar/i });
@@ -234,10 +234,9 @@ export async function enableCommentsGutter(page: Page): Promise<void> {
   }
 }
 
-/** Collapse assistant and enable the Comments gutter toggle. */
+/** Turn on the Comments switch so the review margin mounts. */
 export async function showReviewMargin(page: Page): Promise<void> {
   await enableCommentsGutter(page);
-  await collapseReportSidebar(page);
 }
 
 export function defineSection(page: Page) {
