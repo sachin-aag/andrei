@@ -15,6 +15,14 @@ alwaysApply: false
 
 # Chat and attachments
 
+Follow the **latest user message**. Agent mode may edit when they asked to
+write; empty sections and ready attachments are not a request to draft.
+Greetings ("hi", "hello", "thanks") must not search or call write tools
+(Document `draft_field` / Analytics `write_column`). Classifier:
+`classifyChatUserIntent` in `src/lib/ai/chat/user-intent.ts`. Retrieval
+maps those turns to focused (`reason: no_task`) and skips kickoff
+evidence. A yes after the assistant offered to draft is a write request.
+
 Search attachments **before** `ask_user`, `draft_field`, or a `[placeholder]`
 for report facts (batch, date, result, equipment ID, requirement ID, design
 output, verification objective, ECO/DCR). Exception: if the engineer asked to

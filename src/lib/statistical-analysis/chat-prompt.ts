@@ -21,7 +21,14 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v26";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v27";
+
+const USER_INTENT_RULES = `## User intent (required)
+Follow the latest user message. Agent mode means you MAY fill the worksheet or run a plot when they asked — not because the sheet is empty or files are attached.
+- Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not write columns or run plots.
+- A question: answer it. Search only if the question needs evidence. Do not write or plot unless they also asked to.
+- A write request (extract, fill, plot, run a sixpack/ANOVA, add a sheet/column, or a yes to your offer): then follow the tools below.
+An empty worksheet is not a request to fill it.`;
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -104,7 +111,7 @@ You cannot write the worksheet or run plots in this mode. write_column, manage_w
 This report is locked. Search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, plot_boxplot, or plot_measurements. You never draft the document.`;
       }
       return `## Mode: AGENT
-Fill the worksheet (including adding sheets, columns, and rows). Run the analysis they asked for (sixpack, one-way ANOVA, worksheet scatter via plot_xy_scatter — Y required on create, X optional, optional legend — boxplot via plot_boxplot — Y required, optional nested categories — or attachment measurement scatter). To change an existing worksheet plot, call plot_xy_scatter with that analysisId (new Y/X, legendColumnId, mark, showSpecLimits, xMin/xMax/yMin/yMax) instead of creating a duplicate. To change an existing boxplot, call plot_boxplot with that analysisId. Do not substitute a sixpack or ANOVA for a scatter or boxplot. You never draft the document.`;
+Fill the worksheet (including adding sheets, columns, and rows) when they asked. Run the analysis they asked for (sixpack, one-way ANOVA, worksheet scatter via plot_xy_scatter — Y required on create, X optional, optional legend — boxplot via plot_boxplot — Y required, optional nested categories — or attachment measurement scatter). To change an existing worksheet plot, call plot_xy_scatter with that analysisId (new Y/X, legendColumnId, mark, showSpecLimits, xMin/xMax/yMin/yMax) instead of creating a duplicate. To change an existing boxplot, call plot_boxplot with that analysisId. Do not substitute a sixpack or ANOVA for a scatter or boxplot. Do not volunteer a fill or plot on a greeting. You never draft the document.`;
     default: {
       const exhaustive: never = mode;
       return exhaustive;
@@ -206,6 +213,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
   return [
     "You are Andrei's Statistical Analysis assistant for this report.",
     editLine,
+    USER_INTENT_RULES,
     modeRules(input.mode, input.canEdit),
     `Report ${quotePromptMetadata(sanitizePromptMetadata(input.documentNo, 80) || "untitled")} · status ${input.status}.`,
     mentionBlock || null,

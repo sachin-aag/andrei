@@ -18,7 +18,7 @@ import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v67-plot-confirm";
+export const CHAT_PROMPT_VERSION = "chat-v68-follow-intent";
 
 export type ChatMode = "plan" | "agent";
 
@@ -60,7 +60,7 @@ function sectionFocusBlock(
 ): string {
   if (scope === "all") {
     return `## Section focus: ALL SECTIONS
-The engineer has not narrowed scope. Answer questions about any section unless they focus on one. Agent mode drafts; Ask mode does not.`;
+The engineer has not narrowed scope. Answer questions about any section unless they focus on one. Agent mode may edit when they asked to write; Ask mode never edits. Empty sections are not a request to draft.`;
   }
 
   const label = sectionLabel(scope);
@@ -77,6 +77,13 @@ The engineer tagged **${label}** for this conversation. Focus Ask questions and 
 - Ask mode: answer questions about ${label}; do not address other sections unless they tag a different @ section.
 - Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}`;
 }
+
+const USER_INTENT_RULES = `## User intent (required)
+Follow the latest user message. Agent mode means you MAY edit when they asked — not that you should draft because sections are empty, attachments exist, or a section recipe is in this prompt.
+- Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not draft or edit any section.
+- A question: answer it. Search only if the question needs evidence. Do not draft or edit unless they also asked to write.
+- A write request (draft, fill, write, edit, add, insert, remove, rewrite, start the report, or a yes to your offer to draft): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with the highest-signal sections — still only because they asked.
+Empty fields and ready documents are not a request to write.`;
 
 const QUESTION_RULES = `## Asking questions
 When you need facts from the engineer, call the ask_user tool. It renders a structured answer form in the chat. NEVER write questions as prose, numbered lists, or markdown in your reply.
@@ -105,7 +112,7 @@ function documentRules(
     case "adaptive":
       retrievalMode = `## Document evidence
 - Retrieval mode: ADAPTIVE. Treat search_documents as grep over the attachments. Work in rounds: grep → read the hits → grep complementary terms with excludePages set to nextExcludePages from the last result. Do not stop at the first matching table. Do not read every page unless the set is unbounded.
-- If Documents are listed, you MUST grep before ask_user or draft_field — except when the target section is already filled or partial: call read_section first and grep only for a gap you found. Start with search_documents. Prefer queries[] in one call (equipment AND UUT AND fixtures). Use mode=keyword for exact protocol terms (UUT, Solea, 13.3).
+- If this turn is a question or a write request and Documents are listed, you MUST grep before ask_user or draft_field — except when the target section is already filled or partial: call read_section first and grep only for a gap you found. Start with search_documents. Prefer queries[] in one call (equipment AND UUT AND fixtures). Use mode=keyword for exact protocol terms (UUT, Solea, 13.3). Do not grep because the report is empty or because you are in Agent mode.
 - If hits look like one table or heading, call document_outline and read neighboring pages, then grep again for sibling objects.
 - If truncated=true or nextExcludePages grew, grep again with different terms. Never draft a table from a single truncated hit list.
 - For a single fact (one requirement ID, one date, one labelled page), one grep and one page read is enough.
@@ -113,7 +120,7 @@ function documentRules(
       break;
     case "focused":
       retrievalMode = `## Document evidence
-- Retrieval mode: FOCUSED. The engineer asked for a quick/high-level look. One search_documents call (or the evidence preview) is enough. Keep the answer short. Do not start a document review.`;
+- Retrieval mode: FOCUSED. The engineer asked for a quick/high-level look, or this turn is a greeting with no task. Search only if they asked a question that needs evidence. Do not start a document review. Do not draft.`;
       break;
     default: {
       const _exhaustive: never = policy;
@@ -250,13 +257,14 @@ ${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric 
 - ask_user — structured questions when facts are still missing after a document search (see "Asking questions").${analyzeToolLine}${reviewTools}
 
 Drafting decisions (important):
+- Only draft or edit when this turn is a write request (see User intent). Do not volunteer drafts of empty sections.
 - If the engineer asked to draft a section the context map marks filled or partial: call read_section on that section FIRST. Do not search_documents or ask_user yet. Compare the current text to that section's quality criteria. No material gaps → report that it is already drafted, summarize what is there, and ask if they want a specific change. Gaps → search only for the missing facts, then a targeted propose_edit (or edit_table). Do not draft_field a full rewrite unless they asked to replace the section.
 - Filenames and topics in the document index are not real information. Real information is retrieved evidence, current section text, and answers the engineer already gave.
 ${searchFirst}
-- For each section, judge how much retrieved information you have.
+- For each section they asked you to write, judge how much retrieved information you have.
   - ENOUGH (retrieved evidence covers roughly most of what a section needs): draft empty prose fields with draft_field. Prefer propose_edit with an empty anchor to append prose or a list onto an existing field. To add a NEW table, call edit_table with kind create_table. To add a table or figure with a lead-in sentence, call propose_edit with empty anchorText for the intro (do not quote an earlier paragraph), then create_table / insert_image${opts.includePlotMeasurements ? " / plot_measurements" : ""} with empty afterAnchor / anchorText. Either order is fine; the intro lands immediately above the block, before Citations. Fill known facts; for small gaps use a bracketed placeholder like [batch number], [date of detection], [equipment ID], [ECO/DCR number].
   - TOO LITTLE (only a fragment after searching): do not draft a page of placeholders. Call ask_user for the missing facts instead, or say why you are skipping the section.
-- Prefer drafting the highest-signal sections first (${priority}), not every section at once.
+- Prefer drafting the highest-signal sections first (${priority}), not every section at once — and only when they asked to draft the report or those sections.
 - Use edit_table create_table when creating a NEW table — test results vs specification, batch/equipment lists, timelines of events, action plans with owners and due dates. Tables only work in rich fields; edit_table will tell you if the field cannot hold one. If a table already exists, use edit_cells / insert_rows / etc. To remove a table, use delete_table. Do not draft_field a field just to add or drop a table.
 
 Editing rules:
@@ -371,6 +379,8 @@ export function buildChatSystemPrompt(opts: {
     : "";
 
   return `${chat.persona}
+
+${USER_INTENT_RULES}
 
 ${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${draftedBlock}${mentions}
 
