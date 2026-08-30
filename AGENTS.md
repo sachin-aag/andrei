@@ -118,7 +118,7 @@ NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
 `docs/whitelabel-vercel-deploy.md`. Report workspace chrome is Document | Agent.
 New reports open in Agent; returning to a report restores that user's last
-chrome for it. Switching to Agent seeds the composer Report | Analytics target from the focused pane. Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. History is on Report and Analytics (pane-scoped compare). Report compare diffs prose, every table, and added/removed figures; Analytics compare is a cell/plot list. Worksheet versions are `analyticsRevisions`, not `documentRevisions`. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent).
+chrome for it. Report | Analytics in the composer is independent of the focused canvas pane in both Document and Agent chrome (locked while a turn is running). Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. History is on Report and Analytics (pane-scoped compare). Report compare diffs prose, every table, and added/removed figures; Analytics compare is a cell/plot list. Worksheet versions are `analyticsRevisions`, not `documentRevisions`. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent).
 Statistical Analysis lives on the work-product **Analytics** pane (worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + Tukey boxplot + one-way ANOVA) and is on for demo, MJ,
 and Convergent (`statisticalAnalysisEnabled`). Analytics chat uses the same
 shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep; Ask

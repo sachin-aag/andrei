@@ -265,7 +265,6 @@ export function ReportSidebar({
           <ChatPanel
             visible={chatVisible}
             workspaceChrome={chrome}
-            workProductView={workProductView}
             statsEnabled={statsEnabled}
             onWorksheetChanged={() => onAnalyticsSettled?.()}
             onAgentBusyChange={onAnalyticsAgentBusy}

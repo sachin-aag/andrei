@@ -928,7 +928,6 @@ function subscribeNoop() {
 
 export function ChatPanel({
   workspaceChrome = "agent",
-  workProductView = "report",
   statsEnabled = false,
   visible = true,
   onWorksheetChanged,
@@ -939,7 +938,6 @@ export function ChatPanel({
   mentionSheets = [],
 }: {
   workspaceChrome?: WorkspaceChrome;
-  workProductView?: WorkProductView;
   statsEnabled?: boolean;
   /** False while the sidebar is collapsed or another tab is showing. */
   visible?: boolean;
@@ -991,12 +989,10 @@ export function ChatPanel({
   );
   const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
   const composerPrefsReady = isClient && currentUserId != null;
-  const agentChatTarget =
-    storedComposerPrefs.chatTarget ?? workProductView;
+  const composerChatTarget: WorkProductView =
+    storedComposerPrefs.chatTarget ?? "report";
   const chatTarget = chatWorkProductTarget({
-    chrome: workspaceChrome,
-    workProductView,
-    agentTarget: agentChatTarget,
+    agentTarget: composerChatTarget,
     statsEnabled,
   });
   const targetingAnalytics = chatTarget === "analytics";
@@ -1266,7 +1262,7 @@ export function ChatPanel({
     [persistComposerPrefs, storedComposerPrefs.mode]
   );
 
-  const setAgentChatTarget = useCallback(
+  const setComposerChatTarget = useCallback(
     (next: WorkProductView) => {
       if (!isWorkProductView(next)) return;
       persistComposerPrefs({
@@ -2016,12 +2012,12 @@ export function ChatPanel({
           void send(input);
         }}
       >
-        {workspaceChrome === "agent" && statsEnabled ? (
+        {statsEnabled ? (
           <div className="mb-2 flex items-center gap-1.5">
             <ComposerSelect
-              value={agentChatTarget}
+              value={composerChatTarget}
               options={CHAT_WORK_PRODUCT_OPTIONS}
-              onChange={setAgentChatTarget}
+              onChange={setComposerChatTarget}
               disabled={busy}
               ariaLabel="Work product"
               className="w-[7.5rem]"
