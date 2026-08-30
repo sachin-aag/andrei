@@ -6,6 +6,7 @@ import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import { executePlotMeasurements } from "@/lib/charts/plot-measurements";
 import type { PlotMeasurementsDeps } from "@/lib/charts/plot-measurements";
 import { CHART_DISPLAY_WIDTH_PX } from "@/lib/charts/render-chart";
+import { documentInsertedPlotWidth } from "@/lib/charts/chart-dimensions";
 import { parseChartSpec } from "@/lib/charts/chart-spec";
 import {
   createSameTurnBlockPairing,
@@ -212,7 +213,14 @@ describe("executePlotMeasurements", () => {
     const inserted = insertComment.mock.calls[0]![0] as { content: string };
     const proposed = JSON.parse(inserted.content) as {
       placeAfterSuggestionId?: string;
+      insertImage?: { width?: number | null };
     };
     expect(proposed.placeAfterSuggestionId).toBe("sug-lead");
+    expect(proposed.insertImage?.width).toBe(
+      documentInsertedPlotWidth({
+        widthPx: CHART_DISPLAY_WIDTH_PX,
+        heightPx: 450,
+      })
+    );
   });
 });

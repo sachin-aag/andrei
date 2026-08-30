@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { documentInsertedPlotWidth } from "@/lib/charts/chart-dimensions";
 import { isChatImageFilePart } from "@/lib/ai/chat/image-parts";
 import {
   isGraphAnalysisKind,
@@ -196,7 +197,7 @@ export function resolveAnalyticsImage(
     image: {
       src: preview.dataUrl,
       alt: preview.alt || analysis.title,
-      width: preview.widthPx,
+      width: documentInsertedPlotWidth(preview),
       mediaId: null,
       chartSpec: preview.chartSpec,
     },
@@ -229,6 +230,16 @@ const PLOT_NAME_STOPWORDS = new Set([
   "from",
   "with",
   "please",
+  "do",
+  "doing",
+  "done",
+  "go",
+  "going",
+  "ahead",
+  "proceed",
+  "thing",
+  "things",
+  "stuff",
   "can",
   "could",
   "would",
@@ -378,21 +389,78 @@ function rawPlotNameTokens(text: string): string[] {
 const PLOT_NAME_STOPWORDS_ALL: ReadonlySet<string> = (() => {
   const words = new Set(PLOT_NAME_STOPWORDS);
   for (const label of Object.values(SECTION_LABELS)) {
-    for (const token of rawPlotNameTokens(label)) words.add(token);
+    for (const token of rawPlotNameTokens(label)) {
+      words.add(token);
+      if (token.endsWith("s") && token.length > 4) {
+        words.add(token.slice(0, -1));
+      }
+    }
   }
   return words;
 })();
+
+/** Adjacent transposition, insert, delete, or substitute — destination typos like "devaition". */
+function damerauDistanceAtMostOne(a: string, b: string): boolean {
+  if (a === b) return true;
+  const aLen = a.length;
+  const bLen = b.length;
+  if (Math.abs(aLen - bLen) > 1) return false;
+  if (aLen === bLen) {
+    let i = 0;
+    let diffs = 0;
+    while (i < aLen) {
+      if (a[i] === b[i]) {
+        i += 1;
+        continue;
+      }
+      diffs += 1;
+      if (diffs > 1) return false;
+      if (i + 1 < aLen && a[i] === b[i + 1] && a[i + 1] === b[i]) {
+        i += 2;
+        continue;
+      }
+      i += 1;
+    }
+    return diffs === 1;
+  }
+  const longer = aLen > bLen ? a : b;
+  const shorter = aLen > bLen ? b : a;
+  let li = 0;
+  let si = 0;
+  let skipped = 0;
+  while (li < longer.length) {
+    if (si < shorter.length && longer[li] === shorter[si]) {
+      li += 1;
+      si += 1;
+      continue;
+    }
+    skipped += 1;
+    if (skipped > 1) return false;
+    li += 1;
+  }
+  return true;
+}
+
+function isPlotNameStopword(token: string): boolean {
+  if (PLOT_NAME_STOPWORDS_ALL.has(token)) return true;
+  if (token.length < 6) return false;
+  for (const word of PLOT_NAME_STOPWORDS_ALL) {
+    if (word.length < 6) continue;
+    if (damerauDistanceAtMostOne(token, word)) return true;
+  }
+  return false;
+}
 
 const ANALYTICS_CREATE_COPY =
   "They can create additional plots in Analytics (Document | Analytics at the top of the report).";
 const NOTHING_INSERTED_COPY =
   "Nothing was inserted. Do not tell the engineer a figure was proposed or inserted.";
 const RELAY_AVAILABLE_PLOTS_COPY =
-  `${NOTHING_INSERTED_COPY} Reply in prose with those titles once. Do not call insert_image again this turn. Do not insert a different plot. Do not call plot_measurements as a substitute.`;
+  `NOT INSERTED — you have not proposed a figure. ${NOTHING_INSERTED_COPY} Reply in prose with those titles once. Do not say you proposed or inserted it. Do not call insert_image again this turn. Do not insert a different plot. Do not call plot_measurements as a substitute.`;
 
 /** Same-turn follow-up after available_plots already returned. */
 export const ALREADY_LISTED_PLOTS_COPY =
-  "Plots were already listed this turn. Relay those titles in prose once and stop. Do not call insert_image again.";
+  "NOT INSERTED — plots were already listed this turn. Relay those titles in prose once and stop. Do not say you proposed a figure. Do not call insert_image again.";
 
 function graphKindLabel(kind: AnalysisKind): string {
   switch (kind) {
@@ -414,9 +482,7 @@ function graphKindLabel(kind: AnalysisKind): string {
 }
 
 export function tokenizePlotName(text: string): string[] {
-  return rawPlotNameTokens(text).filter(
-    (token) => !PLOT_NAME_STOPWORDS_ALL.has(token)
-  );
+  return rawPlotNameTokens(text).filter((token) => !isPlotNameStopword(token));
 }
 
 function tokenMatchesIdentity(request: string, identity: string): boolean {

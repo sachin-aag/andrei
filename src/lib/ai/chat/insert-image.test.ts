@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UIMessage } from "ai";
+import { documentInsertedPlotWidth } from "@/lib/charts/chart-dimensions";
 import {
   listLatestUserChatImages,
   parseSectionImageId,
@@ -181,7 +182,10 @@ describe("resolveAnalyticsImage", () => {
     if (!result.ok) return;
     expect(result.image.src).toBe(PNG);
     expect(result.image.alt).toBe("Torque scatter");
-    expect(result.image.width).toBe(600);
+    expect(result.image.width).toBe(
+      documentInsertedPlotWidth({ widthPx: 600, heightPx: 400 })
+    );
+    expect(result.image.width).toBeLessThan(600);
   });
 
   it("explains a missing analysisId", () => {
@@ -278,6 +282,13 @@ describe("resolveNamedAnalyticsPlot", () => {
         "insert a plot into the purpose section for the assays thing"
       )
     ).toEqual(["assays"]);
+    expect(tokenizePlotName("insert plot into the devaition section")).toEqual(
+      []
+    );
+    expect(tokenizePlotName("insert plot into the deviation section")).toEqual(
+      []
+    );
+    expect(tokenizePlotName("insert the assays thing")).toEqual(["assays"]);
     expect(tokenizePlotName("yes please do")).toEqual([]);
     expect(plotMatchesNamedTokens(assay, ["torque"])).toBe(false);
     expect(plotMatchesNamedTokens(assay, ["assay"])).toBe(true);
@@ -305,6 +316,8 @@ describe("resolveNamedAnalyticsPlot", () => {
     if (result.ok) return;
     expect(result.message).toContain("Assay sixpack");
     expect(result.message).toContain("create additional plots in Analytics");
+    expect(result.message).toContain("NOT INSERTED");
+    expect(result.message).toContain("have not proposed a figure");
     expect(result.message).toContain("Do not call insert_image again this turn");
   });
 
@@ -349,6 +362,33 @@ describe("resolveNamedAnalyticsPlot", () => {
       analysisId: assay.id,
       analyses: [assay],
       userText: "i dont see it",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
+  });
+
+  it("inserts the only saved plot when they typo the Deviations destination", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: "wrong-id",
+      analyses: [assay],
+      userText: "insert plot into the devaition section",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
+  });
+
+  it("matches Assay from filler like the assays thing", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: torque.id,
+      analyses: [assay, torque],
+      userText: "insert the assays thing",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
+  });
+
+  it("inserts the listed plot on yes please do", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay, torque],
+      userText: "yes please do",
     });
     expect(result).toEqual({ ok: true, analysisId: assay.id });
   });

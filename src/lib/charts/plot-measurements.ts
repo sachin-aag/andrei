@@ -68,7 +68,9 @@ import {
   type ExtractMeasurementsResult,
 } from "@/lib/charts/extract-measurements";
 import {
-  CHART_DISPLAY_WIDTH_PX,
+  documentInsertedPlotWidth,
+} from "@/lib/charts/chart-dimensions";
+import {
   renderChartPng,
   type RenderedChart,
   type RenderChartError,
@@ -258,7 +260,10 @@ function insertFromRender(
   return {
     src: rendered.dataUrl,
     alt: spec.title,
-    width: CHART_DISPLAY_WIDTH_PX,
+    width: documentInsertedPlotWidth({
+      widthPx: rendered.widthPx,
+      heightPx: rendered.heightPx,
+    }),
     mediaId: null,
     chartSpec: spec,
   };

@@ -159,6 +159,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain('source: "analytics"');
     expect(prompt).toContain("name the plots that are available");
     expect(prompt).toContain("create additional ones in Analytics");
+    expect(prompt).toContain("you did NOT insert or propose a figure");
+    expect(prompt).toContain("that is not a proposal");
     expect(prompt).toContain("Do not call insert_image again this turn");
     expect(prompt).toContain("Do not call insert_image repeatedly to list plots");
     expect(prompt).toContain("call read_section on the destination");

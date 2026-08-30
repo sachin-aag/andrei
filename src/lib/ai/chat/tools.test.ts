@@ -1836,6 +1836,10 @@ describe("buildChatTools propose vs commit", () => {
     expect((result as { message: string }).message).toContain(
       "create additional plots in Analytics"
     );
+    expect((result as { message: string }).message).toContain("NOT INSERTED");
+    expect((result as { message: string }).message).toContain(
+      "have not proposed a figure"
+    );
     expect((result as { message: string }).message).toContain(
       "Do not call insert_image again this turn"
     );
@@ -1995,6 +1999,81 @@ describe("buildChatTools propose vs commit", () => {
     expect(dbInsertMock).toHaveBeenCalledTimes(1);
   });
 
+  it("proposes the only Analytics plot when they typo the Deviations destination", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert plot into the devaition section",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the Assay scatter.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalledTimes(1);
+  });
+
   it("reuses one card when insert_image is called in parallel for the same plot", async () => {
     const tinyPng =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -2134,6 +2213,10 @@ describe("buildChatTools propose vs commit", () => {
     expect(second).toMatchObject({ status: "available_plots" });
     expect((second as { message: string }).message).toContain(
       "already listed this turn"
+    );
+    expect((second as { message: string }).message).toContain("NOT INSERTED");
+    expect((second as { message: string }).message).not.toContain(
+      "have proposed"
     );
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
