@@ -61,6 +61,7 @@ import {
   TrackChangesExtension,
   TrackChangesKeyboardExtension,
 } from "@/lib/tiptap/suggestion-marks";
+import { SuggestionPreviewLock } from "@/lib/tiptap/suggestion-preview-lock";
 import {
   createSuggestionActionWidgetsExtension,
   suggestionActionWidgetsRefreshMeta,
@@ -505,6 +506,7 @@ export function TiptapSectionField({
         TableHeaderWithVerticalAlign,
         SuggestionInsert,
         SuggestionDelete,
+        SuggestionPreviewLock,
         TrackChangesKeyboardExtension,
         TrackChangesExtension,
         highlightExtension,

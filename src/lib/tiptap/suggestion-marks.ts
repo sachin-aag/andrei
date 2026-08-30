@@ -213,6 +213,129 @@ function isAiSuggestionMark(mark: PMMark): boolean {
   );
 }
 
+export const SKIP_SUGGESTION_PREVIEW_LOCK_META = "skipSuggestionPreviewLock";
+
+export type LockedSuggestionRange = { from: number; to: number };
+
+/**
+ * AI preview (pending insert/delete) and strikethrough deletes are not
+ * typeable. Accepted text and human pending inserts stay editable.
+ */
+export function isLockedSuggestionMark(mark: PMMark): boolean {
+  if (!isSuggestionMarkName(mark.type.name)) return false;
+  const status = mark.attrs.status as SuggestionStatus | undefined;
+  if (status === "accepted") return false;
+  if (
+    status === "pending" &&
+    mark.type.name === suggestionInsertMarkName &&
+    mark.attrs.authorId !== "ai"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function nodeIsLockedSuggestion(node: PMNode): boolean {
+  if (node.type.name === "imageInline" && node.attrs.suggestionId) {
+    return true;
+  }
+  if (!node.isText) return false;
+  return node.marks.some(isLockedSuggestionMark);
+}
+
+export function mergeLockedSuggestionRanges(
+  ranges: LockedSuggestionRange[]
+): LockedSuggestionRange[] {
+  if (ranges.length === 0) return [];
+  const sorted = ranges
+    .map((range) => ({ from: range.from, to: range.to }))
+    .sort((a, b) => a.from - b.from || a.to - b.to);
+  const out: LockedSuggestionRange[] = [{ ...sorted[0]! }];
+  for (let i = 1; i < sorted.length; i++) {
+    const cur = sorted[i]!;
+    const last = out[out.length - 1]!;
+    if (cur.from <= last.to) {
+      last.to = Math.max(last.to, cur.to);
+    } else {
+      out.push({ ...cur });
+    }
+  }
+  return out;
+}
+
+export function collectLockedSuggestionRanges(
+  doc: PMNode
+): LockedSuggestionRange[] {
+  const ranges: LockedSuggestionRange[] = [];
+  doc.descendants((node, pos) => {
+    if (!nodeIsLockedSuggestion(node)) return true;
+    ranges.push({ from: pos, to: pos + node.nodeSize });
+    return true;
+  });
+  return mergeLockedSuggestionRanges(ranges);
+}
+
+/** Collapsed caret at a range edge is outside; interior and replacements overlap. */
+export function rangeOverlapsLockedInterior(
+  from: number,
+  to: number,
+  ranges: readonly LockedSuggestionRange[]
+): boolean {
+  for (const range of ranges) {
+    if (from === to) {
+      if (from > range.from && from < range.to) return true;
+      continue;
+    }
+    if (from < range.to && to > range.from) return true;
+  }
+  return false;
+}
+
+export function rangeTouchesLockedSuggestion(
+  doc: PMNode,
+  from: number,
+  to: number
+): boolean {
+  return rangeOverlapsLockedInterior(
+    from,
+    to,
+    collectLockedSuggestionRanges(doc)
+  );
+}
+
+export function transactionEditsLockedSuggestion(
+  tr: Transaction,
+  oldState: EditorState
+): boolean {
+  if (!tr.docChanged) return false;
+  if (tr.getMeta("preventUpdate") === true) return false;
+  if (tr.getMeta(SKIP_SUGGESTION_PREVIEW_LOCK_META) === true) return false;
+
+  const locked = collectLockedSuggestionRanges(oldState.doc);
+  if (locked.length === 0) return false;
+
+  for (const step of tr.steps) {
+    if (
+      step instanceof ReplaceStep &&
+      step.from === 0 &&
+      step.to === oldState.doc.content.size
+    ) {
+      continue;
+    }
+    const from =
+      "from" in step && typeof (step as { from: unknown }).from === "number"
+        ? (step as { from: number }).from
+        : null;
+    const to =
+      "to" in step && typeof (step as { to: unknown }).to === "number"
+        ? (step as { to: number }).to
+        : null;
+    if (from == null || to == null) continue;
+    if (rangeOverlapsLockedInterior(from, to, locked)) return true;
+  }
+  return false;
+}
+
 /** Drop inherited AI marks so new typing is not part of the pending suggestion. */
 export function removeAiSuggestionMarks(
   tr: Transaction,
@@ -305,6 +428,7 @@ export function trackChangesTextInputTransaction(
 
   const { from: selFrom, to: selTo } = state.selection;
   if (state.doc.textBetween(selFrom, selTo, "").length > 0) {
+    if (rangeTouchesLockedSuggestion(state.doc, selFrom, selTo)) return null;
     return trackChangesSelectionReplaceTransaction(
       state,
       selFrom,
@@ -321,6 +445,8 @@ export function trackChangesTextInputTransaction(
       ? textPos(state, selTo)
       : textPos(state, to);
 
+  if (rangeTouchesLockedSuggestion(state.doc, insertAt, insertAt)) return null;
+
   return insertTrackedText(state, insertAt, text, authorId);
 }
 
@@ -332,6 +458,7 @@ export function trackChangesSelectionReplaceTransaction(
   authorId: string
 ) {
   if (from >= to || text.length === 0) return null;
+  if (rangeTouchesLockedSuggestion(state.doc, from, to)) return null;
 
   const deleteMarkType = state.schema.marks[suggestionDeleteMarkName];
   const insertMarkType = state.schema.marks[suggestionInsertMarkName];
