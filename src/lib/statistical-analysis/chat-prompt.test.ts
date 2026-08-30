@@ -18,7 +18,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v21");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v22");
   });
 
   it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
@@ -63,6 +63,7 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("Always save a scatter");
     expect(prompt).toContain("change Chart type in Plot measurements");
     expect(prompt).toContain("the plot cites those pages");
+    expect(prompt).toContain("no Plot-from-attachments menu");
     expect(prompt).toContain("use a label column as X");
     expect(prompt).not.toContain("Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, ANOVA,");
     expect(prompt).toContain("Column specs: none");

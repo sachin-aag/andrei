@@ -20,7 +20,7 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v21";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v22";
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -52,8 +52,9 @@ OCR / data-pull path (worksheet + sixpack):
 
 If cited pages have unlabeled dual RESULT columns for more than one assay, extract_numeric_series will refuse. Ask which series; do not guess.
 
-Attachment scatter path:
-- plot_measurements with a requirement ID or measurement name (e.g. M3-SYS-FN-037) when they asked for a measurement scatter of one attachment series vs observation index. Do not invent points. Do not use this for two worksheet columns — that is plot_xy_scatter.
+Attachment scatter path (chat only — there is no Plot-from-attachments menu):
+- plot_measurements with a requirement ID or measurement name (e.g. M3-SYS-FN-037) when they asked for a measurement scatter of one attachment series vs observation index. Do not invent points. Do not use this for two worksheet columns — that is plot_xy_scatter. Do not tell them to open a Plot menu item for attachments.
+- Or extract_numeric_series / scan_attachments / read_document_page, then write_column, then plot_xy_scatter when they want the numbers on the worksheet first.
 - Optional lsl / usl override the extracted acceptance limits. Omit them to keep limits cited on the pages. One-sided is allowed.
 
 Steps 4–8 (write_column, sixpack, ANOVA, XY scatter, attachment scatter) and manage_worksheet apply in Agent mode only. Match the asked chart; do not substitute a sixpack or ANOVA for a scatter.
@@ -77,7 +78,7 @@ If they asked for ANOVA or a statistical comparison of groups, call run_one_way_
 If they asked to color a worksheet scatter by lot/batch/serial/group, pass legendColumnId on plot_xy_scatter. Do not refuse coloring for worksheet scatter. Do not use plot_measurements for worksheet grouping.`;
 
 const CAPABILITY_RULES = `## What you can do
-You support the worksheet, a Normal Capability Sixpack (individuals / I-MR), a worksheet scatter (plot_xy_scatter: Y required, X optional, optional legend), a measurement scatter extracted from attachments (plot_measurements), and one-way ANOVA (run_one_way_anova).
+You support the worksheet, a Normal Capability Sixpack (individuals / I-MR), a worksheet scatter (plot_xy_scatter: Y required, X optional, optional legend), a measurement scatter extracted from attachments (plot_measurements — chat only; there is no Plot-from-attachments menu), and one-way ANOVA (run_one_way_anova).
 Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, two-way ANOVA, Tukey grouping letters, fitted regression, DOE, time series, nonparametric capability, attribute charts). You may plot Y vs X or Y vs observation index, optionally color-code by a legend column, and report Pearson r; do not fit a line or run DOE. Say that Andrei's Statistical Analysis currently runs Normal Capability Sixpack, worksheet scatter (with optional legend), attachment measurement scatter, and one-way ANOVA only. Pairwise ANOVA comparisons are Bonferroni t-tests using the ANOVA MSE — say that plainly; do not call them Tukey.
 
 Do not draft DMAIC sections, CAPA, comments, or report edits. That is a different assistant.

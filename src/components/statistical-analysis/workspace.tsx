@@ -42,7 +42,6 @@ import {
 } from "@/lib/statistical-analysis/worksheet";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import {
-  MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   isAnovaAnalysis,
   isScatterAnalysis,
@@ -547,14 +546,6 @@ export function StatisticalWorkspace({
     setCapabilityOpen(true);
   };
 
-  const openPlotMeasurements = async () => {
-    if (readOnly) return;
-    await flush().catch(() => undefined);
-    setEditingAnalysisId(null);
-    setPlotError(null);
-    setPlotOpen(true);
-  };
-
   const openOneWayAnova = async (
     columnId: string,
     rows: { start: number; end: number } | null = null
@@ -695,7 +686,6 @@ export function StatisticalWorkspace({
               onXyScatter={() =>
                 void openXyScatter(selectedColumnId, selectedRowRange)
               }
-              onPlotMeasurements={() => void openPlotMeasurements()}
               onAddDataSheet={() => {
                 setWorksheet((current) => addDataSheet(current));
                 setSelection(collapseSelection(0, 0));
@@ -824,11 +814,11 @@ export function StatisticalWorkspace({
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
                 Right-click a column and choose <strong>Analyze data…</strong>,
                 or use <strong>Plot → Normal Capability Sixpack</strong>,{" "}
-                <strong>Plot → One-Way ANOVA</strong>,{" "}
-                <strong>Plot → Plot measurements</strong> for a worksheet column
-                (1D vs index, or 2D if you pick X), or{" "}
-                <strong>Plot → Plot from attachments</strong> for an attachment
-                scatter. Each run is saved as its own result.
+                <strong>Plot → One-Way ANOVA</strong>, or{" "}
+                <strong>Plot → Plot measurements</strong> for a worksheet
+                column (1D vs index, or 2D if you pick X). To extract numbers
+                from a file and plot them, ask the assistant. Each run is saved
+                as its own result.
               </p>
             </div>
           ) : (
@@ -1010,19 +1000,6 @@ export function StatisticalWorkspace({
                 title: payload.values.title || undefined,
                 rowStart: payload.values.rowStart,
                 rowEnd: payload.values.rowEnd,
-              });
-              applyAnalytics(created.analytics, {
-                selectAnalysisId: created.analysisId,
-              });
-            } else if (payload.kind === MEASUREMENT_SCATTER) {
-              const created = await createMeasurementScatter(reportId, {
-                query: payload.values.query,
-                title: payload.values.title || undefined,
-                xLabel: payload.values.xLabel || undefined,
-                yLabel: payload.values.yLabel || undefined,
-                layout: { mode: payload.values.mode },
-                lsl: payload.values.lsl,
-                usl: payload.values.usl,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,
