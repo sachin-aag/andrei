@@ -27,7 +27,10 @@ import { setPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { commitNarrativeSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
-import { injectSuggestionMarks } from "@/lib/tiptap/suggestion-inject";
+import {
+  collectPendingSuggestionMarkIds,
+  injectSuggestionMarks,
+} from "@/lib/tiptap/suggestion-inject";
 import type { InjectAttrs } from "@/lib/suggestions/locator";
 
 export type ResolvedSuggestionMerge = {
@@ -113,16 +116,34 @@ export function injectMergePreview(args: {
   let doc = args.current;
   for (const op of args.operations) {
     if (!op.deleteText && !op.insertText) continue;
+    // Insert-only word hunks must not use insertText as the anchor — that
+    // string is not in the live doc, so locate fails and the editor stays blank.
+    if (op.kind !== "insert_block" && !op.deleteText) continue;
     const injected = injectSuggestionMarks(
       doc,
-      {
-        anchorText: op.deleteText || op.insertText,
-        deleteText: op.deleteText,
-        insertText: op.insertText,
-      },
+      op.kind === "insert_block"
+        ? {
+            anchorText: "",
+            deleteText: "",
+            insertText: op.insertText,
+          }
+        : {
+            anchorText: op.deleteText,
+            deleteText: op.deleteText,
+            insertText: op.insertText,
+          },
       { ...args.attrs, opIndex: op.opIndex }
     );
     if (injected.located) doc = injected.doc;
+  }
+  // Concatenated word hunks and insert-only edits often fail locate. Fall
+  // back to a before/after so the card is never comment-only with a blank document.
+  if (
+    !collectPendingSuggestionMarkIds(doc, args.attrs.authorId).includes(
+      args.attrs.id
+    )
+  ) {
+    return buildRedraftPreviewDoc(args.current, args.intent, args.attrs);
   }
   return doc;
 }

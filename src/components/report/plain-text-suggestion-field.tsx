@@ -24,6 +24,7 @@ import {
   suggestionApplyModeFor,
 } from "@/lib/document-types";
 import { redraftPlainTextValue } from "@/lib/suggestions/apply-redraft";
+import { readSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import {
   acceptSuggestion,
   dismissSuggestion,
@@ -243,13 +244,25 @@ export function PlainTextSuggestionField({
     }
 
     const payload = parseAiFixCommentContent(activeComment.content);
-    return buildPlainTextSuggestionPreview(
+    const located = buildPlainTextSuggestionPreview(
       value,
       payload.deleteText,
       normalizeSuggestionInsertText(payload.insertText),
       activeComment.anchorText,
       payload.second
     );
+    if (located) return located;
+    const record = readSuggestionRecord(activeComment.content);
+    if (typeof record?.intent === "string" && record.intent !== value) {
+      const segments: PlainTextPreviewSegment[] = [];
+      if (value) segments.push({ kind: "delete", text: value });
+      segments.push({
+        kind: "insert",
+        text: value ? ` ${record.intent}` : record.intent,
+      });
+      return segments;
+    }
+    return null;
   }, [activeComment, activeValidation, value]);
 
   const showInlineSuggestion = Boolean(
