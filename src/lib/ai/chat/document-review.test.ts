@@ -8,7 +8,6 @@ vi.mock("@/lib/ai/usage", () => ({
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
 import {
   buildReviewBatches,
-  chatStepBudget,
   DocumentReviewSession,
   extractReviewFindingsFromPages,
   pickPlanModeChatTools,
@@ -17,7 +16,6 @@ import {
   REVIEW_EXTRACT_CONCURRENCY,
   REVIEW_FINISH_FINDINGS_CAP,
   capFindingsForFinish,
-  shouldStopChatSteps,
   type ReviewPageSource,
 } from "./document-review";
 
@@ -336,57 +334,6 @@ describe("prepareDocumentReviewStep", () => {
         availableTools: available,
       })
     ).toBeUndefined();
-  });
-});
-
-describe("chatStepBudget", () => {
-  it("keeps focused turns on the existing small budget", () => {
-    expect(
-      chatStepBudget({ mode: "plan", policy: "focused", totalPages: 62 })
-    ).toBe(8);
-    expect(
-      chatStepBudget({ mode: "agent", policy: "focused", totalPages: 62 })
-    ).toBe(24);
-  });
-
-  it("gives adaptive turns room for complementary search", () => {
-    expect(
-      chatStepBudget({ mode: "plan", policy: "adaptive", totalPages: 62 })
-    ).toBe(16);
-    expect(
-      chatStepBudget({ mode: "agent", policy: "adaptive", totalPages: 62 })
-    ).toBe(40);
-  });
-
-  it("raises the comprehensive budget from page count", () => {
-    const budget = chatStepBudget({
-      mode: "agent",
-      policy: "comprehensive",
-      totalPages: 62,
-    });
-    expect(budget).toBeGreaterThan(24);
-    expect(budget).toBeLessThanOrEqual(96);
-  });
-
-  it("raises the budget once a page walk is in progress", () => {
-    expect(
-      shouldStopChatSteps({
-        stepsTaken: 16,
-        mode: "plan",
-        policy: "adaptive",
-        reviewPhase: "idle",
-        totalPages: 62,
-      })
-    ).toBe(true);
-    expect(
-      shouldStopChatSteps({
-        stepsTaken: 16,
-        mode: "plan",
-        policy: "adaptive",
-        reviewPhase: "in_progress",
-        totalPages: 62,
-      })
-    ).toBe(false);
   });
 });
 

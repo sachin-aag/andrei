@@ -8,10 +8,6 @@ export const CHAT_ASSISTANT_ERROR_MESSAGE =
 export const CHAT_ASSISTANT_INTERRUPTED_MESSAGE =
   "The assistant stopped before finishing. Please try again.";
 
-/** User-facing copy when the turn hits the tool-step budget with no prose. */
-export const CHAT_ASSISTANT_STEP_BUDGET_MESSAGE =
-  "I reached the search/read step limit for this turn before I could finish. Ask me to continue from the last hits, or name the file and page.";
-
 /** User-facing copy when the model ends on tool-calls with no wrap-up text. */
 export const CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE =
   "I stopped after tools and did not finish this turn. Ask me to continue if anything is still missing.";
@@ -215,13 +211,11 @@ function incompleteTurnNotice(parts: UIMessage["parts"]): string {
 export function partsForPersistedAssistantTurn(options: {
   parts: UIMessage["parts"] | undefined;
   isAborted: boolean;
-  stepBudgetExhausted?: boolean;
   finishReason?: string;
 }): {
   parts: UIMessage["parts"];
   emptyFailure: boolean;
   interrupted: boolean;
-  stepBudgetExhausted: boolean;
   incomplete: boolean;
 } {
   const parts = options.parts ?? [];
@@ -234,7 +228,6 @@ export function partsForPersistedAssistantTurn(options: {
         parts,
         emptyFailure: false,
         interrupted: false,
-        stepBudgetExhausted: false,
         incomplete: false,
       };
     }
@@ -243,7 +236,6 @@ export function partsForPersistedAssistantTurn(options: {
         parts: appendInterruptedNotice(parts),
         emptyFailure: false,
         interrupted: true,
-        stepBudgetExhausted: false,
         incomplete: true,
       };
     }
@@ -251,20 +243,6 @@ export function partsForPersistedAssistantTurn(options: {
       parts: INTERRUPTED_ASSISTANT_PARTS,
       emptyFailure: true,
       interrupted: true,
-      stepBudgetExhausted: false,
-      incomplete: true,
-    };
-  }
-
-  if (options.stepBudgetExhausted && !hasVisibleText) {
-    return {
-      parts:
-        parts.length === 0
-          ? [{ type: "text", text: CHAT_ASSISTANT_STEP_BUDGET_MESSAGE }]
-          : appendNoticeIfMissing(parts, CHAT_ASSISTANT_STEP_BUDGET_MESSAGE),
-      emptyFailure: false,
-      interrupted: false,
-      stepBudgetExhausted: true,
       incomplete: true,
     };
   }
@@ -278,7 +256,6 @@ export function partsForPersistedAssistantTurn(options: {
           : appendNoticeIfMissing(parts, notice),
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: true,
     };
   }
@@ -288,7 +265,6 @@ export function partsForPersistedAssistantTurn(options: {
       parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: false,
     };
   }
@@ -296,7 +272,6 @@ export function partsForPersistedAssistantTurn(options: {
     parts: EMPTY_ASSISTANT_ERROR_PARTS,
     emptyFailure: true,
     interrupted: false,
-    stepBudgetExhausted: false,
     incomplete: false,
   };
 }

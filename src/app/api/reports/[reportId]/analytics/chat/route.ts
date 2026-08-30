@@ -248,6 +248,8 @@ async function handleAnalyticsChatPost(
       tools,
       experimental_repairToolCall: repairChatToolCall,
       stopWhen: async () => {
+        // Cancel only. No tool-step cap — `CHAT_SERVER_ABORT_MS` is the
+        // abnormal-condition stop. Loop guards live in prepareStep.
         return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps }) =>
