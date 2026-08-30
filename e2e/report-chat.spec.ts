@@ -453,6 +453,9 @@ test.describe("report chat", () => {
       browserName !== "chromium",
       "AudioWorklet dictation is covered on Chromium."
     );
+    await page.context().grantPermissions(["microphone"], {
+      origin: "http://127.0.0.1:3000",
+    });
     await openReportAssistant(page);
     const sidebar = reportSidebar(page);
     await setReportChrome(page, "document");
@@ -468,7 +471,7 @@ test.describe("report chat", () => {
       .toBe(204);
     const reportMic = sidebar.getByTestId("chat-voice-input");
     await expect(reportMic).toBeVisible({ timeout: 15_000 });
-    const reportComposer = sidebar.locator("textarea");
+    const reportComposer = sidebar.getByTestId("chat-input");
     await expect(reportComposer).toBeEnabled({ timeout: 15_000 });
     await reportComposer.fill("Prefix ");
     await reportMic.click();

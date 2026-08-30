@@ -2144,7 +2144,7 @@ export function ChatPanel({
             <textarea
               ref={textareaRef}
               value={input}
-              data-testid={targetingAnalytics ? "analytics-chat-input" : undefined}
+              data-testid={targetingAnalytics ? "analytics-chat-input" : "chat-input"}
               role="combobox"
               aria-expanded={mentionMenuOpen}
               aria-controls={mentionMenuOpen ? "chat-mention-menu" : undefined}
