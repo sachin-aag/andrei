@@ -8,12 +8,28 @@ function langfuseConfigured(): boolean {
   );
 }
 
+function langfuseBaseUrl(): string | undefined {
+  const fromBase = process.env.LANGFUSE_BASE_URL?.trim();
+  if (fromBase) return fromBase;
+  const fromHost = process.env.LANGFUSE_HOST?.trim();
+  return fromHost || undefined;
+}
+
 let langfuseSpanProcessor: LangfuseSpanProcessor | undefined;
 
 /** Lazily created so CI/test without LANGFUSE_* keys does not warn on import. */
 export function getLangfuseSpanProcessor(): LangfuseSpanProcessor | null {
   if (!langfuseConfigured()) return null;
-  langfuseSpanProcessor ??= new LangfuseSpanProcessor();
+  langfuseSpanProcessor ??= new LangfuseSpanProcessor({
+    baseUrl: langfuseBaseUrl(),
+    // Next.js route handlers are short-lived; export immediately then forceFlush.
+    exportMode: "immediate",
+    // Selects the v4 observations-first ingestion path (SDK 5.4+ also
+    // qualifies via the SDK version header; the explicit header is belt-and-suspenders).
+    additionalHeaders: {
+      "x-langfuse-ingestion-version": "4",
+    },
+  });
   return langfuseSpanProcessor;
 }
 

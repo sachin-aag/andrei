@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { DedupedReasonSample } from "@/lib/sample-eval/bulk-eval-aggregates";
 import { truncateOneLine } from "@/lib/sample-eval/bulk-eval-aggregates";
 import { CRITERIA_EVAL_GOOGLE_MODEL_ID, CRITERIA_EVAL_SEED } from "@/lib/ai/evaluate";
+import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 
 const classificationSchema = z.object({
   assignments: z.array(
@@ -168,6 +169,13 @@ async function classifyWithBuckets(params: {
         `Allowed buckets:\n${buckets.map((b) => `- ${b}`).join("\n")}\n\n` +
         `Classify these reason buckets. Return assignments only for ids you classify; omit ids with no matching bucket.\n\n` +
         `${lines.join("\n")}`,
+      ...langfuseGenerateTextTelemetry({
+        functionId: "sample-eval-cluster-non-met-reasonings",
+        metadata: {
+          feature: "sample_eval",
+          layerName,
+        },
+      }),
     });
 
     const parsed =

@@ -66,8 +66,12 @@ import {
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import {
+  endActiveLangfuseObservation,
   flushLangfuseTraces,
   langfuseGenerateTextTelemetry,
+  observeRouteHandler,
+  setRouteObservationIO,
+  withPropagatedAttributes,
 } from "@/lib/observability/langfuse";
 import {
   aiBudgetExceededResponse,
@@ -139,7 +143,7 @@ function pickStubSection(
   return detectSectionIntentFromText(text, documentType) ?? fallback;
 }
 
-export async function POST(
+async function handleChatPost(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
@@ -396,10 +400,39 @@ export async function POST(
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    result = streamText({
+    const modelMessages = await convertToModelMessages(messages);
+    setRouteObservationIO({
+      input: {
+        reportId,
+        sessionId,
+        mode,
+        pace,
+        sectionScope,
+        userText: userText.slice(0, 500),
+      },
+    });
+    result = withPropagatedAttributes(
+      {
+        sessionId,
+        userId: user.id,
+        traceName: "report-chat",
+        tags: ["document-chat", mode, pace],
+        metadata: {
+          reportId,
+          documentNo: String(report.documentNo ?? ""),
+          documentType: report.documentType,
+          mode,
+          pace,
+          workspaceChrome,
+          canEdit,
+          sectionScope: sectionScope ?? "",
+        },
+      },
+      () =>
+        streamText({
       model,
       system,
-      messages: await convertToModelMessages(messages),
+      messages: modelMessages,
       tools,
       experimental_repairToolCall: repairChatToolCall,
       stopWhen: async ({ steps }) => {
@@ -484,9 +517,11 @@ export async function POST(
           retrievalPolicyReason: retrieval.reason,
         },
       }),
-    });
+    })
+    );
   } catch (err) {
     stopCancelPoll();
+    endActiveLangfuseObservation();
     await clearAssistantTurn(sessionId);
     if (isAiBudgetExceededError(err)) {
       return aiBudgetExceededResponse(err);
@@ -523,6 +558,7 @@ export async function POST(
         });
       }
       await flushLangfuseTraces();
+      endActiveLangfuseObservation();
     } finally {
       stopCancelPoll();
       await clearAssistantTurn(sessionId);
@@ -645,8 +681,21 @@ export async function POST(
         // a failure means it's missing from history on reload, nothing more.
         console.error("chat: failed to persist assistant message", err);
       } finally {
+        setRouteObservationIO({
+          output: {
+            reportId,
+            sessionId,
+            finishReason: finishReason ?? null,
+            isAborted,
+          },
+        });
+        endActiveLangfuseObservation();
         await clearAssistantTurn(sessionId);
       }
     },
   });
 }
+
+export const POST = observeRouteHandler("report-chat", handleChatPost, {
+  endOnExit: false,
+});
