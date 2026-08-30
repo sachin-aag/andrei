@@ -65,7 +65,19 @@ describe("SuggestionCardFace", () => {
     renderFixCard({
       kind: "fix",
       comment,
-      linkedEval: undefined,
+      linkedEval: {
+        id: "e1",
+        reportId: "r1",
+        sectionId: "sec",
+        section: "define",
+        criterionKey: "define_equipment",
+        criterionLabel: "Equipment is identified",
+        status: "partially_met",
+        reasoning: "The narrative never names the filling line.",
+        bypassed: false,
+        evaluatedContentHash: "x",
+        updatedAt: "",
+      },
       queueIndex: 1,
       queueTotal: 2,
       payload: {
@@ -78,6 +90,9 @@ describe("SuggestionCardFace", () => {
     expect(screen.getByTestId("suggestion-change-summary")).toHaveTextContent(
       "Name the filling line in Define."
     );
+    expect(
+      screen.queryByText("The narrative never names the filling line.")
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(deleteText)).not.toBeInTheDocument();
     expect(screen.queryByText(insertText)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /apply/i })).toBeInTheDocument();

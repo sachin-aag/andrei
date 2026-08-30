@@ -318,11 +318,6 @@ export function SuggestionCardFace({
               {reasoning}
             </p>
           ) : null}
-          {linkedEval?.reasoning ? (
-            <p className="text-[11px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2">
-              {linkedEval.reasoning}
-            </p>
-          ) : null}
 
           {evidenceSources.length > 0 ? (
             <div className="text-[10px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2 space-y-1">
