@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v62-delete-table");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v63-delete-table");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -283,6 +283,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image");
     expect(prompt).toContain("Measurement plots — not available in Document chat");
     expect(prompt).toContain("Tell the engineer to open Analytics");
+    expect(prompt).toContain(
+      "ask the Statistical Analysis assistant to extract the numbers from attachments and plot them"
+    );
     expect(prompt).not.toContain("- plot_measurements — extract cited numeric measurements");
   });
 

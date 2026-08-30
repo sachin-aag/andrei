@@ -7,7 +7,9 @@ import {
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
+  BOXPLOT,
   type AnovaAnalysisSummary,
+  type BoxplotAnalysisSummary,
   type ScatterAnalysisSummary,
   type SixpackAnalysisSummary,
   type XyScatterAnalysisSummary,
@@ -126,6 +128,44 @@ function anova(): AnovaAnalysisSummary {
   };
 }
 
+function boxplot(): BoxplotAnalysisSummary {
+  return {
+    id: "an-box",
+    workspaceId: "ws-1",
+    kind: BOXPLOT,
+    title: "Boxplot of Assay by Lot",
+    config: {
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      categoryColumnIds: ["c2"],
+      categoryColumnNames: ["Lot"],
+      title: "Boxplot of Assay by Lot",
+    },
+    results: {
+      n: 50,
+      skipped: 0,
+      groups: [
+        {
+          labels: ["A"],
+          n: 25,
+          min: 90,
+          q1: 95,
+          median: 100,
+          q3: 105,
+          max: 110,
+          whiskerLow: 90,
+          whiskerHigh: 110,
+          outliers: [],
+        },
+      ],
+    },
+    sourceHash: "box",
+    stale: false,
+    createdAt: "2026-08-26T00:00:00.000Z",
+    previewImage: null,
+  };
+}
+
 describe("analysis stale flags", () => {
   it("marks a sixpack stale when the analyzed column cells change locally", () => {
     const persisted = applySampleAssay(createEmptyWorksheet(), 0);
@@ -163,10 +203,48 @@ describe("analysis stale flags", () => {
     expect(staleX?.stale).toBe(true);
   });
 
-  it("summarizes sixpack, scatter, and ANOVA rows for the results list", () => {
+  it("marks a 1D scatter stale only when Y cells change", () => {
+    const analysis = xyScatter();
+    analysis.config.xColumnId = null;
+    analysis.config.xColumnName = "Observation";
+    const persisted = applySampleAssay(createEmptyWorksheet(), 0);
+    const editedY = setCell(persisted, 0, 0, "99.00");
+    const [staleY] = withLocalStale([analysis], editedY, persisted);
+    expect(staleY?.stale).toBe(true);
+
+    const editedLot = setCell(persisted, 1, 0, "Z");
+    const [freshLot] = withLocalStale([analysis], editedLot, persisted);
+    expect(freshLot?.stale).toBe(false);
+  });
+
+  it("marks a scatter stale when the legend column cells change", () => {
+    const analysis = xyScatter();
+    analysis.config.xColumnId = null;
+    analysis.config.xColumnName = "Observation";
+    analysis.config.legendColumnId = "c2";
+    analysis.config.legendColumnName = "Lot";
+    const persisted = applySampleAssay(createEmptyWorksheet(), 0);
+    const editedLot = setCell(persisted, 1, 0, "Z");
+    const [staleLegend] = withLocalStale([analysis], editedLot, persisted);
+    expect(staleLegend?.stale).toBe(true);
+  });
+
+  it("marks a boxplot stale when Y or category cells change", () => {
+    const persisted = applySampleAssay(createEmptyWorksheet(), 0);
+    const editedY = setCell(persisted, 0, 0, "99.00");
+    const [staleY] = withLocalStale([boxplot()], editedY, persisted);
+    expect(staleY?.stale).toBe(true);
+
+    const editedLot = setCell(persisted, 1, 0, "Z");
+    const [staleLot] = withLocalStale([boxplot()], editedLot, persisted);
+    expect(staleLot?.stale).toBe(true);
+  });
+
+  it("summarizes sixpack, scatter, ANOVA, and boxplot rows for the results list", () => {
     expect(analysisListSubtitle(sixpack())).toContain("Assay");
     expect(analysisListSubtitle(scatter())).toMatch(/M3-SYS-FN-037|10 point|ozf-in|limits/i);
     expect(analysisListSubtitle(anova())).toMatch(/Assay by Lot/i);
     expect(analysisListSubtitle(xyScatter())).toMatch(/Assay vs Lot/i);
+    expect(analysisListSubtitle(boxplot())).toMatch(/Assay by Lot/i);
   });
 });

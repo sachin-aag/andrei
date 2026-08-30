@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,6 +15,7 @@ import {
   createCapabilitySixpack,
   createMeasurementScatter,
   createOneWayAnova,
+  createBoxplot,
   createXyScatter,
   deleteCapabilitySixpack,
   getReportAnalytics,
@@ -42,9 +44,9 @@ import {
 } from "@/lib/statistical-analysis/worksheet";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import {
-  MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   isAnovaAnalysis,
+  isBoxplotAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -61,10 +63,12 @@ import {
 import { AnalyzeDialog } from "@/components/statistical-analysis/analyze-dialog";
 import { CapabilityDialog } from "@/components/statistical-analysis/capability-dialog";
 import { AnovaDialog } from "@/components/statistical-analysis/anova-dialog";
+import { BoxplotDialog } from "@/components/statistical-analysis/boxplot-dialog";
 import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-measurements-dialog";
 import { XyScatterDialog } from "@/components/statistical-analysis/xy-scatter-dialog";
 import { ScatterView } from "@/components/statistical-analysis/scatter-view";
 import { AnovaView } from "@/components/statistical-analysis/anova-view";
+import { BoxplotView } from "@/components/statistical-analysis/boxplot-view";
 import { SixpackView } from "@/components/statistical-analysis/sixpack-view";
 import { ColumnSpecsDialog } from "@/components/statistical-analysis/column-specs-dialog";
 import {
@@ -118,6 +122,7 @@ export function StatisticalWorkspace({
   );
   const [tab, setTab] = useState("worksheet");
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
+  const [analysisListCollapsed, setAnalysisListCollapsed] = useState(false);
 
   useEffect(() => {
     if (!focusApiRef) return;
@@ -165,6 +170,12 @@ export function StatisticalWorkspace({
   const [xyRowEnd, setXyRowEnd] = useState<number | null>(null);
   const [xySubmitting, setXySubmitting] = useState(false);
   const [xyError, setXyError] = useState<string | null>(null);
+  const [boxplotOpen, setBoxplotOpen] = useState(false);
+  const [boxplotYColumnId, setBoxplotYColumnId] = useState("");
+  const [boxplotRowStart, setBoxplotRowStart] = useState<number | null>(null);
+  const [boxplotRowEnd, setBoxplotRowEnd] = useState<number | null>(null);
+  const [boxplotSubmitting, setBoxplotSubmitting] = useState(false);
+  const [boxplotError, setBoxplotError] = useState<string | null>(null);
   const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetNameDraft, setSheetNameDraft] = useState("");
@@ -481,6 +492,14 @@ export function StatisticalWorkspace({
         setXyOpen(true);
         return;
       }
+      if (isBoxplotAnalysis(analysis)) {
+        setBoxplotYColumnId(analysis.config.yColumnId);
+        setBoxplotRowStart(analysis.config.rowStart ?? null);
+        setBoxplotRowEnd(analysis.config.rowEnd ?? null);
+        setBoxplotError(null);
+        setBoxplotOpen(true);
+        return;
+      }
       if (isScatterAnalysis(analysis)) {
         setPlotError(null);
         setPlotOpen(true);
@@ -547,14 +566,6 @@ export function StatisticalWorkspace({
     setCapabilityOpen(true);
   };
 
-  const openPlotMeasurements = async () => {
-    if (readOnly) return;
-    await flush().catch(() => undefined);
-    setEditingAnalysisId(null);
-    setPlotError(null);
-    setPlotOpen(true);
-  };
-
   const openOneWayAnova = async (
     columnId: string,
     rows: { start: number; end: number } | null = null
@@ -581,6 +592,20 @@ export function StatisticalWorkspace({
     setXyRowEnd(rows?.end ?? null);
     setXyError(null);
     setXyOpen(true);
+  };
+
+  const openBoxplot = async (
+    columnId: string,
+    rows: { start: number; end: number } | null = null
+  ) => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
+    setBoxplotYColumnId(columnId);
+    setBoxplotRowStart(rows?.start ?? null);
+    setBoxplotRowEnd(rows?.end ?? null);
+    setBoxplotError(null);
+    setBoxplotOpen(true);
   };
 
   const insertColumnAt = (atIndex: number) => {
@@ -692,10 +717,12 @@ export function StatisticalWorkspace({
               onOneWayAnova={() =>
                 void openOneWayAnova(selectedColumnId, selectedRowRange)
               }
+              onBoxplot={() =>
+                void openBoxplot(selectedColumnId, selectedRowRange)
+              }
               onXyScatter={() =>
                 void openXyScatter(selectedColumnId, selectedRowRange)
               }
-              onPlotMeasurements={() => void openPlotMeasurements()}
               onAddDataSheet={() => {
                 setWorksheet((current) => addDataSheet(current));
                 setSelection(collapseSelection(0, 0));
@@ -825,82 +852,118 @@ export function StatisticalWorkspace({
                 Right-click a column and choose <strong>Analyze data…</strong>,
                 or use <strong>Plot → Normal Capability Sixpack</strong>,{" "}
                 <strong>Plot → One-Way ANOVA</strong>,{" "}
-                <strong>Plot → Scatter</strong> for two worksheet columns, or{" "}
-                <strong>Plot → Plot measurements</strong> for an attachment
-                scatter. Each run is saved as its own result.
+                <strong>Plot → Boxplot</strong>, or{" "}
+                <strong>Plot → Plot measurements</strong> for a worksheet
+                column (1D vs index, or 2D if you pick X). To extract numbers
+                from a file and plot them, ask the assistant. Each run is saved
+                as its own result.
               </p>
             </div>
           ) : (
             <div className="flex min-h-0 min-w-0 flex-1">
-              <aside
-                data-testid="analysis-list"
-                className="w-56 shrink-0 overflow-y-auto border-r border-[var(--border)] p-2"
-              >
-                <div className="flex items-center justify-between gap-2 px-2 pb-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-                    Analyses
-                  </p>
-                  {readOnly ? null : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-1.5 text-[11px]"
-                      data-testid="new-analysis"
-                      onClick={() =>
-                        void openAnalyzeForColumn(
-                          selectedColumnId,
-                          selectedRowRange
-                        )
-                      }
-                    >
-                      New
-                    </Button>
-                  )}
-                </div>
-                <ul className="space-y-1">
-                  {displayedAnalyses.map((analysis) => {
-                    const active = selectedAnalysis?.id === analysis.id;
-                    const subtitle = analysisListSubtitle(analysis);
-                    return (
-                      <li key={analysis.id}>
-                        <button
+              {analysisListCollapsed ? (
+                <aside
+                  data-testid="analysis-list"
+                  data-collapsed="true"
+                  className="flex w-10 shrink-0 flex-col border-r border-[var(--border)]"
+                >
+                  <button
+                    type="button"
+                    data-testid="analysis-list-expand"
+                    aria-label="Show analyses list"
+                    aria-expanded={false}
+                    title="Show analyses list"
+                    onClick={() => setAnalysisListCollapsed(false)}
+                    className="mx-auto mt-2 flex size-8 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                  >
+                    <PanelLeftOpen className="size-4" aria-hidden="true" />
+                  </button>
+                </aside>
+              ) : (
+                <aside
+                  data-testid="analysis-list"
+                  data-collapsed="false"
+                  className="w-56 shrink-0 overflow-y-auto border-r border-[var(--border)] p-2"
+                >
+                  <div className="flex items-center justify-between gap-2 px-2 pb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+                      Analyses
+                    </p>
+                    <div className="flex items-center gap-0.5">
+                      {readOnly ? null : (
+                        <Button
                           type="button"
-                          data-testid={`analysis-item-${analysis.id}`}
-                          data-analysis-title={analysis.title}
-                          onClick={() => setSelectedAnalysisId(analysis.id)}
-                          className={`w-full rounded-md px-2 py-2 text-left text-xs transition-colors ${
-                            active
-                              ? "bg-[var(--brand-700)] text-white"
-                              : "hover:bg-[var(--secondary)]"
-                          }`}
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[11px]"
+                          data-testid="new-analysis"
+                          onClick={() =>
+                            void openAnalyzeForColumn(
+                              selectedColumnId,
+                              selectedRowRange
+                            )
+                          }
                         >
-                          <span className="block font-medium">{analysis.title}</span>
-                          <span
-                            className={`block ${
+                          New
+                        </Button>
+                      )}
+                      <button
+                        type="button"
+                        data-testid="analysis-list-collapse"
+                        aria-label="Hide analyses list"
+                        aria-expanded
+                        title="Hide analyses list"
+                        onClick={() => setAnalysisListCollapsed(true)}
+                        className="flex size-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                      >
+                        <PanelLeftClose className="size-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                  <ul className="space-y-1">
+                    {displayedAnalyses.map((analysis) => {
+                      const active = selectedAnalysis?.id === analysis.id;
+                      const subtitle = analysisListSubtitle(analysis);
+                      return (
+                        <li key={analysis.id}>
+                          <button
+                            type="button"
+                            data-testid={`analysis-item-${analysis.id}`}
+                            data-analysis-title={analysis.title}
+                            onClick={() => setSelectedAnalysisId(analysis.id)}
+                            className={`w-full rounded-md px-2 py-2 text-left text-xs transition-colors ${
                               active
-                                ? "text-white/80"
-                                : "text-[var(--muted-foreground)]"
+                                ? "bg-[var(--brand-700)] text-white"
+                                : "hover:bg-[var(--secondary)]"
                             }`}
                           >
-                            {subtitle}
-                          </span>
-                          <span
-                            className={`block ${
-                              active
-                                ? "text-white/80"
-                                : "text-[var(--muted-foreground)]"
-                            }`}
-                          >
-                            {analysis.stale ? "Stale · " : ""}
-                            {new Date(analysis.createdAt).toLocaleString()}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </aside>
+                            <span className="block font-medium">{analysis.title}</span>
+                            <span
+                              className={`block ${
+                                active
+                                  ? "text-white/80"
+                                  : "text-[var(--muted-foreground)]"
+                              }`}
+                            >
+                              {subtitle}
+                            </span>
+                            <span
+                              className={`block ${
+                                active
+                                  ? "text-white/80"
+                                  : "text-[var(--muted-foreground)]"
+                              }`}
+                            >
+                              {analysis.stale ? "Stale · " : ""}
+                              {new Date(analysis.createdAt).toLocaleString()}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </aside>
+              )}
               <div className="min-w-0 flex-1 overflow-hidden">
                 {selectedAnalysis &&
                 (isScatterAnalysis(selectedAnalysis) ||
@@ -933,6 +996,32 @@ export function StatisticalWorkspace({
                 ) : selectedAnalysis && isAnovaAnalysis(selectedAnalysis) ? (
                   <AnovaView
                     analysis={selectedAnalysis}
+                    readOnly={readOnly}
+                    editing={Boolean(editingAnalysisId)}
+                    recomputing={recomputingAnalysisId === selectedAnalysis.id}
+                    onRecompute={() => void recomputeSelectedAnalysis(selectedAnalysis)}
+                    onEdit={() => openAnalysisEdit(selectedAnalysis)}
+                    onDelete={async () => {
+                      try {
+                        const next = await deleteCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not delete the analysis."
+                        );
+                      }
+                    }}
+                  />
+                ) : selectedAnalysis && isBoxplotAnalysis(selectedAnalysis) ? (
+                  <BoxplotView
+                    analysis={selectedAnalysis}
+                    reportId={reportId}
+                    onPreviewUploaded={applyAnalytics}
                     readOnly={readOnly}
                     editing={Boolean(editingAnalysisId)}
                     recomputing={recomputingAnalysisId === selectedAnalysis.id}
@@ -1009,19 +1098,6 @@ export function StatisticalWorkspace({
                 title: payload.values.title || undefined,
                 rowStart: payload.values.rowStart,
                 rowEnd: payload.values.rowEnd,
-              });
-              applyAnalytics(created.analytics, {
-                selectAnalysisId: created.analysisId,
-              });
-            } else if (payload.kind === MEASUREMENT_SCATTER) {
-              const created = await createMeasurementScatter(reportId, {
-                query: payload.values.query,
-                title: payload.values.title || undefined,
-                xLabel: payload.values.xLabel || undefined,
-                yLabel: payload.values.yLabel || undefined,
-                layout: { mode: payload.values.mode },
-                lsl: payload.values.lsl,
-                usl: payload.values.usl,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,
@@ -1239,6 +1315,78 @@ export function StatisticalWorkspace({
         }}
       />
 
+      <BoxplotDialog
+        key={
+          boxplotOpen
+            ? `boxplot-${editingAnalysisId ?? "new"}`
+            : "boxplot-closed"
+        }
+        open={boxplotOpen}
+        worksheet={worksheet}
+        defaultYColumnId={boxplotYColumnId || selectedColumnId}
+        defaultCategoryColumnIds={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? editingAnalysis.config.categoryColumnIds
+            : undefined
+        }
+        defaultRowStart={boxplotRowStart}
+        defaultRowEnd={boxplotRowEnd}
+        defaultTitle={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        editMode={Boolean(
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+        )}
+        submitting={boxplotSubmitting}
+        error={boxplotError}
+        onOpenChange={(open) => {
+          setBoxplotOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
+        onSubmit={async (values) => {
+          setBoxplotSubmitting(true);
+          setBoxplotError(null);
+          try {
+            await flush().catch(() => undefined);
+            if (editingAnalysisId && isBoxplotAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(reportId, editingAnalysisId, {
+                yColumnId: values.yColumnId,
+                categoryColumnIds: values.categoryColumnIds,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("Boxplot updated.");
+            } else {
+              const created = await createBoxplot(reportId, {
+                yColumnId: values.yColumnId,
+                categoryColumnIds: values.categoryColumnIds,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
+            setBoxplotOpen(false);
+            clearAnalysisEdit();
+            setTab("results");
+          } catch (error) {
+            setBoxplotError(
+              error instanceof Error
+                ? error.message
+                : "Could not run the boxplot."
+            );
+          } finally {
+            setBoxplotSubmitting(false);
+          }
+        }}
+      />
+
       <XyScatterDialog
         key={xyOpen ? `xy-${editingAnalysisId ?? "new"}` : "xy-closed"}
         open={xyOpen}
@@ -1247,13 +1395,58 @@ export function StatisticalWorkspace({
         defaultXColumnId={
           editingAnalysis && isXyScatterAnalysis(editingAnalysis)
             ? editingAnalysis.config.xColumnId
-            : undefined
+            : null
+        }
+        defaultLegendColumnId={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.legendColumnId
+            : null
+        }
+        defaultMark={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.mark
+            : "scatter"
+        }
+        defaultShowSpecLimits={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showSpecLimits === true
+            : false
         }
         defaultRowStart={xyRowStart}
         defaultRowEnd={xyRowEnd}
         defaultTitle={
           editingAnalysis && isXyScatterAnalysis(editingAnalysis)
             ? editingAnalysis.config.title
+            : ""
+        }
+        defaultXMin={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xMin ?? null)
+            : null
+        }
+        defaultXMax={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xMax ?? null)
+            : null
+        }
+        defaultYMin={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yMin ?? null)
+            : null
+        }
+        defaultYMax={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yMax ?? null)
+            : null
+        }
+        defaultXAxisLabel={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xAxisLabel ?? "")
+            : ""
+        }
+        defaultYAxisLabel={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yAxisLabel ?? "")
             : ""
         }
         editMode={Boolean(
@@ -1274,19 +1467,37 @@ export function StatisticalWorkspace({
               const next = await updateAnalysis(reportId, editingAnalysisId, {
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
+                legendColumnId: values.legendColumnId,
+                mark: values.mark,
+                showSpecLimits: values.showSpecLimits,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xMin: values.xMin,
+                xMax: values.xMax,
+                yMin: values.yMin,
+                yMax: values.yMax,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
-              toast.success("Scatter updated.");
+              toast.success("Plot updated.");
             } else {
               const created = await createXyScatter(reportId, {
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
+                legendColumnId: values.legendColumnId,
+                mark: values.mark,
+                showSpecLimits: values.showSpecLimits,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xMin: values.xMin,
+                xMax: values.xMax,
+                yMin: values.yMin,
+                yMax: values.yMax,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,
@@ -1299,7 +1510,7 @@ export function StatisticalWorkspace({
             setXyError(
               error instanceof Error
                 ? error.message
-                : "Could not plot the scatter."
+                : "Could not create the plot."
             );
           } finally {
             setXySubmitting(false);

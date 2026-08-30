@@ -1,4 +1,9 @@
-import type { ChartLayout, ChartSpec } from "@/lib/charts/chart-spec";
+import type { ChartMark } from "@/lib/charts/chart-marks";
+import type {
+  ChartCitation,
+  ChartLayout,
+  ChartSpec,
+} from "@/lib/charts/chart-spec";
 
 export const MAX_WORKSHEET_COLUMNS = 50;
 export const MAX_WORKSHEET_ROWS = 10_000;
@@ -21,16 +26,74 @@ export const CAPABILITY_SIXPACK_NORMAL = "capability_sixpack_normal" as const;
 export const MEASUREMENT_SCATTER = "measurement_scatter" as const;
 export const XY_SCATTER = "xy_scatter" as const;
 export const ONE_WAY_ANOVA = "one_way_anova" as const;
+export const BOXPLOT = "boxplot" as const;
 
 export const MIN_ANOVA_GROUPS = 2;
 export const MAX_ANOVA_GROUPS = 40;
+/** Observed category combinations on a boxplot (not a full factorial). */
+export const MAX_BOXPLOT_CATEGORIES = 4;
+export const MAX_BOXPLOT_GROUPS = 80;
+/** A single numeric point still draws a degenerate box. */
+export const MIN_BOXPLOT_N = 1;
 export const MIN_XY_POINTS = 2;
+export const MAX_SCATTER_LEGEND_GROUPS = 24;
+/** X-axis label when a worksheet scatter has no second column (1D vs index). */
+export const OBSERVATION_X_LABEL = "Observation";
+/** Series name when a legend cell is empty. */
+export const BLANK_LEGEND_LABEL = "(blank)";
+
+export function isObservationXyScatter(config: {
+  xColumnId?: string | null;
+}): boolean {
+  return config.xColumnId == null || config.xColumnId === "";
+}
+
+export function xyScatterVersusLabel(config: {
+  yColumnName: string;
+  xColumnName: string;
+  xColumnId?: string | null;
+  legendColumnId?: string | null;
+  legendColumnName?: string | null;
+}): string {
+  const versus = isObservationXyScatter(config)
+    ? `${config.yColumnName} vs ${OBSERVATION_X_LABEL}`
+    : `${config.yColumnName} vs ${config.xColumnName}`;
+  const legend =
+    config.legendColumnId && config.legendColumnName
+      ? ` by ${config.legendColumnName}`
+      : "";
+  return `${versus}${legend}`;
+}
+
+export function xyScatterFallbackTitle(
+  yColumnName: string,
+  xColumnName: string | null,
+  rowLabel: string,
+  legendColumnName?: string | null
+): string {
+  const versus = `${yColumnName} vs ${xColumnName ?? OBSERVATION_X_LABEL}`;
+  const legend = legendColumnName ? ` by ${legendColumnName}` : "";
+  const base = `${versus}${legend}`;
+  return rowLabel ? `${base} (${rowLabel})` : base;
+}
 
 export type AnalysisKind =
   | typeof CAPABILITY_SIXPACK_NORMAL
   | typeof MEASUREMENT_SCATTER
   | typeof XY_SCATTER
-  | typeof ONE_WAY_ANOVA;
+  | typeof ONE_WAY_ANOVA
+  | typeof BOXPLOT;
+
+export function boxplotFallbackTitle(
+  yColumnName: string,
+  categoryNames: string[],
+  rowLabel: string
+): string {
+  const by =
+    categoryNames.length > 0 ? ` by ${categoryNames.join(", ")}` : "";
+  const base = `Boxplot of ${yColumnName}${by}`;
+  return rowLabel ? `${base} (${rowLabel})` : base;
+}
 
 export const PRIMARY_DATA_SHEET_ID = "data-1";
 /** Legacy workbook tab id. Specs now live on the column (right-click header). */
@@ -41,6 +104,11 @@ export type WorksheetColumn = {
   id: string;
   name: string;
   values: string[];
+  /**
+   * Attachment pages this column was written from (extract / table dump).
+   * Omitted for typed or pasted values. Cleared when a human edits a cell.
+   */
+  citations?: ChartCitation[];
 };
 
 export type WorksheetSheet = {
@@ -330,16 +398,32 @@ export type AnovaAnalysisSummary = AnalysisSummaryBase & {
 };
 
 export type XyScatterConfig = {
-  xColumnId: string;
+  /** Null/empty means X is observation index (1D scatter). */
+  xColumnId: string | null;
   xColumnName: string;
   yColumnId: string;
   yColumnName: string;
+  /** Null/empty means one color, no legend. */
+  legendColumnId?: string | null;
+  legendColumnName?: string | null;
   title: string;
   /** 1-based inclusive. Null with `rowEnd` null means the whole columns. */
   rowStart?: number | null;
   rowEnd?: number | null;
   /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
   rows?: number[] | null;
+  /** Visual mark. Chat can set this on create or update. */
+  mark?: ChartMark;
+  /** Draw Y-column LSL/USL on the chart. Default off. */
+  showSpecLimits?: boolean;
+  /** Display window. Null = auto. Not part of sourceHash. */
+  xMin?: number | null;
+  xMax?: number | null;
+  yMin?: number | null;
+  yMax?: number | null;
+  /** Override axis titles. Null/empty uses the column name. */
+  xAxisLabel?: string | null;
+  yAxisLabel?: string | null;
 };
 
 export type XyScatterResult = {
@@ -352,6 +436,7 @@ export type XyScatterResult = {
 
 export type XyScatterComputeErrorCode =
   | "too_few_points"
+  | "too_many_series"
   | "missing_columns"
   | "different_sheets"
   | "same_column";
@@ -377,11 +462,75 @@ export type XyScatterAnalysisSummary = AnalysisSummaryBase & {
   results: XyScatterResult;
 };
 
+export type BoxplotConfig = {
+  yColumnId: string;
+  yColumnName: string;
+  /** Innermost first (closest to the boxes); last is the outermost axis tier. */
+  categoryColumnIds: string[];
+  categoryColumnNames: string[];
+  title: string;
+  /** 1-based inclusive. Null with `rowEnd` null means the whole columns. */
+  rowStart?: number | null;
+  rowEnd?: number | null;
+  /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
+  rows?: number[] | null;
+};
+
+export type BoxplotGroupStats = {
+  /** One label per category column; empty when the plot has no categories. */
+  labels: string[];
+  n: number;
+  min: number;
+  q1: number;
+  median: number;
+  q3: number;
+  max: number;
+  whiskerLow: number;
+  whiskerHigh: number;
+  outliers: number[];
+};
+
+export type BoxplotResult = {
+  n: number;
+  skipped: number;
+  groups: BoxplotGroupStats[];
+};
+
+export type BoxplotComputeErrorCode =
+  | "too_few_values"
+  | "too_many_groups"
+  | "too_many_categories"
+  | "missing_columns"
+  | "different_sheets"
+  | "same_column";
+
+export type BoxplotComputeSuccess = {
+  ok: true;
+  result: BoxplotResult;
+};
+
+export type BoxplotComputeFailure = {
+  ok: false;
+  code: BoxplotComputeErrorCode;
+  message: string;
+};
+
+export type BoxplotComputeOutcome =
+  | BoxplotComputeSuccess
+  | BoxplotComputeFailure;
+
+export type BoxplotAnalysisSummary = AnalysisSummaryBase & {
+  kind: typeof BOXPLOT;
+  config: BoxplotConfig;
+  results: BoxplotResult;
+};
+
 export type StatisticalAnalysisSummary =
   | SixpackAnalysisSummary
   | ScatterAnalysisSummary
   | XyScatterAnalysisSummary
-  | AnovaAnalysisSummary;
+  | AnovaAnalysisSummary
+  | BoxplotAnalysisSummary;
 
 export function isSixpackAnalysis(
   analysis: StatisticalAnalysisSummary
@@ -405,6 +554,12 @@ export function isXyScatterAnalysis(
   analysis: StatisticalAnalysisSummary
 ): analysis is XyScatterAnalysisSummary {
   return analysis.kind === XY_SCATTER;
+}
+
+export function isBoxplotAnalysis(
+  analysis: StatisticalAnalysisSummary
+): analysis is BoxplotAnalysisSummary {
+  return analysis.kind === BOXPLOT;
 }
 
 /**

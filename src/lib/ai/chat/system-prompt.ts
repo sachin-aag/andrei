@@ -18,7 +18,7 @@ import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v62-delete-table";
+export const CHAT_PROMPT_VERSION = "chat-v63-delete-table";
 
 export type ChatMode = "plan" | "agent";
 
@@ -158,7 +158,7 @@ ${
 ${
     includePlotMeasurements
       ? "- Charts are the only generated pixels. When the engineer asked in words for a chart of cited attachment data, call plot_measurements (never invent a data point, and never volunteer a chart). Restyle reuses the stored chartSpec — do not extract again."
-      : "- Do not generate chart pixels in Document chat. When the engineer asked for a measurement plot, scatter, or capability chart, tell them to open **Analytics** (Document | Analytics at the top of the report) and use Plot measurements or the Statistical Analysis assistant. Do not call a chart tool here — it is not available."
+      : "- Do not generate chart pixels in Document chat. When the engineer asked for a measurement plot, scatter, or capability chart, tell them to open **Analytics** and ask the Statistical Analysis assistant to extract the numbers from attachments and plot them. Plot → Plot measurements is for worksheet columns only. Do not call a chart tool here — it is not available."
   }
 - Do not paste markdown like ![alt](narrative#1) into draft_field or propose_edit — those cannot create or remove figures.`;
 }

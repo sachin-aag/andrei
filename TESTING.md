@@ -175,7 +175,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | typing triggers auto-save status | Saving… → Saved |
 | sidebar tabs switch panels | Placeholders, Criteria (stub eval), Comments |
 | collapses and expands sidebar | Collapse / expand controls |
-| hides the review margin while the assistant is expanded | Gutter XOR expanded Assistant (1920px) |
+| shows the review margin when Comments is on and keeps it with the assistant open | Comments switch only; gutter stays with expanded Assistant (1920px) |
 | resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |
 | opens the assistant at the default width on a new report and after reload | Width is not kept across reports or reloads |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
@@ -266,7 +266,7 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 </details>
 
 <details>
-<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet, sixpack, scatter, ANOVA</summary>
+<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet, sixpack, scatter, ANOVA, boxplot</summary>
 
 | Test | What it verifies |
 |------|------------------|
@@ -278,9 +278,9 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 | saves a sixpack for specific row numbers | POST `rows` list; Results shows that subset; Download saves a CSV |
 | marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
 | streams a stats-assistant reply | Stub chat streams and persists; Ask/Agent + Quick/Deep + attach image are present (cannot assert tools) |
-| shows Data sheets and column specs from the header menu | Data tab only; insert/delete row/column are not in Data; right-click column Specs dialog filled from sample assay; Plot measurements dialog has optional LSL/USL and errors without attachments |
+| shows Data sheets and column specs from the header menu | Data tab only; insert/delete row/column are not in Data; right-click column Specs dialog filled from sample assay; Plot menu is Sixpack, ANOVA, Boxplot, and worksheet Plot measurements (no attachment extract); Boxplot Y is required with optional nested categories (innermost first); Plot measurements Show LSL, USL values is off by default; Advanced is collapsed and sets min/max X and Y plus optional axis titles (blank = auto); Agent Analytics chat can edit an existing worksheet plot (Y, chart type, spec lines, axis window) or boxplot (Y, categories) without adding a Results row; attachment plots are Analytics chat |
 | row headers select the whole row and the row menu inserts, clears, and deletes | Click row number to select all columns; right-click Insert above/below, Clear, Delete |
-| column context menu inserts, clears, and opens Analyze with prefilled plot values | Insert left/right, clear data, delete; Analyze data popup switches plot type with column values pre-filled |
+| column context menu inserts, clears, and opens Analyze with prefilled plot values | Insert left/right, clear data, delete; Analyze data popup is sixpack or ANOVA with column values pre-filled |
 | loads sample assay and runs one-way ANOVA of Assay by Lot | Data menu sample fills Assay + Lot; Stat → One-Way ANOVA; Results table + interval plot |
 
 </details>
@@ -316,12 +316,12 @@ File: `src/app/api/reports/route.test.ts`
 </details>
 
 <details>
-<summary><strong>/api/reports/[reportId]/analytics</strong> — worksheet + sixpack + scatter + ANOVA</summary>
+<summary><strong>/api/reports/[reportId]/analytics</strong> — worksheet + sixpack + scatter + ANOVA + boxplot</summary>
 
 - Pack/auth failures pass through `requireAnalyticsAccess` (404/401/403)
 - GET loads or creates the per-report worksheet
 - PATCH/POST persist worksheet JSON (POST is the autosave beacon alias)
-- POST analyses creates a sixpack, `kind: "measurement_scatter"`, or `kind: "one_way_anova"`; POST analyses/[id] recomputes
+- POST analyses creates a sixpack, `kind: "measurement_scatter"`, `kind: "xy_scatter"`, `kind: "one_way_anova"`, or `kind: "boxplot"`; POST analyses/[id] recomputes
 
 File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 

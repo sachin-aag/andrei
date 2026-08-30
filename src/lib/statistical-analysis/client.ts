@@ -1,4 +1,5 @@
 import type { ReportAnalyticsView } from "./types";
+import type { ChartMark } from "@/lib/charts/chart-marks";
 
 export class AnalyticsConflictError extends Error {
   readonly analytics: ReportAnalyticsView;
@@ -134,8 +135,17 @@ export async function createOneWayAnova(
 export async function createXyScatter(
   reportId: string,
   input: {
-    xColumnId: string;
+    xColumnId?: string | null;
     yColumnId: string;
+    legendColumnId?: string | null;
+    mark?: ChartMark;
+    showSpecLimits?: boolean;
+    xMin?: number | null;
+    xMax?: number | null;
+    yMin?: number | null;
+    yMax?: number | null;
+    xAxisLabel?: string | null;
+    yAxisLabel?: string | null;
     title?: string;
     rowStart?: number | null;
     rowEnd?: number | null;
@@ -144,6 +154,23 @@ export async function createXyScatter(
 ): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   return postAnalysis(reportId, {
     kind: "xy_scatter",
+    ...input,
+  });
+}
+
+export async function createBoxplot(
+  reportId: string,
+  input: {
+    yColumnId: string;
+    categoryColumnIds?: string[];
+    title?: string;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "boxplot",
     ...input,
   });
 }

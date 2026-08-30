@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
 import {
+  boxplotBodySchema,
   measurementScatterInputSchema,
   patchAnalyticsBodySchema,
+  xyScatterBodySchema,
   xyScatterInputSchema,
 } from "./schemas";
 import { createEmptyWorksheet } from "./worksheet";
@@ -50,14 +52,153 @@ describe("xyScatterInputSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts distinct columns", () => {
+  it("accepts omitted X (1D vs observation index)", () => {
+    const parsed = xyScatterInputSchema.parse({
+      kind: XY_SCATTER,
+      yColumnId: "c2",
+    });
+    expect(parsed.yColumnId).toBe("c2");
+    expect(parsed.xColumnId ?? null).toBeNull();
+    expect(parsed.legendColumnId ?? null).toBeNull();
+  });
+
+  it("accepts a legend column distinct from X and Y", () => {
     expect(
       xyScatterInputSchema.parse({
         kind: XY_SCATTER,
         xColumnId: "c1",
         yColumnId: "c2",
+        legendColumnId: "c3",
       })
-    ).toMatchObject({ xColumnId: "c1", yColumnId: "c2" });
+    ).toMatchObject({
+      xColumnId: "c1",
+      yColumnId: "c2",
+      legendColumnId: "c3",
+    });
+  });
+
+  it("rejects legend equal to Y or X", () => {
+    expect(
+      xyScatterInputSchema.safeParse({
+        kind: XY_SCATTER,
+        yColumnId: "c1",
+        legendColumnId: "c1",
+      }).success
+    ).toBe(false);
+    expect(
+      xyScatterInputSchema.safeParse({
+        kind: XY_SCATTER,
+        xColumnId: "c1",
+        yColumnId: "c2",
+        legendColumnId: "c1",
+      }).success
+    ).toBe(false);
+  });
+
+  it("accepts a chart type and spec-limit toggle on create and chat body", () => {
+    expect(
+      xyScatterInputSchema.parse({
+        kind: XY_SCATTER,
+        yColumnId: "c2",
+        mark: "line",
+      }).mark
+    ).toBe("line");
+    expect(
+      xyScatterBodySchema.parse({
+        yColumnId: "c2",
+        mark: "column",
+        showSpecLimits: true,
+      })
+    ).toMatchObject({
+      yColumnId: "c2",
+      mark: "column",
+      showSpecLimits: true,
+    });
+    expect(
+      xyScatterInputSchema.parse({
+        kind: XY_SCATTER,
+        yColumnId: "c2",
+        showSpecLimits: true,
+      }).showSpecLimits
+    ).toBe(true);
+  });
+
+  it("accepts axis window and labels, and rejects min ≥ max", () => {
+    expect(
+      xyScatterBodySchema.parse({
+        yColumnId: "c2",
+        xMin: 0,
+        xMax: 10,
+        yMin: null,
+        yAxisLabel: "Assay (%)",
+      })
+    ).toMatchObject({
+      xMin: 0,
+      xMax: 10,
+      yAxisLabel: "Assay (%)",
+    });
+    expect(
+      xyScatterInputSchema.safeParse({
+        kind: XY_SCATTER,
+        yColumnId: "c2",
+        xMin: 10,
+        xMax: 1,
+      }).success
+    ).toBe(false);
+  });
+
+  it("requires yColumnId on create and allows a partial update with analysisId", () => {
+    expect(xyScatterBodySchema.safeParse({ mark: "line" }).success).toBe(false);
+    expect(
+      xyScatterBodySchema.parse({
+        analysisId: "plot-1",
+        mark: "line",
+        showSpecLimits: true,
+      })
+    ).toMatchObject({
+      analysisId: "plot-1",
+      mark: "line",
+      showSpecLimits: true,
+    });
+  });
+});
+
+describe("boxplotBodySchema", () => {
+  it("requires yColumnId on create and allows a partial update with analysisId", () => {
+    expect(boxplotBodySchema.safeParse({}).success).toBe(false);
+    expect(
+      boxplotBodySchema.parse({
+        yColumnId: "c1",
+        categoryColumnIds: ["c2", "c3"],
+      })
+    ).toMatchObject({
+      yColumnId: "c1",
+      categoryColumnIds: ["c2", "c3"],
+    });
+    expect(
+      boxplotBodySchema.parse({
+        analysisId: "box-1",
+        categoryColumnIds: ["c2"],
+      })
+    ).toMatchObject({
+      analysisId: "box-1",
+      categoryColumnIds: ["c2"],
+    });
+  });
+
+  it("rejects Y as a category and duplicate category columns", () => {
+    expect(
+      boxplotBodySchema.safeParse({
+        yColumnId: "c1",
+        categoryColumnIds: ["c1"],
+      }).success
+    ).toBe(false);
+    expect(
+      boxplotBodySchema.safeParse({
+        yColumnId: "c1",
+        categoryColumnIds: ["c2", "c2"],
+      }).success
+    ).toBe(false);
   });
 });
 
@@ -71,5 +212,14 @@ describe("patchAnalyticsBodySchema", () => {
     expect(
       patchAnalyticsBodySchema.safeParse({ worksheet, version: 0 }).success
     ).toBe(false);
+  });
+
+  it("keeps optional column citations from an attachment write", () => {
+    const worksheet = createEmptyWorksheet();
+    worksheet.columns[0]!.citations = [{ attachmentId: "att_1", page: 31 }];
+    const parsed = patchAnalyticsBodySchema.parse({ worksheet });
+    expect(parsed.worksheet?.columns[0]?.citations).toEqual([
+      { attachmentId: "att_1", page: 31 },
+    ]);
   });
 });

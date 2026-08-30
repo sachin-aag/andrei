@@ -6,6 +6,8 @@ import { captureAnalysisPreviewFromElement } from "@/lib/statistical-analysis/ca
 import { isGraphAnalysisKind } from "@/lib/statistical-analysis/insertable-graphs";
 import { saveAnalysisPreview } from "@/lib/statistical-analysis/client";
 import {
+  isAnovaAnalysis,
+  isBoxplotAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -16,7 +18,9 @@ import {
 function chartSpecForAnalysis(
   analysis: StatisticalAnalysisSummary
 ) {
-  if (isSixpackAnalysis(analysis)) return null;
+  if (isSixpackAnalysis(analysis) || isAnovaAnalysis(analysis) || isBoxplotAnalysis(analysis)) {
+    return null;
+  }
   if (isScatterAnalysis(analysis) || isXyScatterAnalysis(analysis)) {
     return analysis.results.specs[0] ?? null;
   }

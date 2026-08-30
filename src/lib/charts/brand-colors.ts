@@ -9,7 +9,7 @@ export type ChartBrandColors = {
   axis: string;
   plotFill: string;
   limit: string;
-  series: readonly [string, string, string];
+  series: readonly string[];
 };
 
 const DEMO: ChartBrandColors = {
@@ -21,7 +21,16 @@ const DEMO: ChartBrandColors = {
   axis: "#5b6b82",
   plotFill: "#ffffff",
   limit: "#dc2626",
-  series: ["#001838", "#3d6fb5", "#5b8ad0"],
+  series: [
+    "#001838",
+    "#3d6fb5",
+    "#5b8ad0",
+    "#0e7490",
+    "#a16207",
+    "#6d28d9",
+    "#c026d3",
+    "#3f6212",
+  ],
 };
 
 const MJ: ChartBrandColors = {
@@ -33,7 +42,16 @@ const MJ: ChartBrandColors = {
   axis: "#5c5c72",
   plotFill: "#ffffff",
   limit: "#dc2626",
-  series: ["#133782", "#403ac8", "#5b4fe0"],
+  series: [
+    "#133782",
+    "#403ac8",
+    "#5b4fe0",
+    "#0f766e",
+    "#b45309",
+    "#9d174d",
+    "#0369a1",
+    "#4d7c0f",
+  ],
 };
 
 const CONVERGENT: ChartBrandColors = {
@@ -45,7 +63,16 @@ const CONVERGENT: ChartBrandColors = {
   axis: "#4d6a80",
   plotFill: "#ffffff",
   limit: "#dc2626",
-  series: ["#0079c1", "#009ddc", "#3aabd9"],
+  series: [
+    "#0079c1",
+    "#009ddc",
+    "#3aabd9",
+    "#0f766e",
+    "#c2410c",
+    "#7c3aed",
+    "#a21caf",
+    "#4d7c0f",
+  ],
 };
 
 const BY_PACK: Record<CustomerId, ChartBrandColors> = {

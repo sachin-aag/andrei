@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { CHART_MARK_LABELS, parseChartMark } from "@/lib/charts/chart-marks";
 import { formatPValue, formatPpm, formatStat } from "./format";
 import { plotImagesForExport } from "./render-analysis-plots";
 import {
@@ -7,6 +8,8 @@ import {
 } from "./row-selection";
 import {
   isAnovaAnalysis,
+  isBoxplotAnalysis,
+  isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -250,7 +253,9 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
       ["Y", analysis.config.yColumnName],
       ["X", analysis.config.xColumnName],
       ["Rows", rows],
-      ["Kind", "XY scatter"],
+      ["Kind", isObservationXyScatter(analysis.config) ? "1D scatter" : "XY scatter"],
+      ["Legend", analysis.config.legendColumnName ?? ""],
+      ["Chart type", CHART_MARK_LABELS[parseChartMark(analysis.config.mark ?? spec?.layout.mark)]],
       ["N", String(analysis.results.n)],
       ["Skipped", String(analysis.results.skipped)],
       ["Pearson r", formatStat(analysis.results.pearsonR, 4)],
@@ -259,15 +264,74 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
       ["Created", analysis.createdAt],
     ],
     [
-      ["Chart", "Label", "X", "Y"],
+      ["Chart", "Series", "Label", "X", "Y"],
       ...analysis.results.specs.flatMap((item) =>
         item.points.map((point) => [
           item.title,
+          point.series ?? "",
           point.label,
           String(point.x),
           String(point.y),
         ])
       ),
+    ],
+    [
+      ["Attachment", "Page"],
+      ...analysis.results.specs.flatMap((item) =>
+        item.citations.map((citation) => [
+          citation.attachmentId,
+          String(citation.page),
+        ])
+      ),
+    ],
+  ];
+}
+
+function boxplotRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
+  if (!isBoxplotAnalysis(analysis)) return [];
+  const { config, results } = analysis;
+  const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
+  const categoryHeaders =
+    config.categoryColumnNames.length > 0
+      ? config.categoryColumnNames
+      : ["Group"];
+  return [
+    [
+      ["Field", "Value"],
+      ["Title", analysis.title],
+      ["Y", config.yColumnName],
+      ["Categories", config.categoryColumnNames.join(", ") || "(none)"],
+      ["Rows", rows],
+      ["Kind", "Boxplot (Tukey)"],
+      ["N", String(results.n)],
+      ["Skipped", String(results.skipped)],
+      ["Created", analysis.createdAt],
+    ],
+    [
+      [
+        ...categoryHeaders,
+        "N",
+        "Min",
+        "Q1",
+        "Median",
+        "Q3",
+        "Max",
+        "Whisker low",
+        "Whisker high",
+        "Outliers",
+      ],
+      ...results.groups.map((group) => [
+        ...(group.labels.length > 0 ? group.labels : ["All"]),
+        String(group.n),
+        formatStat(group.min),
+        formatStat(group.q1),
+        formatStat(group.median),
+        formatStat(group.q3),
+        formatStat(group.max),
+        formatStat(group.whiskerLow),
+        formatStat(group.whiskerHigh),
+        String(group.outliers.length),
+      ]),
     ],
   ];
 }
@@ -278,6 +342,7 @@ function analysisSections(
   if (isScatterAnalysis(analysis)) return scatterRows(analysis);
   if (isXyScatterAnalysis(analysis)) return xyScatterRows(analysis);
   if (isAnovaAnalysis(analysis)) return anovaRows(analysis);
+  if (isBoxplotAnalysis(analysis)) return boxplotRows(analysis);
   if (isSixpackAnalysis(analysis)) return sixpackRows(analysis);
   const exhaustive: never = analysis;
   return exhaustive;
