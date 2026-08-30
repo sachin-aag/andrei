@@ -268,6 +268,9 @@ describe("resolveNamedAnalyticsPlot", () => {
     expect(
       tokenizePlotName("insert the plot into the methods of measurement section")
     ).toEqual([]);
+    expect(tokenizePlotName("insert the plot into the measure section")).toEqual(
+      []
+    );
     expect(tokenizePlotName("yes insert that one in")).toEqual([]);
     expect(tokenizePlotName("i dont see it")).toEqual([]);
     expect(plotMatchesNamedTokens(assay, ["torque"])).toBe(false);
@@ -312,6 +315,15 @@ describe("resolveNamedAnalyticsPlot", () => {
       analysisId: "wrong-id",
       analyses: [assay],
       userText: "insert the plot into the methods of measurement section",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
+  });
+
+  it("inserts the only saved plot when they name Measure, not a series", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: "wrong-id",
+      analyses: [assay],
+      userText: "insert the plot into the measure section",
     });
     expect(result).toEqual({ ok: true, analysisId: assay.id });
   });

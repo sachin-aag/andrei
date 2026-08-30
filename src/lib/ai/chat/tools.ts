@@ -37,6 +37,7 @@ import {
   MAX_IMAGES_PER_SECTION,
 } from "@/lib/images/compress-image";
 import {
+  ALREADY_LISTED_PLOTS_COPY,
   latestUserMessageText,
   resolveAnalyticsImage,
   resolveNamedAnalyticsPlot,
@@ -774,6 +775,16 @@ export function buildChatTools(opts: {
   const committing = editPolicy === "commit";
   const blockPairing = createSameTurnBlockPairing();
   const imageOps = createSameTurnImageOps();
+  let listedPlotsThisTurn = false;
+  let insertImageTail: Promise<void> = Promise.resolve();
+  const enqueueInsertImage = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = insertImageTail.then(fn, fn);
+    insertImageTail = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  };
   const fieldReadSnapshots = new Map<string, unknown>();
   const captureFieldSnapshot = (
     section: SectionType,
@@ -1606,14 +1617,16 @@ export function buildChatTools(opts: {
           .max(300)
           .describe("One short sentence explaining why this figure belongs here."),
       }),
-      execute: async ({
-        section,
-        targetField,
-        image,
-        anchorText,
-        alt,
-        reasoning,
-      }): Promise<InsertImageResult> => {
+      execute: async (args): Promise<InsertImageResult> =>
+        enqueueInsertImage(async () => {
+        const {
+          section,
+          targetField,
+          image,
+          anchorText,
+          alt,
+          reasoning,
+        } = args;
         try {
         if (!canEdit) {
           return {
@@ -1691,6 +1704,13 @@ export function buildChatTools(opts: {
             userText: latestUserMessageText(messages),
           });
           if (!named.ok) {
+            if (listedPlotsThisTurn) {
+              return {
+                status: "available_plots",
+                message: ALREADY_LISTED_PLOTS_COPY,
+              };
+            }
+            listedPlotsThisTurn = true;
             return { status: "available_plots", message: named.message };
           }
           const analysis = analyses.find((item) => item.id === named.analysisId);
@@ -1980,7 +2000,7 @@ export function buildChatTools(opts: {
               "Could not insert this image. Call insert_image with source=chat, source=section (image.id from read_section), or source=analytics (analysisId from the context map). Do not put markdown image syntax in draft_field.",
           };
         }
-      },
+      }),
     }),
 
     plot_measurements: tool({

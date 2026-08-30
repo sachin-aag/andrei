@@ -378,6 +378,10 @@ const ANALYTICS_CREATE_COPY =
 const RELAY_AVAILABLE_PLOTS_COPY =
   "Reply in prose with those titles once. Do not call insert_image again this turn. Do not insert a different plot. Do not call plot_measurements as a substitute.";
 
+/** Same-turn follow-up after available_plots already returned. */
+export const ALREADY_LISTED_PLOTS_COPY =
+  "Plots were already listed this turn. Relay those titles in prose once and stop. Do not call insert_image again.";
+
 function graphKindLabel(kind: AnalysisKind): string {
   switch (kind) {
     case CAPABILITY_SIXPACK_NORMAL:

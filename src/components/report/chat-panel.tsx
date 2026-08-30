@@ -40,6 +40,10 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ChatMarkdown } from "@/components/report/chat-markdown";
 import {
+  isRedundantInsertImageChip,
+  type InsertImageChipInfo,
+} from "@/components/report/chat-insert-image-chips";
+import {
   AskUserForm,
   type AskUserQuestionInput,
 } from "@/components/report/chat-ask-user-form";
@@ -420,7 +424,7 @@ function ToolChip({
     if (info.output?.status === "available_plots") {
       return (
         <ToolLine icon={<ImagePlus className="size-3.5" />}>
-          Listing the Analytics plots that are available.
+          Available Analytics plots.
         </ToolLine>
       );
     }
@@ -795,16 +799,23 @@ const MessageTurn = memo(function MessageTurn({
       {showEmptyError ? (
         <p className="text-sm text-red-600">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
       ) : (
-        groupAssistantParts(parts).map((group, i) => {
-          if (group.kind === "text") {
-            if (!group.text.trim()) return null;
-            return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
-          }
-          if (group.kind === "document-review") {
-            return <DocumentReviewProgress key={i} parts={group.parts} />;
-          }
-          const tool = readToolPart(group.part as UIMessagePart<never, never>);
-          if (tool) {
+        (() => {
+          const shownInsertImage: InsertImageChipInfo[] = [];
+          return groupAssistantParts(parts).map((group, i) => {
+            if (group.kind === "text") {
+              if (!group.text.trim()) return null;
+              return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
+            }
+            if (group.kind === "document-review") {
+              return <DocumentReviewProgress key={i} parts={group.parts} />;
+            }
+            const tool = readToolPart(group.part as UIMessagePart<never, never>);
+            if (!tool) return null;
+            if (isRedundantInsertImageChip(shownInsertImage, tool)) {
+              shownInsertImage.push(tool);
+              return null;
+            }
+            shownInsertImage.push(tool);
             return (
               <ToolChip
                 key={i}
@@ -813,9 +824,8 @@ const MessageTurn = memo(function MessageTurn({
                 onAnswerQuestions={onAnswerQuestions}
               />
             );
-          }
-          return null;
-        })
+          });
+        })()
       )}
       <TurnChangeSummary
         parts={parts}

@@ -56,8 +56,11 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   off that list.
 - `insert_image` source=analytics copies a saved plot only when the named
   series matches (or they did not name one). If they asked for a plot that
-  is not listed, return the available titles and say they can create
-  additional ones in Analytics — do not insert a different figure.
+  is not listed, return the available titles once this turn and say they can
+  create additional ones in Analytics — do not insert a different figure, and
+  do not call `insert_image` again to re-list. Destination wording ("Measure",
+  "Methods of Measurement") and confirmation ("yes, that one") are not plot
+  names. Parallel `insert_image` calls in one turn serialize onto one card.
 - Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
   + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
   `ai_fix` comments). Document chrome **proposes**. Do not trust a client

@@ -1917,6 +1917,224 @@ describe("buildChatTools propose vs commit", () => {
     expect(dbInsertMock).toHaveBeenCalled();
   });
 
+  it("proposes the only Analytics plot when they ask to insert the plot into Measure", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert the plot into the measure section",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "measure",
+        targetField: "narrative",
+        reasoning: "Add the Assay scatter to Measure.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "measure",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses one card when insert_image is called in parallel for the same plot", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      return {
+        analyses: [
+          {
+            id: "anl_assay",
+            workspaceId: "ws",
+            title: "Assay",
+            kind: "measurement_scatter",
+            sourceHash: "h",
+            stale: false,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            previewImage: {
+              dataUrl,
+              widthPx: 600,
+              heightPx: 400,
+              alt: "Assay",
+              chartSpec: null,
+            },
+            config: {
+              query: "assay",
+              title: "Assay",
+              xLabel: "Unit",
+              yLabel: "Assay",
+              layout: {
+                mode: "combined",
+                seriesBy: "none",
+                xAxis: "sequential",
+                yRange: null,
+              },
+              lsl: null,
+              usl: null,
+            },
+            results: { specs: [], n: 3, uom: "%" },
+          },
+        ],
+      };
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert the plot into the measure section",
+            },
+          ],
+        },
+      ],
+    });
+    const input = {
+      section: "measure" as const,
+      targetField: "narrative",
+      reasoning: "Add the Assay scatter to Measure.",
+      image: { source: "analytics" as const, analysisId: "anl_assay" },
+      anchorText: "",
+    };
+    const [first, second] = await Promise.all([
+      tools.insert_image!.execute!(input, TEST_TOOL_OPTIONS),
+      tools.insert_image!.execute!(input, TEST_TOOL_OPTIONS),
+    ]);
+    expect(first).toMatchObject({ status: "proposed" });
+    expect(second).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists available plots only once when insert_image is called twice on a named miss", async () => {
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay sixpack",
+          kind: "capability_sixpack_normal",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl:
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay sixpack",
+            chartSpec: null,
+          },
+          config: {
+            columnId: "c1",
+            columnName: "Assay",
+            title: "Assay sixpack",
+            lsl: 90,
+            usl: 110,
+            target: 100,
+          },
+          results: {} as never,
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert the torque plot into the purpose section",
+            },
+          ],
+        },
+      ],
+    });
+    const input = {
+      section: "define" as const,
+      targetField: "narrative",
+      reasoning: "Add the torque plot to Purpose.",
+      image: { source: "analytics" as const, analysisId: "anl_assay" },
+      anchorText: "",
+    };
+    const first = await tools.insert_image!.execute!(input, TEST_TOOL_OPTIONS);
+    const second = await tools.insert_image!.execute!(input, TEST_TOOL_OPTIONS);
+    expect(first).toMatchObject({ status: "available_plots" });
+    expect((first as { message: string }).message).toContain("Assay sixpack");
+    expect(second).toMatchObject({ status: "available_plots" });
+    expect((second as { message: string }).message).toContain(
+      "already listed this turn"
+    );
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
   it("pairs an empty-anchor propose_edit lead-in with create_table", async () => {
     const inserted: Array<Record<string, unknown>> = [];
     const updates: Array<Record<string, unknown>> = [];
