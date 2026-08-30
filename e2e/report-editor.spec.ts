@@ -328,6 +328,17 @@ test.describe("report editor", () => {
     await expectDocumentPanelResizeHandleAligned(page);
 
     await expandWorkProductPanel(page);
+    const collapse = page.getByRole("button", {
+      name: /collapse document panel/i,
+    });
+    const reportTab = page.getByTestId("report-surface-document");
+    const [collapseBox, reportBox] = await Promise.all([
+      collapse.boundingBox(),
+      reportTab.boundingBox(),
+    ]);
+    expect(collapseBox).toBeTruthy();
+    expect(reportBox).toBeTruthy();
+    expect(collapseBox!.x + collapseBox!.width).toBeLessThan(reportBox!.x);
     await expect(page.getByRole("switch", { name: /comments/i })).toHaveCount(0);
 
     const docsBox = await documentsPanel(page).boundingBox();
