@@ -15,6 +15,12 @@ import {
   parseStoredWorkspaceLayout,
   PREVIEW_DEFAULT_PX,
   previewWidthBounds,
+  documentCanvasWidthClass,
+  documentColumnStyle,
+  DOCUMENT_WIDTH_DEFAULT_PX,
+  DOCUMENT_WIDTH_MAX_PX,
+  DOCUMENT_WIDTH_MIN_PX,
+  documentWidthBounds,
   REVIEW_GUTTER_GRID_COLS,
   REVIEW_GUTTER_MAX_PX,
   REVIEW_GUTTER_MIN_PX,
@@ -80,16 +86,14 @@ describe("docsWidthBounds", () => {
 
 describe("isReviewGutterVisible", () => {
   it("hides the review margin by default until comments are enabled", () => {
-    expect(isReviewGutterVisible(false, true)).toBe(false);
-    expect(isReviewGutterVisible(false, false)).toBe(false);
-    expect(isReviewGutterVisible(true, true)).toBe(true);
-    expect(isReviewGutterVisible(true, false)).toBe(false);
+    expect(isReviewGutterVisible(false)).toBe(false);
+    expect(isReviewGutterVisible(true)).toBe(true);
   });
 
   it("hides the review margin while a PDF or Word document is open", () => {
-    expect(isReviewGutterVisible(true, true, true)).toBe(false);
-    expect(isReviewGutterVisible(true, false, true)).toBe(false);
-    expect(isReviewGutterVisible(true, true, false)).toBe(true);
+    expect(isReviewGutterVisible(true, true)).toBe(false);
+    expect(isReviewGutterVisible(false, true)).toBe(false);
+    expect(isReviewGutterVisible(true, false)).toBe(true);
   });
 });
 
@@ -98,7 +102,70 @@ describe("review gutter width", () => {
     expect(REVIEW_GUTTER_MIN_PX).toBeLessThan(200);
     expect(REVIEW_GUTTER_MAX_PX).toBeLessThan(360);
     expect(REVIEW_GUTTER_GRID_COLS).toContain(`${REVIEW_GUTTER_MIN_PX}px`);
-    expect(REVIEW_GUTTER_GRID_COLS).toContain(`${REVIEW_GUTTER_MAX_PX}px`);
+  });
+
+  it("gives leftover canvas to the margin so widening the sheet shrinks the gutter first", () => {
+    expect(REVIEW_GUTTER_GRID_COLS).toContain("minmax(0,var(--doc-col))");
+    expect(REVIEW_GUTTER_GRID_COLS).toContain(
+      `minmax(${REVIEW_GUTTER_MIN_PX}px,1fr)`
+    );
+  });
+});
+
+describe("document width", () => {
+  it("defaults to a readable sheet inside 640–1280px drag bounds", () => {
+    expect(DOCUMENT_WIDTH_DEFAULT_PX).toBe(880);
+    expect(documentWidthBounds()).toEqual({
+      min: DOCUMENT_WIDTH_MIN_PX,
+      max: DOCUMENT_WIDTH_MAX_PX,
+    });
+    expect(DOCUMENT_WIDTH_MIN_PX).toBe(640);
+    expect(DOCUMENT_WIDTH_MAX_PX).toBe(1280);
+    expect(DOCUMENT_WIDTH_DEFAULT_PX).toBeGreaterThan(DOCUMENT_WIDTH_MIN_PX);
+    expect(DOCUMENT_WIDTH_DEFAULT_PX).toBeLessThan(DOCUMENT_WIDTH_MAX_PX);
+    expect(defaultWorkspaceLayout().documentWidth).toBe(
+      DOCUMENT_WIDTH_DEFAULT_PX
+    );
+  });
+
+  it("writes a clamped --doc-col custom property", () => {
+    expect(documentColumnStyle(880)).toEqual({ "--doc-col": "880px" });
+    expect(documentColumnStyle(100)).toEqual({
+      "--doc-col": `${DOCUMENT_WIDTH_MIN_PX}px`,
+    });
+    expect(documentColumnStyle(2400)).toEqual({
+      "--doc-col": `${DOCUMENT_WIDTH_MAX_PX}px`,
+    });
+  });
+});
+
+describe("documentCanvasWidthClass", () => {
+  it("caps sectioned reports with the resizable --doc-col sheet", () => {
+    expect(
+      documentCanvasWidthClass({
+        continuousDocument: false,
+        reviewGutterVisible: false,
+      })
+    ).toBe("max-w-[min(100%,var(--doc-col))] px-6 py-8");
+  });
+
+  it("widens only enough to sit the review margin beside the sheet", () => {
+    const classes = documentCanvasWidthClass({
+      continuousDocument: false,
+      reviewGutterVisible: true,
+    });
+    expect(classes).toContain("var(--doc-col)");
+    expect(classes).toContain(`${REVIEW_GUTTER_MAX_PX}px`);
+    expect(classes).not.toContain("1180px");
+  });
+
+  it("lets generic Letter pages set their own 8.5in width", () => {
+    expect(
+      documentCanvasWidthClass({
+        continuousDocument: true,
+        reviewGutterVisible: false,
+      })
+    ).toBe("max-w-none px-4 py-6");
   });
 });
 
@@ -392,6 +459,7 @@ describe("session workspace layout", () => {
         chatWidth: 720,
         docsWidth: 480,
         previewWidth: 480,
+        documentWidth: DOCUMENT_WIDTH_DEFAULT_PX,
       })
     );
     bindWorkspaceLayoutToReport("report-a");
@@ -432,11 +500,13 @@ describe("stored workspace layout", () => {
       chatWidth: 512.4,
       docsWidth: 280.9,
       previewWidth: 480.2,
+      documentWidth: 900.6,
     });
     expect(parseStoredWorkspaceLayout(raw)).toEqual({
       chatWidth: 512,
       docsWidth: 281,
       previewWidth: 480,
+      documentWidth: 901,
     });
   });
 
@@ -456,7 +526,7 @@ describe("stored workspace layout", () => {
     ).toBeNull();
   });
 
-  it("fills previewWidth when older stored JSON omitted it", () => {
+  it("fills previewWidth and documentWidth when older stored JSON omitted them", () => {
     expect(
       parseStoredWorkspaceLayout(
         JSON.stringify({ chatWidth: 400, docsWidth: 300 })
@@ -465,6 +535,7 @@ describe("stored workspace layout", () => {
       chatWidth: 400,
       docsWidth: 300,
       previewWidth: PREVIEW_DEFAULT_PX,
+      documentWidth: DOCUMENT_WIDTH_DEFAULT_PX,
     });
   });
 });

@@ -175,7 +175,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | typing triggers auto-save status | Saving… → Saved |
 | sidebar tabs switch panels | Placeholders, Criteria (stub eval), Comments |
 | collapses and expands sidebar | Collapse / expand controls |
-| hides the review margin while the assistant is expanded | Gutter XOR expanded Assistant (1920px) |
+| shows the review margin when Comments is on and keeps it with the assistant open | Comments switch only; gutter stays with expanded Assistant (1920px) |
 | resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |
 | opens the assistant at the default width on a new report and after reload | Width is not kept across reports or reloads |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
