@@ -424,7 +424,7 @@ function ToolChip({
     if (info.output?.status === "available_plots") {
       return (
         <ToolLine icon={<ImagePlus className="size-3.5" />}>
-          Available Analytics plots.
+          No figure was inserted — listing available Analytics plots.
         </ToolLine>
       );
     }

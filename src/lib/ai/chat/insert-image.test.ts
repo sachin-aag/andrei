@@ -273,8 +273,15 @@ describe("resolveNamedAnalyticsPlot", () => {
     );
     expect(tokenizePlotName("yes insert that one in")).toEqual([]);
     expect(tokenizePlotName("i dont see it")).toEqual([]);
+    expect(
+      tokenizePlotName(
+        "insert a plot into the purpose section for the assays thing"
+      )
+    ).toEqual(["assays"]);
+    expect(tokenizePlotName("yes please do")).toEqual([]);
     expect(plotMatchesNamedTokens(assay, ["torque"])).toBe(false);
     expect(plotMatchesNamedTokens(assay, ["assay"])).toBe(true);
+    expect(plotMatchesNamedTokens(assay, ["assays"])).toBe(true);
   });
 
   it("reads the latest user turns for the named series", () => {
@@ -378,5 +385,49 @@ describe("resolveNamedAnalyticsPlot", () => {
     if (result.ok) return;
     expect(result.message).toContain("Boxplot of Assay by Lot");
     expect(result.message).toContain("(boxplot)");
+    expect(result.message).toContain("Nothing was inserted");
+  });
+
+  it("matches Assay when they say assays thing", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay],
+      userText: "insert a plot into the purpose section for the assays thing",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
+  });
+
+  it("treats yes please do as unnamed and trusts the analysisId", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay, torque],
+      userText:
+        "insert a plot into the purpose section for the assays thing\nyes please do",
+      latestUserText: "yes please do",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
+  });
+
+  it("does not treat confirmation as a name that misses the listed plot", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay],
+      userText: "insert the torque plot into the purpose section\nyes please do",
+      latestUserText: "yes please do",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
+  });
+
+  it("still lists available plots when they named a different series", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay],
+      userText: "insert the torque plot",
+      latestUserText: "insert the torque plot",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("Assay sixpack");
+    expect(result.message).toContain("Nothing was inserted");
   });
 });

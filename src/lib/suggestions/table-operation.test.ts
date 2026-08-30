@@ -826,6 +826,24 @@ describe("parseTableOperation", () => {
     });
   });
 
+  it("coerces insert_column headers array to the new header", () => {
+    expect(
+      parseTableOperation({
+        kind: "insert_column",
+        headers: ["Component", "Description", "Example"],
+        values: ["04", "08", "01", "1011"],
+      })
+    ).toEqual({
+      kind: "insert_column",
+      tableIndex: 0,
+      afterCol: undefined,
+      header: "Example",
+      values: ["04", "08", "01", "1011"],
+      expectedHeaderAtAfterCol: undefined,
+      expectedHeaders: undefined,
+    });
+  });
+
   it("coerces stringified create_table rows and extra reasoning", () => {
     expect(
       parseTableOperation({

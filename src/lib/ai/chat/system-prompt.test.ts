@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v66-insert-plot");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v67-plot-confirm");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -162,6 +162,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Do not call insert_image again this turn");
     expect(prompt).toContain("Do not call insert_image repeatedly to list plots");
     expect(prompt).toContain("call read_section on the destination");
+    expect(prompt).toContain('insert "the plot"');
+    expect(prompt).toContain(
+      "Never say you proposed or inserted a figure unless insert_image returned status proposed or applied"
+    );
     expect(prompt).not.toContain("Mode: ASK");
   });
 

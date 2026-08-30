@@ -293,8 +293,18 @@ const PLOT_NAME_STOPWORDS = new Set([
   "ok",
   "okay",
   "sure",
+  "do",
+  "go",
+  "ahead",
   "thanks",
   "thank",
+  "thing",
+  "things",
+  "stuff",
+  "named",
+  "title",
+  "titles",
+  "kind",
   "no",
   "not",
   "dont",
@@ -375,8 +385,10 @@ const PLOT_NAME_STOPWORDS_ALL: ReadonlySet<string> = (() => {
 
 const ANALYTICS_CREATE_COPY =
   "They can create additional plots in Analytics (Document | Analytics at the top of the report).";
+const NOTHING_INSERTED_COPY =
+  "Nothing was inserted. Do not tell the engineer a figure was proposed or inserted.";
 const RELAY_AVAILABLE_PLOTS_COPY =
-  "Reply in prose with those titles once. Do not call insert_image again this turn. Do not insert a different plot. Do not call plot_measurements as a substitute.";
+  `${NOTHING_INSERTED_COPY} Reply in prose with those titles once. Do not call insert_image again this turn. Do not insert a different plot. Do not call plot_measurements as a substitute.`;
 
 /** Same-turn follow-up after available_plots already returned. */
 export const ALREADY_LISTED_PLOTS_COPY =
@@ -545,9 +557,14 @@ export function resolveNamedAnalyticsPlot(input: {
   analysisId: string;
   analyses: StatisticalAnalysisSummary[];
   userText: string;
+  /** Latest user turn only. Confirmation like "yes please do" is unnamed. */
+  latestUserText?: string;
 }): NamedAnalyticsPlotResolution {
   const requestedId = input.analysisId.trim();
-  const namedTokens = tokenizePlotName(input.userText);
+  const latest = input.latestUserText?.trim() ?? "";
+  const namedTokens = latest
+    ? tokenizePlotName(latest)
+    : tokenizePlotName(input.userText);
   const graphs = listGraphAnalyses(input.analyses);
   const insertable = listInsertableGraphAnalyses(input.analyses);
 

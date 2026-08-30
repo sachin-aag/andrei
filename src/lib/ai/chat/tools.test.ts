@@ -1839,6 +1839,9 @@ describe("buildChatTools propose vs commit", () => {
     expect((result as { message: string }).message).toContain(
       "Do not call insert_image again this turn"
     );
+    expect((result as { message: string }).message).toContain(
+      "Nothing was inserted"
+    );
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
@@ -2133,6 +2136,165 @@ describe("buildChatTools propose vs commit", () => {
       "already listed this turn"
     );
     expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("inserts the Assay plot when they confirm with yes please do", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert a plot into the purpose section for the assays thing",
+            },
+          ],
+        },
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [{ type: "text", text: "Available plots: Assay." }],
+        },
+        {
+          id: "u2",
+          role: "user",
+          parts: [{ type: "text", text: "yes please do" }],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Insert the Assay plot they confirmed.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("inserts Assay when they ask for the assays thing and it is the saved plot", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "ywfxhmcrfnlu6n1gn9k68vtb",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert a plot into the purpose section for the assays thing",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Insert the Assay plot.",
+        image: {
+          source: "analytics",
+          analysisId: "ywfxhmcrfnlu6n1gn9k68vtb",
+        },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalled();
   });
 
   it("pairs an empty-anchor propose_edit lead-in with create_table", async () => {

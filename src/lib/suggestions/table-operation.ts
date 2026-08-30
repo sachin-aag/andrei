@@ -965,9 +965,24 @@ function coerceEditCellsShape(next: Record<string, unknown>): void {
   });
 }
 
+function headerFromHeadersAlias(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (!Array.isArray(value)) return undefined;
+  const names = value.filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0
+  );
+  if (names.length === 0) return undefined;
+  return names[names.length - 1];
+}
+
 function coerceInsertColumnShape(next: Record<string, unknown>): void {
   if (typeof next.header !== "string" || !next.header.trim()) {
-    const header = firstString(next.columnHeader, next.name, next.title);
+    const header = firstString(
+      next.columnHeader,
+      next.name,
+      next.title,
+      headerFromHeadersAlias(next.headers)
+    );
     if (header) next.header = header;
   }
 }
