@@ -293,7 +293,7 @@ export function AnalyticsChatToolChip({
       if (pending) {
         return (
           <ToolLine icon={<ChartScatter className="size-3.5" />}>
-            Plotting XY scatter…
+            Plotting scatter…
           </ToolLine>
         );
       }
@@ -303,7 +303,7 @@ export function AnalyticsChatToolChip({
             icon={<ChartScatter className="size-3.5 text-emerald-500" />}
             tone="success"
           >
-            Saved XY scatter — open the Results tab
+            Saved scatter — open the Results tab
           </ToolLine>
         );
       }

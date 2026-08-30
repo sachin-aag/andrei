@@ -186,7 +186,7 @@ describe("analysis download", () => {
     const csv = analysisToCsv(analysis);
     expect(csv).toContain("XY scatter");
     expect(csv).toContain("Pearson r");
-    expect(csv).toContain("Chart,Label,X,Y");
+    expect(csv).toContain("Chart,Series,Label,X,Y");
     expect(csv).toContain("1,2");
   });
 });

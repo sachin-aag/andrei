@@ -40,6 +40,7 @@ import {
   MAX_WORKSHEET_ROWS,
   WARN_VALUES_FOR_SIXPACK,
   isAnovaAnalysis,
+  isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -169,6 +170,7 @@ function analysisIndexItem(
       stale: item.stale,
       xColumnId: item.config.xColumnId,
       yColumnId: item.config.yColumnId,
+      legendColumnId: item.config.legendColumnId ?? null,
       n: item.results.n,
       pearsonR: item.results.pearsonR,
     };
@@ -958,7 +960,7 @@ export function buildAnalyticsChatTools(opts: {
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into worksheet columns (replaces those columns). Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for two numeric columns, or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+        "Write values into worksheet columns (replaces those columns). Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required, X optional, optional legend), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
       inputSchema: writeColumnInputSchema,
       execute: async (input) => {
         let entries = writeColumnEntriesFromInput(input);
@@ -1198,7 +1200,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.plot_xy_scatter = tool({
       description:
-        "Plot two numeric worksheet columns as an XY scatter (Y vs X) and save it on the Results tab. Both columns must be numeric — a serial-number / factor column cannot be X. One series, one color; cannot overlay or color by a third grouping column. Use when they asked to plot A vs B, Y against X, a correlation plot, or a scatter of two columns. Output variable is Y. Optional rowStart/rowEnd or rows limits the paired rows. Reports Pearson r; does not fit a regression line. Tell them to open Results.",
+        "Plot a worksheet scatter and save it on the Results tab. yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X — a serial-number / factor / label column cannot be X. Optional legendColumnId color-codes points by that grouping column (labels, lots, factors, and serials are OK for legend; it cannot be X or Y and must be on the same sheet). Use when they asked to plot A vs B, Y against X, a 1D scatter vs index, a correlation plot, or to color a scatter by lot/batch/serial. Output variable is Y. Optional rowStart/rowEnd or rows limits the rows. Reports overall Pearson r; does not fit a regression line. Tell them to open Results.",
       inputSchema: xyScatterBodySchema,
       execute: async (input) => {
         const result = await createAnalysisAndRecord({
@@ -1214,7 +1216,7 @@ export function buildAnalyticsChatTools(opts: {
         if (!isXyScatterAnalysis(result.analysis)) {
           return {
             status: "error" as const,
-            message: "Saved analysis was not an XY scatter.",
+            message: "Saved analysis was not a worksheet scatter.",
           };
         }
         return {
@@ -1225,6 +1227,9 @@ export function buildAnalyticsChatTools(opts: {
           xColumnName: result.analysis.config.xColumnName,
           yColumnId: result.analysis.config.yColumnId,
           yColumnName: result.analysis.config.yColumnName,
+          legendColumnId: result.analysis.config.legendColumnId ?? null,
+          legendColumnName: result.analysis.config.legendColumnName ?? null,
+          observationX: isObservationXyScatter(result.analysis.config),
           n: result.analysis.results.n,
           skipped: result.analysis.results.skipped,
           pearsonR: result.analysis.results.pearsonR,

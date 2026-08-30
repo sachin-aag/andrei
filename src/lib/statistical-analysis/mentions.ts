@@ -9,6 +9,7 @@ import {
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
+  xyScatterVersusLabel,
   type ReportAnalyticsView,
   type StatisticalAnalysisSummary,
 } from "./types";
@@ -113,7 +114,7 @@ function analysisMentionSummary(item: StatisticalAnalysisSummary): string {
     return `measurement_scatter query=${item.config.query} n=${item.results.n}`;
   }
   if (isXyScatterAnalysis(item)) {
-    return `xy_scatter ${item.config.yColumnName} vs ${item.config.xColumnName} n=${item.results.n}`;
+    return `xy_scatter ${xyScatterVersusLabel(item.config)} n=${item.results.n}`;
   }
   if (isAnovaAnalysis(item)) {
     return `one_way_anova ${item.config.responseColumnName} by ${item.config.factorColumnName}`;

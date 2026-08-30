@@ -825,7 +825,8 @@ export function StatisticalWorkspace({
                 Right-click a column and choose <strong>Analyze data…</strong>,
                 or use <strong>Plot → Normal Capability Sixpack</strong>,{" "}
                 <strong>Plot → One-Way ANOVA</strong>,{" "}
-                <strong>Plot → Scatter</strong> for two worksheet columns, or{" "}
+                <strong>Plot → Scatter</strong> for a worksheet column (1D vs
+                index, or 2D if you pick X), or{" "}
                 <strong>Plot → Plot measurements</strong> for an attachment
                 scatter. Each run is saved as its own result.
               </p>
@@ -1247,7 +1248,12 @@ export function StatisticalWorkspace({
         defaultXColumnId={
           editingAnalysis && isXyScatterAnalysis(editingAnalysis)
             ? editingAnalysis.config.xColumnId
-            : undefined
+            : null
+        }
+        defaultLegendColumnId={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.legendColumnId
+            : null
         }
         defaultRowStart={xyRowStart}
         defaultRowEnd={xyRowEnd}
@@ -1274,6 +1280,7 @@ export function StatisticalWorkspace({
               const next = await updateAnalysis(reportId, editingAnalysisId, {
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
+                legendColumnId: values.legendColumnId,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
@@ -1284,6 +1291,7 @@ export function StatisticalWorkspace({
               const created = await createXyScatter(reportId, {
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
+                legendColumnId: values.legendColumnId,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,

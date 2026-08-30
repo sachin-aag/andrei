@@ -25,6 +25,46 @@ export const ONE_WAY_ANOVA = "one_way_anova" as const;
 export const MIN_ANOVA_GROUPS = 2;
 export const MAX_ANOVA_GROUPS = 40;
 export const MIN_XY_POINTS = 2;
+export const MAX_SCATTER_LEGEND_GROUPS = 24;
+/** X-axis label when a worksheet scatter has no second column (1D vs index). */
+export const OBSERVATION_X_LABEL = "Observation";
+/** Series name when a legend cell is empty. */
+export const BLANK_LEGEND_LABEL = "(blank)";
+
+export function isObservationXyScatter(config: {
+  xColumnId?: string | null;
+}): boolean {
+  return config.xColumnId == null || config.xColumnId === "";
+}
+
+export function xyScatterVersusLabel(config: {
+  yColumnName: string;
+  xColumnName: string;
+  xColumnId?: string | null;
+  legendColumnId?: string | null;
+  legendColumnName?: string | null;
+}): string {
+  const versus = isObservationXyScatter(config)
+    ? `${config.yColumnName} vs ${OBSERVATION_X_LABEL}`
+    : `${config.yColumnName} vs ${config.xColumnName}`;
+  const legend =
+    config.legendColumnId && config.legendColumnName
+      ? ` by ${config.legendColumnName}`
+      : "";
+  return `${versus}${legend}`;
+}
+
+export function xyScatterFallbackTitle(
+  yColumnName: string,
+  xColumnName: string | null,
+  rowLabel: string,
+  legendColumnName?: string | null
+): string {
+  const versus = `${yColumnName} vs ${xColumnName ?? OBSERVATION_X_LABEL}`;
+  const legend = legendColumnName ? ` by ${legendColumnName}` : "";
+  const base = `${versus}${legend}`;
+  return rowLabel ? `${base} (${rowLabel})` : base;
+}
 
 export type AnalysisKind =
   | typeof CAPABILITY_SIXPACK_NORMAL
@@ -330,10 +370,14 @@ export type AnovaAnalysisSummary = AnalysisSummaryBase & {
 };
 
 export type XyScatterConfig = {
-  xColumnId: string;
+  /** Null/empty means X is observation index (1D scatter). */
+  xColumnId: string | null;
   xColumnName: string;
   yColumnId: string;
   yColumnName: string;
+  /** Null/empty means one color, no legend. */
+  legendColumnId?: string | null;
+  legendColumnName?: string | null;
   title: string;
   /** 1-based inclusive. Null with `rowEnd` null means the whole columns. */
   rowStart?: number | null;
@@ -352,6 +396,7 @@ export type XyScatterResult = {
 
 export type XyScatterComputeErrorCode =
   | "too_few_points"
+  | "too_many_series"
   | "missing_columns"
   | "different_sheets"
   | "same_column";

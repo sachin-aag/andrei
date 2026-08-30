@@ -47,11 +47,12 @@ export function hashAnovaSource(
 }
 
 export function hashXyScatterSource(
-  xColumn: WorksheetColumn,
+  xColumn: WorksheetColumn | null,
   yColumn: WorksheetColumn,
-  selection: AnalysisRowSelection = { mode: "all" }
+  selection: AnalysisRowSelection = { mode: "all" },
+  legendColumn: WorksheetColumn | null = null
 ): string {
   return createHash("sha256")
-    .update(xyScatterSourceKey(xColumn, yColumn, selection))
+    .update(xyScatterSourceKey(xColumn, yColumn, selection, legendColumn))
     .digest("hex");
 }

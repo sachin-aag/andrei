@@ -202,34 +202,66 @@ export const oneWayAnovaInputSchema = z
   .superRefine(refineDistinctAnovaColumns);
 
 function refineDistinctXyColumns(
-  value: { xColumnId: string; yColumnId: string },
+  value: {
+    xColumnId?: string | null;
+    yColumnId: string;
+    legendColumnId?: string | null;
+  },
   ctx: z.RefinementCtx
 ): void {
-  if (value.xColumnId === value.yColumnId) {
+  if (value.xColumnId && value.xColumnId === value.yColumnId) {
     ctx.addIssue({
       code: "custom",
-      message: "X and Y must be different columns.",
+      message: "X, Y, and legend must be different columns.",
       path: ["xColumnId"],
+    });
+  }
+  if (value.legendColumnId && value.legendColumnId === value.yColumnId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "X, Y, and legend must be different columns.",
+      path: ["legendColumnId"],
+    });
+  }
+  if (
+    value.legendColumnId &&
+    value.xColumnId &&
+    value.legendColumnId === value.xColumnId
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "X, Y, and legend must be different columns.",
+      path: ["legendColumnId"],
     });
   }
 }
 
+const optionalColumnIdSchema = z.preprocess(
+  (value) => {
+    if (value == null) return null;
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed.length === 0 ? null : trimmed;
+  },
+  z.string().min(1).nullable()
+);
+
+const xyScatterColumnFields = {
+  xColumnId: optionalColumnIdSchema.optional(),
+  yColumnId: z.string().trim().min(1),
+  legendColumnId: optionalColumnIdSchema.optional(),
+  title: z.string().trim().max(120).optional(),
+  ...anovaRowFields,
+} as const;
+
 export const xyScatterBodySchema = z
-  .object({
-    xColumnId: z.string().trim().min(1),
-    yColumnId: z.string().trim().min(1),
-    title: z.string().trim().max(120).optional(),
-    ...anovaRowFields,
-  })
+  .object(xyScatterColumnFields)
   .superRefine(refineDistinctXyColumns);
 
 export const xyScatterInputSchema = z
   .object({
     kind: z.literal(XY_SCATTER),
-    xColumnId: z.string().trim().min(1),
-    yColumnId: z.string().trim().min(1),
-    title: z.string().trim().max(120).optional(),
-    ...anovaRowFields,
+    ...xyScatterColumnFields,
   })
   .superRefine(refineDistinctXyColumns);
 

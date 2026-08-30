@@ -147,7 +147,10 @@ describe("analytics chat tools", () => {
     );
     expect(writable.run_one_way_anova?.description).toContain("not a scatter");
     expect(writable.plot_xy_scatter?.description).toContain(
-      "cannot overlay or color by a third grouping column"
+      "Optional legendColumnId color-codes points"
+    );
+    expect(writable.plot_xy_scatter?.description).toContain(
+      "Omit xColumnId"
     );
     expect(writable.plot_measurements?.description).toContain(
       "cannot color by serial number"

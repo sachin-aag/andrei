@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef } from "react";
-import type {
-  ReportAnalyticsView,
-  ScatterAnalysisSummary,
-  XyScatterAnalysisSummary,
+import {
+  isXyScatterAnalysis,
+  xyScatterVersusLabel,
+  type ReportAnalyticsView,
+  type ScatterAnalysisSummary,
+  type XyScatterAnalysisSummary,
 } from "@/lib/statistical-analysis/types";
-import { isXyScatterAnalysis } from "@/lib/statistical-analysis/types";
 import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import { formatStat } from "@/lib/statistical-analysis/format";
 import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
@@ -293,7 +294,7 @@ export function ScatterView({
   const provenance = spec ? formatChartProvenance(spec) : "";
   const subtitle = xy
     ? [
-        `${analysis.config.yColumnName} vs ${analysis.config.xColumnName}`,
+        xyScatterVersusLabel(analysis.config),
         `${analysis.results.n} point${analysis.results.n === 1 ? "" : "s"}`,
         analysis.results.skipped > 0
           ? `${analysis.results.skipped} skipped`

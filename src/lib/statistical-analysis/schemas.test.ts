@@ -50,14 +50,47 @@ describe("xyScatterInputSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts distinct columns", () => {
+  it("accepts omitted X (1D vs observation index)", () => {
+    const parsed = xyScatterInputSchema.parse({
+      kind: XY_SCATTER,
+      yColumnId: "c2",
+    });
+    expect(parsed.yColumnId).toBe("c2");
+    expect(parsed.xColumnId ?? null).toBeNull();
+    expect(parsed.legendColumnId ?? null).toBeNull();
+  });
+
+  it("accepts a legend column distinct from X and Y", () => {
     expect(
       xyScatterInputSchema.parse({
         kind: XY_SCATTER,
         xColumnId: "c1",
         yColumnId: "c2",
+        legendColumnId: "c3",
       })
-    ).toMatchObject({ xColumnId: "c1", yColumnId: "c2" });
+    ).toMatchObject({
+      xColumnId: "c1",
+      yColumnId: "c2",
+      legendColumnId: "c3",
+    });
+  });
+
+  it("rejects legend equal to Y or X", () => {
+    expect(
+      xyScatterInputSchema.safeParse({
+        kind: XY_SCATTER,
+        yColumnId: "c1",
+        legendColumnId: "c1",
+      }).success
+    ).toBe(false);
+    expect(
+      xyScatterInputSchema.safeParse({
+        kind: XY_SCATTER,
+        xColumnId: "c1",
+        yColumnId: "c2",
+        legendColumnId: "c1",
+      }).success
+    ).toBe(false);
   });
 });
 

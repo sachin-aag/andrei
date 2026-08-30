@@ -23,16 +23,24 @@ import {
   formatRowSelection,
   normalizeRowSelection,
 } from "@/lib/statistical-analysis/row-selection";
-import { suggestXColumn } from "@/lib/statistical-analysis/xy-scatter";
+import {
+  OBSERVATION_X_LABEL,
+  xyScatterFallbackTitle,
+} from "@/lib/statistical-analysis/types";
 import {
   dataSheets,
   findColumn,
 } from "@/lib/statistical-analysis/worksheet";
 import type { WorksheetData } from "@/lib/statistical-analysis/types";
 
+/** Radix Select cannot use an empty string; maps to a null X column (1D). */
+const OBSERVATION_X_VALUE = "__observation__";
+const NONE_LEGEND_VALUE = "__none__";
+
 export type XyScatterDialogValues = {
-  xColumnId: string;
+  xColumnId: string | null;
   yColumnId: string;
+  legendColumnId: string | null;
   title: string;
   rowStart: number | null;
   rowEnd: number | null;
@@ -46,6 +54,22 @@ function parseOptionalRow(raw: string): number | null {
   return Number.isInteger(value) && value >= 1 ? value : null;
 }
 
+function toSelectX(xColumnId: string | null | undefined): string {
+  return xColumnId ? xColumnId : OBSERVATION_X_VALUE;
+}
+
+function fromSelectX(value: string): string | null {
+  return value === OBSERVATION_X_VALUE ? null : value;
+}
+
+function toSelectLegend(legendColumnId: string | null | undefined): string {
+  return legendColumnId ? legendColumnId : NONE_LEGEND_VALUE;
+}
+
+function fromSelectLegend(value: string): string | null {
+  return value === NONE_LEGEND_VALUE ? null : value;
+}
+
 const fieldLabelClass =
   "normal-case tracking-normal text-sm font-medium text-[var(--foreground)]";
 
@@ -54,6 +78,7 @@ export function XyScatterDialog({
   worksheet,
   defaultYColumnId,
   defaultXColumnId,
+  defaultLegendColumnId,
   defaultRowStart = null,
   defaultRowEnd = null,
   defaultTitle = "",
@@ -66,7 +91,8 @@ export function XyScatterDialog({
   open: boolean;
   worksheet: WorksheetData;
   defaultYColumnId: string;
-  defaultXColumnId?: string;
+  defaultXColumnId?: string | null;
+  defaultLegendColumnId?: string | null;
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
   defaultTitle?: string;
@@ -79,8 +105,11 @@ export function XyScatterDialog({
   const sheets = dataSheets(worksheet);
   const fallbackY = defaultYColumnId || worksheet.columns[0]?.id || "";
   const [yColumnId, setYColumnId] = useState(fallbackY);
-  const [xColumnId, setXColumnId] = useState(
-    () => defaultXColumnId ?? suggestXColumn(worksheet, fallbackY) ?? ""
+  const [xColumnId, setXColumnId] = useState<string | null>(
+    () => defaultXColumnId ?? null
+  );
+  const [legendColumnId, setLegendColumnId] = useState<string | null>(
+    () => defaultLegendColumnId ?? null
   );
   const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(
@@ -91,20 +120,29 @@ export function XyScatterDialog({
   );
 
   const yColumn = findColumn(worksheet, yColumnId) ?? worksheet.columns[0];
-  const xColumn = findColumn(worksheet, xColumnId);
+  const xColumn = xColumnId ? findColumn(worksheet, xColumnId) : null;
+  const legendColumn = legendColumnId
+    ? findColumn(worksheet, legendColumnId)
+    : null;
   const rowSelection = normalizeRowSelection({
     rowStart: parseOptionalRow(rowStart),
     rowEnd: parseOptionalRow(rowEnd),
   });
   const rowLabel = formatRowSelection(rowSelection);
-  const placeholderTitle =
-    yColumn && xColumn
-      ? rowLabel
-        ? `${yColumn.name} vs ${xColumn.name} (${rowLabel})`
-        : `${yColumn.name} vs ${xColumn.name}`
-      : "Analysis title";
+  const placeholderTitle = yColumn
+    ? xyScatterFallbackTitle(
+        yColumn.name,
+        xColumn?.name ?? null,
+        rowLabel,
+        legendColumn?.name ?? null
+      )
+    : "Analysis title";
   const canSubmit =
-    Boolean(yColumnId) && Boolean(xColumnId) && yColumnId !== xColumnId;
+    Boolean(yColumnId) &&
+    (xColumnId == null || yColumnId !== xColumnId) &&
+    (legendColumnId == null ||
+      (legendColumnId !== yColumnId && legendColumnId !== xColumnId));
+  const indexMode = xColumnId == null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -112,25 +150,26 @@ export function XyScatterDialog({
         <DialogHeader>
           <DialogTitle>Scatter</DialogTitle>
           <DialogDescription>
-            Plot two numeric worksheet columns. Y is the output (vertical). X
-            is the other variable (horizontal). Both must be numbers — a
-            serial-number or factor column cannot be X. One series, one
-            color; this is not a grouped overlay. Pairs skip rows where
-            either cell is not a number.
+            Y is required. Leave X as Observation for a 1D scatter versus index
+            (1, 2, 3…), or pick a numeric X for Y versus X. A serial or factor
+            column cannot be X — use Legend to color-code by that column.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
             <Label htmlFor="xy-y" className={fieldLabelClass}>
-              Y (output)
+              Y (values)
             </Label>
             <Select
               value={yColumnId}
               onValueChange={(value) => {
                 setYColumnId(value);
                 if (value === xColumnId) {
-                  setXColumnId(suggestXColumn(worksheet, value) ?? "");
+                  setXColumnId(null);
+                }
+                if (value === legendColumnId) {
+                  setLegendColumnId(null);
                 }
               }}
             >
@@ -153,16 +192,59 @@ export function XyScatterDialog({
 
           <div className="grid gap-1.5">
             <Label htmlFor="xy-x" className={fieldLabelClass}>
-              X
+              X (optional)
             </Label>
-            <Select value={xColumnId} onValueChange={setXColumnId}>
+            <Select
+              value={toSelectX(xColumnId)}
+              onValueChange={(value) => {
+                const next = fromSelectX(value);
+                setXColumnId(next);
+                if (next && next === legendColumnId) {
+                  setLegendColumnId(null);
+                }
+              }}
+            >
               <SelectTrigger id="xy-x" data-testid="xy-x">
-                <SelectValue placeholder="Select X" />
+                <SelectValue placeholder={OBSERVATION_X_LABEL} />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={OBSERVATION_X_VALUE}>
+                  {OBSERVATION_X_LABEL} (1, 2, 3…)
+                </SelectItem>
                 {sheets.flatMap((sheet) =>
                   sheet.columns
                     .filter((column) => column.id !== yColumnId)
+                    .map((column) => (
+                      <SelectItem key={column.id} value={column.id}>
+                        {sheets.length > 1
+                          ? `${sheet.name}: ${column.name}`
+                          : column.name}
+                      </SelectItem>
+                    ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="xy-legend" className={fieldLabelClass}>
+              Legend (optional)
+            </Label>
+            <Select
+              value={toSelectLegend(legendColumnId)}
+              onValueChange={(value) => setLegendColumnId(fromSelectLegend(value))}
+            >
+              <SelectTrigger id="xy-legend" data-testid="xy-legend">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE_LEGEND_VALUE}>None</SelectItem>
+                {sheets.flatMap((sheet) =>
+                  sheet.columns
+                    .filter(
+                      (column) =>
+                        column.id !== yColumnId && column.id !== xColumnId
+                    )
                     .map((column) => (
                       <SelectItem key={column.id} value={column.id}>
                         {sheets.length > 1
@@ -205,7 +287,7 @@ export function XyScatterDialog({
           </div>
           <p className="-mt-2 text-xs text-[var(--muted-foreground)]">
             Worksheet rows are numbered from 1. Leave both blank to use every
-            filled pair of cells.
+            filled {indexMode ? "Y cell" : "pair of cells"}.
           </p>
 
           <div className="grid gap-1.5">
@@ -238,11 +320,13 @@ export function XyScatterDialog({
           </Button>
           <Button
             type="button"
+            data-testid="xy-scatter-ok"
             disabled={submitting || !canSubmit}
             onClick={() =>
               onSubmit({
                 xColumnId,
                 yColumnId,
+                legendColumnId,
                 title: title.trim(),
                 rowStart: parseOptionalRow(rowStart),
                 rowEnd: parseOptionalRow(rowEnd),

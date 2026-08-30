@@ -18,7 +18,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v18");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v19");
   });
 
   it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
@@ -56,11 +56,11 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("run_one_way_anova");
     expect(prompt).toContain("Normal Capability Sixpack");
     expect(prompt).toContain("one-way ANOVA");
-    expect(prompt).toContain("worksheet XY scatter");
+    expect(prompt).toContain("worksheet scatter (with optional legend)");
     expect(prompt).toContain("Pearson r");
     expect(prompt).toContain("Bonferroni");
     expect(prompt).toContain("Never call run_capability_sixpack or run_one_way_anova as a substitute");
-    expect(prompt).toContain("cannot color by group on one chart");
+    expect(prompt).toContain("pass legendColumnId on plot_xy_scatter");
     expect(prompt).toContain("use a label column as X");
     expect(prompt).not.toContain("Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, ANOVA,");
     expect(prompt).toContain("Column specs: none");

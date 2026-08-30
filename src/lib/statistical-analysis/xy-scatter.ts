@@ -6,9 +6,14 @@ import {
 import type { AnalysisRowSelection } from "./row-selection";
 import { normalizeRowSelection } from "./row-selection";
 import {
+  BLANK_LEGEND_LABEL,
+  MAX_SCATTER_LEGEND_GROUPS,
   MIN_XY_POINTS,
+  OBSERVATION_X_LABEL,
+  xyScatterVersusLabel,
   type WorksheetColumn,
   type WorksheetData,
+  type XyScatterComputeErrorCode,
   type XyScatterComputeOutcome,
   type XyScatterConfig,
   type XyScatterResult,
@@ -111,16 +116,28 @@ function ySpecLimits(
   };
 }
 
+function legendLabel(raw: string | undefined): string {
+  const text = raw?.trim() ?? "";
+  return text.length > 0 ? text : BLANK_LEGEND_LABEL;
+}
+
+function uniqueSeriesCount(points: ChartPoint[]): number {
+  const names = new Set<string>();
+  for (const point of points) {
+    if (point.series) names.add(point.series);
+  }
+  return names.size;
+}
+
 function buildSpec(
   config: XyScatterConfig,
   points: ChartPoint[],
   limits: { lower: number | null; upper: number | null }
 ): ChartSpec {
-  const query = `${config.yColumnName} vs ${config.xColumnName}`;
   return {
     version: 1,
     kind: "scatter",
-    query,
+    query: xyScatterVersusLabel(config),
     title: config.title,
     xLabel: config.xColumnName,
     yLabel: config.yColumnName,
@@ -129,7 +146,7 @@ function buildSpec(
     points,
     layout: {
       ...DEFAULT_CHART_LAYOUT,
-      seriesBy: "none",
+      seriesBy: config.legendColumnId ? "unit" : "none",
       xAxis: "value",
     },
     citations: [],
@@ -137,73 +154,221 @@ function buildSpec(
   };
 }
 
+export type ResolvedXyScatterColumns =
+  | {
+      ok: true;
+      yColumn: WorksheetColumn;
+      xColumn: WorksheetColumn | null;
+      legendColumn: WorksheetColumn | null;
+    }
+  | {
+      ok: false;
+      code: Extract<
+        XyScatterComputeErrorCode,
+        "missing_columns" | "same_column" | "different_sheets"
+      >;
+      message: string;
+    };
+
+function optionalColumnId(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function resolveXyScatterColumns(
+  worksheet: WorksheetData,
+  config: {
+    yColumnId: string;
+    xColumnId?: string | null;
+    legendColumnId?: string | null;
+  }
+): ResolvedXyScatterColumns {
+  const yColumn = findColumn(worksheet, config.yColumnId);
+  if (!yColumn) {
+    return {
+      ok: false,
+      code: "missing_columns",
+      message: "Select a Y column.",
+    };
+  }
+
+  const ySheet = findSheetIdForColumn(worksheet, yColumn.id);
+  const xColumnId = optionalColumnId(config.xColumnId);
+  const legendColumnId = optionalColumnId(config.legendColumnId);
+
+  let xColumn: WorksheetColumn | null = null;
+  if (xColumnId) {
+    xColumn = findColumn(worksheet, xColumnId) ?? null;
+    if (!xColumn) {
+      return {
+        ok: false,
+        code: "missing_columns",
+        message: "Select an X column and a Y column.",
+      };
+    }
+    if (xColumn.id === yColumn.id) {
+      return {
+        ok: false,
+        code: "same_column",
+        message: "X, Y, and legend must be different columns.",
+      };
+    }
+    const xSheet = findSheetIdForColumn(worksheet, xColumn.id);
+    if (!xSheet || !ySheet || xSheet !== ySheet) {
+      return {
+        ok: false,
+        code: "different_sheets",
+        message: "X, Y, and legend must be on the same data sheet.",
+      };
+    }
+  }
+
+  let legendColumn: WorksheetColumn | null = null;
+  if (legendColumnId) {
+    legendColumn = findColumn(worksheet, legendColumnId) ?? null;
+    if (!legendColumn) {
+      return {
+        ok: false,
+        code: "missing_columns",
+        message: "Select a legend column that is on the same sheet.",
+      };
+    }
+    if (
+      legendColumn.id === yColumn.id ||
+      (xColumn && legendColumn.id === xColumn.id)
+    ) {
+      return {
+        ok: false,
+        code: "same_column",
+        message: "X, Y, and legend must be different columns.",
+      };
+    }
+    const legendSheet = findSheetIdForColumn(worksheet, legendColumn.id);
+    if (!legendSheet || !ySheet || legendSheet !== ySheet) {
+      return {
+        ok: false,
+        code: "different_sheets",
+        message: "X, Y, and legend must be on the same data sheet.",
+      };
+    }
+  }
+
+  return { ok: true, yColumn, xColumn, legendColumn };
+}
+
+function scatterPoints(input: {
+  yColumn: WorksheetColumn;
+  xColumn: WorksheetColumn | null;
+  legendColumn: WorksheetColumn | null;
+  selection: AnalysisRowSelection;
+}): { points: ChartPoint[]; skipped: number } {
+  const yCells = cellsForRowSelection(input.yColumn, input.selection);
+  const xCells = input.xColumn
+    ? cellsForRowSelection(input.xColumn, input.selection)
+    : null;
+  const legendCells = input.legendColumn
+    ? cellsForRowSelection(input.legendColumn, input.selection)
+    : null;
+  const rowCount = Math.max(
+    yCells.length,
+    xCells?.length ?? 0,
+    legendCells?.length ?? 0
+  );
+  const rowNumbers = rowNumbersForSelection(input.selection, rowCount);
+  const points: ChartPoint[] = [];
+  let skipped = 0;
+  for (let i = 0; i < rowCount; i++) {
+    const yRaw = yCells[i] ?? "";
+    const xRaw = xCells ? (xCells[i] ?? "") : "";
+    if (xCells) {
+      if (xRaw.trim() === "" && yRaw.trim() === "") continue;
+      const x = parseNumericCell(xRaw);
+      const y = parseNumericCell(yRaw);
+      if (x === null || y === null) {
+        skipped += 1;
+        continue;
+      }
+      const row = rowNumbers[i] ?? i + 1;
+      points.push({
+        x,
+        y,
+        series: legendCells ? legendLabel(legendCells[i]) : null,
+        label: `Row ${row}`,
+      });
+      continue;
+    }
+    if (yRaw.trim() === "") continue;
+    const y = parseNumericCell(yRaw);
+    if (y === null) {
+      skipped += 1;
+      continue;
+    }
+    const row = rowNumbers[i] ?? i + 1;
+    points.push({
+      x: row,
+      y,
+      series: legendCells ? legendLabel(legendCells[i]) : null,
+      label: `Row ${row}`,
+    });
+  }
+  return { points, skipped };
+}
+
 export function computeXyScatter(
   worksheet: WorksheetData,
   config: XyScatterConfig
 ): XyScatterComputeOutcome {
-  const xColumn = findColumn(worksheet, config.xColumnId);
-  const yColumn = findColumn(worksheet, config.yColumnId);
-  if (!xColumn || !yColumn) {
+  const resolved = resolveXyScatterColumns(worksheet, config);
+  if (!resolved.ok) {
     return {
       ok: false,
-      code: "missing_columns",
-      message: "Select an X column and a Y column.",
-    };
-  }
-  if (xColumn.id === yColumn.id) {
-    return {
-      ok: false,
-      code: "same_column",
-      message: "X and Y must be different columns.",
-    };
-  }
-  const xSheet = findSheetIdForColumn(worksheet, xColumn.id);
-  const ySheet = findSheetIdForColumn(worksheet, yColumn.id);
-  if (!xSheet || !ySheet || xSheet !== ySheet) {
-    return {
-      ok: false,
-      code: "different_sheets",
-      message: "X and Y must be on the same data sheet.",
+      code: resolved.code,
+      message: resolved.message,
     };
   }
 
   const selection = normalizeRowSelection(config);
-  const xCells = cellsForRowSelection(xColumn, selection);
-  const yCells = cellsForRowSelection(yColumn, selection);
-  const rowCount = Math.max(xCells.length, yCells.length);
-  const rowNumbers = rowNumbersForSelection(selection, rowCount);
-
-  const points: ChartPoint[] = [];
-  let skipped = 0;
-  for (let i = 0; i < rowCount; i++) {
-    const xRaw = xCells[i] ?? "";
-    const yRaw = yCells[i] ?? "";
-    if (xRaw.trim() === "" && yRaw.trim() === "") continue;
-    const x = parseNumericCell(xRaw);
-    const y = parseNumericCell(yRaw);
-    if (x === null || y === null) {
-      skipped += 1;
-      continue;
-    }
-    points.push({
-      x,
-      y,
-      series: null,
-      label: `Row ${rowNumbers[i] ?? i + 1}`,
-    });
-  }
+  const { points, skipped } = scatterPoints({
+    yColumn: resolved.yColumn,
+    xColumn: resolved.xColumn,
+    legendColumn: resolved.legendColumn,
+    selection,
+  });
 
   if (points.length < MIN_XY_POINTS) {
     return {
       ok: false,
       code: "too_few_points",
-      message: `Need at least ${MIN_XY_POINTS} paired numeric rows for an XY scatter.`,
+      message: `Need at least ${MIN_XY_POINTS} numeric rows for a scatter.`,
     };
   }
 
+  if (
+    resolved.legendColumn &&
+    uniqueSeriesCount(points) > MAX_SCATTER_LEGEND_GROUPS
+  ) {
+    return {
+      ok: false,
+      code: "too_many_series",
+      message: `Legend supports at most ${MAX_SCATTER_LEGEND_GROUPS} groups. Use a coarser grouping column or a row range.`,
+    };
+  }
+
+  const specConfig: XyScatterConfig = {
+    ...config,
+    xColumnId: resolved.xColumn?.id ?? null,
+    xColumnName: resolved.xColumn?.name ?? OBSERVATION_X_LABEL,
+    legendColumnId: resolved.legendColumn?.id ?? null,
+    legendColumnName: resolved.legendColumn?.name ?? null,
+  };
   const result: XyScatterResult = {
     specs: [
-      buildSpec(config, points, ySpecLimits(worksheet, yColumn.name)),
+      buildSpec(
+        specConfig,
+        points,
+        ySpecLimits(worksheet, resolved.yColumn.name)
+      ),
     ],
     n: points.length,
     skipped,

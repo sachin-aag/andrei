@@ -870,13 +870,19 @@ export function anovaSourceKey(
 
 /** Client-safe XY scatter source key — do not import `hash.ts` from the browser. */
 export function xyScatterSourceKey(
-  xColumn: WorksheetColumn,
+  xColumn: WorksheetColumn | null,
   yColumn: WorksheetColumn,
-  selection: AnalysisRowSelection = { mode: "all" }
+  selection: AnalysisRowSelection = { mode: "all" },
+  legendColumn: WorksheetColumn | null = null
 ): string {
   return JSON.stringify({
-    x: cellsForRowSelection(xColumn, selection),
+    x: xColumn
+      ? cellsForRowSelection(xColumn, selection)
+      : "observation-index",
     y: cellsForRowSelection(yColumn, selection),
+    legend: legendColumn
+      ? cellsForRowSelection(legendColumn, selection)
+      : null,
   });
 }
 

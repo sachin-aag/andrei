@@ -134,8 +134,9 @@ export async function createOneWayAnova(
 export async function createXyScatter(
   reportId: string,
   input: {
-    xColumnId: string;
+    xColumnId?: string | null;
     yColumnId: string;
+    legendColumnId?: string | null;
     title?: string;
     rowStart?: number | null;
     rowEnd?: number | null;
