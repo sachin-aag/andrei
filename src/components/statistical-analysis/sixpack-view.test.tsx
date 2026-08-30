@@ -99,9 +99,17 @@ describe("SixpackView limit labels", () => {
       "90.00"
     );
     expect(screen.queryByTestId("sixpack-spec-label-usl")).toBeNull();
+    expect(screen.getByTestId("sixpack-ichart-label-lsl")).toHaveTextContent(
+      "90.00"
+    );
+    expect(screen.queryByTestId("sixpack-ichart-label-usl")).toBeNull();
+    expect(screen.getByTestId("sixpack-last25-label-lsl")).toHaveTextContent(
+      "90.00"
+    );
+    expect(screen.queryByTestId("sixpack-last25-label-usl")).toBeNull();
   });
 
-  it("labels UCL and LCL on the I chart, last 25 observations, and moving range", () => {
+  it("labels UCL and LCL on the I chart and moving range", () => {
     const analysis = summaryFromValues([...SAMPLE_ASSAY_VALUES], assayConfig);
     const ucl = formatLimit(analysis.results.individuals.ucl);
     const lcl = formatLimit(analysis.results.individuals.lcl);
@@ -121,13 +129,48 @@ describe("SixpackView limit labels", () => {
     expect(screen.getByTestId("sixpack-ichart-label-lcl")).toHaveTextContent(
       lcl
     );
-    expect(screen.getByTestId("sixpack-last25-label-ucl")).toHaveTextContent(
-      ucl
-    );
-    expect(screen.getByTestId("sixpack-last25-label-lcl")).toHaveTextContent(
-      lcl
-    );
+    expect(screen.queryByTestId("sixpack-last25-label-ucl")).toBeNull();
+    expect(screen.queryByTestId("sixpack-last25-label-lcl")).toBeNull();
     expect(screen.getByTestId("sixpack-mr-label-ucl")).toHaveTextContent(mrUcl);
     expect(screen.getByTestId("sixpack-mr-label-lcl")).toHaveTextContent(mrLcl);
+  });
+
+  it("draws the histogram LSL/USL on the I chart and last 25 observations", () => {
+    const analysis = summaryFromValues([...SAMPLE_ASSAY_VALUES], assayConfig);
+    const ucl = formatLimit(analysis.results.individuals.ucl);
+
+    render(
+      <SixpackView
+        analysis={analysis}
+        {...viewProps}
+      />
+    );
+
+    expect(screen.getByTestId("sixpack-ichart-label-lsl")).toHaveTextContent(
+      "90.00"
+    );
+    expect(screen.getByTestId("sixpack-ichart-label-usl")).toHaveTextContent(
+      "110.00"
+    );
+    expect(screen.getByTestId("sixpack-last25-label-lsl")).toHaveTextContent(
+      "90.00"
+    );
+    expect(screen.getByTestId("sixpack-last25-label-usl")).toHaveTextContent(
+      "110.00"
+    );
+    expect(screen.getByTestId("sixpack-spec-label-lsl")).toHaveTextContent(
+      "90.00"
+    );
+    expect(screen.getByTestId("sixpack-spec-label-usl")).toHaveTextContent(
+      "110.00"
+    );
+    expect(screen.getByTestId("sixpack-ichart-label-ucl")).toHaveTextContent(
+      ucl
+    );
+    expect(screen.getByTestId("sixpack-ichart-label-ucl")).not.toHaveTextContent(
+      "110.00"
+    );
+    expect(screen.queryByTestId("sixpack-mr-label-lsl")).toBeNull();
+    expect(screen.queryByTestId("sixpack-mr-label-usl")).toBeNull();
   });
 });

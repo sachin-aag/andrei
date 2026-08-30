@@ -23,6 +23,7 @@ import {
 } from "@/lib/statistical-analysis/row-selection";
 import {
   layoutControlLimitLabels,
+  layoutHorizontalSpecLabels,
   layoutSpecLimitLabels,
   type ControlLimitInput,
   type SpecLimitInput,
@@ -220,6 +221,9 @@ function ControlChart({
   yLabel,
   ariaLabel,
   chartTestId,
+  lsl = null,
+  usl = null,
+  showControlLimits = true,
 }: {
   series: ControlChartSeries;
   xOffset?: number;
@@ -227,10 +231,21 @@ function ControlChart({
   yLabel: string;
   ariaLabel: string;
   chartTestId: string;
+  lsl?: number | null;
+  usl?: number | null;
+  showControlLimits?: boolean;
 }) {
   const xs = series.values.map((_, i) => i + xOffset);
+  const specValues = [lsl, usl].filter(
+    (value): value is number => value != null && Number.isFinite(value)
+  );
   const [yMin, yMax] = domain(
-    [...series.values, series.ucl, series.lcl, series.center],
+    [
+      ...series.values,
+      series.center,
+      ...(showControlLimits ? [series.ucl, series.lcl] : []),
+      ...specValues,
+    ],
     0.12
   );
   const xMin = (xs[0] ?? 1) - 0.5;
@@ -241,11 +256,25 @@ function ControlChart({
   const path = series.values
     .map((value, i) => `${i === 0 ? "M" : "L"} ${x(xs[i]!)} ${y(value)}`)
     .join(" ");
-  const controlLimits: ControlLimitInput[] = [
-    { kind: "ucl", value: series.ucl, lineY: y(series.ucl) },
-    { kind: "lcl", value: series.lcl, lineY: y(series.lcl) },
-  ];
+  const controlLimits: ControlLimitInput[] = showControlLimits
+    ? [
+        { kind: "ucl", value: series.ucl, lineY: y(series.ucl) },
+        { kind: "lcl", value: series.lcl, lineY: y(series.lcl) },
+      ]
+    : [];
   const controlLabels = layoutControlLimitLabels(controlLimits, PLOT);
+  const specEdge = showControlLimits ? "left" : "right";
+  const specLabels = layoutHorizontalSpecLabels(
+    [
+      ...(lsl != null
+        ? [{ kind: "lsl" as const, value: lsl, lineY: y(lsl), edge: specEdge }]
+        : []),
+      ...(usl != null
+        ? [{ kind: "usl" as const, value: usl, lineY: y(usl), edge: specEdge }]
+        : []),
+    ],
+    PLOT
+  );
 
   return (
     <ChartSvg ariaLabel={ariaLabel}>
@@ -257,28 +286,43 @@ function ControlChart({
         xLabel={xLabel}
         yLabel={yLabel}
       />
-      <line
-        x1={PLOT.left}
-        x2={PLOT.right}
-        y1={y(series.ucl)}
-        y2={y(series.ucl)}
-        stroke="var(--destructive)"
-        strokeDasharray="4 3"
-      />
+      {specValues.map((value) => (
+        <line
+          key={`spec-${value}`}
+          x1={PLOT.left}
+          x2={PLOT.right}
+          y1={y(value)}
+          y2={y(value)}
+          stroke="var(--destructive)"
+          strokeDasharray="3 2"
+        />
+      ))}
+      {showControlLimits ? (
+        <>
+          <line
+            x1={PLOT.left}
+            x2={PLOT.right}
+            y1={y(series.ucl)}
+            y2={y(series.ucl)}
+            stroke="var(--destructive)"
+            strokeDasharray="4 3"
+          />
+          <line
+            x1={PLOT.left}
+            x2={PLOT.right}
+            y1={y(series.lcl)}
+            y2={y(series.lcl)}
+            stroke="var(--destructive)"
+            strokeDasharray="4 3"
+          />
+        </>
+      ) : null}
       <line
         x1={PLOT.left}
         x2={PLOT.right}
         y1={y(series.center)}
         y2={y(series.center)}
         stroke="var(--brand-600)"
-      />
-      <line
-        x1={PLOT.left}
-        x2={PLOT.right}
-        y1={y(series.lcl)}
-        y2={y(series.lcl)}
-        stroke="var(--destructive)"
-        strokeDasharray="4 3"
       />
       <path d={path} fill="none" stroke="var(--foreground)" strokeWidth="1.1" />
       {series.values.map((value, i) => (
@@ -291,6 +335,17 @@ function ControlChart({
         />
       ))}
       {controlLabels.map((label) => (
+        <LimitLabel
+          key={label.kind}
+          testId={`sixpack-${chartTestId}-label-${label.kind}`}
+          name={label.kind.toUpperCase()}
+          x={label.x}
+          y={label.y}
+          textAnchor={label.textAnchor}
+          text={label.text}
+        />
+      ))}
+      {specLabels.map((label) => (
         <LimitLabel
           key={label.kind}
           testId={`sixpack-${chartTestId}-label-${label.kind}`}
@@ -675,6 +730,8 @@ export function SixpackView({
               yLabel="Individual"
               ariaLabel="Individuals control chart"
               chartTestId="ichart"
+              lsl={results.capability.lsl}
+              usl={results.capability.usl}
             />
           </Panel>
           <Panel title="Last 25 Observations">
@@ -691,6 +748,9 @@ export function SixpackView({
               yLabel="Value"
               ariaLabel="Last 25 observations"
               chartTestId="last25"
+              lsl={results.capability.lsl}
+              usl={results.capability.usl}
+              showControlLimits={false}
             />
           </Panel>
           <Panel title="Capability Histogram">

@@ -5,6 +5,7 @@ import { resolveCustomerId } from "@/lib/customers/resolve";
 import { formatLimit, formatPpm, formatPValue, formatStat } from "./format";
 import {
   layoutControlLimitLabels,
+  layoutHorizontalSpecLabels,
   layoutSpecLimitLabels,
 } from "./spec-limit-labels";
 import type {
@@ -179,7 +180,12 @@ function drawControlChart(
   colors: ChartBrandColors,
   xOffset = 1,
   xLabel = "Observation",
-  yLabel = "Value"
+  yLabel = "Value",
+  spec?: {
+    lsl: number | null;
+    usl: number | null;
+    showControlLimits?: boolean;
+  }
 ): void {
   const plot = {
     left: ox + PLOT.left,
@@ -187,9 +193,18 @@ function drawControlChart(
     top: oy + PLOT.top,
     bottom: oy + PLOT.bottom,
   };
+  const showControlLimits = spec?.showControlLimits ?? true;
+  const specValues = [spec?.lsl, spec?.usl].filter(
+    (value): value is number => value != null && Number.isFinite(value)
+  );
   const xs = series.values.map((_, i) => i + xOffset);
   const [yMin, yMax] = domain(
-    [...series.values, series.ucl, series.lcl, series.center],
+    [
+      ...series.values,
+      series.center,
+      ...(showControlLimits ? [series.ucl, series.lcl] : []),
+      ...specValues,
+    ],
     0.12
   );
   const xMin = (xs[0] ?? 1) - 0.5;
@@ -200,14 +215,23 @@ function drawControlChart(
 
   drawAxis(ctx, plot, xMin, xMax, yMin, yMax, xLabel, yLabel, colors);
 
-  ctx.setLineDash([4, 3]);
   ctx.strokeStyle = colors.limit;
   ctx.lineWidth = 1;
-  for (const limit of [series.ucl, series.lcl]) {
+  ctx.setLineDash([3, 2]);
+  for (const limit of specValues) {
     ctx.beginPath();
     ctx.moveTo(plot.left, y(limit));
     ctx.lineTo(plot.right, y(limit));
     ctx.stroke();
+  }
+  if (showControlLimits) {
+    ctx.setLineDash([4, 3]);
+    for (const limit of [series.ucl, series.lcl]) {
+      ctx.beginPath();
+      ctx.moveTo(plot.left, y(limit));
+      ctx.lineTo(plot.right, y(limit));
+      ctx.stroke();
+    }
   }
   ctx.setLineDash([]);
   ctx.strokeStyle = colors.brand600;
@@ -235,17 +259,45 @@ function drawControlChart(
     ctx.fill();
   }
 
-  const labels = layoutControlLimitLabels(
+  const controlLabels = showControlLimits
+    ? layoutControlLimitLabels(
+        [
+          { kind: "ucl", value: series.ucl, lineY: y(series.ucl) },
+          { kind: "lcl", value: series.lcl, lineY: y(series.lcl) },
+        ],
+        plot
+      )
+    : [];
+  const specEdge = showControlLimits ? "left" : "right";
+  const specLabels = layoutHorizontalSpecLabels(
     [
-      { kind: "ucl", value: series.ucl, lineY: y(series.ucl) },
-      { kind: "lcl", value: series.lcl, lineY: y(series.lcl) },
+      ...(spec?.lsl != null
+        ? [
+            {
+              kind: "lsl" as const,
+              value: spec.lsl,
+              lineY: y(spec.lsl),
+              edge: specEdge,
+            },
+          ]
+        : []),
+      ...(spec?.usl != null
+        ? [
+            {
+              kind: "usl" as const,
+              value: spec.usl,
+              lineY: y(spec.usl),
+              edge: specEdge,
+            },
+          ]
+        : []),
     ],
     plot
   );
   ctx.font = font(9, "bold");
   ctx.fillStyle = colors.limit;
   ctx.textBaseline = "alphabetic";
-  for (const label of labels) {
+  for (const label of [...controlLabels, ...specLabels]) {
     ctx.textAlign = canvasTextAlign(label.textAnchor);
     ctx.fillText(label.text, label.x, label.y);
   }
@@ -560,7 +612,11 @@ export function renderSixpackPng(
             colors,
             1,
             "Observation",
-            "Individual"
+            "Individual",
+            {
+              lsl: results.capability.lsl,
+              usl: results.capability.usl,
+            }
           ),
       },
       {
@@ -580,7 +636,12 @@ export function renderSixpackPng(
             colors,
             Math.max(1, results.n - results.lastObservations.length + 1),
             "Observation",
-            "Value"
+            "Value",
+            {
+              lsl: results.capability.lsl,
+              usl: results.capability.usl,
+              showControlLimits: false,
+            }
           ),
       },
       {
