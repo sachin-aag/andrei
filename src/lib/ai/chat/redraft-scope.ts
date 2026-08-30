@@ -34,7 +34,8 @@ export function docHasTable(doc: JSONContent | null | undefined): boolean {
 
 export type RedraftScope =
   | { kind: "rewrite" }
-  | { kind: "targeted_edit"; coverage: number };
+  | { kind: "targeted_edit"; coverage: number }
+  | { kind: "table_structure"; adding: boolean };
 
 /**
  * Classify what a `draft_field` call is really doing to a filled field.
@@ -42,8 +43,10 @@ export type RedraftScope =
  * A replacement that leaves most of the field intact is a targeted edit
  * written as a whole-field draft. Accepting it would strike the entire field
  * in review even though a few spans changed, so it belongs on `propose_edit`.
- * Adding or removing a table is a structural rewrite regardless of coverage —
- * only `draft_field` can express it.
+ * Adding or removing a table while keeping most of the prose is the same:
+ * `edit_table` create_table / delete_table inserts or drops the table without
+ * striking the surrounding text. A genuine rewrite (more than half the field)
+ * may still add or drop a table — that stays a rewrite.
  */
 export function classifyRedraftScope(args: {
   currentText: string;
@@ -51,14 +54,24 @@ export function classifyRedraftScope(args: {
   currentHasTable: boolean;
   nextHasTable: boolean;
 }): RedraftScope {
-  if (args.currentHasTable !== args.nextHasTable) return { kind: "rewrite" };
-
   const coverage = redraftDeleteCoverage(args.currentText, args.nextText);
   if (coverage > REDRAFT_COVERAGE_THRESHOLD) return { kind: "rewrite" };
+  if (args.currentHasTable !== args.nextHasTable) {
+    return {
+      kind: "table_structure",
+      adding: !args.currentHasTable && args.nextHasTable,
+    };
+  }
   return { kind: "targeted_edit", coverage };
 }
 
 export function redraftTooSmallHint(coverage: number): string {
   const percent = Math.round(coverage * 100);
   return `This replacement keeps ${100 - percent}% of the field — it is a targeted edit, not a rewrite, and draft_field would strike the whole field in review. Call read_section, then make one propose_edit per changed span (several calls are fine). Use edit_table for table cells. Only use draft_field here if the engineer asked to rewrite or replace the whole field.`;
+}
+
+export function redraftTableStructureHint(adding: boolean): string {
+  return adding
+    ? "Do not rewrite the field to add a table — that strikes the whole section in review. Call edit_table with kind create_table (headers plus rows) at the top of operation, not nested as { create_table: { headers, rows } }. Quote afterAnchor to place it after a specific block, or omit afterAnchor to append before Citations. Surrounding prose stays unmarked."
+    : "Do not rewrite the field to remove a table — that strikes the whole section in review. Call edit_table with kind delete_table and tableIndex from read_section. Surrounding prose stays unmarked.";
 }

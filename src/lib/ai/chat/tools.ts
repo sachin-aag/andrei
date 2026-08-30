@@ -57,6 +57,7 @@ import {
 import {
   classifyRedraftScope,
   docHasTable,
+  redraftTableStructureHint,
   redraftTooSmallHint,
 } from "@/lib/ai/chat/redraft-scope";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -2614,6 +2615,13 @@ export function buildChatTools(opts: {
               status: NOT_A_REWRITE_STATUS,
               hint: redraftTooSmallHint(scope.coverage),
               coverage: scope.coverage,
+            };
+          }
+          if (scope.kind === "table_structure") {
+            return {
+              status: NOT_A_REWRITE_STATUS,
+              hint: redraftTableStructureHint(scope.adding),
+              coverage: 0,
             };
           }
         }

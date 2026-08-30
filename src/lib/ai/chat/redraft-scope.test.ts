@@ -3,6 +3,7 @@ import {
   classifyRedraftScope,
   docHasTable,
   redraftDeleteCoverage,
+  redraftTableStructureHint,
   redraftTooSmallHint,
 } from "./redraft-scope";
 
@@ -83,10 +84,31 @@ describe("classifyRedraftScope", () => {
     expect(scope.kind).toBe("rewrite");
   });
 
-  it("treats adding a table as a rewrite even when the prose survives", () => {
+  it("sends adding a table while keeping the prose back to create_table", () => {
     const scope = classifyRedraftScope({
       currentText: PURPOSE,
       nextText: PURPOSE,
+      currentHasTable: false,
+      nextHasTable: true,
+    });
+    expect(scope).toEqual({ kind: "table_structure", adding: true });
+  });
+
+  it("sends removing a table while keeping the prose back to delete_table", () => {
+    const scope = classifyRedraftScope({
+      currentText: PURPOSE,
+      nextText: PURPOSE,
+      currentHasTable: true,
+      nextHasTable: false,
+    });
+    expect(scope).toEqual({ kind: "table_structure", adding: false });
+  });
+
+  it("still classifies a wholesale rewrite that adds a table as a rewrite", () => {
+    const scope = classifyRedraftScope({
+      currentText: PURPOSE,
+      nextText:
+        "This report documents mechanical verification of the handpiece assembly.\n\n| Check | Result |\n| --- | --- |\n| Drop | Pass |",
       currentHasTable: false,
       nextHasTable: true,
     });
@@ -126,5 +148,17 @@ describe("redraftTooSmallHint", () => {
     const hint = redraftTooSmallHint(0.37);
     expect(hint).toContain("63%");
     expect(hint).toContain("propose_edit");
+  });
+});
+
+describe("redraftTableStructureHint", () => {
+  it("routes an added table to create_table", () => {
+    const hint = redraftTableStructureHint(true);
+    expect(hint).toMatch(/create_table/);
+    expect(hint).not.toMatch(/draft_field would/);
+  });
+
+  it("routes a removed table to delete_table", () => {
+    expect(redraftTableStructureHint(false)).toMatch(/delete_table/);
   });
 });

@@ -700,8 +700,60 @@ function applyDeleteColumn(
   return { ok: true, status: "ok", doc };
 }
 
+const TABLE_OPERATION_KINDS = [
+  "edit_cells",
+  "insert_rows",
+  "delete_rows",
+  "delete_table",
+  "insert_column",
+  "delete_column",
+  "create_table",
+] as const;
+
+function isTableOperationKind(
+  value: unknown
+): value is (typeof TABLE_OPERATION_KINDS)[number] {
+  return (
+    typeof value === "string" &&
+    (TABLE_OPERATION_KINDS as readonly string[]).includes(value)
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Models often nest the op: `{ create_table: { headers, rows } }` instead of
+ * `{ kind: "create_table", headers, rows }`. Hoist that object onto the root.
+ */
+function hoistNestedTableKind(
+  raw: Record<string, unknown>
+): Record<string, unknown> {
+  const existingKind = isTableOperationKind(raw.kind)
+    ? raw.kind
+    : isTableOperationKind(raw.operation)
+      ? raw.operation
+      : null;
+
+  if (existingKind && isRecord(raw[existingKind])) {
+    const nested = raw[existingKind];
+    const rest = { ...raw };
+    delete rest[existingKind];
+    return { ...nested, ...rest, kind: existingKind };
+  }
+
+  if (!existingKind) {
+    for (const kind of TABLE_OPERATION_KINDS) {
+      if (isRecord(raw[kind])) {
+        const nested = raw[kind];
+        const rest = { ...raw };
+        delete rest[kind];
+        return { ...rest, ...nested, kind };
+      }
+    }
+  }
+  return raw;
 }
 
 function asInt(value: unknown): number | null {
@@ -732,7 +784,7 @@ function asStringMatrix(value: unknown): string[][] | null {
  */
 export function coerceTableOperationInput(raw: unknown): unknown {
   if (!isRecord(raw)) return raw;
-  const next: Record<string, unknown> = { ...raw };
+  const next: Record<string, unknown> = hoistNestedTableKind({ ...raw });
   if (typeof next.kind !== "string" && typeof next.operation === "string") {
     next.kind = next.operation;
   }
@@ -911,7 +963,10 @@ export function tableOperationInvalidHint(raw: unknown): string {
   if (kind === "delete_table") {
     return "delete_table needs tableIndex from read_section (0 for the first table). Do not rewrite the field with draft_field.";
   }
-  return "The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table. To remove a whole table, use kind delete_table with tableIndex. Do not rewrite the field with draft_field.";
+  if (kind === "create_table") {
+    return 'create_table needs kind: "create_table" with headers (and optional rows, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. Do not rewrite the field with draft_field.';
+  }
+  return "The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table. Put kind at the top of operation (kind: create_table, headers, rows) — not nested as { create_table: { headers, rows } }. To remove a whole table, use kind delete_table with tableIndex. Do not rewrite the field with draft_field.";
 }
 
 export function tableOperationHint(

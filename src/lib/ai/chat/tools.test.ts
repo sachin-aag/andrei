@@ -1096,6 +1096,39 @@ describe("buildChatTools propose vs commit", () => {
     expect(commitChatEditMock).not.toHaveBeenCalled();
   });
 
+  it("refuses draft_field that adds a table while keeping the surrounding prose", async () => {
+    const filled =
+      "The purpose of this revision is to present the testing results. Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, where:";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: filled }] }],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: `${filled}
+
+| Component | Description |
+| --- | --- |
+| mm | represents major release number (01, 02, etc.) |
+| nn | represents minor release number (01, 02, etc.) |`,
+        reasoning: "Rewrite the purpose section narrative to convert the VCS bullet list into a GFM table.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "not_a_rewrite" });
+    expect(String((refused as { hint?: string }).hint)).toMatch(/create_table/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
   it("refuses a GFM table in propose_edit insertText", async () => {
     const tools = buildChatTools({
       reportId: "report-1",
@@ -1136,6 +1169,38 @@ describe("buildChatTools propose vs commit", () => {
           headers: ["Req", "Result"],
           rows: [["SW-1", "Pass"]],
         },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("coerces nested create_table payloads instead of falling through to draft_field", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Convert the VCS list into a table in the Purpose section.",
+        operation: {
+          create_table: {
+            headers: ["Component", "Description"],
+            rows: [
+              ["mm", "represents major release number (01, 02, etc.)"],
+              ["nn", "represents minor release number (01, 02, etc.)"],
+            ],
+          },
+        } as unknown as { kind: "create_table"; headers: string[]; rows: string[][] },
       },
       TEST_TOOL_OPTIONS
     );

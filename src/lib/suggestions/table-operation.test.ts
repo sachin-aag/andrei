@@ -787,6 +787,29 @@ describe("parseTableOperation", () => {
     });
   });
 
+  it("coerces nested create_table { create_table: { headers, rows } }", () => {
+    expect(
+      parseTableOperation({
+        create_table: {
+          headers: ["Component", "Description"],
+          rows: [
+            ["mm", "represents major release number (01, 02, etc.)"],
+            ["nn", "represents minor release number (01, 02, etc.)"],
+          ],
+          afterAnchor: "mm.nn.ff.bb, where:",
+        },
+      })
+    ).toEqual({
+      kind: "create_table",
+      headers: ["Component", "Description"],
+      rows: [
+        ["mm", "represents major release number (01, 02, etc.)"],
+        ["nn", "represents minor release number (01, 02, etc.)"],
+      ],
+      afterAnchor: "mm.nn.ff.bb, where:",
+    });
+  });
+
   it("round-trips create_table", () => {
     const raw: TableOperation = {
       kind: "create_table",
