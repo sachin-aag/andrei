@@ -2,7 +2,13 @@ import { chartBrandColors } from "@/lib/charts/brand-colors";
 import type { ChartBrandColors } from "@/lib/charts/brand-colors";
 import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
 import { resolveCustomerId } from "@/lib/customers/resolve";
-import { formatLimit, formatPpm, formatPValue, formatStat } from "./format";
+import {
+  formatCapabilityStat,
+  formatLimit,
+  formatPpm,
+  formatPValue,
+  formatStat,
+} from "./format";
 import {
   layoutControlLimitLabels,
   layoutHorizontalSpecLabels,
@@ -524,13 +530,13 @@ function drawCapabilityText(
     ...(result.skipped > 0
       ? ([["Skipped", String(result.skipped)]] as Array<[string, string]>)
       : []),
-    ["Mean", formatStat(result.mean)],
-    ["StDev (overall)", formatStat(result.overallStdev)],
-    ["StDev (within)", formatStat(result.withinStdev)],
-    ["MR̄", formatStat(result.mrBar)],
-    ["LSL", formatStat(cap.lsl)],
-    ["Target", formatStat(cap.target)],
-    ["USL", formatStat(cap.usl)],
+    ["Mean", formatCapabilityStat(result.mean)],
+    ["StDev (overall)", formatCapabilityStat(result.overallStdev)],
+    ["StDev (within)", formatCapabilityStat(result.withinStdev)],
+    ["MR̄", formatCapabilityStat(result.mrBar)],
+    ["LSL", formatCapabilityStat(cap.lsl)],
+    ["Target", formatCapabilityStat(cap.target)],
+    ["USL", formatCapabilityStat(cap.usl)],
   ];
   drawStatColumn(ctx, leftX, top, "Process data", processRows, colors, colW - 8);
   const afterPotential = drawStatColumn(
@@ -539,10 +545,10 @@ function drawCapabilityText(
     top,
     "Potential (within)",
     [
-      ["Cp", formatStat(cap.cp)],
-      ["CPL", formatStat(cap.cpl)],
-      ["CPU", formatStat(cap.cpu)],
-      ["Cpk", formatStat(cap.cpk)],
+      ["Cp", formatCapabilityStat(cap.cp)],
+      ["CPL", formatCapabilityStat(cap.cpl)],
+      ["CPU", formatCapabilityStat(cap.cpu)],
+      ["Cpk", formatCapabilityStat(cap.cpk)],
       ["PPM (exp.)", formatPpm(cap.ppmWithin)],
     ],
     colors,
@@ -554,10 +560,10 @@ function drawCapabilityText(
     afterPotential + 8,
     "Overall",
     [
-      ["Pp", formatStat(cap.pp)],
-      ["PPL", formatStat(cap.ppl)],
-      ["PPU", formatStat(cap.ppu)],
-      ["Ppk", formatStat(cap.ppk)],
+      ["Pp", formatCapabilityStat(cap.pp)],
+      ["PPL", formatCapabilityStat(cap.ppl)],
+      ["PPU", formatCapabilityStat(cap.ppu)],
+      ["Ppk", formatCapabilityStat(cap.ppk)],
       ["PPM (exp.)", formatPpm(cap.ppmOverall)],
       ["PPM (obs.)", formatPpm(cap.ppmObserved)],
     ],

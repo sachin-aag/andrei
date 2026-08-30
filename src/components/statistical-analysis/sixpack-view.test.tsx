@@ -173,4 +173,28 @@ describe("SixpackView limit labels", () => {
     expect(screen.queryByTestId("sixpack-mr-label-lsl")).toBeNull();
     expect(screen.queryByTestId("sixpack-mr-label-usl")).toBeNull();
   });
+
+  it("keeps process-capability stats on one line at three decimal places", () => {
+    const analysis = summaryFromValues([...SAMPLE_ASSAY_VALUES], assayConfig);
+
+    render(
+      <SixpackView
+        analysis={analysis}
+        {...viewProps}
+      />
+    );
+
+    const overall = screen.getByTestId("sixpack-stdev-overall");
+    const within = screen.getByTestId("sixpack-stdev-within");
+    expect(overall).toHaveTextContent(
+      analysis.results.overallStdev.toFixed(3)
+    );
+    expect(within).toHaveTextContent(analysis.results.withinStdev.toFixed(3));
+    expect(overall.textContent?.includes("\n")).toBe(false);
+    expect(overall).toHaveClass("whitespace-nowrap");
+    expect(within).toHaveClass("whitespace-nowrap");
+    expect(screen.getByTestId("sixpack-mean")).toHaveTextContent(
+      analysis.results.mean.toFixed(3)
+    );
+  });
 });

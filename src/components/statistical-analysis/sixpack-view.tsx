@@ -12,6 +12,7 @@ import type {
 } from "@/lib/statistical-analysis/types";
 import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import {
+  formatCapabilityStat,
   formatLimit,
   formatPpm,
   formatPValue,
@@ -551,11 +552,13 @@ function StatRow({
   testId?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-0.5">
-      <dt className="text-[11px] text-[var(--muted-foreground)]">{label}</dt>
+    <div className="flex items-baseline justify-between gap-2 py-0.5">
+      <dt className="min-w-0 truncate text-[11px] text-[var(--muted-foreground)]">
+        {label}
+      </dt>
       <dd
         data-testid={testId}
-        className="text-[11px] font-medium tabular-nums"
+        className="shrink-0 whitespace-nowrap text-[11px] font-medium tabular-nums"
       >
         {value}
       </dd>
@@ -579,33 +582,45 @@ function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
         {result.skipped > 0 ? (
           <StatRow label="Skipped" value={String(result.skipped)} />
         ) : null}
-        <StatRow label="Mean" value={formatStat(result.mean)} />
-        <StatRow label="StDev (overall)" value={formatStat(result.overallStdev)} />
-        <StatRow label="StDev (within)" value={formatStat(result.withinStdev)} />
-        <StatRow label="MR̄" value={formatStat(result.mrBar)} />
-        <StatRow label="LSL" value={formatStat(cap.lsl)} />
-        <StatRow label="Target" value={formatStat(cap.target)} />
-        <StatRow label="USL" value={formatStat(cap.usl)} />
+        <StatRow
+          label="Mean"
+          value={formatCapabilityStat(result.mean)}
+          testId="sixpack-mean"
+        />
+        <StatRow
+          label="StDev (overall)"
+          value={formatCapabilityStat(result.overallStdev)}
+          testId="sixpack-stdev-overall"
+        />
+        <StatRow
+          label="StDev (within)"
+          value={formatCapabilityStat(result.withinStdev)}
+          testId="sixpack-stdev-within"
+        />
+        <StatRow label="MR̄" value={formatCapabilityStat(result.mrBar)} />
+        <StatRow label="LSL" value={formatCapabilityStat(cap.lsl)} />
+        <StatRow label="Target" value={formatCapabilityStat(cap.target)} />
+        <StatRow label="USL" value={formatCapabilityStat(cap.usl)} />
       </dl>
       <div>
         <dl>
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             Potential (within)
           </p>
-          <StatRow label="Cp" value={formatStat(cap.cp)} />
-          <StatRow label="CPL" value={formatStat(cap.cpl)} />
-          <StatRow label="CPU" value={formatStat(cap.cpu)} />
-          <StatRow label="Cpk" value={formatStat(cap.cpk)} />
+          <StatRow label="Cp" value={formatCapabilityStat(cap.cp)} />
+          <StatRow label="CPL" value={formatCapabilityStat(cap.cpl)} />
+          <StatRow label="CPU" value={formatCapabilityStat(cap.cpu)} />
+          <StatRow label="Cpk" value={formatCapabilityStat(cap.cpk)} />
           <StatRow label="PPM (exp.)" value={formatPpm(cap.ppmWithin)} />
         </dl>
         <dl className="mt-2">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             Overall
           </p>
-          <StatRow label="Pp" value={formatStat(cap.pp)} />
-          <StatRow label="PPL" value={formatStat(cap.ppl)} />
-          <StatRow label="PPU" value={formatStat(cap.ppu)} />
-          <StatRow label="Ppk" value={formatStat(cap.ppk)} />
+          <StatRow label="Pp" value={formatCapabilityStat(cap.pp)} />
+          <StatRow label="PPL" value={formatCapabilityStat(cap.ppl)} />
+          <StatRow label="PPU" value={formatCapabilityStat(cap.ppu)} />
+          <StatRow label="Ppk" value={formatCapabilityStat(cap.ppk)} />
           <StatRow label="PPM (exp.)" value={formatPpm(cap.ppmOverall)} />
           <StatRow label="PPM (obs.)" value={formatPpm(cap.ppmObserved)} />
         </dl>
