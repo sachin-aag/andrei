@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyAxisRangeOverride,
   DEFAULT_CHART_LAYOUT,
+  formatChartCitationPages,
   formatChartProvenance,
   layoutPoints,
+  layoutRangeFromBounds,
   parseChartSpec,
   resolveXRange,
   resolveYRange,
   splitSpec,
+  uniqueChartCitations,
   type ChartSpec,
 } from "@/lib/charts/chart-spec";
 
@@ -40,6 +44,24 @@ describe("parseChartSpec", () => {
 
   it("rejects an unknown kind", () => {
     expect(parseChartSpec({ ...spec(), kind: "bar" })).toBeNull();
+  });
+
+  it("defaults missing layout.mark to scatter", () => {
+    const raw = spec();
+    const { mark: _omitted, ...layoutWithoutMark } = raw.layout;
+    expect(_omitted).toBe("scatter");
+    expect(
+      parseChartSpec({ ...raw, layout: layoutWithoutMark })?.layout.mark
+    ).toBe("scatter");
+  });
+
+  it("does not inject xRange when the stored spec omitted it", () => {
+    const raw = spec();
+    const { xRange: _omitted, ...layoutWithoutXRange } = raw.layout;
+    expect(_omitted).toBeNull();
+    expect(
+      parseChartSpec({ ...raw, layout: layoutWithoutXRange })?.layout.xRange
+    ).toBeUndefined();
   });
 
   it("rejects a missing query", () => {
@@ -128,6 +150,51 @@ describe("resolveXRange", () => {
     expect(range.min).toBeGreaterThan(50);
     expect(range.max).toBeGreaterThan(110);
   });
+
+  it("honors a full x-range override and a max-only override", () => {
+    const valueLayout = { ...DEFAULT_CHART_LAYOUT, xAxis: "value" as const };
+    const base = spec({
+      points: [
+        { x: 10, y: 1, series: null, label: "a" },
+        { x: 20, y: 2, series: null, label: "b" },
+      ],
+      layout: valueLayout,
+    });
+    const auto = resolveXRange(base);
+    expect(
+      resolveXRange({
+        ...base,
+        layout: { ...valueLayout, xRange: { min: 0, max: 50 } },
+      })
+    ).toEqual({ min: 0, max: 50 });
+    expect(
+      resolveXRange({
+        ...base,
+        layout: { ...valueLayout, xRange: { min: null, max: 15 } },
+      }).max
+    ).toBe(15);
+    expect(auto.max).toBeGreaterThan(15);
+  });
+});
+
+describe("layoutRangeFromBounds", () => {
+  it("returns null when both ends are auto", () => {
+    expect(layoutRangeFromBounds(null, null)).toBeNull();
+    expect(layoutRangeFromBounds(undefined, undefined)).toBeNull();
+  });
+
+  it("keeps a one-sided bound", () => {
+    expect(layoutRangeFromBounds(0, null)).toEqual({ min: 0, max: null });
+    expect(layoutRangeFromBounds(null, 10)).toEqual({ min: null, max: 10 });
+  });
+});
+
+describe("applyAxisRangeOverride", () => {
+  it("falls back to auto when the override is inverted", () => {
+    expect(
+      applyAxisRangeOverride({ min: 0, max: 10 }, { min: 8, max: 2 })
+    ).toEqual({ min: 0, max: 10 });
+  });
 });
 
 describe("resolveYRange", () => {
@@ -139,6 +206,44 @@ describe("resolveYRange", () => {
 
   it("uses 0 as ymin when data and limits are non-negative", () => {
     expect(resolveYRange(spec({ limits: { lower: 2, upper: 4 } })).min).toBe(0);
+  });
+
+  it("uses stacked totals for column charts with a legend", () => {
+    const range = resolveYRange(
+      spec({
+        limits: { lower: null, upper: null },
+        points: [
+          { x: 1, y: 10, series: "A", label: "a" },
+          { x: 1, y: 15, series: "B", label: "b" },
+        ],
+        layout: { ...DEFAULT_CHART_LAYOUT, mark: "column", seriesBy: "unit" },
+      })
+    );
+    expect(range.max).toBeGreaterThanOrEqual(25);
+  });
+
+  it("ignores spec limits in the y-range when showSpecLimits is off", () => {
+    const range = resolveYRange(
+      spec({
+        limits: { lower: 1, upper: 100 },
+        points: [{ x: 1, y: 10, series: null, label: "a" }],
+        layout: { ...DEFAULT_CHART_LAYOUT, showSpecLimits: false },
+      })
+    );
+    expect(range.max).toBeLessThan(50);
+  });
+
+  it("honors a y-range override without changing auto when unset", () => {
+    const auto = resolveYRange(spec({ limits: { lower: null, upper: null } }));
+    expect(
+      resolveYRange(
+        spec({
+          limits: { lower: null, upper: null },
+          layout: { ...DEFAULT_CHART_LAYOUT, yRange: { min: -2, max: 12 } },
+        })
+      )
+    ).toEqual({ min: -2, max: 12 });
+    expect(auto).not.toEqual({ min: -2, max: 12 });
   });
 });
 
@@ -159,5 +264,37 @@ describe("formatChartProvenance", () => {
     expect(formatChartProvenance(spec())).toBe(
       "4 points, limits 1–6 ozf-in, M3-SYS-FN-037, p. 13"
     );
+  });
+});
+
+describe("uniqueChartCitations", () => {
+  it("deduplicates attachment/page pairs and drops invalid pages", () => {
+    expect(
+      uniqueChartCitations([
+        { attachmentId: "att_1", page: 31 },
+        { attachmentId: " att_1 ", page: 31 },
+        { attachmentId: "att_1", page: 32 },
+        { attachmentId: "", page: 1 },
+        { attachmentId: "att_2", page: 0 },
+      ])
+    ).toEqual([
+      { attachmentId: "att_1", page: 31 },
+      { attachmentId: "att_1", page: 32 },
+    ]);
+  });
+});
+
+describe("formatChartCitationPages", () => {
+  it("returns null when there are no citations", () => {
+    expect(formatChartCitationPages([])).toBeNull();
+  });
+
+  it("formats a page range", () => {
+    expect(
+      formatChartCitationPages([
+        { attachmentId: "att_1", page: 15 },
+        { attachmentId: "att_1", page: 13 },
+      ])
+    ).toBe("p. 13–15");
   });
 });

@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { CHART_MARK_LABELS, parseChartMark } from "@/lib/charts/chart-marks";
 import { formatPValue, formatPpm, formatStat } from "./format";
 import { plotImagesForExport } from "./render-analysis-plots";
 import {
@@ -7,6 +8,7 @@ import {
 } from "./row-selection";
 import {
   isAnovaAnalysis,
+  isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -250,7 +252,9 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
       ["Y", analysis.config.yColumnName],
       ["X", analysis.config.xColumnName],
       ["Rows", rows],
-      ["Kind", "XY scatter"],
+      ["Kind", isObservationXyScatter(analysis.config) ? "1D scatter" : "XY scatter"],
+      ["Legend", analysis.config.legendColumnName ?? ""],
+      ["Chart type", CHART_MARK_LABELS[parseChartMark(analysis.config.mark ?? spec?.layout.mark)]],
       ["N", String(analysis.results.n)],
       ["Skipped", String(analysis.results.skipped)],
       ["Pearson r", formatStat(analysis.results.pearsonR, 4)],
@@ -259,13 +263,23 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
       ["Created", analysis.createdAt],
     ],
     [
-      ["Chart", "Label", "X", "Y"],
+      ["Chart", "Series", "Label", "X", "Y"],
       ...analysis.results.specs.flatMap((item) =>
         item.points.map((point) => [
           item.title,
+          point.series ?? "",
           point.label,
           String(point.x),
           String(point.y),
+        ])
+      ),
+    ],
+    [
+      ["Attachment", "Page"],
+      ...analysis.results.specs.flatMap((item) =>
+        item.citations.map((citation) => [
+          citation.attachmentId,
+          String(citation.page),
         ])
       ),
     ],

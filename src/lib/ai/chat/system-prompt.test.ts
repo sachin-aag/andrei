@@ -19,7 +19,7 @@ describe("isChatMode", () => {
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v53-drop-section-switch"
+      "chat-v54-analytics-plot-chat"
     );
   });
 
@@ -256,6 +256,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image");
     expect(prompt).toContain("Measurement charts belong in Analytics, not Document chat");
     expect(prompt).toContain("Tell the engineer to open Analytics");
+    expect(prompt).toContain(
+      "ask the Statistical Analysis assistant to extract from attachments and plot"
+    );
     expect(prompt).not.toContain("- plot_measurements — extract cited numeric measurements");
   });
 

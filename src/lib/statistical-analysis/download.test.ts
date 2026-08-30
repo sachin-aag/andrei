@@ -5,7 +5,7 @@ import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
 import { computeOneWayAnova } from "./anova";
 import { computeXyScatter } from "./xy-scatter";
-import { createEmptyWorksheet, pasteTsv } from "./worksheet";
+import { createEmptyWorksheet, pasteTsv, replaceColumnValues } from "./worksheet";
 import {
   analysisDownloadFilename,
   analysisImageDownloadFilename,
@@ -186,7 +186,46 @@ describe("analysis download", () => {
     const csv = analysisToCsv(analysis);
     expect(csv).toContain("XY scatter");
     expect(csv).toContain("Pearson r");
-    expect(csv).toContain("Chart,Label,X,Y");
+    expect(csv).toContain("Chart,Series,Label,X,Y");
     expect(csv).toContain("1,2");
+    expect(csv).toContain("Citations");
+  });
+
+  it("downloads XY scatter citations when columns came from an attachment", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = replaceColumnValues(
+      sheet,
+      0,
+      ["10", "20", "30"],
+      "Assay",
+      [{ attachmentId: "att_1", page: 31 }]
+    );
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: null,
+      xColumnName: "Observation",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "Assay vs Observation",
+    });
+    if (!outcome.ok) throw new Error(outcome.message);
+    const csv = analysisToCsv({
+      id: "an-xy-cite",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: "Assay vs Observation",
+      config: {
+        xColumnId: null,
+        xColumnName: "Observation",
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        title: "Assay vs Observation",
+      },
+      results: outcome.result,
+      sourceHash: "xy",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    });
+    expect(csv).toContain("att_1,31");
   });
 });

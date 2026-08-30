@@ -1,10 +1,15 @@
 import { formatPValue, formatPpm, formatStat } from "./format";
 import {
+  CHART_MARK_LABELS,
+  parseChartMark,
+} from "@/lib/charts/chart-marks";
+import {
   formatRowSelection,
   normalizeRowSelection,
 } from "./row-selection";
 import {
   isAnovaAnalysis,
+  isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -266,7 +271,9 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
     ["Y", analysis.config.yColumnName],
     ["X", analysis.config.xColumnName],
     ["Rows", rows],
-    ["Kind", "XY scatter"],
+    ["Kind", isObservationXyScatter(analysis.config) ? "1D scatter" : "XY scatter"],
+    ["Legend", analysis.config.legendColumnName ?? ""],
+    ["Chart type", CHART_MARK_LABELS[parseChartMark(analysis.config.mark ?? spec?.layout.mark)]],
     ["N", String(analysis.results.n)],
     ["Skipped", String(analysis.results.skipped)],
     ["Pearson r", formatStat(analysis.results.pearsonR, 4)],
@@ -276,7 +283,18 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
   ];
   const pointRows = analysis.results.specs.flatMap((item) =>
     item.points.map((point) =>
-      csvRow([item.title, point.label, String(point.x), String(point.y)])
+      csvRow([
+        item.title,
+        point.series ?? "",
+        point.label,
+        String(point.x),
+        String(point.y),
+      ])
+    )
+  );
+  const citationRows = analysis.results.specs.flatMap((item) =>
+    item.citations.map((citation) =>
+      csvRow([citation.attachmentId, String(citation.page)])
     )
   );
   const lines = [
@@ -285,8 +303,12 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
     ...summary.map(([field, value]) => csvRow([field, value])),
     "",
     "Points",
-    csvRow(["Chart", "Label", "X", "Y"]),
+    csvRow(["Chart", "Series", "Label", "X", "Y"]),
     ...pointRows,
+    "",
+    "Citations",
+    csvRow(["Attachment", "Page"]),
+    ...citationRows,
   ];
   return `\uFEFF${lines.join("\n")}\n`;
 }

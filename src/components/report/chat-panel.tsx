@@ -841,7 +841,7 @@ function emptyChatIntro(args: {
     if (args.mode === "plan") {
       return "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document. Type @ to tag a sheet, plot, or file.";
     }
-    return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document. Type @ to tag a sheet, plot, or file.";
+    return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot a worksheet scatter (Y required, X optional, optional legend to color by group) or a measurement scatter from attachments (one series vs index). Serial numbers cannot be X — use them as the legend. I don't draft the document. Type @ to tag a sheet, plot, or file.";
   }
   return documentEmptyChatIntro({
     mode: args.mode,

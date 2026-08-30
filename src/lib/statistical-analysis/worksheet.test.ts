@@ -177,6 +177,28 @@ describe("worksheet grid operations", () => {
     expect(sheet.columns[0]?.values).toEqual(["1", "2", "3"]);
   });
 
+  it("stamps and clears column citations independently of the source key", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = replaceColumnValues(
+      sheet,
+      0,
+      ["1", "2", "3"],
+      "Assay",
+      [{ attachmentId: "att_1", page: 31 }]
+    );
+    expect(sheet.columns[0]?.citations).toEqual([
+      { attachmentId: "att_1", page: 31 },
+    ]);
+    const key = columnSourceKey(sheet.columns[0]!);
+    expect(key).toBe(JSON.stringify(["1", "2", "3"]));
+    sheet = setCell(sheet, 0, 0, "9");
+    expect(sheet.columns[0]?.citations).toBeUndefined();
+    expect(columnSourceKey(sheet.columns[0]!)).not.toBe(key);
+    sheet = replaceColumnValues(sheet, 0, ["1", "2", "3"], "Assay");
+    expect(sheet.columns[0]?.citations).toBeUndefined();
+    expect(columnSourceKey(sheet.columns[0]!)).toBe(key);
+  });
+
   it("loads the sample assay column", () => {
     const sheet = applySampleAssay(createEmptyWorksheet(1), 0);
     expect(sheet.columns[0]?.name).toBe("Assay");

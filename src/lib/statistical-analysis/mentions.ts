@@ -9,6 +9,7 @@ import {
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
+  xyScatterVersusLabel,
   type ReportAnalyticsView,
   type StatisticalAnalysisSummary,
 } from "./types";
@@ -113,7 +114,7 @@ function analysisMentionSummary(item: StatisticalAnalysisSummary): string {
     return `measurement_scatter query=${item.config.query} n=${item.results.n}`;
   }
   if (isXyScatterAnalysis(item)) {
-    return `xy_scatter ${item.config.yColumnName} vs ${item.config.xColumnName} n=${item.results.n}`;
+    return `xy_scatter ${xyScatterVersusLabel(item.config)} n=${item.results.n}`;
   }
   if (isAnovaAnalysis(item)) {
     return `one_way_anova ${item.config.responseColumnName} by ${item.config.factorColumnName}`;
@@ -278,7 +279,7 @@ export function buildAnalyticsMentionBlock(
 
   if (analyses.length > 0) {
     lines.push(
-      "Saved plots — the engineer may want you to read, explain, refresh, or recreate these. Check stale=true before quoting numbers; suggest re-running the same analysis on current worksheet data when stale or when they ask to refresh:"
+      "Saved plots — the engineer may want you to read, explain, refresh, or edit these. For kind=xy_scatter, call plot_xy_scatter with that analysisId and only the fields that change; do not create a second Results row. You cannot edit sixpack, ANOVA, or attachment measurement scatter with plot_xy_scatter. Check stale=true before quoting numbers; suggest re-running the same analysis on current worksheet data when stale or when they ask to refresh:"
     );
     for (const item of analyses) {
       lines.push(

@@ -43,6 +43,7 @@ vi.mock("@/lib/statistical-analysis/store", () => ({
   createAnalysisForReport: vi.fn(),
   getOrCreateReportAnalytics: vi.fn(),
   updateReportAnalytics: vi.fn(),
+  updateAnalysisForReport: vi.fn(),
 }));
 
 import {
@@ -58,13 +59,17 @@ import {
   pickAnalyticsDocumentTools,
 } from "./chat-tools";
 import { P1_PUW_COMBINED_TRANSCRIPT, P1_PUW_FILENAME } from "@/lib/extraction/__fixtures__/p1-puw-qualification-phase-ii";
+import { DEFAULT_CHART_LAYOUT } from "@/lib/charts/chart-spec";
 import { AMBIGUOUS_METRIC_REQUEST_MESSAGE } from "@/lib/extraction/metric-series";
 import { buildAnalyticsChatSystemPrompt } from "./chat-prompt";
 import {
+  createAnalysisForReport,
   getOrCreateReportAnalytics,
+  updateAnalysisForReport,
   updateReportAnalytics,
 } from "./store";
-import type { ReportAnalyticsView } from "./types";
+import type { ReportAnalyticsView, XyScatterAnalysisSummary } from "./types";
+import { MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
 import { createEmptyWorksheet, insertColumn, renameColumn, replaceColumnValues } from "./worksheet";
 
 function pageRead(transcript: string): DocumentPageRead {
@@ -147,8 +152,14 @@ describe("analytics chat tools", () => {
     );
     expect(writable.run_one_way_anova?.description).toContain("not a scatter");
     expect(writable.plot_xy_scatter?.description).toContain(
-      "cannot overlay or color by a third grouping column"
+      "Optional legendColumnId color-codes points"
     );
+    expect(writable.plot_xy_scatter?.description).toContain(
+      "Omit xColumnId"
+    );
+    expect(writable.plot_xy_scatter?.description).toContain("analysisId");
+    expect(writable.plot_xy_scatter?.description).toContain("showSpecLimits");
+    expect(writable.plot_xy_scatter?.description).toContain("xMin/xMax/yMin/yMax");
     expect(writable.plot_measurements?.description).toContain(
       "cannot color by serial number"
     );
@@ -518,6 +529,9 @@ describe("analytics chat tools", () => {
     );
     expect(tools.write_column?.description).toContain("never invent 0");
     expect(tools.write_column?.description).toContain(
+      "worksheet plots cite the file"
+    );
+    expect(tools.write_column?.description).toContain(
       "Do not substitute a sixpack or ANOVA for a scatter"
     );
   });
@@ -571,14 +585,17 @@ describe("analytics chat tools", () => {
     expect(saved.columns[0]).toMatchObject({
       name: "Temp",
       values: ["37.1", "37.2"],
+      citations: [{ attachmentId: "att_1", page: 31 }],
     });
     expect(saved.columns[1]).toMatchObject({
       name: "pH",
       values: ["6.8", "6.9"],
+      citations: [{ attachmentId: "att_1", page: 31 }],
     });
     expect(saved.columns[2]).toMatchObject({
       name: "DO%",
       values: ["96.7", "81.6"],
+      citations: [{ attachmentId: "att_1", page: 31 }],
     });
   });
 
@@ -708,5 +725,223 @@ describe("analytics chat tools", () => {
     expect(
       saved.columns.find((column) => column.name === "Air flow (LPM)")?.values
     ).toEqual(["38.02"]);
+  });
+
+  it("stamps remembered extract pages onto a single-series write", async () => {
+    vi.stubEnv("ALLOW_TEST_STUB_CHAT", "true");
+    try {
+      const initial = analyticsView();
+      vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+      vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+        ok: true,
+        analytics: analyticsView(worksheet),
+      }));
+      vi.mocked(listReadyDocumentsForReport).mockResolvedValue([
+        {
+          attachmentId: "att_1",
+          filename: "bmr.pdf",
+          description: null,
+          pageCount: 1,
+          ingestRunId: "run_1",
+          documentSummary: null,
+        },
+      ]);
+      vi.mocked(readDocumentPage).mockResolvedValue(pageRead("10.1 10.2 10.3"));
+      const tools = buildAnalyticsChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        documentType: "investigation_report",
+      });
+      const extract = tools.extract_numeric_series?.execute;
+      const write = tools.write_column?.execute;
+      if (!extract || !write) throw new Error("extract or write_column missing");
+      const extracted = await extract(
+        { attachmentId: "att_1", pages: [31], metric: "Assay" },
+        {
+          toolCallId: "extract",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      );
+      expect(extracted).toMatchObject({
+        status: "ok",
+        attachmentId: "att_1",
+        pages: [31],
+      });
+      await write(
+        { name: "Assay", values: [10.1, 10.2, 10.3] },
+        {
+          toolCallId: "write",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      );
+      const saved = vi.mocked(updateReportAnalytics).mock.calls.at(-1)?.[1] as {
+        columns: { name: string; values: string[]; citations?: unknown }[];
+      };
+      expect(saved.columns[0]).toMatchObject({
+        name: "Assay",
+        values: ["10.1", "10.2", "10.3"],
+        citations: [{ attachmentId: "att_1", page: 31 }],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("does not cite an attachment for a typed single-column write", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const write = tools.write_column?.execute;
+    if (!write) throw new Error("write_column has no execute");
+    await write(
+      { name: "Assay", values: [1, 2, 3] },
+      {
+        toolCallId: "write",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; citations?: unknown }[];
+    };
+    expect(saved.columns[0]?.name).toBe("Assay");
+    expect(saved.columns[0]?.citations).toBeUndefined();
+  });
+
+  it("updates an existing worksheet plot instead of creating a new Results row", async () => {
+    const existing: XyScatterAnalysisSummary = {
+      id: "plot-1",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: "Assay vs Observation",
+      config: {
+        xColumnId: null,
+        xColumnName: "Observation",
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        title: "Assay vs Observation",
+        mark: "scatter",
+        showSpecLimits: false,
+      },
+      results: { specs: [], n: 3, skipped: 0, pearsonR: null },
+      sourceHash: "hash",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    const initial = analyticsView();
+    initial.analyses = [existing];
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    const updated: XyScatterAnalysisSummary = {
+      ...existing,
+      config: {
+        ...existing.config,
+        yColumnId: "c2",
+        yColumnName: "Moisture",
+        mark: "line",
+        showSpecLimits: true,
+      },
+    };
+    vi.mocked(updateAnalysisForReport).mockResolvedValue({
+      ok: true,
+      analytics: { ...initial, analyses: [updated] },
+      analysis: updated,
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_xy_scatter?.execute;
+    if (!plot) throw new Error("plot_xy_scatter has no execute");
+    const output = await plot(
+      {
+        analysisId: "plot-1",
+        yColumnId: "c2",
+        mark: "line",
+        showSpecLimits: true,
+      },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(createAnalysisForReport).not.toHaveBeenCalled();
+    expect(updateAnalysisForReport).toHaveBeenCalledWith(
+      "report-1",
+      "plot-1",
+      expect.objectContaining({
+        yColumnId: "c2",
+        mark: "line",
+        showSpecLimits: true,
+      })
+    );
+    expect(output).toMatchObject({
+      status: "ok",
+      updated: true,
+      yColumnId: "c2",
+      mark: "line",
+      showSpecLimits: true,
+      analysisCount: 1,
+    });
+  });
+
+  it("refuses to edit a non-worksheet Results row via plot_xy_scatter", async () => {
+    const initial = analyticsView();
+    initial.analyses = [
+      {
+        id: "plot-ms",
+        workspaceId: "ws-1",
+        kind: MEASUREMENT_SCATTER,
+        title: "M3",
+        config: {
+          query: "M3-SYS-FN-037",
+          title: "M3",
+          xLabel: "Observation",
+          yLabel: "Value",
+          layout: DEFAULT_CHART_LAYOUT,
+          lsl: null,
+          usl: null,
+        },
+        results: { specs: [], n: 4, uom: "" },
+        sourceHash: "hash",
+        stale: false,
+        createdAt: "2026-08-26T00:00:00.000Z",
+        previewImage: null,
+      },
+    ];
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_xy_scatter?.execute;
+    if (!plot) throw new Error("plot_xy_scatter has no execute");
+    const output = await plot(
+      { analysisId: "plot-ms", mark: "line" },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(updateAnalysisForReport).not.toHaveBeenCalled();
+    expect(createAnalysisForReport).not.toHaveBeenCalled();
+    expect(output).toMatchObject({
+      status: "error",
+      message: expect.stringContaining("not a worksheet scatter"),
+    });
   });
 });

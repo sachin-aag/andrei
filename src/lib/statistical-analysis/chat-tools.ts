@@ -3,6 +3,10 @@ import { z } from "zod";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { sanitizePromptMetadata } from "@/lib/ai/chat/prompt-metadata";
 import {
+  uniqueChartCitations,
+  type ChartCitation,
+} from "@/lib/charts/chart-spec";
+import {
   CHAT_EXTRACT_GOOGLE_MODEL_ID,
   resolveChatExtractLanguageModel,
 } from "@/lib/ai/chat/model";
@@ -31,6 +35,7 @@ import type { AuditActorSnapshot } from "@/lib/audit";
 import {
   createAnalysisForReport,
   getOrCreateReportAnalytics,
+  updateAnalysisForReport,
   updateReportAnalytics,
   type UpdateReportAnalyticsResult,
 } from "./store";
@@ -41,6 +46,7 @@ import {
   MAX_WORKSHEET_ROWS,
   WARN_VALUES_FOR_SIXPACK,
   isAnovaAnalysis,
+  isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -170,6 +176,7 @@ function analysisIndexItem(
       stale: item.stale,
       xColumnId: item.config.xColumnId,
       yColumnId: item.config.yColumnId,
+      legendColumnId: item.config.legendColumnId ?? null,
       n: item.results.n,
       pearsonR: item.results.pearsonR,
     };
@@ -217,24 +224,88 @@ function rememberPageText(bucket: string[], text: string | null | undefined) {
   if (trimmed) bucket.push(trimmed);
 }
 
-function rememberScanResult(bucket: string[], result: ScanAttachmentsResult) {
+function rememberCitation(
+  bucket: ChartCitation[],
+  citation: { attachmentId?: string; page?: number }
+) {
+  const attachmentId = citation.attachmentId?.trim() ?? "";
+  const page = citation.page;
+  if (!attachmentId || page == null || !Number.isInteger(page) || page < 1) {
+    return;
+  }
+  bucket.push({ attachmentId, page });
+}
+
+function rememberScanResult(
+  textBucket: string[],
+  citationBucket: ChartCitation[],
+  result: ScanAttachmentsResult
+) {
   if (result.status !== "ok") return;
   for (const file of result.files) {
     for (const page of file.pages) {
-      rememberPageText(bucket, page.transcript);
+      rememberPageText(textBucket, page.transcript);
+      rememberCitation(citationBucket, {
+        attachmentId: file.attachmentId,
+        page: page.pageNumber,
+      });
     }
   }
 }
 
-function rememberReadPageResult(bucket: string[], result: unknown) {
+function rememberReadPageResult(
+  textBucket: string[],
+  citationBucket: ChartCitation[],
+  result: unknown
+) {
   if (!result || typeof result !== "object") return;
   const record = result as {
     status?: string;
-    page?: { transcript?: string; visualInterpretation?: string };
+    page?: {
+      attachmentId?: string;
+      pageNumber?: number;
+      transcript?: string;
+      visualInterpretation?: string;
+    };
   };
   if (record.status !== "found" || !record.page) return;
-  rememberPageText(bucket, record.page.transcript);
-  rememberPageText(bucket, record.page.visualInterpretation);
+  rememberPageText(textBucket, record.page.transcript);
+  rememberPageText(textBucket, record.page.visualInterpretation);
+  rememberCitation(citationBucket, {
+    attachmentId: record.page.attachmentId,
+    page: record.page.pageNumber,
+  });
+}
+
+function rememberExtractResult(citationBucket: ChartCitation[], result: unknown) {
+  if (!result || typeof result !== "object") return;
+  const record = result as { attachmentId?: string; pages?: unknown };
+  if (typeof record.attachmentId !== "string") return;
+  const pages = Array.isArray(record.pages) ? record.pages : [];
+  for (const page of pages) {
+    if (typeof page === "number") {
+      rememberCitation(citationBucket, {
+        attachmentId: record.attachmentId,
+        page,
+      });
+    }
+  }
+}
+
+function citationsForWrite(
+  input: WriteColumnInput,
+  remembered: readonly ChartCitation[]
+): ChartCitation[] {
+  const attachmentId = input.sourceAttachmentId?.trim();
+  const pages = (input.sourcePages ?? []).filter(
+    (page) => Number.isInteger(page) && page >= 1
+  );
+  if (attachmentId && pages.length > 0) {
+    return uniqueChartCitations(
+      pages.map((page) => ({ attachmentId, page }))
+    );
+  }
+  return uniqueChartCitations(remembered);
 }
 
 function withRememberedExecute<T>(
@@ -395,7 +466,8 @@ function resolveWriteColumnIndex(
 
 function applyWriteColumnEntries(
   worksheet: WorksheetData,
-  entries: readonly WriteColumnEntry[]
+  entries: readonly WriteColumnEntry[],
+  citations?: ChartCitation[]
 ):
   | { ok: true; worksheet: WorksheetData; indices: number[] }
   | { ok: false; status: "not_found"; columnId?: string; name?: string } {
@@ -407,7 +479,13 @@ function applyWriteColumnEntries(
     const resolved = resolveWriteColumnIndex(next, entry, occupied);
     if ("status" in resolved) return { ok: false, ...resolved };
     const cells = entry.values.map((value) => String(value));
-    next = replaceColumnValues(next, resolved.index, cells, entry.name);
+    next = replaceColumnValues(
+      next,
+      resolved.index,
+      cells,
+      entry.name,
+      citations
+    );
     const column = next.columns[resolved.index];
     if (
       column &&
@@ -549,6 +627,23 @@ export function buildAnalyticsChatTools(opts: {
     }
     return result;
   }
+
+  async function updateAnalysisAndRecord(analysisId: string, input: unknown) {
+    const result = await updateAnalysisForReport(reportId, analysisId, input);
+    if (result.ok && actor) {
+      await tryRecordAnalyticsChange({
+        reportId,
+        analytics: result.analytics,
+        actor,
+        action: "analysis_updated",
+        summary: `Updated ${result.analysis.title}`,
+        entityId: result.analysis.id,
+        historySource: "agent_turn",
+        historySummary: `Updated ${result.analysis.title}`,
+      });
+    }
+    return result;
+  }
   const pinnedAttachmentIds = Array.from(
     new Set((opts.pinnedAttachmentIds ?? []).filter((id) => id.trim().length > 0))
   );
@@ -568,10 +663,11 @@ export function buildAnalyticsChatTools(opts: {
   });
 
   const sourceTexts: string[] = [];
+  const sourceCitations: ChartCitation[] = [];
   if (documentTools.read_document_page) {
     documentTools.read_document_page = withRememberedExecute(
       documentTools.read_document_page,
-      (result) => rememberReadPageResult(sourceTexts, result)
+      (result) => rememberReadPageResult(sourceTexts, sourceCitations, result)
     );
   }
 
@@ -648,7 +744,7 @@ export function buildAnalyticsChatTools(opts: {
           query,
           queries,
         });
-        rememberScanResult(sourceTexts, result);
+        rememberScanResult(sourceTexts, sourceCitations, result);
         return result;
       },
     }),
@@ -964,10 +1060,17 @@ export function buildAnalyticsChatTools(opts: {
     }),
   };
 
+  if (statsTools.extract_numeric_series) {
+    statsTools.extract_numeric_series = withRememberedExecute(
+      statsTools.extract_numeric_series,
+      (result) => rememberExtractResult(sourceCitations, result)
+    );
+  }
+
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into worksheet columns (replaces those columns). Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for two numeric columns, or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+        "Write values into worksheet columns (replaces those columns). Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so worksheet plots cite the file. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
       inputSchema: writeColumnInputSchema,
       execute: async (input) => {
         let entries = writeColumnEntriesFromInput(input);
@@ -995,7 +1098,11 @@ export function buildAnalyticsChatTools(opts: {
           analytics.worksheet,
           focusedSheetId
         );
-        const applied = applyWriteColumnEntries(worksheet, entries);
+        const applied = applyWriteColumnEntries(
+          worksheet,
+          entries,
+          citationsForWrite(input, sourceCitations)
+        );
         if (!applied.ok) {
           return {
             status: "not_found" as const,
@@ -1207,12 +1314,65 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.plot_xy_scatter = tool({
       description:
-        "Plot two numeric worksheet columns as an XY scatter (Y vs X) and save it on the Results tab. Both columns must be numeric — a serial-number / factor column cannot be X. One series, one color; cannot overlay or color by a third grouping column. Use when they asked to plot A vs B, Y against X, a correlation plot, or a scatter of two columns. Output variable is Y. Optional rowStart/rowEnd or rows limits the paired rows. Reports Pearson r; does not fit a regression line. Tell them to open Results.",
+        "Plot or update a worksheet chart on the Results tab. Create: yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X — a serial-number / factor / label column cannot be X. Optional legendColumnId color-codes points by that grouping column (labels, lots, factors, and serials are OK for legend; it cannot be X or Y and must be on the same sheet). Optional mark is the chart type (scatter default, line, line_markers, area, column). Optional showSpecLimits true/false draws Y-column LSL/USL lines (default off on create). Optional xMin/xMax/yMin/yMax set the visible axis window (omit or null = auto). Optional xAxisLabel/yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current plot. Cannot edit sixpack, ANOVA, or attachment measurement scatter. Use when they asked to plot A vs B, change Y/X, switch chart type, zoom axes, or show/hide spec lines. Output variable is Y. Optional rowStart/rowEnd or rows limits the rows. Reports overall Pearson r; does not fit a regression line. Tell them to open Results.",
       inputSchema: xyScatterBodySchema,
       execute: async (input) => {
+        const { analysisId, ...patch } = input;
+        if (analysisId) {
+          const analytics = await getOrCreateReportAnalytics(reportId);
+          const existing = analytics.analyses.find((item) => item.id === analysisId);
+          if (!existing) {
+            return {
+              status: "error" as const,
+              message:
+                "No Results plot with that id. Use an id from the Analyses list or a tagged @ plot.",
+            };
+          }
+          if (!isXyScatterAnalysis(existing)) {
+            return {
+              status: "error" as const,
+              message:
+                "That Results row is not a worksheet scatter. plot_xy_scatter can only edit worksheet plots (kind=xy_scatter), not sixpack, ANOVA, or attachment measurement scatter.",
+            };
+          }
+          const result = await updateAnalysisAndRecord(analysisId, patch);
+          if (!result.ok) {
+            return {
+              status: "error" as const,
+              message: result.error,
+            };
+          }
+          if (!isXyScatterAnalysis(result.analysis)) {
+            return {
+              status: "error" as const,
+              message: "Saved analysis was not a worksheet scatter.",
+            };
+          }
+          return {
+            status: "ok" as const,
+            updated: true,
+            analysisId: result.analysis.id,
+            title: result.analysis.title,
+            xColumnId: result.analysis.config.xColumnId,
+            xColumnName: result.analysis.config.xColumnName,
+            yColumnId: result.analysis.config.yColumnId,
+            yColumnName: result.analysis.config.yColumnName,
+            legendColumnId: result.analysis.config.legendColumnId ?? null,
+            legendColumnName: result.analysis.config.legendColumnName ?? null,
+            mark: result.analysis.config.mark ?? "scatter",
+            showSpecLimits: result.analysis.config.showSpecLimits === true,
+            observationX: isObservationXyScatter(result.analysis.config),
+            n: result.analysis.results.n,
+            skipped: result.analysis.results.skipped,
+            pearsonR: result.analysis.results.pearsonR,
+            analysisCount: result.analytics.analyses.length,
+            stale: result.analysis.stale,
+            openResultsTab: true,
+          };
+        }
         const result = await createAnalysisAndRecord({
           kind: XY_SCATTER,
-          ...input,
+          ...patch,
         });
         if (!result.ok) {
           return {
@@ -1223,17 +1383,23 @@ export function buildAnalyticsChatTools(opts: {
         if (!isXyScatterAnalysis(result.analysis)) {
           return {
             status: "error" as const,
-            message: "Saved analysis was not an XY scatter.",
+            message: "Saved analysis was not a worksheet scatter.",
           };
         }
         return {
           status: "ok" as const,
+          updated: false,
           analysisId: result.analysis.id,
           title: result.analysis.title,
           xColumnId: result.analysis.config.xColumnId,
           xColumnName: result.analysis.config.xColumnName,
           yColumnId: result.analysis.config.yColumnId,
           yColumnName: result.analysis.config.yColumnName,
+          legendColumnId: result.analysis.config.legendColumnId ?? null,
+          legendColumnName: result.analysis.config.legendColumnName ?? null,
+          mark: result.analysis.config.mark ?? "scatter",
+          showSpecLimits: result.analysis.config.showSpecLimits === true,
+          observationX: isObservationXyScatter(result.analysis.config),
           n: result.analysis.results.n,
           skipped: result.analysis.results.skipped,
           pearsonR: result.analysis.results.pearsonR,

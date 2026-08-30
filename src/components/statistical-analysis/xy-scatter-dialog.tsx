@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -23,19 +25,41 @@ import {
   formatRowSelection,
   normalizeRowSelection,
 } from "@/lib/statistical-analysis/row-selection";
-import { suggestXColumn } from "@/lib/statistical-analysis/xy-scatter";
+import {
+  OBSERVATION_X_LABEL,
+  xyScatterFallbackTitle,
+} from "@/lib/statistical-analysis/types";
+import {
+  CHART_MARKS,
+  CHART_MARK_LABELS,
+  parseChartMark,
+  type ChartMark,
+} from "@/lib/charts/chart-marks";
 import {
   dataSheets,
   findColumn,
 } from "@/lib/statistical-analysis/worksheet";
 import type { WorksheetData } from "@/lib/statistical-analysis/types";
 
+/** Radix Select cannot use an empty string; maps to a null X column (1D). */
+const OBSERVATION_X_VALUE = "__observation__";
+const NONE_LEGEND_VALUE = "__none__";
+
 export type XyScatterDialogValues = {
-  xColumnId: string;
+  xColumnId: string | null;
   yColumnId: string;
+  legendColumnId: string | null;
+  mark: ChartMark;
+  showSpecLimits: boolean;
   title: string;
   rowStart: number | null;
   rowEnd: number | null;
+  xMin: number | null;
+  xMax: number | null;
+  yMin: number | null;
+  yMax: number | null;
+  xAxisLabel: string | null;
+  yAxisLabel: string | null;
 };
 
 function parseOptionalRow(raw: string): number | null {
@@ -46,6 +70,39 @@ function parseOptionalRow(raw: string): number | null {
   return Number.isInteger(value) && value >= 1 ? value : null;
 }
 
+function parseOptionalFinite(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function optionalFiniteRawIsValid(raw: string): boolean {
+  const text = raw.trim();
+  if (text === "") return true;
+  return Number.isFinite(Number(text));
+}
+
+function boundRaw(value: number | null | undefined): string {
+  return value == null ? "" : String(value);
+}
+
+function toSelectX(xColumnId: string | null | undefined): string {
+  return xColumnId ? xColumnId : OBSERVATION_X_VALUE;
+}
+
+function fromSelectX(value: string): string | null {
+  return value === OBSERVATION_X_VALUE ? null : value;
+}
+
+function toSelectLegend(legendColumnId: string | null | undefined): string {
+  return legendColumnId ? legendColumnId : NONE_LEGEND_VALUE;
+}
+
+function fromSelectLegend(value: string): string | null {
+  return value === NONE_LEGEND_VALUE ? null : value;
+}
+
 const fieldLabelClass =
   "normal-case tracking-normal text-sm font-medium text-[var(--foreground)]";
 
@@ -54,9 +111,18 @@ export function XyScatterDialog({
   worksheet,
   defaultYColumnId,
   defaultXColumnId,
+  defaultLegendColumnId,
+  defaultMark = "scatter",
+  defaultShowSpecLimits = false,
   defaultRowStart = null,
   defaultRowEnd = null,
   defaultTitle = "",
+  defaultXMin = null,
+  defaultXMax = null,
+  defaultYMin = null,
+  defaultYMax = null,
+  defaultXAxisLabel = "",
+  defaultYAxisLabel = "",
   editMode = false,
   submitting,
   error,
@@ -66,10 +132,19 @@ export function XyScatterDialog({
   open: boolean;
   worksheet: WorksheetData;
   defaultYColumnId: string;
-  defaultXColumnId?: string;
+  defaultXColumnId?: string | null;
+  defaultLegendColumnId?: string | null;
+  defaultMark?: ChartMark;
+  defaultShowSpecLimits?: boolean;
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
   defaultTitle?: string;
+  defaultXMin?: number | null;
+  defaultXMax?: number | null;
+  defaultYMin?: number | null;
+  defaultYMax?: number | null;
+  defaultXAxisLabel?: string | null;
+  defaultYAxisLabel?: string | null;
   editMode?: boolean;
   submitting: boolean;
   error: string | null;
@@ -79,9 +154,14 @@ export function XyScatterDialog({
   const sheets = dataSheets(worksheet);
   const fallbackY = defaultYColumnId || worksheet.columns[0]?.id || "";
   const [yColumnId, setYColumnId] = useState(fallbackY);
-  const [xColumnId, setXColumnId] = useState(
-    () => defaultXColumnId ?? suggestXColumn(worksheet, fallbackY) ?? ""
+  const [xColumnId, setXColumnId] = useState<string | null>(
+    () => defaultXColumnId ?? null
   );
+  const [legendColumnId, setLegendColumnId] = useState<string | null>(
+    () => defaultLegendColumnId ?? null
+  );
+  const [mark, setMark] = useState<ChartMark>(() => parseChartMark(defaultMark));
+  const [showSpecLimits, setShowSpecLimits] = useState(defaultShowSpecLimits);
   const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(
     defaultRowStart != null ? String(defaultRowStart) : ""
@@ -89,48 +169,81 @@ export function XyScatterDialog({
   const [rowEnd, setRowEnd] = useState(
     defaultRowEnd != null ? String(defaultRowEnd) : ""
   );
+  const [xMin, setXMin] = useState(boundRaw(defaultXMin));
+  const [xMax, setXMax] = useState(boundRaw(defaultXMax));
+  const [yMin, setYMin] = useState(boundRaw(defaultYMin));
+  const [yMax, setYMax] = useState(boundRaw(defaultYMax));
+  const [xAxisLabel, setXAxisLabel] = useState(defaultXAxisLabel ?? "");
+  const [yAxisLabel, setYAxisLabel] = useState(defaultYAxisLabel ?? "");
 
   const yColumn = findColumn(worksheet, yColumnId) ?? worksheet.columns[0];
-  const xColumn = findColumn(worksheet, xColumnId);
+  const xColumn = xColumnId ? findColumn(worksheet, xColumnId) : null;
+  const legendColumn = legendColumnId
+    ? findColumn(worksheet, legendColumnId)
+    : null;
   const rowSelection = normalizeRowSelection({
     rowStart: parseOptionalRow(rowStart),
     rowEnd: parseOptionalRow(rowEnd),
   });
   const rowLabel = formatRowSelection(rowSelection);
-  const placeholderTitle =
-    yColumn && xColumn
-      ? rowLabel
-        ? `${yColumn.name} vs ${xColumn.name} (${rowLabel})`
-        : `${yColumn.name} vs ${xColumn.name}`
-      : "Analysis title";
+  const placeholderTitle = yColumn
+    ? xyScatterFallbackTitle(
+        yColumn.name,
+        xColumn?.name ?? null,
+        rowLabel,
+        legendColumn?.name ?? null
+      )
+    : "Analysis title";
+  const xMinValue = parseOptionalFinite(xMin);
+  const xMaxValue = parseOptionalFinite(xMax);
+  const yMinValue = parseOptionalFinite(yMin);
+  const yMaxValue = parseOptionalFinite(yMax);
+  const boundsValid =
+    optionalFiniteRawIsValid(xMin) &&
+    optionalFiniteRawIsValid(xMax) &&
+    optionalFiniteRawIsValid(yMin) &&
+    optionalFiniteRawIsValid(yMax) &&
+    (xMinValue == null || xMaxValue == null || xMinValue < xMaxValue) &&
+    (yMinValue == null || yMaxValue == null || yMinValue < yMaxValue);
   const canSubmit =
-    Boolean(yColumnId) && Boolean(xColumnId) && yColumnId !== xColumnId;
+    Boolean(yColumnId) &&
+    boundsValid &&
+    (xColumnId == null || yColumnId !== xColumnId) &&
+    (legendColumnId == null ||
+      (legendColumnId !== yColumnId && legendColumnId !== xColumnId));
+  const indexMode = xColumnId == null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="xy-scatter-dialog" className="max-w-md">
+      <DialogContent
+        data-testid="xy-scatter-dialog"
+        className="max-h-[min(92vh,44rem)] max-w-md overflow-y-auto"
+      >
         <DialogHeader>
-          <DialogTitle>Scatter</DialogTitle>
+          <DialogTitle>Plot measurements</DialogTitle>
           <DialogDescription>
-            Plot two numeric worksheet columns. Y is the output (vertical). X
-            is the other variable (horizontal). Both must be numbers — a
-            serial-number or factor column cannot be X. One series, one
-            color; this is not a grouped overlay. Pairs skip rows where
-            either cell is not a number.
+            Y is required. Leave X as Observation for values versus index
+            (1, 2, 3…), or pick a numeric X. Chart type is the line you see —
+            scatter, line, area, or column. A legend colors dots, lines, or
+            stacked columns. A serial or factor column cannot be X — use Legend
+            to group by that column.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
             <Label htmlFor="xy-y" className={fieldLabelClass}>
-              Y (output)
+              Y (values)
             </Label>
             <Select
               value={yColumnId}
               onValueChange={(value) => {
                 setYColumnId(value);
                 if (value === xColumnId) {
-                  setXColumnId(suggestXColumn(worksheet, value) ?? "");
+                  setXColumnId(null);
+                }
+                if (value === legendColumnId) {
+                  setLegendColumnId(null);
                 }
               }}
             >
@@ -149,17 +262,43 @@ export function XyScatterDialog({
                 )}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2 pt-0.5">
+              <Checkbox
+                id="xy-show-spec-limits"
+                data-testid="xy-show-spec-limits"
+                checked={showSpecLimits}
+                onCheckedChange={(next) => setShowSpecLimits(next === true)}
+              />
+              <Label
+                htmlFor="xy-show-spec-limits"
+                className={`${fieldLabelClass} cursor-pointer font-normal`}
+              >
+                Show LSL, USL values
+              </Label>
+            </div>
           </div>
 
           <div className="grid gap-1.5">
             <Label htmlFor="xy-x" className={fieldLabelClass}>
-              X
+              X (optional)
             </Label>
-            <Select value={xColumnId} onValueChange={setXColumnId}>
+            <Select
+              value={toSelectX(xColumnId)}
+              onValueChange={(value) => {
+                const next = fromSelectX(value);
+                setXColumnId(next);
+                if (next && next === legendColumnId) {
+                  setLegendColumnId(null);
+                }
+              }}
+            >
               <SelectTrigger id="xy-x" data-testid="xy-x">
-                <SelectValue placeholder="Select X" />
+                <SelectValue placeholder={OBSERVATION_X_LABEL} />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={OBSERVATION_X_VALUE}>
+                  {OBSERVATION_X_LABEL} (1, 2, 3…)
+                </SelectItem>
                 {sheets.flatMap((sheet) =>
                   sheet.columns
                     .filter((column) => column.id !== yColumnId)
@@ -173,6 +312,69 @@ export function XyScatterDialog({
                 )}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="xy-legend" className={fieldLabelClass}>
+              Legend (optional)
+            </Label>
+            <Select
+              value={toSelectLegend(legendColumnId)}
+              onValueChange={(value) => setLegendColumnId(fromSelectLegend(value))}
+            >
+              <SelectTrigger id="xy-legend" data-testid="xy-legend">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE_LEGEND_VALUE}>None</SelectItem>
+                {sheets.flatMap((sheet) =>
+                  sheet.columns
+                    .filter(
+                      (column) =>
+                        column.id !== yColumnId && column.id !== xColumnId
+                    )
+                    .map((column) => (
+                      <SelectItem key={column.id} value={column.id}>
+                        {sheets.length > 1
+                          ? `${sheet.name}: ${column.name}`
+                          : column.name}
+                      </SelectItem>
+                    ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="xy-mark" className={fieldLabelClass}>
+              Chart type
+            </Label>
+            <Select
+              value={mark}
+              onValueChange={(value) => setMark(parseChartMark(value))}
+            >
+              <SelectTrigger id="xy-mark" data-testid="xy-mark">
+                <SelectValue placeholder="Scatter" />
+              </SelectTrigger>
+              <SelectContent>
+                {CHART_MARKS.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {CHART_MARK_LABELS[item]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {legendColumnId || mark === "column" ? (
+              <p className="-mb-1 text-xs text-[var(--muted-foreground)]">
+                {legendColumnId
+                  ? mark === "column"
+                    ? "Legend stacks a column for each group at the same X."
+                    : mark === "scatter"
+                      ? "Legend uses a different color for each group’s dots."
+                      : "Legend uses a different color for each group’s line."
+                  : "One column per X. Add a legend to stack groups."}
+              </p>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -205,7 +407,7 @@ export function XyScatterDialog({
           </div>
           <p className="-mt-2 text-xs text-[var(--muted-foreground)]">
             Worksheet rows are numbered from 1. Leave both blank to use every
-            filled pair of cells.
+            filled {indexMode ? "Y cell" : "pair of cells"}.
           </p>
 
           <div className="grid gap-1.5">
@@ -219,6 +421,99 @@ export function XyScatterDialog({
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
+
+          <details
+            data-testid="xy-advanced"
+            className="group rounded-md border border-[var(--border)]"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-medium text-[var(--foreground)] marker:content-none [&::-webkit-details-marker]:hidden">
+              Advanced
+              <ChevronDown className="h-4 w-4 shrink-0 text-[var(--muted-foreground)] transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="grid gap-3 border-t border-[var(--border)] px-3 py-3">
+              <p className="-mt-1 text-xs text-[var(--muted-foreground)]">
+                Leave a limit blank to auto-fit that end from the data.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="xy-xmin" className={fieldLabelClass}>
+                    Min X
+                  </Label>
+                  <Input
+                    id="xy-xmin"
+                    data-testid="xy-xmin"
+                    inputMode="decimal"
+                    placeholder="Auto"
+                    value={xMin}
+                    onChange={(event) => setXMin(event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="xy-xmax" className={fieldLabelClass}>
+                    Max X
+                  </Label>
+                  <Input
+                    id="xy-xmax"
+                    data-testid="xy-xmax"
+                    inputMode="decimal"
+                    placeholder="Auto"
+                    value={xMax}
+                    onChange={(event) => setXMax(event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="xy-ymin" className={fieldLabelClass}>
+                    Min Y
+                  </Label>
+                  <Input
+                    id="xy-ymin"
+                    data-testid="xy-ymin"
+                    inputMode="decimal"
+                    placeholder="Auto"
+                    value={yMin}
+                    onChange={(event) => setYMin(event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="xy-ymax" className={fieldLabelClass}>
+                    Max Y
+                  </Label>
+                  <Input
+                    id="xy-ymax"
+                    data-testid="xy-ymax"
+                    inputMode="decimal"
+                    placeholder="Auto"
+                    value={yMax}
+                    onChange={(event) => setYMax(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="xy-x-label" className={fieldLabelClass}>
+                  X axis title
+                </Label>
+                <Input
+                  id="xy-x-label"
+                  data-testid="xy-x-label"
+                  placeholder={xColumn?.name ?? OBSERVATION_X_LABEL}
+                  value={xAxisLabel}
+                  onChange={(event) => setXAxisLabel(event.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="xy-y-label" className={fieldLabelClass}>
+                  Y axis title
+                </Label>
+                <Input
+                  id="xy-y-label"
+                  data-testid="xy-y-label"
+                  placeholder={yColumn?.name ?? "Y"}
+                  value={yAxisLabel}
+                  onChange={(event) => setYAxisLabel(event.target.value)}
+                />
+              </div>
+            </div>
+          </details>
 
           {error ? (
             <p className="text-sm text-[var(--destructive)]" role="alert">
@@ -238,14 +533,24 @@ export function XyScatterDialog({
           </Button>
           <Button
             type="button"
+            data-testid="xy-scatter-ok"
             disabled={submitting || !canSubmit}
             onClick={() =>
               onSubmit({
                 xColumnId,
                 yColumnId,
+                legendColumnId,
+                mark,
+                showSpecLimits,
                 title: title.trim(),
                 rowStart: parseOptionalRow(rowStart),
                 rowEnd: parseOptionalRow(rowEnd),
+                xMin: xMinValue,
+                xMax: xMaxValue,
+                yMin: yMinValue,
+                yMax: yMaxValue,
+                xAxisLabel: xAxisLabel.trim() || null,
+                yAxisLabel: yAxisLabel.trim() || null,
               })
             }
           >
