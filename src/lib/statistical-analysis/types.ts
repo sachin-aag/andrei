@@ -282,7 +282,7 @@ type AnalysisSummaryBase = {
   sourceHash: string;
   stale: boolean;
   createdAt: string;
-  /** Captured from the Analytics UI for document insert; null until opened (or after recompute). */
+  /** Captured from the Analytics UI for document insert; null until opened (or after recompute/edit). */
   previewImage: AnalysisPreviewImage | null;
 };
 

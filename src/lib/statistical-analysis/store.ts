@@ -83,6 +83,7 @@ import {
   normalizeRowSelection,
 } from "./row-selection";
 import {
+  analysisPreviewMatchKey,
   asPreviewImage,
 } from "./preview-image";
 
@@ -1207,6 +1208,9 @@ export async function updateAnalysisForReport(
   const existingTitles = analytics.analyses.map((item) => item.title);
   const otherTitles = existingTitles.filter((title) => title !== existing.title);
 
+  // Same as recompute: drop the captured PNG so Download / insert / export
+  // cannot keep serving the pre-edit figure.
+
   if (isAnovaAnalysis(existing)) {
     const parsed = oneWayAnovaBodySchema.safeParse(input);
     if (!parsed.success) {
@@ -1272,6 +1276,7 @@ export async function updateAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashAnovaSource(response, factor, rowSelection),
       })
       .where(
@@ -1314,6 +1319,7 @@ export async function updateAnalysisForReport(
         title: scatter.config.title,
         config: scatter.config,
         results: scatter.results,
+        previewImage: null,
         sourceHash: hashScatterSource(scatter.config.query, scatter.results),
       })
       .where(
@@ -1379,6 +1385,7 @@ export async function updateAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashXyScatterSource(
           resolved.xColumn,
           resolved.yColumn,
@@ -1439,6 +1446,7 @@ export async function updateAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashBoxplotSource(
           resolved.yColumn,
           resolved.categoryColumns,
@@ -1493,6 +1501,7 @@ export async function updateAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashColumnSource(column, rowSelection),
       })
       .where(
@@ -1538,10 +1547,11 @@ export async function deleteAnalysisForReport(
 export async function saveAnalysisPreviewForReport(
   reportId: string,
   analysisId: string,
-  previewImage: AnalysisPreviewImage
+  previewImage: AnalysisPreviewImage,
+  matchKey?: string
 ): Promise<
   | { ok: true; analytics: ReportAnalyticsView }
-  | { ok: false; status: 400 | 404; error: string }
+  | { ok: false; status: 400 | 404 | 409; error: string }
 > {
   const parsed = asPreviewImage(previewImage);
   if (!parsed) {
@@ -1562,6 +1572,16 @@ export async function saveAnalysisPreviewForReport(
       ok: false,
       status: 400,
       error: "This analysis kind cannot store a preview image.",
+    };
+  }
+  if (
+    typeof matchKey === "string" &&
+    matchKey !== analysisPreviewMatchKey(existing)
+  ) {
+    return {
+      ok: false,
+      status: 409,
+      error: "Plot changed before this preview could be saved.",
     };
   }
 
