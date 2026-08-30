@@ -1,7 +1,7 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import { resolveCustomerId } from "@/lib/customers/resolve";
 
-/** One row in the Convergent report table of contents (export-template hierarchy). */
+/** One row in the Convergent report table of contents (Word-recipe hierarchy). */
 export type TableOfContentsEntry = {
   label: string;
   sectionKey?: SectionType;
@@ -9,17 +9,42 @@ export type TableOfContentsEntry = {
 };
 
 /**
- * Software DV headings from `templates/convergent-design-verification-report-template.docx`.
+ * Software DV headings from the Word recipe / export template.
+ * Methods and Results nest the same subsection labels as mechanical DV even
+ * though the editor keeps those children in one section (except Test Equipment).
  * Revision History is template-static (no editor section).
  */
 const CONVERGENT_SOFTWARE_DV_TOC: TableOfContentsEntry[] = [
   { label: "Purpose", sectionKey: "purpose" },
   { label: "Scope", sectionKey: "scope" },
   { label: "Testers/Dates", sectionKey: "testers_dates" },
-  { label: "Methods of Measurement", sectionKey: "methods_of_measurement" },
-  { label: "Test Equipment", sectionKey: "test_equipment" },
+  {
+    label: "Methods of Measurement",
+    children: [
+      { label: "Executed Protocol", sectionKey: "methods_of_measurement" },
+      {
+        label: "Protocol Modifications",
+        sectionKey: "methods_of_measurement",
+      },
+      { label: "Units Under Test", sectionKey: "methods_of_measurement" },
+      { label: "Test Equipment", sectionKey: "test_equipment" },
+    ],
+  },
   { label: "Deviations", sectionKey: "deviations" },
-  { label: "Results and Discussion", sectionKey: "results_and_discussions" },
+  {
+    label: "Results and Discussion",
+    children: [
+      {
+        label: "Data Collection Forms",
+        sectionKey: "results_and_discussions",
+      },
+      {
+        label: "Requirements Verified",
+        sectionKey: "results_and_discussions",
+      },
+      { label: "Observations", sectionKey: "results_and_discussions" },
+    ],
+  },
   {
     label: "Problem or Failure Resolution",
     sectionKey: "problems_resolution",
