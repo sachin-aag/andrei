@@ -193,6 +193,7 @@ describe("SixpackView limit labels", () => {
     expect(overall.textContent?.includes("\n")).toBe(false);
     expect(overall).toHaveClass("whitespace-nowrap");
     expect(within).toHaveClass("whitespace-nowrap");
+    expect(overall.parentElement).toHaveClass("whitespace-nowrap");
     expect(screen.getByTestId("sixpack-mean")).toHaveTextContent(
       analysis.results.mean.toFixed(3)
     );

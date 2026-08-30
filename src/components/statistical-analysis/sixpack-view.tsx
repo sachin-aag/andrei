@@ -27,6 +27,7 @@ import {
   layoutHorizontalSpecLabels,
   layoutSpecLimitLabels,
   type ControlLimitInput,
+  type HorizontalLimitEdge,
   type SpecLimitInput,
 } from "@/lib/statistical-analysis/spec-limit-labels";
 import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
@@ -264,7 +265,7 @@ function ControlChart({
       ]
     : [];
   const controlLabels = layoutControlLimitLabels(controlLimits, PLOT);
-  const specEdge = showControlLimits ? "left" : "right";
+  const specEdge: HorizontalLimitEdge = showControlLimits ? "left" : "right";
   const specLabels = layoutHorizontalSpecLabels(
     [
       ...(lsl != null
@@ -552,8 +553,8 @@ function StatRow({
   testId?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 py-0.5">
-      <dt className="min-w-0 truncate text-[11px] text-[var(--muted-foreground)]">
+    <div className="flex items-baseline justify-between gap-2 whitespace-nowrap py-0.5">
+      <dt className="pr-1 text-[11px] text-[var(--muted-foreground)]">
         {label}
       </dt>
       <dd
@@ -571,7 +572,7 @@ function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
   return (
     <div className="grid h-full grid-cols-2 gap-x-4 gap-y-2 overflow-auto px-1 text-xs">
       <dl>
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+        <p className="mb-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
           Process data
         </p>
         <StatRow
@@ -604,7 +605,7 @@ function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
       </dl>
       <div>
         <dl>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+          <p className="mb-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             Potential (within)
           </p>
           <StatRow label="Cp" value={formatCapabilityStat(cap.cp)} />
@@ -614,7 +615,7 @@ function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
           <StatRow label="PPM (exp.)" value={formatPpm(cap.ppmWithin)} />
         </dl>
         <dl className="mt-2">
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+          <p className="mb-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             Overall
           </p>
           <StatRow label="Pp" value={formatCapabilityStat(cap.pp)} />

@@ -13,6 +13,7 @@ import {
   layoutControlLimitLabels,
   layoutHorizontalSpecLabels,
   layoutSpecLimitLabels,
+  type HorizontalLimitEdge,
 } from "./spec-limit-labels";
 import type {
   CapabilitySixpackResult,
@@ -274,7 +275,7 @@ function drawControlChart(
         plot
       )
     : [];
-  const specEdge = showControlLimits ? "left" : "right";
+  const specEdge: HorizontalLimitEdge = showControlLimits ? "left" : "right";
   const specLabels = layoutHorizontalSpecLabels(
     [
       ...(spec?.lsl != null
