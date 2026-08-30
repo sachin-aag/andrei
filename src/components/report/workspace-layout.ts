@@ -14,8 +14,12 @@ import type { WorkspaceChrome } from "./workspace-chrome";
 
 export const COLLAPSED_RAIL_PX = 48;
 
-/** Review margin beside the document canvas. */
-export const REVIEW_GUTTER_MIN_PX = 168;
+/**
+ * Review margin beside the document canvas. Floor is a middle ground: wide
+ * enough for compact Apply / Dismiss on one row, still well below the old
+ * 360px ceiling that stole sheet space on 13" screens.
+ */
+export const REVIEW_GUTTER_MIN_PX = 208;
 export const REVIEW_GUTTER_MAX_PX = 280;
 
 /**
@@ -35,7 +39,7 @@ export const REVIEW_GUTTER_CONTAINER_MIN_PX = 480;
  * `REVIEW_GUTTER_MIN_PX` before the sheet itself gives way.
  */
 export const REVIEW_GUTTER_GRID_COLS =
-  "@[480px]:grid-cols-[minmax(0,var(--doc-col))_minmax(168px,1fr)]" as const;
+  "@[480px]:grid-cols-[minmax(0,var(--doc-col))_minmax(208px,1fr)]" as const;
 
 export const REVIEW_GUTTER_ASIDE_CLASS =
   "relative hidden min-w-0 @[480px]:block" as const;

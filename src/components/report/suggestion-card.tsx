@@ -39,9 +39,6 @@ import {
   suggestionApplyModeFor,
 } from "@/lib/document-types";
 import { formatChartProvenance } from "@/lib/charts/chart-spec";
-import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
-import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
-import { inlineMarkdownToTextNodes } from "@/lib/tiptap/markdown-to-doc";
 import {
   afterPaint,
   delay,
@@ -76,12 +73,10 @@ import {
   validateSuggestionLocate,
   type SuggestionValidation,
 } from "@/lib/suggestions/validate-suggestion";
-import {
-  summarizeTableOperation,
-  tableOperationDetailLines,
-} from "@/lib/suggestions/table-operation";
+import { summarizeTableOperation } from "@/lib/suggestions/table-operation";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
+
 type CardPhase =
   | "steady"
   | "applying"
@@ -104,11 +99,17 @@ type FrozenCardBase = {
   queueTotal: number;
 };
 
-type FrozenCard = FrozenCardBase &
+export type FrozenCard = FrozenCardBase &
   (
-    | { kind: "fix"; payload: ParsedAiFixPayload; normalizedInsert: string }
+    | { kind: "fix"; payload: ParsedAiFixPayload }
     | { kind: "redraft"; redraft: ParsedAiRedraftPayload }
   );
+
+/** Compact enough that Apply + Dismiss stay on one row at REVIEW_GUTTER_MIN_PX. */
+const SUGGESTION_ACTION_ROW_CLASS =
+  "flex flex-nowrap items-center gap-1.5 pt-1";
+const SUGGESTION_ACTION_BUTTON_CLASS =
+  "h-6 min-w-0 shrink-0 px-2 text-[11px] gap-1 [&_svg]:size-3";
 
 function buildFrozenCard(
   comment: CommentRecord,
@@ -132,59 +133,30 @@ function buildFrozenCard(
     ...base,
     kind: "fix",
     payload,
-    normalizedInsert: normalizeSuggestionInsertText(payload.insertText),
   };
 }
 
-function InlineMarkdownSpan({ text }: { text: string }) {
-  return (
-    <>
-      {inlineMarkdownToTextNodes(text).map((node, i) => {
-        const marks = node.marks ?? [];
-        const italic = marks.some((m) => m.type === "italic");
-        const bold = marks.some((m) => m.type === "bold");
-        return (
-          <span
-            key={i}
-            className={
-              italic && bold
-                ? "italic font-semibold"
-                : italic
-                  ? "italic"
-                  : bold
-                    ? "font-semibold"
-                    : undefined
-            }
-          >
-            {node.text}
-          </span>
-        );
-      })}
-    </>
-  );
-}
-
-/** Text with actionable `[placeholder]` spans highlighted (citations stay plain). */
-function PlaceholderHighlightedText({ text }: { text: string }) {
-  return (
-    <>
-      {splitPlainTextWithPlaceholders(text).map((part, i) =>
-        part.kind === "placeholder" ? (
-          <span key={i} className="suggestion-preview-placeholder">
-            {part.text}
-          </span>
-        ) : (
-          <InlineMarkdownSpan key={i} text={part.text} />
-        )
-      )}
-    </>
-  );
+function figureChangeSummary(payload: ParsedAiFixPayload): string | null {
+  const insert = payload.insertImage;
+  const remove = payload.removeImage;
+  if (!insert && !remove) return null;
+  if (insert && remove && insert.src === remove.src) {
+    return insert.alt?.trim() || null;
+  }
+  if (insert) {
+    const bits = [
+      insert.alt?.trim() || null,
+      insert.chartSpec ? formatChartProvenance(insert.chartSpec) : null,
+    ].filter((bit): bit is string => Boolean(bit));
+    return bits.length > 0 ? bits.join(". ") : null;
+  }
+  return remove?.alt?.trim() || null;
 }
 
 const RESOLVE_HINT =
   "Only the report author or a manager can act on suggestions.";
 
-function SuggestionCardFace({
+export function SuggestionCardFace({
   card,
   phase,
   showActions,
@@ -212,6 +184,8 @@ function SuggestionCardFace({
   const reasoning = card.kind === "fix" ? card.payload.reasoning : card.redraft.reasoning;
   const evidenceSources =
     card.kind === "fix" ? (card.payload.evidenceSources ?? []) : [];
+  const figureSummary =
+    card.kind === "fix" ? figureChangeSummary(card.payload) : null;
 
   const statusLine =
     phase === "applying"
@@ -227,7 +201,7 @@ function SuggestionCardFace({
   return (
     <div
       className={cn(
-        "rounded-md border border-violet-500/30 bg-[var(--card)] p-3 space-y-2",
+        "rounded-md border border-violet-500/30 bg-[var(--card)] p-2.5 space-y-2",
         phase === "applied" && "suggestion-card-applied-glow"
       )}
     >
@@ -293,110 +267,25 @@ function SuggestionCardFace({
       ) : null}
 
       {card.kind === "fix" && card.payload.tableOperation ? (
-        <div
+        <p
           className={cn(
-            "text-xs leading-relaxed space-y-1 transition-opacity duration-300",
+            "text-xs leading-snug suggestion-preview-insert font-medium transition-opacity duration-300",
             phase !== "steady" && "opacity-70"
           )}
         >
-          <p className="suggestion-preview-insert font-medium">
-            {summarizeTableOperation(card.payload.tableOperation)}
-          </p>
-          {tableOperationDetailLines(card.payload.tableOperation).map((line) => (
-            <p key={line} className="text-[11px] text-[var(--muted-foreground)]">
-              {line}
-            </p>
-          ))}
-          {card.payload.second?.insertText.trim() ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              Citation at end of section:{" "}
-              <span className="suggestion-preview-insert font-medium">
-                {card.payload.second.insertText.trim()}
-              </span>
-            </p>
-          ) : null}
-        </div>
+          {summarizeTableOperation(card.payload.tableOperation)}
+        </p>
       ) : null}
 
-      {card.kind === "fix" && card.payload.insertImage ? (
-        <div
+      {figureSummary ? (
+        <p
           className={cn(
-            "space-y-1.5 transition-opacity duration-300",
+            "text-[11px] leading-snug text-[var(--muted-foreground)] transition-opacity duration-300",
             phase !== "steady" && "opacity-70"
           )}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element -- suggestion preview of a data URL */}
-          <img
-            src={card.payload.insertImage.src}
-            alt={card.payload.insertImage.alt ?? ""}
-            className="max-h-32 w-auto max-w-full rounded-sm border border-emerald-700/30"
-          />
-          {card.payload.insertImage.alt ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              {card.payload.insertImage.alt}
-            </p>
-          ) : null}
-          {card.payload.insertImage.chartSpec ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              {formatChartProvenance(card.payload.insertImage.chartSpec)}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {card.kind === "fix" &&
-      card.payload.removeImage &&
-      card.payload.removeImage.src !== card.payload.insertImage?.src ? (
-        <div
-          className={cn(
-            "space-y-1.5 transition-opacity duration-300",
-            phase !== "steady" && "opacity-70"
-          )}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element -- suggestion preview of a data URL */}
-          <img
-            src={card.payload.removeImage.src}
-            alt={card.payload.removeImage.alt ?? ""}
-            className="max-h-32 w-auto max-w-full rounded-sm border border-rose-700/30 opacity-60"
-          />
-          {card.payload.removeImage.alt ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              {card.payload.removeImage.alt}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {card.kind === "fix" &&
-      !card.payload.tableOperation &&
-      !card.payload.insertImage &&
-      !card.payload.removeImage &&
-      (card.payload.deleteText ||
-        card.payload.insertText ||
-        card.payload.second?.insertText) ? (
-        <div
-          className={cn(
-            "text-xs leading-relaxed space-y-1 transition-opacity duration-300",
-            phase !== "steady" && "opacity-70"
-          )}
-        >
-          {card.payload.deleteText ? (
-            <p className="suggestion-preview-delete">{card.payload.deleteText}</p>
-          ) : null}
-          {card.normalizedInsert ? (
-            <p className="suggestion-preview-insert">
-              <PlaceholderHighlightedText text={card.normalizedInsert} />
-            </p>
-          ) : null}
-          {card.payload.second?.insertText.trim() ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              Citation at end of section:{" "}
-              <span className="suggestion-preview-insert font-medium">
-                {card.payload.second.insertText.trim()}
-              </span>
-            </p>
-          ) : null}
-        </div>
+          {figureSummary}
+        </p>
       ) : null}
 
       {card.kind === "redraft" ? (
@@ -416,16 +305,18 @@ function SuggestionCardFace({
               current content.
             </p>
           ) : null}
-          <div className="suggestion-preview-insert max-h-56 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed">
-            <PlaceholderHighlightedText text={card.redraft.markdown} />
-          </div>
         </div>
       ) : null}
 
       {showActions ? (
         <>
           {reasoning ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">{reasoning}</p>
+            <p
+              className="text-[11px] text-[var(--muted-foreground)]"
+              data-testid="suggestion-change-summary"
+            >
+              {reasoning}
+            </p>
           ) : null}
           {linkedEval?.reasoning ? (
             <p className="text-[11px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2">
@@ -455,11 +346,11 @@ function SuggestionCardFace({
             </p>
           ) : null}
 
-          <div className="flex flex-wrap gap-2 pt-1">
+          <div className={SUGGESTION_ACTION_ROW_CLASS} data-testid="suggestion-action-row">
             <Button
               type="button"
               size="sm"
-              className="h-7 text-xs"
+              className={SUGGESTION_ACTION_BUTTON_CLASS}
               disabled={pending || !canResolve || !validation.canApply}
               title={!canResolve ? RESOLVE_HINT : undefined}
               onClick={onAccept}
@@ -471,7 +362,7 @@ function SuggestionCardFace({
               type="button"
               size="sm"
               variant="ghost"
-              className="h-7 text-xs"
+              className={SUGGESTION_ACTION_BUTTON_CLASS}
               disabled={pending || !canResolve}
               title={!canResolve ? RESOLVE_HINT : undefined}
               onClick={onDismiss}
@@ -568,7 +459,7 @@ export function SuggestionQueueBridgeCard({
   }, []);
 
   return (
-    <div className="sticky top-3 z-20 rounded-md border border-violet-500/30 bg-[var(--card)] p-3 space-y-2 shadow-md">
+    <div className="sticky top-3 z-20 rounded-md border border-violet-500/30 bg-[var(--card)] p-2.5 space-y-2 shadow-md">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-medium text-[var(--muted-foreground)] uppercase tracking-wide">
           Next suggestion
@@ -582,12 +473,12 @@ export function SuggestionQueueBridgeCard({
       <p className="text-xs leading-snug text-[var(--foreground)]">
         {suggestionQueueBridgeCopy(remainingTotal, nextSectionLabel)}
       </p>
-      <div className="flex flex-wrap gap-2 pt-1">
+      <div className={SUGGESTION_ACTION_ROW_CLASS}>
         <Button
           ref={goRef}
           type="button"
           size="sm"
-          className="h-7 text-xs"
+          className={SUGGESTION_ACTION_BUTTON_CLASS}
           disabled={pending}
           onClick={onGo}
         >
@@ -598,7 +489,7 @@ export function SuggestionQueueBridgeCard({
           type="button"
           size="sm"
           variant="ghost"
-          className="h-7 text-xs"
+          className={SUGGESTION_ACTION_BUTTON_CLASS}
           disabled={pending}
           onClick={onDismiss}
         >

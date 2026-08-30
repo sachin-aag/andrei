@@ -100,10 +100,14 @@ describe("isReviewGutterVisible", () => {
 });
 
 describe("review gutter width", () => {
-  it("keeps the margin column narrower than the old 200–360px range", () => {
-    expect(REVIEW_GUTTER_MIN_PX).toBeLessThan(200);
+  it("keeps the margin column narrower than the old 360px ceiling", () => {
+    expect(REVIEW_GUTTER_MIN_PX).toBeLessThanOrEqual(220);
     expect(REVIEW_GUTTER_MAX_PX).toBeLessThan(360);
     expect(REVIEW_GUTTER_GRID_COLS).toContain(`${REVIEW_GUTTER_MIN_PX}px`);
+  });
+
+  it("is wide enough for compact Apply and Dismiss on one row", () => {
+    expect(REVIEW_GUTTER_MIN_PX).toBeGreaterThanOrEqual(192);
   });
 
   it("gives leftover canvas to the margin so widening the sheet shrinks the gutter first", () => {
