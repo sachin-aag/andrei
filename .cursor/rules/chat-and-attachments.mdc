@@ -68,7 +68,10 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   plots use a document-sized box (`documentInsertedPlotWidth`, max 480×300).
 - Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
   + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
-  `ai_fix` comments). Document chrome **proposes**. Do not trust a client
+  `ai_fix` comments). Document chrome **proposes**. Same-turn `propose_edit`
+  calls serialize; locatable spans within 20 characters on the same field
+  fold into one card (no per-field budget). Lead-in / table / figure /
+  citation-split / cell-scope edits stay separate. Do not trust a client
   `editPolicy` on a locked report. Plan-mode allowlist does not gain edit tools.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.

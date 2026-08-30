@@ -1043,6 +1043,147 @@ describe("buildChatTools propose vs commit", () => {
     ]);
   });
 
+  it("folds a second nearby propose_edit into the same card", async () => {
+    const nearbyNarrative =
+      "The assay failed due to temperature drift. The batch was released anyway. Operators later noted humidity on the log.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: nearbyNarrative }],
+        },
+      ],
+    });
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const patched: unknown[] = [];
+    dbUpdateMock.mockReturnValue({
+      set: (values: unknown) => {
+        patched.push(values);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const first = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    const second = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "batch was released",
+        deleteText: "batch was released",
+        insertText: "batch remained in quarantine",
+        reasoning: "Do not imply release.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    expect(second).toMatchObject({
+      status: "proposed",
+      suggestionId: (first as { suggestionId: string }).suggestionId,
+    });
+    expect(inserted).toHaveLength(1);
+    expect(patched.length).toBeGreaterThan(0);
+    const folded = parseAiFixCommentContent(
+      (patched[0] as { content: string }).content
+    );
+    expect(folded.deleteText).toContain("temperature drift");
+    expect(folded.deleteText).toContain("batch was released");
+    expect(folded.insertText).toContain("humidity excursion");
+    expect(folded.insertText).toContain("batch remained in quarantine");
+    expect(commitChatEditMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps distant propose_edit spans as separate cards", async () => {
+    const distantNarrative =
+      "The assay failed due to temperature drift. The batch was released anyway. Operators later noted humidity on the log.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: distantNarrative }],
+        },
+      ],
+    });
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const first = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    const second = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "humidity on the log",
+        deleteText: "humidity on the log",
+        insertText: "the humidity excursion on the log",
+        reasoning: "Name the log finding.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    expect(second).toMatchObject({ status: "proposed" });
+    expect((second as { suggestionId: string }).suggestionId).not.toBe(
+      (first as { suggestionId: string }).suggestionId
+    );
+    expect(inserted).toHaveLength(2);
+  });
+
+  it("does not fold an empty-anchor lead-in into a body edit", async () => {
+    mockDefineSectionSelect();
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const leadIn = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "The following table lists the affected lots.",
+        reasoning: "Lead-in for a table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    const body = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    expect(leadIn).toMatchObject({ status: "proposed" });
+    expect(body).toMatchObject({ status: "proposed" });
+    expect((body as { suggestionId: string }).suggestionId).not.toBe(
+      (leadIn as { suggestionId: string }).suggestionId
+    );
+    expect(inserted).toHaveLength(2);
+  });
+
   it("refuses draft_field on a filled field unless replaceFilledField is true", async () => {
     const filled =
       "During routine testing the tablet batch failed dissolution at 68 percent, well below the 80 percent specification, triggering this deviation investigation.";

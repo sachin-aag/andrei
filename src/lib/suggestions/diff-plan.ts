@@ -364,7 +364,12 @@ function alignBlocks(left: MergeBlock[], right: MergeBlock[]): AlignHunk[] {
   return hunks;
 }
 
-function coalesceWordDiff(
+/**
+ * Word-diff hunks whose unchanged gap is shorter than {@link COALESCING_GAP}
+ * become one hunk. The bridge text is copied into both delete and insert so
+ * locate still matches a unique span.
+ */
+export function coalesceWordDiff(
   fromText: string,
   toText: string
 ): Array<{ deleteText: string; insertText: string }> {

@@ -121,6 +121,19 @@ import {
   isPositionedImageOp,
   recordImageOp,
 } from "@/lib/suggestions/same-turn-image-move";
+import {
+  foldNearbyProposeEdit,
+  liveFieldTextForRange,
+  nearbyCoalesceSkipReason,
+  rangeForSuggestionEditOnField,
+  unionRange,
+} from "@/lib/suggestions/coalesce-nearby-edits";
+import {
+  createSameTurnNearbyEdits,
+  findNearbyTurnEdit,
+  recordNearbyEdit,
+} from "@/lib/suggestions/same-turn-nearby-edit";
+import type { SuggestionEdit } from "@/lib/suggestions/locator";
 
 type ReadSectionImageRef = {
   id: string;
@@ -782,11 +795,21 @@ export function buildChatTools(opts: {
   const committing = editPolicy === "commit";
   const blockPairing = createSameTurnBlockPairing();
   const imageOps = createSameTurnImageOps();
+  const nearbyEdits = createSameTurnNearbyEdits();
   let listedPlotsThisTurn = false;
   let insertImageTail: Promise<void> = Promise.resolve();
   const enqueueInsertImage = <T>(fn: () => Promise<T>): Promise<T> => {
     const next = insertImageTail.then(fn, fn);
     insertImageTail = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  };
+  let proposeEditTail: Promise<void> = Promise.resolve();
+  const enqueueProposeEdit = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = proposeEditTail.then(fn, fn);
+    proposeEditTail = next.then(
       () => undefined,
       () => undefined
     );
@@ -1474,7 +1497,6 @@ export function buildChatTools(opts: {
           } as ProposeEditResult;
         }
 
-        const suggestionId = createId();
         const normalizedInsert = normalizeSuggestionInsertText(prepared.insertText);
         const second = prepared.second
           ? {
@@ -1521,78 +1543,154 @@ export function buildChatTools(opts: {
           }
           return result;
         }
-        let payload: ParsedAiFixPayload = {
-          deleteText: prepared.deleteText,
-          insertText: normalizedInsert,
-          reasoning,
-          scope: prepared.scope,
-          second,
-        };
-        if (leadIn) {
-          const pairBlock = takeUnusedBlock(blockPairing, section, resolvedField);
-          if (pairBlock) {
-            payload = withPairedBlock(payload, pairBlock.suggestionId, pairBlock.kind);
-            await patchFixPayload(
-              pairBlock.suggestionId,
-              withPlaceAfterLeadIn(pairBlock.payload, suggestionId)
-            );
-          } else {
-            recordLeadIn(blockPairing, {
+        return enqueueProposeEdit(async (): Promise<ProposeEditResult> => {
+          const proposedEdit: SuggestionEdit = {
+            anchorText: prepared.anchorText,
+            deleteText: prepared.deleteText,
+            insertText: normalizedInsert,
+            scope: prepared.scope,
+            second,
+          };
+          const skipReason = nearbyCoalesceSkipReason({
+            leadIn,
+            second,
+            scope: prepared.scope,
+          });
+          const liveField = liveFieldTextForRange({
+            section,
+            targetField: resolvedField,
+            content: loaded.content as Record<string, unknown>,
+          });
+          const range = skipReason
+            ? null
+            : rangeForSuggestionEditOnField({
+                fieldText: liveField.fieldText,
+                fieldDoc: liveField.fieldDoc,
+                edit: proposedEdit,
+              });
+          const nearby =
+            range != null
+              ? findNearbyTurnEdit(nearbyEdits, {
+                  section,
+                  targetField: resolvedField,
+                  range,
+                })
+              : undefined;
+          if (nearby && range) {
+            const folded = foldNearbyProposeEdit({
+              existingPayload: nearby.payload,
+              liveContent: loaded.content as Record<string, unknown>,
+              section,
+              targetField: resolvedField,
+              documentType,
+              proposed: proposedEdit,
+              reasoning,
+            });
+            if (folded) {
+              await patchFixComment(nearby.suggestionId, folded.payload, {
+                anchorText: folded.payload.deleteText || prepared.anchorText,
+              });
+              recordNearbyEdit(nearbyEdits, {
+                suggestionId: nearby.suggestionId,
+                section,
+                targetField: resolvedField,
+                range: unionRange(nearby.range, range),
+                payload: folded.payload,
+              });
+              const supersededSuggestionIds = await dismissCovered({
+                section,
+                sectionContent: loaded.content,
+                newCommentId: nearby.suggestionId,
+              });
+              return proposedWithSupersession(
+                {
+                  status: "proposed" as const,
+                  suggestionId: nearby.suggestionId,
+                  section,
+                  targetField: resolvedField,
+                  summary: folded.payload.reasoning,
+                },
+                supersededSuggestionIds
+              );
+            }
+          }
+
+          const suggestionId = createId();
+          let payload: ParsedAiFixPayload = {
+            deleteText: prepared.deleteText,
+            insertText: normalizedInsert,
+            reasoning,
+            scope: prepared.scope,
+            second,
+          };
+          if (leadIn) {
+            const pairBlock = takeUnusedBlock(blockPairing, section, resolvedField);
+            if (pairBlock) {
+              payload = withPairedBlock(payload, pairBlock.suggestionId, pairBlock.kind);
+              await patchFixPayload(
+                pairBlock.suggestionId,
+                withPlaceAfterLeadIn(pairBlock.payload, suggestionId)
+              );
+            } else {
+              recordLeadIn(blockPairing, {
+                suggestionId,
+                section,
+                targetField: resolvedField,
+                payload,
+              });
+            }
+          }
+          const recorded = attachRecord(
+            payload,
+            loaded.content as Record<string, unknown>,
+            section,
+            resolvedField,
+            {
+              kind: "located",
+              edit: proposedEdit,
+            }
+          );
+          await db.insert(comments).values({
+            id: suggestionId,
+            reportId,
+            sectionId: loaded.sectionId,
+            section,
+            authorId: AI_AUTHOR_ID,
+            content: serializeAiFixCommentContent(recorded),
+            anchorText: prepared.anchorText,
+            contentPath: resolvedField,
+            fromPos: null,
+            toPos: null,
+            status: "open",
+            kind: "ai_fix",
+            evaluationId: null,
+          });
+          if (range) {
+            recordNearbyEdit(nearbyEdits, {
               suggestionId,
               section,
               targetField: resolvedField,
-              payload,
+              range,
+              payload: recorded,
             });
           }
-        }
-        await db.insert(comments).values({
-          id: suggestionId,
-          reportId,
-          sectionId: loaded.sectionId,
-          section,
-          authorId: AI_AUTHOR_ID,
-          content: serializeAiFixCommentContent(
-            attachRecord(
-              payload,
-              loaded.content as Record<string, unknown>,
-              section,
-              resolvedField,
-              {
-                kind: "located",
-                edit: {
-                  anchorText: prepared.anchorText,
-                  deleteText: prepared.deleteText,
-                  insertText: normalizedInsert,
-                  scope: prepared.scope,
-                  second,
-                },
-              }
-            )
-          ),
-          anchorText: prepared.anchorText,
-          contentPath: resolvedField,
-          fromPos: null,
-          toPos: null,
-          status: "open",
-          kind: "ai_fix",
-          evaluationId: null,
-        });
 
-        const supersededSuggestionIds = await dismissCovered({
-          section,
-          sectionContent: loaded.content,
-          newCommentId: suggestionId,
-        });
-        return proposedWithSupersession(
-          {
-            status: "proposed" as const,
-            suggestionId,
+          const supersededSuggestionIds = await dismissCovered({
             section,
-            targetField: resolvedField,
-            summary: reasoning,
-          },
-          supersededSuggestionIds
-        );
+            sectionContent: loaded.content,
+            newCommentId: suggestionId,
+          });
+          return proposedWithSupersession(
+            {
+              status: "proposed" as const,
+              suggestionId,
+              section,
+              targetField: resolvedField,
+              summary: reasoning,
+            },
+            supersededSuggestionIds
+          );
+        });
       },
     }),
 
