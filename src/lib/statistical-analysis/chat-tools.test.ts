@@ -157,6 +157,9 @@ describe("analytics chat tools", () => {
       "Optional legendColumnId color-codes points"
     );
     expect(writable.plot_xy_scatter?.description).toContain(
+      "color by lot/batch/serial/group"
+    );
+    expect(writable.plot_xy_scatter?.description).toContain(
       "Omit xColumnId"
     );
     expect(writable.plot_xy_scatter?.description).toContain("analysisId");
@@ -900,6 +903,70 @@ describe("analytics chat tools", () => {
       mark: "line",
       showSpecLimits: true,
       analysisCount: 1,
+    });
+  });
+
+  it("creates a worksheet scatter colored by a legend column", async () => {
+    const created: XyScatterAnalysisSummary = {
+      id: "plot-legend",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: "Assay vs Time by Lot",
+      config: {
+        xColumnId: "c2",
+        xColumnName: "Time",
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        legendColumnId: "c3",
+        legendColumnName: "Lot",
+        title: "Assay vs Time by Lot",
+        mark: "scatter",
+        showSpecLimits: false,
+      },
+      results: { specs: [], n: 3, skipped: 0, pearsonR: null },
+      sourceHash: "hash",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    vi.mocked(createAnalysisForReport).mockResolvedValue({
+      ok: true,
+      analytics: { ...analyticsView(), analyses: [created] },
+      analysis: created,
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_xy_scatter?.execute;
+    if (!plot) throw new Error("plot_xy_scatter has no execute");
+    const output = await plot(
+      {
+        yColumnId: "c1",
+        xColumnId: "c2",
+        legendColumnId: "c3",
+      },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(createAnalysisForReport).toHaveBeenCalledWith(
+      "report-1",
+      expect.objectContaining({
+        kind: XY_SCATTER,
+        yColumnId: "c1",
+        xColumnId: "c2",
+        legendColumnId: "c3",
+      })
+    );
+    expect(output).toMatchObject({
+      status: "ok",
+      updated: false,
+      legendColumnId: "c3",
+      legendColumnName: "Lot",
     });
   });
 

@@ -131,8 +131,8 @@ markers, area, column). Column charts stack when a legend is on. **Advanced**
 (collapsed) sets min/max X and Y (blank = auto) and optional axis titles.
 Those display limits are not part of `sourceHash`. Agent
 Analytics chat can create a plot or edit an existing worksheet plot
-(`analysisId` from Results or an `@` tag): replace Y/X, change chart type,
-toggle Show LSL/USL, or set the axis window. Ask mode cannot. New plots default to scatter with
+(`analysisId` from Results or an `@` tag): replace Y/X, set or clear the
+legend, change chart type, toggle Show LSL/USL, or set the axis window. Ask mode cannot. New plots default to scatter with
 spec lines off. **Show LSL, USL values** under Y is off by default (no spec
 lines until checked or the assistant turns them on). Worksheet plots cite
 the attachment page when the plotted columns were

@@ -21,7 +21,7 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v25";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v26";
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -80,11 +80,11 @@ If they asked for capability / sixpack / Cp Cpk, call run_capability_sixpack —
 If they asked for ANOVA or a statistical comparison of groups, call run_one_way_anova — that is an F/p table with Bonferroni pairwise tests, not a scatter or boxplot. A colored scatter by group is plot_xy_scatter with legendColumnId, not ANOVA.
 
 If they asked to color a worksheet scatter by lot/batch/serial/group, pass legendColumnId on plot_xy_scatter. Do not refuse coloring for worksheet scatter. Do not use plot_measurements for worksheet grouping.
-If they asked to change Y, X, chart type, Show LSL/USL, or the visible axis window on an existing worksheet plot, call plot_xy_scatter with that analysisId — do not insert a new Results row.
+If they asked to change Y, X, legend, chart type, Show LSL/USL, or the visible axis window on an existing worksheet plot, call plot_xy_scatter with that analysisId — do not insert a new Results row.
 If they asked to change Y or categories on an existing boxplot, call plot_boxplot with that analysisId.`;
 
 const CAPABILITY_RULES = `## What you can do
-You support the worksheet, a Normal Capability Sixpack (individuals / I-MR), a worksheet scatter (plot_xy_scatter: Y required on create, X optional, optional legend; Agent can edit an existing worksheet plot with analysisId — columns, chart type, Show LSL/USL, axis window), a Tukey boxplot (plot_boxplot: Y required, optional nested categoryColumnIds innermost-first; Agent can edit with analysisId), a measurement scatter extracted from attachments (plot_measurements — chat only; there is no Plot-from-attachments menu), and one-way ANOVA (run_one_way_anova).
+You support the worksheet, a Normal Capability Sixpack (individuals / I-MR), a worksheet scatter (plot_xy_scatter: Y required on create, X optional, optional legend; Agent can edit an existing worksheet plot with analysisId — columns, legend, chart type, Show LSL/USL, axis window), a Tukey boxplot (plot_boxplot: Y required, optional nested categoryColumnIds innermost-first; Agent can edit with analysisId), a measurement scatter extracted from attachments (plot_measurements — chat only; there is no Plot-from-attachments menu), and one-way ANOVA (run_one_way_anova).
 Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, two-way ANOVA, Tukey grouping letters, fitted regression, DOE, time series, nonparametric capability, attribute charts, violin). You may plot Y vs X or Y vs observation index, optionally color-code by a legend column, and report Pearson r; do not fit a line or run DOE. You may draw a boxplot of Y with nested categories. Say that Andrei's Statistical Analysis currently runs Normal Capability Sixpack, worksheet scatter (with optional legend), boxplot (with optional nested categories), attachment measurement scatter, and one-way ANOVA only. Pairwise ANOVA comparisons are Bonferroni t-tests using the ANOVA MSE — say that plainly; do not call them Tukey.
 
 Do not draft DMAIC sections, CAPA, comments, or report edits. That is a different assistant.
@@ -104,7 +104,7 @@ You cannot write the worksheet or run plots in this mode. write_column, manage_w
 This report is locked. Search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, plot_boxplot, or plot_measurements. You never draft the document.`;
       }
       return `## Mode: AGENT
-Fill the worksheet (including adding sheets, columns, and rows). Run the analysis they asked for (sixpack, one-way ANOVA, worksheet scatter via plot_xy_scatter — Y required on create, X optional, optional legend — boxplot via plot_boxplot — Y required, optional nested categories — or attachment measurement scatter). To change an existing worksheet plot, call plot_xy_scatter with that analysisId (new Y/X, mark, showSpecLimits, xMin/xMax/yMin/yMax) instead of creating a duplicate. To change an existing boxplot, call plot_boxplot with that analysisId. Do not substitute a sixpack or ANOVA for a scatter or boxplot. You never draft the document.`;
+Fill the worksheet (including adding sheets, columns, and rows). Run the analysis they asked for (sixpack, one-way ANOVA, worksheet scatter via plot_xy_scatter — Y required on create, X optional, optional legend — boxplot via plot_boxplot — Y required, optional nested categories — or attachment measurement scatter). To change an existing worksheet plot, call plot_xy_scatter with that analysisId (new Y/X, legendColumnId, mark, showSpecLimits, xMin/xMax/yMin/yMax) instead of creating a duplicate. To change an existing boxplot, call plot_boxplot with that analysisId. Do not substitute a sixpack or ANOVA for a scatter or boxplot. You never draft the document.`;
     default: {
       const exhaustive: never = mode;
       return exhaustive;
