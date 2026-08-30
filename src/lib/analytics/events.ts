@@ -15,7 +15,13 @@ export type AnalyticsEvent =
   | "comment_resolved"
   | "comment_dismissed"
   | "sidebar_tab_changed"
-  | "expert_review_requested";
+  | "expert_review_requested"
+  | "product_tour_started"
+  | "product_tour_step_viewed"
+  | "product_tour_completed"
+  | "product_tour_dismissed"
+  | "product_tour_skipped_session"
+  | "product_tour_replayed";
 
 export function captureEvent(
   event: AnalyticsEvent,

@@ -152,18 +152,25 @@ export function ReportWorkspaceHeader({
       </Button>
 
       <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-        <ReportExportButton
-          reportId={report.id}
-          sourceDocxFilename={report.sourceDocxFilename}
-          documentType={report.documentType}
-          surface={workProductView === "analytics" ? "analytics" : "document"}
-        />
+        <span data-walkthrough="export-docx" className="inline-flex">
+          <ReportExportButton
+            reportId={report.id}
+            sourceDocxFilename={report.sourceDocxFilename}
+            documentType={report.documentType}
+            surface={workProductView === "analytics" ? "analytics" : "document"}
+          />
+        </span>
 
         {showRunCriteria ? <RunAllEvaluationButton /> : null}
         {showBulkSuggestions ? <ReportBulkSuggestionActions /> : null}
 
         {canSubmit && (
-          <Button size="sm" onClick={onSubmit} disabled={submitting}>
+          <Button
+            size="sm"
+            onClick={onSubmit}
+            disabled={submitting}
+            data-walkthrough="submit-review"
+          >
             {submitting ? (
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             ) : (
@@ -174,7 +181,7 @@ export function ReportWorkspaceHeader({
         )}
 
         {canReview && (
-          <>
+          <span data-walkthrough="review-actions" className="inline-flex items-center gap-3">
             <Button
               variant="outline"
               size="sm"
@@ -201,7 +208,7 @@ export function ReportWorkspaceHeader({
               )}
               Approve
             </Button>
-          </>
+          </span>
         )}
 
         <ReportActionsMenu

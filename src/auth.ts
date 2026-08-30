@@ -113,6 +113,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
     async jwt({ token, user }) {
+      if (user) {
+        token.productTourSessionId = crypto.randomUUID();
+      }
       const email =
         user?.email ??
         (typeof token.email === "string" ? token.email : undefined);
@@ -159,6 +162,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       if (typeof token.passwordExpired === "boolean") {
         session.user.passwordExpired = token.passwordExpired;
+      }
+      if (typeof token.productTourSessionId === "string") {
+        session.productTourSessionId = token.productTourSessionId;
       }
       return session;
     },

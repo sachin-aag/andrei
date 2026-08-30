@@ -386,6 +386,13 @@
       "when": 1787914400000,
       "tag": "0052_drop_improve_ai_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1787918000000,
+      "tag": "0054_product_tour",
+      "breakpoints": true
     }
   ]
 }

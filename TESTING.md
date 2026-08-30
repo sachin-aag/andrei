@@ -149,6 +149,17 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 </details>
 
 <details>
+<summary><strong>product-walkthrough.spec.ts</strong> — first-login feature tour</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| shows on first login and resumes after skip | Welcome → next → skip; next session resumes mid-tour (email scoped per project + test so parallel workers do not share one user) |
+| dismiss forever stays closed | Don't show again, then resume login has no dialog |
+| replay from profile starts the tour again | Dismiss, wait for `GET /api/me/walkthrough` `dismissed`, then Profile **Replay product tour** |
+
+</details>
+
+<details>
 <summary><strong>create-report.spec.ts</strong> — dashboard create flow</summary>
 
 | Test | What it verifies |

@@ -41,6 +41,7 @@ export function ReportActionsMenu({
           className="px-2"
           aria-label="More report actions"
           title="More report actions"
+          data-walkthrough={auditHref ? "audit-trail" : undefined}
         >
           <MoreHorizontal className="size-4" aria-hidden="true" />
         </Button>

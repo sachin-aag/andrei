@@ -40,6 +40,8 @@ const engineerUser = {
   failedLoginAttempts: 0,
   lockedAt: null,
   passwordExpiryWarningDismissedUntil: null,
+  productTourStatus: "dismissed" as const,
+  productTourStepId: null,
   createdAt: new Date("2026-01-01"),
   ...passwordSchemaDefaults,
 };
@@ -56,6 +58,8 @@ const managerUser = {
   failedLoginAttempts: 0,
   lockedAt: null,
   passwordExpiryWarningDismissedUntil: null,
+  productTourStatus: "dismissed" as const,
+  productTourStepId: null,
   createdAt: new Date("2026-01-01"),
   ...passwordSchemaDefaults,
 };
@@ -72,6 +76,8 @@ const adminUser = {
   failedLoginAttempts: 0,
   lockedAt: null,
   passwordExpiryWarningDismissedUntil: null,
+  productTourStatus: "dismissed" as const,
+  productTourStepId: null,
   createdAt: new Date("2026-01-01"),
   ...passwordSchemaDefaults,
 };
@@ -166,6 +172,31 @@ describe("POST /api/test/login", () => {
     expect(encode).toHaveBeenCalledWith(
       expect.objectContaining({
         token: expect.objectContaining({ mustChangePassword: true }),
+      })
+    );
+  });
+
+  it("resets product tour when productTour is true", async () => {
+    vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValue(engineerUser);
+    const returning = vi.fn().mockResolvedValue([
+      { ...engineerUser, productTourStatus: "not_started" },
+    ]);
+    const where = vi.fn().mockReturnValue({ returning });
+    const set = vi.fn().mockReturnValue({ where });
+    vi.mocked(db.update).mockReturnValue({ set } as never);
+
+    const res = await POST(
+      new Request("http://localhost/api/test/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productTour: true }),
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productTourStatus: "not_started",
+        productTourStepId: null,
       })
     );
   });

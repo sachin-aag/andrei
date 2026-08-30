@@ -21,6 +21,7 @@ import { roleLabel } from "@/lib/auth/roles";
 import { DEFAULT_INACTIVITY_TIMEOUT_MINUTES } from "@/lib/auth/inactivity-timeout";
 import { InactivityLogout } from "@/components/auth/inactivity-logout";
 import { BrandLogo } from "@/components/brand/brand-logo";
+import { ProductWalkthroughProvider } from "@/components/walkthrough/product-walkthrough";
 import { getCustomerPack } from "@/lib/customers/packs";
 
 export function AppShell({
@@ -70,6 +71,7 @@ export function AppShell({
 
   return (
     <UserDirectoryProvider initialUsers={initialUsers}>
+    <ProductWalkthroughProvider userId={user.id} role={user.role}>
       <InactivityLogout
         timeoutMinutes={inactivityTimeoutMinutes}
         userId={user.id}
@@ -156,6 +158,15 @@ export function AppShell({
               aria-label={collapsed ? item.label : undefined}
               aria-current={pathname === item.href ? "page" : undefined}
               title={collapsed ? item.label : undefined}
+              data-walkthrough={
+                item.href === "/" || item.href === "/admin/reports"
+                  ? "nav-reports"
+                  : item.href === "/insights/dashboard"
+                    ? "nav-insights"
+                    : item.href === "/admin/users"
+                      ? "nav-users"
+                      : undefined
+              }
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
                 collapsed && "justify-center px-0",
@@ -177,6 +188,7 @@ export function AppShell({
             aria-label="Profile"
             aria-current={isProfileActive ? "page" : undefined}
             title={collapsed ? "Profile" : undefined}
+            data-walkthrough="nav-profile"
             className={cn(
               "flex items-center gap-3 p-2 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
               collapsed && "justify-center p-1",
@@ -246,6 +258,7 @@ export function AppShell({
         {children}
       </main>
       </div>
+    </ProductWalkthroughProvider>
     </UserDirectoryProvider>
   );
 }

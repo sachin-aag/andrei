@@ -955,6 +955,7 @@ export function ReportWorkspace({
 
         <main
           ref={mainRef}
+          data-walkthrough="report-editor"
           data-testid="report-work-product"
           className={cn(
             // `relative` is required so the document-panel resize handle
