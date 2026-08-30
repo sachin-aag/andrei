@@ -200,6 +200,10 @@ export type ParsedAiFixPayload = {
   };
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
+  /** Live field content at author time (P1). Dual-read with suggestionIntent. */
+  suggestionBase?: unknown;
+  /** Field content the model wants (P1). */
+  suggestionIntent?: unknown;
   evidenceSources?: Array<{
     citationId: string;
     attachmentId: string;
@@ -245,6 +249,8 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion
             : undefined,
+        suggestionBase: parsed.suggestionBase,
+        suggestionIntent: parsed.suggestionIntent,
         evidenceSources: Array.isArray(parsed.evidenceSources)
           ? parsed.evidenceSources.flatMap((source) => {
               if (!source || typeof source !== "object") return [];
@@ -314,6 +320,8 @@ export type ParsedAiRedraftPayload = {
    * fields as stale.
    */
   fieldHashAtSuggestion?: string;
+  suggestionBase?: unknown;
+  suggestionIntent?: unknown;
 };
 
 export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPayload {
@@ -327,6 +335,8 @@ export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPa
           typeof parsed.fieldHashAtSuggestion === "string"
             ? parsed.fieldHashAtSuggestion
             : undefined,
+        suggestionBase: parsed.suggestionBase,
+        suggestionIntent: parsed.suggestionIntent,
       };
     }
   } catch {
