@@ -76,6 +76,8 @@ export function ReportSidebar({
   analyticsMentionSheets,
 }: Props) {
   const analyticsSurface = workProductView === "analytics";
+  const chatVisible =
+    !collapsed && (analyticsSurface || activeTab === "assistant");
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
   const { report } = useReportData();
@@ -218,17 +220,19 @@ export function ReportSidebar({
 
       {/* ChatPanel stays mounted across collapse, tab, and work-product
           changes so the thread, composer prefs, and rendered markdown are
-          not reset. Hide with CSS instead of unmounting. Assistant manages
+          not reset. Hide with CSS instead of unmounting (`display: none`
+          still drops native scroll, so ChatPanel restores the last
+          position — or the bottom when none is known). Assistant manages
           its own scroll/input, so it gets a full-height container without
           the shared padding. */}
       <div
         className={cn(
           "min-h-0 flex-1",
-          (collapsed || (!analyticsSurface && activeTab !== "assistant")) &&
-            "hidden"
+          !chatVisible && "hidden"
         )}
       >
         <ChatPanel
+          visible={chatVisible}
           workspaceChrome={chrome}
           workProductView={workProductView}
           statsEnabled={statsEnabled}
