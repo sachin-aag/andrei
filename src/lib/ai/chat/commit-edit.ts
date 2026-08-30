@@ -1,24 +1,21 @@
 import { and, eq } from "drizzle-orm";
-import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db";
 import { reportSections, type DocumentType, type SectionType } from "@/db/schema";
 import type { AuditActorSnapshot } from "@/lib/audit";
 import { mergeSection } from "@/lib/sections-merge";
-import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { persistSectionContent } from "@/lib/reports/persist-section";
-import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
-import { PlaceholderPreservationError } from "@/lib/placeholders/preservation";
+import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import {
-  applyAndAcceptRichEdit,
-  applyEditToPlainText,
-  type SuggestionEdit,
-} from "@/lib/suggestions/locator";
-import { getPlainTextFieldValue, setPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
-import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
-import {
-  applyTableOperation,
-  type TableOperation,
-} from "@/lib/suggestions/table-operation";
+  applyCommitToSectionContent,
+  type CommitEditFailureStatus,
+  type CommitEditInput,
+} from "@/lib/suggestions/apply-commit-content";
+import { isSuggestionThreeWayMergeEnabled } from "@/lib/suggestions/suggestion-merge-flag";
+import { extractFieldContent } from "@/lib/suggestions/suggestion-record";
+import { mergeField } from "@/lib/suggestions/three-way-merge";
+import { setPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
+import { setRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import type { FieldContent } from "@/lib/suggestions/diff-plan";
 
 export type TurnEditItem = {
   section: SectionType;
@@ -26,116 +23,30 @@ export type TurnEditItem = {
   reasoning: string;
 };
 
-export type CommitEditFailureStatus =
-  | "not_found"
-  | "ambiguous"
-  | "cross_cell"
-  | "bad_scope"
-  | "too_large"
-  | "no_table"
-  | "stale"
-  | "fixed_schema"
-  | "invalid"
-  | "empty_edit"
-  | "placeholder_conflict";
+export type {
+  CommitEditFailureStatus,
+  CommitEditInput,
+};
+export { applyCommitToSectionContent };
 
 export type CommitEditResult =
   | { status: "applied"; section: SectionType; targetField: string; summary: string }
   | { status: "section_not_found"; message: string }
   | { status: CommitEditFailureStatus; hint?: string };
 
-export type CommitEditInput =
-  | {
-      kind: "located";
-      edit: SuggestionEdit;
-    }
-  | {
-      kind: "redraft";
-      markdown: string;
-      allowDropFilledPlaceholders?: boolean;
-    }
-  | {
-      kind: "table";
-      operation: TableOperation;
-    };
-
-export function applyCommitToSectionContent(args: {
-  content: Record<string, unknown>;
-  section: SectionType;
-  targetField: string;
-  documentType: DocumentType;
-  input: CommitEditInput;
-}):
-  | { ok: true; content: Record<string, unknown> }
-  | { ok: false; status: CommitEditFailureStatus; hint?: string } {
-  const { content, section, targetField, documentType, input } = args;
-  const headingNodes = documentType === "generic_document";
-
-  switch (input.kind) {
-    case "located": {
-      if (isRichTargetField(section, targetField)) {
-        const fieldDoc = getRichFieldValue(content, targetField);
-        const applied = applyAndAcceptRichEdit(
-          fieldDoc,
-          createId(),
-          input.edit
-        );
-        if (applied.status !== "located" && applied.status !== "append") {
-          return { ok: false, status: applied.status };
-        }
-        return { ok: true, content: setRichFieldValue(content, targetField, applied.doc) };
-      }
-      const fieldText = getPlainTextFieldValue(content, targetField);
-      const applied = applyEditToPlainText(fieldText, input.edit);
-      if (applied.status !== "located" && applied.status !== "append") {
-        return { ok: false, status: applied.status };
-      }
-      return {
-        ok: true,
-        content: setPlainTextFieldValue(content, targetField, applied.text),
-      };
-    }
-    case "redraft":
-      try {
-        return {
-          ok: true,
-          content: applyRedraftToSection(
-            content,
-            section,
-            targetField,
-            input.markdown,
-            {
-              headingNodes,
-              allowDropFilledPlaceholders: input.allowDropFilledPlaceholders,
-            }
-          ),
-        };
-      } catch (error) {
-        if (error instanceof PlaceholderPreservationError) {
-          return {
-            ok: false,
-            status: "placeholder_conflict",
-            hint: error.message,
-          };
-        }
-        throw error;
-      }
-    case "table": {
-      const fieldDoc = getRichFieldValue(content, targetField);
-      const applied = applyTableOperation(fieldDoc, input.operation, {
-        section,
-        targetField,
-      });
-      if (!applied.ok) {
-        return { ok: false, status: applied.status, hint: applied.hint };
-      }
-      return { ok: true, content: setRichFieldValue(content, targetField, applied.doc) };
-    }
-    default: {
-      const _exhaustive: never = input;
-      return _exhaustive;
-    }
+function writeFieldContent(
+  content: Record<string, unknown>,
+  section: SectionType,
+  targetField: string,
+  field: FieldContent
+): Record<string, unknown> {
+  if (typeof field === "string") {
+    return setPlainTextFieldValue(content, targetField, field);
   }
+  if (isRichTargetField(section, targetField)) {
+    return setRichFieldValue(content, targetField, field);
+  }
+  return content;
 }
 
 export async function commitChatEdit(args: {
@@ -172,14 +83,35 @@ export async function commitChatEdit(args: {
     });
     if (!next.ok) return next;
 
+    let content = next.content;
+    if (isSuggestionThreeWayMergeEnabled()) {
+      const base = extractFieldContent(previous, args.section, args.targetField);
+      const current = base;
+      const intent = extractFieldContent(content, args.section, args.targetField);
+      const merged = mergeField(base, current, intent);
+      if (merged.status === "conflict") {
+        return {
+          ok: false as const,
+          status: "conflict" as const,
+          hint: "This edit conflicts with the current field. Re-read and retry.",
+        };
+      }
+      content = writeFieldContent(
+        previous,
+        args.section,
+        args.targetField,
+        merged.merged
+      );
+    }
+
     await persistSectionContent({
       actor: args.actor,
       reportId: args.reportId,
       section: args.section,
-      content: next.content,
+      content,
       executor: tx,
     });
-    return next;
+    return { ok: true as const, content };
   });
 
   if (!applied.ok) {

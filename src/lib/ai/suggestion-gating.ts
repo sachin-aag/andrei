@@ -207,6 +207,10 @@ export type ParsedAiFixPayload = {
   contentHashAtSuggestion?: string;
   /** Older open suggestions this proposal dismissed (same-table rewrite, covering span). */
   supersededSuggestionIds?: string[];
+  /** Live field content at author time (P1). Dual-read with suggestionIntent. */
+  suggestionBase?: unknown;
+  /** Field content the model wants (P1). */
+  suggestionIntent?: unknown;
   evidenceSources?: Array<{
     citationId: string;
     attachmentId: string;
@@ -264,6 +268,8 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
             ? parsed.contentHashAtSuggestion
             : undefined,
         supersededSuggestionIds: parseStringIdList(parsed.supersededSuggestionIds),
+        suggestionBase: parsed.suggestionBase,
+        suggestionIntent: parsed.suggestionIntent,
         evidenceSources: Array.isArray(parsed.evidenceSources)
           ? parsed.evidenceSources.flatMap((source) => {
               if (!source || typeof source !== "object") return [];
@@ -353,6 +359,8 @@ export type ParsedAiRedraftPayload = {
   fieldHashAtSuggestion?: string;
   /** Older open suggestions this draft dismissed. */
   supersededSuggestionIds?: string[];
+  suggestionBase?: unknown;
+  suggestionIntent?: unknown;
 };
 
 export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPayload {
@@ -367,6 +375,8 @@ export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPa
             ? parsed.fieldHashAtSuggestion
             : undefined,
         supersededSuggestionIds: parseStringIdList(parsed.supersededSuggestionIds),
+        suggestionBase: parsed.suggestionBase,
+        suggestionIntent: parsed.suggestionIntent,
       };
     }
   } catch {

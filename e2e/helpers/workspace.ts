@@ -199,13 +199,20 @@ export async function setReportChrome(
 ): Promise<void> {
   const switchBtn = page.getByTestId("report-chrome-switch");
   await expect(switchBtn).toBeVisible({ timeout: 30_000 });
-  if ((await switchBtn.getAttribute("data-current-chrome")) === chrome) {
-    return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if ((await switchBtn.getAttribute("data-current-chrome")) === chrome) {
+      break;
+    }
+    await switchBtn.click({ force: attempt > 0 });
+    try {
+      await expect(switchBtn).toHaveAttribute("data-current-chrome", chrome, {
+        timeout: 5_000,
+      });
+      break;
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
   }
-  await switchBtn.click();
-  await expect(switchBtn).toHaveAttribute("data-current-chrome", chrome, {
-    timeout: 15_000,
-  });
   if (chrome === "document") {
     await expect(page.getByTestId("report-work-product")).toBeVisible({
       timeout: 30_000,

@@ -515,4 +515,19 @@ describe("parseAiFixCommentContent supersededSuggestionIds", () => {
     });
     expect(parseAiFixCommentContent(json).supersededSuggestionIds).toBeUndefined();
   });
+
+  it("keeps replaced ids next to suggestion base and intent", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "old",
+      insertText: "new",
+      reasoning: "Replace the older edit",
+      supersededSuggestionIds: ["old-edit"],
+      suggestionBase: "old",
+      suggestionIntent: "new",
+    });
+    const parsed = parseAiFixCommentContent(json);
+    expect(parsed.supersededSuggestionIds).toEqual(["old-edit"]);
+    expect(parsed.suggestionBase).toBe("old");
+    expect(parsed.suggestionIntent).toBe("new");
+  });
 });

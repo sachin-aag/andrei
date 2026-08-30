@@ -25,6 +25,7 @@ import {
   openReportAnalytics,
   openReportEditor,
   reportSidebar,
+  waitForReportEditor,
   reviewMargin,
   setReportChrome,
 } from "./helpers/workspace";
@@ -245,9 +246,7 @@ test.describe("report editor", () => {
       await gotoWithNavigationRetry(page, `/reports/${other.id}/edit`, {
         waitUntil: "domcontentloaded",
       });
-      await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-        timeout: 30_000,
-      });
+      await waitForReportEditor(page);
       await expect
         .poll(async () => {
           const width = await sidebar.evaluate(
@@ -274,9 +273,7 @@ test.describe("report editor", () => {
         .toBeGreaterThan(defaultWidth + 8);
 
       await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-        timeout: 30_000,
-      });
+      await waitForReportEditor(page);
       await expect
         .poll(async () => {
           const width = await reportSidebar(page).evaluate(

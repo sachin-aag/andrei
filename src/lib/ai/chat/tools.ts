@@ -80,6 +80,10 @@ import {
   type CommitEditInput,
   type TurnEditItem,
 } from "@/lib/ai/chat/commit-edit";
+import {
+  buildSuggestionRecord,
+  withSuggestionRecord,
+} from "@/lib/suggestions/suggestion-record";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 import {
   citationAppendPart,
@@ -191,7 +195,8 @@ type AgentCommitOutcome =
   | { status: "no_table"; hint: string }
   | { status: "stale"; hint: string }
   | { status: "fixed_schema"; hint: string }
-  | { status: "invalid"; hint: string };
+  | { status: "invalid"; hint: string }
+  | { status: "conflict"; hint: string };
 
 export type ProposeEditResult =
   | {
@@ -735,6 +740,23 @@ export function buildChatTools(opts: {
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
+  const attachRecord = <T extends object>(
+    payload: T,
+    sectionContent: Record<string, unknown>,
+    section: SectionType,
+    targetField: string,
+    input: CommitEditInput
+  ): T =>
+    withSuggestionRecord(
+      payload,
+      buildSuggestionRecord({
+        sectionContent,
+        section,
+        targetField,
+        documentType,
+        input,
+      })
+    );
   const editPolicy: ChatEditPolicy = opts.editPolicy ?? "propose";
   const turnEdits = opts.turnEdits;
   const committing = editPolicy === "commit";
@@ -1454,7 +1476,24 @@ export function buildChatTools(opts: {
           sectionId: loaded.sectionId,
           section,
           authorId: AI_AUTHOR_ID,
-          content: serializeAiFixCommentContent(payload),
+          content: serializeAiFixCommentContent(
+            attachRecord(
+              payload,
+              loaded.content as Record<string, unknown>,
+              section,
+              resolvedField,
+              {
+                kind: "located",
+                edit: {
+                  anchorText: prepared.anchorText,
+                  deleteText: prepared.deleteText,
+                  insertText: normalizedInsert,
+                  scope: prepared.scope,
+                  second,
+                },
+              }
+            )
+          ),
           anchorText: prepared.anchorText,
           contentPath: resolvedField,
           fromPos: null,
@@ -1865,7 +1904,24 @@ export function buildChatTools(opts: {
           sectionId: loaded.sectionId,
           section,
           authorId: AI_AUTHOR_ID,
-          content: serializeAiFixCommentContent(payload),
+          content: serializeAiFixCommentContent(
+            attachRecord(
+              payload,
+              loaded.content as Record<string, unknown>,
+              section,
+              resolvedField,
+              {
+                kind: "located",
+                edit: {
+                  anchorText: trimmedAnchor,
+                  deleteText: "",
+                  insertText: "",
+                  insertImage,
+                  removeImage,
+                },
+              }
+            )
+          ),
           anchorText: trimmedAnchor,
           contentPath: resolvedField,
           fromPos: null,
@@ -2175,7 +2231,23 @@ export function buildChatTools(opts: {
             sectionId: loaded.sectionId,
             section,
             authorId: AI_AUTHOR_ID,
-            content: serializeAiFixCommentContent(payload),
+            content: serializeAiFixCommentContent(
+              attachRecord(
+                payload,
+                loaded.content as Record<string, unknown>,
+                section,
+                resolvedField,
+                {
+                  kind: "located",
+                  edit: {
+                    anchorText: "",
+                    deleteText: "",
+                    insertText: "",
+                    removeImage,
+                  },
+                }
+              )
+            ),
             anchorText: "",
             contentPath: resolvedField,
             fromPos: null,
@@ -2396,7 +2468,15 @@ export function buildChatTools(opts: {
           sectionId: loaded.sectionId,
           section,
           authorId: AI_AUTHOR_ID,
-          content: serializeAiFixCommentContent(payload),
+          content: serializeAiFixCommentContent(
+            attachRecord(
+              payload,
+              loaded.content as Record<string, unknown>,
+              section,
+              resolvedField,
+              { kind: "table", operation: stripped.operation }
+            )
+          ),
           anchorText: summarizeTableOperation(stripped.operation),
           contentPath: resolvedField,
           fromPos: null,
@@ -2561,15 +2641,23 @@ export function buildChatTools(opts: {
           sectionId: loaded.sectionId,
           section,
           authorId: AI_AUTHOR_ID,
-          content: serializeAiRedraftCommentContent({
-            markdown: draftMarkdown,
-            reasoning,
-            fieldHashAtSuggestion: fieldContentHash(
+          content: serializeAiRedraftCommentContent(
+            attachRecord(
+              {
+                markdown: draftMarkdown,
+                reasoning,
+                fieldHashAtSuggestion: fieldContentHash(
+                  section,
+                  loaded.content,
+                  resolvedField
+                ),
+              },
+              loaded.content as Record<string, unknown>,
               section,
-              loaded.content,
-              resolvedField
-            ),
-          }),
+              resolvedField,
+              { kind: "redraft", markdown: draftMarkdown }
+            )
+          ),
           anchorText: "",
           contentPath: resolvedField,
           fromPos: null,
