@@ -258,14 +258,20 @@ test.describe("report editor", () => {
         .toBeLessThan(12);
 
       await expect(chatHandle).toBeVisible();
-      await chatHandle.press("ArrowLeft");
+      // Firefox often drops locator.press() on the separator after a
+      // client-side navigation. Focus + page.keyboard matches the first
+      // half of this test (and Chromium).
+      await chatHandle.focus();
+      await expect(chatHandle).toBeFocused();
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft");
       await expect
         .poll(
           async () =>
             sidebar.evaluate((el) => el.getBoundingClientRect().width),
           { timeout: 10_000 }
         )
-        .toBeGreaterThan(defaultWidth + 4);
+        .toBeGreaterThan(defaultWidth + 8);
 
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
