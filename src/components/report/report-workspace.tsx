@@ -92,6 +92,7 @@ import { WorkspaceResizeHandle } from "./workspace-resize-handle";
 import {
   COLLAPSED_RAIL_PX,
   documentCanvasWidthClass,
+  documentColumnStyle,
   isReviewGutterVisible,
   REVIEW_GUTTER_GRID_COLS,
   WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
@@ -307,15 +308,19 @@ export function ReportWorkspace({
     chatWidth,
     docsWidth,
     previewWidth,
+    documentWidth,
     chatBounds,
     docsBounds,
     previewBounds,
+    documentBounds,
     setChatWidth,
     setDocsWidth,
     setPreviewWidth,
+    setDocumentWidth,
     resetChatWidth,
     resetDocsWidth,
     resetPreviewWidth,
+    resetDocumentWidth,
     beginResize,
     endResize,
   } = useWorkspaceLayout({
@@ -1098,13 +1103,47 @@ export function ReportWorkspace({
                     }),
                     showReviewGutter && REVIEW_GUTTER_GRID_COLS
                   )}
+                  style={
+                    continuousDocument
+                      ? undefined
+                      : documentColumnStyle(documentWidth)
+                  }
                 >
                   <div
+                    id="report-document-sheet"
                     className={cn(
-                      "space-y-10 min-w-0",
+                      "relative space-y-10 min-w-0",
                       documentType === "quality_risk_assessment" && "qra-document"
                     )}
                   >
+                    {continuousDocument ? null : (
+                      <>
+                        <WorkspaceResizeHandle
+                          label="Resize document from the left"
+                          controlsId="report-document-sheet"
+                          edge="start"
+                          value={documentWidth}
+                          min={documentBounds.min}
+                          max={documentBounds.max}
+                          onChange={setDocumentWidth}
+                          onDragStart={() => beginResize("document")}
+                          onDragEnd={endResize}
+                          onReset={resetDocumentWidth}
+                        />
+                        <WorkspaceResizeHandle
+                          label="Resize document from the right"
+                          controlsId="report-document-sheet"
+                          edge="end"
+                          value={documentWidth}
+                          min={documentBounds.min}
+                          max={documentBounds.max}
+                          onChange={setDocumentWidth}
+                          onDragStart={() => beginResize("document")}
+                          onDragEnd={endResize}
+                          onReset={resetDocumentWidth}
+                        />
+                      </>
+                    )}
                     <ReportHeader />
                     <div
                       className={cn(
