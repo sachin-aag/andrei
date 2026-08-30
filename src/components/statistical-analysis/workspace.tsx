@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -121,6 +122,7 @@ export function StatisticalWorkspace({
   );
   const [tab, setTab] = useState("worksheet");
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
+  const [analysisListCollapsed, setAnalysisListCollapsed] = useState(false);
 
   useEffect(() => {
     if (!focusApiRef) return;
@@ -859,75 +861,109 @@ export function StatisticalWorkspace({
             </div>
           ) : (
             <div className="flex min-h-0 min-w-0 flex-1">
-              <aside
-                data-testid="analysis-list"
-                className="w-56 shrink-0 overflow-y-auto border-r border-[var(--border)] p-2"
-              >
-                <div className="flex items-center justify-between gap-2 px-2 pb-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-                    Analyses
-                  </p>
-                  {readOnly ? null : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-1.5 text-[11px]"
-                      data-testid="new-analysis"
-                      onClick={() =>
-                        void openAnalyzeForColumn(
-                          selectedColumnId,
-                          selectedRowRange
-                        )
-                      }
-                    >
-                      New
-                    </Button>
-                  )}
-                </div>
-                <ul className="space-y-1">
-                  {displayedAnalyses.map((analysis) => {
-                    const active = selectedAnalysis?.id === analysis.id;
-                    const subtitle = analysisListSubtitle(analysis);
-                    return (
-                      <li key={analysis.id}>
-                        <button
+              {analysisListCollapsed ? (
+                <aside
+                  data-testid="analysis-list"
+                  data-collapsed="true"
+                  className="flex w-10 shrink-0 flex-col border-r border-[var(--border)]"
+                >
+                  <button
+                    type="button"
+                    data-testid="analysis-list-expand"
+                    aria-label="Show analyses list"
+                    aria-expanded={false}
+                    title="Show analyses list"
+                    onClick={() => setAnalysisListCollapsed(false)}
+                    className="mx-auto mt-2 flex size-8 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                  >
+                    <PanelLeftOpen className="size-4" aria-hidden="true" />
+                  </button>
+                </aside>
+              ) : (
+                <aside
+                  data-testid="analysis-list"
+                  data-collapsed="false"
+                  className="w-56 shrink-0 overflow-y-auto border-r border-[var(--border)] p-2"
+                >
+                  <div className="flex items-center justify-between gap-2 px-2 pb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+                      Analyses
+                    </p>
+                    <div className="flex items-center gap-0.5">
+                      {readOnly ? null : (
+                        <Button
                           type="button"
-                          data-testid={`analysis-item-${analysis.id}`}
-                          data-analysis-title={analysis.title}
-                          onClick={() => setSelectedAnalysisId(analysis.id)}
-                          className={`w-full rounded-md px-2 py-2 text-left text-xs transition-colors ${
-                            active
-                              ? "bg-[var(--brand-700)] text-white"
-                              : "hover:bg-[var(--secondary)]"
-                          }`}
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[11px]"
+                          data-testid="new-analysis"
+                          onClick={() =>
+                            void openAnalyzeForColumn(
+                              selectedColumnId,
+                              selectedRowRange
+                            )
+                          }
                         >
-                          <span className="block font-medium">{analysis.title}</span>
-                          <span
-                            className={`block ${
+                          New
+                        </Button>
+                      )}
+                      <button
+                        type="button"
+                        data-testid="analysis-list-collapse"
+                        aria-label="Hide analyses list"
+                        aria-expanded
+                        title="Hide analyses list"
+                        onClick={() => setAnalysisListCollapsed(true)}
+                        className="flex size-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                      >
+                        <PanelLeftClose className="size-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                  <ul className="space-y-1">
+                    {displayedAnalyses.map((analysis) => {
+                      const active = selectedAnalysis?.id === analysis.id;
+                      const subtitle = analysisListSubtitle(analysis);
+                      return (
+                        <li key={analysis.id}>
+                          <button
+                            type="button"
+                            data-testid={`analysis-item-${analysis.id}`}
+                            data-analysis-title={analysis.title}
+                            onClick={() => setSelectedAnalysisId(analysis.id)}
+                            className={`w-full rounded-md px-2 py-2 text-left text-xs transition-colors ${
                               active
-                                ? "text-white/80"
-                                : "text-[var(--muted-foreground)]"
+                                ? "bg-[var(--brand-700)] text-white"
+                                : "hover:bg-[var(--secondary)]"
                             }`}
                           >
-                            {subtitle}
-                          </span>
-                          <span
-                            className={`block ${
-                              active
-                                ? "text-white/80"
-                                : "text-[var(--muted-foreground)]"
-                            }`}
-                          >
-                            {analysis.stale ? "Stale · " : ""}
-                            {new Date(analysis.createdAt).toLocaleString()}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </aside>
+                            <span className="block font-medium">{analysis.title}</span>
+                            <span
+                              className={`block ${
+                                active
+                                  ? "text-white/80"
+                                  : "text-[var(--muted-foreground)]"
+                              }`}
+                            >
+                              {subtitle}
+                            </span>
+                            <span
+                              className={`block ${
+                                active
+                                  ? "text-white/80"
+                                  : "text-[var(--muted-foreground)]"
+                              }`}
+                            >
+                              {analysis.stale ? "Stale · " : ""}
+                              {new Date(analysis.createdAt).toLocaleString()}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </aside>
+              )}
               <div className="min-w-0 flex-1 overflow-hidden">
                 {selectedAnalysis &&
                 (isScatterAnalysis(selectedAnalysis) ||

@@ -151,6 +151,25 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("sixpack-mr-label-ucl")).toBeVisible();
     await expect(page.getByText("Cpk")).toBeVisible();
     await expect(page.getByTestId("analysis-list")).toBeVisible();
+    await expect(page.getByTestId("analysis-list")).toHaveAttribute(
+      "data-collapsed",
+      "false"
+    );
+
+    await page.getByTestId("analysis-list-collapse").click();
+    await expect(page.getByTestId("analysis-list")).toHaveAttribute(
+      "data-collapsed",
+      "true"
+    );
+    await expect(page.getByTestId("analysis-list-expand")).toBeVisible();
+    await expect(page.locator("[data-analysis-title]")).toHaveCount(0);
+
+    await page.getByTestId("analysis-list-expand").click();
+    await expect(page.getByTestId("analysis-list")).toHaveAttribute(
+      "data-collapsed",
+      "false"
+    );
+    await expect(page.locator("[data-analysis-title]")).toHaveCount(1);
   });
 
   test("saves a sixpack per column and switches between them", async ({
