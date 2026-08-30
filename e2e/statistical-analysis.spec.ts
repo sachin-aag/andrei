@@ -7,6 +7,7 @@ import {
   replaceColumnValues,
 } from "@/lib/statistical-analysis/worksheet";
 import {
+  chatMessageTargetTag,
   chatUserMessage,
   expandReportSidebar,
   openReportAnalytics,
@@ -404,6 +405,9 @@ test.describe("report analytics", () => {
     await expect(
       chatUserMessage(page, "extract assay numbers from the attachments")
     ).toBeVisible({ timeout: 15_000 });
+    await expect(chatMessageTargetTag(page, "analytics").first()).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(
       sidebar.getByText(/normal capability sixpack/i)
     ).toBeVisible({ timeout: 30_000 });

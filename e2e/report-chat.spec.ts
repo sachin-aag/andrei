@@ -6,6 +6,7 @@ import { reloadWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport, seedDefineForEvaluation } from "./helpers/reports";
 import {
   chatAssistantMessage,
+  chatMessageTargetTag,
   chatUserMessage,
   collapseReportSidebar,
   defineEditor,
@@ -15,6 +16,7 @@ import {
   openReportAssistant,
   openReportEditor,
   reportSidebar,
+  setChatWorkProductTarget,
   setReportChrome,
 } from "./helpers/workspace";
 
@@ -103,6 +105,7 @@ test.describe("report chat", () => {
     await expect(chatAssistantMessage(page)).toBeVisible({
       timeout: 30_000,
     });
+    await expect(chatMessageTargetTag(page, "report").first()).toBeVisible();
     await expect(sidebar.getByText(/out-of-spec dissolution result/i)).toBeVisible({
       timeout: 30_000,
     });
@@ -385,5 +388,58 @@ test.describe("report chat", () => {
     ).toBeVisible();
     await expect(composer).toBeVisible();
     await expect(composer).toBeEnabled();
+  });
+
+  test("tags Report and Analytics turns in the same thread", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await openReportAssistant(page);
+    const sidebar = reportSidebar(page);
+    await sidebar.getByLabel("Assistant mode").click();
+    await page.getByRole("option", { name: /^ask$/i }).click();
+
+    const reportComposer = sidebar.getByPlaceholder(
+      /ask about the report or attachments/i
+    );
+    await expect(reportComposer).toBeEnabled({ timeout: 15_000 });
+    await reportComposer.fill("report history ping");
+    await sidebar.getByRole("button", { name: /^send message$/i }).click();
+
+    await expect(chatUserMessage(page, "report history ping")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(chatAssistantMessage(page)).toBeVisible({ timeout: 30_000 });
+    await expect(chatMessageTargetTag(page, "report")).toHaveCount(2);
+
+    await setChatWorkProductTarget(page, "analytics");
+    const analyticsComposer = sidebar.getByTestId("analytics-chat-input");
+    await expect(analyticsComposer).toBeEnabled({ timeout: 15_000 });
+    await analyticsComposer.fill("analytics history ping");
+    await sidebar.getByRole("button", { name: /^send message$/i }).click();
+
+    await expect(chatUserMessage(page, "analytics history ping")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(chatMessageTargetTag(page, "analytics").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(chatMessageTargetTag(page, "report")).toHaveCount(2);
+    await expect(chatMessageTargetTag(page, "analytics")).toHaveCount(2);
+
+    await reloadWithNavigationRetry(page, { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(new RegExp(`/reports/${reportId}/edit`));
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+      timeout: 30_000,
+    });
+    await openReportAssistant(page);
+    await expect(sidebar.getByTestId("analytics-chat-input")).toBeVisible();
+    await expect(chatUserMessage(page, "report history ping")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(chatUserMessage(page, "analytics history ping")).toBeVisible();
+    await expect(chatMessageTargetTag(page, "report")).toHaveCount(2);
+    await expect(chatMessageTargetTag(page, "analytics")).toHaveCount(2);
   });
 });

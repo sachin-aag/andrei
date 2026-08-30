@@ -39,6 +39,12 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ChatMarkdown } from "@/components/report/chat-markdown";
+import { ChatMessageTargetTag } from "@/components/report/chat-message-target-tag";
+import {
+  chatMessageTargetLabel,
+  tagChatMessages,
+  type ChatMessageTarget,
+} from "@/lib/ai/chat/message-target";
 import {
   isRedundantInsertImageChip,
   type InsertImageChipInfo,
@@ -734,16 +740,19 @@ function MentionMenu({
 
 const MessageTurn = memo(function MessageTurn({
   message,
+  chatTarget,
   askUserActive,
   onAnswerQuestions,
   streaming = false,
 }: {
   message: UIMessage;
+  chatTarget: ChatMessageTarget | null;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
 }) {
   const isUser = message.role === "user";
+  const targetLabel = chatTarget ? chatMessageTargetLabel(chatTarget) : null;
 
   if (isUser) {
     const parts = message.parts ?? [];
@@ -757,25 +766,30 @@ const MessageTurn = memo(function MessageTurn({
     );
     if (!text && images.length === 0) return null;
     return (
-      <div className="flex justify-end">
-        <div
-          className="max-w-[92%] space-y-2 rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]"
-          aria-label="Your message"
-        >
-          {images.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {images.map((image, i) => (
-                // eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews
-                <img
-                  key={`${image.filename ?? "image"}-${i}`}
-                  src={image.url}
-                  alt={image.filename ?? "Attached image"}
-                  className="max-h-40 max-w-full rounded-md border border-white/20 object-contain"
-                />
-              ))}
-            </div>
-          ) : null}
-          {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
+      <div
+        className="flex justify-end"
+        aria-label={
+          targetLabel ? `Your message · ${targetLabel}` : "Your message"
+        }
+      >
+        <div className="flex max-w-[92%] flex-col items-end gap-1">
+          <ChatMessageTargetTag target={chatTarget} />
+          <div className="space-y-2 rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]">
+            {images.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {images.map((image, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews
+                  <img
+                    key={`${image.filename ?? "image"}-${i}`}
+                    src={image.url}
+                    alt={image.filename ?? "Attached image"}
+                    className="max-h-40 max-w-full rounded-md border border-white/20 object-contain"
+                  />
+                ))}
+              </div>
+            ) : null}
+            {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
+          </div>
         </div>
       </div>
     );
@@ -788,13 +802,21 @@ const MessageTurn = memo(function MessageTurn({
     streaming,
   });
   return (
-    <div className="flex flex-col gap-2">
-      <div
-        className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]"
-        aria-label="Assistant message"
-      >
+    <div
+      className="flex flex-col gap-2"
+      aria-label={
+        targetLabel ? `Assistant message · ${targetLabel}` : "Assistant message"
+      }
+    >
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]">
         <Sparkles className="size-3 text-[var(--primary)]" />
         Assistant
+        {targetLabel ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <ChatMessageTargetTag target={chatTarget} />
+          </>
+        ) : null}
       </div>
       {showEmptyError ? (
         <p className="text-sm text-red-600">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
@@ -1077,6 +1099,7 @@ export function ChatPanel({
   const currentSessionIdRef = useRef<string | null>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
   const lastSendTargetRef = useRef<WorkProductView>("report");
+  const [lastSendTarget, setLastSendTarget] = useState<WorkProductView>("report");
   const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
@@ -1490,7 +1513,14 @@ export function ChatPanel({
     messages.length,
     visibleCount
   );
-  const visibleMessages = messages.slice(visibleStartIndex);
+  const taggedMessages = useMemo(
+    () =>
+      tagChatMessages(messages, {
+        inFlightTarget: busy ? lastSendTarget : null,
+      }),
+    [busy, lastSendTarget, messages]
+  );
+  const visibleMessages = taggedMessages.slice(visibleStartIndex);
   const hiddenCount = visibleStartIndex;
 
   const loadOlderMessages = useCallback(() => {
@@ -1740,6 +1770,7 @@ export function ChatPanel({
       }
       if (sessionRuntime.busy) return;
       lastSendTargetRef.current = chatTarget;
+      setLastSendTarget(chatTarget);
       savedScrollRef.current = { kind: "bottom" };
       if (
         workspaceChrome === "agent" &&
@@ -1777,12 +1808,16 @@ export function ChatPanel({
           id: mention.id,
         }));
       }
+      const metadata = { chatTarget };
       if (trimmed && files.length > 0) {
-        void sessionRuntime.sendMessage({ text: trimmed, files }, { body });
+        void sessionRuntime.sendMessage(
+          { text: trimmed, files, metadata },
+          { body }
+        );
       } else if (files.length > 0) {
-        void sessionRuntime.sendMessage({ files }, { body });
+        void sessionRuntime.sendMessage({ files, metadata }, { body });
       } else {
-        void sessionRuntime.sendMessage({ text: trimmed }, { body });
+        void sessionRuntime.sendMessage({ text: trimmed, metadata }, { body });
       }
     },
     [
@@ -1973,6 +2008,7 @@ export function ChatPanel({
             <MessageTurn
               key={m.id}
               message={m}
+              chatTarget={m.chatTarget}
               askUserActive={
                 visibleStartIndex + i === messages.length - 1 &&
                 !busy &&
