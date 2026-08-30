@@ -1001,6 +1001,20 @@ export function ReportWorkspace({
           ) : (
             <>
               <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
+                {agentChrome ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 shrink-0"
+                    aria-label="Collapse document panel"
+                    aria-expanded
+                    title="Collapse"
+                    onClick={() => setPreviewCollapsed(true)}
+                  >
+                    <PanelRightClose className="size-4" aria-hidden="true" />
+                  </Button>
+                ) : null}
                 <WorkProductTabs
                   tabs={canvasTabs}
                   value={liveActiveTabId}
@@ -1040,20 +1054,6 @@ export function ReportWorkspace({
                       checked={commentsGutterVisible}
                       onCheckedChange={setCommentsGutterVisible}
                     />
-                  ) : null}
-                  {agentChrome ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 shrink-0"
-                      aria-label="Collapse document panel"
-                      aria-expanded
-                      title="Collapse"
-                      onClick={() => setPreviewCollapsed(true)}
-                    >
-                      <PanelRightClose className="size-4" aria-hidden="true" />
-                    </Button>
                   ) : null}
                 </div>
               </div>
