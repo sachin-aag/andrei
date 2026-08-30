@@ -54,6 +54,10 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
   Missing from the allowlist = silent Plan-mode gap. Analytics tools stay
   off that list.
+- `insert_image` source=analytics copies a saved plot only when the named
+  series matches (or they did not name one). If they asked for a plot that
+  is not listed, return the available titles and say they can create
+  additional ones in Analytics — do not insert a different figure.
 - Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
   + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
   `ai_fix` comments). Document chrome **proposes**. Do not trust a client

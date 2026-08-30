@@ -385,6 +385,13 @@ function ToolChip({
         </ToolLine>
       );
     }
+    if (info.output?.status === "available_plots") {
+      return (
+        <ToolLine icon={<ImagePlus className="size-3.5" />}>
+          Listing the Analytics plots that are available.
+        </ToolLine>
+      );
+    }
     const hint =
       typeof info.output?.hint === "string"
         ? info.output.hint

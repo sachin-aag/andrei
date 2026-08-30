@@ -3,11 +3,16 @@ import type { UIMessage } from "ai";
 import {
   listLatestUserChatImages,
   parseSectionImageId,
+  plotMatchesNamedTokens,
+  recentUserMessageText,
   resolveAnalyticsImage,
   resolveChatImage,
+  resolveNamedAnalyticsPlot,
   resolveSectionImageLocator,
   sectionImageNotFoundMessage,
+  tokenizePlotName,
 } from "./insert-image";
+import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
 
 const TINY_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -194,5 +199,114 @@ describe("resolveAnalyticsImage", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message).toContain("no captured preview");
+  });
+});
+
+describe("resolveNamedAnalyticsPlot", () => {
+  const torque = {
+    id: "anl_torque",
+    workspaceId: "ws",
+    title: "Torque scatter",
+    kind: "measurement_scatter" as const,
+    sourceHash: "h",
+    stale: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    previewImage: {
+      dataUrl: PNG,
+      widthPx: 600,
+      heightPx: 400,
+      alt: "Torque scatter",
+      chartSpec: null,
+    },
+    config: {
+      query: "torque",
+      title: "Torque scatter",
+      xLabel: "Unit",
+      yLabel: "Torque",
+      layout: {
+        mode: "combined" as const,
+        seriesBy: "none" as const,
+        xAxis: "sequential" as const,
+        yRange: null,
+      },
+      lsl: null,
+      usl: null,
+    },
+    results: { specs: [], n: 3, uom: "Nm" },
+  } satisfies StatisticalAnalysisSummary;
+
+  const assay = {
+    id: "anl_assay",
+    workspaceId: "ws",
+    title: "Assay sixpack",
+    kind: "capability_sixpack_normal" as const,
+    sourceHash: "h",
+    stale: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    previewImage: {
+      dataUrl: PNG,
+      widthPx: 600,
+      heightPx: 400,
+      alt: "Assay sixpack",
+      chartSpec: null,
+    },
+    config: {
+      columnId: "c1",
+      columnName: "Assay",
+      title: "Assay sixpack",
+      lsl: 90,
+      usl: 110,
+      target: 100,
+    },
+    results: {} as never,
+  } satisfies StatisticalAnalysisSummary;
+
+  it("strips insert/section boilerplate from the engineer request", () => {
+    expect(
+      tokenizePlotName("insert the torque plot into the purpose section")
+    ).toEqual(["torque"]);
+    expect(plotMatchesNamedTokens(assay, ["torque"])).toBe(false);
+    expect(plotMatchesNamedTokens(assay, ["assay"])).toBe(true);
+  });
+
+  it("reads the latest user turns for the named series", () => {
+    const messages: UIMessage[] = [
+      {
+        id: "u1",
+        role: "user",
+        parts: [{ type: "text", text: "insert the torque plot into purpose" }],
+      },
+    ];
+    expect(recentUserMessageText(messages)).toContain("torque");
+  });
+
+  it("lists available plots when they named a series that is not saved", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay],
+      userText: "insert the torque plot into the purpose section",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("Assay sixpack");
+    expect(result.message).toContain("create additional plots in Analytics");
+  });
+
+  it("inserts the named plot even if analysisId pointed at a different figure", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay, torque],
+      userText: "insert the torque plot",
+    });
+    expect(result).toEqual({ ok: true, analysisId: torque.id });
+  });
+
+  it("keeps an explicit analysisId when they did not name a series", () => {
+    const result = resolveNamedAnalyticsPlot({
+      analysisId: assay.id,
+      analyses: [assay, torque],
+      userText: "insert this into purpose",
+    });
+    expect(result).toEqual({ ok: true, analysisId: assay.id });
   });
 });

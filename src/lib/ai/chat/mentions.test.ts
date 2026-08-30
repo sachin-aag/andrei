@@ -305,6 +305,7 @@ describe("buildMentionBlock", () => {
     );
 
     expect(block).toContain("insert_image source=analytics");
+    expect(block).toContain("create additional ones in Analytics");
     expect(block).toContain("[anl_1]");
     expect(block).toContain("kind=measurement_scatter");
     expect(block).not.toContain("no preview yet");

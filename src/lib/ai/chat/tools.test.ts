@@ -1269,4 +1269,73 @@ describe("buildChatTools propose vs commit", () => {
     expect((result as { message: string }).message).toContain("no captured preview");
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
+
+  it("lists available Analytics plots when they named a series that is not saved", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay sixpack",
+          kind: "capability_sixpack_normal",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay sixpack",
+            chartSpec: null,
+          },
+          config: {
+            columnId: "c1",
+            columnName: "Assay",
+            title: "Assay sixpack",
+            lsl: 90,
+            usl: 110,
+            target: 100,
+          },
+          results: {} as never,
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert the torque plot into the purpose section",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the torque plot to Purpose.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "available_plots" });
+    expect((result as { message: string }).message).toContain("Assay sixpack");
+    expect((result as { message: string }).message).toContain(
+      "create additional plots in Analytics"
+    );
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
 });

@@ -3,8 +3,20 @@ import { isChatImageFilePart } from "@/lib/ai/chat/image-parts";
 import {
   isGraphAnalysisKind,
   isInsertableGraphAnalysis,
+  listGraphAnalyses,
+  listInsertableGraphAnalyses,
 } from "@/lib/statistical-analysis/insertable-graphs";
-import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
+import {
+  CAPABILITY_SIXPACK_NORMAL,
+  MEASUREMENT_SCATTER,
+  ONE_WAY_ANOVA,
+  XY_SCATTER,
+  isScatterAnalysis,
+  isSixpackAnalysis,
+  isXyScatterAnalysis,
+  type AnalysisKind,
+  type StatisticalAnalysisSummary,
+} from "@/lib/statistical-analysis/types";
 import { isValidSuggestionImageSrc } from "@/lib/suggestions/image-insert";
 import type { SuggestionImageInsert } from "@/lib/suggestions/image-insert";
 
@@ -185,6 +197,285 @@ export function resolveAnalyticsImage(
       mediaId: null,
       chartSpec: preview.chartSpec,
     },
+  };
+}
+
+const PLOT_NAME_STOPWORDS = new Set([
+  "a",
+  "an",
+  "the",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "my",
+  "our",
+  "your",
+  "and",
+  "or",
+  "of",
+  "for",
+  "to",
+  "into",
+  "onto",
+  "in",
+  "on",
+  "at",
+  "from",
+  "with",
+  "please",
+  "can",
+  "could",
+  "would",
+  "should",
+  "insert",
+  "add",
+  "copy",
+  "put",
+  "place",
+  "include",
+  "embed",
+  "use",
+  "plot",
+  "plots",
+  "chart",
+  "charts",
+  "graph",
+  "graphs",
+  "figure",
+  "figures",
+  "image",
+  "images",
+  "photo",
+  "picture",
+  "section",
+  "sections",
+  "field",
+  "document",
+  "report",
+  "analytics",
+  "results",
+  "available",
+  "existing",
+  "saved",
+  "current",
+  "purpose",
+  "scope",
+  "define",
+  "measure",
+  "analyze",
+  "analyse",
+  "improve",
+  "control",
+  "conclusion",
+  "references",
+  "traceability",
+  "appendices",
+  "narrative",
+  "body",
+  "approval",
+  "signoff",
+  "one",
+  "ones",
+  "also",
+  "just",
+  "here",
+  "there",
+]);
+
+const ANALYTICS_CREATE_COPY =
+  "They can create additional plots in Analytics (Document | Analytics at the top of the report).";
+const RELAY_AVAILABLE_PLOTS_COPY =
+  "Reply in prose with those titles. Do not insert a different plot. Do not call plot_measurements as a substitute.";
+
+function graphKindLabel(kind: AnalysisKind): string {
+  switch (kind) {
+    case CAPABILITY_SIXPACK_NORMAL:
+      return "sixpack";
+    case MEASUREMENT_SCATTER:
+      return "measurement scatter";
+    case XY_SCATTER:
+      return "XY scatter";
+    case ONE_WAY_ANOVA:
+      return "ANOVA";
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
+export function tokenizePlotName(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) ?? []).filter(
+    (token) => token.length >= 2 && !PLOT_NAME_STOPWORDS.has(token)
+  );
+}
+
+function tokenMatchesIdentity(request: string, identity: string): boolean {
+  if (request === identity) return true;
+  if (request.length < 4) return false;
+  return identity.includes(request) || request.includes(identity);
+}
+
+function analysisIdentityTokens(
+  analysis: StatisticalAnalysisSummary
+): string[] {
+  const parts: string[] = [analysis.title];
+  if (analysis.previewImage?.alt) parts.push(analysis.previewImage.alt);
+  if (isSixpackAnalysis(analysis)) {
+    parts.push(
+      analysis.config.columnName,
+      analysis.config.title,
+      "sixpack",
+      "capability"
+    );
+  } else if (isScatterAnalysis(analysis)) {
+    parts.push(
+      analysis.config.query,
+      analysis.config.yLabel,
+      analysis.config.xLabel,
+      analysis.config.title,
+      "scatter"
+    );
+  } else if (isXyScatterAnalysis(analysis)) {
+    parts.push(
+      analysis.config.xColumnName,
+      analysis.config.yColumnName,
+      analysis.config.title,
+      "scatter",
+      "xy"
+    );
+  }
+  return [...new Set(tokenizePlotName(parts.join(" ")))];
+}
+
+export function plotMatchesNamedTokens(
+  analysis: StatisticalAnalysisSummary,
+  namedTokens: readonly string[]
+): boolean {
+  if (namedTokens.length === 0) return false;
+  const identity = analysisIdentityTokens(analysis);
+  return namedTokens.every((token) =>
+    identity.some((id) => tokenMatchesIdentity(token, id))
+  );
+}
+
+function formatAvailablePlots(analyses: StatisticalAnalysisSummary[]): string {
+  const graphs = listGraphAnalyses(analyses);
+  if (graphs.length === 0) return "none";
+  return graphs
+    .map((analysis) => {
+      const title = analysis.title.trim() || "untitled plot";
+      const preview = isInsertableGraphAnalysis(analysis)
+        ? ""
+        : " — no preview yet";
+      return `"${title}" (${graphKindLabel(analysis.kind)}) [${analysis.id}]${preview}`;
+    })
+    .join("; ");
+}
+
+function availablePlotsMessage(opts: {
+  analyses: StatisticalAnalysisSummary[];
+  requested?: string;
+  unspecified?: boolean;
+}): string {
+  const listed = formatAvailablePlots(opts.analyses);
+  if (listed === "none") {
+    return `There are no saved Analytics plots to insert. Tell the engineer they can create plots in Analytics (Document | Analytics at the top of the report), then insert them here. Do not invent a figure.`;
+  }
+  if (opts.unspecified) {
+    return `The engineer did not name which plot. Available plots: ${listed}. Tell them those are available. ${ANALYTICS_CREATE_COPY} Ask which to insert. ${RELAY_AVAILABLE_PLOTS_COPY}`;
+  }
+  const requested = opts.requested?.trim() || "that name";
+  return `No Analytics plot matches "${requested}". Available plots: ${listed}. Tell the engineer those titles are available. ${ANALYTICS_CREATE_COPY} ${RELAY_AVAILABLE_PLOTS_COPY}`;
+}
+
+/** Latest user turns, oldest-first among the slice, for plot-name matching. */
+export function recentUserMessageText(
+  messages: UIMessage[],
+  maxTurns = 3
+): string {
+  const chunks: string[] = [];
+  let seen = 0;
+  for (let i = messages.length - 1; i >= 0 && seen < maxTurns; i--) {
+    const message = messages[i];
+    if (message?.role !== "user") continue;
+    seen += 1;
+    const texts: string[] = [];
+    for (const part of message.parts ?? []) {
+      if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
+        texts.push(part.text);
+      }
+    }
+    if (texts.length > 0) chunks.push(texts.join("\n"));
+  }
+  return chunks.reverse().join("\n");
+}
+
+export type NamedAnalyticsPlotResolution =
+  | { ok: true; analysisId: string }
+  | { ok: false; message: string };
+
+/**
+ * Match the engineer's named plot against saved Analytics figures. A named
+ * miss lists what is available instead of inserting a different plot.
+ */
+export function resolveNamedAnalyticsPlot(input: {
+  analysisId: string;
+  analyses: StatisticalAnalysisSummary[];
+  userText: string;
+}): NamedAnalyticsPlotResolution {
+  const requestedId = input.analysisId.trim();
+  const namedTokens = tokenizePlotName(input.userText);
+  const graphs = listGraphAnalyses(input.analyses);
+  const insertable = listInsertableGraphAnalyses(input.analyses);
+
+  if (namedTokens.length === 0) {
+    if (requestedId) {
+      const requested = graphs.find((analysis) => analysis.id === requestedId);
+      if (requested) {
+        return { ok: true, analysisId: requested.id };
+      }
+    }
+    if (insertable.length === 1) {
+      return { ok: true, analysisId: insertable[0]!.id };
+    }
+    return {
+      ok: false,
+      message: availablePlotsMessage({
+        analyses: input.analyses,
+        unspecified: insertable.length > 1,
+      }),
+    };
+  }
+
+  const matches = graphs.filter((analysis) =>
+    plotMatchesNamedTokens(analysis, namedTokens)
+  );
+  if (matches.length === 0) {
+    return {
+      ok: false,
+      message: availablePlotsMessage({
+        analyses: input.analyses,
+        requested: namedTokens.join(" "),
+      }),
+    };
+  }
+  if (matches.length === 1) {
+    return { ok: true, analysisId: matches[0]!.id };
+  }
+  const selected = matches.find((analysis) => analysis.id === requestedId);
+  if (selected) {
+    return { ok: true, analysisId: selected.id };
+  }
+  return {
+    ok: false,
+    message: availablePlotsMessage({
+      analyses: matches,
+      unspecified: true,
+    }),
   };
 }
 

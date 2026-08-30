@@ -168,7 +168,7 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
   );
   if (plots.length > 0) {
     lines.push(
-      "Analytics plots (insert with insert_image source=analytics; analysisId is the id in brackets). Do not recreate an existing plot with plot_measurements:"
+      "Analytics plots (insert with insert_image source=analytics; analysisId is the id in brackets). Do not recreate an existing plot with plot_measurements. If they named a plot that is not listed, name the available titles and say they can create additional ones in Analytics — do not insert a different plot:"
     );
     for (const plot of plots) {
       const title = sanitizePromptMetadata(plot.title, 180) || "untitled plot";

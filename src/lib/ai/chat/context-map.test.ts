@@ -279,6 +279,7 @@ describe("buildReportContextMap", () => {
     });
 
     expect(map).toContain("insert_image source=analytics");
+    expect(map).toContain("create additional ones in Analytics");
     expect(map).toContain('"Torque scatter" [anl_1] kind=measurement_scatter');
     expect(map).toContain(
       '"Assay sixpack" [anl_2] kind=capability_sixpack_normal — no preview yet'

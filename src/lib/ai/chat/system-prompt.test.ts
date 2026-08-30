@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v58-analytics-insert");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v59-named-plot");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -155,6 +155,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain('image: { source: "section", section: "purpose"');
     expect(prompt).toContain("id: \"narrative#1\"");
     expect(prompt).toContain('source: "analytics"');
+    expect(prompt).toContain("name the plots that are available");
+    expect(prompt).toContain("create additional ones in Analytics");
     expect(prompt).not.toContain("Mode: ASK");
   });
 

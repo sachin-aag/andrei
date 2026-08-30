@@ -34,9 +34,11 @@ import {
   MAX_IMAGES_PER_SECTION,
 } from "@/lib/images/compress-image";
 import {
+  recentUserMessageText,
+  resolveAnalyticsImage,
+  resolveNamedAnalyticsPlot,
   resolveChatImage,
   resolveSectionImageLocator,
-  resolveAnalyticsImage,
   sectionImageNotFoundMessage,
   type InsertImageSource,
 } from "@/lib/ai/chat/insert-image";
@@ -197,6 +199,7 @@ export type InsertImageResult =
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "plain_field"; message: string }
   | { status: "image_not_found"; message: string }
+  | { status: "available_plots"; message: string }
   | { status: "too_many_images"; message: string }
   | { status: "review_incomplete"; message: string };
 
@@ -1383,7 +1386,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. source=chat uses an attached photo (index). source=section copies a figure already in a report field (image.section + image.id from read_section). source=analytics copies a saved Analytics plot (analysisId from the context map or a tagged @ plot). Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a NEW chart from attachments, not to recreate a plot already in Analytics" : ""}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
+        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. source=chat uses an attached photo (index). source=section copies a figure already in a report field (image.section + image.id from read_section). source=analytics copies a saved Analytics plot (analysisId from the context map or a tagged @ plot). If they named a plot that is not in Analytics, this tool lists the available titles — relay those titles and say they can create additional plots in Analytics; do not insert a different plot. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a NEW chart from attachments, not to recreate a plot already in Analytics" : ""}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1529,10 +1532,17 @@ export function buildChatTools(opts: {
           resolved = resolveChatImage(messages, source.index);
         } else if (source.source === "analytics") {
           const analytics = await getReportAnalytics(reportId);
-          const analysis = analytics?.analyses.find(
-            (item) => item.id === source.analysisId.trim()
-          );
-          resolved = resolveAnalyticsImage(analysis, source.analysisId);
+          const analyses = analytics?.analyses ?? [];
+          const named = resolveNamedAnalyticsPlot({
+            analysisId: source.analysisId,
+            analyses,
+            userText: recentUserMessageText(messages),
+          });
+          if (!named.ok) {
+            return { status: "available_plots", message: named.message };
+          }
+          const analysis = analyses.find((item) => item.id === named.analysisId);
+          resolved = resolveAnalyticsImage(analysis, named.analysisId);
         } else {
           const locator = resolveSectionImageLocator({
             destSection: section,
