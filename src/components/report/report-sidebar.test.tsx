@@ -39,7 +39,10 @@ vi.mock("@/components/report/criteria-sheet", () => ({
 
 const noop = () => {};
 
-function renderSidebar(collapsed: boolean, activeTab: "assistant" | "criteria") {
+function renderSidebar(
+  collapsed: boolean,
+  activeTab: "assistant" | "criteria" | "placeholders" | "comments"
+) {
   return render(
     <ReportSidebar
       collapsed={collapsed}
@@ -151,6 +154,32 @@ describe("ReportSidebar chat keep-alive", () => {
       "invisible"
     );
     expect(chatPanelMounts).toBe(1);
+  });
+
+  it.each(["criteria", "placeholders", "comments"] as const)(
+    "fills the sidebar with %s instead of leaving empty space above it",
+    (tab) => {
+      renderSidebar(false, tab);
+
+      const chatShell = screen.getByTestId("chat-panel").parentElement;
+      const tabPanel = screen.getByTestId("sidebar-tab-panel");
+
+      expect(chatShell).toHaveClass("absolute");
+      expect(chatShell).toHaveClass("invisible");
+      expect(tabPanel).toHaveClass("h-full");
+      expect(tabPanel).not.toHaveClass("flex-1");
+      expect(tabPanel.parentElement).toBe(chatShell?.parentElement);
+      expect(tabPanel.parentElement).toHaveClass("flex-1");
+      expect(tabPanel).toHaveTextContent(tab);
+    }
+  );
+
+  it("does not render a competing tab panel on Assistant", () => {
+    renderSidebar(false, "assistant");
+    expect(screen.queryByTestId("sidebar-tab-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
+      "absolute"
+    );
   });
 
   it("keeps ChatPanel visible on the Analytics surface", () => {
