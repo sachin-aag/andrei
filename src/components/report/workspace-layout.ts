@@ -31,7 +31,7 @@ export const REVIEW_GUTTER_GRID_COLS =
  * Typographic practice is 45–75 characters per line (WCAG 1.4.8 caps at 80).
  * The default sheet is 880px: wide enough for the two-column 6M grid and
  * wide tables, still far short of an ultrawide canvas. Engineers can drag the
- * sheet edge between these bounds; the rest of the canvas stays muted padding.
+ * sheet edge between these bounds; leftover canvas width becomes side padding.
  */
 export const DOCUMENT_WIDTH_DEFAULT_PX = 880;
 export const DOCUMENT_WIDTH_MIN_PX = 640;
