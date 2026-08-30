@@ -55,6 +55,15 @@ describe("parseChartSpec", () => {
     ).toBe("scatter");
   });
 
+  it("does not inject xRange when the stored spec omitted it", () => {
+    const raw = spec();
+    const { xRange: _omitted, ...layoutWithoutXRange } = raw.layout;
+    expect(_omitted).toBeNull();
+    expect(
+      parseChartSpec({ ...raw, layout: layoutWithoutXRange })?.layout.xRange
+    ).toBeUndefined();
+  });
+
   it("rejects a missing query", () => {
     expect(parseChartSpec({ ...spec(), query: "" })).toBeNull();
   });

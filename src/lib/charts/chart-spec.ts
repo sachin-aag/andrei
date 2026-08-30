@@ -177,7 +177,7 @@ const chartLayoutSchema = z.object({
   seriesBy: z.enum(["unit", "none"]),
   xAxis: z.enum(["sequential", "replicate", "value"]),
   yRange: chartAxisRangeSchema,
-  xRange: chartAxisRangeSchema.optional().default(null),
+  xRange: chartAxisRangeSchema.optional(),
   mark: z.enum(CHART_MARKS).optional().default("scatter"),
   showSpecLimits: z.boolean().optional(),
 });
