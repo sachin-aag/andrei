@@ -17,6 +17,7 @@ import {
   readDocumentPage,
 } from "@/lib/attachments/retrieval";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
+import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import {
   alignExtractedDates,
@@ -899,6 +900,14 @@ export function buildAnalyticsChatTools(opts: {
               ]
                 .filter(Boolean)
                 .join("\n\n"),
+              ...langfuseGenerateTextTelemetry({
+                functionId: "analytics-extract-numeric-series",
+                metadata: {
+                  feature: "analytics_chat",
+                  reportId,
+                  metric,
+                },
+              }),
             });
             await recordAiUsage({
               feature: "analytics_chat",

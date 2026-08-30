@@ -23,6 +23,7 @@ import {
   type ChartSpec,
 } from "@/lib/charts/chart-spec";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
+import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import { gateMetricSeriesExtract } from "@/lib/extraction/metric-series";
 
 const MAX_EXTRACT_PAGES = 8;
@@ -197,6 +198,13 @@ async function defaultExtractRows(input: {
       `Query: ${input.query}`,
       pageBlock,
     ].join("\n\n"),
+    ...langfuseGenerateTextTelemetry({
+      functionId: "chart-extract-measurements",
+      metadata: {
+        feature: "chart_extraction",
+        pageCount: input.pages.length,
+      },
+    }),
   });
   await recordAiUsage({
     feature: "chart_extraction",
