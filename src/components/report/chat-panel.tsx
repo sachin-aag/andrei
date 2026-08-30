@@ -870,7 +870,7 @@ function subscribeNoop() {
 }
 
 export function ChatPanel({
-  workspaceChrome = "document",
+  workspaceChrome = "agent",
   workProductView = "report",
   statsEnabled = false,
   visible = true,

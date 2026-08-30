@@ -27,7 +27,7 @@ import {
   isAiFixComment,
   isImportedWordComment,
 } from "@/lib/comments/display";
-import { SECTION_LABELS } from "@/types/sections";
+import { displaySectionLabel } from "@/types/sections";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 import { captureEvent } from "@/lib/analytics/events";
@@ -249,7 +249,7 @@ export function CommentCard({
                   "shrink-0 text-[10px] text-[var(--muted-foreground)] uppercase tracking-wide"
                 )}
               >
-                {SECTION_LABELS[root.section] ?? root.section}
+                {displaySectionLabel(root.section)}
               </span>
             )}
             {canDeleteRoot && (

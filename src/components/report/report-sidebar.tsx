@@ -64,7 +64,7 @@ export function ReportSidebar({
   onJumpToPlaceholder,
   onJumpToComment,
   hideCollapse = false,
-  chrome = "document",
+  chrome = "agent",
   initialCriteriaSection,
   workProductView = "report",
   statsEnabled = false,
