@@ -309,6 +309,25 @@ describe("mechanical DV DOCX export", () => {
     expect(systemAt).toBeGreaterThan(-1);
     expect(hardwareAt).toBeLessThan(systemAt);
 
+    // Req ID / Notes/Results tables match the Convergent source report (landscape).
+    const landscapeBreaks = [...xml.matchAll(/w:orient="landscape"/g)];
+    expect(landscapeBreaks.length).toBeGreaterThanOrEqual(2);
+    expect(
+      landscapeBreaks.some(
+        (m) => (m.index ?? 0) > hardwareAt && (m.index ?? 0) < systemAt
+      )
+    ).toBe(true);
+    expect(landscapeBreaks.some((m) => (m.index ?? 0) > systemAt)).toBe(true);
+
+    // Other 4-column content (revision history) stays portrait — only the
+    // hardware/system results tables force landscape.
+    const revisionAt = xml.indexOf("W. Harrington / D. Burke");
+    expect(revisionAt).toBeGreaterThan(systemAt);
+    const landscapeAfterRevision = landscapeBreaks.some(
+      (m) => (m.index ?? 0) > revisionAt
+    );
+    expect(landscapeAfterRevision).toBe(false);
+
     expect(xml).toContain("W. Harrington / D. Burke");
     expect(xml).toContain(
       "has been deemed acceptable for release on the Solea Model 3"
