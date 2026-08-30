@@ -53,9 +53,10 @@ changes. Empty-state Document chips are `chat.examplePrompts` on the
 document type (not DMAIC-hardcoded); Analytics chips stay in
 `ANALYTICS_EXAMPLE_PROMPTS`. Voice dictation is the shared composer mic
 (Document | Agent, Report | Analytics). Click start / click stop; no VAD.
-MJ: `en-IN` / `hi-IN` / `mr-IN` in native script. Demo/Convergent: `en-US`.
+MJ: `en-IN` / `hi-IN` / `mr-IN` in native script (Devanagari preferred). Demo/Convergent: `en-US`.
 Do not translate STT to English — `LANGUAGE_RULES` keep assistant output
-in English. Terraform: `infra/speech`. Stub: `ALLOW_TEST_STUB_SPEECH`.
+in English. Route is start + PCM chunks + `GET ?session=` SSE (not a duplex
+POST). Terraform: `infra/speech`. Stub: `ALLOW_TEST_STUB_SPEECH`.
 
 ## Prompt / tools
 

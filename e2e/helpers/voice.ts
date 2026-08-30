@@ -9,11 +9,14 @@ export async function installFakeMicrophone(page: Page): Promise<void> {
     const original = mediaDevices.getUserMedia.bind(mediaDevices);
     mediaDevices.getUserMedia = async (constraints) => {
       const audio =
-        typeof constraints === "object" && constraints != null && "audio" in constraints
+        typeof constraints === "object" &&
+        constraints != null &&
+        "audio" in constraints
           ? constraints.audio
           : false;
       if (!audio) return original(constraints);
       const context = new AudioContext();
+      await context.resume();
       const oscillator = context.createOscillator();
       const destination = context.createMediaStreamDestination();
       oscillator.frequency.value = 220;

@@ -447,22 +447,40 @@ test.describe("report chat", () => {
 
   test("streams stub dictation into Document and Analytics composers", async ({
     page,
+    browserName,
   }) => {
+    test.skip(
+      browserName !== "chromium",
+      "AudioWorklet dictation is covered on Chromium."
+    );
     await openReportAssistant(page);
     const sidebar = reportSidebar(page);
     await setReportChrome(page, "document");
+    await setChatWorkProductTarget(page, "report");
+    if (!reportId) throw new Error("expected a report id");
+    await expect
+      .poll(async () => {
+        const warmup = await page.request.get(
+          `/api/reports/${reportId}/chat/transcribe`
+        );
+        return warmup.status();
+      })
+      .toBe(204);
     const reportMic = sidebar.getByTestId("chat-voice-input");
     await expect(reportMic).toBeVisible({ timeout: 15_000 });
-    const reportComposer = sidebar.getByPlaceholder(
-      /ask about the report or attachments/i
-    );
+    const reportComposer = sidebar.locator("textarea");
     await expect(reportComposer).toBeEnabled({ timeout: 15_000 });
     await reportComposer.fill("Prefix ");
     await reportMic.click();
+    await expect(reportMic).toHaveAttribute("aria-pressed", "true", {
+      timeout: 15_000,
+    });
     await expect(reportComposer).toHaveValue(
       new RegExp(`Prefix\\s+${STUB_VOICE_FINAL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
       { timeout: 15_000 }
     );
+    await reportMic.click();
+    await expect(reportComposer).not.toHaveAttribute("readonly");
 
     await setReportChrome(page, "agent");
     await openReportAssistant(page);
@@ -473,9 +491,14 @@ test.describe("report chat", () => {
     await expect(analyticsComposer).toBeEnabled({ timeout: 15_000 });
     await expect(sidebar.getByTestId("analytics-chat-voice-input")).toBeVisible();
     await analyticsComposer.fill("");
-    await sidebar.getByTestId("analytics-chat-voice-input").click();
+    const analyticsMic = sidebar.getByTestId("analytics-chat-voice-input");
+    await analyticsMic.click();
+    await expect(analyticsMic).toHaveAttribute("aria-pressed", "true", {
+      timeout: 15_000,
+    });
     await expect(analyticsComposer).toHaveValue(STUB_VOICE_FINAL, {
       timeout: 15_000,
     });
+    await analyticsMic.click();
   });
 });

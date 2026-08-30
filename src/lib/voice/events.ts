@@ -1,4 +1,4 @@
-/** SSE payloads on POST /api/reports/[reportId]/chat/transcribe. */
+/** SSE payloads on GET /api/reports/[reportId]/chat/transcribe?session=. */
 
 export type VoiceTranscriptEvent = {
   type: "transcript";
@@ -23,6 +23,15 @@ export type VoiceSseEvent =
 
 export function encodeVoiceSse(event: VoiceSseEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+export function parseVoiceSseBlock(block: string): VoiceSseEvent | null {
+  const data = block
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice("data:".length).trimStart())
+    .join("\n");
+  return parseVoiceSseData(data || block);
 }
 
 export function parseVoiceSseData(data: string): VoiceSseEvent | null {

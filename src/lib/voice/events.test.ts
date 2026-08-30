@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeVoiceSse, parseVoiceSseData } from "./events";
+import { encodeVoiceSse, parseVoiceSseBlock, parseVoiceSseData } from "./events";
 
 describe("voice SSE", () => {
   it("round-trips transcript, error, and done events", () => {
@@ -25,6 +25,21 @@ describe("voice SSE", () => {
     ).toEqual({ type: "error", message: "failed" });
     expect(parseVoiceSseData(encodeVoiceSse({ type: "done" }).replace(/^data: /, ""))).toEqual({
       type: "done",
+    });
+    expect(
+      parseVoiceSseBlock(
+        encodeVoiceSse({
+          type: "transcript",
+          text: "नमस्कार",
+          isFinal: true,
+          languageCode: "mr-IN",
+        })
+      )
+    ).toEqual({
+      type: "transcript",
+      text: "नमस्कार",
+      isFinal: true,
+      languageCode: "mr-IN",
     });
   });
 
