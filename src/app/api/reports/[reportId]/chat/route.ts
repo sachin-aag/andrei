@@ -49,6 +49,12 @@ import { primaryFieldForSection } from "@/lib/ai/chat/fields";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
+  classifyChatUserIntent,
+  messageHasChatImage,
+  recentAssistantMessageTexts,
+  restrictToolsForIntent,
+} from "@/lib/ai/chat/user-intent";
+import {
   alreadyDraftedGapHints,
   detectAlreadyDraftedSection,
   alreadyDraftedReadStep,
@@ -217,6 +223,11 @@ async function handleChatPost(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const userIntent = classifyChatUserIntent({
+    userText,
+    recentAssistantTexts: recentAssistantMessageTexts(messages),
+    hasChatImages: messageHasChatImage(userMsg?.parts),
+  });
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -320,7 +331,7 @@ async function handleChatPost(
   });
 
   const autoEvidenceBlock =
-    retrieval.policy === "focused"
+    retrieval.policy === "focused" && userIntent.kind !== "social"
       ? await buildAutoEvidence({
     reportId,
     userText,
@@ -368,10 +379,15 @@ async function handleChatPost(
     editPolicy,
     turnEdits,
   });
-  const tools: ToolSet =
+  const scopedTools: ToolSet =
     mode === "plan"
       ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
+  const tools: ToolSet = restrictToolsForIntent(
+    scopedTools,
+    userIntent.kind,
+    "document"
+  );
 
   const stubSection =
     sectionScope === "all"
@@ -384,6 +400,8 @@ async function handleChatPost(
         targetField: primaryFieldForSection(stubSection),
         insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
         reasoning: "Demo stub proposal.",
+        allowEdits: userIntent.kind === "write",
+        intent: userIntent.kind,
       })
     : resolveChatLanguageModel(pace);
 
@@ -448,6 +466,9 @@ async function handleChatPost(
         });
       },
       prepareStep: ({ steps }) => {
+        if (userIntent.kind === "social") {
+          return { activeTools: [] };
+        }
         const tableEditDirective = tableEditLoopDirective(steps);
         if (tableEditDirective === "finish") {
           // Force a plain-language explanation after the second failed table
@@ -517,6 +538,8 @@ async function handleChatPost(
           chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
           retrievalPolicy: retrieval.policy,
           retrievalPolicyReason: retrieval.reason,
+          userIntent: userIntent.kind,
+          userIntentReason: userIntent.reason,
         },
       }),
     })
