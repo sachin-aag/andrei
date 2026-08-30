@@ -465,3 +465,69 @@ describe("parseAiFixCommentContent removeImage", () => {
     expect(parsed.insertText).toBe("");
   });
 });
+
+describe("parseAiFixCommentContent pairing fields", () => {
+  it("round-trips same-turn table pairing ids", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "The VCS mapping follows.",
+      reasoning: "intro",
+      pairedBlockSuggestionId: "tbl",
+      placeBeforePairedBlock: "table",
+    });
+    expect(parseAiFixCommentContent(json)).toMatchObject({
+      pairedBlockSuggestionId: "tbl",
+      placeBeforePairedBlock: "table",
+    });
+  });
+
+  it("drops unknown placeBeforePairedBlock values", () => {
+    const json = JSON.stringify({
+      deleteText: "",
+      insertText: "Intro.",
+      placeBeforePairedBlock: "chart",
+      placeAfterSuggestionId: "lead",
+    });
+    const parsed = parseAiFixCommentContent(json);
+    expect(parsed.placeBeforePairedBlock).toBeUndefined();
+    expect(parsed.placeAfterSuggestionId).toBe("lead");
+  });
+});
+
+describe("parseAiFixCommentContent supersededSuggestionIds", () => {
+  it("round-trips replaced suggestion ids", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "",
+      reasoning: "Put examples in a new column",
+      supersededSuggestionIds: ["old-edit-cells"],
+    });
+    expect(parseAiFixCommentContent(json).supersededSuggestionIds).toEqual([
+      "old-edit-cells",
+    ]);
+  });
+
+  it("drops empty replaced-id lists", () => {
+    const json = JSON.stringify({
+      deleteText: "",
+      insertText: "x",
+      supersededSuggestionIds: ["", "  "],
+    });
+    expect(parseAiFixCommentContent(json).supersededSuggestionIds).toBeUndefined();
+  });
+
+  it("keeps replaced ids next to suggestion base and intent", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "old",
+      insertText: "new",
+      reasoning: "Replace the older edit",
+      supersededSuggestionIds: ["old-edit"],
+      suggestionBase: "old",
+      suggestionIntent: "new",
+    });
+    const parsed = parseAiFixCommentContent(json);
+    expect(parsed.supersededSuggestionIds).toEqual(["old-edit"]);
+    expect(parsed.suggestionBase).toBe("old");
+    expect(parsed.suggestionIntent).toBe("new");
+  });
+});

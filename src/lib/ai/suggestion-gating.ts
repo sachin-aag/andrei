@@ -198,8 +198,15 @@ export type ParsedAiFixPayload = {
     insertText: string;
     scope?: EditScope;
   };
+  /** Same-turn table/image this prose lead-in belongs in front of. */
+  pairedBlockSuggestionId?: string;
+  placeBeforePairedBlock?: "table" | "image";
+  /** Same-turn prose lead-in this table/image should follow. */
+  placeAfterSuggestionId?: string;
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
+  /** Older open suggestions this proposal dismissed (same-table rewrite, covering span). */
+  supersededSuggestionIds?: string[];
   /** Live field content at author time (P1). Dual-read with suggestionIntent. */
   suggestionBase?: unknown;
   /** Field content the model wants (P1). */
@@ -245,10 +252,22 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
         insertImage,
         removeImage,
         second: parseSecondEdit(parsed.second),
+        pairedBlockSuggestionId:
+          typeof parsed.pairedBlockSuggestionId === "string" &&
+          parsed.pairedBlockSuggestionId.trim()
+            ? parsed.pairedBlockSuggestionId.trim()
+            : undefined,
+        placeBeforePairedBlock: parsePairedBlockKind(parsed.placeBeforePairedBlock),
+        placeAfterSuggestionId:
+          typeof parsed.placeAfterSuggestionId === "string" &&
+          parsed.placeAfterSuggestionId.trim()
+            ? parsed.placeAfterSuggestionId.trim()
+            : undefined,
         contentHashAtSuggestion:
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion
             : undefined,
+        supersededSuggestionIds: parseStringIdList(parsed.supersededSuggestionIds),
         suggestionBase: parsed.suggestionBase,
         suggestionIntent: parsed.suggestionIntent,
         evidenceSources: Array.isArray(parsed.evidenceSources)
@@ -291,6 +310,24 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
   return { deleteText: "", insertText: content, reasoning: "" };
 }
 
+function parseStringIdList(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const ids = [
+    ...new Set(
+      raw.flatMap((item) =>
+        typeof item === "string" && item.trim() ? [item.trim()] : []
+      )
+    ),
+  ];
+  return ids.length > 0 ? ids : undefined;
+}
+
+function parsePairedBlockKind(
+  raw: unknown
+): ParsedAiFixPayload["placeBeforePairedBlock"] {
+  return raw === "table" || raw === "image" ? raw : undefined;
+}
+
 function parseSecondEdit(raw: unknown): ParsedAiFixPayload["second"] {
   if (!raw || typeof raw !== "object") return undefined;
   const s = raw as Record<string, unknown>;
@@ -320,6 +357,8 @@ export type ParsedAiRedraftPayload = {
    * fields as stale.
    */
   fieldHashAtSuggestion?: string;
+  /** Older open suggestions this draft dismissed. */
+  supersededSuggestionIds?: string[];
   suggestionBase?: unknown;
   suggestionIntent?: unknown;
 };
@@ -335,6 +374,7 @@ export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPa
           typeof parsed.fieldHashAtSuggestion === "string"
             ? parsed.fieldHashAtSuggestion
             : undefined,
+        supersededSuggestionIds: parseStringIdList(parsed.supersededSuggestionIds),
         suggestionBase: parsed.suggestionBase,
         suggestionIntent: parsed.suggestionIntent,
       };

@@ -20,6 +20,12 @@ export function isGraphAnalysisKind(kind: AnalysisKind): boolean {
   );
 }
 
+export function listGraphAnalyses(
+  analyses: StatisticalAnalysisSummary[]
+): StatisticalAnalysisSummary[] {
+  return analyses.filter((analysis) => isGraphAnalysisKind(analysis.kind));
+}
+
 /** Visual chart analyses that can be inserted into a document as a figure. */
 export function isInsertableGraphAnalysis(
   analysis: StatisticalAnalysisSummary

@@ -78,7 +78,9 @@ export async function PATCH(
         { status: 403 }
       );
     }
-    if (!canEditCommentContent(user, row)) {
+    const mayEditAiPayload =
+      isAiSuggestionKind(row.kind) && canResolveThread(user, report);
+    if (!canEditCommentContent(user, row) && !mayEditAiPayload) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const [updated] = await db

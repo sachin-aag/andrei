@@ -39,10 +39,18 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - Accept/dismiss: three-way merge when `suggestionBase`/`suggestionIntent`
   are stored (`mergeField` in `three-way-merge.ts`); otherwise locate the
   frozen span. PATCH section → flip comment. Never resolve without a
-  successful apply. Zero-ops dismiss (`already_present`), not resolve.
-- Bulk apply re-merges each open suggestion against the in-memory doc in
-  queue order, then PATCHes the section once. Preview applied wording
-  before that PATCH so insert text does not vanish during save.
+  successful apply. Zero-ops dismiss (`already_present`), not resolve. A
+  superseded sibling is `dismissed` with `resolutionReason:
+  "superseded_by:<id>"`, never `resolved`.
+- Bulk apply re-merges each open suggestion against the in-memory doc.
+  Overlapping edits in a section apply recursively; non-overlapping edits
+  persist as one section PATCH. Preview applied wording before that PATCH
+  so insert text does not vanish during save. Range-contained siblings are
+  dismissed, not applied into an overwrite. Locate failures stay open; the
+  toast reports them. Do not dismiss a skip — that is a silent failure.
+- `draft_field` refuses a filled field unless `replaceFilledField: true`.
+  After a redraft, filled `[Label: value]` placeholders must be preserved
+  unless the caller opted into replacing them.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
   Bump `CHAT_PROMPT_VERSION` when chat edit-tool copy changes.
 - Whole-field is derived: planned operations cover every merge block

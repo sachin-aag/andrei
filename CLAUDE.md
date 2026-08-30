@@ -263,10 +263,10 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 ## Subsystem: Statistical Analysis
 
-**Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR), attachment measurement scatter, worksheet XY scatter, Tukey boxplot, and one-way ANOVA. Lives on the report **Analytics** tab (same attachments as the document). On for demo, MJ, and Convergent (`statisticalAnalysisEnabled`). Not a document type, not TipTap, and not DMAIC chat. Convergent Document chat does **not** propose `plot_measurements` figures — those plots live in Analytics.
+**Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR), attachment measurement scatter, worksheet XY scatter, Tukey boxplot, and one-way ANOVA. Lives on the report **Analytics** tab (same attachments as the document). On for demo, MJ, and Convergent (`statisticalAnalysisEnabled`). Not a document type, not TipTap, and not DMAIC chat. Document chat can copy a saved Analytics plot into a narrative with `insert_image` (`source=analytics`) and can still propose attachment `plot_measurements` figures on every pack.
 
 **Entry points:**
-- Report workspace header: Document | Agent switch (`data-testid="report-chrome-switch"`, `data-current-chrome`). Chrome is persisted per user + report in localStorage (`workspaceChrome:v1`). New reports default to Agent; reopening a report restores that user's last chrome. Switching to Agent seeds the composer Report | Analytics target from the focused pane. Analytics is a work-product pane (`data-testid="report-surface-analytics"`), not a third chrome.
+- Report workspace header: Document | Agent switch (`data-testid="report-chrome-switch"`, `data-current-chrome`). Chrome is persisted per user + report in localStorage (`workspaceChrome:v1`). New reports default to Agent; reopening a report restores that user's last chrome. Composer Report | Analytics is independent of the focused pane in both chromes (`data-testid="chat-work-product-target"`). Analytics is a work-product pane (`data-testid="report-surface-analytics"`), not a third chrome.
 - `GET/PATCH/POST /api/reports/[reportId]/analytics` (`POST` aliases `PATCH` for autosave beacons)
 - `POST .../analytics/analyses` creates a sixpack (default), `kind: "measurement_scatter"`, `kind: "xy_scatter"`, `kind: "boxplot"`, or `kind: "one_way_anova"`; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
 - `POST /api/reports/[reportId]/analytics/chat` — stats-only assistant (`ANALYTICS_CHAT_PROMPT_VERSION`, surface `analytics`)
@@ -309,17 +309,17 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`; commit copy when `editPolicy` is `commit`
 - `edit-policy.ts` / `commit-edit.ts` — Agent chrome writes `report_sections` in a `FOR UPDATE` transaction; Document chrome still inserts suggestion comments
 - `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
-- `context-map.ts` — serializes report state + ready docs (sanitized `summary=`)
-- `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools, pack-gated `plot_measurements` (off for Convergent Document chat); sanitizes untrusted metadata here (not in `src/lib/attachments/`)
+- `context-map.ts` — serializes report state + ready docs (sanitized `summary=`) + insertable Analytics plots
+- `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools, `insert_image` (`chat` / `section` / `analytics`), `plot_measurements` (on for every pack; omit only when embedding Document tools in Analytics chat); sanitizes untrusted metadata here (not in `src/lib/attachments/`)
 - `fields.ts` — type-specific editable sections (`chatEditableSections`); tagged `@` sections set chat scope. Do not keep investigation-only constants like `CHAT_EDITABLE_SECTIONS`.
-- `mentions.ts` — `@` documents/sections. Scope is `sectionScopeFromMentions` (one tagged section focuses prompt/tools; none tagged = all). There is no composer section dropdown and no `body.sectionScope`.
+- `mentions.ts` — `@` documents/sections/plots. Scope is `sectionScopeFromMentions` (one tagged section focuses prompt/tools; none tagged = all). There is no composer section dropdown and no `body.sectionScope`.
 - `propose-edit.ts`, `session-title.ts`, `access.ts`
 
 **Plan-mode allowlist** in `src/lib/ai/chat/document-review.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, plus document-review tools. New tools must be added here or they are silently missing in Plan. Analytics worksheet/plot tools stay off this list.
 
 **Spectrum:** Document and Agent share `ChatPanel`. Composer/scope/tool changes must cover Document | Agent chrome, `/chat` **and** `/analytics/chat`, prompt versions (`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`), Plan allowlist, retrieval-policy, already-drafted, stub model, colocated tests, and `AGENTS.md` / this file / `.cursor/rules/chat-and-attachments.mdc`. Removing a control means deleting parsers, prompt copy, switch-section tools, and tests for it — not hiding the UI. Empty-state Document chips are `chat.examplePrompts` on the document type (Purpose & Scope on DV, Define on investigation); Analytics chips stay in `ANALYTICS_EXAMPLE_PROMPTS`.
 
-**Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
+**Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Comprehensive page review is for inventories / open-set drafts, not sentence rewrites; `finish_document_review` caps findings and follow-up turns strip prior findings arrays (`compactChatToolHistoryForModel`). Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
 
 ## Subsystem: Attachments (ingest + evidence)
 

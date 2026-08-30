@@ -10,6 +10,11 @@ import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
+import {
+  isGraphAnalysisKind,
+  isInsertableGraphAnalysis,
+} from "@/lib/statistical-analysis/insertable-graphs";
+import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
 
 /**
  * Documents retrieved per turn is the real cost driver, so cap document
@@ -20,7 +25,7 @@ export const CHAT_MAX_DOCUMENT_MENTIONS = 5;
 /** Upper bound on raw client input before validation. */
 const MAX_RAW_MENTIONS = 50;
 
-export type ChatMentionType = "document" | "section";
+export type ChatMentionType = "document" | "section" | "analysis";
 
 /**
  * An @ mention as sent by the client. Only the id is trusted — the display
@@ -28,7 +33,8 @@ export type ChatMentionType = "document" | "section";
  */
 export type ChatMention =
   | { type: "document"; id: string }
-  | { type: "section"; id: SectionType };
+  | { type: "section"; id: SectionType }
+  | { type: "analysis"; id: string };
 
 export type ResolvedDocumentMention = {
   attachmentId: string;
@@ -43,9 +49,17 @@ export type ResolvedSectionMention = {
   label: string;
 };
 
+export type ResolvedAnalysisMention = {
+  analysisId: string;
+  title: string;
+  kind: StatisticalAnalysisSummary["kind"];
+  insertable: boolean;
+};
+
 export type ResolvedChatMentions = {
   documents: ResolvedDocumentMention[];
   sections: ResolvedSectionMention[];
+  analyses: ResolvedAnalysisMention[];
   /** Mentions that no longer resolve (deleted, still processing, or foreign). */
   droppedCount: number;
 };
@@ -53,11 +67,12 @@ export type ResolvedChatMentions = {
 export const EMPTY_CHAT_MENTIONS: ResolvedChatMentions = {
   documents: [],
   sections: [],
+  analyses: [],
   droppedCount: 0,
 };
 
 function isMentionType(value: unknown): value is ChatMentionType {
-  return value === "document" || value === "section";
+  return value === "document" || value === "section" || value === "analysis";
 }
 
 /**
@@ -95,7 +110,9 @@ export function parseChatMentions(
     mentions.push(
       type === "section"
         ? { type: "section", id: trimmed as SectionType }
-        : { type: "document", id: trimmed }
+        : type === "analysis"
+          ? { type: "analysis", id: trimmed }
+          : { type: "document", id: trimmed }
     );
   }
 
@@ -128,18 +145,36 @@ export function sectionScopeFromMentions(
  */
 export function resolveChatMentions(
   mentions: ChatMention[],
-  readyDocuments: ReadyDocumentIndexItem[]
+  readyDocuments: ReadyDocumentIndexItem[],
+  analyses: readonly StatisticalAnalysisSummary[] = []
 ): ResolvedChatMentions {
   if (mentions.length === 0) return EMPTY_CHAT_MENTIONS;
 
   const byId = new Map(readyDocuments.map((doc) => [doc.attachmentId, doc]));
+  const analysisById = new Map(analyses.map((item) => [item.id, item]));
   const documents: ResolvedDocumentMention[] = [];
   const sections: ResolvedSectionMention[] = [];
+  const resolvedAnalyses: ResolvedAnalysisMention[] = [];
   let droppedCount = 0;
 
   for (const mention of mentions) {
     if (mention.type === "section") {
       sections.push({ section: mention.id, label: sectionLabel(mention.id) });
+      continue;
+    }
+
+    if (mention.type === "analysis") {
+      const item = analysisById.get(mention.id);
+      if (!item || !isGraphAnalysisKind(item.kind)) {
+        droppedCount++;
+        continue;
+      }
+      resolvedAnalyses.push({
+        analysisId: item.id,
+        title: item.title,
+        kind: item.kind,
+        insertable: isInsertableGraphAnalysis(item),
+      });
       continue;
     }
 
@@ -161,7 +196,7 @@ export function resolveChatMentions(
     });
   }
 
-  return { documents, sections, droppedCount };
+  return { documents, sections, analyses: resolvedAnalyses, droppedCount };
 }
 
 export function mentionedAttachmentIds(resolved: ResolvedChatMentions): string[] {
@@ -174,6 +209,10 @@ export function mentionedSections(
   return resolved.sections.map((entry) => entry.section);
 }
 
+export function mentionedAnalysisIds(resolved: ResolvedChatMentions): string[] {
+  return resolved.analyses.map((item) => item.analysisId);
+}
+
 /**
  * Prompt block naming what the engineer tagged. Deliberately an index, not
  * document text — retrieval still happens just-in-time through the tools.
@@ -181,8 +220,13 @@ export function mentionedSections(
  * must not be treated as instructions.
  */
 export function buildMentionBlock(resolved: ResolvedChatMentions): string {
-  const { documents, sections, droppedCount } = resolved;
-  if (documents.length === 0 && sections.length === 0 && droppedCount === 0) {
+  const { documents, sections, analyses, droppedCount } = resolved;
+  if (
+    documents.length === 0 &&
+    sections.length === 0 &&
+    analyses.length === 0 &&
+    droppedCount === 0
+  ) {
     return "";
   }
 
@@ -223,6 +267,19 @@ export function buildMentionBlock(resolved: ResolvedChatMentions): string {
     lines.push("Sections — read them with read_section before answering:");
     for (const entry of sections) {
       lines.push(`- ${entry.label} [${entry.section}]`);
+    }
+  }
+
+  if (analyses.length > 0) {
+    lines.push(
+      "Analytics plots — insert with insert_image source=analytics and this analysisId. If a line says no preview, tell the engineer to open the plot in Analytics first. If they named a plot that is not listed, name the available titles and say they can create additional ones in Analytics:"
+    );
+    for (const item of analyses) {
+      const title = sanitizePromptMetadata(item.title, 180) || "untitled plot";
+      lines.push(
+        `- ${quotePromptMetadata(title)} [${item.analysisId}] kind=${item.kind}` +
+          (item.insertable ? "" : " — no preview yet")
+      );
     }
   }
 

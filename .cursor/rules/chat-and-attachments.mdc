@@ -32,8 +32,10 @@ system prompt when kickoff retrieval hits.
 ## Spectrum
 
 Document and Agent share `ChatPanel` + `StatisticalWorkspace`. Document
-`/chat` and Analytics `/analytics/chat` are counterparts (section `@` vs
-sheet/plot `@`). A composer, mention, or tool change that only lands on one
+`/chat` and Analytics `/analytics/chat` are counterparts (section `@` plus
+saved-plot `@` vs sheet/plot `@`). Composer Report | Analytics
+(`chat-work-product-target`) is the same dropdown in both chromes — do not
+retarget from the focused canvas pane. A composer, mention, or tool change that only lands on one
 chrome or one surface is incomplete. Walk UI → request body → route parser →
 prompt → tools → `PLAN_MODE_CHAT_TOOL_NAMES` → retrieval-policy /
 already-drafted / stub → tests → docs. Removing a control means deleting
@@ -54,6 +56,16 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
   Missing from the allowlist = silent Plan-mode gap. Analytics tools stay
   off that list.
+- `insert_image` source=analytics copies a saved plot only when the named
+  series matches (or they did not name one). If they asked for a plot that
+  is not listed, return the available titles once this turn (`available_plots`)
+  and say they can create additional ones in Analytics — that status is not a
+  proposal (do not claim a suggestion exists). Do not insert a different
+  figure, and do not call `insert_image` again to re-list. Destination wording
+  ("Measure", "Deviations" / "devaition"), fillers ("the assays thing"), and
+  confirmation ("yes, that one", "yes please do") are not plot names.
+  Parallel `insert_image` calls in one turn serialize onto one card. Inserted
+  plots use a document-sized box (`documentInsertedPlotWidth`, max 480×300).
 - Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
   + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
   `ai_fix` comments). Document chrome **proposes**. Do not trust a client
@@ -72,13 +84,17 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   `mode=keyword` for lexical hits, `document_outline`). Classifier forces
   **comprehensive** for every-row inventories and for open-set work products
   (registry `inventorySections`) when evidence is distributed (≥12 ready
-  pages or ≥6 outline siblings), unless a bounded locator or non-inventory
-  section intent applies. **Focused** is an explicit skim. Adaptive turns
+  pages or ≥6 outline siblings), unless a bounded locator, targeted
+  sentence/paragraph rewrite, or non-inventory section intent applies.
+  Open-set produce intent is scored on the latest user turn only.
+  **Focused** is an explicit skim. Adaptive turns
   skip auto-evidence so the model must grep.
   Adaptive/focused turns do not expose `start_document_review`. Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
-  on extract). Orchestrator is `gemini-3.7-flash` with `thinkingLevel`
+  on extract). `finish_document_review` caps the findings sample;
+  follow-up turns strip prior findings arrays before the model call.
+  Orchestrator is `gemini-3.7-flash` with `thinkingLevel`
   `medium` until we route it by task (3.7 Flash rejects `minimal`); page
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.

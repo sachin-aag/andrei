@@ -257,14 +257,20 @@ test.describe("report editor", () => {
         .toBeLessThan(12);
 
       await expect(chatHandle).toBeVisible();
-      await chatHandle.press("ArrowLeft");
+      // Firefox often drops locator.press() on the separator after a
+      // client-side navigation. Focus + page.keyboard matches the first
+      // half of this test (and Chromium).
+      await chatHandle.focus();
+      await expect(chatHandle).toBeFocused();
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft");
       await expect
         .poll(
           async () =>
             sidebar.evaluate((el) => el.getBoundingClientRect().width),
           { timeout: 10_000 }
         )
-        .toBeGreaterThan(defaultWidth + 4);
+        .toBeGreaterThan(defaultWidth + 8);
 
       await page.reload({ waitUntil: "domcontentloaded" });
       await waitForReportEditor(page);
@@ -328,6 +334,17 @@ test.describe("report editor", () => {
     await expectDocumentPanelResizeHandleAligned(page);
 
     await expandWorkProductPanel(page);
+    const collapse = page.getByRole("button", {
+      name: /collapse document panel/i,
+    });
+    const reportTab = page.getByTestId("report-surface-document");
+    const [collapseBox, reportBox] = await Promise.all([
+      collapse.boundingBox(),
+      reportTab.boundingBox(),
+    ]);
+    expect(collapseBox).toBeTruthy();
+    expect(reportBox).toBeTruthy();
+    expect(collapseBox!.x + collapseBox!.width).toBeLessThan(reportBox!.x);
     await expect(page.getByRole("switch", { name: /comments/i })).toHaveCount(0);
 
     const docsBox = await documentsPanel(page).boundingBox();
@@ -387,6 +404,8 @@ test.describe("report editor", () => {
     await expect(page.getByTestId("report-analytics-workspace")).toBeVisible();
     await collapseWorkProductPanel(page);
     await expect(collapsedPanel.getByRole("button", { name: /expand document panel/i })).toBeVisible();
+    // Collapsed Agent rail only shows the active tab. Expand to reach Analytics.
+    await expandWorkProductPanel(page);
     await page.getByTestId("report-surface-analytics").click();
     await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
       timeout: 30_000,

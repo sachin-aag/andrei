@@ -30,7 +30,6 @@ import {
   nextOpenSuggestionAfterResolve,
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
-  sortedOpenSuggestionsForSection,
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
@@ -57,8 +56,14 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  PLACEHOLDER_CONFLICT_MESSAGE,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import {
+  formatSupersedesBadge,
+  supersededSuggestionIdsFromContent,
+  suggestionsSupersededBy,
+} from "@/lib/suggestions/supersession";
 import {
   isSuggestionTargetInViewport,
   measureSuggestionGutterParkCenterY,
@@ -66,6 +71,7 @@ import {
 } from "@/lib/suggestions/navigate-suggestion";
 import {
   countStaleOpenSuggestions,
+  preferredOpenSuggestion,
   suggestionStaleMessage,
   validateSuggestionLocate,
   type SuggestionValidation,
@@ -186,6 +192,7 @@ function SuggestionCardFace({
   validation,
   queueStaleHint,
   canResolve,
+  supersedesBadge,
   onAccept,
   onDismiss,
 }: {
@@ -196,6 +203,7 @@ function SuggestionCardFace({
   validation: SuggestionValidation;
   queueStaleHint: string | null;
   canResolve: boolean;
+  supersedesBadge?: string;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
@@ -234,7 +242,12 @@ function SuggestionCardFace({
             ? "Full draft"
             : card.kind === "fix" && card.payload.tableOperation
               ? "Table edit"
-              : card.kind === "fix" && card.payload.removeImage
+            : card.kind === "fix" &&
+                card.payload.insertImage &&
+                card.payload.removeImage &&
+                card.payload.insertImage.src === card.payload.removeImage.src
+              ? "Move figure"
+              : card.kind === "fix" && card.payload.removeImage && !card.payload.insertImage
               ? "Remove figure"
               : card.kind === "fix" && card.payload.insertImage
                 ? "Figure"
@@ -337,7 +350,9 @@ function SuggestionCardFace({
         </div>
       ) : null}
 
-      {card.kind === "fix" && card.payload.removeImage ? (
+      {card.kind === "fix" &&
+      card.payload.removeImage &&
+      card.payload.removeImage.src !== card.payload.insertImage?.src ? (
         <div
           className={cn(
             "space-y-1.5 transition-opacity duration-300",
@@ -435,6 +450,15 @@ function SuggestionCardFace({
                 ))}
               </ul>
             </div>
+          ) : null}
+
+          {supersedesBadge ? (
+            <p
+              className="text-[11px] text-[var(--muted-foreground)]"
+              data-testid="suggestion-supersedes-badge"
+            >
+              {supersedesBadge}
+            </p>
           ) : null}
 
           <div className="flex flex-wrap gap-2 pt-1">
@@ -602,6 +626,7 @@ function EnteringSuggestionLayer({
   validation,
   queueStaleHint,
   canResolve,
+  supersedesBadge,
   onAccept,
   onDismiss,
 }: {
@@ -612,6 +637,7 @@ function EnteringSuggestionLayer({
   validation: SuggestionValidation;
   queueStaleHint: string | null;
   canResolve: boolean;
+  supersedesBadge?: string;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
@@ -640,6 +666,7 @@ function EnteringSuggestionLayer({
         validation={validation}
         queueStaleHint={queueStaleHint}
         canResolve={canResolve}
+        supersedesBadge={supersedesBadge}
         onAccept={onAccept}
         onDismiss={onDismiss}
       />
@@ -661,7 +688,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     endSuggestionApplyTransition,
     suggestionApplyTransition,
   } = useReportEvaluations();
-  const { comments, setComments } = useReportComments();
+  const { comments, setComments, activeCommentId } = useReportComments();
   const { sections, replaceSection } = useReportSections();
   const [pending, setPending] = useState(false);
   const [phase, setPhase] = useState<CardPhase>("steady");
@@ -676,18 +703,44 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     [report.documentType]
   );
 
-  const openSorted = useMemo(
-    () => sortedOpenSuggestionsForSection(section, comments, evaluations),
-    [section, comments, evaluations]
+  const queue = useMemo(
+    () =>
+      preferredOpenSuggestion({
+        section,
+        comments,
+        evaluations,
+        sectionContent: sections[section],
+        preferredCommentId: activeCommentId,
+      }),
+    [section, comments, evaluations, sections, activeCommentId]
   );
 
-  const active = openSorted[0] ?? null;
-  const total = openSorted.length;
+  const active = queue.active;
+  const total = queue.ordered.length;
 
   const liveCard = useMemo(
     () =>
-      active ? buildFrozenCard(active, evaluations, 1, total) : null,
-    [active, evaluations, total]
+      active
+        ? buildFrozenCard(active, evaluations, queue.index + 1, total)
+        : null,
+    [active, evaluations, queue.index, total]
+  );
+
+  const supersededByActive = useMemo(() => {
+    if (!liveCard) return [];
+    const content = sections[section];
+    if (!content) return [];
+    return suggestionsSupersededBy(liveCard.comment, {
+      section,
+      comments: comments.filter((c) => c.status === "open" && !c.parentId),
+      sectionContent: content as Record<string, unknown>,
+    });
+  }, [liveCard, section, comments, sections]);
+  const persistedReplacedCount = liveCard
+    ? supersededSuggestionIdsFromContent(liveCard.comment.content).length
+    : 0;
+  const supersedesBadge = formatSupersedesBadge(
+    persistedReplacedCount > 0 ? persistedReplacedCount : supersededByActive.length
   );
 
   const sectionContent = sections[section];
@@ -867,6 +920,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         comment: snapshot.comment,
         sectionContent: sections[section] as Record<string, unknown>,
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
+        openComments: comments.filter((c) => c.status === "open" && !c.parentId),
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -883,14 +937,21 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
               : new SectionPersistError(0, "Failed to save section")
           );
         }
+        if (result.reason === "placeholder_conflict") {
+          throw new Error(PLACEHOLDER_CONFLICT_MESSAGE);
+        }
         throw new Error("Suggestion could not be located");
       }
       replaceSection(section, result.nextSection as unknown);
 
       setComments((prev) =>
-        prev.map((c) =>
-          c.id === commentId ? { ...c, status: "resolved" as const } : c
-        )
+        prev
+          .map((c) => {
+            if (c.id === commentId) return { ...c, status: "resolved" as const };
+            const dismissed = result.dismissed.find((row) => row.id === c.id);
+            return dismissed ?? c;
+          })
+          .filter((c) => c.status !== "dismissed")
       );
       setPhase("applied");
       await delay(SUGGESTION_APPLY_SETTLE_MS);
@@ -912,7 +973,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
           ? err.message
           : err instanceof CommentPersistError
             ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-            : "Could not apply suggestion"
+            : err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE
+              ? err.message
+              : "Could not apply suggestion"
       );
       await refresh();
       setFrozenCard(null);
@@ -1102,6 +1165,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         validation={activeValidation}
         queueStaleHint={queueStaleHint}
         canResolve={canResolve}
+        supersedesBadge={supersedesBadge}
         onAccept={handleAccept}
         onDismiss={handleDismiss}
       />
@@ -1124,6 +1188,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       }
       queueStaleHint={phase === "steady" ? queueStaleHint : null}
       canResolve={canResolve}
+      supersedesBadge={phase === "steady" ? supersedesBadge : undefined}
       onAccept={handleAccept}
       onDismiss={handleDismiss}
     />

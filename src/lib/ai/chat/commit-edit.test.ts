@@ -97,4 +97,22 @@ describe("applyCommitToSectionContent", () => {
       flattenForAnchor(getRichFieldValue(result.content, "narrative")).text
     ).toContain("approved");
   });
+
+  it("returns placeholder_conflict when a redraft would wipe a filled placeholder", () => {
+    const result = applyCommitToSectionContent({
+      content: {
+        narrative: paraDoc("Deviation observed in batch [Batch number: B-2024-117]."),
+      },
+      section: "define",
+      targetField: "narrative",
+      documentType: "investigation_report",
+      input: {
+        kind: "redraft",
+        markdown: "Deviation observed in batch [Batch number: <to be filled>].",
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("placeholder_conflict");
+  });
 });

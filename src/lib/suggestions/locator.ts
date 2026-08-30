@@ -25,6 +25,16 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 import { finalizeNarrativeDocAfterSuggestion } from "@/lib/tiptap/finalize-narrative-doc";
 import {
+  classifyMarkdownInsert,
+  insertMarkdownBlocks,
+} from "@/lib/suggestions/insert-markdown";
+import {
+  bodyAppendIndex,
+  spliceTopLevelNodes,
+  topLevelIndexContainingNode,
+  type PairedBlockKind,
+} from "@/lib/suggestions/block-insert";
+import {
   acceptPendingImageSuggestions,
   dropPendingImageSuggestions,
   insertPendingImageAfterDeletionMark,
@@ -69,7 +79,21 @@ export type SuggestionEdit = {
    * at the end while the primary part edits the claim or a table cell).
    */
   second?: Omit<SuggestionEdit, "second">;
+  /**
+   * Empty-anchor append: insert immediately before the last table/image in
+   * the field body (used when a same-turn lead-in follows a committed block).
+   */
+  placeBeforePairedBlock?: "table" | "image";
 };
+
+/** Same-field reposition: remove original and insert after a quoted span. */
+export function isPositionedImageMove(
+  edit: Pick<SuggestionEdit, "anchorText" | "insertImage" | "removeImage">
+): boolean {
+  return Boolean(
+    edit.removeImage && edit.insertImage && (edit.anchorText ?? "").trim()
+  );
+}
 
 function hasEditContent(
   edit: Pick<
@@ -94,6 +118,7 @@ export function suggestionEditParts(edit: SuggestionEdit): SuggestionEdit[] {
     insertImage: edit.insertImage,
     removeImage: edit.removeImage,
     scope: edit.scope,
+    placeBeforePairedBlock: edit.placeBeforePairedBlock,
   };
   const second = edit.second;
   const parts: SuggestionEdit[] = [];
@@ -697,6 +722,28 @@ export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
   };
 }
 
+/**
+ * Top-level block index that contains a unique `afterAnchor` span, so a new
+ * table/figure can be inserted after that block.
+ */
+export function topLevelIndexAfterAnchor(
+  doc: JSONContent,
+  afterAnchor: string
+): { status: "ok"; index: number } | { status: "not_found" | "ambiguous" } {
+  const index = flattenForAnchor(doc);
+  const located = locateEdit(index.text, {
+    anchorText: afterAnchor,
+    deleteText: "",
+    insertText: "x",
+  });
+  if (located.status === "ambiguous") return { status: "ambiguous" };
+  if (located.status !== "located") return { status: "not_found" };
+  const slices = index.resolveRange(located.deleteStart, located.deleteStart);
+  const node = slices[0]?.node;
+  if (!node) return { status: "not_found" };
+  return { status: "ok", index: topLevelIndexContainingNode(doc, node) };
+}
+
 function withLeadingSpaceIfNeeded(
   haystack: string,
   insertAt: number,
@@ -881,7 +928,9 @@ function insertAfterRef(
   cloned: JSONContent,
   insertAfter: TextSlice | null,
   insertText: string,
-  attrs: InjectAttrs
+  attrs: InjectAttrs,
+  appendAt: "body" | "end" = "end",
+  beforePaired?: PairedBlockKind
 ): JSONContent | null {
   const trimmed = normalizeSuggestionInsertText(insertText);
   if (!trimmed) return null;
@@ -910,7 +959,15 @@ function insertAfterRef(
       content: insertedNodes,
     };
     if (cloned.type !== "doc") return insertedNode;
-    cloned.content = [...(cloned.content ?? []), para];
+    if (appendAt === "body") {
+      spliceTopLevelNodes(
+        cloned,
+        bodyAppendIndex(cloned, beforePaired),
+        [para]
+      );
+    } else {
+      cloned.content = [...(cloned.content ?? []), para];
+    }
   }
   return insertedNode;
 }
@@ -923,7 +980,9 @@ function insertImageAfterRef(
   cloned: JSONContent,
   insertAfter: TextSlice | null,
   image: SuggestionImageInsert,
-  suggestionId: string
+  suggestionId: string,
+  appendAt: "body" | "end" = "end",
+  beforePaired?: PairedBlockKind
 ): JSONContent {
   const node = pendingImageInlineNode(image, suggestionId);
   if (insertAfter && insertAfter.indexInParent >= 0) {
@@ -936,6 +995,10 @@ function insertImageAfterRef(
   }
   const para: JSONContent = { type: "paragraph", content: [node] };
   if (cloned.type !== "doc") return node;
+  if (appendAt === "body") {
+    spliceTopLevelNodes(cloned, bodyAppendIndex(cloned, beforePaired), [para]);
+    return node;
+  }
   const last = cloned.content?.[cloned.content.length - 1];
   const lastEmpty =
     last?.type === "paragraph" &&
@@ -1039,6 +1102,17 @@ function applySingleEditToRichDoc(
   edit: SuggestionEdit,
   attrs: InjectAttrs
 ): { status: LocateStatus; doc: JSONContent } {
+  if (isPositionedImageMove(edit) && edit.removeImage) {
+    const status = locateImageRemoval(doc, edit.removeImage);
+    if (status !== "located") return { status, doc };
+    const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+    if (!markImageForDeletion(cloned, edit.removeImage, attrs.id)) {
+      return { status: "not_found", doc };
+    }
+    const insertOnly: SuggestionEdit = { ...edit, removeImage: undefined };
+    return applySingleEditToRichDoc(cloned, insertOnly, attrs);
+  }
+
   if (edit.removeImage) {
     const status = locateImageRemoval(doc, edit.removeImage);
     if (status !== "located") return { status, doc };
@@ -1061,38 +1135,81 @@ function applySingleEditToRichDoc(
   if (located.status === "append") {
     const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
     if (edit.insertImage && !normalizeSuggestionInsertText(edit.insertText ?? "")) {
-      insertImageAfterRef(cloned, null, edit.insertImage, attrs.id);
+      insertImageAfterRef(
+        cloned,
+        null,
+        edit.insertImage,
+        attrs.id,
+        "body",
+        edit.placeBeforePairedBlock
+      );
       cleanupMarks(cloned);
       return { status: "append", doc: cloned };
     }
     let raw = normalizeSuggestionInsertText(edit.insertText ?? "");
     if (isCitationAppendInsert(raw)) {
       raw = normalizeCitationAppendInsert(index.text, raw);
-    }
-    const paragraphs = raw
-      .split(/\n+/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (paragraphs.length === 0 && !edit.insertImage) {
-      return { status: "empty_edit", doc: cloned };
-    }
-    const lastBlock = cloned.content?.[cloned.content.length - 1];
-    if (
-      paragraphs[0] &&
-      isCitationListHeading(paragraphs[0]) &&
-      lastBlock &&
-      !isEmptyParagraphBlock(lastBlock)
-    ) {
-      cloned.content = [...(cloned.content ?? []), { type: "paragraph" }];
-    }
-    let inserted: JSONContent | null = null;
-    for (const paragraph of paragraphs) {
-      inserted = insertAfterRef(cloned, null, paragraph, attrs);
+      const paragraphs = raw
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (paragraphs.length === 0 && !edit.insertImage) {
+        return { status: "empty_edit", doc: cloned };
+      }
+      const lastBlock = cloned.content?.[cloned.content.length - 1];
+      if (
+        paragraphs[0] &&
+        isCitationListHeading(paragraphs[0]) &&
+        lastBlock &&
+        !isEmptyParagraphBlock(lastBlock)
+      ) {
+        cloned.content = [...(cloned.content ?? []), { type: "paragraph" }];
+      }
+      let inserted = false;
+      for (const paragraph of paragraphs) {
+        if (insertAfterRef(cloned, null, paragraph, attrs, "end")) inserted = true;
+      }
+      if (!inserted && !edit.insertImage) {
+        return { status: "empty_edit", doc: cloned };
+      }
+    } else {
+      const classified = classifyMarkdownInsert(raw);
+      if (classified.kind === "table") {
+        return { status: "not_found", doc };
+      }
+      if (classified.kind === "empty" && !edit.insertImage) {
+        return { status: "empty_edit", doc: cloned };
+      }
+      if (classified.kind === "blocks") {
+        insertMarkdownBlocks(cloned, null, classified.content, attrs, {
+          beforePairedBlock: edit.placeBeforePairedBlock,
+        });
+      } else if (classified.kind === "inline") {
+        if (
+          !insertAfterRef(
+            cloned,
+            null,
+            classified.text,
+            attrs,
+            "body",
+            edit.placeBeforePairedBlock
+          ) &&
+          !edit.insertImage
+        ) {
+          return { status: "empty_edit", doc: cloned };
+        }
+      }
     }
     if (edit.insertImage) {
-      inserted = insertImageAfterRef(cloned, null, edit.insertImage, attrs.id);
+      insertImageAfterRef(
+        cloned,
+        null,
+        edit.insertImage,
+        attrs.id,
+        "body",
+        edit.placeBeforePairedBlock
+      );
     }
-    if (!inserted) return { status: "empty_edit", doc: cloned };
     cleanupMarks(cloned);
     return { status: "append", doc: cloned };
   }
@@ -1192,11 +1309,24 @@ function applySingleEditToRichDoc(
   }
 
   if (insertText) {
-    const inserted = insertAfterRef(cloned, insertAfter, insertText, attrs);
-    if (inserted && insertAfter) {
-      const idx = insertAfter.parentArr.indexOf(inserted);
-      if (idx >= 0) {
-        insertAfter = { ...insertAfter, indexInParent: idx, node: inserted };
+    const classified = classifyMarkdownInsert(insertText);
+    if (classified.kind === "table") {
+      return { status: "not_found", doc };
+    }
+    if (classified.kind === "blocks") {
+      insertMarkdownBlocks(
+        cloned,
+        insertAfter?.node ?? null,
+        classified.content,
+        attrs
+      );
+    } else if (classified.kind === "inline") {
+      const inserted = insertAfterRef(cloned, insertAfter, classified.text, attrs);
+      if (inserted && insertAfter) {
+        const idx = insertAfter.parentArr.indexOf(inserted);
+        if (idx >= 0) {
+          insertAfter = { ...insertAfter, indexInParent: idx, node: inserted };
+        }
       }
     }
   }
@@ -1232,6 +1362,11 @@ function probeSingleRichEdit(
   doc: JSONContent,
   edit: SuggestionEdit
 ): LocateStatus {
+  if (isPositionedImageMove(edit) && edit.removeImage) {
+    const removal = locateImageRemoval(doc, edit.removeImage);
+    if (removal !== "located") return removal;
+    return probeSingleRichEdit(doc, { ...edit, removeImage: undefined });
+  }
   if (edit.removeImage) {
     return locateImageRemoval(doc, edit.removeImage);
   }

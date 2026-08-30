@@ -23,7 +23,6 @@ import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
 import {
-  agentChatTargetOnEnter,
   shouldCollapseAssistantOnSuggestionFocus,
   shouldRevealCriteriaTab,
   type WorkspaceChrome,
@@ -79,10 +78,6 @@ import {
   visibleManagerNames,
 } from "@/lib/reports/hidden-expert-reviewer";
 import { canSaveReportSection } from "@/lib/reports/access";
-import {
-  readChatComposerPrefs,
-  writeChatComposerPrefs,
-} from "@/lib/ai/chat/composer-prefs";
 import { cn } from "@/lib/utils";
 import { PanelRightClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -857,24 +852,13 @@ export function ReportWorkspace({
     (next: WorkspaceChrome) => {
       if (next === "agent") {
         setCommentsGutterVisible(false);
-        if (currentUserId) {
-          const stored = readChatComposerPrefs(currentUserId, report.id);
-          writeChatComposerPrefs(currentUserId, report.id, {
-            mode: stored.mode,
-            pace: stored.pace,
-            chatTarget: agentChatTargetOnEnter({
-              workProductView,
-              statsEnabled,
-            }),
-          });
-        }
         if (workProductView === "analytics") {
           setAnalyticsOpen(true);
         }
       }
       writeWorkspaceChrome(currentUserId, report.id, next);
     },
-    [currentUserId, report.id, statsEnabled, workProductView]
+    [currentUserId, report.id, workProductView]
   );
 
   return (
@@ -1001,6 +985,20 @@ export function ReportWorkspace({
           ) : (
             <>
               <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
+                {agentChrome ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 shrink-0"
+                    aria-label="Collapse document panel"
+                    aria-expanded
+                    title="Collapse"
+                    onClick={() => setPreviewCollapsed(true)}
+                  >
+                    <PanelRightClose className="size-4" aria-hidden="true" />
+                  </Button>
+                ) : null}
                 <WorkProductTabs
                   tabs={canvasTabs}
                   value={liveActiveTabId}
@@ -1040,20 +1038,6 @@ export function ReportWorkspace({
                       checked={commentsGutterVisible}
                       onCheckedChange={setCommentsGutterVisible}
                     />
-                  ) : null}
-                  {agentChrome ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 shrink-0"
-                      aria-label="Collapse document panel"
-                      aria-expanded
-                      title="Collapse"
-                      onClick={() => setPreviewCollapsed(true)}
-                    >
-                      <PanelRightClose className="size-4" aria-hidden="true" />
-                    </Button>
                   ) : null}
                 </div>
               </div>

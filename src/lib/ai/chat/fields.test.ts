@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { documentTypeEnum } from "@/db/schema";
 import { getDocumentType } from "@/lib/document-types";
-import { sectionLabel } from "./fields";
+import { sectionLabel, sectionFieldForChat } from "./fields";
 
 describe("sectionLabel", () => {
   it("uses registry titles for mechanical DV and QRA history", () => {
@@ -18,5 +18,54 @@ describe("sectionLabel", () => {
         );
       }
     }
+  });
+});
+
+describe("sectionFieldForChat", () => {
+  it("exposes tables[] with tableIndex and headers", () => {
+    const chat = sectionFieldForChat(
+      {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "VCS scheme:" }],
+            },
+            {
+              type: "table",
+              content: [
+                {
+                  type: "tableRow",
+                  content: ["Component", "Description"].map((text) => ({
+                    type: "tableHeader",
+                    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                  })),
+                },
+                {
+                  type: "tableRow",
+                  content: ["mm", "Major release number"].map((text) => ({
+                    type: "tableCell",
+                    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                  })),
+                },
+              ],
+            },
+          ],
+        },
+      },
+      "define",
+      "narrative",
+      []
+    );
+    expect(chat.tables).toEqual([
+      {
+        tableIndex: 0,
+        headers: ["Component", "Description"],
+        dataRowCount: 1,
+      },
+    ]);
+    expect(chat.structuredText).toContain("tableIndex=0");
+    expect(chat.structuredText).toContain("[1,0] mm");
   });
 });

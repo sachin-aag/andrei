@@ -41,6 +41,13 @@ export const COMPREHENSIVE_CHAT_STEP_BUDGET_CAP = 96;
 /** In-flight extract calls inside one continue_document_review. */
 export const REVIEW_EXTRACT_CONCURRENCY = 8;
 const REVIEW_DRAIN_MAX_EXTRACTS = 800;
+/**
+ * `finish_document_review` must stay small enough to persist in chat history.
+ * Inventory drafting uses `recommendedInventory` / `allIdentifiers`, not this
+ * sample. A 273-page catalog produced ~1.3k findings / 530KB and the next
+ * user turn failed before Gemini started.
+ */
+export const REVIEW_FINISH_FINDINGS_CAP = 60;
 
 export type DocumentReviewPhase =
   | "idle"
@@ -297,6 +304,7 @@ export class DocumentReviewSession {
     totalPages: number;
     coverageComplete: boolean;
     findings: DocumentReviewFinding[];
+    findingsOmitted: number;
     identifiers: string[];
     allIdentifiers: string[];
     recommendedInventory: RecommendedResultsInventory;
@@ -313,6 +321,7 @@ export class DocumentReviewSession {
         totalPages: this.totalPages,
         coverageComplete: false,
         findings: [],
+        findingsOmitted: 0,
         identifiers: [],
         allIdentifiers: [],
         recommendedInventory: empty,
@@ -329,6 +338,7 @@ export class DocumentReviewSession {
     const recommendedInventory = selectRecommendedInventory(this.findings);
     this.lastRecommended = recommendedInventory;
     const coverageComplete = this.failedPages.length === 0;
+    const capped = capFindingsForFinish(compactFindings(this.findings));
     const inventoryNote =
       recommendedInventory.ids.length > 0
         ? ` recommendedInventory ${recommendedInventory.ids.length} (${recommendedInventory.sourceKind}).`
@@ -338,7 +348,8 @@ export class DocumentReviewSession {
       reviewedPages: this.reviewedPageKeys.size,
       totalPages: this.totalPages,
       coverageComplete,
-      findings: compactFindings(this.findings),
+      findings: capped.findings,
+      findingsOmitted: capped.omitted,
       identifiers,
       allIdentifiers: identifiers,
       recommendedInventory,
@@ -347,7 +358,7 @@ export class DocumentReviewSession {
       ),
       failedPages: [...this.failedPages],
       coverageSummary: coverageComplete
-        ? `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages; ${this.findings.length} findings; ${identifiers.length} identifiers.${inventoryNote}`
+        ? `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages; ${this.findings.length} findings (${capped.findings.length} in sample${capped.omitted > 0 ? `, ${capped.omitted} omitted` : ""}); ${identifiers.length} identifiers.${inventoryNote}`
         : `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages with ${this.failedPages.length} failed page(s); do not claim completeness.${inventoryNote}`,
     };
   }
@@ -731,6 +742,19 @@ function compactFindings(
       finding.identifiers.map((id) => sanitizePromptMetadata(id, 40))
     ),
   }));
+}
+
+export function capFindingsForFinish(
+  findings: DocumentReviewFinding[],
+  cap = REVIEW_FINISH_FINDINGS_CAP
+): { findings: DocumentReviewFinding[]; omitted: number } {
+  if (findings.length <= cap) {
+    return { findings, omitted: 0 };
+  }
+  return {
+    findings: findings.slice(0, cap),
+    omitted: findings.length - cap,
+  };
 }
 
 function normalizeFinding(

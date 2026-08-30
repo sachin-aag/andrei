@@ -15,6 +15,8 @@ import {
   PLAN_MODE_CHAT_TOOL_NAMES,
   prepareDocumentReviewStep,
   REVIEW_EXTRACT_CONCURRENCY,
+  REVIEW_FINISH_FINDINGS_CAP,
+  capFindingsForFinish,
   shouldStopChatSteps,
   type ReviewPageSource,
 } from "./document-review";
@@ -427,5 +429,45 @@ describe("pickPlanModeChatTools", () => {
     expect(planTools).not.toHaveProperty("plot_measurements");
     expect(planTools).not.toHaveProperty("remove_image");
     expect(planTools).not.toHaveProperty("edit_table");
+  });
+});
+
+describe("capFindingsForFinish", () => {
+  it("keeps a short list unchanged", () => {
+    const findings = [
+      {
+        id: "d1",
+        attachmentId: "att_b",
+        filename: "Appendix-B.pdf",
+        pageNumber: 1,
+        identifiers: ["SW-SST-1"],
+        heading: null,
+        summary: "pass",
+        configuration: null,
+        result: "Pass",
+      },
+    ];
+    expect(capFindingsForFinish(findings)).toEqual({
+      findings,
+      omitted: 0,
+    });
+  });
+
+  it("caps a long catalog sample and reports omitted count", () => {
+    const findings = Array.from({ length: REVIEW_FINISH_FINDINGS_CAP + 17 }, (_, i) => ({
+      id: `d${i + 1}`,
+      attachmentId: "att_b",
+      filename: "Appendix-B.pdf",
+      pageNumber: i + 1,
+      identifiers: [`ID-${i + 1}`],
+      heading: null,
+      summary: "row",
+      configuration: null,
+      result: null,
+    }));
+    const capped = capFindingsForFinish(findings);
+    expect(capped.findings).toHaveLength(REVIEW_FINISH_FINDINGS_CAP);
+    expect(capped.omitted).toBe(17);
+    expect(capped.findings[0]?.id).toBe("d1");
   });
 });

@@ -116,6 +116,31 @@ export async function openReportAnalytics(page: Page): Promise<void> {
   });
 }
 
+/** Composer Report | Analytics — independent of the focused canvas pane. */
+export async function setChatWorkProductTarget(
+  page: Page,
+  target: "report" | "analytics"
+): Promise<void> {
+  const sidebar = reportSidebar(page);
+  const control = sidebar.getByTestId("chat-work-product-target");
+  await expect(control).toBeVisible({ timeout: 15_000 });
+  const current = (await control.innerText()).trim().toLowerCase();
+  if (current === target) {
+    if (target === "analytics") {
+      await expect(sidebar.getByTestId("analytics-chat-input")).toBeVisible();
+    }
+    return;
+  }
+  await control.click();
+  const optionName = target === "analytics" ? /^analytics$/i : /^report$/i;
+  await page.getByRole("option", { name: optionName }).click();
+  if (target === "analytics") {
+    await expect(sidebar.getByTestId("analytics-chat-input")).toBeVisible();
+  } else {
+    await expect(sidebar.getByTestId("analytics-chat-input")).toHaveCount(0);
+  }
+}
+
 /** Report workspace shell + Define section are mounted in Document chrome. */
 export async function waitForReportEditor(page: Page): Promise<void> {
   const chromeSwitch = page.getByTestId("report-chrome-switch");

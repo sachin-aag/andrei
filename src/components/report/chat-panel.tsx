@@ -40,6 +40,10 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ChatMarkdown } from "@/components/report/chat-markdown";
 import {
+  isRedundantInsertImageChip,
+  type InsertImageChipInfo,
+} from "@/components/report/chat-insert-image-chips";
+import {
   AskUserForm,
   type AskUserQuestionInput,
 } from "@/components/report/chat-ask-user-form";
@@ -150,6 +154,7 @@ import {
   type ChatScrollPosition,
 } from "@/components/report/chat-scroll-position";
 import { getDocumentType } from "@/lib/document-types";
+import { formatReplacedOlderSuggestionsNote } from "@/lib/suggestions/supersession";
 import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
 import {
   agentDoneNotificationCopy,
@@ -170,6 +175,7 @@ import {
   type AnalyticsMentionSheet,
 } from "@/lib/statistical-analysis/mentions";
 import { analysisListSubtitle } from "@/lib/statistical-analysis/stale";
+import { listGraphAnalyses } from "@/lib/statistical-analysis/insertable-graphs";
 import type { ReportAnalyticsView } from "@/lib/statistical-analysis/types";
 import { dataSheets } from "@/lib/statistical-analysis/worksheet";
 
@@ -270,6 +276,12 @@ function sectionLabel(section: unknown): string {
   return "section";
 }
 
+function replacedOlderSuffix(output: { supersededSuggestionIds?: unknown } | undefined): string {
+  const ids = output?.supersededSuggestionIds;
+  if (!Array.isArray(ids)) return "";
+  return formatReplacedOlderSuggestionsNote(ids.length);
+}
+
 function parseAskUserQuestions(input: Record<string, unknown> | undefined): AskUserQuestionInput[] {
   if (!Array.isArray(input?.questions)) return [];
   return input.questions.flatMap((q) => {
@@ -301,6 +313,22 @@ function appliedEditsFromParts(
     items.push({ section, targetField, reasoning });
   }
   return items;
+}
+
+/** Document proposals and Agent commits — refresh report state as soon as a card exists. */
+function persistedEditCountFromParts(
+  parts: UIMessage["parts"] | undefined
+): number {
+  let count = 0;
+  for (const part of parts ?? []) {
+    const tool = readToolPart(part as UIMessagePart<never, never>);
+    if (!tool?.output) continue;
+    const status = tool.output.status;
+    if (status === "applied" || status === "proposed" || status === "drafted") {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function ToolChip({
@@ -348,7 +376,7 @@ function ToolChip({
       return (
         <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
           Proposed edit to {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
+          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
         </ToolLine>
       );
     }
@@ -389,7 +417,14 @@ function ToolChip({
       return (
         <ToolLine icon={<ImagePlus className="size-3.5 text-emerald-500" />} tone="success">
           Proposed image in {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
+          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "available_plots") {
+      return (
+        <ToolLine icon={<ImagePlus className="size-3.5" />}>
+          No figure was inserted — listing available Analytics plots.
         </ToolLine>
       );
     }
@@ -430,7 +465,7 @@ function ToolChip({
       return (
         <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
           Proposed figure removal in {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
+          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
         </ToolLine>
       );
     }
@@ -471,7 +506,7 @@ function ToolChip({
       return (
         <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
           Proposed table edit to {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
+          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
         </ToolLine>
       );
     }
@@ -513,16 +548,26 @@ function ToolChip({
       return (
         <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
           Drafted {section}
-          {field ? ` · ${field}` : ""} — review the full draft in the document.
+          {field ? ` · ${field}` : ""} — review the full draft in the document.{replacedOlderSuffix(info.output)}
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "not_a_rewrite") {
+      return (
+        <ToolLine icon={<FileText className="size-3.5" />}>
+          Switching to a targeted edit on {section}
+          {field ? ` · ${field}` : ""}…
         </ToolLine>
       );
     }
     const message =
       typeof info.output?.message === "string"
         ? info.output.message
-        : info.errorText
-          ? info.errorText
-          : "Could not create this draft.";
+        : typeof info.output?.hint === "string"
+          ? info.output.hint
+          : info.errorText
+            ? info.errorText
+            : "Could not create this draft.";
     return (
       <ToolLine icon={<FileText className="size-3.5 text-amber-500" />} tone="warn">
         Draft not created: {message}
@@ -754,16 +799,23 @@ const MessageTurn = memo(function MessageTurn({
       {showEmptyError ? (
         <p className="text-sm text-red-600">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
       ) : (
-        groupAssistantParts(parts).map((group, i) => {
-          if (group.kind === "text") {
-            if (!group.text.trim()) return null;
-            return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
-          }
-          if (group.kind === "document-review") {
-            return <DocumentReviewProgress key={i} parts={group.parts} />;
-          }
-          const tool = readToolPart(group.part as UIMessagePart<never, never>);
-          if (tool) {
+        (() => {
+          const shownInsertImage: InsertImageChipInfo[] = [];
+          return groupAssistantParts(parts).map((group, i) => {
+            if (group.kind === "text") {
+              if (!group.text.trim()) return null;
+              return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
+            }
+            if (group.kind === "document-review") {
+              return <DocumentReviewProgress key={i} parts={group.parts} />;
+            }
+            const tool = readToolPart(group.part as UIMessagePart<never, never>);
+            if (!tool) return null;
+            if (isRedundantInsertImageChip(shownInsertImage, tool)) {
+              shownInsertImage.push(tool);
+              return null;
+            }
+            shownInsertImage.push(tool);
             return (
               <ToolChip
                 key={i}
@@ -772,9 +824,8 @@ const MessageTurn = memo(function MessageTurn({
                 onAnswerQuestions={onAnswerQuestions}
               />
             );
-          }
-          return null;
-        })
+          });
+        })()
       )}
       <TurnChangeSummary
         parts={parts}
@@ -855,16 +906,20 @@ function emptyChatIntro(args: {
 function composerPlaceholder(args: {
   targetingAnalytics: boolean;
   mode: ChatMode;
+  statsEnabled: boolean;
 }): string {
   if (args.targetingAnalytics) {
     return args.mode === "plan"
       ? "Ask about measurements in the attachments… type @ to tag a sheet or plot"
       : "Extract numbers, run a sixpack or ANOVA, or plot… type @ to tag a sheet or plot";
   }
+  const tags = args.statsEnabled
+    ? "a document, section, or plot"
+    : "a document or section";
   if (args.mode === "plan") {
-    return "Ask about the report or attachments… type @ to tag a document or section";
+    return `Ask about the report or attachments… type @ to tag ${tags}`;
   }
-  return "Ask the assistant to draft or improve a section… type @ to tag a document or section";
+  return `Ask the assistant to draft or improve a section… type @ to tag ${tags}`;
 }
 
 function subscribeNoop() {
@@ -873,7 +928,6 @@ function subscribeNoop() {
 
 export function ChatPanel({
   workspaceChrome = "agent",
-  workProductView = "report",
   statsEnabled = false,
   visible = true,
   onWorksheetChanged,
@@ -884,7 +938,6 @@ export function ChatPanel({
   mentionSheets = [],
 }: {
   workspaceChrome?: WorkspaceChrome;
-  workProductView?: WorkProductView;
   statsEnabled?: boolean;
   /** False while the sidebar is collapsed or another tab is showing. */
   visible?: boolean;
@@ -936,12 +989,10 @@ export function ChatPanel({
   );
   const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
   const composerPrefsReady = isClient && currentUserId != null;
-  const agentChatTarget =
-    storedComposerPrefs.chatTarget ?? workProductView;
+  const composerChatTarget: WorkProductView =
+    storedComposerPrefs.chatTarget ?? "report";
   const chatTarget = chatWorkProductTarget({
-    chrome: workspaceChrome,
-    workProductView,
-    agentTarget: agentChatTarget,
+    agentTarget: composerChatTarget,
     statsEnabled,
   });
   const targetingAnalytics = chatTarget === "analytics";
@@ -1052,16 +1103,15 @@ export function ChatPanel({
     busy
   );
 
-  const appliedEditCount = useMemo(
+  const persistedEditCount = useMemo(
     () =>
       messages.reduce(
-        (sum, message) =>
-          sum + appliedEditsFromParts(message.parts).length,
+        (sum, message) => sum + persistedEditCountFromParts(message.parts),
         0
       ),
     [messages]
   );
-  const appliedEditCountRef = useRef(0);
+  const persistedEditCountRef = useRef(0);
   useEffect(() => {
     if (!busy) {
       setAgentCommitInFlight(false);
@@ -1090,13 +1140,13 @@ export function ChatPanel({
     if (found) onWorksheetChanged();
   }, [messages, onWorksheetChanged]);
   useEffect(() => {
-    if (appliedEditCount <= appliedEditCountRef.current) {
-      appliedEditCountRef.current = appliedEditCount;
+    if (persistedEditCount <= persistedEditCountRef.current) {
+      persistedEditCountRef.current = persistedEditCount;
       return;
     }
-    appliedEditCountRef.current = appliedEditCount;
+    persistedEditCountRef.current = persistedEditCount;
     void refresh();
-  }, [appliedEditCount, refresh]);
+  }, [persistedEditCount, refresh]);
 
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.
@@ -1142,12 +1192,21 @@ export function ChatPanel({
       id: section,
       label: sectionLabel(section),
     }));
-    return [...documents, ...sections];
+    const analyses = statsEnabled
+      ? listGraphAnalyses(analyticsSnapshot?.analyses ?? []).map((item) => ({
+          type: "analysis" as const,
+          id: item.id,
+          label: item.title,
+          sublabel: analysisListSubtitle(item),
+        }))
+      : [];
+    return [...documents, ...sections, ...analyses];
   }, [
     analyticsSnapshot,
     attachments,
     mentionSheets,
     report.documentType,
+    statsEnabled,
     targetingAnalytics,
   ]);
   const labeledMentions = syncMentionCandidateLabels(
@@ -1203,7 +1262,7 @@ export function ChatPanel({
     [persistComposerPrefs, storedComposerPrefs.mode]
   );
 
-  const setAgentChatTarget = useCallback(
+  const setComposerChatTarget = useCallback(
     (next: WorkProductView) => {
       if (!isWorkProductView(next)) return;
       persistComposerPrefs({
@@ -1953,12 +2012,12 @@ export function ChatPanel({
           void send(input);
         }}
       >
-        {workspaceChrome === "agent" && statsEnabled ? (
+        {statsEnabled ? (
           <div className="mb-2 flex items-center gap-1.5">
             <ComposerSelect
-              value={agentChatTarget}
+              value={composerChatTarget}
               options={CHAT_WORK_PRODUCT_OPTIONS}
-              onChange={setAgentChatTarget}
+              onChange={setComposerChatTarget}
               disabled={busy}
               ariaLabel="Work product"
               className="w-[7.5rem]"
@@ -2092,6 +2151,7 @@ export function ChatPanel({
               placeholder={composerPlaceholder({
                 targetingAnalytics,
                 mode,
+                statsEnabled,
               })}
               className="min-h-[4.5rem] max-h-40 w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm outline-none placeholder:text-[var(--muted-foreground)] disabled:opacity-50"
             />

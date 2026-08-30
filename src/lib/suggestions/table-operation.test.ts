@@ -209,6 +209,88 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 1, 0)).toBe("b");
   });
 
+  it("removes a whole table and keeps surrounding prose, figures, and citations", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Purpose of this revision." }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: { src: "data:image/png;base64,xx", alt: "Assay" },
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 2]" }],
+        },
+        tableDoc(
+          ["Component", "Description", "Example"],
+          [
+            ["mm", "Major", "04"],
+            ["nn", "Minor", "08"],
+            ["ff", "Fix", "01"],
+            ["bb", "Build", "1164"],
+          ]
+        ).content![0]!,
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.content?.some((node) => node.type === "table")).toBe(false);
+    expect(JSON.stringify(result.doc)).toContain("Purpose of this revision.");
+    expect(JSON.stringify(result.doc)).toContain("imageInline");
+    expect(flattenForAnchor(result.doc.content!.at(-2)!).text.trim()).toBe(
+      "Citations:"
+    );
+    expect(flattenForAnchor(result.doc.content!.at(-1)!).text.trim()).toMatch(
+      /protocol\.pdf/
+    );
+  });
+
+  it("deletes only the targeted table when more than one exists", () => {
+    const result = applyTableOperation(twoTablesDoc(), {
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.content?.filter((n) => n.type === "table")).toHaveLength(1);
+    expect(cellText(result.doc, 0, 0, 0)).toBe("X");
+  });
+
+  it("upgrades a delete of every data row into delete_table", () => {
+    const doc = tableDoc(["H"], [["a"], ["b"], ["c"]]);
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "delete_rows",
+      tableIndex: 0,
+      rows: [
+        { row: 1, expectedCells: [] },
+        { row: 2, expectedCells: [] },
+        { row: 3, expectedCells: [] },
+      ],
+    });
+    expect(captured).toEqual({ kind: "delete_table", tableIndex: 0 });
+    const result = applyTableOperation(doc, captured);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.content?.some((node) => node.type === "table")).toBe(false);
+  });
+
   it("captures omitted row snapshots before persisting a delete proposal", () => {
     const doc = tableDoc(["H1", "H2"], [["first", "row"], ["second", "row"]]);
     const captured = captureTableOperationSnapshots(doc, {
@@ -252,6 +334,49 @@ describe("applyTableOperation", () => {
       expectedRowAtAfter: ["first", "row"],
     });
     expect(applyTableOperation(doc, captured).ok).toBe(true);
+  });
+
+  it("captures omitted expectedText and appends a column when afterCol is omitted", () => {
+    const doc = tableDoc(
+      ["Component", "Description"],
+      [["mm", "Major release number (01, 02, etc.)"]]
+    );
+    const cells = captureTableOperationSnapshots(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [{ row: 1, col: 1, insertText: "Major release number (e.g., 04)" }],
+    });
+    expect(cells).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          expectedText: "Major release number (01, 02, etc.)",
+          insertText: "Major release number (e.g., 04)",
+        },
+      ],
+    });
+    expect(applyTableOperation(doc, cells).ok).toBe(true);
+
+    const column = captureTableOperationSnapshots(doc, {
+      kind: "insert_column",
+      tableIndex: 0,
+      header: "Example",
+      values: ["04"],
+    });
+    expect(column).toMatchObject({
+      kind: "insert_column",
+      afterCol: 1,
+      header: "Example",
+      expectedHeaderAtAfterCol: "Description",
+    });
+    const applied = applyTableOperation(doc, column);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(colCount(applied.doc)).toBe(3);
+    expect(cellText(applied.doc, 0, 2)).toBe("Example");
+    expect(cellText(applied.doc, 1, 2)).toBe("04");
   });
 
   it("refuses to delete the header row", () => {
@@ -410,6 +535,223 @@ describe("applyTableOperation", () => {
     );
     expect(result.status).toBe("fixed_schema");
   });
+
+  it("appends a new table and pads short rows", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Intro." }],
+        },
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["Req", "Result", "Notes"],
+      rows: [["SW-1", "Pass"], ["SW-2", "Fail", "see log", "extra"]],
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.doc.content?.map((n) => n.type)).toEqual(["paragraph", "table"]);
+    expect(cellText(result.doc, 0, 0)).toBe("Req");
+    expect(cellText(result.doc, 1, 2)).toBe("");
+    expect(cellText(result.doc, 2, 2)).toBe("see log");
+    expect(colCount(result.doc)).toBe(3);
+    expect(rowCount(result.doc)).toBe(3);
+  });
+
+  it("inserts a new table before trailing Citations", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Purpose of this verification." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
+        },
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["VCS", "Meaning"],
+      rows: [["1", "Design"]],
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    const types = result.doc.content?.map((n) => n.type) ?? [];
+    const citeAt = result.doc.content?.findIndex(
+      (n) => flattenForAnchor(n).text.trim() === "Citations:"
+    );
+    expect(citeAt).toBeGreaterThan(0);
+    expect(types[1]).toBe("table");
+    expect(types.slice(citeAt).includes("table")).toBe(false);
+  });
+
+  it("parks a table that was appended below Citations, then inserts the new table above the list", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "This report covers Solea Model 3." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "1. [790-00134R_Rev_U.docx, p. 1]",
+            },
+          ],
+        },
+        tableDoc(["Solea Model 3.0 SW Application Version", "Reason for Build"], [
+          ["3.0.1", "Initial"],
+        ]).content![0]!,
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["Config", "Notes"],
+      rows: [["A", "Added"]],
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    const types = result.doc.content?.map((n) => n.type);
+    expect(types?.slice(0, 3)).toEqual(["paragraph", "table", "table"]);
+    expect(types?.at(-2)).toBe("paragraph");
+    expect(flattenForAnchor(result.doc.content!.at(-2)!).text.trim()).toBe(
+      "Citations:"
+    );
+    expect(flattenForAnchor(result.doc.content!.at(-1)!).text.trim()).toMatch(
+      /790-00134R/
+    );
+    expect(cellText(result.doc, 0, 0, 0)).toBe("Solea Model 3.0 SW Application Version");
+    expect(cellText(result.doc, 0, 0, 1)).toBe("Config");
+  });
+
+  it("does not insert afterAnchor below a Citations heading", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Scope covers software." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 1]" }],
+        },
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["A"],
+      rows: [["1"]],
+      afterAnchor: "1. [protocol.pdf, p. 1]",
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    const types = result.doc.content?.map((n) => n.type) ?? [];
+    const citeAt = result.doc.content?.findIndex(
+      (n) => flattenForAnchor(n).text.trim() === "Citations:"
+    );
+    expect(citeAt).toBeGreaterThan(0);
+    expect(types.slice(0, citeAt).includes("table")).toBe(true);
+    expect(types.slice(citeAt).includes("table")).toBe(false);
+  });
+
+  it("inserts after a unique afterAnchor block", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "First paragraph." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Second paragraph." }],
+        },
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["A"],
+      rows: [["1"]],
+      afterAnchor: "First paragraph.",
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.doc.content?.map((n) => n.type)).toEqual([
+      "paragraph",
+      "table",
+      "paragraph",
+    ]);
+  });
+
+  it("refuses a missing or ambiguous afterAnchor", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "The assay failed." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "The assay failed again." }],
+        },
+      ],
+    };
+    expect(
+      applyTableOperation(before, {
+        kind: "create_table",
+        headers: ["A"],
+        afterAnchor: "not in the field",
+      }).status
+    ).toBe("bad_scope");
+    expect(
+      applyTableOperation(before, {
+        kind: "create_table",
+        headers: ["A"],
+        afterAnchor: "The assay failed",
+      }).status
+    ).toBe("bad_scope");
+  });
+
+  it("refuses create_table on a seeded DV matrix field", () => {
+    const result = applyTableOperation(
+      seededTableDoc(["Equipment", "ID", "Calibration"]),
+      { kind: "create_table", headers: ["A", "B"] },
+      { section: "test_equipment", targetField: "table" }
+    );
+    expect(result.status).toBe("fixed_schema");
+  });
+
+  it("refuses delete_table on a seeded DV matrix field", () => {
+    const result = applyTableOperation(
+      seededTableDoc(["Equipment", "ID", "Calibration"]),
+      { kind: "delete_table", tableIndex: 0 },
+      { section: "test_equipment", targetField: "table" }
+    );
+    expect(result.status).toBe("fixed_schema");
+  });
 });
 
 describe("parseTableOperation", () => {
@@ -435,6 +777,199 @@ describe("parseTableOperation", () => {
       })
     ).toBeUndefined();
     expect(parseTableOperation({ kind: "insert_rows", afterRow: 0, rows: [] })).toBeUndefined();
+    expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
+  });
+
+  it("coerces nested edit_cells with extra reasoning and omitted expectedText", () => {
+    expect(
+      parseTableOperation({
+        edit_cells: {
+          cells: [
+            {
+              row: 1,
+              col: 2,
+              insertText: "Major release number (e.g., 04)",
+            },
+          ],
+        },
+        reasoning: "Add an example to the VCS table.",
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 2,
+          insertText: "Major release number (e.g., 04)",
+        },
+      ],
+    });
+  });
+
+  it("coerces add_column aliases and omits afterCol to append", () => {
+    expect(
+      parseTableOperation({
+        add_column: {
+          header: "Example",
+          values: ["04", "07", "01", "1011"],
+        },
+      })
+    ).toEqual({
+      kind: "insert_column",
+      tableIndex: 0,
+      afterCol: undefined,
+      header: "Example",
+      values: ["04", "07", "01", "1011"],
+      expectedHeaderAtAfterCol: undefined,
+      expectedHeaders: undefined,
+    });
+  });
+
+  it("coerces insert_column headers array to the new header", () => {
+    expect(
+      parseTableOperation({
+        kind: "insert_column",
+        headers: ["Component", "Description", "Example"],
+        values: ["04", "08", "01", "1011"],
+      })
+    ).toEqual({
+      kind: "insert_column",
+      tableIndex: 0,
+      afterCol: undefined,
+      header: "Example",
+      values: ["04", "08", "01", "1011"],
+      expectedHeaderAtAfterCol: undefined,
+      expectedHeaders: undefined,
+    });
+  });
+
+  it("coerces stringified create_table rows and extra reasoning", () => {
+    expect(
+      parseTableOperation({
+        create_table: {
+          headers: ["Component", "Designation", "Description"],
+          rows: [
+            "['mm', 'Major', 'Major release number (01, 02, etc.)'],",
+            "['nn', 'Minor', 'Minor release number (01, 02, etc.)'],",
+            ["ff", "Fix", "Fix release number (01, 02, etc.)"],
+          ],
+        },
+        reasoning: "Add a VCS table",
+      })
+    ).toEqual({
+      kind: "create_table",
+      headers: ["Component", "Designation", "Description"],
+      rows: [
+        ["mm", "Major", "Major release number (01, 02, etc.)"],
+        ["nn", "Minor", "Minor release number (01, 02, etc.)"],
+        ["ff", "Fix", "Fix release number (01, 02, etc.)"],
+      ],
+    });
+  });
+
+  it("coerces a single edit_cells object with a value alias", () => {
+    expect(
+      parseTableOperation({
+        kind: "edit_cells",
+        row: 1,
+        col: 2,
+        value: "Major release number (e.g., 04)",
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 2,
+          insertText: "Major release number (e.g., 04)",
+        },
+      ],
+    });
+  });
+
+  it("coerces near-miss delete_table / delete_rows shapes", () => {
+    expect(
+      parseTableOperation({
+        tableIndex: 0,
+        operation: "delete_rows",
+        toRow: 4,
+      })
+    ).toEqual({
+      kind: "delete_rows",
+      tableIndex: 0,
+      rows: [
+        { row: 1, expectedCells: [] },
+        { row: 2, expectedCells: [] },
+        { row: 3, expectedCells: [] },
+        { row: 4, expectedCells: [] },
+      ],
+    });
+    expect(
+      parseTableOperation({
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [1, 2, 3, 4],
+      })
+    ).toEqual({
+      kind: "delete_rows",
+      tableIndex: 0,
+      rows: [
+        { row: 1, expectedCells: [] },
+        { row: 2, expectedCells: [] },
+        { row: 3, expectedCells: [] },
+        { row: 4, expectedCells: [] },
+      ],
+    });
+    expect(
+      parseTableOperation({
+        kind: "delete_rows",
+        fromRow: 1,
+        toRow: 4,
+      })
+    ).toMatchObject({ kind: "delete_rows", tableIndex: 0 });
+    expect(parseTableOperation({ kind: "delete_table" })).toEqual({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(parseTableOperation({ kind: "remove_table", tableIndex: 0 })).toEqual({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+  });
+
+  it("coerces nested create_table { create_table: { headers, rows } }", () => {
+    expect(
+      parseTableOperation({
+        create_table: {
+          headers: ["Component", "Description"],
+          rows: [
+            ["mm", "represents major release number (01, 02, etc.)"],
+            ["nn", "represents minor release number (01, 02, etc.)"],
+          ],
+          afterAnchor: "mm.nn.ff.bb, where:",
+        },
+      })
+    ).toEqual({
+      kind: "create_table",
+      headers: ["Component", "Description"],
+      rows: [
+        ["mm", "represents major release number (01, 02, etc.)"],
+        ["nn", "represents minor release number (01, 02, etc.)"],
+      ],
+      afterAnchor: "mm.nn.ff.bb, where:",
+    });
+  });
+
+  it("round-trips create_table", () => {
+    const raw: TableOperation = {
+      kind: "create_table",
+      headers: ["Req", "Result"],
+      rows: [["SW-1", "Pass"]],
+      afterAnchor: "Purpose of this verification.",
+    };
+    expect(parseTableOperation(raw)).toEqual(raw);
   });
 });
 
@@ -449,5 +984,21 @@ describe("summarizeTableOperation", () => {
         values: ["a", "b", "", "c"],
       })
     ).toBe("Add “Description” column; populate 3 rows");
+  });
+
+  it("describes a new table", () => {
+    expect(
+      summarizeTableOperation({
+        kind: "create_table",
+        headers: ["A", "B"],
+        rows: [["1", "2"]],
+      })
+    ).toBe("Create a 2-column table with 1 row");
+  });
+
+  it("describes deleting a table", () => {
+    expect(
+      summarizeTableOperation({ kind: "delete_table", tableIndex: 0 })
+    ).toBe("Delete table");
   });
 });

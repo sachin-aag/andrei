@@ -6,7 +6,12 @@ import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import { executePlotMeasurements } from "@/lib/charts/plot-measurements";
 import type { PlotMeasurementsDeps } from "@/lib/charts/plot-measurements";
 import { CHART_DISPLAY_WIDTH_PX } from "@/lib/charts/render-chart";
+import { documentInsertedPlotWidth } from "@/lib/charts/chart-dimensions";
 import { parseChartSpec } from "@/lib/charts/chart-spec";
+import {
+  createSameTurnBlockPairing,
+  recordLeadIn,
+} from "@/lib/suggestions/same-turn-block-pair";
 
 vi.mock("@/db", () => ({ db: {} }));
 vi.mock("@/lib/attachments/retrieval", () => ({
@@ -160,5 +165,62 @@ describe("executePlotMeasurements", () => {
     expect(result.status).toBe("replaced");
     expect(extractMeasurements).not.toHaveBeenCalled();
     expect(insertComment).toHaveBeenCalledOnce();
+  });
+
+  it("pairs an empty-anchor chart with a same-turn lead-in", async () => {
+    const insertComment = vi.fn<PlotMeasurementsDeps["insertComment"]>(
+      async () => undefined
+    );
+    const updateComment = vi.fn<PlotMeasurementsDeps["updateComment"]>(
+      async () => undefined
+    );
+    const pairing = createSameTurnBlockPairing();
+    recordLeadIn(pairing, {
+      suggestionId: "sug-lead",
+      section: "define",
+      targetField: "narrative",
+      payload: {
+        deleteText: "",
+        insertText: "The torque scatter follows.",
+        reasoning: "intro",
+      },
+    });
+    const deps = baseDeps({ insertComment, updateComment });
+    const result = await executePlotMeasurements(
+      {
+        section: "define",
+        targetField: "narrative",
+        query: "mock-torque",
+        anchorText: "",
+        reasoning: "Plot of cited torque values",
+      },
+      { ...ctx, blockPairing: pairing },
+      deps
+    );
+    expect(result.status).toBe("proposed");
+    expect(updateComment).toHaveBeenCalledOnce();
+    const updated = updateComment.mock.calls[0]![0] as {
+      id: string;
+      content: string;
+    };
+    const patched = JSON.parse(updated.content) as {
+      pairedBlockSuggestionId?: string;
+      placeBeforePairedBlock?: string;
+    };
+    expect(patched.pairedBlockSuggestionId).toBe("sug-plot-1");
+    expect(patched.placeBeforePairedBlock).toBe("image");
+    expect(insertComment).toHaveBeenCalledOnce();
+    const inserted = insertComment.mock.calls[0]![0] as { content: string };
+    const proposed = JSON.parse(inserted.content) as {
+      placeAfterSuggestionId?: string;
+      insertImage?: { width?: number | null };
+    };
+    expect(proposed.placeAfterSuggestionId).toBe("sug-lead");
+    expect(proposed.insertImage?.width).toBe(
+      documentInsertedPlotWidth({
+        widthPx: CHART_DISPLAY_WIDTH_PX,
+        heightPx: 450,
+      })
+    );
   });
 });

@@ -67,6 +67,7 @@ import {
   type SuggestionActionWidgetState,
 } from "@/lib/tiptap/suggestion-action-widgets";
 import {
+  collectPendingSuggestionMarkIds,
   injectSuggestionMarks,
   richDocsMatchIgnoringAiPreview,
   shouldApplyExternalValueToEditor,
@@ -93,11 +94,16 @@ import {
 } from "@/lib/document-types";
 import { afterPaint } from "@/lib/suggestions/apply-transition";
 import { setRichEditorContentPreservingViewport } from "@/lib/suggestions/preserve-suggestion-viewport";
-import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
+import {
+  buildSuggestionEdit,
+  narrativeHasSuggestionMarks,
+  removePendingNarrativeSuggestion,
+} from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  PLACEHOLDER_CONFLICT_MESSAGE,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
@@ -642,6 +648,9 @@ export function TiptapSectionField({
                 sectionContent: currentSection,
                 fieldContentPath: contentPath,
                 applyMode: suggestionPersistMode,
+                openComments: comments.filter(
+                  (c) => c.status === "open" && !c.parentId
+                ),
               })
             : await dismissSuggestion({
                 reportId: report.id,
@@ -666,18 +675,40 @@ export function TiptapSectionField({
                 : new SectionPersistError(0, "Save failed")
             );
           }
+          if (result.reason === "placeholder_conflict") {
+            throw new Error(PLACEHOLDER_CONFLICT_MESSAGE);
+          }
           throw new Error("Suggestion could not be located");
         }
 
-        // Paint the applied result immediately. External-value sync skips a
-        // focused editor, and the preview-strip effect would otherwise revert
-        // pending AI marks once the comment is no longer the active suggestion.
+        const dismissedSiblings =
+          mode === "accept"
+            ? (
+                result as Extract<
+                  Awaited<ReturnType<typeof acceptSuggestion>>,
+                  { ok: true }
+                >
+              ).dismissed
+            : [];
+
+        // Paint the applied result immediately. Preview marks live in the
+        // editor, not provider state, so dismiss often has no nextSection.
+        // External-value sync and the preview-strip effect both skip a
+        // focused editor — the inline Ignore button leaves focus in the
+        // field, which used to leave red/green markup after the widgets
+        // disappeared.
         if (result.nextSection) {
-          replaceSection(
-            section,
-            result.nextSection as unknown
-          );
-          if (editor && !editor.isDestroyed && isRichField) {
+          replaceSection(section, result.nextSection as unknown);
+        }
+        if (editor && !editor.isDestroyed && isRichField) {
+          const pin: {
+            pinSuggestionId: string;
+            pinKind: "insert" | "delete";
+          } = {
+            pinSuggestionId: suggestionId,
+            pinKind: mode === "dismiss" ? "delete" : "insert",
+          };
+          if (result.nextSection) {
             setRichEditorContentPreservingViewport(
               editor,
               getRichFieldValue(
@@ -685,19 +716,42 @@ export function TiptapSectionField({
                 contentPath,
                 richFieldOptions
               ) as Content,
-              {
-                pinSuggestionId: suggestionId,
-                pinKind: mode === "dismiss" ? "delete" : "insert",
-              }
+              pin
             );
+          } else if (mode === "dismiss") {
+            if (tablePreviewSuggestionIdRef.current === suggestionId) {
+              setRichEditorContentPreservingViewport(
+                editor,
+                normalizeRichField(value, richFieldOptions) as Content,
+                pin
+              );
+              tablePreviewSuggestionIdRef.current = null;
+            } else {
+              const live = editor.getJSON() as JSONContent;
+              if (narrativeHasSuggestionMarks(live, suggestionId)) {
+                setRichEditorContentPreservingViewport(
+                  editor,
+                  normalizeRichField(
+                    removePendingNarrativeSuggestion(live, suggestionId),
+                    richFieldOptions
+                  ) as Content,
+                  pin
+                );
+              }
+            }
           }
         }
         setComments((prev) =>
           mode === "dismiss"
             ? prev.filter((c) => c.id !== suggestionId)
-            : prev.map((c) =>
-                c.id === suggestionId ? { ...c, status: "resolved" as const } : c
-              )
+            : prev.map((c) => {
+                if (c.id === suggestionId) {
+                  return { ...c, status: "resolved" as const };
+                }
+                const dismissed = dismissedSiblings.find((row) => row.id === c.id);
+                if (dismissed) return dismissed;
+                return c;
+              })
         );
         // Let the accepted/dismissed value paint while preview-held is still on,
         // otherwise ending the lock in the same tick re-strips the preview.
@@ -718,6 +772,7 @@ export function TiptapSectionField({
       editor,
       isRichField,
       richFieldOptions,
+      value,
       beginSuggestionApplyTransition,
       endSuggestionApplyTransition,
     ]
@@ -745,7 +800,8 @@ export function TiptapSectionField({
           console.error(err);
           toast.error(
             err instanceof CommentPersistError ||
-              err instanceof SectionPersistError
+              err instanceof SectionPersistError ||
+              (err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE)
               ? err.message
               : "Could not apply suggestion"
           );
@@ -856,6 +912,20 @@ export function TiptapSectionField({
     let json = editor.getJSON() as JSONContent;
     const canonicalJson = normalizeRichField(value, richFieldOptions) as JSONContent;
     const before = JSON.stringify(json);
+    let keepPreviewId = activeSuggestionId;
+    if (previewHeld) {
+      keepPreviewId = suggestionApplyTransition[section]?.bridge
+        ? null
+        : (suggestionApplyTransition[section]?.gutterAnchorCommentId ?? null);
+    }
+    const needsStrip =
+      collectPendingSuggestionMarkIds(json, AI_AUTHOR_ID).some(
+        (id) => id !== keepPreviewId
+      ) ||
+      Boolean(
+        tablePreviewSuggestionIdRef.current &&
+          tablePreviewSuggestionIdRef.current !== activeSuggestionId
+      );
 
     if (
       shouldSkipSuggestionDocSync({
@@ -866,6 +936,7 @@ export function TiptapSectionField({
             !narrativeHasSuggestionMarks(json, activeSuggestionId)
         ),
         hasLocalEdits: !richDocsMatchIgnoringAiPreview(json, canonicalJson),
+        needsStrip,
       })
     ) {
       return;
@@ -1027,6 +1098,7 @@ export function TiptapSectionField({
               removeImage: payload.removeImage,
               scope: payload.scope,
               second: payload.second,
+              placeBeforePairedBlock: payload.placeBeforePairedBlock,
             });
             const injected = injectSuggestionMarks(json, edit, {
               id: activeSuggestionId,
