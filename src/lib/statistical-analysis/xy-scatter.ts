@@ -160,6 +160,7 @@ function buildSpec(
       seriesBy: config.legendColumnId ? "unit" : "none",
       xAxis: "value",
       mark: parseChartMark(config.mark),
+      showSpecLimits: config.showSpecLimits === true,
     },
     citations,
     sampleSizeMin: null,

@@ -139,6 +139,7 @@ export async function createXyScatter(
     yColumnId: string;
     legendColumnId?: string | null;
     mark?: ChartMark;
+    showSpecLimits?: boolean;
     title?: string;
     rowStart?: number | null;
     rowEnd?: number | null;

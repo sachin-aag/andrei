@@ -1237,6 +1237,11 @@ export function StatisticalWorkspace({
             ? editingAnalysis.config.mark
             : "scatter"
         }
+        defaultShowSpecLimits={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showSpecLimits === true
+            : false
+        }
         defaultRowStart={xyRowStart}
         defaultRowEnd={xyRowEnd}
         defaultTitle={
@@ -1264,6 +1269,7 @@ export function StatisticalWorkspace({
                 yColumnId: values.yColumnId,
                 legendColumnId: values.legendColumnId,
                 mark: values.mark,
+                showSpecLimits: values.showSpecLimits,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
@@ -1276,6 +1282,7 @@ export function StatisticalWorkspace({
                 yColumnId: values.yColumnId,
                 legendColumnId: values.legendColumnId,
                 mark: values.mark,
+                showSpecLimits: values.showSpecLimits,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -48,6 +49,7 @@ export type XyScatterDialogValues = {
   yColumnId: string;
   legendColumnId: string | null;
   mark: ChartMark;
+  showSpecLimits: boolean;
   title: string;
   rowStart: number | null;
   rowEnd: number | null;
@@ -87,6 +89,7 @@ export function XyScatterDialog({
   defaultXColumnId,
   defaultLegendColumnId,
   defaultMark = "scatter",
+  defaultShowSpecLimits = false,
   defaultRowStart = null,
   defaultRowEnd = null,
   defaultTitle = "",
@@ -102,6 +105,7 @@ export function XyScatterDialog({
   defaultXColumnId?: string | null;
   defaultLegendColumnId?: string | null;
   defaultMark?: ChartMark;
+  defaultShowSpecLimits?: boolean;
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
   defaultTitle?: string;
@@ -121,6 +125,7 @@ export function XyScatterDialog({
     () => defaultLegendColumnId ?? null
   );
   const [mark, setMark] = useState<ChartMark>(() => parseChartMark(defaultMark));
+  const [showSpecLimits, setShowSpecLimits] = useState(defaultShowSpecLimits);
   const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(
     defaultRowStart != null ? String(defaultRowStart) : ""
@@ -200,6 +205,20 @@ export function XyScatterDialog({
                 )}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2 pt-0.5">
+              <Checkbox
+                id="xy-show-spec-limits"
+                data-testid="xy-show-spec-limits"
+                checked={showSpecLimits}
+                onCheckedChange={(next) => setShowSpecLimits(next === true)}
+              />
+              <Label
+                htmlFor="xy-show-spec-limits"
+                className={`${fieldLabelClass} cursor-pointer font-normal`}
+              >
+                Show LSL, USL values
+              </Label>
+            </div>
           </div>
 
           <div className="grid gap-1.5">
@@ -372,6 +391,7 @@ export function XyScatterDialog({
                 yColumnId,
                 legendColumnId,
                 mark,
+                showSpecLimits,
                 title: title.trim(),
                 rowStart: parseOptionalRow(rowStart),
                 rowEnd: parseOptionalRow(rowEnd),

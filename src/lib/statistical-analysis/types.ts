@@ -396,6 +396,8 @@ export type XyScatterConfig = {
   rows?: number[] | null;
   /** Visual mark. Chat always saves scatter; Edit can change this. */
   mark?: ChartMark;
+  /** Draw Y-column LSL/USL on the chart. Default off. */
+  showSpecLimits?: boolean;
 };
 
 export type XyScatterResult = {

@@ -264,9 +264,10 @@ const xyScatterColumnFields = {
 const xyScatterUiFields = {
   ...xyScatterColumnFields,
   mark: z.enum(CHART_MARKS).optional(),
+  showSpecLimits: z.boolean().optional(),
 } as const;
 
-/** Chat tool body — scatter only. Do not add `mark` or the model will set it. */
+/** Chat tool body — scatter only. Do not add `mark` or `showSpecLimits` or the model will set them. */
 export const xyScatterBodySchema = z
   .object(xyScatterColumnFields)
   .superRefine(refineDistinctXyColumns);

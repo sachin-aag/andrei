@@ -79,6 +79,12 @@ export type ChartLayout = {
    * charts and stored JSON keep parsing. Omitted → scatter.
    */
   mark?: ChartMark;
+  /**
+   * Draw Y-column LSL/USL as dashed lines and include them in the y-range.
+   * Worksheet plots set this explicitly (default off). Omitted (attachment
+   * charts, older specs) still shows limits when they exist.
+   */
+  showSpecLimits?: boolean;
 };
 
 export type ChartSpec = {
@@ -136,6 +142,7 @@ const chartLayoutSchema = z.object({
     })
     .nullable(),
   mark: z.enum(CHART_MARKS).optional().default("scatter"),
+  showSpecLimits: z.boolean().optional(),
 });
 
 export const chartSpecSchema = z.object({
@@ -157,6 +164,13 @@ export const chartSpecSchema = z.object({
 export function parseChartSpec(raw: unknown): ChartSpec | null {
   const parsed = chartSpecSchema.safeParse(raw);
   return parsed.success ? parsed.data : null;
+}
+
+/** Worksheet plots default off (`false`). Omitted (attachment charts) still shows. */
+export function chartShowsSpecLimits(
+  layout: Pick<ChartLayout, "showSpecLimits">
+): boolean {
+  return layout.showSpecLimits !== false;
 }
 
 function seriesKey(series: string | null): string {
@@ -236,8 +250,10 @@ function yValues(spec: ChartSpec): number[] {
       values.push(stacked.min, stacked.max);
     }
   }
-  if (spec.limits.lower != null) values.push(spec.limits.lower);
-  if (spec.limits.upper != null) values.push(spec.limits.upper);
+  if (chartShowsSpecLimits(spec.layout)) {
+    if (spec.limits.lower != null) values.push(spec.limits.lower);
+    if (spec.limits.upper != null) values.push(spec.limits.upper);
+  }
   return values;
 }
 

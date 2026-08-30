@@ -7,6 +7,7 @@ import {
   resolveYRange,
   xTickValues,
   yTickValues,
+  chartShowsSpecLimits,
   type ChartPoint,
   type ChartSpec,
 } from "@/lib/charts/chart-spec";
@@ -204,13 +205,15 @@ function drawChart(
   ctx.setLineDash([6, 4]);
   ctx.strokeStyle = colors.limit;
   ctx.lineWidth = 1.5;
-  for (const limit of [spec.limits.lower, spec.limits.upper]) {
-    if (limit == null) continue;
-    const y = yToPx(limit);
-    ctx.beginPath();
-    ctx.moveTo(plotLeft, y);
-    ctx.lineTo(plotRight, y);
-    ctx.stroke();
+  if (chartShowsSpecLimits(spec.layout)) {
+    for (const limit of [spec.limits.lower, spec.limits.upper]) {
+      if (limit == null) continue;
+      const y = yToPx(limit);
+      ctx.beginPath();
+      ctx.moveTo(plotLeft, y);
+      ctx.lineTo(plotRight, y);
+      ctx.stroke();
+    }
   }
   ctx.setLineDash([]);
 

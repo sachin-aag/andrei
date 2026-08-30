@@ -106,6 +106,32 @@ describe("computeXyScatter", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.result.specs[0]?.limits).toEqual({ lower: 5, upper: 40 });
+    expect(outcome.result.specs[0]?.layout.showSpecLimits).toBe(false);
+  });
+
+  it("draws spec limits only when showSpecLimits is on", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = pasteTsv(sheet, 0, 0, ["1", "2", "3"].join("\n"));
+    sheet = pasteTsv(sheet, 1, 0, ["10", "20", "30"].join("\n"));
+    sheet = renameColumn(sheet, 1, "OD660");
+    sheet = upsertSpecRow(sheet, {
+      columnName: "OD660",
+      lsl: "5",
+      usl: "40",
+      target: "",
+    });
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: "c1",
+      xColumnName: "C1",
+      yColumnId: "c2",
+      yColumnName: "OD660",
+      title: "OD660 vs C1",
+      showSpecLimits: true,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.layout.showSpecLimits).toBe(true);
+    expect(outcome.result.specs[0]?.limits).toEqual({ lower: 5, upper: 40 });
   });
 
   it("suggests the next column as X", () => {

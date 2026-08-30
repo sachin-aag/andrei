@@ -19,6 +19,7 @@ import {
   resolveYRange,
   xTickValues,
   yTickValues,
+  chartShowsSpecLimits,
   type ChartPoint,
   type ChartSpec,
 } from "@/lib/charts/chart-spec";
@@ -114,19 +115,21 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
     value: number;
     lineY: number;
   }> = [];
-  if (spec.limits.lower != null) {
-    specLimits.push({
-      kind: "lsl",
-      value: spec.limits.lower,
-      lineY: yToPx(spec.limits.lower),
-    });
-  }
-  if (spec.limits.upper != null) {
-    specLimits.push({
-      kind: "usl",
-      value: spec.limits.upper,
-      lineY: yToPx(spec.limits.upper),
-    });
+  if (chartShowsSpecLimits(spec.layout)) {
+    if (spec.limits.lower != null) {
+      specLimits.push({
+        kind: "lsl",
+        value: spec.limits.lower,
+        lineY: yToPx(spec.limits.lower),
+      });
+    }
+    if (spec.limits.upper != null) {
+      specLimits.push({
+        kind: "usl",
+        value: spec.limits.upper,
+        lineY: yToPx(spec.limits.upper),
+      });
+    }
   }
   const specLabels = layoutHorizontalSpecLabels(specLimits, plotBox);
 

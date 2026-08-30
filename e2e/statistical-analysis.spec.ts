@@ -419,6 +419,7 @@ test.describe("report analytics", () => {
     );
     await page.getByTestId("stat-xy-scatter").click();
     await expect(page.getByTestId("xy-scatter-dialog")).toBeVisible();
+    await expect(page.getByTestId("xy-show-spec-limits")).not.toBeChecked();
     await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
     await expect(page.getByTestId("xy-scatter-dialog")).toHaveCount(0);
   });

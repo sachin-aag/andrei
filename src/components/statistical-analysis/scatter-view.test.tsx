@@ -120,6 +120,64 @@ describe("ScatterView spec limits", () => {
     expect(chart.querySelectorAll("polyline").length).toBeGreaterThan(1);
   });
 
+  it("hides LSL/USL on a worksheet plot until showSpecLimits is on", () => {
+    const spec = {
+      ...TORQUE_MOCK_SPEC,
+      limits: { lower: 1, upper: 6 },
+      layout: { ...TORQUE_MOCK_SPEC.layout, showSpecLimits: false },
+    };
+    const analysis: XyScatterAnalysisSummary = {
+      id: "an-xy-limits",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: spec.title,
+      config: {
+        xColumnId: null,
+        xColumnName: "Observation",
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        title: spec.title,
+        showSpecLimits: false,
+      },
+      results: {
+        specs: [spec],
+        n: spec.points.length,
+        skipped: 0,
+        pearsonR: null,
+      },
+      sourceHash: "xy-limits",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    const { rerender } = render(
+      <ScatterView analysis={analysis} {...viewProps} />
+    );
+    expect(screen.queryByTestId("scatter-spec-line-lsl")).toBeNull();
+    expect(screen.queryByTestId("scatter-spec-line-usl")).toBeNull();
+
+    rerender(
+      <ScatterView
+        analysis={{
+          ...analysis,
+          config: { ...analysis.config, showSpecLimits: true },
+          results: {
+            ...analysis.results,
+            specs: [
+              {
+                ...spec,
+                layout: { ...spec.layout, showSpecLimits: true },
+              },
+            ],
+          },
+        }}
+        {...viewProps}
+      />
+    );
+    expect(screen.getByTestId("scatter-spec-line-lsl")).toBeTruthy();
+    expect(screen.getByTestId("scatter-spec-line-usl")).toBeTruthy();
+  });
+
   it("shows attachment page citations on a worksheet plot subtitle", () => {
     const spec = {
       ...TORQUE_MOCK_SPEC,

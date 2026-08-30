@@ -106,7 +106,16 @@ describe("xyScatterInputSchema", () => {
       yColumnId: "c2",
       mark: "column",
     });
+    expect(body).toMatchObject({ yColumnId: "c2" });
     expect("mark" in body).toBe(false);
+    expect("showSpecLimits" in body).toBe(false);
+    expect(
+      xyScatterInputSchema.parse({
+        kind: XY_SCATTER,
+        yColumnId: "c2",
+        showSpecLimits: true,
+      }).showSpecLimits
+    ).toBe(true);
   });
 });
 

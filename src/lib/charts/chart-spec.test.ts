@@ -165,6 +165,17 @@ describe("resolveYRange", () => {
     );
     expect(range.max).toBeGreaterThanOrEqual(25);
   });
+
+  it("ignores spec limits in the y-range when showSpecLimits is off", () => {
+    const range = resolveYRange(
+      spec({
+        limits: { lower: 1, upper: 100 },
+        points: [{ x: 1, y: 10, series: null, label: "a" }],
+        layout: { ...DEFAULT_CHART_LAYOUT, showSpecLimits: false },
+      })
+    );
+    expect(range.max).toBeLessThan(50);
+  });
 });
 
 describe("splitSpec", () => {

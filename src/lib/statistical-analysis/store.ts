@@ -173,6 +173,7 @@ function asXyScatterConfig(value: unknown): XyScatterConfig {
     rowEnd: parsed.rowEnd ?? null,
     rows: rows && rows.length > 0 ? rows : null,
     mark: parseChartMark(parsed.mark),
+    showSpecLimits: parsed.showSpecLimits === true,
   };
 }
 
@@ -688,6 +689,7 @@ async function createXyScatterAnalysisForReport(
     legendColumnName: resolved.legendColumn?.name ?? null,
     title,
     mark: parseChartMark(parsed.data.mark),
+    showSpecLimits: parsed.data.showSpecLimits === true,
     ...rowFields,
   };
 
@@ -1108,6 +1110,9 @@ export async function updateAnalysisForReport(
       legendColumnName: resolved.legendColumn?.name ?? null,
       title,
       mark: parseChartMark(parsed.data.mark ?? existing.config.mark),
+      showSpecLimits:
+        parsed.data.showSpecLimits ??
+        (existing.config.showSpecLimits === true),
       ...rowFields,
     };
     const outcome = computeXyScatter(analytics.worksheet, config);
