@@ -103,6 +103,10 @@ export async function openReportSidebarTab(
  * Expand the report sidebar and wait until Assistant has finished loading
  * sessions. The tab is already selected on a fresh editor load — clicking it
  * during hydration remounts the button (CI flake on reload).
+ *
+ * Composer Report | Analytics is persisted per user + report. After reload the
+ * textarea may be Analytics (`analytics-chat-input`) with worksheet placeholder
+ * copy — do not require the Document-chat placeholder.
  */
 export async function openReportAssistant(page: Page): Promise<void> {
   await openReportSidebarTab(page, "assistant");
@@ -110,9 +114,7 @@ export async function openReportAssistant(page: Page): Promise<void> {
   await expect(sidebar.getByLabel("Assistant mode")).toBeVisible({
     timeout: 15_000,
   });
-  await expect(
-    sidebar.getByPlaceholder(/ask about the report or attachments|ask the assistant/i)
-  ).toBeEnabled({ timeout: 15_000 });
+  await expect(sidebar.locator("textarea")).toBeEnabled({ timeout: 15_000 });
 }
 
 export async function openReportAnalytics(page: Page): Promise<void> {

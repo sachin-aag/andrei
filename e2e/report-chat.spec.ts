@@ -429,7 +429,12 @@ test.describe("report chat", () => {
     await expect(chatMessageTargetTag(page, "analytics")).toHaveCount(2);
 
     await reloadWithNavigationRetry(page, { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(new RegExp(`/reports/${reportId}/edit`));
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+      timeout: 30_000,
+    });
     await openReportAssistant(page);
+    await expect(sidebar.getByTestId("analytics-chat-input")).toBeVisible();
     await expect(chatUserMessage(page, "report history ping")).toBeVisible({
       timeout: 30_000,
     });
