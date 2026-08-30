@@ -11,6 +11,7 @@ import {
 } from "@/lib/ai/usage";
 import { convertLatexToMathMl, ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 import { isTestStubMathExtraction } from "@/lib/test/ai-bypass";
+import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import { z } from "zod";
 
 type WmfModule = {
@@ -533,6 +534,12 @@ async function defaultLlmCall(args: {
     temperature: MATH_EXTRACT_TEMPERATURE,
     maxOutputTokens: MATH_EXTRACT_MAX_OUTPUT_TOKENS,
     providerOptions: { google: { seed: MATH_EXTRACT_SEED } },
+    ...langfuseGenerateTextTelemetry({
+      functionId: "math-extract-from-image",
+      metadata: {
+        feature: "math_extraction",
+      },
+    }),
   });
 
   await recordAiUsage({

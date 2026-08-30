@@ -33,6 +33,7 @@ import {
   derivePageOutlineDigest,
   isPlaceholderPageContext,
 } from "@/lib/attachments/page-outline";
+import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 
 export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
 /**
@@ -525,6 +526,15 @@ async function requestPageInsights(
       ],
       temperature: TEMPERATURE,
       maxOutputTokens: INSIGHT_MAX_OUTPUT_TOKENS,
+      ...langfuseGenerateTextTelemetry({
+        functionId: "document-extract-page-insights",
+        metadata: {
+          feature: "document_extract",
+          filename: input.filename,
+          pageStart: input.pageStart,
+          pageEnd: input.pageEnd,
+        },
+      }),
     });
 
     const usage = {
@@ -730,6 +740,18 @@ async function extractOnce(
     ],
     temperature: TEMPERATURE,
     maxOutputTokens: options.maxOutputTokens,
+    ...langfuseGenerateTextTelemetry({
+      functionId: options.transcriptOnly
+        ? "document-extract-transcript-only"
+        : "document-extract-batch",
+      metadata: {
+        feature: "document_extract",
+        filename: input.filename,
+        pageStart: input.pageStart,
+        pageEnd: input.pageEnd,
+        transcriptOnly: Boolean(options.transcriptOnly),
+      },
+    }),
   });
 
   const usage = {
