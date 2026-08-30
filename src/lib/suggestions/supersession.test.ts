@@ -95,6 +95,55 @@ describe("findSupersededSuggestions", () => {
     ).toEqual([]);
   });
 
+  it("does not supersede an equal-range refinement of the same saved span", () => {
+    const older = comment("old", {
+      deleteText: "deviation was observed",
+      insertText: "issue was seen",
+      anchor: "a deviation was observed",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const newer = comment("new", {
+      deleteText: "deviation was observed",
+      insertText: "issue was logged",
+      anchor: "a deviation was observed",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    });
+    expect(
+      findSupersededSuggestions({
+        section: "define",
+        comments: [older, newer],
+        sectionContent,
+      })
+    ).toEqual([]);
+  });
+
+  it("keeps a disjoint sibling open when a later edit refines another span", () => {
+    const disjoint = comment("line", {
+      insertText: " (shift A)",
+      anchor: "On 01/01/2026",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const firstShrink = comment("shrink-1", {
+      deleteText: "deviation was observed",
+      insertText: "issue was seen",
+      anchor: "a deviation was observed",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    });
+    const secondShrink = comment("shrink-2", {
+      deleteText: "deviation was observed",
+      insertText: "issue was logged",
+      anchor: "a deviation was observed",
+      createdAt: "2026-01-01T00:02:00.000Z",
+    });
+    expect(
+      findSupersededSuggestions({
+        section: "define",
+        comments: [disjoint, firstShrink, secondShrink],
+        sectionContent,
+      })
+    ).toEqual([]);
+  });
+
   it("supersedes an older span fully covered by a newer span", () => {
     const older = comment("old", {
       deleteText: "deviation was observed",

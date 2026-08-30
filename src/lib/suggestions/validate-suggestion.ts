@@ -260,6 +260,40 @@ export function firstPreviewableOpenSuggestion(
   );
 }
 
+/**
+ * Review queue plus which card to show. `preferredCommentId` wins when that
+ * comment is still open in this section (newly generated chat edit, or a
+ * focused mark). Otherwise the locatable head.
+ */
+export function preferredOpenSuggestion(args: {
+  section: SectionType;
+  comments: CommentRecord[];
+  evaluations: EvaluationRecord[];
+  sectionContent: unknown;
+  preferredCommentId?: string | null;
+}): {
+  ordered: CommentRecord[];
+  active: CommentRecord | null;
+  index: number;
+} {
+  const ordered = reviewOrderOpenSuggestions(
+    args.section,
+    args.comments,
+    args.evaluations,
+    args.sectionContent
+  );
+  if (ordered.length === 0) {
+    return { ordered, active: null, index: 0 };
+  }
+  if (args.preferredCommentId) {
+    const index = ordered.findIndex((c) => c.id === args.preferredCommentId);
+    if (index >= 0) {
+      return { ordered, active: ordered[index]!, index };
+    }
+  }
+  return { ordered, active: ordered[0]!, index: 0 };
+}
+
 export function countStaleOpenSuggestions(
   section: SectionType,
   comments: CommentRecord[],

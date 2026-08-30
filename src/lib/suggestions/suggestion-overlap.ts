@@ -68,6 +68,22 @@ export function suggestionApplySpanContains(
   );
 }
 
+/**
+ * Same path and identical apply ranges. Equal-range refinements (a second
+ * shrink of the same saved span) are not a covering rewrite.
+ */
+export function suggestionApplySpansHaveEqualRanges(
+  a: SuggestionApplySpan,
+  b: SuggestionApplySpan
+): boolean {
+  if (a.path !== b.path) return false;
+  if (a.wholeField || b.wholeField) return false;
+  if (a.ranges.length === 0 || a.ranges.length !== b.ranges.length) return false;
+  return a.ranges.every(
+    (ra, i) => ra.start === b.ranges[i]!.start && ra.end === b.ranges[i]!.end
+  );
+}
+
 function locateToRange(
   located: LocateResult,
   fieldLength: number

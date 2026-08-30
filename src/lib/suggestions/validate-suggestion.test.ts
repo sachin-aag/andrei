@@ -4,6 +4,7 @@ import {
   countStaleOpenSuggestions,
   fieldContentHash,
   firstPreviewableOpenSuggestion,
+  preferredOpenSuggestion,
   reviewOrderOpenSuggestions,
   validateSuggestionLocate,
 } from "./validate-suggestion";
@@ -522,5 +523,50 @@ describe("reviewOrderOpenSuggestions", () => {
       firstPreviewableOpenSuggestion("define", [stale, fresh], [], sectionContent)
         ?.id
     ).toBe("fresh");
+  });
+
+  it("prefers a focused open card over the locatable head", () => {
+    const first = aiFixComment({
+      id: "first",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      evaluationId: null,
+      anchorText: "On",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: " shift A",
+        reasoning: "line",
+      }),
+    });
+    const second = aiFixComment({
+      id: "second",
+      createdAt: "2026-01-02T00:00:00.000Z",
+      evaluationId: null,
+      anchorText: "hello",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: " there",
+        reasoning: "later shrink",
+      }),
+    });
+    const focused = preferredOpenSuggestion({
+      section: "define",
+      comments: [first, second],
+      evaluations: [],
+      sectionContent,
+      preferredCommentId: "second",
+    });
+    expect(focused.ordered.map((c) => c.id)).toEqual(["first", "second"]);
+    expect(focused.active?.id).toBe("second");
+    expect(focused.index).toBe(1);
+
+    const fallback = preferredOpenSuggestion({
+      section: "define",
+      comments: [first, second],
+      evaluations: [],
+      sectionContent,
+      preferredCommentId: "gone",
+    });
+    expect(fallback.active?.id).toBe("first");
+    expect(fallback.index).toBe(0);
   });
 });

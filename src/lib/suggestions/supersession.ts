@@ -4,6 +4,7 @@ import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 import {
   spanForSuggestionComment,
   suggestionApplySpanContains,
+  suggestionApplySpansHaveEqualRanges,
   type SuggestionApplySpan,
 } from "@/lib/suggestions/suggestion-overlap";
 
@@ -44,8 +45,10 @@ function isNewer(b: CommentRecord, a: CommentRecord): boolean {
 
 /**
  * A is superseded by B when B is newer, targets the same field, and B's
- * operation ranges fully cover A's. A whole-field intent (draft_field /
- * redraft) supersedes every older open suggestion on that field.
+ * operation ranges fully cover A's. Equal ranges do not count as covering —
+ * a second shrink of the same saved span stacks instead of replacing.
+ * A whole-field intent (draft_field / redraft) supersedes every older open
+ * suggestion on that field.
  */
 export function findSupersededSuggestions(args: {
   section: SectionType;
@@ -78,6 +81,7 @@ export function findSupersededSuggestions(args: {
       const spanA = spans.get(a.id);
       if (!spanA) continue;
       if (!suggestionApplySpanContains(spanB, spanA)) continue;
+      if (suggestionApplySpansHaveEqualRanges(spanB, spanA)) continue;
       const current = bestBySuperseded.get(a.id);
       if (!current) {
         bestBySuperseded.set(a.id, b.id);

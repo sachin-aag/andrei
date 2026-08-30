@@ -70,7 +70,7 @@ import {
 } from "@/lib/suggestions/navigate-suggestion";
 import {
   countStaleOpenSuggestions,
-  reviewOrderOpenSuggestions,
+  preferredOpenSuggestion,
   suggestionStaleMessage,
   validateSuggestionLocate,
   type SuggestionValidation,
@@ -673,7 +673,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     endSuggestionApplyTransition,
     suggestionApplyTransition,
   } = useReportEvaluations();
-  const { comments, setComments } = useReportComments();
+  const { comments, setComments, activeCommentId } = useReportComments();
   const { sections, replaceSection } = useReportSections();
   const [pending, setPending] = useState(false);
   const [phase, setPhase] = useState<CardPhase>("steady");
@@ -688,24 +688,27 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     [report.documentType]
   );
 
-  const openSorted = useMemo(
+  const queue = useMemo(
     () =>
-      reviewOrderOpenSuggestions(
+      preferredOpenSuggestion({
         section,
         comments,
         evaluations,
-        sections[section]
-      ),
-    [section, comments, evaluations, sections]
+        sectionContent: sections[section],
+        preferredCommentId: activeCommentId,
+      }),
+    [section, comments, evaluations, sections, activeCommentId]
   );
 
-  const active = openSorted[0] ?? null;
-  const total = openSorted.length;
+  const active = queue.active;
+  const total = queue.ordered.length;
 
   const liveCard = useMemo(
     () =>
-      active ? buildFrozenCard(active, evaluations, 1, total) : null,
-    [active, evaluations, total]
+      active
+        ? buildFrozenCard(active, evaluations, queue.index + 1, total)
+        : null,
+    [active, evaluations, queue.index, total]
   );
 
   const supersededByActive = useMemo(() => {
