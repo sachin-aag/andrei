@@ -1,4 +1,3 @@
-export const ANALYTICS_CHAT_STEP_BUDGET = 24;
 export const ANALYTICS_SEARCH_LOOP_LIMIT = 2;
 
 const SEARCH_TOOL = "search_documents";
@@ -192,11 +191,6 @@ export function prepareAnalyticsChatStep(input: {
     analyticsSearchLoopDirective(input.steps) === "read"
   ) {
     input.searchGate.closed = true;
-  }
-  // Last allowed step is text-only so a budget stop is never a silent
-  // tool-call dump.
-  if (input.steps.length >= ANALYTICS_CHAT_STEP_BUDGET - 1) {
-    return { activeTools: [] };
   }
   if (analyticsSearchLoopDirective(input.steps) !== "read") return undefined;
   const activeTools: string[] = [...READ_AFTER_SEARCH_TOOLS];
