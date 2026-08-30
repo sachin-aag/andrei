@@ -168,6 +168,58 @@ test.describe("suggestion accept keeps text visible", () => {
   });
 });
 
+test.describe("suggestion dismiss clears preview", () => {
+  let reportId: string | null = null;
+
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAsEngineer(page);
+    const created = await createReport(page);
+    reportId = created.id;
+    await seedDefineSuggestion(page, reportId);
+  });
+
+  test.afterEach(async ({ page }) => {
+    if (reportId) {
+      await deleteReport(page, reportId);
+      reportId = null;
+    }
+  });
+
+  test("inline Ignore removes red/green markup without a reload", async ({
+    page,
+  }) => {
+    const editor = await openDefineWithPreview(page, reportId!);
+    const ignore = editor.getByRole("button", { name: "Ignore suggestion" });
+    await expect(ignore).toBeVisible({ timeout: 15_000 });
+    await ignore.click();
+
+    await expect(editor.locator(".suggestion-insert")).toHaveCount(0);
+    await expect(editor.locator(".suggestion-delete")).toHaveCount(0);
+    await expect(editor.getByRole("button", { name: "Accept suggestion" })).toHaveCount(
+      0
+    );
+    await expect(editor).not.toContainText("filling line FL-02");
+    await expect(editor).toContainText(ANCHOR);
+  });
+
+  test("gutter Dismiss removes red/green markup while the field is focused", async ({
+    page,
+  }) => {
+    const editor = await openDefineWithPreview(page, reportId!);
+    await editor.click();
+    await showReviewMargin(page);
+    const dismiss = reviewMargin(page).getByRole("button", { name: /^dismiss$/i });
+    await expect(dismiss).toBeVisible({ timeout: 15_000 });
+    await dismiss.click();
+
+    await expect(editor.locator(".suggestion-insert")).toHaveCount(0);
+    await expect(editor.locator(".suggestion-delete")).toHaveCount(0);
+    await expect(editor).not.toContainText("filling line FL-02");
+    await expect(editor).toContainText(ANCHOR);
+  });
+});
+
 const SECOND_ANCHOR = "The result exceeded acceptance limits";
 const SECOND_INSERT = " by 12%";
 

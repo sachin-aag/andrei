@@ -67,6 +67,7 @@ import {
   type SuggestionActionWidgetState,
 } from "@/lib/tiptap/suggestion-action-widgets";
 import {
+  collectPendingSuggestionMarkIds,
   injectSuggestionMarks,
   richDocsMatchIgnoringAiPreview,
   shouldApplyExternalValueToEditor,
@@ -91,7 +92,11 @@ import {
 } from "@/lib/document-types";
 import { afterPaint } from "@/lib/suggestions/apply-transition";
 import { setRichEditorContentPreservingViewport } from "@/lib/suggestions/preserve-suggestion-viewport";
-import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
+import {
+  buildSuggestionEdit,
+  narrativeHasSuggestionMarks,
+  removePendingNarrativeSuggestion,
+} from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
   dismissSuggestion,
@@ -684,15 +689,24 @@ export function TiptapSectionField({
               ).dismissed
             : [];
 
-        // Paint the applied result immediately. External-value sync skips a
-        // focused editor, and the preview-strip effect would otherwise revert
-        // pending AI marks once the comment is no longer the active suggestion.
+        // Paint the applied result immediately. Preview marks live in the
+        // editor, not provider state, so dismiss often has no nextSection.
+        // External-value sync and the preview-strip effect both skip a
+        // focused editor — the inline Ignore button leaves focus in the
+        // field, which used to leave red/green markup after the widgets
+        // disappeared.
         if (result.nextSection) {
-          replaceSection(
-            section,
-            result.nextSection as unknown
-          );
-          if (editor && !editor.isDestroyed && isRichField) {
+          replaceSection(section, result.nextSection as unknown);
+        }
+        if (editor && !editor.isDestroyed && isRichField) {
+          const pin: {
+            pinSuggestionId: string;
+            pinKind: "insert" | "delete";
+          } = {
+            pinSuggestionId: suggestionId,
+            pinKind: mode === "dismiss" ? "delete" : "insert",
+          };
+          if (result.nextSection) {
             setRichEditorContentPreservingViewport(
               editor,
               getRichFieldValue(
@@ -700,11 +714,29 @@ export function TiptapSectionField({
                 contentPath,
                 richFieldOptions
               ) as Content,
-              {
-                pinSuggestionId: suggestionId,
-                pinKind: mode === "dismiss" ? "delete" : "insert",
-              }
+              pin
             );
+          } else if (mode === "dismiss") {
+            if (tablePreviewSuggestionIdRef.current === suggestionId) {
+              setRichEditorContentPreservingViewport(
+                editor,
+                normalizeRichField(value, richFieldOptions) as Content,
+                pin
+              );
+              tablePreviewSuggestionIdRef.current = null;
+            } else {
+              const live = editor.getJSON() as JSONContent;
+              if (narrativeHasSuggestionMarks(live, suggestionId)) {
+                setRichEditorContentPreservingViewport(
+                  editor,
+                  normalizeRichField(
+                    removePendingNarrativeSuggestion(live, suggestionId),
+                    richFieldOptions
+                  ) as Content,
+                  pin
+                );
+              }
+            }
           }
         }
         setComments((prev) =>
@@ -738,6 +770,7 @@ export function TiptapSectionField({
       editor,
       isRichField,
       richFieldOptions,
+      value,
       beginSuggestionApplyTransition,
       endSuggestionApplyTransition,
     ]
@@ -877,6 +910,20 @@ export function TiptapSectionField({
     let json = editor.getJSON() as JSONContent;
     const canonicalJson = normalizeRichField(value, richFieldOptions) as JSONContent;
     const before = JSON.stringify(json);
+    let keepPreviewId = activeSuggestionId;
+    if (previewHeld) {
+      keepPreviewId = suggestionApplyTransition[section]?.bridge
+        ? null
+        : (suggestionApplyTransition[section]?.gutterAnchorCommentId ?? null);
+    }
+    const needsStrip =
+      collectPendingSuggestionMarkIds(json, AI_AUTHOR_ID).some(
+        (id) => id !== keepPreviewId
+      ) ||
+      Boolean(
+        tablePreviewSuggestionIdRef.current &&
+          tablePreviewSuggestionIdRef.current !== activeSuggestionId
+      );
 
     if (
       shouldSkipSuggestionDocSync({
@@ -887,6 +934,7 @@ export function TiptapSectionField({
             !narrativeHasSuggestionMarks(json, activeSuggestionId)
         ),
         hasLocalEdits: !richDocsMatchIgnoringAiPreview(json, canonicalJson),
+        needsStrip,
       })
     ) {
       return;
