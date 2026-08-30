@@ -1,6 +1,7 @@
 import { parseChartMark } from "@/lib/charts/chart-marks";
 import {
   DEFAULT_CHART_LAYOUT,
+  uniqueChartCitations,
   type ChartPoint,
   type ChartSpec,
 } from "@/lib/charts/chart-spec";
@@ -130,10 +131,19 @@ function uniqueSeriesCount(points: ChartPoint[]): number {
   return names.size;
 }
 
+function citationsFromColumns(
+  columns: Array<WorksheetColumn | null>
+): ChartSpec["citations"] {
+  return uniqueChartCitations(
+    columns.flatMap((column) => column?.citations ?? [])
+  );
+}
+
 function buildSpec(
   config: XyScatterConfig,
   points: ChartPoint[],
-  limits: { lower: number | null; upper: number | null }
+  limits: { lower: number | null; upper: number | null },
+  citations: ChartSpec["citations"]
 ): ChartSpec {
   return {
     version: 1,
@@ -151,7 +161,7 @@ function buildSpec(
       xAxis: "value",
       mark: parseChartMark(config.mark),
     },
-    citations: [],
+    citations,
     sampleSizeMin: null,
   };
 }
@@ -369,7 +379,12 @@ export function computeXyScatter(
       buildSpec(
         specConfig,
         points,
-        ySpecLimits(worksheet, resolved.yColumn.name)
+        ySpecLimits(worksheet, resolved.yColumn.name),
+        citationsFromColumns([
+          resolved.yColumn,
+          resolved.xColumn,
+          resolved.legendColumn,
+        ])
       ),
     ],
     n: points.length,

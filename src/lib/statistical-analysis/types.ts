@@ -1,5 +1,9 @@
 import type { ChartMark } from "@/lib/charts/chart-marks";
-import type { ChartLayout, ChartSpec } from "@/lib/charts/chart-spec";
+import type {
+  ChartCitation,
+  ChartLayout,
+  ChartSpec,
+} from "@/lib/charts/chart-spec";
 
 export const MAX_WORKSHEET_COLUMNS = 50;
 export const MAX_WORKSHEET_ROWS = 10_000;
@@ -82,6 +86,11 @@ export type WorksheetColumn = {
   id: string;
   name: string;
   values: string[];
+  /**
+   * Attachment pages this column was written from (extract / table dump).
+   * Omitted for typed or pasted values. Cleared when a human edits a cell.
+   */
+  citations?: ChartCitation[];
 };
 
 export type WorksheetSheet = {

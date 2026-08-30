@@ -1,4 +1,8 @@
 import {
+  uniqueChartCitations,
+  type ChartCitation,
+} from "@/lib/charts/chart-spec";
+import {
   MAX_CELL_LENGTH,
   MAX_COLUMN_NAME_LENGTH,
   MAX_DATA_SHEETS,
@@ -468,11 +472,18 @@ function mergeColumnValues(
     const persistedCell = cellAt(persisted.values, i);
     values.push(localCell !== persistedCell ? localCell : cellAt(remote.values, i));
   }
-  return {
+  const valuesChanged =
+    JSON.stringify(trimTrailingEmpty(local.values)) !==
+    JSON.stringify(trimTrailingEmpty(persisted.values));
+  const merged: WorksheetColumn = {
     ...remote,
     name: local.name !== persisted.name ? local.name : remote.name,
     values: trimTrailingEmpty(values),
   };
+  if (valuesChanged) {
+    delete merged.citations;
+  }
+  return merged;
 }
 
 /**
@@ -576,10 +587,17 @@ export function setCell(
   const column = columns[colIndex];
   if (!column) return data;
 
+  const previous = column.values[rowIndex] ?? "";
+  const nextValue = sanitizeCell(value);
+  if (previous === nextValue && rowIndex < column.values.length) {
+    return data;
+  }
+
   const nextValues = [...column.values];
   while (nextValues.length <= rowIndex) nextValues.push("");
-  nextValues[rowIndex] = sanitizeCell(value);
+  nextValues[rowIndex] = nextValue;
   column.values = trimTrailingEmpty(nextValues);
+  delete column.citations;
 
   return withWorkbook(data, columns);
 }
@@ -890,17 +908,27 @@ export function columnSourceKey(column: WorksheetColumn): string {
   return analysisSourceKey(column, { mode: "all" });
 }
 
+function citationsForColumn(
+  citations: ChartCitation[] | null | undefined
+): ChartCitation[] | undefined {
+  if (!citations || citations.length === 0) return undefined;
+  const unique = uniqueChartCitations(citations);
+  return unique.length > 0 ? unique : undefined;
+}
+
 export function replaceColumnValues(
   data: WorksheetData,
   colIndex: number,
   values: string[],
-  name?: string
+  name?: string,
+  citations?: ChartCitation[] | null
 ): WorksheetData {
   const column = data.columns[colIndex];
   if (!column) return data;
   const nextValues = trimTrailingEmpty(
     values.slice(0, MAX_WORKSHEET_ROWS).map(sanitizeCell)
   );
+  const nextCitations = citationsForColumn(citations);
   return withWorkbook(
     data,
     data.columns.map((item, index) =>
@@ -909,6 +937,7 @@ export function replaceColumnValues(
             ...item,
             name: name !== undefined ? sanitizeColumnName(name) : item.name,
             values: nextValues,
+            citations: nextCitations,
           }
         : item
     )

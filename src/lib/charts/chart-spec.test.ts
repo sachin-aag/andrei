@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CHART_LAYOUT,
+  formatChartCitationPages,
   formatChartProvenance,
   layoutPoints,
   parseChartSpec,
   resolveXRange,
   resolveYRange,
   splitSpec,
+  uniqueChartCitations,
   type ChartSpec,
 } from "@/lib/charts/chart-spec";
 
@@ -182,5 +184,37 @@ describe("formatChartProvenance", () => {
     expect(formatChartProvenance(spec())).toBe(
       "4 points, limits 1–6 ozf-in, M3-SYS-FN-037, p. 13"
     );
+  });
+});
+
+describe("uniqueChartCitations", () => {
+  it("deduplicates attachment/page pairs and drops invalid pages", () => {
+    expect(
+      uniqueChartCitations([
+        { attachmentId: "att_1", page: 31 },
+        { attachmentId: " att_1 ", page: 31 },
+        { attachmentId: "att_1", page: 32 },
+        { attachmentId: "", page: 1 },
+        { attachmentId: "att_2", page: 0 },
+      ])
+    ).toEqual([
+      { attachmentId: "att_1", page: 31 },
+      { attachmentId: "att_1", page: 32 },
+    ]);
+  });
+});
+
+describe("formatChartCitationPages", () => {
+  it("returns null when there are no citations", () => {
+    expect(formatChartCitationPages([])).toBeNull();
+  });
+
+  it("formats a page range", () => {
+    expect(
+      formatChartCitationPages([
+        { attachmentId: "att_1", page: 15 },
+        { attachmentId: "att_1", page: 13 },
+      ])
+    ).toBe("p. 13–15");
   });
 });

@@ -292,6 +292,11 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
       ])
     )
   );
+  const citationRows = analysis.results.specs.flatMap((item) =>
+    item.citations.map((citation) =>
+      csvRow([citation.attachmentId, String(citation.page)])
+    )
+  );
   const lines = [
     "Summary",
     csvRow(["Field", "Value"]),
@@ -300,6 +305,10 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
     "Points",
     csvRow(["Chart", "Series", "Label", "X", "Y"]),
     ...pointRows,
+    "",
+    "Citations",
+    csvRow(["Attachment", "Page"]),
+    ...citationRows,
   ];
   return `\uFEFF${lines.join("\n")}\n`;
 }

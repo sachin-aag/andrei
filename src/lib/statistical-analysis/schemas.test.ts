@@ -121,4 +121,13 @@ describe("patchAnalyticsBodySchema", () => {
       patchAnalyticsBodySchema.safeParse({ worksheet, version: 0 }).success
     ).toBe(false);
   });
+
+  it("keeps optional column citations from an attachment write", () => {
+    const worksheet = createEmptyWorksheet();
+    worksheet.columns[0]!.citations = [{ attachmentId: "att_1", page: 31 }];
+    const parsed = patchAnalyticsBodySchema.parse({ worksheet });
+    expect(parsed.worksheet?.columns[0]?.citations).toEqual([
+      { attachmentId: "att_1", page: 31 },
+    ]);
+  });
 });

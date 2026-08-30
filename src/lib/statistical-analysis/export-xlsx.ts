@@ -274,6 +274,15 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
         ])
       ),
     ],
+    [
+      ["Attachment", "Page"],
+      ...analysis.results.specs.flatMap((item) =>
+        item.citations.map((citation) => [
+          citation.attachmentId,
+          String(citation.page),
+        ])
+      ),
+    ],
   ];
 }
 

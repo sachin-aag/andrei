@@ -4,6 +4,8 @@ import {
   createEmptyWorksheet,
   pasteTsv,
   renameColumn,
+  replaceColumnValues,
+  setCell,
   upsertSpecRow,
 } from "./worksheet";
 import { computeXyScatter, suggestXColumn } from "./xy-scatter";
@@ -217,5 +219,73 @@ describe("computeXyScatter", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.result.specs[0]?.layout.mark).toBe("line");
+  });
+
+  it("copies attachment citations from plotted columns onto the spec", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = replaceColumnValues(
+      sheet,
+      0,
+      ["10", "20", "30"],
+      "Assay",
+      [{ attachmentId: "att_1", page: 31 }]
+    );
+    sheet = replaceColumnValues(
+      sheet,
+      1,
+      ["1", "2", "3"],
+      "Time",
+      [{ attachmentId: "att_1", page: 32 }]
+    );
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: "c2",
+      xColumnName: "Time",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "Assay vs Time",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.citations).toEqual([
+      { attachmentId: "att_1", page: 31 },
+      { attachmentId: "att_1", page: 32 },
+    ]);
+  });
+
+  it("omits citations when columns were typed or pasted", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = pasteTsv(sheet, 0, 0, ["10", "20", "30"].join("\n"));
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: null,
+      xColumnName: "Observation",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "typed",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.citations).toEqual([]);
+  });
+
+  it("drops citations after a human edits a cited column", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = replaceColumnValues(
+      sheet,
+      0,
+      ["10", "20", "30"],
+      "Assay",
+      [{ attachmentId: "att_1", page: 31 }]
+    );
+    sheet = setCell(sheet, 0, 1, "21");
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: null,
+      xColumnName: "Observation",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "edited",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.citations).toEqual([]);
   });
 });

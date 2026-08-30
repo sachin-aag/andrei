@@ -3,7 +3,12 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
-import { MEASUREMENT_SCATTER, type ScatterAnalysisSummary } from "@/lib/statistical-analysis/types";
+import {
+  MEASUREMENT_SCATTER,
+  XY_SCATTER,
+  type ScatterAnalysisSummary,
+  type XyScatterAnalysisSummary,
+} from "@/lib/statistical-analysis/types";
 import { ScatterView } from "./scatter-view";
 
 vi.mock("@/hooks/use-analysis-preview-capture", () => ({
@@ -113,5 +118,42 @@ describe("ScatterView spec limits", () => {
     expect(chart.getAttribute("data-chart-mark")).toBe("line");
     expect(chart.querySelectorAll("circle")).toHaveLength(0);
     expect(chart.querySelectorAll("polyline").length).toBeGreaterThan(1);
+  });
+
+  it("shows attachment page citations on a worksheet plot subtitle", () => {
+    const spec = {
+      ...TORQUE_MOCK_SPEC,
+      query: "Assay vs Observation",
+      title: "Assay vs Observation",
+      xLabel: "Observation",
+      yLabel: "Assay",
+      uom: "",
+      citations: [{ attachmentId: "att_1", page: 31 }],
+    };
+    const analysis: XyScatterAnalysisSummary = {
+      id: "an-xy",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: spec.title,
+      config: {
+        xColumnId: null,
+        xColumnName: "Observation",
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        title: spec.title,
+      },
+      results: {
+        specs: [spec],
+        n: spec.points.length,
+        skipped: 0,
+        pearsonR: null,
+      },
+      sourceHash: "xy",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    render(<ScatterView analysis={analysis} {...viewProps} />);
+    expect(screen.getByText(/p\. 31/)).toBeTruthy();
   });
 });

@@ -29,6 +29,38 @@ export type ChartCitation = {
   page: number;
 };
 
+/** Deduplicate `(attachmentId, page)` pairs; drop empty or non-positive pages. */
+export function uniqueChartCitations(
+  citations: readonly ChartCitation[]
+): ChartCitation[] {
+  const seen = new Set<string>();
+  const out: ChartCitation[] = [];
+  for (const citation of citations) {
+    const attachmentId = citation.attachmentId.trim();
+    const page = Math.trunc(citation.page);
+    if (!attachmentId || !Number.isInteger(page) || page < 1) continue;
+    const key = `${attachmentId}:${page}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ attachmentId, page });
+  }
+  return out;
+}
+
+/** Compact page label for a spec subtitle, e.g. `p. 31` or `p. 13–15`. */
+export function formatChartCitationPages(
+  citations: readonly ChartCitation[]
+): string | null {
+  const pages = [
+    ...new Set(
+      uniqueChartCitations(citations).map((citation) => citation.page)
+    ),
+  ].toSorted((a, b) => a - b);
+  if (pages.length === 0) return null;
+  if (pages.length === 1) return `p. ${pages[0]}`;
+  return `p. ${pages[0]}–${pages[pages.length - 1]}`;
+}
+
 export type ChartLayout = {
   /** "combined" = one chart. "per-series" = one chart per series group. */
   mode: "combined" | "per-series";
@@ -363,15 +395,7 @@ export function formatChartProvenance(spec: ChartSpec): string {
         : upper != null
           ? `limit ≤ ${upper}${spec.uom ? ` ${spec.uom}` : ""}`
           : "no limits";
-  const pages = [
-    ...new Set(spec.citations.map((citation) => citation.page).toSorted((a, b) => a - b)),
-  ];
-  const pageBit =
-    pages.length === 0
-      ? "no citations"
-      : pages.length === 1
-        ? `p. ${pages[0]}`
-        : `p. ${pages[0]}–${pages[pages.length - 1]}`;
+  const pageBit = formatChartCitationPages(spec.citations) ?? "no citations";
   return `${n} point${n === 1 ? "" : "s"}, ${limitBit}, ${spec.query}, ${pageBit}`;
 }
 

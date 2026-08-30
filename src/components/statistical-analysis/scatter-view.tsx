@@ -12,6 +12,7 @@ import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture"
 import { formatStat } from "@/lib/statistical-analysis/format";
 import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import {
+  formatChartCitationPages,
   formatChartProvenance,
   layoutPoints,
   resolveXRange,
@@ -397,6 +398,7 @@ export function ScatterView({
     onUploaded: onPreviewUploaded,
   });
   const provenance = spec ? formatChartProvenance(spec) : "";
+  const citationPages = spec ? formatChartCitationPages(spec.citations) : null;
   const subtitle = xy
     ? [
         xyScatterVersusLabel(analysis.config),
@@ -407,6 +409,7 @@ export function ScatterView({
         analysis.results.pearsonR == null
           ? null
           : `r = ${formatStat(analysis.results.pearsonR, 3)}`,
+        citationPages,
       ]
         .filter(Boolean)
         .join(" · ")

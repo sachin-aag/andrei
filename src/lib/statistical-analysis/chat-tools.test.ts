@@ -521,6 +521,9 @@ describe("analytics chat tools", () => {
     );
     expect(tools.write_column?.description).toContain("never invent 0");
     expect(tools.write_column?.description).toContain(
+      "worksheet plots cite the file"
+    );
+    expect(tools.write_column?.description).toContain(
       "Do not substitute a sixpack or ANOVA for a scatter"
     );
   });
@@ -574,14 +577,17 @@ describe("analytics chat tools", () => {
     expect(saved.columns[0]).toMatchObject({
       name: "Temp",
       values: ["37.1", "37.2"],
+      citations: [{ attachmentId: "att_1", page: 31 }],
     });
     expect(saved.columns[1]).toMatchObject({
       name: "pH",
       values: ["6.8", "6.9"],
+      citations: [{ attachmentId: "att_1", page: 31 }],
     });
     expect(saved.columns[2]).toMatchObject({
       name: "DO%",
       values: ["96.7", "81.6"],
+      citations: [{ attachmentId: "att_1", page: 31 }],
     });
   });
 
@@ -711,5 +717,96 @@ describe("analytics chat tools", () => {
     expect(
       saved.columns.find((column) => column.name === "Air flow (LPM)")?.values
     ).toEqual(["38.02"]);
+  });
+
+  it("stamps remembered extract pages onto a single-series write", async () => {
+    vi.stubEnv("ALLOW_TEST_STUB_CHAT", "true");
+    try {
+      const initial = analyticsView();
+      vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+      vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+        ok: true,
+        analytics: analyticsView(worksheet),
+      }));
+      vi.mocked(listReadyDocumentsForReport).mockResolvedValue([
+        {
+          attachmentId: "att_1",
+          filename: "bmr.pdf",
+          description: null,
+          pageCount: 1,
+          ingestRunId: "run_1",
+          documentSummary: null,
+        },
+      ]);
+      vi.mocked(readDocumentPage).mockResolvedValue(pageRead("10.1 10.2 10.3"));
+      const tools = buildAnalyticsChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        documentType: "investigation_report",
+      });
+      const extract = tools.extract_numeric_series?.execute;
+      const write = tools.write_column?.execute;
+      if (!extract || !write) throw new Error("extract or write_column missing");
+      const extracted = await extract(
+        { attachmentId: "att_1", pages: [31], metric: "Assay" },
+        {
+          toolCallId: "extract",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      );
+      expect(extracted).toMatchObject({
+        status: "ok",
+        attachmentId: "att_1",
+        pages: [31],
+      });
+      await write(
+        { name: "Assay", values: [10.1, 10.2, 10.3] },
+        {
+          toolCallId: "write",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      );
+      const saved = vi.mocked(updateReportAnalytics).mock.calls.at(-1)?.[1] as {
+        columns: { name: string; values: string[]; citations?: unknown }[];
+      };
+      expect(saved.columns[0]).toMatchObject({
+        name: "Assay",
+        values: ["10.1", "10.2", "10.3"],
+        citations: [{ attachmentId: "att_1", page: 31 }],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("does not cite an attachment for a typed single-column write", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const write = tools.write_column?.execute;
+    if (!write) throw new Error("write_column has no execute");
+    await write(
+      { name: "Assay", values: [1, 2, 3] },
+      {
+        toolCallId: "write",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; citations?: unknown }[];
+    };
+    expect(saved.columns[0]?.name).toBe("Assay");
+    expect(saved.columns[0]?.citations).toBeUndefined();
   });
 });

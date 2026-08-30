@@ -10,10 +10,16 @@ import {
   XY_SCATTER,
 } from "./types";
 
+const worksheetColumnCitationSchema = z.object({
+  attachmentId: z.string().trim().min(1).max(128),
+  page: z.number().int().min(1).max(10_000),
+});
+
 export const worksheetColumnSchema = z.object({
   id: z.string().trim().min(1).max(64),
   name: z.string().trim().min(1).max(MAX_COLUMN_NAME_LENGTH),
   values: z.array(z.string().max(MAX_CELL_LENGTH)).max(MAX_WORKSHEET_ROWS),
+  citations: z.array(worksheetColumnCitationSchema).max(24).optional(),
 });
 
 export const worksheetSheetSchema = z.object({
