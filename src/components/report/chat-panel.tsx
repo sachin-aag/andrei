@@ -1099,6 +1099,7 @@ export function ChatPanel({
   const currentSessionIdRef = useRef<string | null>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
   const lastSendTargetRef = useRef<WorkProductView>("report");
+  const [lastSendTarget, setLastSendTarget] = useState<WorkProductView>("report");
   const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
@@ -1515,9 +1516,9 @@ export function ChatPanel({
   const taggedMessages = useMemo(
     () =>
       tagChatMessages(messages, {
-        inFlightTarget: busy ? lastSendTargetRef.current : null,
+        inFlightTarget: busy ? lastSendTarget : null,
       }),
-    [busy, messages]
+    [busy, lastSendTarget, messages]
   );
   const visibleMessages = taggedMessages.slice(visibleStartIndex);
   const hiddenCount = visibleStartIndex;
@@ -1769,6 +1770,7 @@ export function ChatPanel({
       }
       if (sessionRuntime.busy) return;
       lastSendTargetRef.current = chatTarget;
+      setLastSendTarget(chatTarget);
       savedScrollRef.current = { kind: "bottom" };
       if (
         workspaceChrome === "agent" &&
