@@ -981,7 +981,11 @@ export function ReportWorkspace({
               : "order-2 min-w-0 flex-1",
             agentChrome &&
               !isResizing &&
-              "transition-[width] duration-200 ease-in-out"
+              "transition-[width] duration-200 ease-in-out",
+            !agentChrome &&
+              reportSurface &&
+              continuousDocument &&
+              "bg-[var(--muted)]"
           )}
           style={agentChrome ? { width: previewWidth } : undefined}
         >
@@ -1055,8 +1059,7 @@ export function ReportWorkspace({
               <div
                 className={cn(
                   "relative flex min-h-0 min-w-0 flex-1 flex-col",
-                  hideReportEditors ? "overflow-hidden" : "overflow-auto",
-                  reportSurface && "bg-[var(--muted)]"
+                  hideReportEditors ? "overflow-hidden" : "overflow-auto"
                 )}
               >
                 {comparing && compare?.surface === "report" ? (
