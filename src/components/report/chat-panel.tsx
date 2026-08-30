@@ -140,6 +140,15 @@ import {
   shouldLoadOlderMessages,
   visibleMessageStartIndex,
 } from "@/components/report/chat-visible-messages";
+import {
+  captureChatScrollPosition,
+  isChatScrollerLaidOut,
+  pinChatScrollerToBottom,
+  restoreChatScrollPosition,
+  shouldReapplyChatScroll,
+  shouldStickChatToBottom,
+  type ChatScrollPosition,
+} from "@/components/report/chat-scroll-position";
 import { getDocumentType } from "@/lib/document-types";
 import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
 import {
@@ -735,7 +744,10 @@ const MessageTurn = memo(function MessageTurn({
   });
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]">
+      <div
+        className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]"
+        aria-label="Assistant message"
+      >
         <Sparkles className="size-3 text-[var(--primary)]" />
         Assistant
       </div>
@@ -831,7 +843,7 @@ function emptyChatIntro(args: {
     if (args.mode === "plan") {
       return "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document. Type @ to tag a sheet, plot, or file.";
     }
-    return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document. Type @ to tag a sheet, plot, or file.";
+    return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot a worksheet scatter (Y required, X optional, optional legend to color by group) or a measurement scatter from attachments (one series vs index). Serial numbers cannot be X — use them as the legend. I don't draft the document. Type @ to tag a sheet, plot, or file.";
   }
   return documentEmptyChatIntro({
     mode: args.mode,
@@ -860,9 +872,10 @@ function subscribeNoop() {
 }
 
 export function ChatPanel({
-  workspaceChrome = "document",
+  workspaceChrome = "agent",
   workProductView = "report",
   statsEnabled = false,
+  visible = true,
   onWorksheetChanged,
   onAgentBusyChange,
   onAnalyticsFocusSheet,
@@ -873,6 +886,8 @@ export function ChatPanel({
   workspaceChrome?: WorkspaceChrome;
   workProductView?: WorkProductView;
   statsEnabled?: boolean;
+  /** False while the sidebar is collapsed or another tab is showing. */
+  visible?: boolean;
   onWorksheetChanged?: () => void;
   onAgentBusyChange?: (busy: boolean) => void;
   onAnalyticsFocusSheet?: (sheetId: string) => void;
@@ -996,6 +1011,15 @@ export function ChatPanel({
   const olderScrollRestoreRef = useRef<{ height: number; top: number } | null>(
     null
   );
+  const savedScrollRef = useRef<ChatScrollPosition | null>(null);
+  const savedScrollSessionKeyRef = useRef(sessionWindowKey);
+  const visibleRef = useRef(visible);
+  const restoringScrollRef = useRef(false);
+  visibleRef.current = visible;
+  if (savedScrollSessionKeyRef.current !== sessionWindowKey) {
+    savedScrollSessionKeyRef.current = sessionWindowKey;
+    savedScrollRef.current = null;
+  }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
@@ -1430,19 +1454,31 @@ export function ChatPanel({
     if (el && restore != null) {
       olderScrollRestoreRef.current = null;
       el.scrollTop = el.scrollHeight - restore.height + restore.top;
+      const captured = captureChatScrollPosition(el);
+      if (captured != null) savedScrollRef.current = captured;
     }
     loadingOlderRef.current = false;
   }, [visibleCount]);
 
+  const captureVisibleScroll = useCallback(() => {
+    if (!visibleRef.current || restoringScrollRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const captured = captureChatScrollPosition(el);
+    if (captured != null) savedScrollRef.current = captured;
+  }, []);
+
   const onMessagesScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (!visibleRef.current || restoringScrollRef.current) return;
+    captureVisibleScroll();
     if (
       shouldLoadOlderMessages(el.scrollTop, visibleCount, messages.length)
     ) {
       loadOlderMessages();
     }
-  }, [loadOlderMessages, messages.length, visibleCount]);
+  }, [captureVisibleScroll, loadOlderMessages, messages.length, visibleCount]);
 
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
@@ -1473,9 +1509,67 @@ export function ChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report.id]);
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!visible) {
+      restoringScrollRef.current = true;
+      return;
+    }
+    if (!el) return;
+    restoringScrollRef.current = true;
+    restoreChatScrollPosition(el, savedScrollRef.current);
+    // Cover the sidebar width transition so intermediate reflows cannot
+    // overwrite the saved offset as "bottom".
+    const timeout = window.setTimeout(() => {
+      restoringScrollRef.current = false;
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [visible]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!visibleRef.current || !el || !isChatScrollerLaidOut(el)) return;
+    if (!shouldStickChatToBottom(savedScrollRef.current)) return;
+    pinChatScrollerToBottom(el);
+    savedScrollRef.current = { kind: "bottom" };
   }, [messages, status]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let wasLaidOut = isChatScrollerLaidOut(el);
+    let previousWidth = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (!visibleRef.current) {
+        wasLaidOut = false;
+        previousWidth = 0;
+        return;
+      }
+      const nowLaidOut = isChatScrollerLaidOut(el);
+      const currentWidth = el.clientWidth;
+      if (
+        shouldReapplyChatScroll({
+          wasLaidOut,
+          nowLaidOut,
+          previousWidth,
+          currentWidth,
+        })
+      ) {
+        restoringScrollRef.current = true;
+        restoreChatScrollPosition(el, savedScrollRef.current);
+        restoringScrollRef.current = false;
+      } else if (
+        nowLaidOut &&
+        shouldStickChatToBottom(savedScrollRef.current)
+      ) {
+        pinChatScrollerToBottom(el);
+      }
+      wasLaidOut = nowLaidOut;
+      previousWidth = currentWidth;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Close history dropdown on outside click.
   useEffect(() => {
@@ -1587,6 +1681,7 @@ export function ChatPanel({
       }
       if (sessionRuntime.busy) return;
       lastSendTargetRef.current = chatTarget;
+      savedScrollRef.current = { kind: "bottom" };
       if (
         workspaceChrome === "agent" &&
         mode === "agent" &&
@@ -1772,6 +1867,7 @@ export function ChatPanel({
       {/* Messages */}
       <div
         ref={scrollRef}
+        data-testid="chat-message-scroller"
         className="flex-1 space-y-5 overflow-y-auto p-4"
         onScroll={onMessagesScroll}
       >

@@ -16,11 +16,15 @@ vi.mock("@/providers/report-provider", () => ({
 let chatPanelMounts = 0;
 
 vi.mock("@/components/report/chat-panel", () => ({
-  ChatPanel: function MockChatPanel() {
+  ChatPanel: function MockChatPanel({ visible = true }: { visible?: boolean }) {
     useEffect(() => {
       chatPanelMounts += 1;
     }, []);
-    return <div data-testid="chat-panel">chat</div>;
+    return (
+      <div data-testid="chat-panel" data-visible={visible ? "true" : "false"}>
+        chat
+      </div>
+    );
   },
 }));
 
@@ -66,7 +70,10 @@ describe("ReportSidebar chat keep-alive", () => {
   it("keeps ChatPanel mounted when the sidebar is collapsed", () => {
     chatPanelMounts = 0;
     const { rerender } = renderSidebar(false, "assistant");
-    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-panel")).toHaveAttribute(
+      "data-visible",
+      "true"
+    );
 
     rerender(
       <ReportSidebar
@@ -81,7 +88,37 @@ describe("ReportSidebar chat keep-alive", () => {
     );
 
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("chat-panel").parentElement).toHaveClass("hidden");
+    expect(screen.getByTestId("chat-panel")).toHaveAttribute(
+      "data-visible",
+      "false"
+    );
+    expect(screen.getByTestId("chat-panel").parentElement).toHaveClass(
+      "invisible"
+    );
+    expect(screen.getByTestId("chat-panel").parentElement).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
+    expect(chatPanelMounts).toBe(1);
+
+    rerender(
+      <ReportSidebar
+        collapsed={false}
+        onToggleCollapse={noop}
+        activeTab="assistant"
+        onTabChange={noop}
+        onJumpToSection={noop}
+        onJumpToPlaceholder={noop}
+        onJumpToComment={noop}
+      />
+    );
+    expect(screen.getByTestId("chat-panel")).toHaveAttribute(
+      "data-visible",
+      "true"
+    );
+    expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
+      "invisible"
+    );
     expect(chatPanelMounts).toBe(1);
   });
 
@@ -90,7 +127,7 @@ describe("ReportSidebar chat keep-alive", () => {
     const { rerender } = renderSidebar(false, "assistant");
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
-      "hidden"
+      "invisible"
     );
 
     rerender(
@@ -106,7 +143,13 @@ describe("ReportSidebar chat keep-alive", () => {
     );
 
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("chat-panel").parentElement).toHaveClass("hidden");
+    expect(screen.getByTestId("chat-panel")).toHaveAttribute(
+      "data-visible",
+      "false"
+    );
+    expect(screen.getByTestId("chat-panel").parentElement).toHaveClass(
+      "invisible"
+    );
     expect(chatPanelMounts).toBe(1);
   });
 
@@ -130,8 +173,12 @@ describe("ReportSidebar chat keep-alive", () => {
     );
 
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-panel")).toHaveAttribute(
+      "data-visible",
+      "true"
+    );
     expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
-      "hidden"
+      "invisible"
     );
     expect(screen.queryByRole("button", { name: "Criteria" })).not.toBeInTheDocument();
     expect(chatPanelMounts).toBe(1);

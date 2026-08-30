@@ -421,6 +421,7 @@ describe("parseAiFixCommentContent insertImage", () => {
         seriesBy: "none" as const,
         xAxis: "sequential" as const,
         yRange: null,
+        mark: "scatter" as const,
       },
       citations: [] as [],
       sampleSizeMin: null,

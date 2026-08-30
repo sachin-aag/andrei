@@ -7,6 +7,7 @@ import { renderChartPng } from "@/lib/charts/render-chart";
 import { resolveCustomerId } from "@/lib/customers/resolve";
 import { pngBufferFromDataUrl } from "./preview-image";
 import { renderAnovaIntervalPlotPng } from "./render-anova-png";
+import { renderBoxplotPng } from "./render-boxplot-png";
 import {
   renderSixpackPng,
   SIXPACK_PNG_HEIGHT,
@@ -14,6 +15,7 @@ import {
 } from "./render-sixpack-png";
 import {
   isAnovaAnalysis,
+  isBoxplotAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -67,6 +69,19 @@ export async function renderAnalysisPlotImages(
 
   if (isAnovaAnalysis(analysis)) {
     const buffer = renderAnovaIntervalPlotPng(analysis, { packId });
+    if (typeof buffer === "object" && "error" in buffer) return [];
+    return [
+      {
+        title: analysis.title,
+        buffer,
+        width: CHART_DISPLAY_WIDTH_PX,
+        height: FALLBACK_CHART_HEIGHT_PX,
+      },
+    ];
+  }
+
+  if (isBoxplotAnalysis(analysis)) {
+    const buffer = renderBoxplotPng(analysis, { packId });
     if (typeof buffer === "object" && "error" in buffer) return [];
     return [
       {

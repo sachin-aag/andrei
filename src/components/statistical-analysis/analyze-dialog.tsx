@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import type { AnovaDialogValues } from "@/components/statistical-analysis/anova-dialog";
 import type { CapabilityDialogValues } from "@/components/statistical-analysis/capability-dialog";
-import type { PlotMeasurementsDialogValues } from "@/components/statistical-analysis/plot-measurements-dialog";
+import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import { suggestFactorColumn } from "@/lib/statistical-analysis/anova";
 import {
   formatRowSelection,
@@ -29,10 +29,8 @@ import {
 } from "@/lib/statistical-analysis/row-selection";
 import {
   CAPABILITY_SIXPACK_NORMAL,
-  MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   WARN_VALUES_FOR_SIXPACK,
-  type AnalysisKind,
   type WorksheetData,
 } from "@/lib/statistical-analysis/types";
 import {
@@ -44,8 +42,11 @@ import {
 
 export type AnalyzeDialogSubmit =
   | { kind: typeof CAPABILITY_SIXPACK_NORMAL; values: CapabilityDialogValues }
-  | { kind: typeof ONE_WAY_ANOVA; values: AnovaDialogValues }
-  | { kind: typeof MEASUREMENT_SCATTER; values: PlotMeasurementsDialogValues };
+  | { kind: typeof ONE_WAY_ANOVA; values: AnovaDialogValues };
+
+type AnalyzePlotKind =
+  | typeof CAPABILITY_SIXPACK_NORMAL
+  | typeof ONE_WAY_ANOVA;
 
 const fieldLabelClass =
   "normal-case tracking-normal text-sm font-medium text-[var(--foreground)]";
@@ -98,10 +99,9 @@ function limitsForColumn(
   };
 }
 
-const PLOT_TYPES: { value: AnalysisKind; label: string }[] = [
+const PLOT_TYPES: { value: AnalyzePlotKind; label: string }[] = [
   { value: CAPABILITY_SIXPACK_NORMAL, label: "Normal Capability Sixpack" },
   { value: ONE_WAY_ANOVA, label: "One-Way ANOVA" },
-  { value: MEASUREMENT_SCATTER, label: "Plot measurements" },
 ];
 
 export function AnalyzeDialog({
@@ -135,10 +135,7 @@ export function AnalyzeDialog({
     initialRowStart,
     initialRowEnd
   );
-  const initialColumn =
-    findColumn(worksheet, fallbackColumnId) ?? worksheet.columns[0];
-
-  const [kind, setKind] = useState<AnalysisKind>(CAPABILITY_SIXPACK_NORMAL);
+  const [kind, setKind] = useState<AnalyzePlotKind>(CAPABILITY_SIXPACK_NORMAL);
   const [columnId, setColumnId] = useState(fallbackColumnId);
   const [factorColumnId, setFactorColumnId] = useState(
     () => suggestFactorColumn(worksheet, fallbackColumnId) ?? ""
@@ -149,10 +146,6 @@ export function AnalyzeDialog({
   const [target, setTarget] = useState(initialLimits.target);
   const [rowStart, setRowStart] = useState(initialRowStart);
   const [rowEnd, setRowEnd] = useState(initialRowEnd);
-  const [query, setQuery] = useState(initialColumn?.name ?? "");
-  const [xLabel, setXLabel] = useState("");
-  const [yLabel, setYLabel] = useState("");
-  const [mode, setMode] = useState<"combined" | "per-series">("combined");
 
   const applyColumnLimits = (
     nextColumnId: string,
@@ -171,13 +164,8 @@ export function AnalyzeDialog({
   };
 
   const changeColumn = (nextColumnId: string) => {
-    const previous = findColumn(worksheet, columnId);
-    const next = findColumn(worksheet, nextColumnId);
     setColumnId(nextColumnId);
     applyColumnLimits(nextColumnId, rowStart, rowEnd);
-    if (next && (!query.trim() || query === previous?.name)) {
-      setQuery(next.name);
-    }
     if (nextColumnId === factorColumnId) {
       setFactorColumnId(suggestFactorColumn(worksheet, nextColumnId) ?? "");
     }
@@ -208,18 +196,12 @@ export function AnalyzeDialog({
     Boolean(factorColumnId) &&
     columnId !== factorColumnId;
   const canSubmit =
-    kind === MEASUREMENT_SCATTER
-      ? Boolean(query.trim())
-      : kind === ONE_WAY_ANOVA
-        ? anovaCanSubmit
-        : Boolean(columnId);
+    kind === ONE_WAY_ANOVA ? anovaCanSubmit : Boolean(columnId);
 
   const description =
     kind === ONE_WAY_ANOVA
-      ? "Compare means of a numeric response across factor levels on the same data sheet. Pairwise tests use Bonferroni-adjusted t-tests with the ANOVA MSE."
-      : kind === MEASUREMENT_SCATTER
-        ? "Extract cited numeric measurements from this report's attachments and save a scatter of that series versus observation index in Results. One series, one color — not a grouped overlay. Query and limits start from the selected column and can be edited."
-        : "Individuals / moving range (I-MR). Values are filled from the selected column and can be edited before you run the plot.";
+      ? "Compare a numeric response across groups."
+      : "I-MR capability for the selected column.";
 
   const submit = () => {
     if (kind === ONE_WAY_ANOVA) {
@@ -231,21 +213,6 @@ export function AnalyzeDialog({
           title: title.trim(),
           rowStart: parseOptionalRow(rowStart),
           rowEnd: parseOptionalRow(rowEnd),
-        },
-      });
-      return;
-    }
-    if (kind === MEASUREMENT_SCATTER) {
-      onSubmit({
-        kind: MEASUREMENT_SCATTER,
-        values: {
-          query: query.trim(),
-          title: title.trim(),
-          xLabel: xLabel.trim(),
-          yLabel: yLabel.trim(),
-          mode,
-          lsl: parseOptionalNumber(lsl),
-          usl: parseOptionalNumber(usl),
         },
       });
       return;
@@ -274,12 +241,19 @@ export function AnalyzeDialog({
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <Label htmlFor="analyze-plot-type" className={fieldLabelClass}>
-              Plot type
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="analyze-plot-type" className={fieldLabelClass}>
+                Plot type
+              </Label>
+              <FieldInfoIcon
+                label="Plot type"
+                testId="analyze-plot-type-info"
+                text="Sixpack for capability. ANOVA to compare means by a factor."
+              />
+            </div>
             <Select
               value={kind}
-              onValueChange={(value) => setKind(value as AnalysisKind)}
+              onValueChange={(value) => setKind(value as AnalyzePlotKind)}
             >
               <SelectTrigger
                 id="analyze-plot-type"
@@ -297,106 +271,7 @@ export function AnalyzeDialog({
             </Select>
           </div>
 
-          {kind === MEASUREMENT_SCATTER ? (
-            <>
-              <div className="grid gap-1.5">
-                <Label htmlFor="plot-query" className={fieldLabelClass}>
-                  Query
-                </Label>
-                <Input
-                  id="plot-query"
-                  data-testid="plot-query"
-                  value={query}
-                  placeholder="Assay"
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="analyze-scatter-title" className={fieldLabelClass}>
-                  Title (optional)
-                </Label>
-                <Input
-                  id="analyze-scatter-title"
-                  value={title}
-                  placeholder={query.trim() || "Chart title"}
-                  onChange={(event) => setTitle(event.target.value)}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="plot-x-label" className={fieldLabelClass}>
-                    X label
-                  </Label>
-                  <Input
-                    id="plot-x-label"
-                    value={xLabel}
-                    placeholder="Measurement"
-                    onChange={(event) => setXLabel(event.target.value)}
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="plot-y-label" className={fieldLabelClass}>
-                    Y label
-                  </Label>
-                  <Input
-                    id="plot-y-label"
-                    value={yLabel}
-                    placeholder="Value"
-                    onChange={(event) => setYLabel(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="plot-layout" className={fieldLabelClass}>
-                  Layout
-                </Label>
-                <Select
-                  value={mode}
-                  onValueChange={(value) =>
-                    setMode(value === "per-series" ? "per-series" : "combined")
-                  }
-                >
-                  <SelectTrigger id="plot-layout" data-testid="plot-layout">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="combined">One combined chart</SelectItem>
-                    <SelectItem value="per-series">One chart per series</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="plot-lsl" className={fieldLabelClass}>
-                    LSL (optional)
-                  </Label>
-                  <Input
-                    id="plot-lsl"
-                    data-testid="plot-lsl"
-                    inputMode="decimal"
-                    value={lsl}
-                    placeholder="From attachments"
-                    onChange={(event) => setLsl(event.target.value)}
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="plot-usl" className={fieldLabelClass}>
-                    USL (optional)
-                  </Label>
-                  <Input
-                    id="plot-usl"
-                    data-testid="plot-usl"
-                    inputMode="decimal"
-                    value={usl}
-                    placeholder="From attachments"
-                    onChange={(event) => setUsl(event.target.value)}
-                  />
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              {kind === ONE_WAY_ANOVA ? (
+          {kind === ONE_WAY_ANOVA ? (
                 <>
                   <div className="grid gap-1.5">
                     <Label htmlFor="anova-response" className={fieldLabelClass}>
@@ -423,9 +298,16 @@ export function AnalyzeDialog({
                     </Select>
                   </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="anova-factor" className={fieldLabelClass}>
-                      Factor
-                    </Label>
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="anova-factor" className={fieldLabelClass}>
+                        Factor
+                      </Label>
+                      <FieldInfoIcon
+                        label="Factor"
+                        testId="anova-factor-info"
+                        text="Grouping column on the same sheet. Pairwise tests are Bonferroni t-tests using the ANOVA MSE."
+                      />
+                    </div>
                     <Select
                       value={factorColumnId}
                       onValueChange={setFactorColumnId}
@@ -488,16 +370,23 @@ export function AnalyzeDialog({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5">
-                  <Label
-                    htmlFor={
-                      kind === ONE_WAY_ANOVA
-                        ? "anova-row-start"
-                        : "sixpack-row-start"
-                    }
-                    className={fieldLabelClass}
-                  >
-                    First row
-                  </Label>
+                  <div className="flex items-center gap-1">
+                    <Label
+                      htmlFor={
+                        kind === ONE_WAY_ANOVA
+                          ? "anova-row-start"
+                          : "sixpack-row-start"
+                      }
+                      className={fieldLabelClass}
+                    >
+                      First row
+                    </Label>
+                    <FieldInfoIcon
+                      label="Row range"
+                      testId="analyze-row-range-info"
+                      text="Rows are numbered from 1. Leave both blank to use the whole column."
+                    />
+                  </div>
                   <Input
                     id={
                       kind === ONE_WAY_ANOVA
@@ -546,10 +435,6 @@ export function AnalyzeDialog({
                   />
                 </div>
               </div>
-              <p className="-mt-2 text-xs text-[var(--muted-foreground)]">
-                Worksheet rows are numbered from 1. Leave both blank to use the
-                whole column.
-              </p>
 
               <div className="grid gap-1.5">
                 <Label htmlFor="analyze-title" className={fieldLabelClass}>
@@ -570,9 +455,16 @@ export function AnalyzeDialog({
               {kind === CAPABILITY_SIXPACK_NORMAL ? (
                 <div className="grid grid-cols-3 gap-3">
                   <div className="grid gap-1.5">
-                    <Label htmlFor="sixpack-lsl" className={fieldLabelClass}>
-                      LSL
-                    </Label>
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="sixpack-lsl" className={fieldLabelClass}>
+                        LSL
+                      </Label>
+                      <FieldInfoIcon
+                        label="LSL"
+                        testId="sixpack-lsl-info"
+                        text="Lower spec limit. At least one of LSL or USL is required."
+                      />
+                    </div>
                     <Input
                       id="sixpack-lsl"
                       data-testid="sixpack-lsl"
@@ -582,9 +474,16 @@ export function AnalyzeDialog({
                     />
                   </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="sixpack-target" className={fieldLabelClass}>
-                      Target
-                    </Label>
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="sixpack-target" className={fieldLabelClass}>
+                        Target
+                      </Label>
+                      <FieldInfoIcon
+                        label="Target"
+                        testId="sixpack-target-info"
+                        text="Nominal target; optional."
+                      />
+                    </div>
                     <Input
                       id="sixpack-target"
                       data-testid="sixpack-target"
@@ -594,9 +493,16 @@ export function AnalyzeDialog({
                     />
                   </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="sixpack-usl" className={fieldLabelClass}>
-                      USL
-                    </Label>
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="sixpack-usl" className={fieldLabelClass}>
+                        USL
+                      </Label>
+                      <FieldInfoIcon
+                        label="USL"
+                        testId="sixpack-usl-info"
+                        text="Upper spec limit. At least one of LSL or USL is required."
+                      />
+                    </div>
                     <Input
                       id="sixpack-usl"
                       data-testid="sixpack-usl"
@@ -607,8 +513,6 @@ export function AnalyzeDialog({
                   </div>
                 </div>
               ) : null}
-            </>
-          )}
 
           {error ? (
             <p className="text-sm text-[var(--destructive)]" role="alert">
@@ -632,11 +536,7 @@ export function AnalyzeDialog({
             disabled={submitting || !canSubmit}
             onClick={submit}
           >
-            {submitting
-              ? kind === MEASUREMENT_SCATTER
-                ? "Extracting…"
-                : "Running…"
-              : "OK"}
+            {submitting ? "Running…" : "OK"}
           </Button>
         </DialogFooter>
       </DialogContent>

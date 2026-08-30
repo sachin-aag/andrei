@@ -531,6 +531,17 @@ html[data-customer="convergent"] {
 }
 
 /*
+ * While a suggestion apply rewrites the editor, disable overflow anchoring.
+ * A wholesale setContent briefly empties the field; the next section heading
+ * can become the scroll anchor and the viewport lands there after a large
+ * insert. JS restore pins the caret to the green run — this keeps the
+ * browser from fighting that restore.
+ */
+body:has([data-suggestion-preview-held]) {
+  overflow-anchor: none;
+}
+
+/*
  * While a suggestion is being applied, calm the diff down to a plain preview
  * of the result: the deleted run fades out and the inserted run sheds its
  * highlight, so what's left reads as ordinary text.
@@ -858,19 +869,15 @@ html[data-customer="convergent"] {
 }
 
 /* ProseMirror / Tiptap — table editing.
-   Wide matrices (FMEA, DV) must never shrink below a readable floor.
-   The editor chrome scrolls horizontally as one unit. */
-.ProseMirror:has(table) {
-  max-width: none;
-  width: max-content;
-  min-width: 100%;
-}
-
+   Keep the editor at the field width so mixed prose + table sections
+   (Convergent Scope, investigation Define) wrap instead of becoming one
+   horizontal strip. Wide matrices (FMEA, DV) still honor per-cell
+   min-width floors; those tables overflow and the field chrome scrolls. */
 .ProseMirror table {
   border-collapse: separate;
   border-spacing: 0;
   table-layout: auto;
-  width: max-content;
+  width: 100%;
   min-width: 100%;
   margin: 0.75rem 0;
   overflow: visible;
@@ -888,13 +895,13 @@ html[data-customer="convergent"] {
   box-sizing: border-box;
   position: relative;
   overflow-wrap: break-word;
-  word-break: normal;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .ProseMirror th {
   background-color: var(--secondary);
   font-weight: 600;
-  white-space: normal;
 }
 
 .ProseMirror td {
@@ -906,12 +913,8 @@ html[data-customer="convergent"] {
   border-top-width: 1px;
 }
 
-/* Identity column floors — sizing only; the whole table scrolls together. */
 .ProseMirror th:first-child,
 .ProseMirror td:first-child {
-  min-width: 4.5rem;
-  width: 4.5rem;
-  max-width: 4.5rem;
   border-left-width: 1px;
 }
 

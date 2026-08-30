@@ -37,7 +37,7 @@ export function agentChatTargetOnEnter(args: {
 /**
  * After Suggest fixes or a document-chrome chat proposal lands, keep the
  * assistant as the engineer left it. Collapsing it hid the thread they were
- * using. The review margin stays opt-in (Comments switch + collapsed chat).
+ * using. The review margin stays opt-in via the Comments switch.
  */
 export function shouldCollapseAssistantOnSuggestionFocus(): boolean {
   return false;

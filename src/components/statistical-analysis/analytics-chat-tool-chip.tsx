@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import {
   BarChart3,
+  ChartCandlestick,
   ChartScatter,
   FileSearch,
   LayoutList,
@@ -293,7 +294,7 @@ export function AnalyticsChatToolChip({
       if (pending) {
         return (
           <ToolLine icon={<ChartScatter className="size-3.5" />}>
-            Plotting XY scatter…
+            Plotting scatter…
           </ToolLine>
         );
       }
@@ -303,7 +304,9 @@ export function AnalyticsChatToolChip({
             icon={<ChartScatter className="size-3.5 text-emerald-500" />}
             tone="success"
           >
-            Saved XY scatter — open the Results tab
+            {info.output.updated === true
+              ? "Updated plot — open the Results tab"
+              : "Saved scatter — open the Results tab"}
           </ToolLine>
         );
       }
@@ -312,6 +315,34 @@ export function AnalyticsChatToolChip({
           {typeof info.output?.message === "string"
             ? info.output.message
             : "Could not plot the scatter."}
+        </ToolLine>
+      );
+    }
+    case "plot_boxplot": {
+      if (pending) {
+        return (
+          <ToolLine icon={<ChartCandlestick className="size-3.5" />}>
+            Plotting boxplot…
+          </ToolLine>
+        );
+      }
+      if (info.output?.status === "ok") {
+        return (
+          <ToolLine
+            icon={<ChartCandlestick className="size-3.5 text-emerald-500" />}
+            tone="success"
+          >
+            {info.output.updated === true
+              ? "Updated boxplot — open the Results tab"
+              : "Saved boxplot — open the Results tab"}
+          </ToolLine>
+        );
+      }
+      return (
+        <ToolLine icon={<ChartCandlestick className="size-3.5" />} tone="warn">
+          {typeof info.output?.message === "string"
+            ? info.output.message
+            : "Could not plot the boxplot."}
         </ToolLine>
       );
     }

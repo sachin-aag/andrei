@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DocumentType } from "@/db/schema";
 import { DEFAULT_CHAT_COMPOSER_PREFS } from "./composer-prefs";
 import {
+  ANALYTICS_EXAMPLE_PROMPTS,
   documentEmptyChatIntro,
   examplePromptsForDocument,
   examplePromptsForMode,
@@ -111,5 +112,11 @@ describe("chat.examplePrompts per document type", () => {
     const text = chipText(getDocumentType("generic_document"));
     expect(text.toLowerCase()).not.toContain("quality criteria");
     expect(text.toLowerCase()).toContain("document");
+  });
+});
+
+describe("ANALYTICS_EXAMPLE_PROMPTS", () => {
+  it("offers a boxplot chip in Agent mode", () => {
+    expect(ANALYTICS_EXAMPLE_PROMPTS.agent.join("\n")).toMatch(/Boxplot Assay by Lot/i);
   });
 });
