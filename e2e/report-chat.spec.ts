@@ -475,12 +475,20 @@ test.describe("report chat", () => {
     await expect(reportMic).toHaveAttribute("aria-pressed", "true", {
       timeout: 15_000,
     });
+    const send = sidebar.getByRole("button", { name: /^send message$/i });
+    await expect(send).toBeDisabled();
+    await reportComposer.press("Enter");
+    await expect(chatUserMessage(page, STUB_VOICE_FINAL)).toHaveCount(0);
     await expect(reportComposer).toHaveValue(
       new RegExp(`Prefix\\s+${STUB_VOICE_FINAL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
       { timeout: 15_000 }
     );
+    await expect(send).toBeDisabled();
+    await reportComposer.press("Enter");
+    await expect(chatUserMessage(page, STUB_VOICE_FINAL)).toHaveCount(0);
     await reportMic.click();
     await expect(reportComposer).not.toHaveAttribute("readonly");
+    await expect(send).toBeEnabled();
 
     await setReportChrome(page, "agent");
     await openReportAssistant(page);
@@ -496,9 +504,14 @@ test.describe("report chat", () => {
     await expect(analyticsMic).toHaveAttribute("aria-pressed", "true", {
       timeout: 15_000,
     });
+    const analyticsSend = sidebar.getByRole("button", { name: /^send message$/i });
+    await expect(analyticsSend).toBeDisabled();
     await expect(analyticsComposer).toHaveValue(STUB_VOICE_FINAL, {
       timeout: 15_000,
     });
+    await expect(analyticsSend).toBeDisabled();
+    await analyticsComposer.press("Enter");
+    await expect(chatUserMessage(page, STUB_VOICE_FINAL)).toHaveCount(0);
     await analyticsMic.click();
   });
 });

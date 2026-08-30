@@ -312,6 +312,7 @@ export function useVoiceDictation({
   }, [tearDownAudio]);
 
   const recording = status === "recording" || status === "stopping";
+  const locked = status !== "idle";
 
-  return { status, recording, level, toggle };
+  return { status, recording, locked, level, toggle };
 }
