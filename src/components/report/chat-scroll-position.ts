@@ -36,6 +36,24 @@ export function shouldStickChatToBottom(
   return saved == null || saved.kind === "bottom";
 }
 
+/** Re-apply the saved offset when the panel appears or its width changes. */
+export function shouldReapplyChatScroll(args: {
+  wasLaidOut: boolean;
+  nowLaidOut: boolean;
+  previousWidth: number;
+  currentWidth: number;
+}): boolean {
+  if (!args.nowLaidOut) return false;
+  if (!args.wasLaidOut) return true;
+  return args.previousWidth !== args.currentWidth;
+}
+
+/** Instant pin — never `behavior: "smooth"` (it can resume after `display: none`). */
+export function pinChatScrollerToBottom(el: ChatScrollerMetrics): void {
+  if (!isChatScrollerLaidOut(el)) return;
+  el.scrollTop = el.scrollHeight;
+}
+
 /** Instant restore. Unknown / bottom → pin to the end of the thread. */
 export function restoreChatScrollPosition(
   el: ChatScrollerMetrics,
@@ -43,12 +61,12 @@ export function restoreChatScrollPosition(
 ): void {
   if (!isChatScrollerLaidOut(el)) return;
   if (saved == null) {
-    el.scrollTop = el.scrollHeight;
+    pinChatScrollerToBottom(el);
     return;
   }
   switch (saved.kind) {
     case "bottom":
-      el.scrollTop = el.scrollHeight;
+      pinChatScrollerToBottom(el);
       return;
     case "offset":
       el.scrollTop = Math.max(
