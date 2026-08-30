@@ -492,3 +492,26 @@ describe("parseAiFixCommentContent pairing fields", () => {
     expect(parsed.placeAfterSuggestionId).toBe("lead");
   });
 });
+
+describe("parseAiFixCommentContent supersededSuggestionIds", () => {
+  it("round-trips replaced suggestion ids", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "",
+      reasoning: "Put examples in a new column",
+      supersededSuggestionIds: ["old-edit-cells"],
+    });
+    expect(parseAiFixCommentContent(json).supersededSuggestionIds).toEqual([
+      "old-edit-cells",
+    ]);
+  });
+
+  it("drops empty replaced-id lists", () => {
+    const json = JSON.stringify({
+      deleteText: "",
+      insertText: "x",
+      supersededSuggestionIds: ["", "  "],
+    });
+    expect(parseAiFixCommentContent(json).supersededSuggestionIds).toBeUndefined();
+  });
+});

@@ -205,6 +205,8 @@ export type ParsedAiFixPayload = {
   placeAfterSuggestionId?: string;
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
+  /** Older open suggestions this proposal dismissed (same-table rewrite, covering span). */
+  supersededSuggestionIds?: string[];
   evidenceSources?: Array<{
     citationId: string;
     attachmentId: string;
@@ -261,6 +263,7 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion
             : undefined,
+        supersededSuggestionIds: parseStringIdList(parsed.supersededSuggestionIds),
         evidenceSources: Array.isArray(parsed.evidenceSources)
           ? parsed.evidenceSources.flatMap((source) => {
               if (!source || typeof source !== "object") return [];
@@ -301,6 +304,18 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
   return { deleteText: "", insertText: content, reasoning: "" };
 }
 
+function parseStringIdList(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const ids = [
+    ...new Set(
+      raw.flatMap((item) =>
+        typeof item === "string" && item.trim() ? [item.trim()] : []
+      )
+    ),
+  ];
+  return ids.length > 0 ? ids : undefined;
+}
+
 function parsePairedBlockKind(
   raw: unknown
 ): ParsedAiFixPayload["placeBeforePairedBlock"] {
@@ -336,6 +351,8 @@ export type ParsedAiRedraftPayload = {
    * fields as stale.
    */
   fieldHashAtSuggestion?: string;
+  /** Older open suggestions this draft dismissed. */
+  supersededSuggestionIds?: string[];
 };
 
 export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPayload {
@@ -349,6 +366,7 @@ export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPa
           typeof parsed.fieldHashAtSuggestion === "string"
             ? parsed.fieldHashAtSuggestion
             : undefined,
+        supersededSuggestionIds: parseStringIdList(parsed.supersededSuggestionIds),
       };
     }
   } catch {

@@ -11,6 +11,7 @@ import {
   findSupersededSuggestions,
   resolutionReasonSupersededBy,
   withResolutionReason,
+  withSupersededSuggestionIds,
   type SupersessionPair,
 } from "@/lib/suggestions/supersession";
 import type { CommentRecord } from "@/types/report";
@@ -50,8 +51,10 @@ function toCommentRecord(
 
 /**
  * After inserting a new open AI suggestion, dismiss older open suggestions
- * whose ranges it fully covers. Uses `dismissed` + payload reason — never
- * `resolved` (that would claim an edit was applied).
+ * whose ranges it fully covers, or older table ops on the same table.
+ * Uses `dismissed` + payload reason — never `resolved` (that would claim
+ * an edit was applied). Stamps replaced ids onto the newer comment so the
+ * card can say it replaced an older suggestion after the older one is gone.
  */
 export async function dismissSuggestionsSupersededBy(args: {
   reportId: string;
@@ -114,6 +117,24 @@ export async function dismissSuggestionsSupersededBy(args: {
         resolutionReason: resolutionReasonSupersededBy(pair.supersededBy),
       },
     });
+  }
+
+  const newer = byId.get(args.newCommentId);
+  if (newer) {
+    await db
+      .update(comments)
+      .set({
+        content: withSupersededSuggestionIds(
+          newer.content,
+          pairs.map((pair) => pair.supersededId)
+        ),
+      })
+      .where(
+        and(
+          eq(comments.reportId, args.reportId),
+          eq(comments.id, args.newCommentId)
+        )
+      );
   }
   return pairs;
 }

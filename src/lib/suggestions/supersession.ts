@@ -7,6 +7,7 @@ import {
   suggestionApplySpansHaveEqualRanges,
   type SuggestionApplySpan,
 } from "@/lib/suggestions/suggestion-overlap";
+import type { TableOperation } from "@/lib/suggestions/table-operation";
 
 export const SUPERSEDED_BY_PREFIX = "superseded_by:";
 
@@ -43,12 +44,50 @@ function isNewer(b: CommentRecord, a: CommentRecord): boolean {
   return b.id > a.id;
 }
 
+function tableOpFromComment(comment: CommentRecord): TableOperation | null {
+  if (comment.kind !== "ai_fix") return null;
+  const payload = parseAiFixCommentContent(comment.content);
+  if (payload.tableOperationInvalid || !payload.tableOperation) return null;
+  return payload.tableOperation;
+}
+
+/**
+ * Same field + same table. `create_table` is a distinct virtual index so a
+ * pending new table does not wipe edits to an existing one, and vice versa.
+ */
+function tableSupersessionKey(comment: CommentRecord): string | null {
+  const op = tableOpFromComment(comment);
+  if (!op) return null;
+  const path = comment.contentPath ?? "";
+  if (op.kind === "create_table") return `${path}::create`;
+  return `${path}::${op.tableIndex}`;
+}
+
+function rememberNewest(
+  bestBySuperseded: Map<string, string>,
+  open: readonly CommentRecord[],
+  supersededId: string,
+  newer: CommentRecord
+): void {
+  const current = bestBySuperseded.get(supersededId);
+  if (!current) {
+    bestBySuperseded.set(supersededId, newer.id);
+    return;
+  }
+  const currentComment = open.find((c) => c.id === current);
+  if (currentComment && isNewer(newer, currentComment)) {
+    bestBySuperseded.set(supersededId, newer.id);
+  }
+}
+
 /**
  * A is superseded by B when B is newer, targets the same field, and B's
  * operation ranges fully cover A's. Equal ranges do not count as covering —
  * a second shrink of the same saved span stacks instead of replacing.
  * A whole-field intent (draft_field / redraft) supersedes every older open
  * suggestion on that field.
+ * Two table ops on the same field and tableIndex: the newer rewrites the
+ * older (edit_cells then insert_column on the VCS table is one card, not two).
  */
 export function findSupersededSuggestions(args: {
   section: SectionType;
@@ -82,15 +121,19 @@ export function findSupersededSuggestions(args: {
       if (!spanA) continue;
       if (!suggestionApplySpanContains(spanB, spanA)) continue;
       if (suggestionApplySpansHaveEqualRanges(spanB, spanA)) continue;
-      const current = bestBySuperseded.get(a.id);
-      if (!current) {
-        bestBySuperseded.set(a.id, b.id);
-        continue;
-      }
-      const currentComment = open.find((c) => c.id === current);
-      if (currentComment && isNewer(b, currentComment)) {
-        bestBySuperseded.set(a.id, b.id);
-      }
+      rememberNewest(bestBySuperseded, open, a.id, b);
+    }
+  }
+
+  for (const b of open) {
+    const keyB = tableSupersessionKey(b);
+    if (!keyB) continue;
+    for (const a of open) {
+      if (a.id === b.id) continue;
+      if (!isNewer(b, a)) continue;
+      const keyA = tableSupersessionKey(a);
+      if (keyA !== keyB) continue;
+      rememberNewest(bestBySuperseded, open, a.id, b);
     }
   }
 
@@ -138,6 +181,46 @@ export function parseResolutionReason(content: string): string | undefined {
   return undefined;
 }
 
+export function withSupersededSuggestionIds(
+  content: string,
+  ids: readonly string[]
+): string {
+  const unique = [
+    ...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0)),
+  ];
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      if (unique.length === 0) {
+        const rest = { ...parsed };
+        delete rest.supersededSuggestionIds;
+        return JSON.stringify(rest);
+      }
+      return JSON.stringify({ ...parsed, supersededSuggestionIds: unique });
+    }
+  } catch {
+    // wrap plain content
+  }
+  if (unique.length === 0) return content;
+  return JSON.stringify({ insertText: content, supersededSuggestionIds: unique });
+}
+
+export function supersededSuggestionIdsFromContent(content: string): string[] {
+  try {
+    const parsed = JSON.parse(content) as { supersededSuggestionIds?: unknown };
+    if (!Array.isArray(parsed.supersededSuggestionIds)) return [];
+    return [
+      ...new Set(
+        parsed.supersededSuggestionIds.flatMap((id) =>
+          typeof id === "string" && id.trim() ? [id.trim()] : []
+        )
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
+
 export function withResolutionReason(content: string, reason: string): string {
   try {
     const parsed = JSON.parse(content) as Record<string, unknown>;
@@ -172,6 +255,14 @@ export function isSupersededDismissal(comment: Pick<CommentRecord, "status" | "c
 export function formatSupersedesBadge(count: number): string {
   if (count <= 0) return "";
   return count === 1
-    ? "Supersedes 1 pending suggestion"
-    : `Supersedes ${count} pending suggestions`;
+    ? "This replaced 1 older suggestion"
+    : `This replaced ${count} older suggestions`;
+}
+
+/** Chat tool-line suffix. Leading space so it concatenates onto the proposed line. */
+export function formatReplacedOlderSuggestionsNote(count: number): string {
+  if (count <= 0) return "";
+  return count === 1
+    ? " It replaced an older suggestion."
+    : ` It replaced ${count} older suggestions.`;
 }

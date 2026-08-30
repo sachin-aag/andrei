@@ -61,6 +61,7 @@ import {
 } from "@/lib/suggestions/accept-suggestion";
 import {
   formatSupersedesBadge,
+  supersededSuggestionIdsFromContent,
   suggestionsSupersededBy,
 } from "@/lib/suggestions/supersession";
 import {
@@ -728,7 +729,12 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       sectionContent: content as Record<string, unknown>,
     });
   }, [liveCard, section, comments, sections]);
-  const supersedesBadge = formatSupersedesBadge(supersededByActive.length);
+  const persistedReplacedCount = liveCard
+    ? supersededSuggestionIdsFromContent(liveCard.comment.content).length
+    : 0;
+  const supersedesBadge = formatSupersedesBadge(
+    persistedReplacedCount > 0 ? persistedReplacedCount : supersededByActive.length
+  );
 
   const sectionContent = sections[section];
 

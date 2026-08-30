@@ -141,6 +141,7 @@ import {
   visibleMessageStartIndex,
 } from "@/components/report/chat-visible-messages";
 import { getDocumentType } from "@/lib/document-types";
+import { formatReplacedOlderSuggestionsNote } from "@/lib/suggestions/supersession";
 import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
 import {
   agentDoneNotificationCopy,
@@ -262,6 +263,12 @@ function sectionLabel(section: unknown): string {
   return "section";
 }
 
+function replacedOlderSuffix(output: { supersededSuggestionIds?: unknown } | undefined): string {
+  const ids = output?.supersededSuggestionIds;
+  if (!Array.isArray(ids)) return "";
+  return formatReplacedOlderSuggestionsNote(ids.length);
+}
+
 function parseAskUserQuestions(input: Record<string, unknown> | undefined): AskUserQuestionInput[] {
   if (!Array.isArray(input?.questions)) return [];
   return input.questions.flatMap((q) => {
@@ -340,7 +347,7 @@ function ToolChip({
       return (
         <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
           Proposed edit to {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
+          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
         </ToolLine>
       );
     }
@@ -381,7 +388,7 @@ function ToolChip({
       return (
         <ToolLine icon={<ImagePlus className="size-3.5 text-emerald-500" />} tone="success">
           Proposed image in {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
+          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
         </ToolLine>
       );
     }
@@ -429,7 +436,7 @@ function ToolChip({
       return (
         <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
           Proposed figure removal in {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
+          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
         </ToolLine>
       );
     }
@@ -470,7 +477,7 @@ function ToolChip({
       return (
         <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
           Proposed table edit to {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
+          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
         </ToolLine>
       );
     }
@@ -512,7 +519,7 @@ function ToolChip({
       return (
         <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
           Drafted {section}
-          {field ? ` · ${field}` : ""} — review the full draft in the document.
+          {field ? ` · ${field}` : ""} — review the full draft in the document.{replacedOlderSuffix(info.output)}
         </ToolLine>
       );
     }
