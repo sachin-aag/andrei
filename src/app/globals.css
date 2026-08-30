@@ -201,6 +201,16 @@ html[data-customer="convergent"] {
   }
 }
 
+/* Dusty sage / ochre — mixed into muted so Applied/Edit-attempted
+   lines do not flash neon emerald/amber on the light chat pane. */
+.chat-activity-success {
+  color: color-mix(in srgb, var(--success) 46%, var(--muted-foreground));
+}
+
+.chat-activity-warn {
+  color: color-mix(in srgb, var(--warning) 48%, var(--muted-foreground));
+}
+
 .chat-activity-glimmer {
   background-image: linear-gradient(
     90deg,

@@ -30,9 +30,9 @@ function useElapsedSeconds(active: boolean): number {
 function toneClass(tone: ActivitySurfaceNode["tone"]): string {
   switch (tone) {
     case "success":
-      return "text-emerald-700 dark:text-emerald-300";
+      return "chat-activity-success";
     case "warn":
-      return "text-amber-700 dark:text-amber-300";
+      return "chat-activity-warn";
     default:
       return "text-[var(--muted-foreground)]";
   }
