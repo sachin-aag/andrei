@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ChatVoiceButton } from "@/components/report/chat-voice-button";
 import { useVoiceDictation } from "@/hooks/use-voice-dictation";
+import { ChatMarkdown } from "@/components/report/chat-markdown";
 import { ChatMessageTargetTag } from "@/components/report/chat-message-target-tag";
 import {
   chatMessageTargetLabel,
@@ -994,8 +995,6 @@ export function ChatPanel({
       : "You can't propose edits on this report right now.";
   const { attachments } = useReportAttachments();
   const [input, setInput] = useState("");
-  const inputRef = useRef(input);
-  inputRef.current = input;
   const showUploadingNotice = useDocumentUploadingNotice(input);
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
   const [mentionRange, setMentionRange] = useState<MentionQuery | null>(null);
@@ -1120,7 +1119,7 @@ export function ChatPanel({
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
   const voice = useVoiceDictation({
     reportId: report.id,
-    getPrefix: () => inputRef.current,
+    getPrefix: () => input,
     onComposerValue: setInput,
     disabled: busy || initializing || attaching || !hostReady,
   });
