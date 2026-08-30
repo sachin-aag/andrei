@@ -143,6 +143,7 @@ import {
 import {
   captureChatScrollPosition,
   isChatScrollerLaidOut,
+  pinChatScrollerToBottom,
   restoreChatScrollPosition,
   shouldStickChatToBottom,
   type ChatScrollPosition,
@@ -1011,6 +1012,9 @@ export function ChatPanel({
   );
   const savedScrollRef = useRef<ChatScrollPosition | null>(null);
   const savedScrollSessionKeyRef = useRef(sessionWindowKey);
+  const visibleRef = useRef(visible);
+  const restoringScrollRef = useRef(false);
+  visibleRef.current = visible;
   if (savedScrollSessionKeyRef.current !== sessionWindowKey) {
     savedScrollSessionKeyRef.current = sessionWindowKey;
     savedScrollRef.current = null;
@@ -1456,6 +1460,7 @@ export function ChatPanel({
   }, [visibleCount]);
 
   const captureVisibleScroll = useCallback(() => {
+    if (!visibleRef.current || restoringScrollRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
     const captured = captureChatScrollPosition(el);
@@ -1465,6 +1470,7 @@ export function ChatPanel({
   const onMessagesScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (!visibleRef.current || restoringScrollRef.current) return;
     captureVisibleScroll();
     if (
       shouldLoadOlderMessages(el.scrollTop, visibleCount, messages.length)
@@ -1503,17 +1509,25 @@ export function ChatPanel({
   }, [report.id]);
 
   useLayoutEffect(() => {
-    if (!visible) return;
     const el = scrollRef.current;
+    if (!visible) {
+      restoringScrollRef.current = true;
+      return;
+    }
     if (!el) return;
+    restoringScrollRef.current = true;
     restoreChatScrollPosition(el, savedScrollRef.current);
+    const frame = window.requestAnimationFrame(() => {
+      restoringScrollRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [visible]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!el || !isChatScrollerLaidOut(el)) return;
+    if (!visibleRef.current || !el || !isChatScrollerLaidOut(el)) return;
     if (!shouldStickChatToBottom(savedScrollRef.current)) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    pinChatScrollerToBottom(el);
     savedScrollRef.current = { kind: "bottom" };
   }, [messages, status]);
 
@@ -1522,9 +1536,20 @@ export function ChatPanel({
     if (!el || typeof ResizeObserver === "undefined") return;
     let wasLaidOut = isChatScrollerLaidOut(el);
     const observer = new ResizeObserver(() => {
+      if (!visibleRef.current) {
+        wasLaidOut = false;
+        return;
+      }
       const nowLaidOut = isChatScrollerLaidOut(el);
       if (!wasLaidOut && nowLaidOut) {
+        restoringScrollRef.current = true;
         restoreChatScrollPosition(el, savedScrollRef.current);
+        restoringScrollRef.current = false;
+      } else if (
+        nowLaidOut &&
+        shouldStickChatToBottom(savedScrollRef.current)
+      ) {
+        pinChatScrollerToBottom(el);
       }
       wasLaidOut = nowLaidOut;
     });

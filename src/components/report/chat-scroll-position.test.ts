@@ -3,6 +3,7 @@ import {
   CHAT_NEAR_BOTTOM_PX,
   captureChatScrollPosition,
   isChatScrollerLaidOut,
+  pinChatScrollerToBottom,
   restoreChatScrollPosition,
   shouldStickChatToBottom,
 } from "@/components/report/chat-scroll-position";
@@ -75,6 +76,26 @@ describe("shouldStickChatToBottom", () => {
     expect(shouldStickChatToBottom({ kind: "offset", fromBottom: 120 })).toBe(
       false
     );
+  });
+});
+
+describe("pinChatScrollerToBottom", () => {
+  it("pins instantly and skips a zero-height box", () => {
+    const el = scroller({
+      scrollTop: 80,
+      scrollHeight: 1000,
+      clientHeight: 400,
+    });
+    pinChatScrollerToBottom(el);
+    expect(el.scrollTop).toBe(1000);
+
+    const hidden = scroller({
+      scrollTop: 12,
+      scrollHeight: 0,
+      clientHeight: 0,
+    });
+    pinChatScrollerToBottom(hidden);
+    expect(hidden.scrollTop).toBe(12);
   });
 });
 
