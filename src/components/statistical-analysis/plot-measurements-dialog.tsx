@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 
 export type PlotMeasurementsDialogValues = {
   query: string;
@@ -87,17 +88,22 @@ export function PlotMeasurementsDialog({
         <DialogHeader>
           <DialogTitle>Edit measurement scatter</DialogTitle>
           <DialogDescription>
-            Update the query, axis labels, or optional LSL/USL for this
-            attachment scatter. To extract a new series from a file, ask the
-            assistant.
+            Update this attachment scatter.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <Label htmlFor="plot-query" className={fieldLabelClass}>
-              Query
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="plot-query" className={fieldLabelClass}>
+                Query
+              </Label>
+              <FieldInfoIcon
+                label="Query"
+                testId="plot-query-info"
+                text="What was extracted from the files. To plot a new series, ask the assistant."
+              />
+            </div>
             <Input
               id="plot-query"
               data-testid="plot-query"
@@ -142,9 +148,16 @@ export function PlotMeasurementsDialog({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="plot-layout" className={fieldLabelClass}>
-              Layout
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="plot-layout" className={fieldLabelClass}>
+                Layout
+              </Label>
+              <FieldInfoIcon
+                label="Layout"
+                testId="plot-layout-info"
+                text="One combined chart, or a separate chart per series."
+              />
+            </div>
             <Select
               value={mode}
               onValueChange={(value) =>
@@ -162,9 +175,16 @@ export function PlotMeasurementsDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="plot-lsl" className={fieldLabelClass}>
-                LSL (optional)
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="plot-lsl" className={fieldLabelClass}>
+                  LSL (optional)
+                </Label>
+                <FieldInfoIcon
+                  label="LSL"
+                  testId="plot-lsl-info"
+                  text="Optional lower spec limit drawn on the chart."
+                />
+              </div>
               <Input
                 id="plot-lsl"
                 data-testid="plot-lsl"
@@ -175,9 +195,16 @@ export function PlotMeasurementsDialog({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="plot-usl" className={fieldLabelClass}>
-                USL (optional)
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="plot-usl" className={fieldLabelClass}>
+                  USL (optional)
+                </Label>
+                <FieldInfoIcon
+                  label="USL"
+                  testId="plot-usl-info"
+                  text="Optional upper spec limit drawn on the chart."
+                />
+              </div>
               <Input
                 id="plot-usl"
                 data-testid="plot-usl"

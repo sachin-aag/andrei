@@ -119,7 +119,7 @@ They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
 `docs/whitelabel-vercel-deploy.md`. Report workspace chrome is Document | Agent.
 New reports open in Agent; returning to a report restores that user's last
 chrome for it. Switching to Agent seeds the composer Report | Analytics target from the focused pane. Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. History is on Report and Analytics (pane-scoped compare). Report compare diffs prose, every table, and added/removed figures; Analytics compare is a cell/plot list. Worksheet versions are `analyticsRevisions`, not `documentRevisions`. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent).
-Statistical Analysis lives on the work-product **Analytics** pane (worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + one-way ANOVA) and is on for demo, MJ,
+Statistical Analysis lives on the work-product **Analytics** pane (worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + Tukey boxplot + one-way ANOVA) and is on for demo, MJ,
 and Convergent (`statisticalAnalysisEnabled`). Analytics chat uses the same
 shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep; Ask
 searches/extracts only; Agent fills the worksheet and runs plots when the
@@ -133,8 +133,8 @@ markers, area, column). Column charts stack when a legend is on. **Advanced**
 (collapsed) sets min/max X and Y (blank = auto) and optional axis titles.
 Those display limits are not part of `sourceHash`. Agent
 Analytics chat can create a plot or edit an existing worksheet plot
-(`analysisId` from Results or an `@` tag): replace Y/X, change chart type,
-toggle Show LSL/USL, or set the axis window. Ask mode cannot. New plots default to scatter with
+(`analysisId` from Results or an `@` tag): replace Y/X, set or clear the
+legend, change chart type, toggle Show LSL/USL, or set the axis window. Ask mode cannot. New plots default to scatter with
 spec lines off. **Show LSL, USL values** under Y is off by default (no spec
 lines until checked or the assistant turns them on). Worksheet plots cite
 the attachment page when the plotted columns were
@@ -142,7 +142,14 @@ written from a file (`write_column` after extract/scan/read). Editing a
 cell drops that citation. Attachment extract-and-plot is Analytics chat
 only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
 There is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA
-for a scatter.
+for a scatter or boxplot.
+Plot → Boxplot (`plot_boxplot`) is a Tukey box-and-whisker of numeric Y.
+Optional category columns (innermost first, closest to the boxes; last is
+the outermost nested axis label) group observed combinations only — not a
+full factorial. Zero categories is one box of all Y. Empty category cells
+are labeled `(blank)`. Agent Analytics chat can create a boxplot or edit
+an existing one with `analysisId`. Ask mode cannot. Time series is not
+supported.
 Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
 assistant write; Agent `write_column` / `manage_worksheet` refresh the grid
 mid-turn. Analytics `search_documents` is keyword-first and stops after a cited page —

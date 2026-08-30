@@ -8,6 +8,7 @@ import {
 } from "./row-selection";
 import {
   isAnovaAnalysis,
+  isBoxplotAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
@@ -286,12 +287,62 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
   ];
 }
 
+function boxplotRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
+  if (!isBoxplotAnalysis(analysis)) return [];
+  const { config, results } = analysis;
+  const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
+  const categoryHeaders =
+    config.categoryColumnNames.length > 0
+      ? config.categoryColumnNames
+      : ["Group"];
+  return [
+    [
+      ["Field", "Value"],
+      ["Title", analysis.title],
+      ["Y", config.yColumnName],
+      ["Categories", config.categoryColumnNames.join(", ") || "(none)"],
+      ["Rows", rows],
+      ["Kind", "Boxplot (Tukey)"],
+      ["N", String(results.n)],
+      ["Skipped", String(results.skipped)],
+      ["Created", analysis.createdAt],
+    ],
+    [
+      [
+        ...categoryHeaders,
+        "N",
+        "Min",
+        "Q1",
+        "Median",
+        "Q3",
+        "Max",
+        "Whisker low",
+        "Whisker high",
+        "Outliers",
+      ],
+      ...results.groups.map((group) => [
+        ...(group.labels.length > 0 ? group.labels : ["All"]),
+        String(group.n),
+        formatStat(group.min),
+        formatStat(group.q1),
+        formatStat(group.median),
+        formatStat(group.q3),
+        formatStat(group.max),
+        formatStat(group.whiskerLow),
+        formatStat(group.whiskerHigh),
+        String(group.outliers.length),
+      ]),
+    ],
+  ];
+}
+
 function analysisSections(
   analysis: StatisticalAnalysisSummary
 ): Array<string[][]> {
   if (isScatterAnalysis(analysis)) return scatterRows(analysis);
   if (isXyScatterAnalysis(analysis)) return xyScatterRows(analysis);
   if (isAnovaAnalysis(analysis)) return anovaRows(analysis);
+  if (isBoxplotAnalysis(analysis)) return boxplotRows(analysis);
   if (isSixpackAnalysis(analysis)) return sixpackRows(analysis);
   const exhaustive: never = analysis;
   return exhaustive;

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITY_SIXPACK_NORMAL, MEASUREMENT_SCATTER, ONE_WAY_ANOVA, XY_SCATTER } from "./types";
+import { CAPABILITY_SIXPACK_NORMAL, MEASUREMENT_SCATTER, ONE_WAY_ANOVA, XY_SCATTER, BOXPLOT } from "./types";
 import type { StatisticalAnalysisSummary } from "./types";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
+import { computeBoxplot } from "./boxplot";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
 import { computeOneWayAnova } from "./anova";
 import { computeXyScatter } from "./xy-scatter";
@@ -227,5 +228,46 @@ describe("analysis download", () => {
       previewImage: null,
     });
     expect(csv).toContain("att_1,31");
+  });
+
+  it("downloads boxplot group stats", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = pasteTsv(sheet, 0, 0, ["10", "12", "14", "20", "22", "24"].join("\n"));
+    sheet = pasteTsv(sheet, 1, 0, ["A", "A", "A", "B", "B", "B"].join("\n"));
+    const outcome = computeBoxplot(sheet, {
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      categoryColumnIds: ["c2"],
+      categoryColumnNames: ["Lot"],
+      title: "Boxplot of Assay by Lot",
+    });
+    if (!outcome.ok) throw new Error(outcome.message);
+    const analysis: StatisticalAnalysisSummary = {
+      id: "an-box",
+      workspaceId: "ws-1",
+      kind: BOXPLOT,
+      title: "Boxplot of Assay by Lot",
+      config: {
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        categoryColumnIds: ["c2"],
+        categoryColumnNames: ["Lot"],
+        title: "Boxplot of Assay by Lot",
+      },
+      results: outcome.result,
+      sourceHash: "box",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    expect(analysisDownloadFilename(analysis)).toBe(
+      "Boxplot-of-Assay-by-Lot-boxplot.csv"
+    );
+    const csv = analysisToCsv(analysis);
+    expect(csv).toContain("Boxplot (Tukey)");
+    expect(csv).toContain("Lot");
+    expect(csv).toContain("Median");
+    expect(csv).toContain("A");
+    expect(csv).toContain("B");
   });
 });

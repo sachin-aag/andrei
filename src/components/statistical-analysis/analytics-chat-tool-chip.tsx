@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import {
   BarChart3,
+  ChartCandlestick,
   ChartScatter,
   FileSearch,
   LayoutList,
@@ -314,6 +315,34 @@ export function AnalyticsChatToolChip({
           {typeof info.output?.message === "string"
             ? info.output.message
             : "Could not plot the scatter."}
+        </ToolLine>
+      );
+    }
+    case "plot_boxplot": {
+      if (pending) {
+        return (
+          <ToolLine icon={<ChartCandlestick className="size-3.5" />}>
+            Plotting boxplot…
+          </ToolLine>
+        );
+      }
+      if (info.output?.status === "ok") {
+        return (
+          <ToolLine
+            icon={<ChartCandlestick className="size-3.5 text-emerald-500" />}
+            tone="success"
+          >
+            {info.output.updated === true
+              ? "Updated boxplot — open the Results tab"
+              : "Saved boxplot — open the Results tab"}
+          </ToolLine>
+        );
+      }
+      return (
+        <ToolLine icon={<ChartCandlestick className="size-3.5" />} tone="warn">
+          {typeof info.output?.message === "string"
+            ? info.output.message
+            : "Could not plot the boxplot."}
         </ToolLine>
       );
     }

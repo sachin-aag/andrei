@@ -20,6 +20,7 @@ export const ANALYTICS_EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
     "Plot measurements for M3-SYS-FN-037 from the attachments.",
     "Plot OD660 vs Cumulative Glucose from the worksheet.",
     "Plot Assay from the worksheet, colored by Lot.",
+    "Boxplot Assay by Lot.",
   ],
 };
 

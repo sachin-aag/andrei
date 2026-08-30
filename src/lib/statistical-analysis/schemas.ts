@@ -8,6 +8,8 @@ import {
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
+  BOXPLOT,
+  MAX_BOXPLOT_CATEGORIES,
 } from "./types";
 
 const worksheetColumnCitationSchema = z.object({
@@ -360,6 +362,88 @@ export const xyScatterInputSchema = z
     refineDistinctXyColumns(value, ctx);
     refineAxisBounds(value, ctx);
   });
+
+function refineBoxplotColumns(
+  value: { yColumnId?: string; categoryColumnIds?: string[] },
+  ctx: z.RefinementCtx
+): void {
+  const ids = value.categoryColumnIds ?? [];
+  const seen = new Set<string>();
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i]!;
+    if (value.yColumnId && id === value.yColumnId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Y and category columns must be different.",
+        path: ["categoryColumnIds", i],
+      });
+    }
+    if (seen.has(id)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Category columns must be unique.",
+        path: ["categoryColumnIds", i],
+      });
+    }
+    seen.add(id);
+  }
+}
+
+const boxplotRowFields = anovaRowFields;
+
+const boxplotCategoryIdsSchema = z
+  .array(z.string().trim().min(1))
+  .max(MAX_BOXPLOT_CATEGORIES)
+  .optional();
+
+function refineBoxplotChatBody(
+  value: {
+    analysisId?: string;
+    yColumnId?: string;
+    categoryColumnIds?: string[];
+  },
+  ctx: z.RefinementCtx
+): void {
+  if (!value.analysisId && !value.yColumnId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "yColumnId is required when creating a new boxplot.",
+      path: ["yColumnId"],
+    });
+  }
+  refineBoxplotColumns(value, ctx);
+}
+
+/** Chat tool body — create (yColumnId required) or update (analysisId + changed fields). */
+export const boxplotBodySchema = z
+  .object({
+    analysisId: z.string().trim().min(1).max(128).optional(),
+    yColumnId: z.string().trim().min(1).optional(),
+    categoryColumnIds: boxplotCategoryIdsSchema,
+    title: z.string().trim().max(120).optional(),
+    ...boxplotRowFields,
+  })
+  .superRefine(refineBoxplotChatBody);
+
+export const boxplotInputSchema = z
+  .object({
+    kind: z.literal(BOXPLOT),
+    yColumnId: z.string().trim().min(1),
+    categoryColumnIds: boxplotCategoryIdsSchema,
+    title: z.string().trim().max(120).optional(),
+    ...boxplotRowFields,
+  })
+  .superRefine(refineBoxplotColumns);
+
+/** Edit/update from the Boxplot dialog or chat (omitted fields keep the saved config). */
+export const boxplotUpdateSchema = z
+  .object({
+    yColumnId: z.string().trim().min(1).optional(),
+    categoryColumnIds: boxplotCategoryIdsSchema,
+    title: z.string().trim().max(120).optional(),
+    ...boxplotRowFields,
+  })
+  .superRefine(refineBoxplotColumns);
 
 /** Edit/update from the Plot measurements dialog or chat (omitted fields keep the saved config). */
 export const xyScatterUpdateSchema = z

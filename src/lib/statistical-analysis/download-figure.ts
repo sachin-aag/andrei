@@ -10,6 +10,8 @@ import {
   downloadTextFile,
 } from "./download";
 import {
+  isAnovaAnalysis,
+  isBoxplotAnalysis,
   isScatterAnalysis,
   isXyScatterAnalysis,
   type StatisticalAnalysisSummary,
@@ -18,6 +20,9 @@ import {
 function chartSpecForAnalysis(analysis: StatisticalAnalysisSummary) {
   if (isScatterAnalysis(analysis) || isXyScatterAnalysis(analysis)) {
     return analysis.results.specs[0] ?? null;
+  }
+  if (isAnovaAnalysis(analysis) || isBoxplotAnalysis(analysis)) {
+    return null;
   }
   return null;
 }

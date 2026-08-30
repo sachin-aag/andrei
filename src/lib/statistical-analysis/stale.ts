@@ -1,12 +1,14 @@
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 import {
   isAnovaAnalysis,
+  isBoxplotAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
   xyScatterVersusLabel,
   type AnovaAnalysisSummary,
+  type BoxplotAnalysisSummary,
   type ScatterAnalysisSummary,
   type StatisticalAnalysisSummary,
   type WorksheetData,
@@ -15,6 +17,7 @@ import {
 import {
   analysisSourceKey,
   anovaSourceKey,
+  boxplotSourceKey,
   findColumn,
   xyScatterSourceKey,
 } from "./worksheet";
@@ -33,6 +36,9 @@ export function withLocalStale(
     }
     if (isXyScatterAnalysis(analysis)) {
       return withXyScatterLocalStale(analysis, worksheet, persisted);
+    }
+    if (isBoxplotAnalysis(analysis)) {
+      return withBoxplotLocalStale(analysis, worksheet, persisted);
     }
     if (!isSixpackAnalysis(analysis)) {
       const exhaustive: never = analysis;
@@ -110,6 +116,39 @@ function withXyScatterLocalStale(
   return { ...analysis, stale: analysis.stale || changed };
 }
 
+function withBoxplotLocalStale(
+  analysis: BoxplotAnalysisSummary,
+  worksheet: WorksheetData,
+  persisted: WorksheetData
+): BoxplotAnalysisSummary {
+  const currentY = findColumn(worksheet, analysis.config.yColumnId);
+  const currentCategories = analysis.config.categoryColumnIds.map(
+    (id) => findColumn(worksheet, id) ?? null
+  );
+  if (!currentY || currentCategories.some((column) => column == null)) {
+    return { ...analysis, stale: true };
+  }
+  const savedY = findColumn(persisted, analysis.config.yColumnId);
+  const savedCategories = analysis.config.categoryColumnIds.map(
+    (id) => findColumn(persisted, id) ?? null
+  );
+  if (!savedY || savedCategories.some((column) => column == null)) {
+    return analysis;
+  }
+  const selection = normalizeRowSelection(analysis.config);
+  const currentKey = boxplotSourceKey(
+    currentY,
+    currentCategories.filter((column): column is NonNullable<typeof column> => column != null),
+    selection
+  );
+  const savedKey = boxplotSourceKey(
+    savedY,
+    savedCategories.filter((column): column is NonNullable<typeof column> => column != null),
+    selection
+  );
+  return { ...analysis, stale: analysis.stale || currentKey !== savedKey };
+}
+
 export function analysisListSubtitle(analysis: StatisticalAnalysisSummary): string {
   if (isScatterAnalysis(analysis)) {
     return scatterListSubtitle(analysis);
@@ -119,6 +158,9 @@ export function analysisListSubtitle(analysis: StatisticalAnalysisSummary): stri
   }
   if (isAnovaAnalysis(analysis)) {
     return anovaListSubtitle(analysis);
+  }
+  if (isBoxplotAnalysis(analysis)) {
+    return boxplotListSubtitle(analysis);
   }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
@@ -159,6 +201,21 @@ function anovaListSubtitle(analysis: AnovaAnalysisSummary): string {
     `${analysis.config.responseColumnName} by ${analysis.config.factorColumnName}`,
     rows,
     "One-way ANOVA",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function boxplotListSubtitle(analysis: BoxplotAnalysisSummary): string {
+  const rows = formatRowSelection(normalizeRowSelection(analysis.config));
+  const by =
+    analysis.config.categoryColumnNames.length > 0
+      ? ` by ${analysis.config.categoryColumnNames.join(", ")}`
+      : "";
+  return [
+    `${analysis.config.yColumnName}${by}`,
+    rows,
+    `${analysis.results.groups.length} box${analysis.results.groups.length === 1 ? "" : "es"}`,
   ]
     .filter(Boolean)
     .join(" · ");

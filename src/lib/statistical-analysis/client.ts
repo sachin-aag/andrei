@@ -158,6 +158,23 @@ export async function createXyScatter(
   });
 }
 
+export async function createBoxplot(
+  reportId: string,
+  input: {
+    yColumnId: string;
+    categoryColumnIds?: string[];
+    title?: string;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "boxplot",
+    ...input,
+  });
+}
+
 async function postAnalysis(
   reportId: string,
   input: unknown
