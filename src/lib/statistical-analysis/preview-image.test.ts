@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import {
   ANALYTICS_PREVIEW_MAX_DATA_URL_CHARS,
+  analysisPreviewMatchKey,
   asPreviewImage,
   isValidAnalysisPreviewSrc,
   pngBufferFromDataUrl,
@@ -36,6 +37,23 @@ describe("asPreviewImage", () => {
     };
     expect(asPreviewImage(preview)?.alt).toBe("Torque");
     expect(asPreviewImage({ ...preview, dataUrl: "http://evil" })).toBeNull();
+  });
+});
+
+describe("analysisPreviewMatchKey", () => {
+  it("changes when the plot config or source hash changes", () => {
+    const before = {
+      sourceHash: "h1",
+      config: { yColumnId: "c1", mark: "scatter" },
+    };
+    const afterEdit = {
+      sourceHash: "h1",
+      config: { yColumnId: "c1", mark: "line" },
+    };
+    expect(analysisPreviewMatchKey(before)).not.toBe(
+      analysisPreviewMatchKey(afterEdit)
+    );
+    expect(analysisPreviewMatchKey(before)).toBe(analysisPreviewMatchKey(before));
   });
 });
 

@@ -73,7 +73,32 @@ describe("PATCH /api/reports/[reportId]/analytics/analyses/[analysisId]/preview"
     expect(saveAnalysisPreviewForReport).toHaveBeenCalledWith(
       "report-1",
       "analysis-1",
-      previewImage
+      previewImage,
+      undefined
+    );
+  });
+
+  it("forwards a capture match key so a stale in-flight preview is rejected", async () => {
+    vi.mocked(saveAnalysisPreviewForReport).mockResolvedValue({
+      ok: false,
+      status: 409,
+      error: "Plot changed before this preview could be saved.",
+    });
+
+    const response = await PATCH(
+      new Request("http://localhost/api", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewImage, matchKey: "stale-key" }),
+      }),
+      params
+    );
+    expect(response.status).toBe(409);
+    expect(saveAnalysisPreviewForReport).toHaveBeenCalledWith(
+      "report-1",
+      "analysis-1",
+      previewImage,
+      "stale-key"
     );
   });
 });

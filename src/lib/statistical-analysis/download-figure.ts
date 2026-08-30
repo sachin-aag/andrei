@@ -28,18 +28,14 @@ function chartSpecForAnalysis(analysis: StatisticalAnalysisSummary) {
 }
 
 /**
- * Download the on-screen plot PNG (stored preview, or a live capture).
- * Falls back to CSV when no image is available.
+ * Download the on-screen plot PNG. Prefer a live capture of the figure that is
+ * currently rendered so Download after an edit matches the chart on screen.
+ * Fall back to the stored preview, then CSV.
  */
 export async function downloadAnalysisFigure(
   analysis: StatisticalAnalysisSummary,
   captureElement: HTMLElement | null
 ): Promise<void> {
-  if (analysis.previewImage?.dataUrl) {
-    downloadAnalysis(analysis);
-    return;
-  }
-
   if (captureElement) {
     const captured = await captureAnalysisPreviewFromElement(
       captureElement,
@@ -53,6 +49,11 @@ export async function downloadAnalysisFigure(
       );
       return;
     }
+  }
+
+  if (analysis.previewImage?.dataUrl) {
+    downloadAnalysis(analysis);
+    return;
   }
 
   downloadTextFile(analysisDownloadFilename(analysis), analysisToCsv(analysis));
