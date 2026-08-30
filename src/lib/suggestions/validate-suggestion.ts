@@ -9,11 +9,14 @@ import {
 } from "@/lib/ai/suggestion-gating";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import {
+  flattenForAnchor,
   isApplyableStatus,
   probePlainEdit,
   probeRichEdit,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
+import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { effectivePlainTextContentPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
@@ -83,6 +86,45 @@ export function fieldContentHash(
   );
 }
 
+/**
+ * Merge can report noop when canonicalField collapses a still-pending
+ * delete/insert (whitespace, parked citations, identity intent snapshot).
+ * If the frozen payload still locates and its insert is not already in the
+ * live field, preview and apply that span instead of hiding the card.
+ */
+export function frozenPayloadStillPending(
+  comment: CommentRecord,
+  section: SectionType,
+  sectionContent: unknown,
+  fieldContentPath?: string
+): boolean {
+  if (comment.kind === "ai_redraft") return false;
+  const payload = parseAiFixCommentContent(comment.content);
+  if (payload.tableOperation || payload.tableOperationInvalid) return false;
+  const record = sectionContent as Record<string, unknown>;
+  const path = effectivePlainTextContentPath(
+    section,
+    comment.contentPath,
+    fieldContentPath
+  );
+  const edit = suggestionEditFromComment(comment);
+  const insert = collapseWhitespace(
+    normalizeSuggestionInsertText(edit.insertText ?? "")
+  );
+  if (isRichTargetField(section, path)) {
+    const doc = getRichFieldValue(record, path);
+    if (!isApplyableStatus(probeRichEdit(doc, edit))) return false;
+    const live = collapseWhitespace(flattenForAnchor(doc).text);
+    if (insert.length > 0 && live.includes(insert)) return false;
+    return true;
+  }
+  const plain = getPlainTextFieldValue(record, path);
+  if (!isApplyableStatus(probePlainEdit(plain, edit))) return false;
+  const live = collapseWhitespace(plain);
+  if (insert.length > 0 && live.includes(insert)) return false;
+  return true;
+}
+
 /** Check whether an open AI suggestion still applies to the current section content. */
 export function validateSuggestionLocate(
   comment: CommentRecord,
@@ -102,16 +144,26 @@ export function validateSuggestionLocate(
   });
   if (resolved.merge) {
     if (resolved.merge.status === "noop") {
-      return {
-        locateStatus: "locatable",
-        documentChanged: false,
-        canApply: false,
-        canPreview: false,
-        mergeStatus: "noop",
-        wholeField: resolved.wholeField,
-      };
-    }
-    if (resolved.merge.status === "conflict") {
+      if (
+        !frozenPayloadStillPending(
+          comment,
+          section,
+          sectionContent,
+          fieldContentPath
+        )
+      ) {
+        return {
+          locateStatus: "locatable",
+          documentChanged: false,
+          canApply: false,
+          canPreview: false,
+          mergeStatus: "noop",
+          wholeField: resolved.wholeField,
+        };
+      }
+      // Frozen delete/insert still changes the live field. Skip merge identity
+      // so the editor locates that span.
+    } else if (resolved.merge.status === "conflict") {
       return {
         locateStatus: "locatable",
         documentChanged: true,
@@ -120,15 +172,16 @@ export function validateSuggestionLocate(
         mergeStatus: "conflict",
         wholeField: resolved.wholeField,
       };
+    } else {
+      return {
+        locateStatus: "locatable",
+        documentChanged: false,
+        canApply: true,
+        canPreview: true,
+        mergeStatus: "clean",
+        wholeField: resolved.wholeField,
+      };
     }
-    return {
-      locateStatus: "locatable",
-      documentChanged: false,
-      canApply: true,
-      canPreview: true,
-      mergeStatus: "clean",
-      wholeField: resolved.wholeField,
-    };
   }
 
   // Legacy rows without base/intent: locate the frozen span. Hashes are not read.

@@ -42,7 +42,7 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
-import { suggestionEditFromComment } from "@/lib/suggestions/validate-suggestion";
+import { suggestionEditFromComment, frozenPayloadStillPending } from "@/lib/suggestions/validate-suggestion";
 import type { PlannedOperation } from "@/lib/suggestions/diff-plan";
 import {
   persistMergedAsTrackedChange,
@@ -133,38 +133,48 @@ export function applySuggestionToContent(
   });
   if (resolved.merge) {
     if (resolved.merge.status === "noop") {
-      return { ok: false, reason: "noop" };
-    }
-    const merged = resolved.merge.merged;
-    let nextSection = writeMergedField({
-      sectionContent,
-      section,
-      path: resolved.path,
-      merged,
-    });
-    if (
-      persistAsTrackedChange &&
-      isRichTargetField(section, resolved.path) &&
-      typeof resolved.current !== "string" &&
-      typeof merged !== "string"
-    ) {
-      nextSection = setRichFieldValue(
+      if (
+        !frozenPayloadStillPending(
+          comment,
+          section,
+          sectionContent,
+          fieldContentPath
+        )
+      ) {
+        return { ok: false, reason: "noop" };
+      }
+    } else {
+      const merged = resolved.merge.merged;
+      let nextSection = writeMergedField({
         sectionContent,
-        resolved.path,
-        persistMergedAsTrackedChange({
-          current: resolved.current,
-          merged,
-          commentId: comment.id,
-          createdAt: comment.createdAt,
-        })
-      );
+        section,
+        path: resolved.path,
+        merged,
+      });
+      if (
+        persistAsTrackedChange &&
+        isRichTargetField(section, resolved.path) &&
+        typeof resolved.current !== "string" &&
+        typeof merged !== "string"
+      ) {
+        nextSection = setRichFieldValue(
+          sectionContent,
+          resolved.path,
+          persistMergedAsTrackedChange({
+            current: resolved.current,
+            merged,
+            commentId: comment.id,
+            createdAt: comment.createdAt,
+          })
+        );
+      }
+      return {
+        ok: true,
+        nextSection,
+        remainder: resolved.merge.status === "conflict" ? "conflict" : undefined,
+        operations: resolved.operations,
+      };
     }
-    return {
-      ok: true,
-      nextSection,
-      remainder: resolved.merge.status === "conflict" ? "conflict" : undefined,
-      operations: resolved.operations,
-    };
   }
 
   if (comment.kind === "ai_redraft") {

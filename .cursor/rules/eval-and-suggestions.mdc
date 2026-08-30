@@ -38,10 +38,12 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
 - Accept/dismiss: three-way merge when `suggestionBase`/`suggestionIntent`
   are stored (`mergeField` in `three-way-merge.ts`); otherwise locate the
-  frozen span. PATCH section → flip comment. Never resolve without a
-  successful apply. Zero-ops dismiss (`already_present`), not resolve. A
-  superseded sibling is `dismissed` with `resolutionReason:
-  "superseded_by:<id>"`, never `resolved`.
+  frozen span. If merge reports identity but the stored delete/insert still
+  locates and the insert is not already in the field, preview and apply that
+  span — do not hide inline marks behind "already in the document." PATCH
+  section → flip comment. Never resolve without a successful apply. Zero-ops
+  dismiss (`already_present`), not resolve. A superseded sibling is
+  `dismissed` with `resolutionReason: "superseded_by:<id>"`, never `resolved`.
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits
   persist as one section PATCH. Preview applied wording before that PATCH
