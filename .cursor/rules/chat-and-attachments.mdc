@@ -65,7 +65,9 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   ("Measure", "Deviations" / "devaition"), fillers ("the assays thing"), and
   confirmation ("yes, that one", "yes please do") are not plot names.
   Parallel `insert_image` calls in one turn serialize onto one card. Inserted
-  plots use a document-sized box (`documentInsertedPlotWidth`, max 480×300).
+  plots copy the saved Analytics preview at the same 600px display width
+  as right-click Insert graph (`CHART_DISPLAY_WIDTH_PX`). Do not shrink by
+  a 300px height cap — that turns a sixpack into a thin unreadable strip.
 - Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
   + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
   `ai_fix` comments). Document chrome **proposes**. Same-turn `propose_edit`

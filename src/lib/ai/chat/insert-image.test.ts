@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UIMessage } from "ai";
-import { documentInsertedPlotWidth } from "@/lib/charts/chart-dimensions";
+import { CHART_DISPLAY_WIDTH_PX } from "@/lib/charts/chart-dimensions";
 import {
   listLatestUserChatImages,
   parseSectionImageId,
@@ -182,10 +182,7 @@ describe("resolveAnalyticsImage", () => {
     if (!result.ok) return;
     expect(result.image.src).toBe(PNG);
     expect(result.image.alt).toBe("Torque scatter");
-    expect(result.image.width).toBe(
-      documentInsertedPlotWidth({ widthPx: 600, heightPx: 400 })
-    );
-    expect(result.image.width).toBeLessThan(600);
+    expect(result.image.width).toBe(CHART_DISPLAY_WIDTH_PX);
   });
 
   it("explains a missing analysisId", () => {
