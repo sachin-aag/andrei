@@ -211,7 +211,7 @@ describe("computeBoxplot", () => {
   });
 
   it("suggests the next unused column as a category", () => {
-    const sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    const sheet = applySampleAssay(createEmptyWorksheet(2), 0);
     expect(suggestCategoryColumn(sheet, "c1")).toBe("c2");
     expect(suggestCategoryColumn(sheet, "c1", ["c2"])).toBeNull();
     const wider = insertColumn(sheet, 2);

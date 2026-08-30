@@ -1276,7 +1276,6 @@ export function StatisticalWorkspace({
           } finally {
             setAnovaSubmitting(false);
           }
-          }
         }}
       />
 

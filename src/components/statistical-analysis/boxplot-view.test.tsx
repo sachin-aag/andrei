@@ -72,7 +72,9 @@ describe("BoxplotView", () => {
     expect(screen.getByTestId("boxplot-chart")).toBeInTheDocument();
     expect(screen.getByTestId("boxplot-group-0")).toBeInTheDocument();
     expect(screen.queryByTestId("boxplot-axis-level-0")).toBeNull();
-    expect(screen.getByText("Boxplot of Assay")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: /Boxplot of Assay$/ })
+    ).toBeTruthy();
   });
 
   it("nests category labels on the x-axis innermost-first", () => {
@@ -87,7 +89,9 @@ describe("BoxplotView", () => {
 
     expect(screen.getByTestId("boxplot-axis-level-0")).toBeInTheDocument();
     expect(screen.getByTestId("boxplot-axis-level-1")).toBeInTheDocument();
-    expect(screen.getByText("Boxplot of Assay by Operator, Batch")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: /Boxplot of Assay by Operator, Batch/ })
+    ).toBeTruthy();
     expect(screen.getByText("A123")).toBeTruthy();
     expect(screen.getByText("A124")).toBeTruthy();
     expect(screen.getAllByText("OP1").length).toBeGreaterThan(0);

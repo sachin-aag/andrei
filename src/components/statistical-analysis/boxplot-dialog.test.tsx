@@ -55,11 +55,11 @@ describe("BoxplotDialog", () => {
 
     await user.click(screen.getByTestId("boxplot-add-category"));
     expect(screen.getByTestId("boxplot-category-0")).toBeInTheDocument();
-    expect(screen.getByText(/innermost/i)).toBeTruthy();
+    expect(screen.getByText("Category (innermost)")).toBeTruthy();
 
     await user.click(screen.getByTestId("boxplot-add-category"));
     expect(screen.getByTestId("boxplot-category-1")).toBeInTheDocument();
-    expect(screen.getByText(/outermost/i)).toBeTruthy();
+    expect(screen.getByText("Category 2 (outermost)")).toBeTruthy();
 
     await user.click(screen.getByTestId("boxplot-remove-category-1"));
     expect(screen.queryByTestId("boxplot-category-1")).toBeNull();
