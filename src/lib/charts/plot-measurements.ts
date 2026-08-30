@@ -419,7 +419,6 @@ async function persistChartEdit(args: {
           insertImage: args.insertImage,
           removeImage: args.removeImage,
           reasoning: args.input.reasoning,
-          contentHashAtSuggestion: args.hash,
         },
         buildSuggestionRecord({
           sectionContent: args.loaded.content,

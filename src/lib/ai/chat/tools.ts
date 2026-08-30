@@ -1292,7 +1292,6 @@ export function buildChatTools(opts: {
                 reasoning,
                 scope: prepared.scope,
                 second,
-                contentHashAtSuggestion: sectionContentHash(section, loaded.content),
               },
               loaded.content as Record<string, unknown>,
               section,
@@ -1601,7 +1600,6 @@ export function buildChatTools(opts: {
                 insertText: "",
                 insertImage,
                 reasoning,
-                contentHashAtSuggestion: sectionContentHash(section, loaded.content),
               },
               loaded.content as Record<string, unknown>,
               section,
@@ -1864,7 +1862,6 @@ export function buildChatTools(opts: {
                   insertText: "",
                   removeImage,
                   reasoning,
-                  contentHashAtSuggestion: sectionContentHash(section, loaded.content),
                 },
                 loaded.content as Record<string, unknown>,
                 section,
@@ -2035,7 +2032,6 @@ export function buildChatTools(opts: {
                 reasoning,
                 tableOperation: stripped.operation,
                 second,
-                contentHashAtSuggestion: sectionContentHash(section, loaded.content),
               },
               loaded.content as Record<string, unknown>,
               section,
@@ -2164,11 +2160,6 @@ export function buildChatTools(opts: {
               {
                 markdown: draftMarkdown,
                 reasoning,
-                fieldHashAtSuggestion: fieldContentHash(
-                  section,
-                  loaded.content,
-                  resolvedField
-                ),
               },
               loaded.content as Record<string, unknown>,
               section,
