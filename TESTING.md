@@ -198,7 +198,8 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 
 | Test | What it verifies |
 |------|------------------|
-| streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, collapse/expand keeps the thread, reload still shows it |
+| streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, collapse/expand keeps the thread, reload still shows it; the turn is tagged **Report** |
+| tags Report and Analytics turns in the same thread | Send on Report, switch the composer to Analytics, send again — each pair keeps its tag after reload |
 | starting a new chat while a turn is in flight leaves the composer usable | Hold the first `/chat` POST (do not forward it), click +, type and send in the empty thread; open-chat tabs show the parked turn as still working. Abort the held POST on teardown so `next start` is not left waiting on a half-open body. |
 
 </details>
@@ -277,7 +278,7 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 | shift+arrow selects rows and runs a sixpack on that range | Range highlight, Analyze label, Sample N matches the span |
 | saves a sixpack for specific row numbers | POST `rows` list; Results shows that subset; Download saves a CSV |
 | marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
-| streams a stats-assistant reply | Opening Analytics does not retarget chat; composer Report \| Analytics does; stub chat streams and persists; Ask/Agent + Quick/Deep + attach image are present (cannot assert tools) |
+| streams a stats-assistant reply | Opening Analytics does not retarget chat; composer Report \| Analytics does; stub chat streams and persists with an **Analytics** tag; Ask/Agent + Quick/Deep + attach image are present (cannot assert tools) |
 | shows Data sheets and column specs from the header menu | Data tab only; insert/delete row/column are not in Data; right-click column Specs dialog filled from sample assay; Plot menu is Sixpack, ANOVA, Boxplot, and worksheet Plot measurements (no attachment extract); Boxplot Y is required with optional nested categories (innermost first); Plot measurements Show LSL, USL values is off by default; Advanced is collapsed and sets min/max X and Y plus optional axis titles (blank = auto); Agent Analytics chat can edit an existing worksheet plot (Y, chart type, spec lines, axis window) or boxplot (Y, categories) without adding a Results row; attachment plots are Analytics chat |
 | row headers select the whole row and the row menu inserts, clears, and deletes | Click row number to select all columns; right-click Insert above/below, Clear, Delete |
 | column context menu inserts, clears, and opens Analyze with prefilled plot values | Insert left/right, clear data, delete; Analyze data popup is sixpack or ANOVA with column values pre-filled |

@@ -24,6 +24,7 @@ import {
   chatPaceConfig,
   resolveChatLanguageModel,
 } from "@/lib/ai/chat/model";
+import { chatUserTurnMetadata } from "@/lib/ai/chat/message-target";
 import { DEFAULT_CHAT_PACE, isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
   isChatMode,
@@ -148,6 +149,7 @@ async function handleAnalyticsChatPost(
         sessionId,
         role: "user",
         parts: userMsg.parts ?? [],
+        metadata: chatUserTurnMetadata("analytics"),
         authorId: user.id,
       });
       await touchChatSession(sessionId, userText || null);
@@ -337,6 +339,7 @@ async function handleAnalyticsChatPost(
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
     sendReasoning: false,
+    messageMetadata: () => ({ chatTarget: "analytics" as const }),
     consumeSseStream: ({ stream }) => {
       void drainSseStream(stream);
     },
@@ -396,6 +399,7 @@ async function handleAnalyticsChatPost(
             pace,
             mode,
             promptVersion: ANALYTICS_CHAT_PROMPT_VERSION,
+            chatTarget: "analytics",
           }),
           authorId: null,
         });

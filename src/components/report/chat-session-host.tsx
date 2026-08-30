@@ -31,7 +31,11 @@ import {
 import type { ChatSessionView } from "@/lib/ai/chat/sessions";
 
 export type ChatSessionSend = (
-  message: { text?: string; files?: FileUIPart[] },
+  message: {
+    text?: string;
+    files?: FileUIPart[];
+    metadata?: Record<string, unknown>;
+  },
   options?: { body?: Record<string, unknown> }
 ) => void | Promise<void>;
 

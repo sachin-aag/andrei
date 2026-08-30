@@ -24,6 +24,14 @@ export function chatAssistantMessage(page: Page) {
   return reportSidebar(page).getByLabel("Assistant message");
 }
 
+/** Per-turn Report | Analytics tag in the transcript. */
+export function chatMessageTargetTag(
+  page: Page,
+  target: "report" | "analytics"
+) {
+  return reportSidebar(page).getByTestId(`chat-message-target-${target}`);
+}
+
 export function reviewMargin(page: Page) {
   return page.getByRole("complementary", { name: "Review margin" });
 }

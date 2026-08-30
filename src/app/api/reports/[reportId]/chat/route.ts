@@ -38,6 +38,7 @@ import {
   chatPaceConfig,
   resolveChatLanguageModel,
 } from "@/lib/ai/chat/model";
+import { chatUserTurnMetadata } from "@/lib/ai/chat/message-target";
 import {
   DEFAULT_CHAT_PACE,
   isChatPace,
@@ -223,6 +224,7 @@ async function handleChatPost(
         sessionId,
         role: "user",
         parts: userMsg.parts ?? [],
+        metadata: chatUserTurnMetadata("report"),
         authorId: user.id,
       });
       await touchChatSession(sessionId, userText || null);
@@ -570,6 +572,7 @@ async function handleChatPost(
     // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
     // do not stream or persist them as chat message parts.
     sendReasoning: false,
+    messageMetadata: () => ({ chatTarget: "report" as const }),
     // Drain the teed SSE now. Wrapping this in Next `after()` waits until the
     // HTTP response finishes — and the tee only finishes if this copy is
     // already being read. That deadlock wedged `next start` after a client
@@ -637,6 +640,7 @@ async function handleChatPost(
               pace,
               mode,
               promptVersion: CHAT_PROMPT_VERSION,
+              chatTarget: "report",
               changeSummary:
                 changeItems.length > 0 ? { items: changeItems } : undefined,
             }),
@@ -664,6 +668,7 @@ async function handleChatPost(
                   pace,
                   mode,
                   promptVersion: CHAT_PROMPT_VERSION,
+                  chatTarget: "report",
                   changeSummary: {
                     items: changeItems,
                     revisionNo: revision.revisionNo,

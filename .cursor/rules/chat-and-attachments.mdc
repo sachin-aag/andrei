@@ -35,7 +35,11 @@ Document and Agent share `ChatPanel` + `StatisticalWorkspace`. Document
 `/chat` and Analytics `/analytics/chat` are counterparts (section `@` plus
 saved-plot `@` vs sheet/plot `@`). Composer Report | Analytics
 (`chat-work-product-target`) is the same dropdown in both chromes — do not
-retarget from the focused canvas pane. A composer, mention, or tool change that only lands on one
+retarget from the focused canvas pane. Mixed-thread history tags each
+message Report or Analytics (`metadata.chatTarget`, stamped by the route
+that handled the POST — not the client body). Legacy rows fall back to
+`promptVersion` / exclusive tools; fully unknown history stays untagged.
+A composer, mention, or tool change that only lands on one
 chrome or one surface is incomplete. Walk UI → request body → route parser →
 prompt → tools → `PLAN_MODE_CHAT_TOOL_NAMES` → retrieval-policy /
 already-drafted / stub → tests → docs. Removing a control means deleting

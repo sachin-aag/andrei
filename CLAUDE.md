@@ -314,6 +314,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - `fields.ts` — type-specific editable sections (`chatEditableSections`); tagged `@` sections set chat scope. Do not keep investigation-only constants like `CHAT_EDITABLE_SECTIONS`.
 - `mentions.ts` — `@` documents/sections/plots. Scope is `sectionScopeFromMentions` (one tagged section focuses prompt/tools; none tagged = all). There is no composer section dropdown and no `body.sectionScope`.
 - `propose-edit.ts`, `session-title.ts`, `access.ts`
+- `message-target.ts` — per-turn Report | Analytics tags on mixed threads (`chat_messages.metadata.chatTarget`, stamped by the route). Legacy rows use `promptVersion` / exclusive tools. Fully unknown history stays untagged.
 
 **Plan-mode allowlist** in `src/lib/ai/chat/document-review.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, plus document-review tools. New tools must be added here or they are silently missing in Plan. Analytics worksheet/plot tools stay off this list.
 
