@@ -474,6 +474,29 @@ describe("buildChatTools edit_table", () => {
       accepts(tools, "edit_table", {
         section: "define",
         targetField: "narrative",
+        reasoning: "example",
+        operation: {
+          kind: "edit_cells",
+          cells: [{ row: 1, col: 2, insertText: "e.g., 04" }],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "example column",
+        operation: {
+          kind: "insert_column",
+          header: "Example",
+          values: ["04"],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
         reasoning: "rows",
         operation: {
           kind: "insert_rows",
@@ -1152,6 +1175,65 @@ describe("buildChatTools propose vs commit", () => {
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
+  it("refuses propose_edit that restates a table as bullets", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, as detailed in the table below:",
+            },
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Component", "Designation", "Description"].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["mm", "Major", "Major release number (01, 02, etc.)"].map(
+                (text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+          ],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "as detailed in the table below:",
+        deleteText: "as detailed in the table below:",
+        insertText:
+          "- mm (Major): Major release number (e.g., 04)\n- nn (Minor): Minor release number (e.g., 07)",
+        reasoning: "Add an example to the VCS table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "table_as_list" });
+    expect(String((result as { hint?: string }).hint)).toMatch(/edit_table/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
   it("proposes edit_table create_table on a rich narrative field", async () => {
     const tools = buildChatTools({
       reportId: "report-1",
@@ -1210,6 +1292,174 @@ describe("buildChatTools propose vs commit", () => {
       targetField: "narrative",
     });
     expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("coerces nested edit_cells plus extra reasoning instead of falling through to propose_edit", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, as detailed in the table below:",
+            },
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Component", "Designation", "Description"].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["mm", "Major", "Major release number (01, 02, etc.)"].map(
+                (text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+          ],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add an example to the VCS table.",
+        operation: {
+          edit_cells: {
+            cells: [
+              {
+                row: 1,
+                col: 2,
+                insertText: "Major release number (e.g., 04)",
+              },
+            ],
+          },
+          reasoning: "Add an example to the VCS table.",
+        } as never,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("appends an example column when afterCol is omitted", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Component", "Description"].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["mm", "Major release number (01, 02, etc.)"].map((text) => ({
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add an Example column.",
+        operation: {
+          kind: "insert_column",
+          header: "Example",
+          values: ["04"],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("returns tables[] from read_section so tableIndex is available before editing", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "VCS scheme:" }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Component", "Description"].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["mm", "Major"].map((text) => ({
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = (await tools.read_section!.execute!(
+      { section: "define" },
+      TEST_TOOL_OPTIONS
+    )) as {
+      fields: Array<{
+        tables?: Array<{ tableIndex: number; headers: string[]; dataRowCount: number }>;
+        structuredText?: string;
+      }>;
+    };
+    expect(result.fields[0]?.tables).toEqual([
+      { tableIndex: 0, headers: ["Component", "Description"], dataRowCount: 1 },
+    ]);
+    expect(result.fields[0]?.structuredText).toContain("tableIndex=0");
   });
 
   it("proposes delete_table without rewriting the field", async () => {

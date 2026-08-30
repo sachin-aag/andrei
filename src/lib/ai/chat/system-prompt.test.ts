@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v64-create-table-insert");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v65-table-cell-edit");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -221,6 +221,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("retry with kind delete_table");
     expect(prompt).toContain("not `{ create_table: { headers, rows } }`");
     expect(prompt).toContain("Adding a table under existing bullets is create_table");
+    expect(prompt).toContain("Do not recover with propose_edit");
+    expect(prompt).toContain("Never convert an existing table into a bulleted list");
+    expect(prompt).toContain("tables[]");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {

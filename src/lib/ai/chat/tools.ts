@@ -139,6 +139,12 @@ type ReadSectionSuccess = {
     text: string;
     readingText: string;
     imageCount: number;
+    structuredText?: string;
+    tables?: Array<{
+      tableIndex: number;
+      headers: string[];
+      dataRowCount: number;
+    }>;
   }>;
   images: ReadSectionImageRef[];
   imageNote?: string;
@@ -361,7 +367,7 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
         z.object({
           row: z.number().int().min(0),
           col: z.number().int().min(0),
-          expectedText: z.string(),
+          expectedText: z.string().optional(),
           insertText: z.string(),
         })
       )
@@ -405,7 +411,12 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("insert_column"),
     tableIndex: tableIndexSchema,
-    afterCol: z.number().int().min(-1),
+    afterCol: z
+      .number()
+      .int()
+      .min(-1)
+      .optional()
+      .describe("Column to insert after. Omit to append as the last column."),
     header: z.string().min(1),
     values: z.array(z.string()).optional(),
     expectedHeaderAtAfterCol: z.string().optional(),
@@ -934,7 +945,7 @@ export function buildChatTools(opts: {
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section so you can quote exact anchors. Inline images are returned as vision parts (see readingText [image:N] markers). Optionally pass specific field paths; otherwise all editable fields are returned. When the engineer asked to draft a section the context map marks filled or partial, call this FIRST — before search_documents or ask_user.${scopeHint}` +
+        `Read the current text of an editable section so you can quote exact anchors. Inline images are returned as vision parts (see readingText [image:N] markers). Optionally pass specific field paths; otherwise all editable fields are returned. When the engineer asked to draft a section the context map marks filled or partial, call this FIRST — before search_documents or ask_user. When they asked to change a table, this is also the first call: fields[].tables[] lists tableIndex and headers; copy tableIndex and [row,col] from structuredText into edit_table.${scopeHint}` +
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
@@ -991,6 +1002,11 @@ export function buildChatTools(opts: {
              * List items still use propose_edit `scope`.
              */
             structuredText: chat.structuredText,
+            /**
+             * Existing tables in this field. Copy tableIndex into edit_table.
+             * Present only when the field contains at least one table.
+             */
+            tables: chat.tables,
           };
         });
 
@@ -1237,7 +1253,7 @@ export function buildChatTools(opts: {
 
     propose_edit: tool({
       description:
-        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table.${
+        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table. Do not rewrite an existing table as a bulleted list; that is edit_table (edit_cells / insert_column).${
           citationsAtEndOfSection
             ? " Put document citations as [filename, p. N] immediately after the claim in insertText. The server converts them to numbered markers and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
             : ""
@@ -2295,7 +2311,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, delete_table (remove the whole table; keeps surrounding prose, figures, and citations), insert_column (optional per-row values), delete_column, and create_table (headers plus rows) to add a NEW table in a rich field. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText when editing an existing table. Row 0 is the header and cannot be deleted; the first data row is row 1. To delete the whole table, use kind delete_table with tableIndex — do not delete every data row (that leaves an empty header) and do not rewrite the field with draft_field. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create, incrementally edit, or remove a table.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, delete_table (remove the whole table; keeps surrounding prose, figures, and citations), insert_column (optional per-row values; omit afterCol to append as the last column), delete_column, and create_table (headers plus rows) to add a NEW table in a rich field. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section FIRST and copy tableIndex plus [row,col] / header text from tables[] / structuredText when editing an existing table. To add an example to a table, edit_cells (or insert_column) — never propose_edit a bullet list. Row 0 is the header and cannot be deleted; the first data row is row 1. To delete the whole table, use kind delete_table with tableIndex — do not delete every data row (that leaves an empty header) and do not rewrite the field with draft_field. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. edit_cells may omit expectedText (server captures it). When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create, incrementally edit, or remove a table.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z

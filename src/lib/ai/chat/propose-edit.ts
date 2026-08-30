@@ -8,6 +8,7 @@ import {
 } from "@/lib/suggestions/locator";
 import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
+import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 import type {
   SuggestionImageInsert,
   SuggestionImageRemove,
@@ -36,7 +37,8 @@ export type ProposedEditCheck =
   | { status: "ambiguous" }
   | { status: "cross_cell" }
   | { status: "bad_scope" }
-  | { status: "too_large"; coverage: number };
+  | { status: "too_large"; coverage: number }
+  | { status: "table_as_list" };
 
 /**
  * Validate a proposed targeted edit against the current field:
@@ -83,6 +85,13 @@ export function checkProposedEdit(
     return { status: "not_found" };
   }
 
+  if (
+    insertRestatesTableAsList(edit.insertText, fieldDoc) ||
+    replacesTableLeadInWithList(edit.deleteText, edit.insertText)
+  ) {
+    return { status: "table_as_list" };
+  }
+
   // A scoped edit replaces at most one cell / list item, which is a small part
   // of the whole field even when it rewrites that cell — skip the coverage
   // guard (it exists to catch whole-field rewrites masquerading as edits).
@@ -96,6 +105,36 @@ export function checkProposedEdit(
   }
 
   return { status: "ok" };
+}
+
+function looksLikeMarkdownList(text: string): boolean {
+  const items = text
+    .split(/\n+/)
+    .filter((line) => /^\s*(?:[-*]|\d+[.)])\s+\S/.test(line));
+  return items.length >= 2;
+}
+
+function insertRestatesTableAsList(
+  insertText: string,
+  fieldDoc?: JSONContent | null
+): boolean {
+  if (!fieldDoc || !looksLikeMarkdownList(insertText)) return false;
+  const cells = summarizeTablesInDoc(fieldDoc)
+    .flatMap((table) => table.cells)
+    .filter((cell) => cell.row > 0)
+    .map((cell) => cell.text.trim())
+    .filter((text) => text.length >= 4 && text !== "(empty)");
+  if (cells.length === 0) return false;
+  const haystack = insertText.toLowerCase();
+  const hits = cells.filter((text) => haystack.includes(text.toLowerCase())).length;
+  return hits >= 3 || hits / cells.length >= 0.5;
+}
+
+function replacesTableLeadInWithList(deleteText: string, insertText: string): boolean {
+  if (!looksLikeMarkdownList(insertText)) return false;
+  return /table below|in the table|as detailed in the table|vcs table/i.test(
+    deleteText
+  );
 }
 
 /** Agent-facing repair hint for a non-ok check result. */
@@ -144,6 +183,8 @@ export function proposedEditHint(
       return "The `scope` coordinate does not exist in this field. For tables, call read_section then edit_table. For lists, re-read and use a valid item index.";
     case "too_large":
       return "This change rewrites most of the field. Make a smaller, targeted edit, or use draft_field for an explicit full replacement. To add a new table, use edit_table with kind create_table — not draft_field.";
+    case "table_as_list":
+      return "This restates an existing table as a bulleted list. Call read_section, copy tableIndex and [row,col] from tables[] / structuredText, then edit_table (edit_cells to add an example in a cell, or insert_column for a new Example column). Do not convert the table into prose.";
     default: {
       const _exhaustive: never = check;
       return _exhaustive;

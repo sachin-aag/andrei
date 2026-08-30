@@ -102,6 +102,113 @@ describe("checkProposedEdit", () => {
       })
     ).toEqual({ status: "not_found" });
   });
+
+  it("refuses rewriting an existing table as a bulleted list", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, as detailed in the table below:",
+            },
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Component", "Designation", "Description"].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["mm", "Major", "Major release number (01, 02, etc.)"].map(
+                (text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+            {
+              type: "tableRow",
+              content: ["nn", "Minor", "Minor release number (01, 02, etc.)"].map(
+                (text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+          ],
+        },
+      ],
+    };
+    const field =
+      "Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, as detailed in the table below: Component Designation Description mm Major Major release number (01, 02, etc.) nn Minor Minor release number (01, 02, etc.)";
+    expect(
+      checkProposedEdit(
+        field,
+        {
+          anchorText: "as detailed in the table below:",
+          deleteText: "as detailed in the table below:",
+          insertText:
+            "- mm (Major): Major release number (e.g., 04)\n- nn (Minor): Minor release number (e.g., 07)",
+        },
+        doc
+      )
+    ).toEqual({ status: "table_as_list" });
+  });
+
+  it("still allows a short prose example next to a table", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, as detailed in the table below:",
+            },
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "Component" }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const field =
+      "Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, as detailed in the table below:";
+    expect(
+      checkProposedEdit(
+        field,
+        {
+          anchorText: "mm.nn.ff.bb, as detailed in the table below:",
+          deleteText: "mm.nn.ff.bb, as detailed in the table below:",
+          insertText: "mm.nn.ff.bb (for example, version 4.7.1.1011), as detailed in the table below:",
+        },
+        doc
+      )
+    ).toEqual({ status: "ok" });
+  });
 });
 
 describe("proposedEditHint", () => {
@@ -138,5 +245,10 @@ describe("proposedEditHint", () => {
     expect(proposedEditHint({ status: "too_large", coverage: 0.9 })).toMatch(
       /create_table/
     );
+  });
+
+  it("routes table-as-list rewrites to edit_table", () => {
+    expect(proposedEditHint({ status: "table_as_list" })).toMatch(/edit_table/);
+    expect(proposedEditHint({ status: "table_as_list" })).toMatch(/bulleted list/);
   });
 });

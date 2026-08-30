@@ -341,7 +341,7 @@ export function buildTableOperationPreviewDoc(
       return applied;
     }
     case "insert_column": {
-      const col = operation.afterCol + 1;
+      const col = (operation.afterCol ?? -1) + 1;
       markColumn(rows, col, suggestionInsertMarkName, attrs);
       return applied;
     }

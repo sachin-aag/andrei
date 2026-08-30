@@ -336,6 +336,49 @@ describe("applyTableOperation", () => {
     expect(applyTableOperation(doc, captured).ok).toBe(true);
   });
 
+  it("captures omitted expectedText and appends a column when afterCol is omitted", () => {
+    const doc = tableDoc(
+      ["Component", "Description"],
+      [["mm", "Major release number (01, 02, etc.)"]]
+    );
+    const cells = captureTableOperationSnapshots(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [{ row: 1, col: 1, insertText: "Major release number (e.g., 04)" }],
+    });
+    expect(cells).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          expectedText: "Major release number (01, 02, etc.)",
+          insertText: "Major release number (e.g., 04)",
+        },
+      ],
+    });
+    expect(applyTableOperation(doc, cells).ok).toBe(true);
+
+    const column = captureTableOperationSnapshots(doc, {
+      kind: "insert_column",
+      tableIndex: 0,
+      header: "Example",
+      values: ["04"],
+    });
+    expect(column).toMatchObject({
+      kind: "insert_column",
+      afterCol: 1,
+      header: "Example",
+      expectedHeaderAtAfterCol: "Description",
+    });
+    const applied = applyTableOperation(doc, column);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(colCount(applied.doc)).toBe(3);
+    expect(cellText(applied.doc, 0, 2)).toBe("Example");
+    expect(cellText(applied.doc, 1, 2)).toBe("04");
+  });
+
   it("refuses to delete the header row", () => {
     const result = applyTableOperation(tableDoc(["H"], [["a"]]), {
       kind: "delete_rows",
@@ -735,6 +778,97 @@ describe("parseTableOperation", () => {
     ).toBeUndefined();
     expect(parseTableOperation({ kind: "insert_rows", afterRow: 0, rows: [] })).toBeUndefined();
     expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
+  });
+
+  it("coerces nested edit_cells with extra reasoning and omitted expectedText", () => {
+    expect(
+      parseTableOperation({
+        edit_cells: {
+          cells: [
+            {
+              row: 1,
+              col: 2,
+              insertText: "Major release number (e.g., 04)",
+            },
+          ],
+        },
+        reasoning: "Add an example to the VCS table.",
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 2,
+          insertText: "Major release number (e.g., 04)",
+        },
+      ],
+    });
+  });
+
+  it("coerces add_column aliases and omits afterCol to append", () => {
+    expect(
+      parseTableOperation({
+        add_column: {
+          header: "Example",
+          values: ["04", "07", "01", "1011"],
+        },
+      })
+    ).toEqual({
+      kind: "insert_column",
+      tableIndex: 0,
+      afterCol: undefined,
+      header: "Example",
+      values: ["04", "07", "01", "1011"],
+      expectedHeaderAtAfterCol: undefined,
+      expectedHeaders: undefined,
+    });
+  });
+
+  it("coerces stringified create_table rows and extra reasoning", () => {
+    expect(
+      parseTableOperation({
+        create_table: {
+          headers: ["Component", "Designation", "Description"],
+          rows: [
+            "['mm', 'Major', 'Major release number (01, 02, etc.)'],",
+            "['nn', 'Minor', 'Minor release number (01, 02, etc.)'],",
+            ["ff", "Fix", "Fix release number (01, 02, etc.)"],
+          ],
+        },
+        reasoning: "Add a VCS table",
+      })
+    ).toEqual({
+      kind: "create_table",
+      headers: ["Component", "Designation", "Description"],
+      rows: [
+        ["mm", "Major", "Major release number (01, 02, etc.)"],
+        ["nn", "Minor", "Minor release number (01, 02, etc.)"],
+        ["ff", "Fix", "Fix release number (01, 02, etc.)"],
+      ],
+    });
+  });
+
+  it("coerces a single edit_cells object with a value alias", () => {
+    expect(
+      parseTableOperation({
+        kind: "edit_cells",
+        row: 1,
+        col: 2,
+        value: "Major release number (e.g., 04)",
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 2,
+          insertText: "Major release number (e.g., 04)",
+        },
+      ],
+    });
   });
 
   it("coerces near-miss delete_table / delete_rows shapes", () => {

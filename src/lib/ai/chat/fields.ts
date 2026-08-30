@@ -9,6 +9,7 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import { renderStructuredFieldView } from "@/lib/ai/suggestion-section-context";
+import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 import {
   countImagesInDoc,
   flattenDocForChat,
@@ -185,6 +186,12 @@ export function sectionFieldForChat(
   imageCount: number;
   /** Coordinate-tagged view for table/list fields (present only when useful). */
   structuredText?: string;
+  /** Existing tables in this field (present only when the field has one). */
+  tables?: Array<{
+    tableIndex: number;
+    headers: string[];
+    dataRowCount: number;
+  }>;
 } {
   if (!isRichTargetField(section, targetField)) {
     const text = getPlainTextFieldValue(sectionContent, targetField);
@@ -203,11 +210,19 @@ export function sectionFieldForChat(
   const structuredText = /\[\d+,\d+\]|\n\[\d+\] /.test(structured)
     ? structured
     : undefined;
+  const tableInventory = summarizeTablesInDoc(doc).map(
+    ({ tableIndex, headers, dataRowCount }) => ({
+      tableIndex,
+      headers,
+      dataRowCount,
+    })
+  );
   return {
     text,
     readingText: chat.readingText,
     imageCount: chat.imageCount,
     structuredText,
+    tables: tableInventory.length > 0 ? tableInventory : undefined,
   };
 }
 
