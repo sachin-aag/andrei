@@ -145,6 +145,7 @@ import {
   isChatScrollerLaidOut,
   pinChatScrollerToBottom,
   restoreChatScrollPosition,
+  shouldReapplyChatScroll,
   shouldStickChatToBottom,
   type ChatScrollPosition,
 } from "@/components/report/chat-scroll-position";
@@ -1517,10 +1518,12 @@ export function ChatPanel({
     if (!el) return;
     restoringScrollRef.current = true;
     restoreChatScrollPosition(el, savedScrollRef.current);
-    const frame = window.requestAnimationFrame(() => {
+    // Cover the sidebar width transition so intermediate reflows cannot
+    // overwrite the saved offset as "bottom".
+    const timeout = window.setTimeout(() => {
       restoringScrollRef.current = false;
-    });
-    return () => window.cancelAnimationFrame(frame);
+    }, 250);
+    return () => window.clearTimeout(timeout);
   }, [visible]);
 
   useLayoutEffect(() => {
@@ -1535,13 +1538,23 @@ export function ChatPanel({
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     let wasLaidOut = isChatScrollerLaidOut(el);
+    let previousWidth = el.clientWidth;
     const observer = new ResizeObserver(() => {
       if (!visibleRef.current) {
         wasLaidOut = false;
+        previousWidth = 0;
         return;
       }
       const nowLaidOut = isChatScrollerLaidOut(el);
-      if (!wasLaidOut && nowLaidOut) {
+      const currentWidth = el.clientWidth;
+      if (
+        shouldReapplyChatScroll({
+          wasLaidOut,
+          nowLaidOut,
+          previousWidth,
+          currentWidth,
+        })
+      ) {
         restoringScrollRef.current = true;
         restoreChatScrollPosition(el, savedScrollRef.current);
         restoringScrollRef.current = false;
@@ -1552,6 +1565,7 @@ export function ChatPanel({
         pinChatScrollerToBottom(el);
       }
       wasLaidOut = nowLaidOut;
+      previousWidth = currentWidth;
     });
     observer.observe(el);
     return () => observer.disconnect();

@@ -5,6 +5,7 @@ import {
   isChatScrollerLaidOut,
   pinChatScrollerToBottom,
   restoreChatScrollPosition,
+  shouldReapplyChatScroll,
   shouldStickChatToBottom,
 } from "@/components/report/chat-scroll-position";
 
@@ -66,6 +67,43 @@ describe("captureChatScrollPosition", () => {
         })
       )
     ).toEqual({ kind: "offset", fromBottom: 400 });
+  });
+});
+
+describe("shouldReapplyChatScroll", () => {
+  it("reapplies when the panel becomes laid out or its width changes", () => {
+    expect(
+      shouldReapplyChatScroll({
+        wasLaidOut: false,
+        nowLaidOut: true,
+        previousWidth: 0,
+        currentWidth: 360,
+      })
+    ).toBe(true);
+    expect(
+      shouldReapplyChatScroll({
+        wasLaidOut: true,
+        nowLaidOut: true,
+        previousWidth: 48,
+        currentWidth: 360,
+      })
+    ).toBe(true);
+    expect(
+      shouldReapplyChatScroll({
+        wasLaidOut: true,
+        nowLaidOut: true,
+        previousWidth: 360,
+        currentWidth: 360,
+      })
+    ).toBe(false);
+    expect(
+      shouldReapplyChatScroll({
+        wasLaidOut: true,
+        nowLaidOut: false,
+        previousWidth: 360,
+        currentWidth: 0,
+      })
+    ).toBe(false);
   });
 });
 
