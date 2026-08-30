@@ -30,6 +30,21 @@ function renderDialog(
 }
 
 describe("XyScatterDialog Advanced", () => {
+  it("keeps the description short and explains Legend on hover", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    expect(
+      screen.getByText("Plot a numeric Y against X or observation index.")
+    ).toBeTruthy();
+    expect(screen.getByTestId("xy-legend-info")).toBeInTheDocument();
+
+    await user.hover(screen.getByTestId("xy-legend-info"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      /colors dots, lines, or stacked columns/i
+    );
+  });
+
   it("keeps Advanced collapsed until the summary is clicked", async () => {
     const user = userEvent.setup();
     renderDialog();

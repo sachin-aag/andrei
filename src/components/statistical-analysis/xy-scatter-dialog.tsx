@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import {
   formatRowSelection,
   normalizeRowSelection,
@@ -211,7 +212,6 @@ export function XyScatterDialog({
     (xColumnId == null || yColumnId !== xColumnId) &&
     (legendColumnId == null ||
       (legendColumnId !== yColumnId && legendColumnId !== xColumnId));
-  const indexMode = xColumnId == null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -222,11 +222,7 @@ export function XyScatterDialog({
         <DialogHeader>
           <DialogTitle>Plot measurements</DialogTitle>
           <DialogDescription>
-            Y is required. Leave X as Observation for values versus index
-            (1, 2, 3…), or pick a numeric X. Chart type is the line you see —
-            scatter, line, area, or column. A legend colors dots, lines, or
-            stacked columns. A serial or factor column cannot be X — use Legend
-            to group by that column.
+            Plot a numeric Y against X or observation index.
           </DialogDescription>
         </DialogHeader>
 
@@ -275,13 +271,25 @@ export function XyScatterDialog({
               >
                 Show LSL, USL values
               </Label>
+              <FieldInfoIcon
+                label="LSL and USL"
+                testId="xy-spec-limits-info"
+                text="Draws the Y column’s spec limits as dashed horizontal lines."
+              />
             </div>
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="xy-x" className={fieldLabelClass}>
-              X (optional)
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="xy-x" className={fieldLabelClass}>
+                X (optional)
+              </Label>
+              <FieldInfoIcon
+                label="X"
+                testId="xy-x-info"
+                text="Leave Observation for values versus index (1, 2, 3…). Pick a numeric column for Y versus X. A serial or factor cannot be X — use Legend to group by that column."
+              />
+            </div>
             <Select
               value={toSelectX(xColumnId)}
               onValueChange={(value) => {
@@ -315,9 +323,16 @@ export function XyScatterDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="xy-legend" className={fieldLabelClass}>
-              Legend (optional)
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="xy-legend" className={fieldLabelClass}>
+                Legend (optional)
+              </Label>
+              <FieldInfoIcon
+                label="Legend"
+                testId="xy-legend-info"
+                text="Colors dots, lines, or stacked columns by this column. Use Legend for a serial or factor."
+              />
+            </div>
             <Select
               value={toSelectLegend(legendColumnId)}
               onValueChange={(value) => setLegendColumnId(fromSelectLegend(value))}
@@ -346,9 +361,16 @@ export function XyScatterDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="xy-mark" className={fieldLabelClass}>
-              Chart type
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="xy-mark" className={fieldLabelClass}>
+                Chart type
+              </Label>
+              <FieldInfoIcon
+                label="Chart type"
+                testId="xy-mark-info"
+                text="The mark you see — scatter, line, area, or column."
+              />
+            </div>
             <Select
               value={mark}
               onValueChange={(value) => setMark(parseChartMark(value))}
@@ -379,9 +401,16 @@ export function XyScatterDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="xy-row-start" className={fieldLabelClass}>
-                First row
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="xy-row-start" className={fieldLabelClass}>
+                  First row
+                </Label>
+                <FieldInfoIcon
+                  label="Row range"
+                  testId="xy-row-range-info"
+                  text="Rows are numbered from 1. Leave both blank to use every filled cell."
+                />
+              </div>
               <Input
                 id="xy-row-start"
                 data-testid="xy-row-start"
@@ -405,11 +434,6 @@ export function XyScatterDialog({
               />
             </div>
           </div>
-          <p className="-mt-2 text-xs text-[var(--muted-foreground)]">
-            Worksheet rows are numbered from 1. Leave both blank to use every
-            filled {indexMode ? "Y cell" : "pair of cells"}.
-          </p>
-
           <div className="grid gap-1.5">
             <Label htmlFor="xy-title" className={fieldLabelClass}>
               Title (optional)
@@ -431,14 +455,18 @@ export function XyScatterDialog({
               <ChevronDown className="h-4 w-4 shrink-0 text-[var(--muted-foreground)] transition-transform group-open:rotate-180" />
             </summary>
             <div className="grid gap-3 border-t border-[var(--border)] px-3 py-3">
-              <p className="-mt-1 text-xs text-[var(--muted-foreground)]">
-                Leave a limit blank to auto-fit that end from the data.
-              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5">
-                  <Label htmlFor="xy-xmin" className={fieldLabelClass}>
-                    Min X
-                  </Label>
+                  <div className="flex items-center gap-1">
+                    <Label htmlFor="xy-xmin" className={fieldLabelClass}>
+                      Min X
+                    </Label>
+                    <FieldInfoIcon
+                      label="Axis limits"
+                      testId="xy-axis-limits-info"
+                      text="Leave a limit blank to auto-fit that end from the data."
+                    />
+                  </div>
                   <Input
                     id="xy-xmin"
                     data-testid="xy-xmin"

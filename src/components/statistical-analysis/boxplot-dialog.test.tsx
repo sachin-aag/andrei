@@ -35,7 +35,9 @@ describe("BoxplotDialog", () => {
     const { onSubmit } = renderDialog();
 
     expect(screen.getByTestId("boxplot-dialog")).toBeInTheDocument();
-    expect(screen.getByText(/one box of every numeric Y/i)).toBeTruthy();
+    expect(screen.getByText("Tukey box-and-whisker of a numeric Y.")).toBeTruthy();
+    expect(screen.getByText("One box of all Y.")).toBeTruthy();
+    expect(screen.getByTestId("boxplot-categories-info")).toBeInTheDocument();
     await user.click(screen.getByTestId("boxplot-ok"));
 
     expect(onSubmit).toHaveBeenCalledWith(
@@ -56,6 +58,11 @@ describe("BoxplotDialog", () => {
     await user.click(screen.getByTestId("boxplot-add-category"));
     expect(screen.getByTestId("boxplot-category-0")).toBeInTheDocument();
     expect(screen.getByText("Category (innermost)")).toBeTruthy();
+
+    await user.hover(screen.getByTestId("boxplot-categories-info"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      /first category is closest to the boxes/i
+    );
 
     await user.click(screen.getByTestId("boxplot-add-category"));
     expect(screen.getByTestId("boxplot-category-1")).toBeInTheDocument();

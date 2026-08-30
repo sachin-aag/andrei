@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import { suggestCategoryColumn } from "@/lib/statistical-analysis/boxplot";
 import {
   formatRowSelection,
@@ -139,10 +140,7 @@ export function BoxplotDialog({
         <DialogHeader>
           <DialogTitle>Boxplot</DialogTitle>
           <DialogDescription>
-            Plot a numeric Y as Tukey boxes. Add category columns to group boxes
-            on a nested axis — first category is closest to the boxes, last is
-            the outermost label. Observed combinations only; empty cells are
-            labeled (blank).
+            Tukey box-and-whisker of a numeric Y.
           </DialogDescription>
         </DialogHeader>
 
@@ -177,7 +175,14 @@ export function BoxplotDialog({
 
           <div className="grid gap-2">
             <div className="flex items-center justify-between gap-2">
-              <Label className={fieldLabelClass}>Categories</Label>
+              <div className="flex items-center gap-1">
+                <Label className={fieldLabelClass}>Categories</Label>
+                <FieldInfoIcon
+                  label="Categories"
+                  testId="boxplot-categories-info"
+                  text="First category is closest to the boxes; last is the outermost label. Only observed combinations. Empty cells are (blank). No categories draws one box of all Y."
+                />
+              </div>
               <Button
                 type="button"
                 variant="outline"
@@ -193,7 +198,7 @@ export function BoxplotDialog({
             </div>
             {categoryColumnIds.length === 0 ? (
               <p className="text-xs text-[var(--muted-foreground)]">
-                No categories — one box of every numeric Y value.
+                One box of all Y.
               </p>
             ) : (
               categoryColumnIds.map((id, index) => (
@@ -257,9 +262,16 @@ export function BoxplotDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="boxplot-row-start" className={fieldLabelClass}>
-                First row
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="boxplot-row-start" className={fieldLabelClass}>
+                  First row
+                </Label>
+                <FieldInfoIcon
+                  label="Row range"
+                  testId="boxplot-row-range-info"
+                  text="Rows are numbered from 1. Leave both blank to use every filled Y cell."
+                />
+              </div>
               <Input
                 id="boxplot-row-start"
                 data-testid="boxplot-row-start"
@@ -283,10 +295,6 @@ export function BoxplotDialog({
               />
             </div>
           </div>
-          <p className="-mt-2 text-xs text-[var(--muted-foreground)]">
-            Worksheet rows are numbered from 1. Leave both blank to use every
-            filled Y cell.
-          </p>
 
           <div className="grid gap-1.5">
             <Label htmlFor="boxplot-title" className={fieldLabelClass}>
