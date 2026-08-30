@@ -553,8 +553,8 @@ function StatRow({
   testId?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 whitespace-nowrap py-0.5">
-      <dt className="pr-1 text-[11px] text-[var(--muted-foreground)]">
+    <div className="flex items-baseline justify-between gap-2 py-0.5">
+      <dt className="min-w-0 pr-1 text-[11px] text-[var(--muted-foreground)]">
         {label}
       </dt>
       <dd
@@ -570,7 +570,7 @@ function StatRow({
 function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
   const cap = result.capability;
   return (
-    <div className="grid h-full grid-cols-2 gap-x-4 gap-y-2 overflow-auto px-1 text-xs">
+    <div className="grid h-full grid-cols-2 gap-x-3 gap-y-2 overflow-auto px-1 text-xs">
       <dl>
         <p className="mb-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
           Process data
