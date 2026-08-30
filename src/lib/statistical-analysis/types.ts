@@ -394,7 +394,7 @@ export type XyScatterConfig = {
   rowEnd?: number | null;
   /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
   rows?: number[] | null;
-  /** Visual mark. Chat always saves scatter; Edit can change this. */
+  /** Visual mark. Chat can set this on create or update. */
   mark?: ChartMark;
   /** Draw Y-column LSL/USL on the chart. Default off. */
   showSpecLimits?: boolean;

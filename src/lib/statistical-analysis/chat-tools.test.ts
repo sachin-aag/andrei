@@ -43,6 +43,7 @@ vi.mock("@/lib/statistical-analysis/store", () => ({
   createAnalysisForReport: vi.fn(),
   getOrCreateReportAnalytics: vi.fn(),
   updateReportAnalytics: vi.fn(),
+  updateAnalysisForReport: vi.fn(),
 }));
 
 import {
@@ -58,13 +59,17 @@ import {
   pickAnalyticsDocumentTools,
 } from "./chat-tools";
 import { P1_PUW_COMBINED_TRANSCRIPT, P1_PUW_FILENAME } from "@/lib/extraction/__fixtures__/p1-puw-qualification-phase-ii";
+import { DEFAULT_CHART_LAYOUT } from "@/lib/charts/chart-spec";
 import { AMBIGUOUS_METRIC_REQUEST_MESSAGE } from "@/lib/extraction/metric-series";
 import { buildAnalyticsChatSystemPrompt } from "./chat-prompt";
 import {
+  createAnalysisForReport,
   getOrCreateReportAnalytics,
+  updateAnalysisForReport,
   updateReportAnalytics,
 } from "./store";
-import type { ReportAnalyticsView } from "./types";
+import type { ReportAnalyticsView, XyScatterAnalysisSummary } from "./types";
+import { MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
 import { createEmptyWorksheet, insertColumn, renameColumn, replaceColumnValues } from "./worksheet";
 
 function pageRead(transcript: string): DocumentPageRead {
@@ -152,6 +157,8 @@ describe("analytics chat tools", () => {
     expect(writable.plot_xy_scatter?.description).toContain(
       "Omit xColumnId"
     );
+    expect(writable.plot_xy_scatter?.description).toContain("analysisId");
+    expect(writable.plot_xy_scatter?.description).toContain("showSpecLimits");
     expect(writable.plot_measurements?.description).toContain(
       "cannot color by serial number"
     );
@@ -808,5 +815,132 @@ describe("analytics chat tools", () => {
     };
     expect(saved.columns[0]?.name).toBe("Assay");
     expect(saved.columns[0]?.citations).toBeUndefined();
+  });
+
+  it("updates an existing worksheet plot instead of creating a new Results row", async () => {
+    const existing: XyScatterAnalysisSummary = {
+      id: "plot-1",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: "Assay vs Observation",
+      config: {
+        xColumnId: null,
+        xColumnName: "Observation",
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        title: "Assay vs Observation",
+        mark: "scatter",
+        showSpecLimits: false,
+      },
+      results: { specs: [], n: 3, skipped: 0, pearsonR: null },
+      sourceHash: "hash",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    const initial = analyticsView();
+    initial.analyses = [existing];
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    const updated: XyScatterAnalysisSummary = {
+      ...existing,
+      config: {
+        ...existing.config,
+        yColumnId: "c2",
+        yColumnName: "Moisture",
+        mark: "line",
+        showSpecLimits: true,
+      },
+    };
+    vi.mocked(updateAnalysisForReport).mockResolvedValue({
+      ok: true,
+      analytics: { ...initial, analyses: [updated] },
+      analysis: updated,
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_xy_scatter?.execute;
+    if (!plot) throw new Error("plot_xy_scatter has no execute");
+    const output = await plot(
+      {
+        analysisId: "plot-1",
+        yColumnId: "c2",
+        mark: "line",
+        showSpecLimits: true,
+      },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(createAnalysisForReport).not.toHaveBeenCalled();
+    expect(updateAnalysisForReport).toHaveBeenCalledWith(
+      "report-1",
+      "plot-1",
+      expect.objectContaining({
+        yColumnId: "c2",
+        mark: "line",
+        showSpecLimits: true,
+      })
+    );
+    expect(output).toMatchObject({
+      status: "ok",
+      updated: true,
+      yColumnId: "c2",
+      mark: "line",
+      showSpecLimits: true,
+      analysisCount: 1,
+    });
+  });
+
+  it("refuses to edit a non-worksheet Results row via plot_xy_scatter", async () => {
+    const initial = analyticsView();
+    initial.analyses = [
+      {
+        id: "plot-ms",
+        workspaceId: "ws-1",
+        kind: MEASUREMENT_SCATTER,
+        title: "M3",
+        config: {
+          query: "M3-SYS-FN-037",
+          title: "M3",
+          xLabel: "Observation",
+          yLabel: "Value",
+          layout: DEFAULT_CHART_LAYOUT,
+          lsl: null,
+          usl: null,
+        },
+        results: { specs: [], n: 4, uom: "" },
+        sourceHash: "hash",
+        stale: false,
+        createdAt: "2026-08-26T00:00:00.000Z",
+        previewImage: null,
+      },
+    ];
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_xy_scatter?.execute;
+    if (!plot) throw new Error("plot_xy_scatter has no execute");
+    const output = await plot(
+      { analysisId: "plot-ms", mark: "line" },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(updateAnalysisForReport).not.toHaveBeenCalled();
+    expect(createAnalysisForReport).not.toHaveBeenCalled();
+    expect(output).toMatchObject({
+      status: "error",
+      message: expect.stringContaining("not a worksheet scatter"),
+    });
   });
 });

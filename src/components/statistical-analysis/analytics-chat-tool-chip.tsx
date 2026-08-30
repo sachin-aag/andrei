@@ -303,7 +303,9 @@ export function AnalyticsChatToolChip({
             icon={<ChartScatter className="size-3.5 text-emerald-500" />}
             tone="success"
           >
-            Saved scatter — open the Results tab
+            {info.output.updated === true
+              ? "Updated plot — open the Results tab"
+              : "Saved scatter — open the Results tab"}
           </ToolLine>
         );
       }

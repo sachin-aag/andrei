@@ -94,7 +94,7 @@ describe("xyScatterInputSchema", () => {
     ).toBe(false);
   });
 
-  it("accepts a chart type on create, not on the chat body", () => {
+  it("accepts a chart type and spec-limit toggle on create and chat body", () => {
     expect(
       xyScatterInputSchema.parse({
         kind: XY_SCATTER,
@@ -102,13 +102,17 @@ describe("xyScatterInputSchema", () => {
         mark: "line",
       }).mark
     ).toBe("line");
-    const body = xyScatterBodySchema.parse({
+    expect(
+      xyScatterBodySchema.parse({
+        yColumnId: "c2",
+        mark: "column",
+        showSpecLimits: true,
+      })
+    ).toMatchObject({
       yColumnId: "c2",
       mark: "column",
+      showSpecLimits: true,
     });
-    expect(body).toMatchObject({ yColumnId: "c2" });
-    expect("mark" in body).toBe(false);
-    expect("showSpecLimits" in body).toBe(false);
     expect(
       xyScatterInputSchema.parse({
         kind: XY_SCATTER,
@@ -116,6 +120,21 @@ describe("xyScatterInputSchema", () => {
         showSpecLimits: true,
       }).showSpecLimits
     ).toBe(true);
+  });
+
+  it("requires yColumnId on create and allows a partial update with analysisId", () => {
+    expect(xyScatterBodySchema.safeParse({ mark: "line" }).success).toBe(false);
+    expect(
+      xyScatterBodySchema.parse({
+        analysisId: "plot-1",
+        mark: "line",
+        showSpecLimits: true,
+      })
+    ).toMatchObject({
+      analysisId: "plot-1",
+      mark: "line",
+      showSpecLimits: true,
+    });
   });
 });
 

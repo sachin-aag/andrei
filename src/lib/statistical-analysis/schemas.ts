@@ -211,19 +211,27 @@ export const oneWayAnovaInputSchema = z
 function refineDistinctXyColumns(
   value: {
     xColumnId?: string | null;
-    yColumnId: string;
+    yColumnId?: string;
     legendColumnId?: string | null;
   },
   ctx: z.RefinementCtx
 ): void {
-  if (value.xColumnId && value.xColumnId === value.yColumnId) {
+  if (
+    value.yColumnId &&
+    value.xColumnId &&
+    value.xColumnId === value.yColumnId
+  ) {
     ctx.addIssue({
       code: "custom",
       message: "X, Y, and legend must be different columns.",
       path: ["xColumnId"],
     });
   }
-  if (value.legendColumnId && value.legendColumnId === value.yColumnId) {
+  if (
+    value.yColumnId &&
+    value.legendColumnId &&
+    value.legendColumnId === value.yColumnId
+  ) {
     ctx.addIssue({
       code: "custom",
       message: "X, Y, and legend must be different columns.",
@@ -253,12 +261,16 @@ const optionalColumnIdSchema = z.preprocess(
   z.string().min(1).nullable()
 );
 
-const xyScatterColumnFields = {
+const xyScatterAxisFields = {
   xColumnId: optionalColumnIdSchema.optional(),
-  yColumnId: z.string().trim().min(1),
   legendColumnId: optionalColumnIdSchema.optional(),
   title: z.string().trim().max(120).optional(),
   ...anovaRowFields,
+} as const;
+
+const xyScatterColumnFields = {
+  yColumnId: z.string().trim().min(1),
+  ...xyScatterAxisFields,
 } as const;
 
 const xyScatterUiFields = {
@@ -267,10 +279,35 @@ const xyScatterUiFields = {
   showSpecLimits: z.boolean().optional(),
 } as const;
 
-/** Chat tool body — scatter only. Do not add `mark` or `showSpecLimits` or the model will set them. */
+function refineXyScatterChatBody(
+  value: {
+    analysisId?: string;
+    yColumnId?: string;
+    xColumnId?: string | null;
+    legendColumnId?: string | null;
+  },
+  ctx: z.RefinementCtx
+): void {
+  if (!value.analysisId && !value.yColumnId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "yColumnId is required when creating a new plot.",
+      path: ["yColumnId"],
+    });
+  }
+  refineDistinctXyColumns(value, ctx);
+}
+
+/** Chat tool body — create (yColumnId required) or update (analysisId + changed fields). */
 export const xyScatterBodySchema = z
-  .object(xyScatterColumnFields)
-  .superRefine(refineDistinctXyColumns);
+  .object({
+    analysisId: z.string().trim().min(1).max(128).optional(),
+    yColumnId: z.string().trim().min(1).optional(),
+    ...xyScatterAxisFields,
+    mark: z.enum(CHART_MARKS).optional(),
+    showSpecLimits: z.boolean().optional(),
+  })
+  .superRefine(refineXyScatterChatBody);
 
 export const xyScatterInputSchema = z
   .object({
@@ -279,9 +316,14 @@ export const xyScatterInputSchema = z
   })
   .superRefine(refineDistinctXyColumns);
 
-/** Edit/update from the Plot measurements dialog (chart type allowed). */
+/** Edit/update from the Plot measurements dialog or chat (omitted fields keep the saved config). */
 export const xyScatterUpdateSchema = z
-  .object(xyScatterUiFields)
+  .object({
+    yColumnId: z.string().trim().min(1).optional(),
+    ...xyScatterAxisFields,
+    mark: z.enum(CHART_MARKS).optional(),
+    showSpecLimits: z.boolean().optional(),
+  })
   .superRefine(refineDistinctXyColumns);
 
 export const patchAnalyticsBodySchema = z

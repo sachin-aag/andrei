@@ -8,7 +8,7 @@ import {
   setCell,
   upsertSpecRow,
 } from "./worksheet";
-import { computeXyScatter, suggestXColumn } from "./xy-scatter";
+import { computeXyScatter, mergeXyScatterPatch, suggestXColumn } from "./xy-scatter";
 
 describe("computeXyScatter", () => {
   it("pairs rows where both cells are numeric and skips NA pairs", () => {
@@ -313,5 +313,56 @@ describe("computeXyScatter", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.result.specs[0]?.citations).toEqual([]);
+  });
+});
+
+describe("mergeXyScatterPatch", () => {
+  const existing = {
+    xColumnId: "c1",
+    xColumnName: "Glucose",
+    yColumnId: "c2",
+    yColumnName: "OD660",
+    legendColumnId: "c3",
+    legendColumnName: "Lot",
+    title: "OD660 vs Glucose",
+    mark: "scatter" as const,
+    showSpecLimits: false,
+    rowStart: 1,
+    rowEnd: 10,
+    rows: null,
+  };
+
+  it("keeps omitted axes, mark, spec lines, and row range", () => {
+    expect(mergeXyScatterPatch(existing, { title: "Retitled" })).toMatchObject({
+      yColumnId: "c2",
+      xColumnId: "c1",
+      legendColumnId: "c3",
+      title: "Retitled",
+      mark: "scatter",
+      showSpecLimits: false,
+      rowStart: 1,
+      rowEnd: 10,
+    });
+  });
+
+  it("clears X to observation index when xColumnId is null", () => {
+    expect(
+      mergeXyScatterPatch(existing, { xColumnId: null }).xColumnId
+    ).toBeNull();
+  });
+
+  it("replaces Y, chart type, and spec-limit visibility", () => {
+    expect(
+      mergeXyScatterPatch(existing, {
+        yColumnId: "c4",
+        mark: "line",
+        showSpecLimits: true,
+      })
+    ).toMatchObject({
+      yColumnId: "c4",
+      xColumnId: "c1",
+      mark: "line",
+      showSpecLimits: true,
+    });
   });
 });

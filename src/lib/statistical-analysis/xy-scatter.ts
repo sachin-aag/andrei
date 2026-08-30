@@ -189,6 +189,54 @@ function optionalColumnId(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** Partial worksheet-plot patch from chat or the Edit dialog. */
+export type XyScatterPatch = {
+  yColumnId?: string;
+  xColumnId?: string | null;
+  legendColumnId?: string | null;
+  title?: string;
+  mark?: XyScatterConfig["mark"];
+  showSpecLimits?: boolean;
+  rowStart?: number | null;
+  rowEnd?: number | null;
+  rows?: number[] | null;
+};
+
+/** Omitted patch fields keep the saved config. `xColumnId: null` clears X to observation index. */
+export function mergeXyScatterPatch(
+  existing: XyScatterConfig,
+  patch: XyScatterPatch
+): XyScatterPatch & { yColumnId: string } {
+  const useRowPatch =
+    patch.rowStart !== undefined ||
+    patch.rowEnd !== undefined ||
+    patch.rows !== undefined;
+  return {
+    yColumnId: patch.yColumnId ?? existing.yColumnId,
+    xColumnId:
+      patch.xColumnId !== undefined ? patch.xColumnId : existing.xColumnId,
+    legendColumnId:
+      patch.legendColumnId !== undefined
+        ? patch.legendColumnId
+        : (existing.legendColumnId ?? null),
+    title: patch.title,
+    mark: patch.mark ?? existing.mark,
+    showSpecLimits:
+      patch.showSpecLimits ?? existing.showSpecLimits === true,
+    ...(useRowPatch
+      ? {
+          rowStart: patch.rowStart,
+          rowEnd: patch.rowEnd,
+          rows: patch.rows,
+        }
+      : {
+          rowStart: existing.rowStart,
+          rowEnd: existing.rowEnd,
+          rows: existing.rows,
+        }),
+  };
+}
+
 export function resolveXyScatterColumns(
   worksheet: WorksheetData,
   config: {

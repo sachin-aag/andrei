@@ -48,7 +48,11 @@ import {
 import { hashAnovaSource, hashColumnSource, hashScatterSource, hashXyScatterSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
 import { computeOneWayAnova } from "./anova";
-import { computeXyScatter, resolveXyScatterColumns } from "./xy-scatter";
+import {
+  computeXyScatter,
+  mergeXyScatterPatch,
+  resolveXyScatterColumns,
+} from "./xy-scatter";
 import { runMeasurementScatter } from "./measurement-scatter";
 import {
   capabilitySixpackInputSchema,
@@ -1082,11 +1086,12 @@ export async function updateAnalysisForReport(
         error: parsed.error.issues[0]?.message ?? "Invalid scatter options.",
       };
     }
-    const resolved = resolveXyScatterColumns(analytics.worksheet, parsed.data);
+    const merged = mergeXyScatterPatch(existing.config, parsed.data);
+    const resolved = resolveXyScatterColumns(analytics.worksheet, merged);
     if (!resolved.ok) {
       return { ok: false, status: 400, error: resolved.message };
     }
-    const rowSelection = normalizeRowSelection(parsed.data);
+    const rowSelection = normalizeRowSelection(merged);
     const rowFields = configRowFields(rowSelection);
     const rowLabel = formatRowSelection(rowSelection);
     const fallback = xyScatterFallbackTitle(
@@ -1109,10 +1114,8 @@ export async function updateAnalysisForReport(
       legendColumnId: resolved.legendColumn?.id ?? null,
       legendColumnName: resolved.legendColumn?.name ?? null,
       title,
-      mark: parseChartMark(parsed.data.mark ?? existing.config.mark),
-      showSpecLimits:
-        parsed.data.showSpecLimits ??
-        (existing.config.showSpecLimits === true),
+      mark: parseChartMark(merged.mark ?? existing.config.mark),
+      showSpecLimits: merged.showSpecLimits === true,
       ...rowFields,
     };
     const outcome = computeXyScatter(analytics.worksheet, config);

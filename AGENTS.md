@@ -127,10 +127,13 @@ Scatters: worksheet Plot → Plot measurements (`plot_xy_scatter`) has required
 numeric Y, optional X (omit = vs observation index), optional
 `legendColumnId` to color-code by a grouping column (labels/lots/serials
 are OK for legend, not for X), and a Chart type (scatter, line, line +
-markers, area, column). Column charts stack when a legend is on. Chat
-always saves a scatter; the engineer can change Chart type in the dialog.
-**Show LSL, USL values** under Y is off by default (no spec lines until
-checked). Worksheet plots cite the attachment page when the plotted columns were
+markers, area, column). Column charts stack when a legend is on. Agent
+Analytics chat can create a plot or edit an existing worksheet plot
+(`analysisId` from Results or an `@` tag): replace Y/X, change chart type,
+toggle Show LSL/USL. Ask mode cannot. New plots default to scatter with
+spec lines off. **Show LSL, USL values** under Y is off by default (no spec
+lines until checked or the assistant turns them on). Worksheet plots cite
+the attachment page when the plotted columns were
 written from a file (`write_column` after extract/scan/read). Editing a
 cell drops that citation. Attachment extract-and-plot is Analytics chat
 only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
