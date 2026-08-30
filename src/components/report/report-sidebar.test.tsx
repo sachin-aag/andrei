@@ -92,7 +92,13 @@ describe("ReportSidebar chat keep-alive", () => {
       "data-visible",
       "false"
     );
-    expect(screen.getByTestId("chat-panel").parentElement).toHaveClass("hidden");
+    expect(screen.getByTestId("chat-panel").parentElement).toHaveClass(
+      "invisible"
+    );
+    expect(screen.getByTestId("chat-panel").parentElement).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
     expect(chatPanelMounts).toBe(1);
 
     rerender(
@@ -110,6 +116,9 @@ describe("ReportSidebar chat keep-alive", () => {
       "data-visible",
       "true"
     );
+    expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
+      "invisible"
+    );
     expect(chatPanelMounts).toBe(1);
   });
 
@@ -118,7 +127,7 @@ describe("ReportSidebar chat keep-alive", () => {
     const { rerender } = renderSidebar(false, "assistant");
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
-      "hidden"
+      "invisible"
     );
 
     rerender(
@@ -138,7 +147,9 @@ describe("ReportSidebar chat keep-alive", () => {
       "data-visible",
       "false"
     );
-    expect(screen.getByTestId("chat-panel").parentElement).toHaveClass("hidden");
+    expect(screen.getByTestId("chat-panel").parentElement).toHaveClass(
+      "invisible"
+    );
     expect(chatPanelMounts).toBe(1);
   });
 
@@ -167,7 +178,7 @@ describe("ReportSidebar chat keep-alive", () => {
       "true"
     );
     expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
-      "hidden"
+      "invisible"
     );
     expect(screen.queryByRole("button", { name: "Criteria" })).not.toBeInTheDocument();
     expect(chatPanelMounts).toBe(1);
