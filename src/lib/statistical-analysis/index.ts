@@ -10,9 +10,11 @@ export type {
 export {
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
+  BOXPLOT,
   ONE_WAY_ANOVA,
   XY_SCATTER,
   isAnovaAnalysis,
+  isBoxplotAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -23,6 +25,7 @@ export {
   analysisSourceKey,
   anovaSourceKey,
   xyScatterSourceKey,
+  boxplotSourceKey,
   columnNumericValues,
   columnSourceKey,
   findColumn,
@@ -59,6 +62,7 @@ export {
 export { computeCapabilitySixpack } from "./sixpack";
 export { computeOneWayAnova, suggestFactorColumn } from "./anova";
 export { computeXyScatter, suggestXColumn } from "./xy-scatter";
+export { computeBoxplot, suggestCategoryColumn } from "./boxplot";
 export { formatLimit, formatPpm, formatPValue, formatStat, formatSpecSummary } from "./format";
 export {
   formatRowSelection,

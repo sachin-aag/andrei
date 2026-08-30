@@ -15,6 +15,7 @@ export function WorkspaceMenubar({
   onLoadSample,
   onNormalSixpack,
   onOneWayAnova,
+  onBoxplot,
   onXyScatter,
   onAddDataSheet,
   onRenameDataSheet,
@@ -23,6 +24,7 @@ export function WorkspaceMenubar({
   onLoadSample: () => void;
   onNormalSixpack: () => void;
   onOneWayAnova: () => void;
+  onBoxplot: () => void;
   onXyScatter: () => void;
   onAddDataSheet: () => void;
   onRenameDataSheet: () => void;
@@ -91,6 +93,12 @@ export function WorkspaceMenubar({
             onSelect={onOneWayAnova}
           >
             One-Way ANOVA…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-testid="stat-boxplot"
+            onSelect={onBoxplot}
+          >
+            Boxplot…
           </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="stat-xy-scatter"

@@ -904,6 +904,20 @@ export function xyScatterSourceKey(
   });
 }
 
+/** Client-safe boxplot source key — do not import `hash.ts` from the browser. */
+export function boxplotSourceKey(
+  yColumn: WorksheetColumn,
+  categoryColumns: WorksheetColumn[],
+  selection: AnalysisRowSelection = { mode: "all" }
+): string {
+  return JSON.stringify({
+    y: cellsForRowSelection(yColumn, selection),
+    categories: categoryColumns.map((column) =>
+      cellsForRowSelection(column, selection)
+    ),
+  });
+}
+
 export function columnSourceKey(column: WorksheetColumn): string {
   return analysisSourceKey(column, { mode: "all" });
 }

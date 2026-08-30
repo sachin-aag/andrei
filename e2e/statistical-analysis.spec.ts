@@ -417,6 +417,15 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("stat-xy-scatter")).toHaveText(
       /plot measurements/i
     );
+    await expect(page.getByTestId("stat-boxplot")).toBeVisible();
+    await expect(page.getByTestId("stat-boxplot")).toHaveText(/boxplot/i);
+    await page.getByTestId("stat-boxplot").click();
+    await expect(page.getByTestId("boxplot-dialog")).toBeVisible();
+    await expect(page.getByTestId("boxplot-add-category")).toBeVisible();
+    await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
+    await expect(page.getByTestId("boxplot-dialog")).toHaveCount(0);
+
+    await page.getByTestId("worksheet-plot-menu").click();
     await page.getByTestId("stat-xy-scatter").click();
     await expect(page.getByTestId("xy-scatter-dialog")).toBeVisible();
     await expect(page.getByTestId("xy-show-spec-limits")).not.toBeChecked();

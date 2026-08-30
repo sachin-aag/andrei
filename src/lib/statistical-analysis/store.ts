@@ -9,18 +9,24 @@ import {
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
+  BOXPLOT,
   isAnovaAnalysis,
+  isBoxplotAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
   OBSERVATION_X_LABEL,
+  boxplotFallbackTitle,
   xyScatterFallbackTitle,
 } from "./types";
 import type {
   AnalysisKind,
   AnalysisPreviewImage,
   AnovaAnalysisSummary,
+  BoxplotAnalysisSummary,
+  BoxplotConfig,
+  BoxplotResult,
   CapabilitySixpackConfig,
   CapabilitySixpackResult,
   MeasurementScatterConfig,
@@ -45,9 +51,14 @@ import {
   upsertSpecRow,
   worksheetsEqual,
 } from "./worksheet";
-import { hashAnovaSource, hashColumnSource, hashScatterSource, hashXyScatterSource } from "./hash";
+import { hashAnovaSource, hashBoxplotSource, hashColumnSource, hashScatterSource, hashXyScatterSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
 import { computeOneWayAnova } from "./anova";
+import {
+  computeBoxplot,
+  mergeBoxplotPatch,
+  resolveBoxplotColumns,
+} from "./boxplot";
 import {
   computeXyScatter,
   mergeXyScatterPatch,
@@ -63,6 +74,8 @@ import {
   worksheetDataSchema,
   xyScatterInputSchema,
   xyScatterUpdateSchema,
+  boxplotInputSchema,
+  boxplotUpdateSchema,
 } from "./schemas";
 import {
   configRowFields,
@@ -131,6 +144,7 @@ function asKind(value: string): AnalysisKind {
   if (value === MEASUREMENT_SCATTER) return MEASUREMENT_SCATTER;
   if (value === ONE_WAY_ANOVA) return ONE_WAY_ANOVA;
   if (value === XY_SCATTER) return XY_SCATTER;
+  if (value === BOXPLOT) return BOXPLOT;
   return CAPABILITY_SIXPACK_NORMAL;
 }
 
@@ -214,6 +228,74 @@ function asXyScatterResults(value: unknown): XyScatterResult {
   };
 }
 
+function asBoxplotConfig(value: unknown): BoxplotConfig {
+  const parsed = value as BoxplotConfig;
+  const rows = Array.isArray(parsed.rows)
+    ? parsed.rows.filter((row) => Number.isInteger(row) && row >= 1)
+    : null;
+  const categoryColumnIds = Array.isArray(parsed.categoryColumnIds)
+    ? parsed.categoryColumnIds.filter((id) => typeof id === "string" && id.trim())
+    : [];
+  const categoryColumnNames = Array.isArray(parsed.categoryColumnNames)
+    ? parsed.categoryColumnNames.filter((name) => typeof name === "string")
+    : [];
+  return {
+    yColumnId: parsed.yColumnId,
+    yColumnName: parsed.yColumnName,
+    categoryColumnIds,
+    categoryColumnNames: categoryColumnNames.slice(0, categoryColumnIds.length),
+    title: parsed.title,
+    rowStart: parsed.rowStart ?? null,
+    rowEnd: parsed.rowEnd ?? null,
+    rows: rows && rows.length > 0 ? rows : null,
+  };
+}
+
+function asBoxplotResults(value: unknown): BoxplotResult {
+  const parsed = (value ?? {}) as Partial<BoxplotResult>;
+  const groups = Array.isArray(parsed.groups)
+    ? parsed.groups.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const group = item as Partial<BoxplotResult["groups"][number]>;
+        const labels = Array.isArray(group.labels)
+          ? group.labels.filter((label): label is string => typeof label === "string")
+          : [];
+        const n = typeof group.n === "number" ? group.n : 0;
+        const min = typeof group.min === "number" ? group.min : 0;
+        const q1 = typeof group.q1 === "number" ? group.q1 : 0;
+        const median = typeof group.median === "number" ? group.median : 0;
+        const q3 = typeof group.q3 === "number" ? group.q3 : 0;
+        const max = typeof group.max === "number" ? group.max : 0;
+        const whiskerLow =
+          typeof group.whiskerLow === "number" ? group.whiskerLow : min;
+        const whiskerHigh =
+          typeof group.whiskerHigh === "number" ? group.whiskerHigh : max;
+        const outliers = Array.isArray(group.outliers)
+          ? group.outliers.filter((v): v is number => typeof v === "number")
+          : [];
+        return [
+          {
+            labels,
+            n,
+            min,
+            q1,
+            median,
+            q3,
+            max,
+            whiskerLow,
+            whiskerHigh,
+            outliers,
+          },
+        ];
+      })
+    : [];
+  return {
+    n: typeof parsed.n === "number" ? parsed.n : groups.reduce((sum, g) => sum + g.n, 0),
+    skipped: typeof parsed.skipped === "number" ? parsed.skipped : 0,
+    groups,
+  };
+}
+
 function iso(value: Date): string {
   return value.toISOString();
 }
@@ -291,6 +373,37 @@ function toAnalysisSummary(
       title: row.title,
       config,
       results: asXyScatterResults(row.results),
+      sourceHash: row.sourceHash,
+      stale: currentHash !== row.sourceHash,
+      createdAt: iso(row.createdAt),
+      previewImage: asPreviewImage(row.previewImage),
+    };
+    return summary;
+  }
+
+  if (kind === BOXPLOT) {
+    const config = asBoxplotConfig(row.config);
+    const yColumn = findColumn(worksheet, config.yColumnId);
+    const categoryColumns = config.categoryColumnIds.map(
+      (id) => findColumn(worksheet, id) ?? null
+    );
+    const columnsOk =
+      Boolean(yColumn) && categoryColumns.every((column) => column != null);
+    const currentHash =
+      yColumn && columnsOk
+        ? hashBoxplotSource(
+            yColumn,
+            categoryColumns as NonNullable<(typeof categoryColumns)[number]>[],
+            normalizeRowSelection(config)
+          )
+        : "";
+    const summary: BoxplotAnalysisSummary = {
+      id: row.id,
+      workspaceId: row.workspaceId,
+      kind: BOXPLOT,
+      title: row.title,
+      config,
+      results: asBoxplotResults(row.results),
       sourceHash: row.sourceHash,
       stale: currentHash !== row.sourceHash,
       createdAt: iso(row.createdAt),
@@ -461,6 +574,9 @@ export async function createAnalysisForReport(
   }
   if (kind === XY_SCATTER) {
     return createXyScatterAnalysisForReport(reportId, input);
+  }
+  if (kind === BOXPLOT) {
+    return createBoxplotAnalysisForReport(reportId, input);
   }
   return createSixpackAnalysisForReport(reportId, input);
 }
@@ -741,13 +857,78 @@ async function createXyScatterAnalysisForReport(
   });
 }
 
+async function createBoxplotAnalysisForReport(
+  reportId: string,
+  input: unknown
+): Promise<
+  | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const parsed = boxplotInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      error: parsed.error.issues[0]?.message ?? "Invalid boxplot options.",
+    };
+  }
+
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return { ok: false, status: 404, error: "Not found" };
+
+  const resolved = resolveBoxplotColumns(analytics.worksheet, parsed.data);
+  if (!resolved.ok) {
+    return { ok: false, status: 400, error: resolved.message };
+  }
+
+  const rowSelection = normalizeRowSelection(parsed.data);
+  const rowFields = configRowFields(rowSelection);
+  const rowLabel = formatRowSelection(rowSelection);
+  const categoryNames = resolved.categoryColumns.map((column) => column.name);
+  const baseTitle =
+    parsed.data.title?.trim() ||
+    boxplotFallbackTitle(resolved.yColumn.name, categoryNames, rowLabel);
+  const title = nextAnalysisTitle(
+    analytics.analyses.map((item) => item.title),
+    baseTitle
+  );
+
+  const config: BoxplotConfig = {
+    yColumnId: resolved.yColumn.id,
+    yColumnName: resolved.yColumn.name,
+    categoryColumnIds: resolved.categoryColumns.map((column) => column.id),
+    categoryColumnNames: categoryNames,
+    title,
+    ...rowFields,
+  };
+
+  const outcome = computeBoxplot(analytics.worksheet, config);
+  if (!outcome.ok) {
+    return { ok: false, status: 400, error: outcome.message };
+  }
+
+  return insertAnalysisRow({
+    reportId,
+    workspaceId: analytics.id,
+    kind: BOXPLOT,
+    title: config.title,
+    config,
+    results: outcome.result,
+    sourceHash: hashBoxplotSource(
+      resolved.yColumn,
+      resolved.categoryColumns,
+      rowSelection
+    ),
+  });
+}
+
 async function insertAnalysisRow(input: {
   reportId: string;
   workspaceId: string;
   kind: AnalysisKind;
   title: string;
-  config: CapabilitySixpackConfig | MeasurementScatterConfig | OneWayAnovaConfig | XyScatterConfig;
-  results: CapabilitySixpackResult | MeasurementScatterResult | OneWayAnovaResult | XyScatterResult;
+  config: CapabilitySixpackConfig | MeasurementScatterConfig | OneWayAnovaConfig | XyScatterConfig | BoxplotConfig;
+  results: CapabilitySixpackResult | MeasurementScatterResult | OneWayAnovaResult | XyScatterResult | BoxplotResult;
   sourceHash: string;
 }): Promise<
   | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
@@ -911,6 +1092,47 @@ export async function recomputeAnalysisForReport(
           resolved.yColumn,
           normalizeRowSelection(config),
           resolved.legendColumn
+        ),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
+  } else if (isBoxplotAnalysis(existing)) {
+    const resolved = resolveBoxplotColumns(
+      analytics.worksheet,
+      existing.config
+    );
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        status: 400,
+        error: resolved.message,
+      };
+    }
+    const config: BoxplotConfig = {
+      ...existing.config,
+      yColumnName: resolved.yColumn.name,
+      categoryColumnIds: resolved.categoryColumns.map((column) => column.id),
+      categoryColumnNames: resolved.categoryColumns.map((column) => column.name),
+    };
+    const outcome = computeBoxplot(analytics.worksheet, config);
+    if (!outcome.ok) {
+      return { ok: false, status: 400, error: outcome.message };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: config.title,
+        config,
+        results: outcome.result,
+        previewImage: null,
+        sourceHash: hashBoxplotSource(
+          resolved.yColumn,
+          resolved.categoryColumns,
+          normalizeRowSelection(config)
         ),
       })
       .where(
@@ -1170,6 +1392,65 @@ export async function updateAnalysisForReport(
           eq(statisticalAnalyses.workspaceId, analytics.id)
         )
       );
+  } else if (isBoxplotAnalysis(existing)) {
+    const parsed = boxplotUpdateSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        status: 400,
+        error: parsed.error.issues[0]?.message ?? "Invalid boxplot options.",
+      };
+    }
+    const merged = mergeBoxplotPatch(existing.config, parsed.data);
+    const resolved = resolveBoxplotColumns(analytics.worksheet, merged);
+    if (!resolved.ok) {
+      return { ok: false, status: 400, error: resolved.message };
+    }
+    const rowSelection = normalizeRowSelection(merged);
+    const rowFields = configRowFields(rowSelection);
+    const rowLabel = formatRowSelection(rowSelection);
+    const categoryNames = resolved.categoryColumns.map((column) => column.name);
+    const fallback = boxplotFallbackTitle(
+      resolved.yColumn.name,
+      categoryNames,
+      rowLabel
+    );
+    const title = titleForUpdate(
+      existingTitles,
+      existing.config.title,
+      parsed.data.title,
+      fallback
+    );
+    const config: BoxplotConfig = {
+      yColumnId: resolved.yColumn.id,
+      yColumnName: resolved.yColumn.name,
+      categoryColumnIds: resolved.categoryColumns.map((column) => column.id),
+      categoryColumnNames: categoryNames,
+      title,
+      ...rowFields,
+    };
+    const outcome = computeBoxplot(analytics.worksheet, config);
+    if (!outcome.ok) {
+      return { ok: false, status: 400, error: outcome.message };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: config.title,
+        config,
+        results: outcome.result,
+        sourceHash: hashBoxplotSource(
+          resolved.yColumn,
+          resolved.categoryColumns,
+          rowSelection
+        ),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
   } else if (isSixpackAnalysis(existing)) {
     const parsed = capabilitySixpackInputSchema.safeParse(input);
     if (!parsed.success) {
@@ -1274,7 +1555,8 @@ export async function saveAnalysisPreviewForReport(
   if (
     !isSixpackAnalysis(existing) &&
     !isScatterAnalysis(existing) &&
-    !isXyScatterAnalysis(existing)
+    !isXyScatterAnalysis(existing) &&
+    !isBoxplotAnalysis(existing)
   ) {
     return {
       ok: false,

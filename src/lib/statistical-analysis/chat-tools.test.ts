@@ -68,8 +68,8 @@ import {
   updateAnalysisForReport,
   updateReportAnalytics,
 } from "./store";
-import type { ReportAnalyticsView, XyScatterAnalysisSummary } from "./types";
-import { MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
+import type { BoxplotAnalysisSummary, ReportAnalyticsView, XyScatterAnalysisSummary } from "./types";
+import { BOXPLOT, MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
 import { createEmptyWorksheet, insertColumn, renameColumn, replaceColumnValues } from "./worksheet";
 
 function pageRead(transcript: string): DocumentPageRead {
@@ -118,6 +118,7 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_one_way_anova");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_measurements");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_xy_scatter");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_boxplot");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("scan_attachments");
   });
 
@@ -147,6 +148,7 @@ describe("analytics chat tools", () => {
     expect(writable.run_one_way_anova).toBeDefined();
     expect(writable.plot_measurements).toBeDefined();
     expect(writable.plot_xy_scatter).toBeDefined();
+    expect(writable.plot_boxplot).toBeDefined();
     expect(writable.run_capability_sixpack?.description).toContain(
       "not when they asked for a scatter"
     );
@@ -160,6 +162,9 @@ describe("analytics chat tools", () => {
     expect(writable.plot_xy_scatter?.description).toContain("analysisId");
     expect(writable.plot_xy_scatter?.description).toContain("showSpecLimits");
     expect(writable.plot_xy_scatter?.description).toContain("xMin/xMax/yMin/yMax");
+    expect(writable.plot_boxplot?.description).toContain("categoryColumnIds");
+    expect(writable.plot_boxplot?.description).toContain("innermost first");
+    expect(writable.plot_boxplot?.description).toContain("analysisId");
     expect(writable.plot_measurements?.description).toContain(
       "cannot color by serial number"
     );
@@ -175,6 +180,7 @@ describe("analytics chat tools", () => {
     expect(locked.run_one_way_anova).toBeUndefined();
     expect(locked.plot_measurements).toBeUndefined();
     expect(locked.plot_xy_scatter).toBeUndefined();
+    expect(locked.plot_boxplot).toBeUndefined();
     expect(locked.scan_attachments).toBeDefined();
     expect(locked.search_documents).toBeDefined();
     const searchSchema = locked.search_documents?.inputSchema as unknown as ZodToolSchema;
@@ -942,6 +948,209 @@ describe("analytics chat tools", () => {
     expect(output).toMatchObject({
       status: "error",
       message: expect.stringContaining("not a worksheet scatter"),
+    });
+  });
+
+  it("creates a boxplot Results row via plot_boxplot", async () => {
+    const created: BoxplotAnalysisSummary = {
+      id: "box-1",
+      workspaceId: "ws-1",
+      kind: BOXPLOT,
+      title: "Boxplot of Assay by Lot",
+      config: {
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        categoryColumnIds: ["c2"],
+        categoryColumnNames: ["Lot"],
+        title: "Boxplot of Assay by Lot",
+      },
+      results: {
+        n: 6,
+        skipped: 0,
+        groups: [
+          {
+            labels: ["A"],
+            n: 3,
+            min: 1,
+            q1: 1,
+            median: 2,
+            q3: 3,
+            max: 3,
+            whiskerLow: 1,
+            whiskerHigh: 3,
+            outliers: [],
+          },
+        ],
+      },
+      sourceHash: "hash",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    vi.mocked(createAnalysisForReport).mockResolvedValue({
+      ok: true,
+      analytics: { ...analyticsView(), analyses: [created] },
+      analysis: created,
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_boxplot?.execute;
+    if (!plot) throw new Error("plot_boxplot has no execute");
+    const output = await plot(
+      { yColumnId: "c1", categoryColumnIds: ["c2"] },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(createAnalysisForReport).toHaveBeenCalledWith(
+      "report-1",
+      expect.objectContaining({
+        kind: BOXPLOT,
+        yColumnId: "c1",
+        categoryColumnIds: ["c2"],
+      })
+    );
+    expect(output).toMatchObject({
+      status: "ok",
+      updated: false,
+      analysisId: "box-1",
+      yColumnId: "c1",
+      groupCount: 1,
+      openResultsTab: true,
+    });
+  });
+
+  it("updates an existing boxplot instead of creating a new Results row", async () => {
+    const existing: BoxplotAnalysisSummary = {
+      id: "box-1",
+      workspaceId: "ws-1",
+      kind: BOXPLOT,
+      title: "Boxplot of Assay",
+      config: {
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        categoryColumnIds: [],
+        categoryColumnNames: [],
+        title: "Boxplot of Assay",
+      },
+      results: {
+        n: 6,
+        skipped: 0,
+        groups: [
+          {
+            labels: [],
+            n: 6,
+            min: 1,
+            q1: 1,
+            median: 2,
+            q3: 3,
+            max: 3,
+            whiskerLow: 1,
+            whiskerHigh: 3,
+            outliers: [],
+          },
+        ],
+      },
+      sourceHash: "hash",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    const initial = analyticsView();
+    initial.analyses = [existing];
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    const updated: BoxplotAnalysisSummary = {
+      ...existing,
+      config: {
+        ...existing.config,
+        categoryColumnIds: ["c2"],
+        categoryColumnNames: ["Lot"],
+        title: "Boxplot of Assay by Lot",
+      },
+      title: "Boxplot of Assay by Lot",
+    };
+    vi.mocked(updateAnalysisForReport).mockResolvedValue({
+      ok: true,
+      analytics: { ...initial, analyses: [updated] },
+      analysis: updated,
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_boxplot?.execute;
+    if (!plot) throw new Error("plot_boxplot has no execute");
+    const output = await plot(
+      { analysisId: "box-1", categoryColumnIds: ["c2"] },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(createAnalysisForReport).not.toHaveBeenCalled();
+    expect(updateAnalysisForReport).toHaveBeenCalledWith(
+      "report-1",
+      "box-1",
+      expect.objectContaining({ categoryColumnIds: ["c2"] })
+    );
+    expect(output).toMatchObject({
+      status: "ok",
+      updated: true,
+      categoryColumnIds: ["c2"],
+    });
+  });
+
+  it("refuses to edit a non-boxplot Results row via plot_boxplot", async () => {
+    const existing: XyScatterAnalysisSummary = {
+      id: "plot-1",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: "Assay vs Observation",
+      config: {
+        xColumnId: null,
+        xColumnName: "Observation",
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        title: "Assay vs Observation",
+        mark: "scatter",
+        showSpecLimits: false,
+      },
+      results: { specs: [], n: 3, skipped: 0, pearsonR: null },
+      sourceHash: "hash",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    const initial = analyticsView();
+    initial.analyses = [existing];
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_boxplot?.execute;
+    if (!plot) throw new Error("plot_boxplot has no execute");
+    const output = await plot(
+      { analysisId: "plot-1", yColumnId: "c2" },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(updateAnalysisForReport).not.toHaveBeenCalled();
+    expect(createAnalysisForReport).not.toHaveBeenCalled();
+    expect(output).toMatchObject({
+      status: "error",
+      message: expect.stringContaining("not a boxplot"),
     });
   });
 });

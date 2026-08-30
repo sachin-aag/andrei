@@ -14,6 +14,7 @@ import {
   createCapabilitySixpack,
   createMeasurementScatter,
   createOneWayAnova,
+  createBoxplot,
   createXyScatter,
   deleteCapabilitySixpack,
   getReportAnalytics,
@@ -44,6 +45,7 @@ import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions"
 import {
   ONE_WAY_ANOVA,
   isAnovaAnalysis,
+  isBoxplotAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -60,10 +62,12 @@ import {
 import { AnalyzeDialog } from "@/components/statistical-analysis/analyze-dialog";
 import { CapabilityDialog } from "@/components/statistical-analysis/capability-dialog";
 import { AnovaDialog } from "@/components/statistical-analysis/anova-dialog";
+import { BoxplotDialog } from "@/components/statistical-analysis/boxplot-dialog";
 import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-measurements-dialog";
 import { XyScatterDialog } from "@/components/statistical-analysis/xy-scatter-dialog";
 import { ScatterView } from "@/components/statistical-analysis/scatter-view";
 import { AnovaView } from "@/components/statistical-analysis/anova-view";
+import { BoxplotView } from "@/components/statistical-analysis/boxplot-view";
 import { SixpackView } from "@/components/statistical-analysis/sixpack-view";
 import { ColumnSpecsDialog } from "@/components/statistical-analysis/column-specs-dialog";
 import {
@@ -164,6 +168,12 @@ export function StatisticalWorkspace({
   const [xyRowEnd, setXyRowEnd] = useState<number | null>(null);
   const [xySubmitting, setXySubmitting] = useState(false);
   const [xyError, setXyError] = useState<string | null>(null);
+  const [boxplotOpen, setBoxplotOpen] = useState(false);
+  const [boxplotYColumnId, setBoxplotYColumnId] = useState("");
+  const [boxplotRowStart, setBoxplotRowStart] = useState<number | null>(null);
+  const [boxplotRowEnd, setBoxplotRowEnd] = useState<number | null>(null);
+  const [boxplotSubmitting, setBoxplotSubmitting] = useState(false);
+  const [boxplotError, setBoxplotError] = useState<string | null>(null);
   const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetNameDraft, setSheetNameDraft] = useState("");
@@ -480,6 +490,14 @@ export function StatisticalWorkspace({
         setXyOpen(true);
         return;
       }
+      if (isBoxplotAnalysis(analysis)) {
+        setBoxplotYColumnId(analysis.config.yColumnId);
+        setBoxplotRowStart(analysis.config.rowStart ?? null);
+        setBoxplotRowEnd(analysis.config.rowEnd ?? null);
+        setBoxplotError(null);
+        setBoxplotOpen(true);
+        return;
+      }
       if (isScatterAnalysis(analysis)) {
         setPlotError(null);
         setPlotOpen(true);
@@ -572,6 +590,20 @@ export function StatisticalWorkspace({
     setXyRowEnd(rows?.end ?? null);
     setXyError(null);
     setXyOpen(true);
+  };
+
+  const openBoxplot = async (
+    columnId: string,
+    rows: { start: number; end: number } | null = null
+  ) => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
+    setBoxplotYColumnId(columnId);
+    setBoxplotRowStart(rows?.start ?? null);
+    setBoxplotRowEnd(rows?.end ?? null);
+    setBoxplotError(null);
+    setBoxplotOpen(true);
   };
 
   const insertColumnAt = (atIndex: number) => {
@@ -682,6 +714,9 @@ export function StatisticalWorkspace({
               }
               onOneWayAnova={() =>
                 void openOneWayAnova(selectedColumnId, selectedRowRange)
+              }
+              onBoxplot={() =>
+                void openBoxplot(selectedColumnId, selectedRowRange)
               }
               onXyScatter={() =>
                 void openXyScatter(selectedColumnId, selectedRowRange)
@@ -814,7 +849,8 @@ export function StatisticalWorkspace({
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
                 Right-click a column and choose <strong>Analyze data…</strong>,
                 or use <strong>Plot → Normal Capability Sixpack</strong>,{" "}
-                <strong>Plot → One-Way ANOVA</strong>, or{" "}
+                <strong>Plot → One-Way ANOVA</strong>,{" "}
+                <strong>Plot → Boxplot</strong>, or{" "}
                 <strong>Plot → Plot measurements</strong> for a worksheet
                 column (1D vs index, or 2D if you pick X). To extract numbers
                 from a file and plot them, ask the assistant. Each run is saved
@@ -924,6 +960,32 @@ export function StatisticalWorkspace({
                 ) : selectedAnalysis && isAnovaAnalysis(selectedAnalysis) ? (
                   <AnovaView
                     analysis={selectedAnalysis}
+                    readOnly={readOnly}
+                    editing={Boolean(editingAnalysisId)}
+                    recomputing={recomputingAnalysisId === selectedAnalysis.id}
+                    onRecompute={() => void recomputeSelectedAnalysis(selectedAnalysis)}
+                    onEdit={() => openAnalysisEdit(selectedAnalysis)}
+                    onDelete={async () => {
+                      try {
+                        const next = await deleteCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not delete the analysis."
+                        );
+                      }
+                    }}
+                  />
+                ) : selectedAnalysis && isBoxplotAnalysis(selectedAnalysis) ? (
+                  <BoxplotView
+                    analysis={selectedAnalysis}
+                    reportId={reportId}
+                    onPreviewUploaded={applyAnalytics}
                     readOnly={readOnly}
                     editing={Boolean(editingAnalysisId)}
                     recomputing={recomputingAnalysisId === selectedAnalysis.id}
@@ -1213,6 +1275,79 @@ export function StatisticalWorkspace({
             );
           } finally {
             setAnovaSubmitting(false);
+          }
+          }
+        }}
+      />
+
+      <BoxplotDialog
+        key={
+          boxplotOpen
+            ? `boxplot-${editingAnalysisId ?? "new"}`
+            : "boxplot-closed"
+        }
+        open={boxplotOpen}
+        worksheet={worksheet}
+        defaultYColumnId={boxplotYColumnId || selectedColumnId}
+        defaultCategoryColumnIds={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? editingAnalysis.config.categoryColumnIds
+            : undefined
+        }
+        defaultRowStart={boxplotRowStart}
+        defaultRowEnd={boxplotRowEnd}
+        defaultTitle={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        editMode={Boolean(
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+        )}
+        submitting={boxplotSubmitting}
+        error={boxplotError}
+        onOpenChange={(open) => {
+          setBoxplotOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
+        onSubmit={async (values) => {
+          setBoxplotSubmitting(true);
+          setBoxplotError(null);
+          try {
+            await flush().catch(() => undefined);
+            if (editingAnalysisId && isBoxplotAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(reportId, editingAnalysisId, {
+                yColumnId: values.yColumnId,
+                categoryColumnIds: values.categoryColumnIds,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("Boxplot updated.");
+            } else {
+              const created = await createBoxplot(reportId, {
+                yColumnId: values.yColumnId,
+                categoryColumnIds: values.categoryColumnIds,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
+            setBoxplotOpen(false);
+            clearAnalysisEdit();
+            setTab("results");
+          } catch (error) {
+            setBoxplotError(
+              error instanceof Error
+                ? error.message
+                : "Could not run the boxplot."
+            );
+          } finally {
+            setBoxplotSubmitting(false);
           }
         }}
       />

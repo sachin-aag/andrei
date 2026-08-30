@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
 import {
+  boxplotBodySchema,
   measurementScatterInputSchema,
   patchAnalyticsBodySchema,
   xyScatterBodySchema,
@@ -159,6 +160,45 @@ describe("xyScatterInputSchema", () => {
       mark: "line",
       showSpecLimits: true,
     });
+  });
+});
+
+describe("boxplotBodySchema", () => {
+  it("requires yColumnId on create and allows a partial update with analysisId", () => {
+    expect(boxplotBodySchema.safeParse({}).success).toBe(false);
+    expect(
+      boxplotBodySchema.parse({
+        yColumnId: "c1",
+        categoryColumnIds: ["c2", "c3"],
+      })
+    ).toMatchObject({
+      yColumnId: "c1",
+      categoryColumnIds: ["c2", "c3"],
+    });
+    expect(
+      boxplotBodySchema.parse({
+        analysisId: "box-1",
+        categoryColumnIds: ["c2"],
+      })
+    ).toMatchObject({
+      analysisId: "box-1",
+      categoryColumnIds: ["c2"],
+    });
+  });
+
+  it("rejects Y as a category and duplicate category columns", () => {
+    expect(
+      boxplotBodySchema.safeParse({
+        yColumnId: "c1",
+        categoryColumnIds: ["c1"],
+      }).success
+    ).toBe(false);
+    expect(
+      boxplotBodySchema.safeParse({
+        yColumnId: "c1",
+        categoryColumnIds: ["c2", "c2"],
+      }).success
+    ).toBe(false);
   });
 });
 

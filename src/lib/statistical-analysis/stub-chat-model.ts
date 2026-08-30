@@ -15,7 +15,7 @@ export async function buildStubAnalyticsChatModel(): Promise<LanguageModel> {
   };
 
   const reply =
-    "I can pull numbers from this report's attachments into the worksheet, run a Normal Capability Sixpack, plot a worksheet scatter (Y required, X optional, optional legend to color by group), plot a measurement scatter vs index, or run a one-way ANOVA. Serial numbers cannot be X — use them as the legend. Ask me to extract a column, run the sixpack, plot Y vs X, plot Assay colored by Lot, plot a requirement ID, or compare groups with ANOVA.";
+    "I can pull numbers from this report's attachments into the worksheet, run a Normal Capability Sixpack, plot a worksheet scatter (Y required, X optional, optional legend to color by group), plot a Tukey boxplot (Y required, optional nested categories), plot a measurement scatter vs index, or run a one-way ANOVA. Serial numbers cannot be X — use them as the legend. Ask me to extract a column, run the sixpack, plot Y vs X, plot Assay colored by Lot, boxplot Assay by Lot, plot a requirement ID, or compare groups with ANOVA.";
 
   const doStream = async () => {
     const stubDelayMs = Number.parseInt(process.env.CHAT_STUB_DELAY_MS ?? "", 10);
