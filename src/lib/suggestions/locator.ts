@@ -86,6 +86,15 @@ export type SuggestionEdit = {
   placeBeforePairedBlock?: "table" | "image";
 };
 
+/** Same-field reposition: remove original and insert after a quoted span. */
+export function isPositionedImageMove(
+  edit: Pick<SuggestionEdit, "anchorText" | "insertImage" | "removeImage">
+): boolean {
+  return Boolean(
+    edit.removeImage && edit.insertImage && (edit.anchorText ?? "").trim()
+  );
+}
+
 function hasEditContent(
   edit: Pick<
     SuggestionEdit,
@@ -1091,6 +1100,17 @@ function applySingleEditToRichDoc(
   edit: SuggestionEdit,
   attrs: InjectAttrs
 ): { status: LocateStatus; doc: JSONContent } {
+  if (isPositionedImageMove(edit) && edit.removeImage) {
+    const status = locateImageRemoval(doc, edit.removeImage);
+    if (status !== "located") return { status, doc };
+    const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+    if (!markImageForDeletion(cloned, edit.removeImage, attrs.id)) {
+      return { status: "not_found", doc };
+    }
+    const insertOnly: SuggestionEdit = { ...edit, removeImage: undefined };
+    return applySingleEditToRichDoc(cloned, insertOnly, attrs);
+  }
+
   if (edit.removeImage) {
     const status = locateImageRemoval(doc, edit.removeImage);
     if (status !== "located") return { status, doc };
@@ -1340,6 +1360,11 @@ function probeSingleRichEdit(
   doc: JSONContent,
   edit: SuggestionEdit
 ): LocateStatus {
+  if (isPositionedImageMove(edit) && edit.removeImage) {
+    const removal = locateImageRemoval(doc, edit.removeImage);
+    if (removal !== "located") return removal;
+    return probeSingleRichEdit(doc, { ...edit, removeImage: undefined });
+  }
   if (edit.removeImage) {
     return locateImageRemoval(doc, edit.removeImage);
   }

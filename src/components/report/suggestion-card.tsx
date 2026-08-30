@@ -241,7 +241,12 @@ function SuggestionCardFace({
             ? "Full draft"
             : card.kind === "fix" && card.payload.tableOperation
               ? "Table edit"
-              : card.kind === "fix" && card.payload.removeImage
+            : card.kind === "fix" &&
+                card.payload.insertImage &&
+                card.payload.removeImage &&
+                card.payload.insertImage.src === card.payload.removeImage.src
+              ? "Move figure"
+              : card.kind === "fix" && card.payload.removeImage && !card.payload.insertImage
               ? "Remove figure"
               : card.kind === "fix" && card.payload.insertImage
                 ? "Figure"
@@ -338,7 +343,9 @@ function SuggestionCardFace({
         </div>
       ) : null}
 
-      {card.kind === "fix" && card.payload.removeImage ? (
+      {card.kind === "fix" &&
+      card.payload.removeImage &&
+      card.payload.removeImage.src !== card.payload.insertImage?.src ? (
         <div
           className={cn(
             "space-y-1.5 transition-opacity duration-300",

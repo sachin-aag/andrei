@@ -28,7 +28,9 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { dismissSuggestionsSupersededBy } from "@/lib/suggestions/persist-supersession";
 import {
   listInlineImagesInDoc,
+  type ListedInlineImage,
   type SuggestionImageInsert,
+  type SuggestionImageRemove,
 } from "@/lib/suggestions/image-insert";
 import {
   countImagesInDoc,
@@ -104,6 +106,13 @@ import {
   withPairedBlock,
   withPlaceAfterLeadIn,
 } from "@/lib/suggestions/same-turn-block-pair";
+import {
+  createSameTurnImageOps,
+  findImageOpForMove,
+  findImageOpForRemove,
+  isPositionedImageOp,
+  recordImageOp,
+} from "@/lib/suggestions/same-turn-image-move";
 
 type ReadSectionImageRef = {
   id: string;
@@ -719,6 +728,7 @@ export function buildChatTools(opts: {
   const turnEdits = opts.turnEdits;
   const committing = editPolicy === "commit";
   const blockPairing = createSameTurnBlockPairing();
+  const imageOps = createSameTurnImageOps();
   const fieldReadSnapshots = new Map<string, unknown>();
   const captureFieldSnapshot = (
     section: SectionType,
@@ -768,11 +778,21 @@ export function buildChatTools(opts: {
       return [];
     }
   };
-  const patchFixPayload = async (id: string, payload: ParsedAiFixPayload) => {
+  const patchFixComment = async (
+    id: string,
+    payload: ParsedAiFixPayload,
+    extra?: { anchorText?: string }
+  ) => {
     await db
       .update(comments)
-      .set({ content: serializeAiFixCommentContent(payload) })
+      .set({
+        content: serializeAiFixCommentContent(payload),
+        ...(extra?.anchorText !== undefined ? { anchorText: extra.anchorText } : {}),
+      })
       .where(eq(comments.id, id));
+  };
+  const patchFixPayload = async (id: string, payload: ParsedAiFixPayload) => {
+    await patchFixComment(id, payload);
   };
   const recordTurnEdit = (
     section: SectionType,
@@ -1453,7 +1473,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. source=chat uses an attached photo (index). source=section copies a figure already in a report field (image.section + image.id from read_section). source=analytics copies a saved Analytics plot (analysisId from the context map or a tagged @ plot). If they named a plot that is not in Analytics, this tool lists the available titles — relay those titles and say they can create additional plots in Analytics; do not insert a different plot. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a NEW chart from attachments, not to recreate a plot already in Analytics" : ""}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends before a trailing Citations heading. After a same-turn empty-anchor propose_edit lead-in, the figure lands immediately after that intro.${scopeHint}`,
+        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. source=chat uses an attached photo (index). source=section copies a figure already in a report field (image.section + image.id from read_section). Same-field source=section with a non-empty anchorText MOVES that figure (one suggestion) — do not also call remove_image. source=analytics copies a saved Analytics plot (analysisId from the context map or a tagged @ plot). If they named a plot that is not in Analytics, this tool lists the available titles — relay those titles and say they can create additional plots in Analytics; do not insert a different plot. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a NEW chart from attachments, not to recreate a plot already in Analytics" : ""}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends before a trailing Citations heading. After a same-turn empty-anchor propose_edit lead-in, the figure lands immediately after that intro.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1587,13 +1607,9 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
-        if (countImagesInDoc(fieldDoc) >= MAX_IMAGES_PER_SECTION) {
-          return {
-            status: "too_many_images",
-            message: `This field already has ${MAX_IMAGES_PER_SECTION} images (the maximum). Remove one before inserting another.`,
-          };
-        }
 
+        let sourceHit: ListedInlineImage | undefined;
+        let sameFieldSectionSource = false;
         let resolved:
           | { ok: true; image: SuggestionImageInsert }
           | { ok: false; message: string };
@@ -1673,6 +1689,9 @@ export function buildChatTools(opts: {
               }),
             };
           }
+          sourceHit = hit;
+          sameFieldSectionSource =
+            sourceSectionKey === section && sourceResolved === resolvedField;
           resolved = {
             ok: true,
             image: {
@@ -1692,6 +1711,26 @@ export function buildChatTools(opts: {
           ...resolved.image,
           alt: alt?.trim() || resolved.image.alt,
         };
+        const trimmedAnchor = (anchorText ?? "").trim();
+        const removeImage: SuggestionImageRemove | undefined =
+          sameFieldSectionSource && sourceHit && trimmedAnchor
+            ? {
+                src: sourceHit.src,
+                alt: sourceHit.alt || null,
+                width: sourceHit.width,
+                mediaId: sourceHit.mediaId,
+                index: sourceHit.index,
+              }
+            : undefined;
+        if (
+          !removeImage &&
+          countImagesInDoc(fieldDoc) >= MAX_IMAGES_PER_SECTION
+        ) {
+          return {
+            status: "too_many_images",
+            message: `This field already has ${MAX_IMAGES_PER_SECTION} images (the maximum). Remove one before inserting another.`,
+          };
+        }
         const fieldText = sectionFieldPlainText(loaded.content, section, resolvedField);
         const check = checkProposedEdit(
           fieldText,
@@ -1700,6 +1739,7 @@ export function buildChatTools(opts: {
             deleteText: "",
             insertText: "",
             insertImage,
+            removeImage,
           },
           fieldDoc
         );
@@ -1713,7 +1753,6 @@ export function buildChatTools(opts: {
           } as InsertImageResult;
         }
 
-        const suggestionId = createId();
         const appendBlock = isAppendBlock({ anchorText: anchorText ?? "" });
         if (committing) {
           const result = await commitFieldEdit({
@@ -1723,10 +1762,11 @@ export function buildChatTools(opts: {
             input: {
               kind: "located",
               edit: {
-                anchorText: (anchorText ?? "").trim(),
+                anchorText: trimmedAnchor,
                 deleteText: "",
                 insertText: "",
                 insertImage,
+                removeImage,
               },
             },
           });
@@ -1746,10 +1786,47 @@ export function buildChatTools(opts: {
           }
           return result;
         }
+
+        const existingOp = findImageOpForMove(imageOps, {
+          section,
+          targetField: resolvedField,
+          src: insertImage.src,
+          removeIndex: removeImage?.index,
+        });
+        if (existingOp) {
+          const nextPayload: ParsedAiFixPayload = {
+            ...existingOp.payload,
+            insertImage,
+            removeImage: removeImage ?? existingOp.payload.removeImage,
+            reasoning,
+          };
+          await patchFixComment(existingOp.suggestionId, nextPayload, {
+            anchorText: trimmedAnchor,
+          });
+          recordImageOp(imageOps, {
+            suggestionId: existingOp.suggestionId,
+            section,
+            targetField: resolvedField,
+            payload: nextPayload,
+            anchorText: trimmedAnchor,
+            src: insertImage.src,
+            removeIndex: removeImage?.index ?? existingOp.removeIndex,
+          });
+          return {
+            status: "proposed" as const,
+            suggestionId: existingOp.suggestionId,
+            section,
+            targetField: resolvedField,
+            summary: reasoning,
+          };
+        }
+
+        const suggestionId = createId();
         let payload: ParsedAiFixPayload = {
           deleteText: "",
           insertText: "",
           insertImage,
+          removeImage,
           reasoning,
           contentHashAtSuggestion: sectionContentHash(section, loaded.content),
         };
@@ -1778,13 +1855,22 @@ export function buildChatTools(opts: {
           section,
           authorId: AI_AUTHOR_ID,
           content: serializeAiFixCommentContent(payload),
-          anchorText: (anchorText ?? "").trim(),
+          anchorText: trimmedAnchor,
           contentPath: resolvedField,
           fromPos: null,
           toPos: null,
           status: "open",
           kind: "ai_fix",
           evaluationId: null,
+        });
+        recordImageOp(imageOps, {
+          suggestionId,
+          section,
+          targetField: resolvedField,
+          payload,
+          anchorText: trimmedAnchor,
+          src: insertImage.src,
+          removeIndex: removeImage?.index,
         });
 
         const supersededSuggestionIds = await dismissCovered({
@@ -1864,7 +1950,7 @@ export function buildChatTools(opts: {
 
     remove_image: tool({
       description:
-        `Remove one existing inline figure from a rich narrative field. ${reviewableCopy} Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not rewrite the field with draft_field just to drop a figure — that drops every figure. Do not use propose_edit against [image:N] markers.${scopeHint}`,
+        `Remove one existing inline figure from a rich narrative field. ${reviewableCopy} Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not call this to move a figure — use insert_image with source=section, that field's image.id, and anchorText quoting the paragraph it should follow. A second remove of the same figure reuses the existing card. Do not rewrite the field with draft_field just to drop a figure — that drops every figure. Do not use propose_edit against [image:N] markers.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -2008,7 +2094,6 @@ export function buildChatTools(opts: {
             } as InsertImageResult;
           }
 
-          const suggestionId = createId();
           if (committing) {
             return commitFieldEdit({
               section,
@@ -2025,19 +2110,61 @@ export function buildChatTools(opts: {
               },
             });
           }
+
+          const existingOp = findImageOpForRemove(imageOps, {
+            section,
+            targetField: resolvedField,
+            src: hit.src,
+            removeIndex: hit.index,
+          });
+          if (existingOp) {
+            if (existingOp.removeIndex === hit.index && existingOp.payload.removeImage) {
+              return {
+                status: "proposed" as const,
+                suggestionId: existingOp.suggestionId,
+                section,
+                targetField: resolvedField,
+                summary: existingOp.payload.reasoning || reasoning,
+              };
+            }
+            if (isPositionedImageOp(existingOp) && existingOp.payload.insertImage) {
+              const nextPayload: ParsedAiFixPayload = {
+                ...existingOp.payload,
+                removeImage,
+                reasoning: existingOp.payload.reasoning || reasoning,
+              };
+              await patchFixComment(existingOp.suggestionId, nextPayload);
+              recordImageOp(imageOps, {
+                ...existingOp,
+                payload: nextPayload,
+                removeIndex: hit.index,
+                src: hit.src,
+              });
+              return {
+                status: "proposed" as const,
+                suggestionId: existingOp.suggestionId,
+                section,
+                targetField: resolvedField,
+                summary: nextPayload.reasoning,
+              };
+            }
+          }
+
+          const suggestionId = createId();
+          const payload: ParsedAiFixPayload = {
+            deleteText: "",
+            insertText: "",
+            removeImage,
+            reasoning,
+            contentHashAtSuggestion: sectionContentHash(section, loaded.content),
+          };
           await db.insert(comments).values({
             id: suggestionId,
             reportId,
             sectionId: loaded.sectionId,
             section,
             authorId: AI_AUTHOR_ID,
-            content: serializeAiFixCommentContent({
-              deleteText: "",
-              insertText: "",
-              removeImage,
-              reasoning,
-              contentHashAtSuggestion: sectionContentHash(section, loaded.content),
-            }),
+            content: serializeAiFixCommentContent(payload),
             anchorText: "",
             contentPath: resolvedField,
             fromPos: null,
@@ -2045,6 +2172,15 @@ export function buildChatTools(opts: {
             status: "open",
             kind: "ai_fix",
             evaluationId: null,
+          });
+          recordImageOp(imageOps, {
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            payload,
+            anchorText: "",
+            src: hit.src,
+            removeIndex: hit.index,
           });
 
           const supersededSuggestionIds = await dismissCovered({

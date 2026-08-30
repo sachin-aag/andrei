@@ -473,6 +473,104 @@ describe("locator — replace image (remove + insert)", () => {
   });
 });
 
+describe("locator — move image (remove + insert after anchor)", () => {
+  function docWithTrailingFigure(): JSONContent {
+    return {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "First paragraph of purpose." }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Closing sentence." },
+            {
+              type: "imageInline",
+              attrs: {
+                src: PNG,
+                alt: "HPLC trace",
+                width: 400,
+                mediaId: null,
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  const moveEdit = {
+    anchorText: "First paragraph of purpose.",
+    deleteText: "",
+    insertText: "",
+    removeImage: { ...IMAGE, index: 1 },
+    insertImage: IMAGE,
+  };
+
+  it("marks the original for deletion and inserts after the quoted paragraph", () => {
+    const doc = docWithTrailingFigure();
+    expect(probeRichEdit(doc, moveEdit)).toBe("located");
+    const result = applyEditToRichDoc(doc, moveEdit, ATTRS);
+    expect(result.status).toBe("located");
+    const first = result.doc.content?.[0]?.content ?? [];
+    const second = result.doc.content?.[1]?.content ?? [];
+    const inserted = first.find((node) => node.type === "imageInline");
+    const original = second.find((node) => node.type === "imageInline");
+    expect(inserted?.attrs?.suggestionKind).toBe("insert");
+    expect(original?.attrs?.suggestionKind).toBe("delete");
+  });
+
+  it("accept keeps one figure after the first paragraph", () => {
+    const accepted = applyAndAcceptRichEdit(
+      docWithTrailingFigure(),
+      ATTRS.id,
+      moveEdit,
+      ATTRS
+    );
+    expect(accepted.status).toBe("located");
+    const listed = listInlineImagesInDoc(accepted.doc);
+    expect(listed).toHaveLength(1);
+    const firstHasImage = (accepted.doc.content?.[0]?.content ?? []).some(
+      (node) => node.type === "imageInline"
+    );
+    const secondHasImage = (accepted.doc.content?.[1]?.content ?? []).some(
+      (node) => node.type === "imageInline"
+    );
+    expect(firstHasImage).toBe(true);
+    expect(secondHasImage).toBe(false);
+  });
+
+  it("empty-anchor remove+insert still restyles in place", () => {
+    const replacement = {
+      src: PNG,
+      alt: "Restyled chart",
+      width: 600,
+      mediaId: null,
+      chartSpec: TORQUE_MOCK_SPEC,
+    };
+    const doc = docWithImage("See the figure.");
+    const result = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        removeImage: { ...IMAGE, index: 1 },
+        insertImage: replacement,
+      },
+      ATTRS
+    );
+    expect(result.status).toBe("located");
+    const images =
+      result.doc.content?.[0]?.content?.filter((c) => c.type === "imageInline") ?? [];
+    expect(images).toHaveLength(2);
+    expect(images[0]?.attrs?.suggestionKind).toBe("delete");
+    expect(images[1]?.attrs?.suggestionKind).toBe("insert");
+  });
+});
+
 describe("imageInline chartSpec plumbing", () => {
   it("surfaces chartSpec from listInlineImagesInDoc and pending nodes", () => {
     const pending = pendingImageInlineNode(

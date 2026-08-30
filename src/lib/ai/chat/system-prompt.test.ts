@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v60-block-insert-pair");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v61-image-move");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -154,6 +154,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Never volunteer");
     expect(prompt).toContain('image: { source: "section", section: "purpose"');
     expect(prompt).toContain("id: \"narrative#1\"");
+    expect(prompt).toContain("To move a figure already in the destination field");
+    expect(prompt).toContain("Do not also call remove_image");
     expect(prompt).toContain('source: "analytics"');
     expect(prompt).toContain("name the plots that are available");
     expect(prompt).toContain("create additional ones in Analytics");

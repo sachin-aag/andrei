@@ -898,7 +898,7 @@ const DEFINE_NARRATIVE = {
   ],
 };
 
-function mockDefineSectionSelect(narrative = DEFINE_NARRATIVE) {
+function mockDefineSectionSelect(narrative: unknown = DEFINE_NARRATIVE) {
   dbSelectMock.mockImplementation(() => ({
     from: (table: unknown) => ({
       where: vi.fn().mockResolvedValue(
@@ -1537,5 +1537,162 @@ describe("buildChatTools propose vs commit", () => {
     const patchedLead = parseAiFixCommentContent(String(updates[0]!.content));
     expect(patchedLead.pairedBlockSuggestionId).toBe(imageId);
     expect(patchedLead.placeBeforePairedBlock).toBe("image");
+  });
+
+  it("moves a same-field figure in one suggestion and ignores extra removes", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "First paragraph of purpose." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Second paragraph continues." }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: {
+                src: dataUrl,
+                alt: "Torque scatter",
+                width: 400,
+                mediaId: null,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+
+    const removeOnce = await tools.remove_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Pick the figure up from the end.",
+        image: { id: "narrative#1" },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    const insertMove = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Place the torque plot after the first paragraph.",
+        image: { source: "section", id: "narrative#1" },
+        anchorText: "First paragraph of purpose.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    const removeAgain = await tools.remove_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Remove the original after copying.",
+        image: { id: "narrative#1" },
+      },
+      TEST_TOOL_OPTIONS
+    );
+
+    expect(inserted).toHaveLength(1);
+    expect(removeOnce).toMatchObject({
+      status: "proposed",
+      suggestionId: inserted[0]!.id,
+    });
+    expect(insertMove).toMatchObject({
+      status: "proposed",
+      suggestionId: inserted[0]!.id,
+    });
+    expect(removeAgain).toMatchObject({
+      status: "proposed",
+      suggestionId: inserted[0]!.id,
+    });
+    expect(updates.length).toBeGreaterThan(0);
+    const moved = parseAiFixCommentContent(String(updates[0]!.content));
+    expect(moved.insertImage?.src).toBe(dataUrl);
+    expect(moved.removeImage?.index).toBe(1);
+    expect(moved.removeImage?.src).toBe(dataUrl);
+  });
+
+  it("same-field insert_image with afterAnchor includes the original removal", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "First paragraph of purpose." }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: {
+                src: dataUrl,
+                alt: "Torque scatter",
+                width: 400,
+                mediaId: null,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Move the torque plot after the first paragraph.",
+        image: { source: "section", id: "narrative#1" },
+        anchorText: "First paragraph of purpose.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(inserted).toHaveLength(1);
+    const payload = parseAiFixCommentContent(String(inserted[0]!.content));
+    expect(payload.insertImage?.src).toBe(dataUrl);
+    expect(payload.removeImage?.index).toBe(1);
+    expect(inserted[0]!.anchorText).toBe("First paragraph of purpose.");
   });
 });
