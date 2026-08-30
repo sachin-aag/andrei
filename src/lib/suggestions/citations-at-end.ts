@@ -856,6 +856,7 @@ export function stripCitationsFromTableOperation(
       };
     case "delete_rows":
     case "delete_column":
+    case "delete_table":
       return { operation, citations: [] };
     case "create_table":
       return {

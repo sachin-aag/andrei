@@ -31,6 +31,10 @@ export type TableOperation =
       rows: TableRowDelete[];
     }
   | {
+      kind: "delete_table";
+      tableIndex: number;
+    }
+  | {
       kind: "insert_column";
       tableIndex: number;
       afterCol: number;
@@ -126,17 +130,31 @@ function tableRows(table: JSONContent): JSONContent[] {
   return (table.content ?? []).filter((n) => n.type === "tableRow");
 }
 
-function collectTables(doc: JSONContent): JSONContent[] {
-  const tables: JSONContent[] = [];
+type TableLocation = {
+  table: JSONContent;
+  parent: JSONContent;
+  index: number;
+};
+
+function collectTableLocations(doc: JSONContent): TableLocation[] {
+  const found: TableLocation[] = [];
   const walk = (node: JSONContent) => {
-    if (node.type === "table") {
-      tables.push(node);
-      return;
-    }
-    node.content?.forEach(walk);
+    const content = node.content;
+    if (!content) return;
+    content.forEach((child, index) => {
+      if (child.type === "table") {
+        found.push({ table: child, parent: node, index });
+        return;
+      }
+      walk(child);
+    });
   };
   walk(doc);
-  return tables;
+  return found;
+}
+
+function collectTables(doc: JSONContent): JSONContent[] {
+  return collectTableLocations(doc).map((location) => location.table);
 }
 
 function rowSnapshot(row: JSONContent): string[] {
@@ -233,6 +251,11 @@ export function captureTableOperationSnapshots(
         const row = rows[target.row];
         return row ? { ...target, expectedCells: rowSnapshot(row) } : target;
       });
+      if (deletesEveryDataRow(table, captured)) {
+        return { kind: "delete_table", tableIndex: captured.tableIndex };
+      }
+      return captured;
+    case "delete_table":
       return captured;
     case "insert_column":
       if (captured.expectedHeaders === undefined) {
@@ -348,6 +371,14 @@ export function applyTableOperation(
       return applyInsertRows(next, table, operation);
     case "delete_rows":
       return applyDeleteRows(next, table, operation);
+    case "delete_table":
+      if (fixedColumns) {
+        return fail(
+          "fixed_schema",
+          "This matrix has a fixed column schema. Do not remove the table. Edit cells or delete rows instead."
+        );
+      }
+      return applyDeleteTable(next, operation.tableIndex);
     case "insert_column":
       if (fixedColumns) {
         return fail(
@@ -528,6 +559,44 @@ function applyDeleteRows(
   return { ok: true, status: "ok", doc };
 }
 
+function deletesEveryDataRow(
+  table: JSONContent,
+  operation: Extract<TableOperation, { kind: "delete_rows" }>
+): boolean {
+  const n = tableRows(table).length;
+  if (n <= 1) return false;
+  const wanted = new Set(operation.rows.map((target) => target.row));
+  for (let row = 1; row < n; row += 1) {
+    if (!wanted.has(row)) return false;
+  }
+  return true;
+}
+
+function applyDeleteTable(
+  doc: JSONContent,
+  tableIndex: number
+): TableOperationResult {
+  const locations = collectTableLocations(doc);
+  const location = locations[tableIndex];
+  if (!location) {
+    return fail(
+      "bad_scope",
+      `tableIndex ${tableIndex} does not exist (field has ${locations.length} table(s)). Re-read with read_section.`
+    );
+  }
+  if (!location.parent.content) {
+    return fail("invalid", "Cannot remove this table.");
+  }
+  location.parent.content = location.parent.content.filter(
+    (_, index) => index !== location.index
+  );
+  return {
+    ok: true,
+    status: "ok",
+    doc: normalizeTrailingCitationBlockInDoc(doc),
+  };
+}
+
 function applyInsertColumn(
   doc: JSONContent,
   table: JSONContent,
@@ -657,17 +726,61 @@ function asStringMatrix(value: unknown): string[][] | null {
   return rows;
 }
 
+/**
+ * Repair common model mistakes so `edit_table` can return a hint (or succeed)
+ * instead of throwing at the tool schema. Does not invent cell text.
+ */
+export function coerceTableOperationInput(raw: unknown): unknown {
+  if (!isRecord(raw)) return raw;
+  const next: Record<string, unknown> = { ...raw };
+  if (typeof next.kind !== "string" && typeof next.operation === "string") {
+    next.kind = next.operation;
+  }
+  if (next.kind === "remove_table" || next.kind === "drop_table") {
+    next.kind = "delete_table";
+  }
+  if (next.kind !== "delete_rows") return next;
+
+  if (
+    Array.isArray(next.rows) &&
+    next.rows.length > 0 &&
+    next.rows.every((item) => typeof item === "number" && Number.isInteger(item))
+  ) {
+    next.rows = next.rows.map((row) => ({ row }));
+  }
+
+  const hasRowObjects =
+    Array.isArray(next.rows) &&
+    next.rows.length > 0 &&
+    next.rows.every((item) => isRecord(item) && asInt(item.row) !== null);
+
+  if (!hasRowObjects) {
+    const to = asInt(next.toRow);
+    const from = asInt(next.fromRow) ?? (to !== null ? 1 : null);
+    if (from !== null && to !== null && to >= from) {
+      const rows: Array<{ row: number }> = [];
+      for (let row = from; row <= to; row += 1) {
+        if (row === 0) continue;
+        rows.push({ row });
+      }
+      if (rows.length > 0) next.rows = rows;
+    }
+  }
+  return next;
+}
+
 /** Validate an untrusted table operation from persisted / model JSON. */
 export function parseTableOperation(raw: unknown): TableOperation | undefined {
-  if (!isRecord(raw) || typeof raw.kind !== "string") return undefined;
-  const tableIndex = asInt(raw.tableIndex) ?? 0;
+  const coerced = coerceTableOperationInput(raw);
+  if (!isRecord(coerced) || typeof coerced.kind !== "string") return undefined;
+  const tableIndex = asInt(coerced.tableIndex) ?? 0;
   if (tableIndex < 0) return undefined;
 
-  switch (raw.kind) {
+  switch (coerced.kind) {
     case "edit_cells": {
-      if (!Array.isArray(raw.cells) || raw.cells.length === 0) return undefined;
+      if (!Array.isArray(coerced.cells) || coerced.cells.length === 0) return undefined;
       const cells: TableCellEdit[] = [];
-      for (const item of raw.cells) {
+      for (const item of coerced.cells) {
         if (!isRecord(item)) return undefined;
         const row = asInt(item.row);
         const col = asInt(item.col);
@@ -686,17 +799,17 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
     }
     case "insert_rows": {
       const afterRow =
-        raw.afterRow === undefined || raw.afterRow === null
+        coerced.afterRow === undefined || coerced.afterRow === null
           ? undefined
-          : asInt(raw.afterRow);
-      const rows = asStringMatrix(raw.rows);
+          : asInt(coerced.afterRow);
+      const rows = asStringMatrix(coerced.rows);
       if (afterRow === null || (afterRow !== undefined && afterRow < 0) || !rows) {
         return undefined;
       }
-      const expectedRowAtAfter = raw.expectedRowAtAfter
-        ? asStringArray(raw.expectedRowAtAfter)
+      const expectedRowAtAfter = coerced.expectedRowAtAfter
+        ? asStringArray(coerced.expectedRowAtAfter)
         : undefined;
-      if (raw.expectedRowAtAfter && !expectedRowAtAfter) return undefined;
+      if (coerced.expectedRowAtAfter && !expectedRowAtAfter) return undefined;
       return {
         kind: "insert_rows",
         tableIndex,
@@ -706,30 +819,32 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
       };
     }
     case "delete_rows": {
-      if (!Array.isArray(raw.rows) || raw.rows.length === 0) return undefined;
+      if (!Array.isArray(coerced.rows) || coerced.rows.length === 0) return undefined;
       const rows: TableRowDelete[] = [];
-      for (const item of raw.rows) {
+      for (const item of coerced.rows) {
         if (!isRecord(item)) return undefined;
         const row = asInt(item.row);
-        const expectedCells = asStringArray(item.expectedCells);
-        if (row === null || row < 0 || !expectedCells) return undefined;
+        const expectedCells = asStringArray(item.expectedCells) ?? [];
+        if (row === null || row < 0) return undefined;
         rows.push({ row, expectedCells });
       }
       return { kind: "delete_rows", tableIndex, rows };
     }
+    case "delete_table":
+      return { kind: "delete_table", tableIndex };
     case "insert_column": {
-      const afterCol = asInt(raw.afterCol);
+      const afterCol = asInt(coerced.afterCol);
       if (afterCol === null || afterCol < -1) return undefined;
-      if (typeof raw.header !== "string" || !raw.header.trim()) return undefined;
-      const values = raw.values === undefined ? undefined : asStringArray(raw.values);
-      if (raw.values !== undefined && !values) return undefined;
-      const expectedHeaders = raw.expectedHeaders
-        ? asStringArray(raw.expectedHeaders)
+      if (typeof coerced.header !== "string" || !coerced.header.trim()) return undefined;
+      const values = coerced.values === undefined ? undefined : asStringArray(coerced.values);
+      if (coerced.values !== undefined && !values) return undefined;
+      const expectedHeaders = coerced.expectedHeaders
+        ? asStringArray(coerced.expectedHeaders)
         : undefined;
-      if (raw.expectedHeaders && !expectedHeaders) return undefined;
+      if (coerced.expectedHeaders && !expectedHeaders) return undefined;
       if (
-        raw.expectedHeaderAtAfterCol !== undefined &&
-        typeof raw.expectedHeaderAtAfterCol !== "string"
+        coerced.expectedHeaderAtAfterCol !== undefined &&
+        typeof coerced.expectedHeaderAtAfterCol !== "string"
       ) {
         return undefined;
       }
@@ -737,53 +852,66 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         kind: "insert_column",
         tableIndex,
         afterCol,
-        header: raw.header,
+        header: coerced.header,
         values,
         expectedHeaderAtAfterCol:
-          typeof raw.expectedHeaderAtAfterCol === "string"
-            ? raw.expectedHeaderAtAfterCol
+          typeof coerced.expectedHeaderAtAfterCol === "string"
+            ? coerced.expectedHeaderAtAfterCol
             : undefined,
         expectedHeaders,
       };
     }
     case "delete_column": {
-      const col = asInt(raw.col);
+      const col = asInt(coerced.col);
       if (col === null || col < 0) return undefined;
-      if (typeof raw.expectedHeaderText !== "string") return undefined;
-      const expectedHeaders = raw.expectedHeaders
-        ? asStringArray(raw.expectedHeaders)
+      if (typeof coerced.expectedHeaderText !== "string") return undefined;
+      const expectedHeaders = coerced.expectedHeaders
+        ? asStringArray(coerced.expectedHeaders)
         : undefined;
-      if (raw.expectedHeaders && !expectedHeaders) return undefined;
+      if (coerced.expectedHeaders && !expectedHeaders) return undefined;
       return {
         kind: "delete_column",
         tableIndex,
         col,
-        expectedHeaderText: raw.expectedHeaderText,
+        expectedHeaderText: coerced.expectedHeaderText,
         expectedHeaders,
       };
     }
     case "create_table": {
-      const headers = asStringArray(raw.headers);
+      const headers = asStringArray(coerced.headers);
       if (!headers || headers.length === 0) return undefined;
       let rows: string[][] | undefined;
-      if (raw.rows !== undefined) {
-        if (Array.isArray(raw.rows) && raw.rows.length === 0) {
+      if (coerced.rows !== undefined) {
+        if (Array.isArray(coerced.rows) && coerced.rows.length === 0) {
           rows = [];
         } else {
-          const matrix = asStringMatrix(raw.rows);
+          const matrix = asStringMatrix(coerced.rows);
           if (!matrix) return undefined;
           rows = matrix;
         }
       }
       const afterAnchor =
-        typeof raw.afterAnchor === "string" && raw.afterAnchor.trim()
-          ? raw.afterAnchor.trim()
+        typeof coerced.afterAnchor === "string" && coerced.afterAnchor.trim()
+          ? coerced.afterAnchor.trim()
           : undefined;
       return { kind: "create_table", headers, rows, afterAnchor };
     }
     default:
       return undefined;
   }
+}
+
+export function tableOperationInvalidHint(raw: unknown): string {
+  const coerced = coerceTableOperationInput(raw);
+  const kind =
+    isRecord(coerced) && typeof coerced.kind === "string" ? coerced.kind : undefined;
+  if (kind === "delete_rows") {
+    return "delete_rows needs rows: [{ row: N }] with N >= 1 (row 0 is the header and cannot be deleted). To remove the whole table, use kind delete_table with tableIndex from read_section. Do not rewrite the field with draft_field.";
+  }
+  if (kind === "delete_table") {
+    return "delete_table needs tableIndex from read_section (0 for the first table). Do not rewrite the field with draft_field.";
+  }
+  return "The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table. To remove a whole table, use kind delete_table with tableIndex. Do not rewrite the field with draft_field.";
 }
 
 export function tableOperationHint(
@@ -797,9 +925,9 @@ export function tableOperationHint(
     case "stale":
       return "The table changed since you read it. Call read_section again and retry edit_table with the current cell text.";
     case "fixed_schema":
-      return "This matrix has a fixed column schema. Edit cells or add/delete rows — do not add, delete, or rename columns.";
+      return "This matrix has a fixed column schema. Edit cells or add/delete rows — do not add, delete, or rename columns, and do not remove the table.";
     case "invalid":
-      return "The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, insert_column, delete_column, or create_table with the fields listed in the tool schema.";
+      return "The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table with the fields listed in the tool schema. To remove a whole table, use kind delete_table. Do not rewrite the field with draft_field.";
     default: {
       const _exhaustive: never = status;
       return _exhaustive;
@@ -825,6 +953,8 @@ export function summarizeTableOperation(operation: TableOperation): string {
       const n = operation.rows.length;
       return n === 1 ? "Delete 1 table row" : `Delete ${n} table rows`;
     }
+    case "delete_table":
+      return "Delete table";
     case "insert_column": {
       const filled = (operation.values ?? []).filter((v) =>
         normalizeTableCellText(v)
@@ -868,6 +998,8 @@ export function tableOperationDetailLines(operation: TableOperation): string[] {
         (row) =>
           `Row ${row.row}: ${row.expectedCells.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
       );
+    case "delete_table":
+      return [`Table ${operation.tableIndex}`];
     case "insert_column":
       return [
         `Header: ${operation.header}`,

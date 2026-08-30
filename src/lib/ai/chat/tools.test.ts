@@ -520,10 +520,30 @@ describe("buildChatTools edit_table", () => {
       accepts(tools, "edit_table", {
         section: "define",
         targetField: "narrative",
+        reasoning: "remove VCS table",
+        operation: { kind: "delete_table", tableIndex: 0 },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "remove VCS table",
+        operation: {
+          tableIndex: 0,
+          operation: "delete_rows",
+          toRow: 4,
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
         reasoning: "bad",
         operation: { kind: "rewrite_table" },
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
@@ -1125,6 +1145,170 @@ describe("buildChatTools propose vs commit", () => {
       targetField: "narrative",
     });
     expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("proposes delete_table without rewriting the field", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Purpose of this revision." }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "Component" }] },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "mm" }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (row: Record<string, unknown>) => {
+        inserted.push(row);
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Remove the version-control table.",
+        operation: { kind: "delete_table", tableIndex: 0 },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(inserted).toHaveLength(1);
+    const payload = parseAiFixCommentContent(String(inserted[0]!.content));
+    expect(payload.tableOperation).toEqual({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+  });
+
+  it("coerces a malformed delete-all-rows call into delete_table", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "VCS scheme:" }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "Component" }] },
+                  ],
+                },
+              ],
+            },
+            ...["mm", "nn", "ff", "bb"].map((cell) => ({
+              type: "tableRow" as const,
+              content: [
+                {
+                  type: "tableCell" as const,
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: cell }] },
+                  ],
+                },
+              ],
+            })),
+          ],
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (row: Record<string, unknown>) => {
+        inserted.push(row);
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Delete the table in purpose.",
+        operation: {
+          tableIndex: 0,
+          operation: "delete_rows",
+          toRow: 4,
+        } as never,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(inserted).toHaveLength(1);
+    const payload = parseAiFixCommentContent(String(inserted[0]!.content));
+    expect(payload.tableOperation).toEqual({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+  });
+
+  it("returns an invalid hint instead of throwing on an unknown table kind", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "rewrite",
+        operation: { kind: "rewrite_table" } as never,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "invalid" });
+    expect(String((result as { hint?: string }).hint)).toMatch(/delete_table/);
+    expect(String((result as { hint?: string }).hint)).toMatch(/draft_field/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
   it("returns section_changed when the field moved after read_section", async () => {

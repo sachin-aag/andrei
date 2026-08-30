@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v61-image-move");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v62-delete-table");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -212,11 +212,13 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain("failed-retry cap");
     expect(prompt).toContain("create_table");
-    expect(prompt).toContain("Do not use draft_field to create a table");
+    expect(prompt).toContain("delete_table");
+    expect(prompt).toContain("Do not use draft_field to create or delete a table");
     expect(prompt).toContain("two failed retries following a fresh read_section");
     expect(prompt).toContain("Omit afterAnchor to append before Citations");
     expect(prompt).toContain("empty-anchor propose_edit");
     expect(prompt).toContain("never splice it into an earlier paragraph");
+    expect(prompt).toContain("retry with kind delete_table");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {

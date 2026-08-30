@@ -392,6 +392,15 @@ describe("stripCitationsFromTableOperation", () => {
     if (operation.kind !== "create_table") return;
     expect(operation.rows?.[0]?.[0]).toBe("SW-1 [1]");
   });
+
+  it("leaves delete_table operations unchanged", () => {
+    const { operation, citations } = stripCitationsFromTableOperation({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(citations).toEqual([]);
+    expect(operation).toEqual({ kind: "delete_table", tableIndex: 0 });
+  });
 });
 
 describe("keepEmptyParagraphBeforeCitationHeading", () => {

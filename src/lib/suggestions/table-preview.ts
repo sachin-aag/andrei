@@ -271,7 +271,11 @@ export function buildTableOperationPreviewDoc(
   attrs: RedraftPreviewAttrs,
   context?: TableOperationContext
 ): TableOperationResult {
-  if (operation.kind === "delete_rows" || operation.kind === "delete_column") {
+  if (
+    operation.kind === "delete_rows" ||
+    operation.kind === "delete_column" ||
+    operation.kind === "delete_table"
+  ) {
     const probe = applyTableOperation(doc, operation, context);
     if (!probe.ok) return probe;
     const preview = structuredClone(doc);
@@ -282,6 +286,13 @@ export function buildTableOperationPreviewDoc(
       markRows(
         rows,
         operation.rows.map((target) => target.row),
+        suggestionDeleteMarkName,
+        attrs
+      );
+    } else if (operation.kind === "delete_table") {
+      markRows(
+        rows,
+        rows.map((_, i) => i),
         suggestionDeleteMarkName,
         attrs
       );

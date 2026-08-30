@@ -133,7 +133,7 @@ export function proposedEditHint(
           opts?.insertText
         )
       ) {
-        return "That looks like a table change. Do not use a markdown pipe table as anchorText or insertText — propose_edit cannot create or match it. Call read_section, then edit_table: create_table (headers plus rows) to add a table, or edit_cells / insert_rows for an existing one. Do not fall through to draft_field.";
+        return "That looks like a table change. Do not use a markdown pipe table as anchorText or insertText — propose_edit cannot create or match it. Call read_section, then edit_table: create_table (headers plus rows) to add a table, edit_cells / insert_rows for an existing one, or delete_table to remove one. Do not fall through to draft_field.";
       }
       return "The anchorText was not found in the current field. Call read_section to get the exact current text, then quote a verbatim longer unique span.";
     case "ambiguous":

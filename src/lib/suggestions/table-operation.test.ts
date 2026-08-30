@@ -209,6 +209,88 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 1, 0)).toBe("b");
   });
 
+  it("removes a whole table and keeps surrounding prose, figures, and citations", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Purpose of this revision." }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: { src: "data:image/png;base64,xx", alt: "Assay" },
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 2]" }],
+        },
+        tableDoc(
+          ["Component", "Description", "Example"],
+          [
+            ["mm", "Major", "04"],
+            ["nn", "Minor", "08"],
+            ["ff", "Fix", "01"],
+            ["bb", "Build", "1164"],
+          ]
+        ).content![0]!,
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.content?.some((node) => node.type === "table")).toBe(false);
+    expect(JSON.stringify(result.doc)).toContain("Purpose of this revision.");
+    expect(JSON.stringify(result.doc)).toContain("imageInline");
+    expect(flattenForAnchor(result.doc.content!.at(-2)!).text.trim()).toBe(
+      "Citations:"
+    );
+    expect(flattenForAnchor(result.doc.content!.at(-1)!).text.trim()).toMatch(
+      /protocol\.pdf/
+    );
+  });
+
+  it("deletes only the targeted table when more than one exists", () => {
+    const result = applyTableOperation(twoTablesDoc(), {
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.content?.filter((n) => n.type === "table")).toHaveLength(1);
+    expect(cellText(result.doc, 0, 0, 0)).toBe("X");
+  });
+
+  it("upgrades a delete of every data row into delete_table", () => {
+    const doc = tableDoc(["H"], [["a"], ["b"], ["c"]]);
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "delete_rows",
+      tableIndex: 0,
+      rows: [
+        { row: 1, expectedCells: [] },
+        { row: 2, expectedCells: [] },
+        { row: 3, expectedCells: [] },
+      ],
+    });
+    expect(captured).toEqual({ kind: "delete_table", tableIndex: 0 });
+    const result = applyTableOperation(doc, captured);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.content?.some((node) => node.type === "table")).toBe(false);
+  });
+
   it("captures omitted row snapshots before persisting a delete proposal", () => {
     const doc = tableDoc(["H1", "H2"], [["first", "row"], ["second", "row"]]);
     const captured = captureTableOperationSnapshots(doc, {
@@ -618,6 +700,15 @@ describe("applyTableOperation", () => {
     );
     expect(result.status).toBe("fixed_schema");
   });
+
+  it("refuses delete_table on a seeded DV matrix field", () => {
+    const result = applyTableOperation(
+      seededTableDoc(["Equipment", "ID", "Calibration"]),
+      { kind: "delete_table", tableIndex: 0 },
+      { section: "test_equipment", targetField: "table" }
+    );
+    expect(result.status).toBe("fixed_schema");
+  });
 });
 
 describe("parseTableOperation", () => {
@@ -644,6 +735,56 @@ describe("parseTableOperation", () => {
     ).toBeUndefined();
     expect(parseTableOperation({ kind: "insert_rows", afterRow: 0, rows: [] })).toBeUndefined();
     expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
+  });
+
+  it("coerces near-miss delete_table / delete_rows shapes", () => {
+    expect(
+      parseTableOperation({
+        tableIndex: 0,
+        operation: "delete_rows",
+        toRow: 4,
+      })
+    ).toEqual({
+      kind: "delete_rows",
+      tableIndex: 0,
+      rows: [
+        { row: 1, expectedCells: [] },
+        { row: 2, expectedCells: [] },
+        { row: 3, expectedCells: [] },
+        { row: 4, expectedCells: [] },
+      ],
+    });
+    expect(
+      parseTableOperation({
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [1, 2, 3, 4],
+      })
+    ).toEqual({
+      kind: "delete_rows",
+      tableIndex: 0,
+      rows: [
+        { row: 1, expectedCells: [] },
+        { row: 2, expectedCells: [] },
+        { row: 3, expectedCells: [] },
+        { row: 4, expectedCells: [] },
+      ],
+    });
+    expect(
+      parseTableOperation({
+        kind: "delete_rows",
+        fromRow: 1,
+        toRow: 4,
+      })
+    ).toMatchObject({ kind: "delete_rows", tableIndex: 0 });
+    expect(parseTableOperation({ kind: "delete_table" })).toEqual({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(parseTableOperation({ kind: "remove_table", tableIndex: 0 })).toEqual({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
   });
 
   it("round-trips create_table", () => {
@@ -678,5 +819,11 @@ describe("summarizeTableOperation", () => {
         rows: [["1", "2"]],
       })
     ).toBe("Create a 2-column table with 1 row");
+  });
+
+  it("describes deleting a table", () => {
+    expect(
+      summarizeTableOperation({ kind: "delete_table", tableIndex: 0 })
+    ).toBe("Delete table");
   });
 });

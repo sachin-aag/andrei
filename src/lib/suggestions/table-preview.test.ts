@@ -255,6 +255,20 @@ describe("buildTableOperationPreviewDoc", () => {
     expect(cellText(preview.doc, 0, 0)).toBe("Req");
     expect(cellText(preview.doc, 1, 1)).toBe("Pass");
   });
+
+  it("marks every row of a deleted table without removing it from preview", () => {
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(["H"], [["a"], ["b"]]),
+      { kind: "delete_table", tableIndex: 0 },
+      PREVIEW_ATTRS
+    );
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(preview.doc.content?.some((node) => node.type === "table")).toBe(true);
+    expect(JSON.stringify(preview.doc)).toContain(suggestionDeleteMarkName);
+    expect(cellText(preview.doc, 0, 0)).toBe("H");
+    expect(cellText(preview.doc, 2, 0)).toBe("b");
+  });
 });
 
 describe("prefixSuffixDiff", () => {
