@@ -15,6 +15,7 @@ import {
   parseStoredWorkspaceLayout,
   PREVIEW_DEFAULT_PX,
   previewWidthBounds,
+  documentCanvasWidthClass,
   REVIEW_GUTTER_GRID_COLS,
   REVIEW_GUTTER_MAX_PX,
   REVIEW_GUTTER_MIN_PX,
@@ -99,6 +100,40 @@ describe("review gutter width", () => {
     expect(REVIEW_GUTTER_MAX_PX).toBeLessThan(360);
     expect(REVIEW_GUTTER_GRID_COLS).toContain(`${REVIEW_GUTTER_MIN_PX}px`);
     expect(REVIEW_GUTTER_GRID_COLS).toContain(`${REVIEW_GUTTER_MAX_PX}px`);
+  });
+
+  it("caps the document column so the gutter does not stretch the prose", () => {
+    expect(REVIEW_GUTTER_GRID_COLS).toContain("minmax(0,48rem)");
+  });
+});
+
+describe("documentCanvasWidthClass", () => {
+  it("caps sectioned reports at a readable 48rem sheet", () => {
+    expect(
+      documentCanvasWidthClass({
+        continuousDocument: false,
+        reviewGutterVisible: false,
+      })
+    ).toBe("max-w-3xl px-6 py-8");
+  });
+
+  it("widens only enough to sit the review margin beside the sheet", () => {
+    const classes = documentCanvasWidthClass({
+      continuousDocument: false,
+      reviewGutterVisible: true,
+    });
+    expect(classes).toContain("48rem");
+    expect(classes).toContain(`${REVIEW_GUTTER_MAX_PX}px`);
+    expect(classes).not.toContain("1180px");
+  });
+
+  it("lets generic Letter pages set their own 8.5in width", () => {
+    expect(
+      documentCanvasWidthClass({
+        continuousDocument: true,
+        reviewGutterVisible: false,
+      })
+    ).toBe("max-w-none px-4 py-6");
   });
 });
 

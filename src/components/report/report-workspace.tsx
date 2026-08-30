@@ -91,6 +91,7 @@ import { AgentWorkProductRail } from "./agent-work-product-rail";
 import { WorkspaceResizeHandle } from "./workspace-resize-handle";
 import {
   COLLAPSED_RAIL_PX,
+  documentCanvasWidthClass,
   isReviewGutterVisible,
   REVIEW_GUTTER_GRID_COLS,
   WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
@@ -981,11 +982,7 @@ export function ReportWorkspace({
               : "order-2 min-w-0 flex-1",
             agentChrome &&
               !isResizing &&
-              "transition-[width] duration-200 ease-in-out",
-            !agentChrome &&
-              reportSurface &&
-              continuousDocument &&
-              "bg-[var(--muted)]"
+              "transition-[width] duration-200 ease-in-out"
           )}
           style={agentChrome ? { width: previewWidth } : undefined}
         >
@@ -1059,7 +1056,8 @@ export function ReportWorkspace({
               <div
                 className={cn(
                   "relative flex min-h-0 min-w-0 flex-1 flex-col",
-                  hideReportEditors ? "overflow-hidden" : "overflow-auto"
+                  hideReportEditors ? "overflow-hidden" : "overflow-auto",
+                  reportSurface && "bg-[var(--muted)]"
                 )}
               >
                 {comparing && compare?.surface === "report" ? (
@@ -1090,12 +1088,14 @@ export function ReportWorkspace({
                 <div
                   hidden={hideReportEditors}
                   inert={hideReportEditors}
+                  data-testid="report-document-canvas"
                   className={cn(
                     "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
                     hideReportEditors && "hidden",
-                    continuousDocument
-                      ? "max-w-none px-4 py-6"
-                      : "max-w-[1180px] px-6 py-8",
+                    documentCanvasWidthClass({
+                      continuousDocument,
+                      reviewGutterVisible: showReviewGutter,
+                    }),
                     showReviewGutter && REVIEW_GUTTER_GRID_COLS
                   )}
                 >
