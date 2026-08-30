@@ -46,6 +46,7 @@ export function suggestionEditFromComment(
     removeImage: payload.removeImage,
     scope: payload.scope,
     second: payload.second,
+    placeBeforePairedBlock: payload.placeBeforePairedBlock,
   };
 }
 

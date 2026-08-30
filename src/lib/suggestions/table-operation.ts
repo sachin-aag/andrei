@@ -3,7 +3,11 @@ import type { SectionType } from "@/db/schema";
 import { dvTableHeadersForSection } from "@/lib/document-types/design-verification/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
-import { flattenForAnchor } from "@/lib/suggestions/locator";
+import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
+import {
+  insertNodesAfterTopLevelIndex,
+  insertNodesIntoFieldBody,
+} from "@/lib/suggestions/block-insert";
 
 /** Structured table mutation proposed via `edit_table` and stored on an `ai_fix`. */
 export type TableOperation =
@@ -47,6 +51,11 @@ export type TableOperation =
       headers: string[];
       /** Data rows; each padded or trimmed to headers.length. */
       rows?: string[][];
+      /**
+       * Unique span already in the field. The table is inserted after the
+       * block that contains it. Omit to append before a trailing Citations list.
+       */
+      afterAnchor?: string;
     };
 
 export type TableCellEdit = {
@@ -284,8 +293,21 @@ function applyCreateTable(
       })),
     ],
   };
-  if (!Array.isArray(doc.content)) doc.content = [];
-  doc.content.push(table);
+  const afterAnchor = operation.afterAnchor?.trim() ?? "";
+  if (afterAnchor) {
+    const located = topLevelIndexAfterAnchor(doc, afterAnchor);
+    if (located.status !== "ok") {
+      return fail(
+        "bad_scope",
+        located.status === "ambiguous"
+          ? "afterAnchor matches more than once. Quote a longer unique span, or omit afterAnchor to append before Citations."
+          : "afterAnchor was not found in the field. Call read_section and quote a unique span, or omit afterAnchor to append before Citations."
+      );
+    }
+    insertNodesAfterTopLevelIndex(doc, located.index, [table]);
+    return { ok: true, status: "ok", doc };
+  }
+  insertNodesIntoFieldBody(doc, [table]);
   return { ok: true, status: "ok", doc };
 }
 
@@ -752,7 +774,11 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
           rows = matrix;
         }
       }
-      return { kind: "create_table", headers, rows };
+      const afterAnchor =
+        typeof raw.afterAnchor === "string" && raw.afterAnchor.trim()
+          ? raw.afterAnchor.trim()
+          : undefined;
+      return { kind: "create_table", headers, rows, afterAnchor };
     }
     default:
       return undefined;

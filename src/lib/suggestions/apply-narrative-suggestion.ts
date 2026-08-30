@@ -27,6 +27,7 @@ export function buildSuggestionEdit(payload: {
   removeImage?: SuggestionEdit["removeImage"];
   scope?: EditScope;
   second?: SuggestionEdit["second"];
+  placeBeforePairedBlock?: SuggestionEdit["placeBeforePairedBlock"];
 }): SuggestionEdit {
   const second = payload.second
     ? {
@@ -44,6 +45,7 @@ export function buildSuggestionEdit(payload: {
     insertImage: payload.insertImage,
     removeImage: payload.removeImage,
     scope: payload.scope,
+    placeBeforePairedBlock: payload.placeBeforePairedBlock,
     second:
       second &&
       (second.deleteText.trim() ||

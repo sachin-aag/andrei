@@ -198,6 +198,11 @@ export type ParsedAiFixPayload = {
     insertText: string;
     scope?: EditScope;
   };
+  /** Same-turn table/image this prose lead-in belongs in front of. */
+  pairedBlockSuggestionId?: string;
+  placeBeforePairedBlock?: "table" | "image";
+  /** Same-turn prose lead-in this table/image should follow. */
+  placeAfterSuggestionId?: string;
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
   evidenceSources?: Array<{
@@ -241,6 +246,17 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
         insertImage,
         removeImage,
         second: parseSecondEdit(parsed.second),
+        pairedBlockSuggestionId:
+          typeof parsed.pairedBlockSuggestionId === "string" &&
+          parsed.pairedBlockSuggestionId.trim()
+            ? parsed.pairedBlockSuggestionId.trim()
+            : undefined,
+        placeBeforePairedBlock: parsePairedBlockKind(parsed.placeBeforePairedBlock),
+        placeAfterSuggestionId:
+          typeof parsed.placeAfterSuggestionId === "string" &&
+          parsed.placeAfterSuggestionId.trim()
+            ? parsed.placeAfterSuggestionId.trim()
+            : undefined,
         contentHashAtSuggestion:
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion
@@ -283,6 +299,12 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
     // plain insert text
   }
   return { deleteText: "", insertText: content, reasoning: "" };
+}
+
+function parsePairedBlockKind(
+  raw: unknown
+): ParsedAiFixPayload["placeBeforePairedBlock"] {
+  return raw === "table" || raw === "image" ? raw : undefined;
 }
 
 function parseSecondEdit(raw: unknown): ParsedAiFixPayload["second"] {

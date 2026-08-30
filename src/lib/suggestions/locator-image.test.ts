@@ -65,6 +65,48 @@ describe("locator — insertImage", () => {
     expect(node?.attrs?.suggestionId).toBe("sug-img");
   });
 
+  it("appends an empty-anchor figure before trailing Citations", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "See the chromatogram." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
+        },
+      ],
+    };
+    const result = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        insertImage: IMAGE,
+      },
+      ATTRS
+    );
+    expect(result.status).toBe("append");
+    const images = listInlineImagesInDoc(result.doc);
+    expect(images).toHaveLength(1);
+    const types = result.doc.content ?? [];
+    const figureIndex = types.findIndex((block) =>
+      (block.content ?? []).some((child) => child.type === "imageInline")
+    );
+    const citationsIndex = types.findIndex(
+      (block) => block.content?.[0]?.text === "Citations:"
+    );
+    expect(figureIndex).toBeGreaterThanOrEqual(0);
+    expect(citationsIndex).toBeGreaterThan(figureIndex);
+  });
+
   it("inserts after a unique anchor and accept strips the pending attr", () => {
     const doc = para("Batch 17 failed the assay. Next steps follow.");
     const accepted = applyAndAcceptRichEdit(

@@ -13,15 +13,16 @@ import { investigationToolsUsed } from "@/types/report";
 import { mergeSection } from "@/lib/sections-merge";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
+  parseEditScope,
   serializeAiFixCommentContent,
   serializeAiRedraftCommentContent,
   sectionContentHash,
+  type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
 import {
   isRichTargetField,
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
-import { parseEditScope } from "@/lib/ai/suggestion-gating";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { dismissSuggestionsSupersededBy } from "@/lib/suggestions/persist-supersession";
@@ -92,6 +93,17 @@ import {
   summarizeTableOperation,
   tableOperationHint,
 } from "@/lib/suggestions/table-operation";
+import {
+  createSameTurnBlockPairing,
+  isAppendBlock,
+  isAppendLeadIn,
+  recordBlock,
+  recordLeadIn,
+  takeUnusedBlock,
+  takeUnusedLeadIn,
+  withPairedBlock,
+  withPlaceAfterLeadIn,
+} from "@/lib/suggestions/same-turn-block-pair";
 
 type ReadSectionImageRef = {
   id: string;
@@ -396,6 +408,12 @@ const tableOperationSchema = z.discriminatedUnion("kind", [
       .array(z.array(z.string()))
       .optional()
       .describe("Data rows. Each row is padded or trimmed to headers.length."),
+    afterAnchor: z
+      .string()
+      .optional()
+      .describe(
+        "Unique span already in the field. The table is inserted after that block. Omit to append before a trailing Citations heading."
+      ),
   }),
 ]);
 
@@ -700,6 +718,7 @@ export function buildChatTools(opts: {
   const editPolicy: ChatEditPolicy = opts.editPolicy ?? "propose";
   const turnEdits = opts.turnEdits;
   const committing = editPolicy === "commit";
+  const blockPairing = createSameTurnBlockPairing();
   const fieldReadSnapshots = new Map<string, unknown>();
   const captureFieldSnapshot = (
     section: SectionType,
@@ -748,6 +767,12 @@ export function buildChatTools(opts: {
       console.error("chat: failed to dismiss superseded suggestions", err);
       return [];
     }
+  };
+  const patchFixPayload = async (id: string, payload: ParsedAiFixPayload) => {
+    await db
+      .update(comments)
+      .set({ content: serializeAiFixCommentContent(payload) })
+      .where(eq(comments.id, id));
   };
   const recordTurnEdit = (
     section: SectionType,
@@ -1171,7 +1196,9 @@ export function buildChatTools(opts: {
         anchorText: z
           .string()
           .default("")
-          .describe("Verbatim span from the current text; '' appends at end of field."),
+          .describe(
+            "Verbatim span from the current text. Empty appends before a trailing Citations heading — use that for a lead-in sentence above a same-turn create_table / insert_image. Do not quote an earlier paragraph as the anchor for that intro."
+          ),
         deleteText: z
           .string()
           .default("")
@@ -1326,8 +1353,16 @@ export function buildChatTools(opts: {
               insertText: normalizeSuggestionInsertText(prepared.second.insertText),
             }
           : undefined;
+        const leadIn = isAppendLeadIn({
+          anchorText: prepared.anchorText,
+          deleteText: prepared.deleteText,
+          insertText: normalizedInsert,
+        });
         if (committing) {
-          return commitFieldEdit({
+          const pairBlock = leadIn
+            ? takeUnusedBlock(blockPairing, section, resolvedField)
+            : undefined;
+          const result = await commitFieldEdit({
             section,
             targetField: resolvedField,
             reasoning,
@@ -1339,9 +1374,48 @@ export function buildChatTools(opts: {
                 insertText: normalizedInsert,
                 scope: prepared.scope,
                 second,
+                placeBeforePairedBlock: pairBlock?.kind,
               },
             },
           });
+          if (result.status === "applied" && leadIn && !pairBlock) {
+            recordLeadIn(blockPairing, {
+              suggestionId: "committed",
+              section,
+              targetField: resolvedField,
+              payload: {
+                deleteText: prepared.deleteText,
+                insertText: normalizedInsert,
+                reasoning,
+              },
+            });
+          }
+          return result;
+        }
+        let payload: ParsedAiFixPayload = {
+          deleteText: prepared.deleteText,
+          insertText: normalizedInsert,
+          reasoning,
+          scope: prepared.scope,
+          second,
+          contentHashAtSuggestion: sectionContentHash(section, loaded.content),
+        };
+        if (leadIn) {
+          const pairBlock = takeUnusedBlock(blockPairing, section, resolvedField);
+          if (pairBlock) {
+            payload = withPairedBlock(payload, pairBlock.suggestionId, pairBlock.kind);
+            await patchFixPayload(
+              pairBlock.suggestionId,
+              withPlaceAfterLeadIn(pairBlock.payload, suggestionId)
+            );
+          } else {
+            recordLeadIn(blockPairing, {
+              suggestionId,
+              section,
+              targetField: resolvedField,
+              payload,
+            });
+          }
         }
         await db.insert(comments).values({
           id: suggestionId,
@@ -1349,14 +1423,7 @@ export function buildChatTools(opts: {
           sectionId: loaded.sectionId,
           section,
           authorId: AI_AUTHOR_ID,
-          content: serializeAiFixCommentContent({
-            deleteText: prepared.deleteText,
-            insertText: normalizedInsert,
-            reasoning,
-            scope: prepared.scope,
-            second,
-            contentHashAtSuggestion: sectionContentHash(section, loaded.content),
-          }),
+          content: serializeAiFixCommentContent(payload),
           anchorText: prepared.anchorText,
           contentPath: resolvedField,
           fromPos: null,
@@ -1386,7 +1453,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. source=chat uses an attached photo (index). source=section copies a figure already in a report field (image.section + image.id from read_section). source=analytics copies a saved Analytics plot (analysisId from the context map or a tagged @ plot). If they named a plot that is not in Analytics, this tool lists the available titles — relay those titles and say they can create additional plots in Analytics; do not insert a different plot. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a NEW chart from attachments, not to recreate a plot already in Analytics" : ""}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
+        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. source=chat uses an attached photo (index). source=section copies a figure already in a report field (image.section + image.id from read_section). source=analytics copies a saved Analytics plot (analysisId from the context map or a tagged @ plot). If they named a plot that is not in Analytics, this tool lists the available titles — relay those titles and say they can create additional plots in Analytics; do not insert a different plot. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a NEW chart from attachments, not to recreate a plot already in Analytics" : ""}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends before a trailing Citations heading. After a same-turn empty-anchor propose_edit lead-in, the figure lands immediately after that intro.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1439,7 +1506,9 @@ export function buildChatTools(opts: {
         anchorText: z
           .string()
           .default("")
-          .describe("Verbatim span from the field's text; '' appends at end."),
+          .describe(
+            "Verbatim span from the field's text; '' appends before a trailing Citations heading."
+          ),
         alt: z
           .string()
           .max(200)
@@ -1645,8 +1714,9 @@ export function buildChatTools(opts: {
         }
 
         const suggestionId = createId();
+        const appendBlock = isAppendBlock({ anchorText: anchorText ?? "" });
         if (committing) {
-          return commitFieldEdit({
+          const result = await commitFieldEdit({
             section,
             targetField: resolvedField,
             reasoning,
@@ -1660,6 +1730,46 @@ export function buildChatTools(opts: {
               },
             },
           });
+          if (result.status === "applied" && appendBlock) {
+            recordBlock(blockPairing, {
+              suggestionId: "committed",
+              section,
+              targetField: resolvedField,
+              kind: "image",
+              payload: {
+                deleteText: "",
+                insertText: "",
+                insertImage,
+                reasoning,
+              },
+            });
+          }
+          return result;
+        }
+        let payload: ParsedAiFixPayload = {
+          deleteText: "",
+          insertText: "",
+          insertImage,
+          reasoning,
+          contentHashAtSuggestion: sectionContentHash(section, loaded.content),
+        };
+        if (appendBlock) {
+          const leadIn = takeUnusedLeadIn(blockPairing, section, resolvedField);
+          if (leadIn) {
+            payload = withPlaceAfterLeadIn(payload, leadIn.suggestionId);
+            await patchFixPayload(
+              leadIn.suggestionId,
+              withPairedBlock(leadIn.payload, suggestionId, "image")
+            );
+          } else {
+            recordBlock(blockPairing, {
+              suggestionId,
+              section,
+              targetField: resolvedField,
+              kind: "image",
+              payload,
+            });
+          }
         }
         await db.insert(comments).values({
           id: suggestionId,
@@ -1667,13 +1777,7 @@ export function buildChatTools(opts: {
           sectionId: loaded.sectionId,
           section,
           authorId: AI_AUTHOR_ID,
-          content: serializeAiFixCommentContent({
-            deleteText: "",
-            insertText: "",
-            insertImage,
-            reasoning,
-            contentHashAtSuggestion: sectionContentHash(section, loaded.content),
-          }),
+          content: serializeAiFixCommentContent(payload),
           anchorText: (anchorText ?? "").trim(),
           contentPath: resolvedField,
           fromPos: null,
@@ -1711,7 +1815,7 @@ export function buildChatTools(opts: {
 
     plot_measurements: tool({
       description:
-        `Extract cited numeric measurements from attachments, render a scatter plot, and propose it as a reviewable figure. Call this only when the engineer asked in words for a chart. Query must name one series or requirement ID — not two assays joined with or. Never invent data points — the tool extracts and validates number tokens from page transcripts. Restyle reuses the stored chartSpec; do not extract again. Empty anchorText appends at the end of the field.${scopeHint}`,
+        `Extract cited numeric measurements from attachments, render a scatter plot, and propose it as a reviewable figure. Call this only when the engineer asked in words for a chart. Query must name one series or requirement ID — not two assays joined with or. Never invent data points — the tool extracts and validates number tokens from page transcripts. Restyle reuses the stored chartSpec; do not extract again. Empty anchorText appends before a trailing Citations heading.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1736,7 +1840,9 @@ export function buildChatTools(opts: {
         anchorText: z
           .string()
           .default("")
-          .describe("Verbatim span from the field's text; '' appends at end."),
+          .describe(
+            "Verbatim span from the field's text. Empty appends before a trailing Citations heading. After a same-turn empty-anchor propose_edit lead-in, the chart lands immediately after that intro."
+          ),
         reasoning: z
           .string()
           .max(300)
@@ -1752,6 +1858,7 @@ export function buildChatTools(opts: {
           editPolicy,
           actor,
           turnEdits,
+          blockPairing,
         }),
     }),
 
@@ -1968,7 +2075,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, insert_column (optional per-row values), delete_column, and create_table (headers plus rows) to add a NEW table in a rich field. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText when editing an existing table. Row 0 is the header and cannot be deleted; the first data row is row 1. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create or incrementally edit a table.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, insert_column (optional per-row values), delete_column, and create_table (headers plus rows) to add a NEW table in a rich field. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText when editing an existing table. Row 0 is the header and cannot be deleted; the first data row is row 1. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create or incrementally edit a table.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -2057,6 +2164,11 @@ export function buildChatTools(opts: {
           : undefined;
 
         const suggestionId = createId();
+        const createTable =
+          stripped.operation.kind === "create_table" ? stripped.operation : null;
+        const appendTable = Boolean(
+          createTable && isAppendBlock({ afterAnchor: createTable.afterAnchor })
+        );
         if (committing) {
           const tableResult = await commitFieldEdit({
             section,
@@ -2064,6 +2176,20 @@ export function buildChatTools(opts: {
             reasoning,
             input: { kind: "table", operation: stripped.operation },
           });
+          if (tableResult.status === "applied" && appendTable) {
+            recordBlock(blockPairing, {
+              suggestionId: "committed",
+              section,
+              targetField: resolvedField,
+              kind: "table",
+              payload: {
+                deleteText: "",
+                insertText: "",
+                tableOperation: stripped.operation,
+                reasoning,
+              },
+            });
+          }
           if (tableResult.status !== "applied" || !second) {
             return tableResult;
           }
@@ -2082,20 +2208,39 @@ export function buildChatTools(opts: {
             },
           });
         }
+        let payload: ParsedAiFixPayload = {
+          deleteText: "",
+          insertText: "",
+          reasoning,
+          tableOperation: stripped.operation,
+          second,
+          contentHashAtSuggestion: sectionContentHash(section, loaded.content),
+        };
+        if (appendTable) {
+          const leadIn = takeUnusedLeadIn(blockPairing, section, resolvedField);
+          if (leadIn) {
+            payload = withPlaceAfterLeadIn(payload, leadIn.suggestionId);
+            await patchFixPayload(
+              leadIn.suggestionId,
+              withPairedBlock(leadIn.payload, suggestionId, "table")
+            );
+          } else {
+            recordBlock(blockPairing, {
+              suggestionId,
+              section,
+              targetField: resolvedField,
+              kind: "table",
+              payload,
+            });
+          }
+        }
         await db.insert(comments).values({
           id: suggestionId,
           reportId,
           sectionId: loaded.sectionId,
           section,
           authorId: AI_AUTHOR_ID,
-          content: serializeAiFixCommentContent({
-            deleteText: "",
-            insertText: "",
-            reasoning,
-            tableOperation: stripped.operation,
-            second,
-            contentHashAtSuggestion: sectionContentHash(section, loaded.content),
-          }),
+          content: serializeAiFixCommentContent(payload),
           anchorText: summarizeTableOperation(stripped.operation),
           contentPath: resolvedField,
           fromPos: null,

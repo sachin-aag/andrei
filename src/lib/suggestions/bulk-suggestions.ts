@@ -13,7 +13,11 @@ import {
   resolutionReasonSupersededBy,
   withResolutionReason,
 } from "@/lib/suggestions/supersession";
-import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
+import {
+  parseAiFixCommentContent,
+  sortedOpenSuggestionsForSection,
+} from "@/lib/ai/suggestion-gating";
+import { sortCommentsForPairedApply } from "@/lib/suggestions/same-turn-block-pair";
 
 export type BulkSuggestionResult = {
   appliedIds: string[];
@@ -61,6 +65,7 @@ function applyOneInMemory(args: {
   applied: Set<string>;
   appliedIds: string[];
   skippedIds: string[];
+  ignorePlaceBeforePairedBlock?: boolean;
 }): Record<string, unknown> {
   if (args.applied.has(args.comment.id)) return args.sectionContent;
   args.applied.add(args.comment.id);
@@ -69,6 +74,7 @@ function applyOneInMemory(args: {
     comment: args.comment,
     sectionContent: args.sectionContent,
     applyMode: args.applyMode,
+    ignorePlaceBeforePairedBlock: args.ignorePlaceBeforePairedBlock,
   });
   if (!result.ok) {
     args.skippedIds.push(args.comment.id);
@@ -128,8 +134,11 @@ export async function acceptAllSuggestions(args: {
         group.some((c) => c.id === comment.id)
       );
       if (!cluster) continue;
-      for (const member of cluster) {
+      const ordered = sortCommentsForPairedApply(cluster);
+      const clusterIds = new Set(ordered.map((member) => member.id));
+      for (const member of ordered) {
         if (supersededIds.has(member.id)) continue;
+        const payload = parseAiFixCommentContent(member.content);
         current = applyOneInMemory({
           section: args.section,
           comment: member,
@@ -138,6 +147,10 @@ export async function acceptAllSuggestions(args: {
           applied,
           appliedIds,
           skippedIds,
+          ignorePlaceBeforePairedBlock: Boolean(
+            payload.pairedBlockSuggestionId &&
+              clusterIds.has(payload.pairedBlockSuggestionId)
+          ),
         });
       }
       continue;

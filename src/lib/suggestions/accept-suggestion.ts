@@ -43,6 +43,7 @@ import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-fie
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { suggestionEditFromComment } from "@/lib/suggestions/validate-suggestion";
+import { findOpenBlockPair } from "@/lib/suggestions/same-turn-block-pair";
 
 export type AcceptSuggestionResult =
   | {
@@ -76,6 +77,11 @@ export type ApplySuggestionToContentArgs = {
   sectionContent: Record<string, unknown>;
   fieldContentPath?: string;
   applyMode?: SuggestionApplyMode;
+  /**
+   * Same-turn pair apply: the block is still a pending suggestion, so the
+   * lead-in must body-append rather than jump in front of an existing table.
+   */
+  ignorePlaceBeforePairedBlock?: boolean;
 };
 
 export type ApplySuggestionToContentResult =
@@ -98,6 +104,7 @@ export function applySuggestionToContent(
     sectionContent,
     fieldContentPath,
     applyMode = "final",
+    ignorePlaceBeforePairedBlock = false,
   } = args;
   const persistAsTrackedChange = applyMode === "tracked_change";
   const path = resolveSuggestionFieldPath(
@@ -185,6 +192,9 @@ export function applySuggestionToContent(
   }
 
   const edit = suggestionEditFromComment(comment);
+  if (ignorePlaceBeforePairedBlock) {
+    edit.placeBeforePairedBlock = undefined;
+  }
 
   if (isRichTargetField(section, path)) {
     const persistMarks = applyMode === "tracked_change";
@@ -298,20 +308,51 @@ export async function acceptSuggestion(args: {
   /** Open siblings used to compute range-containment supersession. */
   openComments?: readonly CommentRecord[];
 }): Promise<AcceptSuggestionResult> {
-  const applied = applySuggestionToContent(args);
-  if (!applied.ok) return applied;
+  const pair = findOpenBlockPair(args.comment, args.openComments ?? []);
+  const sequence =
+    pair && pair.leadIn.id !== pair.block.id
+      ? [pair.leadIn, pair.block]
+      : [args.comment];
+  const uniqueSequence = sequence.filter(
+    (item, index, all) => all.findIndex((comment) => comment.id === item.id) === index
+  );
+  let content = args.sectionContent;
+  const resolved: CommentRecord[] = [];
+  for (const item of uniqueSequence) {
+    const next = applySuggestionToContent({
+      ...args,
+      comment: item,
+      sectionContent: content,
+      ignorePlaceBeforePairedBlock:
+        uniqueSequence.length > 1 && item.id === uniqueSequence[0]?.id,
+    });
+    if (!next.ok) {
+      if (item.id === args.comment.id) return next;
+      continue;
+    }
+    content = next.nextSection;
+    resolved.push(item);
+  }
+  if (resolved.length === 0) {
+    return { ok: false, reason: "not_found" };
+  }
+  const resolvedIds = new Set(resolved.map((item) => item.id));
   const superseded = suggestionsSupersededBy(args.comment, {
     section: args.section,
     comments: args.openComments ?? [],
     sectionContent: args.sectionContent,
-  });
+  }).filter((sibling) => !resolvedIds.has(sibling.id));
   try {
-    await patchSection(args.reportId, args.section, applied.nextSection);
+    await patchSection(args.reportId, args.section, content);
   } catch (error) {
     return { ok: false, reason: "save_failed", error };
   }
   try {
-    await patchCommentStatus(args.reportId, args.comment.id, "resolved");
+    await patchCommentStatuses(
+      args.reportId,
+      resolved.map((item) => item.id),
+      "resolved"
+    );
     const contentById: Record<string, string> = {};
     for (const sibling of superseded) {
       contentById[sibling.id] = withResolutionReason(
@@ -338,7 +379,7 @@ export async function acceptSuggestion(args: {
       resolutionReasonSupersededBy(args.comment.id)
     ),
   }));
-  return { ok: true, nextSection: applied.nextSection, dismissed };
+  return { ok: true, nextSection: content, dismissed };
 }
 
 /**

@@ -29,6 +29,12 @@ import {
   insertMarkdownBlocks,
 } from "@/lib/suggestions/insert-markdown";
 import {
+  bodyAppendIndex,
+  spliceTopLevelNodes,
+  topLevelIndexContainingNode,
+  type PairedBlockKind,
+} from "@/lib/suggestions/block-insert";
+import {
   acceptPendingImageSuggestions,
   dropPendingImageSuggestions,
   insertPendingImageAfterDeletionMark,
@@ -73,6 +79,11 @@ export type SuggestionEdit = {
    * at the end while the primary part edits the claim or a table cell).
    */
   second?: Omit<SuggestionEdit, "second">;
+  /**
+   * Empty-anchor append: insert immediately before the last table/image in
+   * the field body (used when a same-turn lead-in follows a committed block).
+   */
+  placeBeforePairedBlock?: "table" | "image";
 };
 
 function hasEditContent(
@@ -98,6 +109,7 @@ export function suggestionEditParts(edit: SuggestionEdit): SuggestionEdit[] {
     insertImage: edit.insertImage,
     removeImage: edit.removeImage,
     scope: edit.scope,
+    placeBeforePairedBlock: edit.placeBeforePairedBlock,
   };
   const second = edit.second;
   const parts: SuggestionEdit[] = [];
@@ -699,6 +711,28 @@ export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
   };
 }
 
+/**
+ * Top-level block index that contains a unique `afterAnchor` span, so a new
+ * table/figure can be inserted after that block.
+ */
+export function topLevelIndexAfterAnchor(
+  doc: JSONContent,
+  afterAnchor: string
+): { status: "ok"; index: number } | { status: "not_found" | "ambiguous" } {
+  const index = flattenForAnchor(doc);
+  const located = locateEdit(index.text, {
+    anchorText: afterAnchor,
+    deleteText: "",
+    insertText: "x",
+  });
+  if (located.status === "ambiguous") return { status: "ambiguous" };
+  if (located.status !== "located") return { status: "not_found" };
+  const slices = index.resolveRange(located.deleteStart, located.deleteStart);
+  const node = slices[0]?.node;
+  if (!node) return { status: "not_found" };
+  return { status: "ok", index: topLevelIndexContainingNode(doc, node) };
+}
+
 function withLeadingSpaceIfNeeded(
   haystack: string,
   insertAt: number,
@@ -883,7 +917,9 @@ function insertAfterRef(
   cloned: JSONContent,
   insertAfter: TextSlice | null,
   insertText: string,
-  attrs: InjectAttrs
+  attrs: InjectAttrs,
+  appendAt: "body" | "end" = "end",
+  beforePaired?: PairedBlockKind
 ): JSONContent | null {
   const trimmed = normalizeSuggestionInsertText(insertText);
   if (!trimmed) return null;
@@ -912,7 +948,15 @@ function insertAfterRef(
       content: insertedNodes,
     };
     if (cloned.type !== "doc") return insertedNode;
-    cloned.content = [...(cloned.content ?? []), para];
+    if (appendAt === "body") {
+      spliceTopLevelNodes(
+        cloned,
+        bodyAppendIndex(cloned, beforePaired),
+        [para]
+      );
+    } else {
+      cloned.content = [...(cloned.content ?? []), para];
+    }
   }
   return insertedNode;
 }
@@ -925,7 +969,9 @@ function insertImageAfterRef(
   cloned: JSONContent,
   insertAfter: TextSlice | null,
   image: SuggestionImageInsert,
-  suggestionId: string
+  suggestionId: string,
+  appendAt: "body" | "end" = "end",
+  beforePaired?: PairedBlockKind
 ): JSONContent {
   const node = pendingImageInlineNode(image, suggestionId);
   if (insertAfter && insertAfter.indexInParent >= 0) {
@@ -938,6 +984,10 @@ function insertImageAfterRef(
   }
   const para: JSONContent = { type: "paragraph", content: [node] };
   if (cloned.type !== "doc") return node;
+  if (appendAt === "body") {
+    spliceTopLevelNodes(cloned, bodyAppendIndex(cloned, beforePaired), [para]);
+    return node;
+  }
   const last = cloned.content?.[cloned.content.length - 1];
   const lastEmpty =
     last?.type === "paragraph" &&
@@ -1063,7 +1113,14 @@ function applySingleEditToRichDoc(
   if (located.status === "append") {
     const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
     if (edit.insertImage && !normalizeSuggestionInsertText(edit.insertText ?? "")) {
-      insertImageAfterRef(cloned, null, edit.insertImage, attrs.id);
+      insertImageAfterRef(
+        cloned,
+        null,
+        edit.insertImage,
+        attrs.id,
+        "body",
+        edit.placeBeforePairedBlock
+      );
       cleanupMarks(cloned);
       return { status: "append", doc: cloned };
     }
@@ -1088,7 +1145,7 @@ function applySingleEditToRichDoc(
       }
       let inserted = false;
       for (const paragraph of paragraphs) {
-        if (insertAfterRef(cloned, null, paragraph, attrs)) inserted = true;
+        if (insertAfterRef(cloned, null, paragraph, attrs, "end")) inserted = true;
       }
       if (!inserted && !edit.insertImage) {
         return { status: "empty_edit", doc: cloned };
@@ -1102,10 +1159,19 @@ function applySingleEditToRichDoc(
         return { status: "empty_edit", doc: cloned };
       }
       if (classified.kind === "blocks") {
-        insertMarkdownBlocks(cloned, null, classified.content, attrs);
+        insertMarkdownBlocks(cloned, null, classified.content, attrs, {
+          beforePairedBlock: edit.placeBeforePairedBlock,
+        });
       } else if (classified.kind === "inline") {
         if (
-          !insertAfterRef(cloned, null, classified.text, attrs) &&
+          !insertAfterRef(
+            cloned,
+            null,
+            classified.text,
+            attrs,
+            "body",
+            edit.placeBeforePairedBlock
+          ) &&
           !edit.insertImage
         ) {
           return { status: "empty_edit", doc: cloned };
@@ -1113,7 +1179,14 @@ function applySingleEditToRichDoc(
       }
     }
     if (edit.insertImage) {
-      insertImageAfterRef(cloned, null, edit.insertImage, attrs.id);
+      insertImageAfterRef(
+        cloned,
+        null,
+        edit.insertImage,
+        attrs.id,
+        "body",
+        edit.placeBeforePairedBlock
+      );
     }
     cleanupMarks(cloned);
     return { status: "append", doc: cloned };

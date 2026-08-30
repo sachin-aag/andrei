@@ -1074,6 +1074,7 @@ export function TiptapSectionField({
               removeImage: payload.removeImage,
               scope: payload.scope,
               second: payload.second,
+              placeBeforePairedBlock: payload.placeBeforePairedBlock,
             });
             const injected = injectSuggestionMarks(json, edit, {
               id: activeSuggestionId,

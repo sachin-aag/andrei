@@ -436,6 +436,97 @@ describe("applyTableOperation", () => {
     expect(rowCount(result.doc)).toBe(3);
   });
 
+  it("inserts a new table before trailing Citations", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Purpose of this verification." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
+        },
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["VCS", "Meaning"],
+      rows: [["1", "Design"]],
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    const types = result.doc.content?.map((n) => n.type);
+    expect(types).toEqual(["paragraph", "table", "paragraph", "paragraph"]);
+    expect(flattenForAnchor(result.doc.content![2]!).text.trim()).toBe(
+      "Citations:"
+    );
+  });
+
+  it("inserts after a unique afterAnchor block", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "First paragraph." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Second paragraph." }],
+        },
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["A"],
+      rows: [["1"]],
+      afterAnchor: "First paragraph.",
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.doc.content?.map((n) => n.type)).toEqual([
+      "paragraph",
+      "table",
+      "paragraph",
+    ]);
+  });
+
+  it("refuses a missing or ambiguous afterAnchor", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "The assay failed." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "The assay failed again." }],
+        },
+      ],
+    };
+    expect(
+      applyTableOperation(before, {
+        kind: "create_table",
+        headers: ["A"],
+        afterAnchor: "not in the field",
+      }).status
+    ).toBe("bad_scope");
+    expect(
+      applyTableOperation(before, {
+        kind: "create_table",
+        headers: ["A"],
+        afterAnchor: "The assay failed",
+      }).status
+    ).toBe("bad_scope");
+  });
+
   it("refuses create_table on a seeded DV matrix field", () => {
     const result = applyTableOperation(
       seededTableDoc(["Equipment", "ID", "Calibration"]),
@@ -477,6 +568,7 @@ describe("parseTableOperation", () => {
       kind: "create_table",
       headers: ["Req", "Result"],
       rows: [["SW-1", "Pass"]],
+      afterAnchor: "Purpose of this verification.",
     };
     expect(parseTableOperation(raw)).toEqual(raw);
   });

@@ -392,6 +392,25 @@ type TrailingDocRange = {
   end: number;
 };
 
+/**
+ * Index at which new body content (prose, tables, figures) should land.
+ * Trailing Citations:/References: stay after this index. Replaces a dangling
+ * empty paragraph when the field has no citation block.
+ */
+export function fieldBodyInsertIndex(doc: JSONContent): number {
+  const blocks = doc.content;
+  if (!Array.isArray(blocks) || blocks.length === 0) return 0;
+  const range = findTrailingCitationRange(blocks);
+  if (range) return range.cut;
+  const last = blocks[blocks.length - 1];
+  if (last && isEmptyParagraphBlock(last)) return blocks.length - 1;
+  return blocks.length;
+}
+
+export function hasTrailingCitationBlock(doc: JSONContent): boolean {
+  return Array.isArray(doc.content) && findTrailingCitationRange(doc.content) !== null;
+}
+
 function findTrailingCitationRange(
   blocks: JSONContent[]
 ): TrailingDocRange | null {

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v59-named-plot");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v60-block-insert-pair");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -212,6 +212,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("create_table");
     expect(prompt).toContain("Do not use draft_field to create a table");
     expect(prompt).toContain("two failed retries following a fresh read_section");
+    expect(prompt).toContain("Omit afterAnchor to append before Citations");
+    expect(prompt).toContain("empty-anchor propose_edit");
+    expect(prompt).toContain("never splice it into an earlier paragraph");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {

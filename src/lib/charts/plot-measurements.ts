@@ -9,6 +9,7 @@ import {
   parseAiFixCommentContent,
   serializeAiFixCommentContent,
   sectionContentHash,
+  type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
 import {
   isRichTargetField,
@@ -40,6 +41,14 @@ import {
   type SuggestionImageInsert,
   type SuggestionImageRemove,
 } from "@/lib/suggestions/image-insert";
+import {
+  isAppendBlock,
+  recordBlock,
+  takeUnusedLeadIn,
+  withPairedBlock,
+  withPlaceAfterLeadIn,
+  type SameTurnBlockPairing,
+} from "@/lib/suggestions/same-turn-block-pair";
 import {
   DEFAULT_CHART_LAYOUT,
   layoutPoints,
@@ -345,6 +354,7 @@ async function persistChartEdit(args: {
     editPolicy?: ChatEditPolicy;
     actor?: AuditActorSnapshot;
     turnEdits?: TurnEditItem[];
+    blockPairing?: SameTurnBlockPairing;
   };
   deps: PlotMeasurementsDeps;
   loaded: LoadedSection;
@@ -355,6 +365,11 @@ async function persistChartEdit(args: {
   removeImage?: SuggestionImageRemove;
   anchorText: string;
 }): Promise<{ ok: true; id: string } | PlotMeasurementsResult> {
+  const appendImage = Boolean(
+    args.insertImage &&
+      !args.removeImage &&
+      isAppendBlock({ anchorText: args.anchorText })
+  );
   if (args.ctx.editPolicy === "commit") {
     if (!args.ctx.actor) {
       return {
@@ -387,6 +402,20 @@ async function persistChartEdit(args: {
         targetField: result.targetField,
         reasoning: args.input.reasoning,
       });
+      if (appendImage && args.ctx.blockPairing) {
+        recordBlock(args.ctx.blockPairing, {
+          suggestionId: "committed",
+          section: args.input.section,
+          targetField: args.resolvedField,
+          kind: "image",
+          payload: {
+            deleteText: "",
+            insertText: "",
+            insertImage: args.insertImage,
+            reasoning: args.input.reasoning,
+          },
+        });
+      }
       return { ok: true, id: "applied" };
     }
     if (result.status === "section_not_found") {
@@ -405,19 +434,44 @@ async function persistChartEdit(args: {
   }
 
   const id = args.deps.createId();
+  let payload: ParsedAiFixPayload = {
+    deleteText: "",
+    insertText: "",
+    insertImage: args.insertImage,
+    removeImage: args.removeImage,
+    reasoning: args.input.reasoning,
+    contentHashAtSuggestion: args.hash,
+  };
+  if (appendImage && args.ctx.blockPairing) {
+    const leadIn = takeUnusedLeadIn(
+      args.ctx.blockPairing,
+      args.input.section,
+      args.resolvedField
+    );
+    if (leadIn) {
+      payload = withPlaceAfterLeadIn(payload, leadIn.suggestionId);
+      await args.deps.updateComment({
+        id: leadIn.suggestionId,
+        content: serializeAiFixCommentContent(
+          withPairedBlock(leadIn.payload, id, "image")
+        ),
+      });
+    } else {
+      recordBlock(args.ctx.blockPairing, {
+        suggestionId: id,
+        section: args.input.section,
+        targetField: args.resolvedField,
+        kind: "image",
+        payload,
+      });
+    }
+  }
   await args.deps.insertComment({
     id,
     reportId: args.ctx.reportId,
     sectionId: args.loaded.sectionId,
     section: args.input.section,
-    content: serializeAiFixCommentContent({
-      deleteText: "",
-      insertText: "",
-      insertImage: args.insertImage,
-      removeImage: args.removeImage,
-      reasoning: args.input.reasoning,
-      contentHashAtSuggestion: args.hash,
-    }),
+    content: serializeAiFixCommentContent(payload),
     anchorText: args.anchorText,
     contentPath: args.resolvedField,
   });
@@ -435,6 +489,7 @@ export async function executePlotMeasurements(
     editPolicy?: ChatEditPolicy;
     actor?: AuditActorSnapshot;
     turnEdits?: TurnEditItem[];
+    blockPairing?: SameTurnBlockPairing;
   },
   deps: PlotMeasurementsDeps = DEFAULT_DEPS
 ): Promise<PlotMeasurementsResult> {

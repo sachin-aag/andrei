@@ -835,3 +835,122 @@ describe("commitSuggestionMarksById", () => {
     expect(json).toContain("was OOS");
   });
 });
+
+describe("locator — body append before Citations", () => {
+  function docWithCitations(body: string): JSONContent {
+    return {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: body }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
+        },
+      ],
+    };
+  }
+
+  function labels(doc: JSONContent): string[] {
+    return (doc.content ?? []).map((block) => {
+      if (block.type === "table") return "table";
+      const text = flattenForAnchor(block).text.replace(/\s+/g, " ").trim();
+      if (/^citations:?$/i.test(text)) return "citations";
+      return text || block.type || "";
+    });
+  }
+
+  it("appends empty-anchor prose before trailing Citations", () => {
+    const result = applyEditToRichDoc(
+      docWithCitations("Purpose of this verification."),
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "The VCS mapping follows.",
+      },
+      ATTRS
+    );
+    expect(result.status).toBe("append");
+    expect(labels(result.doc)).toEqual([
+      "Purpose of this verification.",
+      "The VCS mapping follows.",
+      "citations",
+      "1. [protocol.pdf, p. 3]",
+    ]);
+  });
+
+  it("still parks a citation-only append at the true end", () => {
+    const result = applyEditToRichDoc(
+      docWithCitations("Purpose of this verification."),
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "Citations:\n[other.pdf, p. 1]",
+      },
+      ATTRS
+    );
+    expect(result.status).toBe("append");
+    const last = flattenForAnchor(result.doc.content!.at(-1)!).text.trim();
+    expect(last).toContain("[other.pdf, p. 1]");
+    expect(labels(result.doc)[0]).toBe("Purpose of this verification.");
+    expect(labels(result.doc)).toContain("citations");
+  });
+
+  it("places a lead-in before the last table when placeBeforePairedBlock is set", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Purpose of this verification." }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "VCS" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+      ],
+    };
+    const result = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "The VCS mapping follows.",
+        placeBeforePairedBlock: "table",
+      },
+      ATTRS
+    );
+    expect(result.status).toBe("append");
+    expect(labels(result.doc)).toEqual([
+      "Purpose of this verification.",
+      "The VCS mapping follows.",
+      "table",
+      "citations",
+    ]);
+  });
+});

@@ -3,6 +3,7 @@ import type { z } from "zod";
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
 import { comments } from "@/db/schema";
 import { buildChatTools, collectSearchQueries, mergeExcludePages } from "@/lib/ai/chat/tools";
+import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 import {
   DocumentReviewSession,
   extractReviewFindingsFromPages,
@@ -1337,5 +1338,204 @@ describe("buildChatTools propose vs commit", () => {
       "create additional plots in Analytics"
     );
     expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("pairs an empty-anchor propose_edit lead-in with create_table", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "The VCS mapping follows.",
+        reasoning: "Introduce the table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the VCS table.",
+        operation: {
+          kind: "create_table",
+          headers: ["VCS", "Meaning"],
+          rows: [["1", "Design"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(inserted).toHaveLength(2);
+    const leadId = String(inserted[0]!.id);
+    const tableId = String(inserted[1]!.id);
+    const tablePayload = parseAiFixCommentContent(String(inserted[1]!.content));
+    expect(tablePayload.placeAfterSuggestionId).toBe(leadId);
+    expect(updates.length).toBeGreaterThan(0);
+    const patchedLead = parseAiFixCommentContent(String(updates[0]!.content));
+    expect(patchedLead.pairedBlockSuggestionId).toBe(tableId);
+    expect(patchedLead.placeBeforePairedBlock).toBe("table");
+  });
+
+  it("pairs create_table then the empty-anchor lead-in in reverse order", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the VCS table.",
+        operation: {
+          kind: "create_table",
+          headers: ["VCS", "Meaning"],
+          rows: [["1", "Design"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "The VCS mapping follows.",
+        reasoning: "Introduce the table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(inserted).toHaveLength(2);
+    const tableId = String(inserted[0]!.id);
+    const leadId = String(inserted[1]!.id);
+    const leadPayload = parseAiFixCommentContent(String(inserted[1]!.content));
+    expect(leadPayload.pairedBlockSuggestionId).toBe(tableId);
+    expect(leadPayload.placeBeforePairedBlock).toBe("table");
+    const patchedTable = parseAiFixCommentContent(String(updates[0]!.content));
+    expect(patchedTable.placeAfterSuggestionId).toBe(leadId);
+  });
+
+  it("pairs an empty-anchor propose_edit lead-in with insert_image", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_1",
+          workspaceId: "ws",
+          title: "Torque scatter",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Torque scatter",
+            chartSpec: null,
+          },
+          config: {
+            query: "torque",
+            title: "Torque scatter",
+            xLabel: "Unit",
+            yLabel: "Torque",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "Nm" },
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "The torque scatter follows.",
+        reasoning: "Introduce the figure.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the torque scatter to Define.",
+        image: { source: "analytics", analysisId: "anl_1" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(inserted).toHaveLength(2);
+    const leadId = String(inserted[0]!.id);
+    const imageId = String(inserted[1]!.id);
+    const imagePayload = parseAiFixCommentContent(String(inserted[1]!.content));
+    expect(imagePayload.placeAfterSuggestionId).toBe(leadId);
+    expect(imagePayload.insertImage).toBeDefined();
+    const patchedLead = parseAiFixCommentContent(String(updates[0]!.content));
+    expect(patchedLead.pairedBlockSuggestionId).toBe(imageId);
+    expect(patchedLead.placeBeforePairedBlock).toBe("image");
   });
 });

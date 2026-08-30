@@ -1,7 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
-import { isEmptyParagraphBlock } from "@/lib/suggestions/citations-at-end";
 import { markdownHasTable, markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
+import {
+  insertNodesIntoFieldBody,
+  type PairedBlockKind,
+} from "@/lib/suggestions/block-insert";
 
 type InsertMarkAttrs = {
   id: string;
@@ -105,7 +108,8 @@ export function insertMarkdownBlocks(
   doc: JSONContent,
   afterNode: JSONContent | null,
   blocks: JSONContent[],
-  attrs: InsertMarkAttrs
+  attrs: InsertMarkAttrs,
+  opts?: { beforePairedBlock?: PairedBlockKind }
 ): void {
   const inserted: JSONContent[] = JSON.parse(JSON.stringify(blocks));
   for (const block of inserted) markInserted(block, attrs);
@@ -131,12 +135,9 @@ export function insertMarkdownBlocks(
 
   if (!Array.isArray(doc.content)) doc.content = [];
   if (!afterNode) {
-    const last = doc.content[doc.content.length - 1];
-    if (last && isEmptyParagraphBlock(last)) {
-      doc.content = [...doc.content.slice(0, -1), ...inserted];
-      return;
-    }
-    doc.content = [...doc.content, ...inserted];
+    insertNodesIntoFieldBody(doc, inserted, {
+      beforePairedBlock: opts?.beforePairedBlock,
+    });
     return;
   }
   const index = topLevelIndexContaining(doc, afterNode);
