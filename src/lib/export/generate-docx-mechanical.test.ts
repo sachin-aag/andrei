@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { reports } from "@/db/schema";
 import { reportExportDocxFileName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
+import { docxParagraphPlainText } from "@/lib/export/docx-toc-headings";
 import {
   EMPTY_MECHANICAL_DV_CONTENT,
   MECHANICAL_DV_SECTION_KEYS,
@@ -338,6 +339,20 @@ describe("mechanical DV DOCX export", () => {
     const failuresAt = xml.indexOf("3. Failure/Out of Specification Forms");
     expect(deviationsAt).toBeGreaterThan(-1);
     expect(failuresAt).toBeGreaterThan(deviationsAt);
+
+    const paras = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? [];
+    const styleOf = (text: string) =>
+      paras.find((p) => docxParagraphPlainText(p) === text)?.match(
+        /<w:pStyle w:val="([^"]+)"/
+      )?.[1] ?? null;
+    expect(styleOf("PURPOSE:")).toBe("Heading1");
+    expect(styleOf("1. Testers/Dates:")).toBe("Heading1");
+    expect(styleOf("2. Methods of Measurement")).toBe("Heading1");
+    expect(styleOf("2.1 Executed Protocol:")).toBe("Heading2");
+    expect(styleOf("2.4 Test Equipment:")).toBe("Heading2");
+    expect(styleOf("4.2 Requirements Verified:")).toBe("Heading2");
+    expect(styleOf("6. Conclusion:")).toBe("Heading1");
+    expect(styleOf("Revision History")).toBe("Heading1");
   });
 
   it("names the exported file for the mechanical type", () => {

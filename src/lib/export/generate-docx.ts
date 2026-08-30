@@ -73,6 +73,10 @@ import {
   type ReportDocxComment,
 } from "@/lib/export/docx-comments";
 import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images";
+import {
+  applyTocHeadingStylesToDocxZip,
+  tocHeadingSpecsForDocumentType,
+} from "@/lib/export/docx-toc-headings";
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -673,6 +677,10 @@ async function generateDesignVerificationDocx({
   }
 
   doc.render(data);
+  const headingSpecs = tocHeadingSpecsForDocumentType(pack.id, documentType);
+  if (headingSpecs) {
+    applyTocHeadingStylesToDocxZip(doc.getZip(), headingSpecs);
+  }
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);
