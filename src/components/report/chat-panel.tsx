@@ -140,6 +140,13 @@ import {
   shouldLoadOlderMessages,
   visibleMessageStartIndex,
 } from "@/components/report/chat-visible-messages";
+import {
+  captureChatScrollPosition,
+  isChatScrollerLaidOut,
+  restoreChatScrollPosition,
+  shouldStickChatToBottom,
+  type ChatScrollPosition,
+} from "@/components/report/chat-scroll-position";
 import { getDocumentType } from "@/lib/document-types";
 import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
 import {
@@ -866,6 +873,7 @@ export function ChatPanel({
   workspaceChrome = "document",
   workProductView = "report",
   statsEnabled = false,
+  visible = true,
   onWorksheetChanged,
   onAgentBusyChange,
   onAnalyticsFocusSheet,
@@ -876,6 +884,8 @@ export function ChatPanel({
   workspaceChrome?: WorkspaceChrome;
   workProductView?: WorkProductView;
   statsEnabled?: boolean;
+  /** False while the sidebar is collapsed or another tab is showing. */
+  visible?: boolean;
   onWorksheetChanged?: () => void;
   onAgentBusyChange?: (busy: boolean) => void;
   onAnalyticsFocusSheet?: (sheetId: string) => void;
@@ -999,6 +1009,12 @@ export function ChatPanel({
   const olderScrollRestoreRef = useRef<{ height: number; top: number } | null>(
     null
   );
+  const savedScrollRef = useRef<ChatScrollPosition | null>(null);
+  const savedScrollSessionKeyRef = useRef(sessionWindowKey);
+  if (savedScrollSessionKeyRef.current !== sessionWindowKey) {
+    savedScrollSessionKeyRef.current = sessionWindowKey;
+    savedScrollRef.current = null;
+  }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
@@ -1433,19 +1449,29 @@ export function ChatPanel({
     if (el && restore != null) {
       olderScrollRestoreRef.current = null;
       el.scrollTop = el.scrollHeight - restore.height + restore.top;
+      const captured = captureChatScrollPosition(el);
+      if (captured != null) savedScrollRef.current = captured;
     }
     loadingOlderRef.current = false;
   }, [visibleCount]);
 
+  const captureVisibleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const captured = captureChatScrollPosition(el);
+    if (captured != null) savedScrollRef.current = captured;
+  }, []);
+
   const onMessagesScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    captureVisibleScroll();
     if (
       shouldLoadOlderMessages(el.scrollTop, visibleCount, messages.length)
     ) {
       loadOlderMessages();
     }
-  }, [loadOlderMessages, messages.length, visibleCount]);
+  }, [captureVisibleScroll, loadOlderMessages, messages.length, visibleCount]);
 
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
@@ -1476,9 +1502,35 @@ export function ChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report.id]);
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  useLayoutEffect(() => {
+    if (!visible) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    restoreChatScrollPosition(el, savedScrollRef.current);
+  }, [visible]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !isChatScrollerLaidOut(el)) return;
+    if (!shouldStickChatToBottom(savedScrollRef.current)) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    savedScrollRef.current = { kind: "bottom" };
   }, [messages, status]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let wasLaidOut = isChatScrollerLaidOut(el);
+    const observer = new ResizeObserver(() => {
+      const nowLaidOut = isChatScrollerLaidOut(el);
+      if (!wasLaidOut && nowLaidOut) {
+        restoreChatScrollPosition(el, savedScrollRef.current);
+      }
+      wasLaidOut = nowLaidOut;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Close history dropdown on outside click.
   useEffect(() => {
@@ -1590,6 +1642,7 @@ export function ChatPanel({
       }
       if (sessionRuntime.busy) return;
       lastSendTargetRef.current = chatTarget;
+      savedScrollRef.current = { kind: "bottom" };
       if (
         workspaceChrome === "agent" &&
         mode === "agent" &&
@@ -1775,6 +1828,7 @@ export function ChatPanel({
       {/* Messages */}
       <div
         ref={scrollRef}
+        data-testid="chat-message-scroller"
         className="flex-1 space-y-5 overflow-y-auto p-4"
         onScroll={onMessagesScroll}
       >
