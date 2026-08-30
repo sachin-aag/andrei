@@ -12,6 +12,7 @@ import {
   openReportAnalytics,
   openReportEditor,
   reportSidebar,
+  setChatWorkProductTarget,
 } from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
@@ -390,6 +391,9 @@ test.describe("report analytics", () => {
     await openReportAnalytics(page);
     await expandReportSidebar(page);
     const sidebar = reportSidebar(page);
+    await expect(sidebar.getByTestId("chat-work-product-target")).toBeVisible();
+    await expect(sidebar.getByTestId("analytics-chat-input")).toHaveCount(0);
+    await setChatWorkProductTarget(page, "analytics");
     const composer = sidebar.getByTestId("analytics-chat-input");
     await expect(composer).toBeEnabled({ timeout: 15_000 });
     await expect(sidebar.getByTestId("analytics-chat-mode")).toBeVisible();
