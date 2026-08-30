@@ -256,6 +256,7 @@ async function handleSuggestionsPost(
         reasoning: s.reasoning,
         scope: s.scope,
         second,
+        contentHashAtSuggestion: suggestionContentHash,
         evidenceSources: s.evidenceSources,
       },
       buildSuggestionRecord({
@@ -331,6 +332,7 @@ async function handleSuggestionsPost(
         insertText,
         reasoning: s.reasoning,
         second,
+        contentHashAtSuggestion: suggestionContentHash,
         evidenceSources: s.evidenceSources,
       },
       buildSuggestionRecord({

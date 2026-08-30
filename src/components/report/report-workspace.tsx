@@ -94,6 +94,7 @@ import {
   documentCanvasWidthClass,
   documentColumnStyle,
   isReviewGutterVisible,
+  REVIEW_GUTTER_ASIDE_CLASS,
   REVIEW_GUTTER_GRID_COLS,
   WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
 } from "./workspace-layout";
@@ -1174,7 +1175,7 @@ export function ReportWorkspace({
                   </div>
                   {showReviewGutter ? (
                     <aside
-                      className="relative hidden min-w-0 @[800px]:block"
+                      className={REVIEW_GUTTER_ASIDE_CLASS}
                       aria-label="Review margin"
                     >
                       <MarginGutter

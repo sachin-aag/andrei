@@ -14,17 +14,31 @@ import type { WorkspaceChrome } from "./workspace-chrome";
 
 export const COLLAPSED_RAIL_PX = 48;
 
-/** Review margin beside the document canvas (container ≥800px). */
+/** Review margin beside the document canvas. */
 export const REVIEW_GUTTER_MIN_PX = 168;
 export const REVIEW_GUTTER_MAX_PX = 280;
 
 /**
- * Review margin beside the document sheet (container ≥800px). The sheet keeps
- * `--doc-col`; the margin takes what is left, so widening the sheet shrinks
- * the margin to `REVIEW_GUTTER_MIN_PX` before the sheet itself gives way.
+ * Container-query floor for the review-margin column. Must stay a complete
+ * Tailwind class in `REVIEW_GUTTER_GRID_COLS` / `REVIEW_GUTTER_ASIDE_CLASS`.
+ *
+ * 480px (not 800px) is required on a 1280px laptop: default chat (400) +
+ * attachments (300) + collapsed app nav (~56) leave ~520px of canvas. An
+ * 800px floor hid the gutter on Playwright’s viewport and on 13" screens
+ * even with Comments turned on.
+ */
+export const REVIEW_GUTTER_CONTAINER_MIN_PX = 480;
+
+/**
+ * Review margin beside the document sheet. The sheet keeps `--doc-col`; the
+ * margin takes what is left, so widening the sheet shrinks the margin to
+ * `REVIEW_GUTTER_MIN_PX` before the sheet itself gives way.
  */
 export const REVIEW_GUTTER_GRID_COLS =
-  "@[800px]:grid-cols-[minmax(0,var(--doc-col))_minmax(168px,1fr)]" as const;
+  "@[480px]:grid-cols-[minmax(0,var(--doc-col))_minmax(168px,1fr)]" as const;
+
+export const REVIEW_GUTTER_ASIDE_CLASS =
+  "relative hidden min-w-0 @[480px]:block" as const;
 
 /**
  * Readable measure for sectioned reports (investigation, DV, QRA).

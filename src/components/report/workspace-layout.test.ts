@@ -21,6 +21,8 @@ import {
   DOCUMENT_WIDTH_MAX_PX,
   DOCUMENT_WIDTH_MIN_PX,
   documentWidthBounds,
+  REVIEW_GUTTER_ASIDE_CLASS,
+  REVIEW_GUTTER_CONTAINER_MIN_PX,
   REVIEW_GUTTER_GRID_COLS,
   REVIEW_GUTTER_MAX_PX,
   REVIEW_GUTTER_MIN_PX,
@@ -108,6 +110,25 @@ describe("review gutter width", () => {
     expect(REVIEW_GUTTER_GRID_COLS).toContain("minmax(0,var(--doc-col))");
     expect(REVIEW_GUTTER_GRID_COLS).toContain(
       `minmax(${REVIEW_GUTTER_MIN_PX}px,1fr)`
+    );
+  });
+
+  it("shows the margin on a 1280px laptop with default chat and attachments", () => {
+    const allocated = allocateWorkspaceColumns(1224, 1280, {
+      chrome: "document",
+      chatWidth: CHAT_DEFAULT_PX,
+      docsWidth: DOCS_DEFAULT_PX,
+      chatCollapsed: false,
+      docsCollapsed: false,
+    });
+    expect(allocated.mainWidth).toBeGreaterThanOrEqual(
+      REVIEW_GUTTER_CONTAINER_MIN_PX
+    );
+    expect(REVIEW_GUTTER_GRID_COLS).toContain(
+      `@[${REVIEW_GUTTER_CONTAINER_MIN_PX}px]`
+    );
+    expect(REVIEW_GUTTER_ASIDE_CLASS).toContain(
+      `@[${REVIEW_GUTTER_CONTAINER_MIN_PX}px]`
     );
   });
 });
