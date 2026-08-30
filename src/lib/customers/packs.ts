@@ -226,13 +226,3 @@ export function isStatisticalAnalysisEnabled(
 ): boolean {
   return pack.statisticalAnalysisEnabled;
 }
-
-/**
- * Document (report-body) chat may propose a measurement scatter as a
- * reviewable figure. Convergent plots live in Analytics instead.
- */
-export function isDocumentChatPlotMeasurementsEnabled(
-  pack: CustomerPack = getCustomerPack()
-): boolean {
-  return pack.id !== "convergent";
-}

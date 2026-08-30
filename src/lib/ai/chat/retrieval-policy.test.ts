@@ -253,6 +253,43 @@ describe("classifyRetrievalPolicy", () => {
     expect(decision.policy).toBe("comprehensive");
     expect(decision.reason).toBe("open_set_distributed");
   });
+
+  it("keeps a sentence or paragraph rewrite adaptive on a large DV catalog", () => {
+    const sentence = classifyRetrievalPolicy({
+      userText:
+        "change the last sentence of the first paragraph to also explain what perioguide is",
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(sentence.policy).toBe("adaptive");
+    expect(sentence.reason).toBe("targeted_rewrite");
+
+    const paragraph = classifyRetrievalPolicy({
+      userText: "rewrite first paragraph in purpose section",
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(paragraph.policy).toBe("adaptive");
+    expect(paragraph.reason).toBe("targeted_rewrite");
+  });
+
+  it("does not let an earlier draft-report turn force another full page walk", () => {
+    const decision = classifyRetrievalPolicy({
+      userText:
+        "change the last sentence of the first paragraph to also explain what perioguide is",
+      recentUserTexts: ["draft report"],
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("targeted_rewrite");
+  });
 });
 
 describe("document-type inventory registry", () => {

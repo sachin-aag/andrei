@@ -1,5 +1,26 @@
 import type { UIMessage } from "ai";
+import { documentInsertedPlotWidth } from "@/lib/charts/chart-dimensions";
 import { isChatImageFilePart } from "@/lib/ai/chat/image-parts";
+import {
+  isGraphAnalysisKind,
+  isInsertableGraphAnalysis,
+  listGraphAnalyses,
+  listInsertableGraphAnalyses,
+} from "@/lib/statistical-analysis/insertable-graphs";
+import { SECTION_LABELS } from "@/types/sections";
+import {
+  BOXPLOT,
+  CAPABILITY_SIXPACK_NORMAL,
+  MEASUREMENT_SCATTER,
+  ONE_WAY_ANOVA,
+  XY_SCATTER,
+  isBoxplotAnalysis,
+  isScatterAnalysis,
+  isSixpackAnalysis,
+  isXyScatterAnalysis,
+  type AnalysisKind,
+  type StatisticalAnalysisSummary,
+} from "@/lib/statistical-analysis/types";
 import { isValidSuggestionImageSrc } from "@/lib/suggestions/image-insert";
 import type { SuggestionImageInsert } from "@/lib/suggestions/image-insert";
 
@@ -121,7 +142,551 @@ export function sectionImageNotFoundMessage(opts: {
   return `No image at index ${opts.index}. ${opts.sourceSection} ${opts.sourceField} has ${opts.listedCount} image${opts.listedCount === 1 ? "" : "s"} (index 1–${opts.listedCount}).`;
 }
 
-export type InsertImageSource = ChatImageSource | SectionImageSource;
+export type AnalyticsImageSource = {
+  source: "analytics";
+  /** Saved Analytics plot id (context map / @ mention). */
+  analysisId: string;
+};
+
+export type InsertImageSource =
+  | ChatImageSource
+  | SectionImageSource
+  | AnalyticsImageSource;
+
+export function resolveAnalyticsImage(
+  analysis: StatisticalAnalysisSummary | undefined,
+  analysisId: string
+):
+  | { ok: true; image: SuggestionImageInsert }
+  | { ok: false; message: string } {
+  const id = analysisId.trim();
+  if (!id) {
+    return {
+      ok: false,
+      message:
+        "Provide image.analysisId from the context map Analytics plots list (or a tagged @ plot).",
+    };
+  }
+  if (!analysis) {
+    return {
+      ok: false,
+      message: `No Analytics plot with id '${id}'. Use analysisId from the context map Analytics plots list, or tag the plot with @.`,
+    };
+  }
+  if (!isGraphAnalysisKind(analysis.kind)) {
+    return {
+      ok: false,
+      message: `'${analysis.title}' (${analysis.kind}) is not a figure you can insert. insert_image source=analytics copies a sixpack, measurement scatter, or XY scatter.`,
+    };
+  }
+  if (!isInsertableGraphAnalysis(analysis) || !analysis.previewImage) {
+    return {
+      ok: false,
+      message: `'${analysis.title}' has no captured preview yet. Open it in Analytics so the preview can be saved, then retry insert_image with source=analytics.`,
+    };
+  }
+  const preview = analysis.previewImage;
+  if (!isValidSuggestionImageSrc(preview.dataUrl)) {
+    return {
+      ok: false,
+      message: `The stored preview for '${analysis.title}' is not a usable image. Open the plot in Analytics and retry.`,
+    };
+  }
+  return {
+    ok: true,
+    image: {
+      src: preview.dataUrl,
+      alt: preview.alt || analysis.title,
+      width: documentInsertedPlotWidth(preview),
+      mediaId: null,
+      chartSpec: preview.chartSpec,
+    },
+  };
+}
+
+const PLOT_NAME_STOPWORDS = new Set([
+  "a",
+  "an",
+  "the",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "my",
+  "our",
+  "your",
+  "and",
+  "or",
+  "of",
+  "for",
+  "to",
+  "into",
+  "onto",
+  "in",
+  "on",
+  "at",
+  "from",
+  "with",
+  "please",
+  "do",
+  "doing",
+  "done",
+  "go",
+  "going",
+  "ahead",
+  "proceed",
+  "thing",
+  "things",
+  "stuff",
+  "can",
+  "could",
+  "would",
+  "should",
+  "insert",
+  "add",
+  "copy",
+  "put",
+  "place",
+  "include",
+  "embed",
+  "use",
+  "plot",
+  "plots",
+  "chart",
+  "charts",
+  "graph",
+  "graphs",
+  "figure",
+  "figures",
+  "image",
+  "images",
+  "photo",
+  "picture",
+  "section",
+  "sections",
+  "field",
+  "document",
+  "report",
+  "analytics",
+  "results",
+  "available",
+  "existing",
+  "saved",
+  "current",
+  "purpose",
+  "scope",
+  "define",
+  "measure",
+  "analyze",
+  "analyse",
+  "improve",
+  "control",
+  "conclusion",
+  "references",
+  "traceability",
+  "appendices",
+  "narrative",
+  "body",
+  "approval",
+  "signoff",
+  "one",
+  "ones",
+  "also",
+  "just",
+  "here",
+  "there",
+  "yes",
+  "yeah",
+  "yep",
+  "yup",
+  "ok",
+  "okay",
+  "sure",
+  "do",
+  "go",
+  "ahead",
+  "thanks",
+  "thank",
+  "thing",
+  "things",
+  "stuff",
+  "named",
+  "title",
+  "titles",
+  "kind",
+  "no",
+  "not",
+  "dont",
+  "didnt",
+  "doesnt",
+  "isnt",
+  "wasnt",
+  "wont",
+  "cant",
+  "cannot",
+  "still",
+  "see",
+  "saw",
+  "look",
+  "looking",
+  "find",
+  "found",
+  "show",
+  "showing",
+  "shown",
+  "visible",
+  "missing",
+  "appear",
+  "appears",
+  "where",
+  "why",
+  "how",
+  "what",
+  "which",
+  "did",
+  "does",
+  "was",
+  "were",
+  "been",
+  "have",
+  "has",
+  "had",
+  "try",
+  "trying",
+  "tried",
+  "again",
+  "really",
+  "actually",
+  "maybe",
+  "perhaps",
+  "hello",
+  "hey",
+  "wait",
+  "hmm",
+  "nope",
+  "nah",
+  "both",
+  "them",
+  "method",
+  "methods",
+  "measurement",
+  "measurements",
+  "protocol",
+  "protocols",
+  "test",
+  "tests",
+  "testing",
+]);
+
+function rawPlotNameTokens(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) ?? []).filter(
+    (token) => token.length >= 2
+  );
+}
+
+const PLOT_NAME_STOPWORDS_ALL: ReadonlySet<string> = (() => {
+  const words = new Set(PLOT_NAME_STOPWORDS);
+  for (const label of Object.values(SECTION_LABELS)) {
+    for (const token of rawPlotNameTokens(label)) {
+      words.add(token);
+      if (token.endsWith("s") && token.length > 4) {
+        words.add(token.slice(0, -1));
+      }
+    }
+  }
+  return words;
+})();
+
+/** Adjacent transposition, insert, delete, or substitute — destination typos like "devaition". */
+function damerauDistanceAtMostOne(a: string, b: string): boolean {
+  if (a === b) return true;
+  const aLen = a.length;
+  const bLen = b.length;
+  if (Math.abs(aLen - bLen) > 1) return false;
+  if (aLen === bLen) {
+    let i = 0;
+    let diffs = 0;
+    while (i < aLen) {
+      if (a[i] === b[i]) {
+        i += 1;
+        continue;
+      }
+      diffs += 1;
+      if (diffs > 1) return false;
+      if (i + 1 < aLen && a[i] === b[i + 1] && a[i + 1] === b[i]) {
+        i += 2;
+        continue;
+      }
+      i += 1;
+    }
+    return diffs === 1;
+  }
+  const longer = aLen > bLen ? a : b;
+  const shorter = aLen > bLen ? b : a;
+  let li = 0;
+  let si = 0;
+  let skipped = 0;
+  while (li < longer.length) {
+    if (si < shorter.length && longer[li] === shorter[si]) {
+      li += 1;
+      si += 1;
+      continue;
+    }
+    skipped += 1;
+    if (skipped > 1) return false;
+    li += 1;
+  }
+  return true;
+}
+
+function isPlotNameStopword(token: string): boolean {
+  if (PLOT_NAME_STOPWORDS_ALL.has(token)) return true;
+  if (token.length < 6) return false;
+  for (const word of PLOT_NAME_STOPWORDS_ALL) {
+    if (word.length < 6) continue;
+    if (damerauDistanceAtMostOne(token, word)) return true;
+  }
+  return false;
+}
+
+const ANALYTICS_CREATE_COPY =
+  "They can create additional plots in Analytics (Document | Analytics at the top of the report).";
+const NOTHING_INSERTED_COPY =
+  "Nothing was inserted. Do not tell the engineer a figure was proposed or inserted.";
+const RELAY_AVAILABLE_PLOTS_COPY =
+  `NOT INSERTED — you have not proposed a figure. ${NOTHING_INSERTED_COPY} Reply in prose with those titles once. Do not say you proposed or inserted it. Do not call insert_image again this turn. Do not insert a different plot. Do not call plot_measurements as a substitute.`;
+
+/** Same-turn follow-up after available_plots already returned. */
+export const ALREADY_LISTED_PLOTS_COPY =
+  "NOT INSERTED — plots were already listed this turn. Relay those titles in prose once and stop. Do not say you proposed a figure. Do not call insert_image again.";
+
+function graphKindLabel(kind: AnalysisKind): string {
+  switch (kind) {
+    case CAPABILITY_SIXPACK_NORMAL:
+      return "sixpack";
+    case MEASUREMENT_SCATTER:
+      return "measurement scatter";
+    case XY_SCATTER:
+      return "XY scatter";
+    case BOXPLOT:
+      return "boxplot";
+    case ONE_WAY_ANOVA:
+      return "ANOVA";
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
+export function tokenizePlotName(text: string): string[] {
+  return rawPlotNameTokens(text).filter((token) => !isPlotNameStopword(token));
+}
+
+function tokenMatchesIdentity(request: string, identity: string): boolean {
+  if (request === identity) return true;
+  if (request.length < 4) return false;
+  return identity.includes(request) || request.includes(identity);
+}
+
+function analysisIdentityTokens(
+  analysis: StatisticalAnalysisSummary
+): string[] {
+  const parts: string[] = [analysis.title];
+  if (analysis.previewImage?.alt) parts.push(analysis.previewImage.alt);
+  if (isSixpackAnalysis(analysis)) {
+    parts.push(
+      analysis.config.columnName,
+      analysis.config.title,
+      "sixpack",
+      "capability"
+    );
+  } else if (isScatterAnalysis(analysis)) {
+    parts.push(
+      analysis.config.query,
+      analysis.config.yLabel,
+      analysis.config.xLabel,
+      analysis.config.title,
+      "scatter"
+    );
+  } else if (isXyScatterAnalysis(analysis)) {
+    parts.push(
+      analysis.config.xColumnName,
+      analysis.config.yColumnName,
+      analysis.config.title,
+      "scatter",
+      "xy"
+    );
+  } else if (isBoxplotAnalysis(analysis)) {
+    parts.push(
+      analysis.config.yColumnName,
+      ...analysis.config.categoryColumnNames,
+      analysis.config.title,
+      "boxplot",
+      "box"
+    );
+  }
+  return [...new Set(tokenizePlotName(parts.join(" ")))];
+}
+
+export function plotMatchesNamedTokens(
+  analysis: StatisticalAnalysisSummary,
+  namedTokens: readonly string[]
+): boolean {
+  if (namedTokens.length === 0) return false;
+  const identity = analysisIdentityTokens(analysis);
+  return namedTokens.every((token) =>
+    identity.some((id) => tokenMatchesIdentity(token, id))
+  );
+}
+
+function formatAvailablePlots(analyses: StatisticalAnalysisSummary[]): string {
+  const graphs = listGraphAnalyses(analyses);
+  if (graphs.length === 0) return "none";
+  return graphs
+    .map((analysis) => {
+      const title = analysis.title.trim() || "untitled plot";
+      const preview = isInsertableGraphAnalysis(analysis)
+        ? ""
+        : " — no preview yet";
+      return `"${title}" (${graphKindLabel(analysis.kind)}) [${analysis.id}]${preview}`;
+    })
+    .join("; ");
+}
+
+function availablePlotsMessage(opts: {
+  analyses: StatisticalAnalysisSummary[];
+  requested?: string;
+  unspecified?: boolean;
+}): string {
+  const listed = formatAvailablePlots(opts.analyses);
+  if (listed === "none") {
+    return `There are no saved Analytics plots to insert. Tell the engineer they can create plots in Analytics (Document | Analytics at the top of the report), then insert them here. Do not invent a figure.`;
+  }
+  if (opts.unspecified) {
+    return `The engineer did not name which plot. Available plots: ${listed}. Tell them those are available. ${ANALYTICS_CREATE_COPY} Ask which to insert. ${RELAY_AVAILABLE_PLOTS_COPY}`;
+  }
+  const requested = opts.requested?.trim() || "that name";
+  return `No Analytics plot matches "${requested}". Available plots: ${listed}. Tell the engineer those titles are available. ${ANALYTICS_CREATE_COPY} ${RELAY_AVAILABLE_PLOTS_COPY}`;
+}
+
+function userMessageText(message: UIMessage): string {
+  const texts: string[] = [];
+  for (const part of message.parts ?? []) {
+    if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
+      texts.push(part.text);
+    }
+  }
+  return texts.join("\n");
+}
+
+/** Most recent user turn only — confirmation ("yes, that one") must not inherit an earlier named miss. */
+export function latestUserMessageText(messages: UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role !== "user") continue;
+    return userMessageText(message);
+  }
+  return "";
+}
+
+/** Latest user turns, oldest-first among the slice, for plot-name matching. */
+export function recentUserMessageText(
+  messages: UIMessage[],
+  maxTurns = 3
+): string {
+  const chunks: string[] = [];
+  let seen = 0;
+  for (let i = messages.length - 1; i >= 0 && seen < maxTurns; i--) {
+    const message = messages[i];
+    if (message?.role !== "user") continue;
+    seen += 1;
+    const text = userMessageText(message);
+    if (text) chunks.push(text);
+  }
+  return chunks.reverse().join("\n");
+}
+
+export type NamedAnalyticsPlotResolution =
+  | { ok: true; analysisId: string }
+  | { ok: false; message: string };
+
+/**
+ * Match the engineer's named plot against saved Analytics figures. A named
+ * miss lists what is available instead of inserting a different plot.
+ * Destination-section wording and confirmation ("yes, that one") are not
+ * plot names — those follow analysisId or the only saved figure.
+ */
+export function resolveNamedAnalyticsPlot(input: {
+  analysisId: string;
+  analyses: StatisticalAnalysisSummary[];
+  userText: string;
+  /** Latest user turn only. Confirmation like "yes please do" is unnamed. */
+  latestUserText?: string;
+}): NamedAnalyticsPlotResolution {
+  const requestedId = input.analysisId.trim();
+  const latest = input.latestUserText?.trim() ?? "";
+  const namedTokens = latest
+    ? tokenizePlotName(latest)
+    : tokenizePlotName(input.userText);
+  const graphs = listGraphAnalyses(input.analyses);
+  const insertable = listInsertableGraphAnalyses(input.analyses);
+
+  const pickUnnamed = (): NamedAnalyticsPlotResolution => {
+    if (requestedId) {
+      const requested = graphs.find((analysis) => analysis.id === requestedId);
+      if (requested) {
+        return { ok: true, analysisId: requested.id };
+      }
+    }
+    if (insertable.length === 1) {
+      return { ok: true, analysisId: insertable[0]!.id };
+    }
+    if (graphs.length === 1) {
+      return { ok: true, analysisId: graphs[0]!.id };
+    }
+    return {
+      ok: false,
+      message: availablePlotsMessage({
+        analyses: input.analyses,
+        unspecified: insertable.length > 1 || graphs.length > 1,
+      }),
+    };
+  };
+
+  if (namedTokens.length === 0) {
+    return pickUnnamed();
+  }
+
+  const matches = graphs.filter((analysis) =>
+    plotMatchesNamedTokens(analysis, namedTokens)
+  );
+  if (matches.length === 0) {
+    return {
+      ok: false,
+      message: availablePlotsMessage({
+        analyses: input.analyses,
+        requested: namedTokens.join(" "),
+      }),
+    };
+  }
+  if (matches.length === 1) {
+    return { ok: true, analysisId: matches[0]!.id };
+  }
+  const selected = matches.find((analysis) => analysis.id === requestedId);
+  if (selected) {
+    return { ok: true, analysisId: selected.id };
+  }
+  return {
+    ok: false,
+    message: availablePlotsMessage({
+      analyses: matches,
+      unspecified: true,
+    }),
+  };
+}
 
 export type ListedChatImage = {
   index: number;

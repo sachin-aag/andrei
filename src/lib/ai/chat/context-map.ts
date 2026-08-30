@@ -2,7 +2,9 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import {
   chatEditableSections,
+  chatTargetFields,
   countSectionInlineImages,
+  fieldFillState,
   primaryFieldForSection,
   sectionFieldPlainText,
   sectionFillState,
@@ -19,6 +21,11 @@ import {
 } from "@/lib/analyze/method";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import { getDocumentType } from "@/lib/document-types";
+import {
+  isGraphAnalysisKind,
+  isInsertableGraphAnalysis,
+} from "@/lib/statistical-analysis/insertable-graphs";
+import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
 
 export type ContextMapReport = {
   documentNo: string;
@@ -51,6 +58,8 @@ export type BuildContextMapInput = {
   comments: ContextMapComment[];
   documents?: ReadyDocumentIndexItem[];
   documentType?: DocumentType;
+  /** Saved Analytics plots the document chat can copy in with insert_image. */
+  analyticsPlots?: StatisticalAnalysisSummary[];
 };
 
 function summarize(text: string, max = 140): string {
@@ -133,8 +142,16 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
         `) · criteria: ${evalSummary(sectionEvals)}` +
         (openFixes > 0 ? ` · ${openFixes} open suggestion(s)` : "")
     );
-    if (state !== "empty") {
-      lines.push(`    ${primary}: "${summarize(text)}"`);
+    for (const field of chatTargetFields(section)) {
+      const fieldState = fieldFillState(content, section, field.targetField);
+      const fieldText = sectionFieldPlainText(content, section, field.targetField);
+      if (fieldState === "empty") {
+        lines.push(`    ${field.targetField}: empty`);
+      } else {
+        lines.push(
+          `    ${field.targetField}:${fieldState} "${summarize(fieldText)}"`
+        );
+      }
     }
     if (imageCount > 0) {
       lines.push(
@@ -143,6 +160,24 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     }
     if (section === "analyze") {
       lines.push(analyzeMethodLine(content, report.toolsUsed));
+    }
+  }
+
+  const plots = (input.analyticsPlots ?? []).filter((item) =>
+    isGraphAnalysisKind(item.kind)
+  );
+  if (plots.length > 0) {
+    lines.push(
+      "Analytics plots (insert with insert_image source=analytics; analysisId is the id in brackets). Do not recreate an existing plot with plot_measurements. If they named a plot that is not listed, name the available titles and say they can create additional ones in Analytics — do not insert a different plot:"
+    );
+    for (const plot of plots) {
+      const title = sanitizePromptMetadata(plot.title, 180) || "untitled plot";
+      const previewNote = isInsertableGraphAnalysis(plot)
+        ? ""
+        : " — no preview yet; open it in Analytics first";
+      lines.push(
+        `- ${quotePromptMetadata(title)} [${plot.id}] kind=${plot.kind}${previewNote}`
+      );
     }
   }
 

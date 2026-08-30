@@ -17,6 +17,12 @@ import {
 } from "@/lib/suggestions/apply-narrative-suggestion";
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
 import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
+import { PlaceholderPreservationError } from "@/lib/placeholders/preservation";
+import {
+  suggestionsSupersededBy,
+  resolutionReasonSupersededBy,
+  withResolutionReason,
+} from "@/lib/suggestions/supersession";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
@@ -30,18 +36,24 @@ import {
 import {
   CommentPersistError,
   patchCommentStatus,
+  patchCommentStatuses,
 } from "@/lib/suggestions/persist-comment-status";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { suggestionEditFromComment } from "@/lib/suggestions/validate-suggestion";
+import { findOpenBlockPair } from "@/lib/suggestions/same-turn-block-pair";
 
 export type AcceptSuggestionResult =
-  | { ok: true; nextSection: Record<string, unknown> }
+  | {
+      ok: true;
+      nextSection: Record<string, unknown>;
+      dismissed: CommentRecord[];
+    }
   | {
       ok: false;
-      reason: LocateStatus | "save_failed" | "status_failed";
+      reason: LocateStatus | "save_failed" | "status_failed" | "placeholder_conflict";
       error?: unknown;
     };
 
@@ -65,11 +77,19 @@ export type ApplySuggestionToContentArgs = {
   sectionContent: Record<string, unknown>;
   fieldContentPath?: string;
   applyMode?: SuggestionApplyMode;
+  /**
+   * Same-turn pair apply: the block is still a pending suggestion, so the
+   * lead-in must body-append rather than jump in front of an existing table.
+   */
+  ignorePlaceBeforePairedBlock?: boolean;
 };
 
 export type ApplySuggestionToContentResult =
   | { ok: true; nextSection: Record<string, unknown> }
-  | { ok: false; reason: LocateStatus };
+  | { ok: false; reason: LocateStatus | "placeholder_conflict" };
+
+export const PLACEHOLDER_CONFLICT_MESSAGE =
+  "This rewrite would wipe filled placeholders. Dismiss it or use a targeted edit.";
 
 /**
  * Locate and apply one suggestion in memory. No network. Bulk apply uses this
@@ -84,6 +104,7 @@ export function applySuggestionToContent(
     sectionContent,
     fieldContentPath,
     applyMode = "final",
+    ignorePlaceBeforePairedBlock = false,
   } = args;
   const persistAsTrackedChange = applyMode === "tracked_change";
   const path = resolveSuggestionFieldPath(
@@ -94,34 +115,41 @@ export function applySuggestionToContent(
 
   if (comment.kind === "ai_redraft") {
     const redraft = parseAiRedraftCommentContent(comment.content);
-    const nextSection =
-      persistAsTrackedChange && isRichTargetField(section, path)
-        ? setRichFieldValue(
-            sectionContent,
-            path,
-            commitNarrativeSuggestionMarks(
-              buildRedraftPreviewDoc(
-                getRichFieldValue(sectionContent, path),
-                markdownToDoc(redraft.markdown, { headingNodes: true }),
-                {
-                  id: comment.id,
-                  authorId: AI_AUTHOR_ID,
-                  status: "pending",
-                  createdAt: new Date().toISOString(),
-                  kind: "redraft",
-                }
-              ),
-              comment.id
+    try {
+      const nextSection =
+        persistAsTrackedChange && isRichTargetField(section, path)
+          ? setRichFieldValue(
+              sectionContent,
+              path,
+              commitNarrativeSuggestionMarks(
+                buildRedraftPreviewDoc(
+                  getRichFieldValue(sectionContent, path),
+                  markdownToDoc(redraft.markdown, { headingNodes: true }),
+                  {
+                    id: comment.id,
+                    authorId: AI_AUTHOR_ID,
+                    status: "pending",
+                    createdAt: new Date().toISOString(),
+                    kind: "redraft",
+                  }
+                ),
+                comment.id
+              )
             )
-          )
-        : applyRedraftToSection(
-            sectionContent,
-            section,
-            path,
-            redraft.markdown,
-            { headingNodes: persistAsTrackedChange }
-          );
-    return { ok: true, nextSection };
+          : applyRedraftToSection(
+              sectionContent,
+              section,
+              path,
+              redraft.markdown,
+              { headingNodes: persistAsTrackedChange }
+            );
+      return { ok: true, nextSection };
+    } catch (error) {
+      if (error instanceof PlaceholderPreservationError) {
+        return { ok: false, reason: "placeholder_conflict" };
+      }
+      throw error;
+    }
   }
 
   const payload = parseAiFixCommentContent(comment.content);
@@ -164,6 +192,9 @@ export function applySuggestionToContent(
   }
 
   const edit = suggestionEditFromComment(comment);
+  if (ignorePlaceBeforePairedBlock) {
+    edit.placeBeforePairedBlock = undefined;
+  }
 
   if (isRichTargetField(section, path)) {
     const persistMarks = applyMode === "tracked_change";
@@ -274,20 +305,81 @@ export async function acceptSuggestion(args: {
   fieldContentPath?: string;
   /** How to persist the applied edit. Default `final` (investigation/DV). */
   applyMode?: SuggestionApplyMode;
+  /** Open siblings used to compute range-containment supersession. */
+  openComments?: readonly CommentRecord[];
 }): Promise<AcceptSuggestionResult> {
-  const applied = applySuggestionToContent(args);
-  if (!applied.ok) return applied;
+  const pair = findOpenBlockPair(args.comment, args.openComments ?? []);
+  const sequence =
+    pair && pair.leadIn.id !== pair.block.id
+      ? [pair.leadIn, pair.block]
+      : [args.comment];
+  const uniqueSequence = sequence.filter(
+    (item, index, all) => all.findIndex((comment) => comment.id === item.id) === index
+  );
+  let content = args.sectionContent;
+  const resolved: CommentRecord[] = [];
+  for (const item of uniqueSequence) {
+    const next = applySuggestionToContent({
+      ...args,
+      comment: item,
+      sectionContent: content,
+      ignorePlaceBeforePairedBlock:
+        uniqueSequence.length > 1 && item.id === uniqueSequence[0]?.id,
+    });
+    if (!next.ok) {
+      if (item.id === args.comment.id) return next;
+      continue;
+    }
+    content = next.nextSection;
+    resolved.push(item);
+  }
+  if (resolved.length === 0) {
+    return { ok: false, reason: "not_found" };
+  }
+  const resolvedIds = new Set(resolved.map((item) => item.id));
+  const superseded = suggestionsSupersededBy(args.comment, {
+    section: args.section,
+    comments: args.openComments ?? [],
+    sectionContent: args.sectionContent,
+  }).filter((sibling) => !resolvedIds.has(sibling.id));
   try {
-    await patchSection(args.reportId, args.section, applied.nextSection);
+    await patchSection(args.reportId, args.section, content);
   } catch (error) {
     return { ok: false, reason: "save_failed", error };
   }
   try {
-    await patchCommentStatus(args.reportId, args.comment.id, "resolved");
+    await patchCommentStatuses(
+      args.reportId,
+      resolved.map((item) => item.id),
+      "resolved"
+    );
+    const contentById: Record<string, string> = {};
+    for (const sibling of superseded) {
+      contentById[sibling.id] = withResolutionReason(
+        sibling.content,
+        resolutionReasonSupersededBy(args.comment.id)
+      );
+    }
+    if (superseded.length > 0) {
+      await patchCommentStatuses(
+        args.reportId,
+        superseded.map((c) => c.id),
+        "dismissed",
+        contentById
+      );
+    }
   } catch (error) {
     return { ok: false, reason: "status_failed", error };
   }
-  return { ok: true, nextSection: applied.nextSection };
+  const dismissed = superseded.map((sibling) => ({
+    ...sibling,
+    status: "dismissed" as const,
+    content: withResolutionReason(
+      sibling.content,
+      resolutionReasonSupersededBy(args.comment.id)
+    ),
+  }));
+  return { ok: true, nextSection: content, dismissed };
 }
 
 /**

@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { DocumentType, SectionType } from "@/db/schema";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
+import { PlaceholderPreservationError } from "@/lib/placeholders/preservation";
 import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
 import {
   applyAndAcceptRichEdit,
@@ -25,7 +26,8 @@ export type CommitEditFailureStatus =
   | "fixed_schema"
   | "invalid"
   | "empty_edit"
-  | "conflict";
+  | "conflict"
+  | "placeholder_conflict";
 
 export type CommitEditInput =
   | {
@@ -35,6 +37,7 @@ export type CommitEditInput =
   | {
       kind: "redraft";
       markdown: string;
+      allowDropFilledPlaceholders?: boolean;
     }
   | {
       kind: "table";
@@ -78,16 +81,30 @@ export function applyCommitToSectionContent(args: {
       };
     }
     case "redraft":
-      return {
-        ok: true,
-        content: applyRedraftToSection(
-          content,
-          section,
-          targetField,
-          input.markdown,
-          { headingNodes }
-        ),
-      };
+      try {
+        return {
+          ok: true,
+          content: applyRedraftToSection(
+            content,
+            section,
+            targetField,
+            input.markdown,
+            {
+              headingNodes,
+              allowDropFilledPlaceholders: input.allowDropFilledPlaceholders,
+            }
+          ),
+        };
+      } catch (error) {
+        if (error instanceof PlaceholderPreservationError) {
+          return {
+            ok: false,
+            status: "placeholder_conflict",
+            hint: error.message,
+          };
+        }
+        throw error;
+      }
     case "table": {
       const fieldDoc = getRichFieldValue(content, targetField);
       const applied = applyTableOperation(fieldDoc, input.operation, {

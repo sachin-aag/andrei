@@ -37,10 +37,16 @@ DV mixes LLM criteria with deterministic `check()` functions.
   `probeRichEdit` / `probePlainEdit` in `src/lib/suggestions/locator.ts`.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
 - Accept/dismiss always: locate → apply → PATCH section → flip comment.
-  Never resolve a suggestion without a successful apply.
+  Never resolve a suggestion without a successful apply. A superseded sibling
+  is `dismissed` with `resolutionReason: "superseded_by:<id>"`, never `resolved`.
 - Bulk apply locates overlapping edits in a section and applies those
   recursively; non-overlapping edits persist as one section PATCH.
   Preview the applied section content before that PATCH so insert text
-  does not vanish during save.
+  does not vanish during save. Range-contained siblings are dismissed, not
+  applied into an overwrite. Locate failures stay open; the toast reports
+  them. Do not dismiss a skip — that is a silent failure.
+- `draft_field` refuses a filled field unless `replaceFilledField: true`.
+  After a redraft, filled `[Label: value]` placeholders must be preserved
+  unless the caller opted into replacing them.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
 - Whole-field rewrites are redrafts (`apply-redraft.ts`), not anchored edits.

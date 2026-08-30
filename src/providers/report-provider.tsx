@@ -29,9 +29,11 @@ import {
   getWorkspaceSections,
   mergeSectionForType,
 } from "@/lib/document-types";
-import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
 import { firstGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
-import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
+import {
+  preferredOpenSuggestion,
+  validateSuggestionLocate,
+} from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
@@ -647,8 +649,9 @@ export function ReportProvider({
         section: generated.section,
         commentId: generated.id,
       });
+      requestCommentFocus(generated.id);
     }
-  }, [bundle.report.id, flushPendingSectionSaves]);
+  }, [bundle.report.id, flushPendingSectionSaves, requestCommentFocus]);
 
   const getSectionId = useCallback(
     (section: SectionType) =>
@@ -886,24 +889,57 @@ export function ReportProvider({
         const locked = comments.find((c) => c.id === lockedId);
         if (locked) return locked;
       }
-      return activeSuggestionForSection(section, comments, evaluations);
+      return preferredOpenSuggestion({
+        section,
+        comments,
+        evaluations,
+        sectionContent: sections[section as keyof SectionContentMap],
+        preferredCommentId: activeCommentId,
+      }).active;
     },
-    [comments, evaluations, suggestionApplyTransition]
+    [activeCommentId, comments, evaluations, sections, suggestionApplyTransition]
   );
 
   const activeSuggestionIdForSection = useCallback(
     (section: SectionType) => {
       if (isSuggestionPreviewHeld(section)) return null;
-      const active = activeSuggestionForSection(section, comments, evaluations);
-      if (!active) return null;
-      const validation = validateSuggestionLocate(
-        active,
+      const sectionContent = sections[section as keyof SectionContentMap];
+      const preferred = preferredOpenSuggestion({
         section,
-        sections[section as keyof SectionContentMap]
+        comments,
+        evaluations,
+        sectionContent,
+        preferredCommentId: activeCommentId,
+      }).active;
+      if (preferred) {
+        const preferredValidation = validateSuggestionLocate(
+          preferred,
+          section,
+          sectionContent
+        );
+        if (preferredValidation.canPreview) return preferred.id;
+      }
+      const fallback = preferredOpenSuggestion({
+        section,
+        comments,
+        evaluations,
+        sectionContent,
+      }).active;
+      if (!fallback) return null;
+      const validation = validateSuggestionLocate(
+        fallback,
+        section,
+        sectionContent
       );
-      return validation.canPreview ? active.id : null;
+      return validation.canPreview ? fallback.id : null;
     },
-    [comments, evaluations, isSuggestionPreviewHeld, sections]
+    [
+      activeCommentId,
+      comments,
+      evaluations,
+      isSuggestionPreviewHeld,
+      sections,
+    ]
   );
 
   // Scan narrative for unfilled placeholders (to-be-filled tokens + bracket guidance).

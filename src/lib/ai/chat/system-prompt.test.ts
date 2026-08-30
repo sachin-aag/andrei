@@ -18,9 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v54-analytics-plot-chat"
-    );
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v67-plot-confirm");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -151,10 +149,25 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("insert_image");
     expect(prompt).toContain("source=chat");
+    expect(prompt).toContain("source=analytics");
     expect(prompt).toContain("Do not invent or generate pixels — use plot_measurements");
     expect(prompt).toContain("Never volunteer");
     expect(prompt).toContain('image: { source: "section", section: "purpose"');
     expect(prompt).toContain("id: \"narrative#1\"");
+    expect(prompt).toContain("To move a figure already in the destination field");
+    expect(prompt).toContain("Do not also call remove_image");
+    expect(prompt).toContain('source: "analytics"');
+    expect(prompt).toContain("name the plots that are available");
+    expect(prompt).toContain("create additional ones in Analytics");
+    expect(prompt).toContain("you did NOT insert or propose a figure");
+    expect(prompt).toContain("that is not a proposal");
+    expect(prompt).toContain("Do not call insert_image again this turn");
+    expect(prompt).toContain("Do not call insert_image repeatedly to list plots");
+    expect(prompt).toContain("call read_section on the destination");
+    expect(prompt).toContain('insert "the plot"');
+    expect(prompt).toContain(
+      "Never say you proposed or inserted a figure unless insert_image returned status proposed or applied"
+    );
     expect(prompt).not.toContain("Mode: ASK");
   });
 
@@ -188,18 +201,38 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Mode: ASK");
   });
 
+  it("sends a small change in a filled field back to propose_edit", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("not_a_rewrite");
+    expect(prompt).toContain("The two tools meet at half the field");
+    expect(prompt).toContain("Call it once per changed span");
+  });
+
   it("routes existing table changes to edit_table instead of draft_field", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
     expect(prompt).toContain("edit_table");
     expect(prompt).toContain("Any change to an existing table uses edit_table");
     expect(prompt).toContain("do not fall through to draft_field");
-    expect(prompt).toContain("That fallback is for prose only — never for tables");
+    expect(prompt).toContain("Never use that fallback for tables or images");
     expect(prompt).toContain("Row 0 is the header; the first data row is row 1");
     expect(prompt).toContain("never a single representative row");
     expect(prompt).toContain(
       "put every affected cell in one edit_cells call (source and destination together)"
     );
     expect(prompt).toContain("failed-retry cap");
+    expect(prompt).toContain("create_table");
+    expect(prompt).toContain("delete_table");
+    expect(prompt).toContain("Do not use draft_field to create or delete a table");
+    expect(prompt).toContain("two failed retries following a fresh read_section");
+    expect(prompt).toContain("Omit afterAnchor to append before Citations");
+    expect(prompt).toContain("empty-anchor propose_edit");
+    expect(prompt).toContain("never splice it into an earlier paragraph");
+    expect(prompt).toContain("retry with kind delete_table");
+    expect(prompt).toContain("not `{ create_table: { headers, rows } }`");
+    expect(prompt).toContain("Adding a table under existing bullets is create_table");
+    expect(prompt).toContain("Do not recover with propose_edit");
+    expect(prompt).toContain("Never convert an existing table into a bulleted list");
+    expect(prompt).toContain("tables[]");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {
@@ -246,7 +279,15 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("[measure]:");
   });
 
-  it("sends Convergent document chat to Analytics instead of plot_measurements", () => {
+  it("includes plot_measurements by default, including Convergent", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("- plot_measurements — extract cited numeric measurements");
+    expect(prompt).not.toContain("Measurement charts belong in Analytics, not Document chat");
+    expect(prompt).not.toContain("Tell the engineer to open Analytics");
+  });
+
+  it("omits plot_measurements copy when the tool is disabled", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
@@ -254,10 +295,10 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("use insert_image / remove_image");
     expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image");
-    expect(prompt).toContain("Measurement charts belong in Analytics, not Document chat");
+    expect(prompt).toContain("Measurement plots — not available in Document chat");
     expect(prompt).toContain("Tell the engineer to open Analytics");
     expect(prompt).toContain(
-      "ask the Statistical Analysis assistant to extract from attachments and plot"
+      "ask the Statistical Analysis assistant to extract the numbers from attachments and plot them"
     );
     expect(prompt).not.toContain("- plot_measurements — extract cited numeric measurements");
   });
@@ -327,6 +368,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("recommendedInventory");
     expect(prompt).toContain("allIdentifiers");
+    expect(prompt).toContain("short findings sample");
     expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");
     expect(prompt).toContain("M3-SYS-FN-037 is not SYS-FN-037");
     expect(prompt).not.toContain(

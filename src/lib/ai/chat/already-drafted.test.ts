@@ -6,7 +6,7 @@ import {
   detectAlreadyDraftedSection,
   isSectionDraftRequest,
 } from "./already-drafted";
-import { sectionFillState } from "./fields";
+import { fieldFillState, sectionFillState } from "./fields";
 
 function testersDoc(text: string) {
   return {
@@ -116,6 +116,82 @@ describe("detectAlreadyDraftedSection", () => {
 describe("sectionFillState", () => {
   it("treats empty testers as empty", () => {
     expect(sectionFillState(testersDoc(""), "testers_dates")).toBe("empty");
+  });
+
+  it("is filled when a non-primary field is populated and the primary is empty", () => {
+    const emptyNarrative = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [] }],
+    };
+    const filledTable = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Requirement" }],
+                    },
+                  ],
+                },
+                {
+                  type: "tableHeader",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Result" }],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [
+                        {
+                          type: "text",
+                          text: "SYS-FN-037 assay dissolution measured 68 percent versus the 80 percent specification limit on batch B24017; the failure is documented in the laboratory worksheet.",
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Fail" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const content = { narrative: emptyNarrative, table: filledTable };
+    expect(fieldFillState(content, "results_and_discussions", "narrative")).toBe(
+      "empty"
+    );
+    expect(fieldFillState(content, "results_and_discussions", "table")).toBe(
+      "filled"
+    );
+    expect(sectionFillState(content, "results_and_discussions")).toBe("filled");
   });
 });
 

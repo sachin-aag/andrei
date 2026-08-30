@@ -124,7 +124,7 @@ and Convergent (`statisticalAnalysisEnabled`). Analytics chat uses the same
 shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep; Ask
 searches/extracts only; Agent fills the worksheet and runs plots when the
 report is writable). `@` tags set scope (sections in Document chat; sheets,
-plots, and files in Analytics) — there is no section/sheet dropdown.
+plots, and files in Analytics; Document chat can also tag saved plots) — there is no section/sheet dropdown.
 Scatters: worksheet Plot → Plot measurements (`plot_xy_scatter`) has required
 numeric Y, optional X (omit = vs observation index), optional
 `legendColumnId` to color-code by a grouping column (labels/lots/serials
@@ -154,8 +154,8 @@ Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
 assistant write; Agent `write_column` / `manage_worksheet` refresh the grid
 mid-turn. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy.
-Convergent Document chat does not propose measurement plots; use Analytics
-instead.
+Document chat copies a saved Analytics plot with `insert_image` (`source=analytics`)
+and can propose attachment `plot_measurements` figures on every pack.
 
 - `pnpm db:ensure-workspace-users` is Neon HTTP — **skip on local Docker**
   (`127.0.0.1` → `https://api.0.0.1/sql`). Create users with
@@ -206,7 +206,7 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
   `search_documents` (multi-round grep), `document_outline`, `read_document_page`.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   The report body is **not** chunk-indexed; use `read_section`.
-- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
+- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. A sentence/paragraph rewrite is adaptive even on a large catalog, and an earlier “draft the report” turn must not force another full page walk. `finish_document_review` returns a capped findings sample; follow-up turns strip prior findings arrays before the model call so a 273-page review cannot 500 the next message. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
 - Composer scope is `@` tags (`sectionScopeFromMentions` / analytics mentions),
   not dropdowns. Document and Analytics share `ChatPanel`; a composer or tool
   change must land on both surfaces and both chromes (Hard rules spectrum).

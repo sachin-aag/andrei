@@ -39,6 +39,10 @@ const SERIAL_ASSET_RE =
 const OPEN_SET_PRODUCE_RE =
   /\b(?:draft|write(?:\s+(?:up|out|the))?|prepare|populate|fill(?:\s+(?:in|out|the))?|complete)\b/i;
 
+/** Sentence/paragraph rewrites — not an open-set inventory of the catalog. */
+const TARGETED_REWRITE_RE =
+  /\b(?:re-?write|rephrase|revise|tweak|expand)\b.{0,120}\b(?:sentence|paragraph|passage|wording|line)\b|\b(?:change|edit|update|fix)\b.{0,80}\b(?:(?:the\s+)?(?:last|first|second|third|\d+(?:st|nd|rd|th))\s+)?(?:sentence|paragraph)\b/i;
+
 const NARROW_FACT_RE =
   /\b(?:what(?:'s| is| was| are)|who (?:is|are|was)|when (?:is|was|did)|where (?:is|was)|which [a-z][\w-]* (?:is|was|did|were))\b/i;
 
@@ -110,6 +114,10 @@ export function classifyRetrievalPolicy(
     return { policy: "adaptive", reason: "bounded_locator" };
   }
 
+  if (isTargetedRewrite(latest) && !hasInventoryLanguage(latest)) {
+    return { policy: "adaptive", reason: "targeted_rewrite" };
+  }
+
   if (FOCUSED_OVERRIDE_RE.test(latest) && !hasInventoryLanguage(combined)) {
     return { policy: "focused", reason: "explicit_quick_overview" };
   }
@@ -137,7 +145,7 @@ export function classifyRetrievalPolicy(
     if (
       inventory.size > 0 &&
       isDistributedEvidence(input) &&
-      OPEN_SET_PRODUCE_RE.test(combined)
+      OPEN_SET_PRODUCE_RE.test(latest)
     ) {
       return { policy: "comprehensive", reason: "open_set_distributed" };
     }
@@ -185,6 +193,10 @@ function isNarrowFact(text: string): boolean {
     return false;
   }
   return NARROW_FACT_RE.test(text);
+}
+
+function isTargetedRewrite(text: string): boolean {
+  return TARGETED_REWRITE_RE.test(text);
 }
 
 function isDistributedEvidence(input: ClassifyRetrievalPolicyInput): boolean {

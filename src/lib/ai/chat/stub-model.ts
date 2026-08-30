@@ -18,7 +18,9 @@ export type StubChatPlan = {
  * dynamically so it never enters the production bundle.
  *
  * - Ask mode: replies with follow-up questions (no edit tool call).
- * - Agent mode: calls `propose_edit`, then replies with a summary.
+ * - Agent mode: `read_section` first (matches already-drafted prepareStep),
+ *   then `propose_edit`, then a summary. A first-step propose_edit is dropped
+ *   when the section is already filled.
  */
 export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageModel> {
   const { MockLanguageModelV3, convertArrayToReadableStream } = await import("ai/test");
@@ -59,6 +61,21 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
     }
 
     if (step === 0) {
+      return {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          {
+            type: "tool-call",
+            toolCallId: `stub-read-${Date.now()}`,
+            toolName: "read_section",
+            input: JSON.stringify({ section: plan.section }),
+          },
+          { type: "finish", finishReason: "tool-calls", usage },
+        ]),
+      };
+    }
+
+    if (step === 1) {
       return {
         stream: convertArrayToReadableStream([
           { type: "stream-start", warnings: [] },

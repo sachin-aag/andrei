@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommentRecord } from "@/types/report";
 import {
   partitionBulkApplies,
+  suggestionApplySpansHaveEqualRanges,
   suggestionApplySpansOverlap,
   spanForSuggestionComment,
 } from "./suggestion-overlap";
@@ -114,6 +115,41 @@ describe("suggestionApplySpansOverlap", () => {
     expect(a).not.toBeNull();
     expect(b).not.toBeNull();
     expect(suggestionApplySpansOverlap(a!, b!)).toBe(true);
+  });
+
+  it("treats two edits of the same delete span as equal ranges", () => {
+    const first = comment(
+      "s1",
+      "deviation was observed",
+      "issue was seen",
+      "a deviation was observed"
+    );
+    const second = comment(
+      "s2",
+      "deviation was observed",
+      "issue was logged",
+      "a deviation was observed"
+    );
+    const a = spanForSuggestionComment({
+      section: "define",
+      comment: first,
+      sectionContent,
+    });
+    const b = spanForSuggestionComment({
+      section: "define",
+      comment: second,
+      sectionContent,
+    });
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(suggestionApplySpansHaveEqualRanges(a!, b!)).toBe(true);
+    const disjoint = spanForSuggestionComment({
+      section: "define",
+      comment: independentA,
+      sectionContent,
+    });
+    expect(disjoint).not.toBeNull();
+    expect(suggestionApplySpansHaveEqualRanges(a!, disjoint!)).toBe(false);
   });
 });
 

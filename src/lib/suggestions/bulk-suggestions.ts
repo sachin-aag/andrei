@@ -8,12 +8,23 @@ import {
 } from "@/lib/suggestions/accept-suggestion";
 import { patchCommentStatuses } from "@/lib/suggestions/persist-comment-status";
 import { partitionBulkApplies } from "@/lib/suggestions/suggestion-overlap";
-import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
+import {
+  findSupersededSuggestions,
+  resolutionReasonSupersededBy,
+  withResolutionReason,
+} from "@/lib/suggestions/supersession";
+import {
+  parseAiFixCommentContent,
+  sortedOpenSuggestionsForSection,
+} from "@/lib/ai/suggestion-gating";
+import { sortCommentsForPairedApply } from "@/lib/suggestions/same-turn-block-pair";
 
 export type BulkSuggestionResult = {
   appliedIds: string[];
   skippedIds: string[];
   failedIds: string[];
+  dismissedIds: string[];
+  dismissedContent: Record<string, string>;
   nextSection: Record<string, unknown>;
 };
 
@@ -21,6 +32,8 @@ export type ReportBulkSuggestionResult = {
   appliedIds: string[];
   skippedIds: string[];
   failedIds: string[];
+  dismissedIds: string[];
+  dismissedContent: Record<string, string>;
   /** Sections whose content actually changed, in the order they were run. */
   changedSections: SectionType[];
 };
@@ -52,6 +65,7 @@ function applyOneInMemory(args: {
   applied: Set<string>;
   appliedIds: string[];
   skippedIds: string[];
+  ignorePlaceBeforePairedBlock?: boolean;
 }): Record<string, unknown> {
   if (args.applied.has(args.comment.id)) return args.sectionContent;
   args.applied.add(args.comment.id);
@@ -60,6 +74,7 @@ function applyOneInMemory(args: {
     comment: args.comment,
     sectionContent: args.sectionContent,
     applyMode: args.applyMode,
+    ignorePlaceBeforePairedBlock: args.ignorePlaceBeforePairedBlock,
   });
   if (!result.ok) {
     args.skippedIds.push(args.comment.id);
@@ -90,11 +105,24 @@ export async function acceptAllSuggestions(args: {
     comments: args.comments,
     sectionContent: args.sectionContent,
   });
+  const supersededPairs = findSupersededSuggestions({
+    section: args.section,
+    comments: args.comments,
+    sectionContent: args.sectionContent,
+  });
+  const supersededIds = new Set(supersededPairs.map((pair) => pair.supersededId));
 
   let current = args.sectionContent;
   const appliedIds: string[] = [];
-  const skippedIds: string[] = [...partition.unlocatableIds];
-  const applied = new Set<string>(partition.unlocatableIds);
+  // Leave unlocatable leftovers open. Dismissing them is a silent failure;
+  // the toast reports the skip and the card stays so the engineer can act.
+  const skippedIds: string[] = partition.unlocatableIds.filter(
+    (id) => !supersededIds.has(id)
+  );
+  const applied = new Set<string>([
+    ...partition.unlocatableIds,
+    ...supersededIds,
+  ]);
   const overlappingIds = new Set(
     partition.overlapping.flatMap((group) => group.map((c) => c.id))
   );
@@ -106,7 +134,11 @@ export async function acceptAllSuggestions(args: {
         group.some((c) => c.id === comment.id)
       );
       if (!cluster) continue;
-      for (const member of cluster) {
+      const ordered = sortCommentsForPairedApply(cluster);
+      const clusterIds = new Set(ordered.map((member) => member.id));
+      for (const member of ordered) {
+        if (supersededIds.has(member.id)) continue;
+        const payload = parseAiFixCommentContent(member.content);
         current = applyOneInMemory({
           section: args.section,
           comment: member,
@@ -115,6 +147,10 @@ export async function acceptAllSuggestions(args: {
           applied,
           appliedIds,
           skippedIds,
+          ignorePlaceBeforePairedBlock: Boolean(
+            payload.pairedBlockSuggestionId &&
+              clusterIds.has(payload.pairedBlockSuggestionId)
+          ),
         });
       }
       continue;
@@ -130,24 +166,40 @@ export async function acceptAllSuggestions(args: {
     });
   }
 
-  if (appliedIds.length === 0) {
-    return { appliedIds, skippedIds, failedIds: [], nextSection: current };
+  const dismissedIds = [...supersededIds];
+  if (
+    appliedIds.length === 0 &&
+    dismissedIds.length === 0 &&
+    skippedIds.length === 0
+  ) {
+    return {
+      appliedIds,
+      skippedIds,
+      failedIds: [],
+      dismissedIds,
+      dismissedContent: {},
+      nextSection: current,
+    };
   }
 
   // Push the applied wording into the editor before the network round-trip
   // so insert text does not vanish while the section PATCH is in flight.
-  args.onPreview?.(current);
+  if (appliedIds.length > 0) {
+    args.onPreview?.(current);
 
-  try {
-    await patchSection(args.reportId, args.section, current);
-  } catch {
-    args.onPreview?.(args.sectionContent);
-    return {
-      appliedIds: [],
-      skippedIds,
-      failedIds: appliedIds,
-      nextSection: args.sectionContent,
-    };
+    try {
+      await patchSection(args.reportId, args.section, current);
+    } catch {
+      args.onPreview?.(args.sectionContent);
+      return {
+        appliedIds: [],
+        skippedIds,
+        failedIds: appliedIds,
+        dismissedIds: [],
+        dismissedContent: {},
+        nextSection: args.sectionContent,
+      };
+    }
   }
 
   const { failedIds } = await patchCommentStatuses(
@@ -155,11 +207,35 @@ export async function acceptAllSuggestions(args: {
     appliedIds,
     "resolved"
   );
+  const supersededById = new Map(
+    supersededPairs.map((pair) => [pair.supersededId, pair.supersededBy])
+  );
+  const commentById = new Map(args.comments.map((c) => [c.id, c]));
+  const dismissContent: Record<string, string> = {};
+  for (const id of dismissedIds) {
+    const row = commentById.get(id);
+    const by = supersededById.get(id);
+    if (!row || !by) continue;
+    dismissContent[id] = withResolutionReason(
+      row.content,
+      resolutionReasonSupersededBy(by)
+    );
+  }
+  if (dismissedIds.length > 0) {
+    await patchCommentStatuses(
+      args.reportId,
+      dismissedIds,
+      "dismissed",
+      dismissContent
+    );
+  }
   const failed = new Set(failedIds);
   return {
     appliedIds: appliedIds.filter((id) => !failed.has(id)),
     skippedIds,
     failedIds,
+    dismissedIds,
+    dismissedContent: dismissContent,
     nextSection: current,
   };
 }
@@ -197,6 +273,8 @@ export async function dismissAllSuggestions(args: {
         appliedIds: [],
         skippedIds: [],
         failedIds: candidateIds,
+        dismissedIds: [],
+        dismissedContent: {},
         nextSection: args.sectionContent,
       };
     }
@@ -212,6 +290,8 @@ export async function dismissAllSuggestions(args: {
     appliedIds: candidateIds.filter((id) => !failed.has(id)),
     skippedIds: [],
     failedIds,
+    dismissedIds: [],
+    dismissedContent: {},
     nextSection: current,
   };
 }
@@ -286,6 +366,8 @@ async function runReportBulk(
   const appliedIds: string[] = [];
   const skippedIds: string[] = [];
   const failedIds: string[] = [];
+  const dismissedIds: string[] = [];
+  const dismissedContent: Record<string, string> = {};
   const changedSections: SectionType[] = [];
 
   const queues = reportSuggestionQueues(
@@ -310,6 +392,8 @@ async function runReportBulk(
       appliedIds.push(...result.appliedIds);
       skippedIds.push(...result.skippedIds);
       failedIds.push(...result.failedIds);
+      dismissedIds.push(...result.dismissedIds);
+      Object.assign(dismissedContent, result.dismissedContent);
       if (result.appliedIds.length > 0) {
         changedSections.push(queue.section);
       }
@@ -318,7 +402,14 @@ async function runReportBulk(
     }
   }
 
-  return { appliedIds, skippedIds, failedIds, changedSections };
+  return {
+    appliedIds,
+    skippedIds,
+    failedIds,
+    dismissedIds,
+    dismissedContent,
+    changedSections,
+  };
 }
 
 export function formatBulkApplyToast(

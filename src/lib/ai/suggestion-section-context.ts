@@ -4,6 +4,7 @@ import type { AnalyzeSection } from "@/types/sections";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 import {
   compactText,
   compactTextPreservingNewlines,
@@ -91,7 +92,14 @@ function renderListItems(list: JSONContent): string {
  * the first table is tableIndex 0, etc. — the scope default).
  */
 export function renderStructuredFieldView(doc: JSONContent): string {
+  const tables = summarizeTablesInDoc(doc);
   const out: string[] = [];
+  if (tables.length > 0) {
+    const indexes = tables.map((table) => String(table.tableIndex)).join(", ");
+    out.push(
+      `This field has ${tables.length} table${tables.length === 1 ? "" : "s"} (tableIndex ${indexes}). Copy tableIndex and [row,col] into edit_table. Do not rewrite a table as bullets with propose_edit.`
+    );
+  }
   let tableIndex = 0;
 
   function walk(nodes: JSONContent[]) {

@@ -22,14 +22,17 @@ function messageForStatus(status: number, serverMessage?: string): string {
 export async function patchCommentStatus(
   reportId: string,
   commentId: string,
-  status: "resolved" | "dismissed"
+  status: "open" | "resolved" | "dismissed",
+  content?: string
 ): Promise<void> {
   let res: Response;
   try {
     res = await fetch(`/api/reports/${reportId}/comments/${commentId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(
+        content !== undefined ? { status, content } : { status }
+      ),
     });
   } catch {
     throw new CommentPersistError(0, "Could not update suggestion. Please try again.");
@@ -53,12 +56,13 @@ export async function patchCommentStatus(
 export async function patchCommentStatuses(
   reportId: string,
   commentIds: readonly string[],
-  status: "resolved" | "dismissed"
+  status: "open" | "resolved" | "dismissed",
+  contentById?: Record<string, string>
 ): Promise<{ failedIds: string[] }> {
   const results = await Promise.all(
     commentIds.map(async (id) => {
       try {
-        await patchCommentStatus(reportId, id, status);
+        await patchCommentStatus(reportId, id, status, contentById?.[id]);
         return { id, ok: true as const };
       } catch {
         return { id, ok: false as const };

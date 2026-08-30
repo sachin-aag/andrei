@@ -81,6 +81,8 @@ import {
 } from "@/lib/ai/usage";
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
+import { isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
+import { getReportAnalytics } from "@/lib/statistical-analysis/store";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import {
   classifyRetrievalPolicy,
@@ -93,6 +95,7 @@ import {
   shouldStopChatSteps,
 } from "@/lib/ai/chat/document-review";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
@@ -157,8 +160,10 @@ async function handleChatPost(
     mentions?: unknown;
     workspaceChrome?: unknown;
   };
-  const messages = sanitizeChatMessagesForModel(
-    Array.isArray(body.messages) ? body.messages : []
+  const messages = compactChatToolHistoryForModel(
+    sanitizeChatMessagesForModel(
+      Array.isArray(body.messages) ? body.messages : []
+    )
   );
   if (messages.length === 0) {
     return NextResponse.json({ error: "No messages" }, { status: 400 });
@@ -232,15 +237,19 @@ async function handleChatPost(
   }
 
   // Build the compact context map from current report state.
-  const [sectionRows, evaluations, commentRows, documents] = await Promise.all([
-    db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
-    db
-      .select()
-      .from(criteriaEvaluations)
-      .where(eq(criteriaEvaluations.reportId, reportId)),
-    db.select().from(comments).where(eq(comments.reportId, reportId)),
-    listReadyDocumentsForReport(reportId),
-  ]);
+  const [sectionRows, evaluations, commentRows, documents, analytics] =
+    await Promise.all([
+      db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
+      db
+        .select()
+        .from(criteriaEvaluations)
+        .where(eq(criteriaEvaluations.reportId, reportId)),
+      db.select().from(comments).where(eq(comments.reportId, reportId)),
+      listReadyDocumentsForReport(reportId),
+      isStatisticalAnalysisEnabled()
+        ? getReportAnalytics(reportId)
+        : Promise.resolve(null),
+    ]);
   const mergedSections: Partial<Record<SectionType, Record<string, unknown>>> = {};
   for (const row of sectionRows) {
     mergedSections[row.section] = mergeSection(row.section, row.content) as Record<
@@ -250,7 +259,11 @@ async function handleChatPost(
   }
   // Resolved against this report's ready documents only, so a tagged
   // attachment id from another report cannot pull in its evidence.
-  const mentions = resolveChatMentions(requestedMentions, documents);
+  const mentions = resolveChatMentions(
+    requestedMentions,
+    documents,
+    analytics?.analyses ?? []
+  );
   const pinnedAttachmentIds = mentionedAttachmentIds(mentions);
   const mentionedPageCount = documents
     .filter((doc) => pinnedAttachmentIds.includes(doc.attachmentId))
@@ -301,6 +314,7 @@ async function handleChatPost(
     })),
     documents,
     documentType: report.documentType,
+    analyticsPlots: analytics?.analyses ?? [],
   });
 
   const autoEvidenceBlock =
@@ -493,6 +507,7 @@ async function handleChatPost(
           canEdit,
           taggedDocuments: mentions.documents.length,
           taggedSections: mentions.sections.length,
+          taggedAnalyses: mentions.analyses.length,
           chatPromptVersion: CHAT_PROMPT_VERSION,
           pace,
           chatModelId: paceConfig.modelId,

@@ -100,10 +100,13 @@ export function ReportBulkSuggestionActions() {
       });
 
       const applied = new Set(result.appliedIds);
+      const superseded = new Set(result.dismissedIds);
       setComments((prev) =>
-        prev.map((c) =>
-          applied.has(c.id) ? { ...c, status: "resolved" as const } : c
-        )
+        prev
+          .map((c) =>
+            applied.has(c.id) ? { ...c, status: "resolved" as const } : c
+          )
+          .filter((c) => !superseded.has(c.id))
       );
       for (const id of result.appliedIds) {
         captureEvent("ai_suggestion_accepted", { suggestionId: id, bulk: true });
