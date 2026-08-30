@@ -1,10 +1,10 @@
 import type { DocumentType, SectionType } from "@/db/schema";
-import { SECTION_LABELS } from "@/types/sections";
+import { displaySectionLabel } from "@/types/sections";
 import {
   SUGGEST_TARGET_FIELD_PATTERNS,
   isRichTargetField,
 } from "@/lib/ai/suggest-target-fields";
-import { getDocumentType, listDocumentTypes } from "@/lib/document-types";
+import { getDocumentType } from "@/lib/document-types";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
@@ -180,11 +180,19 @@ export function sectionFieldForChat(
   };
 }
 
-/** Human label for a section (workspace labels, then any registered document type). */
+const ALL_DOCUMENT_TYPES: Record<DocumentType, true> = {
+  investigation_report: true,
+  design_verification: true,
+  mechanical_design_verification: true,
+  generic_document: true,
+  quality_risk_assessment: true,
+};
+
+/** Human label for a section (registry, then shared map, then title-cased key). */
 export function sectionLabel(section: SectionType): string {
-  for (const def of listDocumentTypes()) {
-    const match = def.sections.find((s) => s.key === section);
+  for (const type of Object.keys(ALL_DOCUMENT_TYPES) as DocumentType[]) {
+    const match = getDocumentType(type).sections.find((s) => s.key === section);
     if (match) return match.label;
   }
-  return SECTION_LABELS[section] ?? section;
+  return displaySectionLabel(section);
 }

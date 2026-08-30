@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { after } from "next/server";
-import { propagateAttributes } from "@langfuse/tracing";
 import { and, eq, inArray } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod";
@@ -44,9 +43,9 @@ import {
 } from "@/lib/suggestions/suggestion-record";
 import {
   flushLangfuseTraces,
-  isLangfuseEnabled,
   observeRouteHandler,
   setRouteObservationIO,
+  withPropagatedAttributes,
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
@@ -429,20 +428,9 @@ async function handleSuggestionsPost(
   });
   };
 
-  if (!isLangfuseEnabled()) return runSuggestions();
-
-  setRouteObservationIO({
-    input: {
-      reportId,
-      section,
-      documentNo: report.documentNo,
-      gapCriterionCount: gap.length,
-      gapCriteria: gap.map((g) => g.criterionKey),
-    },
-  });
   after(flushLangfuseTraces);
 
-  return propagateAttributes(
+  return withPropagatedAttributes(
     {
       sessionId: reportId,
       userId: user.id,
@@ -451,9 +439,21 @@ async function handleSuggestionsPost(
       metadata: {
         feature: "suggestion-generation",
         section,
-        documentNo: report.documentNo,
+        documentNo: String(report.documentNo ?? ""),
+        documentType: report.documentType,
       },
     },
-    runSuggestions
+    async () => {
+      setRouteObservationIO({
+        input: {
+          reportId,
+          section,
+          documentNo: report.documentNo,
+          gapCriterionCount: gap.length,
+          gapCriteria: gap.map((g) => g.criterionKey),
+        },
+      });
+      return runSuggestions();
+    }
   );
 }

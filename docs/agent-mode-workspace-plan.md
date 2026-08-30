@@ -263,8 +263,9 @@ In agent chrome the center chat should feel like a conversation: cap the
 transcript ~720–800px and center it in the column. Reuse `ChatPanel` /
 `AnalyticsChatPanel`; do not fork.
 
-Review margin stays off while chat is open (`isReviewGutterVisible`). Agent
-chrome has chat open, so no gutter — correct, there are no bubbles.
+Review margin is opt-in via the Comments switch (`isReviewGutterVisible`).
+Agent chrome hides the gutter and clears the toggle on entry — correct, there
+are no bubbles in that chrome.
 
 ### 6.4 Wider right panel (both chromes)
 

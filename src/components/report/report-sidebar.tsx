@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   FileQuestion,
   ListChecks,
@@ -20,6 +21,7 @@ import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { WorkProductView, WorkspaceChrome } from "./workspace-chrome";
 import { getEvaluatableSections } from "@/lib/document-types";
+import { COLLAPSED_RAIL_PX } from "./workspace-layout";
 
 export type SidebarTab =
   | "assistant"
@@ -64,7 +66,7 @@ export function ReportSidebar({
   onJumpToPlaceholder,
   onJumpToComment,
   hideCollapse = false,
-  chrome = "document",
+  chrome = "agent",
   initialCriteriaSection,
   workProductView = "report",
   statsEnabled = false,
@@ -76,6 +78,28 @@ export function ReportSidebar({
   analyticsMentionSheets,
 }: Props) {
   const analyticsSurface = workProductView === "analytics";
+  const chatVisible =
+    !collapsed && (analyticsSurface || activeTab === "assistant");
+  const chatShellRef = useRef<HTMLDivElement>(null);
+  const lastOpenChatWidthRef = useRef(360);
+  const wasChatVisibleRef = useRef(chatVisible);
+  const [holdChatPark, setHoldChatPark] = useState(false);
+  useLayoutEffect(() => {
+    if (!chatVisible) return;
+    const width = chatShellRef.current?.offsetWidth ?? 0;
+    if (width > COLLAPSED_RAIL_PX) {
+      lastOpenChatWidthRef.current = width;
+    }
+  });
+  useLayoutEffect(() => {
+    const becameVisible = chatVisible && !wasChatVisibleRef.current;
+    wasChatVisibleRef.current = chatVisible;
+    if (!becameVisible) return;
+    setHoldChatPark(true);
+    const timeout = window.setTimeout(() => setHoldChatPark(false), 220);
+    return () => window.clearTimeout(timeout);
+  }, [chatVisible]);
+  const parkChat = !chatVisible || holdChatPark;
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
   const { report } = useReportData();
@@ -218,27 +242,39 @@ export function ReportSidebar({
 
       {/* ChatPanel stays mounted across collapse, tab, and work-product
           changes so the thread, composer prefs, and rendered markdown are
-          not reset. Hide with CSS instead of unmounting. Assistant manages
-          its own scroll/input, so it gets a full-height container without
-          the shared padding. */}
+          not reset. Hide with visibility (not display:none) so the scroller
+          keeps its layout box and scrollTop through the width animation. */}
       <div
         className={cn(
-          "min-h-0 flex-1",
-          (collapsed || (!analyticsSurface && activeTab !== "assistant")) &&
-            "hidden"
+          "relative min-h-0 flex-1",
+          parkChat && "overflow-hidden"
         )}
       >
-        <ChatPanel
-          workspaceChrome={chrome}
-          workProductView={workProductView}
-          statsEnabled={statsEnabled}
-          onWorksheetChanged={() => onAnalyticsSettled?.()}
-          onAgentBusyChange={onAnalyticsAgentBusy}
-          onAnalyticsFocusSheet={onAnalyticsFocusSheet}
-          onAnalyticsFocusAnalysis={onAnalyticsFocusAnalysis}
-          analyticsReloadEpoch={analyticsReloadEpoch}
-          mentionSheets={analyticsMentionSheets}
-        />
+        <div
+          ref={chatShellRef}
+          className={cn(
+            "flex h-full min-h-0 w-full flex-col",
+            parkChat && "absolute top-0 right-0",
+            !chatVisible && "invisible pointer-events-none"
+          )}
+          style={
+            parkChat ? { width: lastOpenChatWidthRef.current } : undefined
+          }
+          aria-hidden={!chatVisible}
+        >
+          <ChatPanel
+            visible={chatVisible}
+            workspaceChrome={chrome}
+            workProductView={workProductView}
+            statsEnabled={statsEnabled}
+            onWorksheetChanged={() => onAnalyticsSettled?.()}
+            onAgentBusyChange={onAnalyticsAgentBusy}
+            onAnalyticsFocusSheet={onAnalyticsFocusSheet}
+            onAnalyticsFocusAnalysis={onAnalyticsFocusAnalysis}
+            analyticsReloadEpoch={analyticsReloadEpoch}
+            mentionSheets={analyticsMentionSheets}
+          />
+        </div>
       </div>
       {!collapsed && !analyticsSurface && activeTab !== "assistant" ? (
         <div className="flex-1 overflow-y-auto p-4 min-w-0">

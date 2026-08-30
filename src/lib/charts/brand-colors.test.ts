@@ -4,9 +4,18 @@ import { chartBrandColors, seriesFill } from "@/lib/charts/brand-colors";
 describe("chartBrandColors", () => {
   it("cycles brand 600/500/400 and never uses red for series", () => {
     const colors = chartBrandColors("demo");
-    expect(colors.series).toEqual(["#001838", "#3d6fb5", "#5b8ad0"]);
+    expect(colors.series).toEqual([
+      "#001838",
+      "#3d6fb5",
+      "#5b8ad0",
+      "#0e7490",
+      "#a16207",
+      "#6d28d9",
+      "#c026d3",
+      "#3f6212",
+    ]);
     expect(seriesFill(colors, 0)).toBe("#001838");
-    expect(seriesFill(colors, 3)).toBe("#001838");
+    expect(seriesFill(colors, 8)).toBe("#001838");
     expect(colors.series.every((hex) => hex.toLowerCase() !== "#dc2626")).toBe(true);
   });
 

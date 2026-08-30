@@ -72,6 +72,22 @@ const anova = {
   results: {} as never,
 } satisfies StatisticalAnalysisSummary;
 
+const boxplot = {
+  ...sixpack,
+  id: "a5",
+  title: "Boxplot of Assay",
+  kind: "boxplot",
+  previewImage,
+  config: {
+    yColumnId: "c1",
+    yColumnName: "Assay",
+    categoryColumnIds: ["c2"],
+    categoryColumnNames: ["Lot"],
+    title: "Boxplot of Assay by Lot",
+  },
+  results: { n: 10, skipped: 0, groups: [] },
+} satisfies StatisticalAnalysisSummary;
+
 const legacySixpack = {
   ...sixpack,
   id: "a4",
@@ -82,11 +98,11 @@ describe("insertable-graphs", () => {
   it("includes graph analyses with a stored preview only", () => {
     expect(isInsertableGraphAnalysis(sixpack)).toBe(true);
     expect(isInsertableGraphAnalysis(scatter)).toBe(true);
+    expect(isInsertableGraphAnalysis(boxplot)).toBe(true);
     expect(isInsertableGraphAnalysis(anova)).toBe(false);
     expect(isInsertableGraphAnalysis(legacySixpack)).toBe(false);
-    expect(listInsertableGraphAnalyses([sixpack, scatter, anova, legacySixpack])).toEqual([
-      sixpack,
-      scatter,
-    ]);
+    expect(
+      listInsertableGraphAnalyses([sixpack, scatter, boxplot, anova, legacySixpack])
+    ).toEqual([sixpack, scatter, boxplot]);
   });
 });

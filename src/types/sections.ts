@@ -167,6 +167,15 @@ export const SECTION_LABELS: Record<string, string> = {
   test_equipment: "Test Equipment",
   results_and_discussions: "Results and Discussion",
   problems_resolution: "Problem or Failure Resolution",
+  executed_protocol: "Executed Protocol",
+  protocol_deviations: "Protocol Deviations",
+  units_under_test: "Units Under Test",
+  equipment_and_calibration: "Test Equipment",
+  failure_forms: "Failure/Out of Specification Forms",
+  data_collection_forms: "Data Collection Forms",
+  requirements_verified: "Requirements Verified",
+  observations: "Observations",
+  revision_history: "Revision History",
   body: "Document",
   qra_approach: "Risk Assessment Approach",
   qra_objective: "Objective",
@@ -184,6 +193,21 @@ export const SECTION_LABELS: Record<string, string> = {
   qra_post_conclusion: "Summary and Conclusion (After Implementation)",
   qra_revision_history: "Revision History",
 };
+
+/** Title-case a section key so Criteria and comments never show `revision_history`. */
+export function humanizeSectionKey(section: string): string {
+  return section
+    .replace(/^qra_/, "")
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/** Human-readable section title for Criteria, comments, and status pills. */
+export function displaySectionLabel(section: string): string {
+  return SECTION_LABELS[section] ?? humanizeSectionKey(section);
+}
 
 export const EDITABLE_SECTIONS = [
   "define",

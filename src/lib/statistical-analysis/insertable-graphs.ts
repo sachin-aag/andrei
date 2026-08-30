@@ -1,7 +1,9 @@
 import {
+  BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
   XY_SCATTER,
+  isBoxplotAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -13,7 +15,8 @@ export function isGraphAnalysisKind(kind: AnalysisKind): boolean {
   return (
     kind === CAPABILITY_SIXPACK_NORMAL ||
     kind === MEASUREMENT_SCATTER ||
-    kind === XY_SCATTER
+    kind === XY_SCATTER ||
+    kind === BOXPLOT
   );
 }
 
@@ -24,7 +27,8 @@ export function isInsertableGraphAnalysis(
   return (
     (isSixpackAnalysis(analysis) ||
       isScatterAnalysis(analysis) ||
-      isXyScatterAnalysis(analysis)) &&
+      isXyScatterAnalysis(analysis) ||
+      isBoxplotAnalysis(analysis)) &&
     analysis.previewImage != null
   );
 }
