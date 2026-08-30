@@ -9,6 +9,7 @@ import { analysisPreviewMatchKey } from "@/lib/statistical-analysis/preview-imag
 import { CAPABILITY_SIXPACK_NORMAL } from "@/lib/statistical-analysis/types";
 import type {
   ReportAnalyticsView,
+  SixpackAnalysisSummary,
   StatisticalAnalysisSummary,
 } from "@/lib/statistical-analysis/types";
 import { computeCapabilitySixpackFromValues } from "@/lib/statistical-analysis/sixpack";
@@ -29,7 +30,9 @@ const PREVIEW = {
   chartSpec: null,
 };
 
-function sixpack(overrides: Partial<StatisticalAnalysisSummary> = {}): StatisticalAnalysisSummary {
+function sixpack(
+  overrides: Partial<SixpackAnalysisSummary> = {}
+): SixpackAnalysisSummary {
   const outcome = computeCapabilitySixpackFromValues([10, 12, 11], 0, {
     columnId: "c1",
     columnName: "Assay",
