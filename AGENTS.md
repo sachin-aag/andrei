@@ -123,11 +123,14 @@ shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep; Ask
 searches/extracts only; Agent fills the worksheet and runs plots when the
 report is writable). `@` tags set scope (sections in Document chat; sheets,
 plots, and files in Analytics) — there is no section/sheet dropdown.
-Scatters: worksheet `plot_xy_scatter` has required numeric Y, optional X
-(omit = vs observation index), and optional `legendColumnId` to color-code
-by a grouping column (labels/lots/serials are OK for legend, not for X).
-`plot_measurements` stays one attachment series vs index, one color. Do not
-substitute sixpack/ANOVA for a scatter.
+Scatters: worksheet Plot → Plot measurements (`plot_xy_scatter`) has required
+numeric Y, optional X (omit = vs observation index), optional
+`legendColumnId` to color-code by a grouping column (labels/lots/serials
+are OK for legend, not for X), and a Chart type (scatter, line, line +
+markers, area, column). Column charts stack when a legend is on. Chat
+always saves a scatter; the engineer can change Chart type in the dialog.
+`plot_measurements` (Plot → Plot from attachments) stays one attachment
+series vs index, one color. Do not substitute sixpack/ANOVA for a scatter.
 Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
 assistant write; Agent `write_column` / `manage_worksheet` refresh the grid
 mid-turn. Analytics `search_documents` is keyword-first and stops after a cited page —

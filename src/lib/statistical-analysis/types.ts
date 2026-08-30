@@ -1,3 +1,4 @@
+import type { ChartMark } from "@/lib/charts/chart-marks";
 import type { ChartLayout, ChartSpec } from "@/lib/charts/chart-spec";
 
 export const MAX_WORKSHEET_COLUMNS = 50;
@@ -384,6 +385,8 @@ export type XyScatterConfig = {
   rowEnd?: number | null;
   /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
   rows?: number[] | null;
+  /** Visual mark. Chat always saves scatter; Edit can change this. */
+  mark?: ChartMark;
 };
 
 export type XyScatterResult = {

@@ -3,6 +3,7 @@ import { MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
 import {
   measurementScatterInputSchema,
   patchAnalyticsBodySchema,
+  xyScatterBodySchema,
   xyScatterInputSchema,
 } from "./schemas";
 import { createEmptyWorksheet } from "./worksheet";
@@ -91,6 +92,21 @@ describe("xyScatterInputSchema", () => {
         legendColumnId: "c1",
       }).success
     ).toBe(false);
+  });
+
+  it("accepts a chart type on create, not on the chat body", () => {
+    expect(
+      xyScatterInputSchema.parse({
+        kind: XY_SCATTER,
+        yColumnId: "c2",
+        mark: "line",
+      }).mark
+    ).toBe("line");
+    const body = xyScatterBodySchema.parse({
+      yColumnId: "c2",
+      mark: "column",
+    });
+    expect("mark" in body).toBe(false);
   });
 });
 

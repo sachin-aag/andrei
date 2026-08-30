@@ -1,4 +1,13 @@
 import { z } from "zod";
+import {
+  CHART_MARKS,
+  parseChartMark,
+  stackedYExtent,
+  type ChartMark,
+} from "./chart-marks";
+
+export type { ChartMark };
+export { CHART_MARKS, parseChartMark };
 
 export type ChartPoint = {
   /** X position. Sequential/replicate layouts overwrite this; value keeps it. */
@@ -33,6 +42,11 @@ export type ChartLayout = {
   xAxis: "sequential" | "replicate" | "value";
   /** null = auto from data and limits with padding. */
   yRange: { min: number; max: number } | null;
+  /**
+   * Visual mark the engineer sees. Spec `kind` stays `"scatter"` so document
+   * charts and stored JSON keep parsing. Omitted → scatter.
+   */
+  mark?: ChartMark;
 };
 
 export type ChartSpec = {
@@ -59,6 +73,7 @@ export const DEFAULT_CHART_LAYOUT: ChartLayout = {
   seriesBy: "unit",
   xAxis: "sequential",
   yRange: null,
+  mark: "scatter",
 };
 
 const chartPointSchema = z.object({
@@ -88,6 +103,7 @@ const chartLayoutSchema = z.object({
       max: z.number().finite(),
     })
     .nullable(),
+  mark: z.enum(CHART_MARKS).optional().default("scatter"),
 });
 
 export const chartSpecSchema = z.object({
@@ -182,6 +198,12 @@ function niceNumber(range: number, round: boolean): number {
 
 function yValues(spec: ChartSpec): number[] {
   const values = spec.points.map((point) => point.y);
+  if (parseChartMark(spec.layout.mark) === "column" && spec.layout.seriesBy === "unit") {
+    const stacked = stackedYExtent(spec.points);
+    if (stacked) {
+      values.push(stacked.min, stacked.max);
+    }
+  }
   if (spec.limits.lower != null) values.push(spec.limits.lower);
   if (spec.limits.upper != null) values.push(spec.limits.upper);
   return values;
@@ -311,6 +333,7 @@ export function mergeChartLayout(
     seriesBy?: ChartLayout["seriesBy"];
     xAxis?: ChartLayout["xAxis"];
     yMax?: number;
+    mark?: ChartMark;
   }
 ): ChartLayout {
   const yRange =
@@ -325,6 +348,7 @@ export function mergeChartLayout(
     seriesBy: patch.seriesBy ?? base.seriesBy,
     xAxis: patch.xAxis ?? base.xAxis,
     yRange,
+    mark: patch.mark ?? base.mark ?? "scatter",
   };
 }
 

@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { CHART_MARK_LABELS, parseChartMark } from "@/lib/charts/chart-marks";
 import { formatPValue, formatPpm, formatStat } from "./format";
 import { plotImagesForExport } from "./render-analysis-plots";
 import {
@@ -253,6 +254,7 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
       ["Rows", rows],
       ["Kind", isObservationXyScatter(analysis.config) ? "1D scatter" : "XY scatter"],
       ["Legend", analysis.config.legendColumnName ?? ""],
+      ["Chart type", CHART_MARK_LABELS[parseChartMark(analysis.config.mark ?? spec?.layout.mark)]],
       ["N", String(analysis.results.n)],
       ["Skipped", String(analysis.results.skipped)],
       ["Pearson r", formatStat(analysis.results.pearsonR, 4)],

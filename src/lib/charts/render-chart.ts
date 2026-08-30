@@ -10,6 +10,11 @@ import {
   type ChartPoint,
   type ChartSpec,
 } from "@/lib/charts/chart-spec";
+import {
+  columnBarWidthPx,
+  markGeometry,
+  parseChartMark,
+} from "@/lib/charts/chart-marks";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
 import { readRasterDimensions } from "@/lib/export/raster-dimensions";
 import {
@@ -30,6 +35,7 @@ type Canvas2d = {
   fillStyle: string;
   strokeStyle: string;
   lineWidth: number;
+  globalAlpha: number;
   font: string;
   textAlign: CanvasTextAlign;
   textBaseline: CanvasTextBaseline;
@@ -40,6 +46,7 @@ type Canvas2d = {
   arc: (x: number, y: number, r: number, start: number, end: number) => void;
   stroke: () => void;
   fill: () => void;
+  closePath: () => void;
   fillRect: (x: number, y: number, w: number, h: number) => void;
   strokeRect: (x: number, y: number, w: number, h: number) => void;
   fillText: (text: string, x: number, y: number) => void;
@@ -208,20 +215,89 @@ function drawChart(
   ctx.setLineDash([]);
 
   const seriesIndex = new Map(seriesNames.map((name, index) => [name, index]));
-  for (const point of points) {
-    const color =
-      spec.layout.seriesBy === "unit"
-        ? seriesFill(colors, seriesIndex.get(point.series ?? "") ?? 0)
-        : colors.brand600;
-    const px = xToPx(point.x);
-    const py = yToPx(point.y);
-    ctx.beginPath();
-    ctx.arc(px, py, 5, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = colors.plotFill;
-    ctx.stroke();
+  const colorFor = (series: string | null) =>
+    spec.layout.seriesBy === "unit"
+      ? seriesFill(colors, seriesIndex.get(series ?? "") ?? 0)
+      : colors.brand600;
+  const geometry = markGeometry({
+    points,
+    mark: spec.layout.mark,
+    seriesBy: spec.layout.seriesBy,
+  });
+  const mark = parseChartMark(spec.layout.mark);
+
+  if (geometry.type === "points") {
+    for (const point of geometry.points) {
+      const px = xToPx(point.x);
+      const py = yToPx(point.y);
+      ctx.beginPath();
+      ctx.arc(px, py, 5, 0, Math.PI * 2);
+      ctx.fillStyle = colorFor(point.series);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = colors.plotFill;
+      ctx.stroke();
+    }
+  } else if (geometry.type === "polylines") {
+    const baseline = yToPx(Math.max(0, yRange.min));
+    for (const line of geometry.lines) {
+      const color = colorFor(line.series || null);
+      const first = line.points[0];
+      const last = line.points[line.points.length - 1];
+      if (geometry.fill && first && last) {
+        ctx.beginPath();
+        ctx.moveTo(xToPx(first.x), yToPx(first.y));
+        for (let i = 1; i < line.points.length; i++) {
+          const point = line.points[i]!;
+          ctx.lineTo(xToPx(point.x), yToPx(point.y));
+        }
+        ctx.lineTo(xToPx(last.x), baseline);
+        ctx.lineTo(xToPx(first.x), baseline);
+        ctx.closePath();
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      if (line.points.length >= 2 && first) {
+        ctx.beginPath();
+        ctx.moveTo(xToPx(first.x), yToPx(first.y));
+        for (let i = 1; i < line.points.length; i++) {
+          const point = line.points[i]!;
+          ctx.lineTo(xToPx(point.x), yToPx(point.y));
+        }
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.25;
+        ctx.stroke();
+      }
+      if (geometry.markers) {
+        for (const point of line.points) {
+          ctx.beginPath();
+          ctx.arc(xToPx(point.x), yToPx(point.y), 4, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = colors.plotFill;
+          ctx.stroke();
+        }
+      }
+    }
+  } else {
+    const width = columnBarWidthPx(
+      geometry.segments.map((segment) => segment.x),
+      xToPx
+    );
+    for (const segment of geometry.segments) {
+      const top = yToPx(Math.max(segment.y0, segment.y1));
+      const bottom = yToPx(Math.min(segment.y0, segment.y1));
+      ctx.fillStyle = colorFor(segment.series || null);
+      ctx.fillRect(
+        xToPx(segment.x) - width / 2,
+        top,
+        width,
+        Math.max(1, bottom - top)
+      );
+    }
   }
 
   if (showLegend) {
@@ -233,12 +309,24 @@ function drawChart(
     for (const name of seriesNames) {
       if (!name) continue;
       const color = seriesFill(colors, seriesIndex.get(name) ?? 0);
-      ctx.beginPath();
-      ctx.arc(legendX + 6, legendY, 5, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
+      if (mark === "column") {
+        ctx.fillStyle = color;
+        ctx.fillRect(legendX + 1, legendY - 5, 10, 10);
+      } else if (mark === "scatter") {
+        ctx.beginPath();
+        ctx.arc(legendX + 6, legendY, 5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(legendX, legendY);
+        ctx.lineTo(legendX + 14, legendY);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.25;
+        ctx.stroke();
+      }
       ctx.fillStyle = colors.brand800;
-      ctx.fillText(name, legendX + 16, legendY);
+      ctx.fillText(name, legendX + 18, legendY);
       legendY += 20;
     }
   }

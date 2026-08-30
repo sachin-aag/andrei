@@ -278,7 +278,7 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 | saves a sixpack for specific row numbers | POST `rows` list; Results shows that subset; Download saves a CSV |
 | marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
 | streams a stats-assistant reply | Stub chat streams and persists; Ask/Agent + Quick/Deep + attach image are present (cannot assert tools) |
-| shows Data sheets and column specs from the header menu | Data tab only; insert/delete row/column are not in Data; right-click column Specs dialog filled from sample assay; Plot measurements dialog has optional LSL/USL and errors without attachments |
+| shows Data sheets and column specs from the header menu | Data tab only; insert/delete row/column are not in Data; right-click column Specs dialog filled from sample assay; Plot from attachments dialog has optional LSL/USL and errors without attachments |
 | row headers select the whole row and the row menu inserts, clears, and deletes | Click row number to select all columns; right-click Insert above/below, Clear, Delete |
 | column context menu inserts, clears, and opens Analyze with prefilled plot values | Insert left/right, clear data, delete; Analyze data popup switches plot type with column values pre-filled |
 | loads sample assay and runs one-way ANOVA of Assay by Lot | Data menu sample fills Assay + Lot; Stat → One-Way ANOVA; Results table + interval plot |

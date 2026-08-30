@@ -1,5 +1,9 @@
 import { formatPValue, formatPpm, formatStat } from "./format";
 import {
+  CHART_MARK_LABELS,
+  parseChartMark,
+} from "@/lib/charts/chart-marks";
+import {
   formatRowSelection,
   normalizeRowSelection,
 } from "./row-selection";
@@ -269,6 +273,7 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
     ["Rows", rows],
     ["Kind", isObservationXyScatter(analysis.config) ? "1D scatter" : "XY scatter"],
     ["Legend", analysis.config.legendColumnName ?? ""],
+    ["Chart type", CHART_MARK_LABELS[parseChartMark(analysis.config.mark ?? spec?.layout.mark)]],
     ["N", String(analysis.results.n)],
     ["Skipped", String(analysis.results.skipped)],
     ["Pearson r", formatStat(analysis.results.pearsonR, 4)],

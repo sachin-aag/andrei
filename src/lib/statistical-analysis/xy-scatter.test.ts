@@ -145,6 +145,7 @@ describe("computeXyScatter", () => {
     expect(outcome.result.skipped).toBe(1);
     expect(outcome.result.specs[0]?.xLabel).toBe("Observation");
     expect(outcome.result.specs[0]?.layout.seriesBy).toBe("none");
+    expect(outcome.result.specs[0]?.layout.mark).toBe("scatter");
     expect(outcome.result.specs[0]?.points.map((point) => point.x)).toEqual([
       1, 2, 4,
     ]);
@@ -200,5 +201,21 @@ describe("computeXyScatter", () => {
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.code).toBe("too_many_series");
+  });
+
+  it("copies chart type onto the spec layout", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = pasteTsv(sheet, 0, 0, ["10", "20", "30"].join("\n"));
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: null,
+      xColumnName: "Observation",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "line",
+      mark: "line",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.layout.mark).toBe("line");
   });
 });

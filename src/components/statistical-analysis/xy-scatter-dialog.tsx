@@ -28,6 +28,12 @@ import {
   xyScatterFallbackTitle,
 } from "@/lib/statistical-analysis/types";
 import {
+  CHART_MARKS,
+  CHART_MARK_LABELS,
+  parseChartMark,
+  type ChartMark,
+} from "@/lib/charts/chart-marks";
+import {
   dataSheets,
   findColumn,
 } from "@/lib/statistical-analysis/worksheet";
@@ -41,6 +47,7 @@ export type XyScatterDialogValues = {
   xColumnId: string | null;
   yColumnId: string;
   legendColumnId: string | null;
+  mark: ChartMark;
   title: string;
   rowStart: number | null;
   rowEnd: number | null;
@@ -79,6 +86,7 @@ export function XyScatterDialog({
   defaultYColumnId,
   defaultXColumnId,
   defaultLegendColumnId,
+  defaultMark = "scatter",
   defaultRowStart = null,
   defaultRowEnd = null,
   defaultTitle = "",
@@ -93,6 +101,7 @@ export function XyScatterDialog({
   defaultYColumnId: string;
   defaultXColumnId?: string | null;
   defaultLegendColumnId?: string | null;
+  defaultMark?: ChartMark;
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
   defaultTitle?: string;
@@ -111,6 +120,7 @@ export function XyScatterDialog({
   const [legendColumnId, setLegendColumnId] = useState<string | null>(
     () => defaultLegendColumnId ?? null
   );
+  const [mark, setMark] = useState<ChartMark>(() => parseChartMark(defaultMark));
   const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(
     defaultRowStart != null ? String(defaultRowStart) : ""
@@ -148,11 +158,13 @@ export function XyScatterDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="xy-scatter-dialog" className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Scatter</DialogTitle>
+          <DialogTitle>Plot measurements</DialogTitle>
           <DialogDescription>
-            Y is required. Leave X as Observation for a 1D scatter versus index
-            (1, 2, 3…), or pick a numeric X for Y versus X. A serial or factor
-            column cannot be X — use Legend to color-code by that column.
+            Y is required. Leave X as Observation for values versus index
+            (1, 2, 3…), or pick a numeric X. Chart type is the line you see —
+            scatter, line, area, or column. A legend colors dots, lines, or
+            stacked columns. A serial or factor column cannot be X — use Legend
+            to group by that column.
           </DialogDescription>
         </DialogHeader>
 
@@ -257,6 +269,38 @@ export function XyScatterDialog({
             </Select>
           </div>
 
+          <div className="grid gap-1.5">
+            <Label htmlFor="xy-mark" className={fieldLabelClass}>
+              Chart type
+            </Label>
+            <Select
+              value={mark}
+              onValueChange={(value) => setMark(parseChartMark(value))}
+            >
+              <SelectTrigger id="xy-mark" data-testid="xy-mark">
+                <SelectValue placeholder="Scatter" />
+              </SelectTrigger>
+              <SelectContent>
+                {CHART_MARKS.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {CHART_MARK_LABELS[item]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {legendColumnId || mark === "column" ? (
+              <p className="-mb-1 text-xs text-[var(--muted-foreground)]">
+                {legendColumnId
+                  ? mark === "column"
+                    ? "Legend stacks a column for each group at the same X."
+                    : mark === "scatter"
+                      ? "Legend uses a different color for each group’s dots."
+                      : "Legend uses a different color for each group’s line."
+                  : "One column per X. Add a legend to stack groups."}
+              </p>
+            ) : null}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
               <Label htmlFor="xy-row-start" className={fieldLabelClass}>
@@ -327,6 +371,7 @@ export function XyScatterDialog({
                 xColumnId,
                 yColumnId,
                 legendColumnId,
+                mark,
                 title: title.trim(),
                 rowStart: parseOptionalRow(rowStart),
                 rowEnd: parseOptionalRow(rowEnd),

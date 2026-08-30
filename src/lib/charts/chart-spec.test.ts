@@ -42,6 +42,15 @@ describe("parseChartSpec", () => {
     expect(parseChartSpec({ ...spec(), kind: "bar" })).toBeNull();
   });
 
+  it("defaults missing layout.mark to scatter", () => {
+    const raw = spec();
+    const { mark: _omitted, ...layoutWithoutMark } = raw.layout;
+    expect(_omitted).toBe("scatter");
+    expect(
+      parseChartSpec({ ...raw, layout: layoutWithoutMark })?.layout.mark
+    ).toBe("scatter");
+  });
+
   it("rejects a missing query", () => {
     expect(parseChartSpec({ ...spec(), query: "" })).toBeNull();
   });
@@ -139,6 +148,20 @@ describe("resolveYRange", () => {
 
   it("uses 0 as ymin when data and limits are non-negative", () => {
     expect(resolveYRange(spec({ limits: { lower: 2, upper: 4 } })).min).toBe(0);
+  });
+
+  it("uses stacked totals for column charts with a legend", () => {
+    const range = resolveYRange(
+      spec({
+        limits: { lower: null, upper: null },
+        points: [
+          { x: 1, y: 10, series: "A", label: "a" },
+          { x: 1, y: 15, series: "B", label: "b" },
+        ],
+        layout: { ...DEFAULT_CHART_LAYOUT, mark: "column", seriesBy: "unit" },
+      })
+    );
+    expect(range.max).toBeGreaterThanOrEqual(25);
   });
 });
 

@@ -1,3 +1,4 @@
+import { parseChartMark } from "@/lib/charts/chart-marks";
 import {
   DEFAULT_CHART_LAYOUT,
   type ChartPoint,
@@ -148,6 +149,7 @@ function buildSpec(
       ...DEFAULT_CHART_LAYOUT,
       seriesBy: config.legendColumnId ? "unit" : "none",
       xAxis: "value",
+      mark: parseChartMark(config.mark),
     },
     citations: [],
     sampleSizeMin: null,

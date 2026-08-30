@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { statisticalAnalyses, statisticalWorkspaces } from "@/db/schema";
 import { isPostgresUniqueViolation } from "@/lib/reports/document-no";
 import { parseChartSpec } from "@/lib/charts/chart-spec";
+import { parseChartMark } from "@/lib/charts/chart-marks";
 import {
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
@@ -56,8 +57,8 @@ import {
   oneWayAnovaBodySchema,
   oneWayAnovaInputSchema,
   worksheetDataSchema,
-  xyScatterBodySchema,
   xyScatterInputSchema,
+  xyScatterUpdateSchema,
 } from "./schemas";
 import {
   configRowFields,
@@ -171,6 +172,7 @@ function asXyScatterConfig(value: unknown): XyScatterConfig {
     rowStart: parsed.rowStart ?? null,
     rowEnd: parsed.rowEnd ?? null,
     rows: rows && rows.length > 0 ? rows : null,
+    mark: parseChartMark(parsed.mark),
   };
 }
 
@@ -685,6 +687,7 @@ async function createXyScatterAnalysisForReport(
     legendColumnId: resolved.legendColumn?.id ?? null,
     legendColumnName: resolved.legendColumn?.name ?? null,
     title,
+    mark: parseChartMark(parsed.data.mark),
     ...rowFields,
   };
 
@@ -1069,7 +1072,7 @@ export async function updateAnalysisForReport(
         )
       );
   } else if (isXyScatterAnalysis(existing)) {
-    const parsed = xyScatterBodySchema.safeParse(input);
+    const parsed = xyScatterUpdateSchema.safeParse(input);
     if (!parsed.success) {
       return {
         ok: false,
@@ -1104,6 +1107,7 @@ export async function updateAnalysisForReport(
       legendColumnId: resolved.legendColumn?.id ?? null,
       legendColumnName: resolved.legendColumn?.name ?? null,
       title,
+      mark: parseChartMark(parsed.data.mark ?? existing.config.mark),
       ...rowFields,
     };
     const outcome = computeXyScatter(analytics.worksheet, config);

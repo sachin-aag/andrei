@@ -85,7 +85,7 @@ export function PlotMeasurementsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="plot-measurements-dialog" className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Plot measurements</DialogTitle>
+          <DialogTitle>Plot from attachments</DialogTitle>
           <DialogDescription>
             Extract cited numeric measurements from this report&apos;s
             attachments and save a scatter of that series versus observation

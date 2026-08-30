@@ -1,4 +1,5 @@
 import type { ReportAnalyticsView } from "./types";
+import type { ChartMark } from "@/lib/charts/chart-marks";
 
 export class AnalyticsConflictError extends Error {
   readonly analytics: ReportAnalyticsView;
@@ -137,6 +138,7 @@ export async function createXyScatter(
     xColumnId?: string | null;
     yColumnId: string;
     legendColumnId?: string | null;
+    mark?: ChartMark;
     title?: string;
     rowStart?: number | null;
     rowEnd?: number | null;

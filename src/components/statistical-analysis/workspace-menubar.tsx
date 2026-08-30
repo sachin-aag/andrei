@@ -98,13 +98,13 @@ export function WorkspaceMenubar({
             data-testid="stat-xy-scatter"
             onSelect={onXyScatter}
           >
-            Scatter…
+            Plot measurements…
           </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="stat-plot-measurements"
             onSelect={onPlotMeasurements}
           >
-            Plot measurements…
+            Plot from attachments…
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

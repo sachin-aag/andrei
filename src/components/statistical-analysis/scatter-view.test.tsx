@@ -94,4 +94,24 @@ describe("ScatterView spec limits", () => {
     expect(screen.getByTestId("scatter-spec-line-usl")).toBeTruthy();
     expect(screen.getByTestId("scatter-spec-label-usl")).toHaveTextContent("6.00");
   });
+
+  it("renders a line chart instead of dots when mark is line", () => {
+    const spec = {
+      ...TORQUE_MOCK_SPEC,
+      layout: { ...TORQUE_MOCK_SPEC.layout, mark: "line" as const },
+    };
+    render(
+      <ScatterView
+        analysis={{
+          ...scatterSummary({ lower: null, upper: null }),
+          results: { specs: [spec], n: spec.points.length, uom: spec.uom },
+        }}
+        {...viewProps}
+      />
+    );
+    const chart = screen.getByTestId("measurement-scatter-chart");
+    expect(chart.getAttribute("data-chart-mark")).toBe("line");
+    expect(chart.querySelectorAll("circle")).toHaveLength(0);
+    expect(chart.querySelectorAll("polyline").length).toBeGreaterThan(1);
+  });
 });

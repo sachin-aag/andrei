@@ -23,6 +23,11 @@ import {
 } from "@/lib/charts/chart-spec";
 import { chartBrandColors, seriesFill } from "@/lib/charts/brand-colors";
 import {
+  columnBarWidthPx,
+  markGeometry,
+  parseChartMark,
+} from "@/lib/charts/chart-marks";
+import {
   layoutHorizontalSpecLabels,
   type HorizontalSpecKind,
 } from "@/lib/statistical-analysis/spec-limit-labels";
@@ -80,6 +85,23 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
   const yToPx = (y: number) =>
     plotBottom - ((y - yRange.min) / (yRange.max - yRange.min)) * plotHeight;
   const seriesIndex = new Map(seriesNames.map((name, index) => [name, index]));
+  const colorFor = (series: string | null) =>
+    spec.layout.seriesBy === "unit"
+      ? seriesFill(colors, seriesIndex.get(series ?? "") ?? 0)
+      : colors.brand600;
+  const geometry = markGeometry({
+    points,
+    mark: spec.layout.mark,
+    seriesBy: spec.layout.seriesBy,
+  });
+  const mark = parseChartMark(spec.layout.mark);
+  const barWidth =
+    geometry.type === "columns"
+      ? columnBarWidthPx(
+          geometry.segments.map((segment) => segment.x),
+          xToPx
+        )
+      : 0;
   const plotBox = {
     left: plotLeft,
     right: plotRight,
@@ -114,6 +136,7 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
       role="img"
       aria-label={spec.title}
       data-testid="measurement-scatter-chart"
+      data-chart-mark={mark}
       className="max-h-[520px] rounded-md border border-[var(--border)] bg-white"
     >
       <rect width={WIDTH} height={HEIGHT} fill={colors.plotFill} />
@@ -221,35 +244,117 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
           {label.text}
         </text>
       ))}
-      {points.map((point, index) => {
-        const color =
-          spec.layout.seriesBy === "unit"
-            ? seriesFill(colors, seriesIndex.get(point.series ?? "") ?? 0)
-            : colors.brand600;
-        return (
-          <circle
-            key={`${point.label}-${index}`}
-            cx={xToPx(point.x)}
-            cy={yToPx(point.y)}
-            r="5"
-            fill={color}
-            stroke={colors.plotFill}
-            strokeWidth="1"
-          >
-            <title>
-              {spec.layout.xAxis === "value"
-                ? `${point.label}: ${point.x}, ${point.y}`
-                : `${point.label}: ${point.y}`}
-            </title>
-          </circle>
-        );
-      })}
+      {geometry.type === "points"
+        ? geometry.points.map((point, index) => (
+            <circle
+              key={`${point.label}-${index}`}
+              cx={xToPx(point.x)}
+              cy={yToPx(point.y)}
+              r="5"
+              fill={colorFor(point.series)}
+              stroke={colors.plotFill}
+              strokeWidth="1"
+            >
+              <title>
+                {spec.layout.xAxis === "value"
+                  ? `${point.label}: ${point.x}, ${point.y}`
+                  : `${point.label}: ${point.y}`}
+              </title>
+            </circle>
+          ))
+        : null}
+      {geometry.type === "polylines"
+        ? geometry.lines.map((line) => {
+            const color = colorFor(line.series || null);
+            const d = line.points
+              .map((point) => `${xToPx(point.x)},${yToPx(point.y)}`)
+              .join(" ");
+            const first = line.points[0];
+            const last = line.points[line.points.length - 1];
+            const baseline = yToPx(Math.max(0, yRange.min));
+            const areaD =
+              geometry.fill && first && last
+                ? `${d} ${xToPx(last.x)},${baseline} ${xToPx(first.x)},${baseline}`
+                : null;
+            return (
+              <g key={`line-${line.series || "series"}`}>
+                {areaD ? (
+                  <polyline
+                    points={areaD}
+                    fill={color}
+                    fillOpacity="0.18"
+                    stroke="none"
+                  />
+                ) : null}
+                {line.points.length >= 2 ? (
+                  <polyline
+                    points={d}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="2.25"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                ) : null}
+                {geometry.markers
+                  ? line.points.map((point, index) => (
+                      <circle
+                        key={`${point.label}-${index}`}
+                        cx={xToPx(point.x)}
+                        cy={yToPx(point.y)}
+                        r="4"
+                        fill={color}
+                        stroke={colors.plotFill}
+                        strokeWidth="1"
+                      >
+                        <title>
+                          {spec.layout.xAxis === "value"
+                            ? `${point.label}: ${point.x}, ${point.y}`
+                            : `${point.label}: ${point.y}`}
+                        </title>
+                      </circle>
+                    ))
+                  : null}
+              </g>
+            );
+          })
+        : null}
+      {geometry.type === "columns"
+        ? geometry.segments.map((segment, index) => {
+            const top = yToPx(Math.max(segment.y0, segment.y1));
+            const bottom = yToPx(Math.min(segment.y0, segment.y1));
+            return (
+              <rect
+                key={`col-${segment.x}-${segment.series}-${index}`}
+                x={xToPx(segment.x) - barWidth / 2}
+                y={top}
+                width={barWidth}
+                height={Math.max(1, bottom - top)}
+                fill={colorFor(segment.series || null)}
+              />
+            );
+          })
+        : null}
       {showLegend
         ? seriesNames.map((name, index) =>
             name ? (
               <g key={name} transform={`translate(${plotRight + 16} ${plotTop + 8 + index * 20})`}>
-                <circle cx="6" cy="0" r="5" fill={seriesFill(colors, index)} />
-                <text x="16" y="0" dominantBaseline="middle" fontSize="11" fill={colors.brand800}>
+                {mark === "column" ? (
+                  <rect x="1" y="-5" width="10" height="10" fill={seriesFill(colors, index)} />
+                ) : mark === "scatter" ? (
+                  <circle cx="6" cy="0" r="5" fill={seriesFill(colors, index)} />
+                ) : (
+                  <line
+                    x1="0"
+                    x2="14"
+                    y1="0"
+                    y2="0"
+                    stroke={seriesFill(colors, index)}
+                    strokeWidth="2.25"
+                    strokeLinecap="round"
+                  />
+                )}
+                <text x="18" y="0" dominantBaseline="middle" fontSize="11" fill={colors.brand800}>
                   {name}
                 </text>
               </g>

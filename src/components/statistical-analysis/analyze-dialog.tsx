@@ -101,7 +101,7 @@ function limitsForColumn(
 const PLOT_TYPES: { value: AnalysisKind; label: string }[] = [
   { value: CAPABILITY_SIXPACK_NORMAL, label: "Normal Capability Sixpack" },
   { value: ONE_WAY_ANOVA, label: "One-Way ANOVA" },
-  { value: MEASUREMENT_SCATTER, label: "Plot measurements" },
+  { value: MEASUREMENT_SCATTER, label: "Plot from attachments" },
 ];
 
 export function AnalyzeDialog({

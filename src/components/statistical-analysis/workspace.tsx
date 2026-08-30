@@ -825,9 +825,9 @@ export function StatisticalWorkspace({
                 Right-click a column and choose <strong>Analyze data…</strong>,
                 or use <strong>Plot → Normal Capability Sixpack</strong>,{" "}
                 <strong>Plot → One-Way ANOVA</strong>,{" "}
-                <strong>Plot → Scatter</strong> for a worksheet column (1D vs
-                index, or 2D if you pick X), or{" "}
-                <strong>Plot → Plot measurements</strong> for an attachment
+                <strong>Plot → Plot measurements</strong> for a worksheet column
+                (1D vs index, or 2D if you pick X), or{" "}
+                <strong>Plot → Plot from attachments</strong> for an attachment
                 scatter. Each run is saved as its own result.
               </p>
             </div>
@@ -1255,6 +1255,11 @@ export function StatisticalWorkspace({
             ? editingAnalysis.config.legendColumnId
             : null
         }
+        defaultMark={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.mark
+            : "scatter"
+        }
         defaultRowStart={xyRowStart}
         defaultRowEnd={xyRowEnd}
         defaultTitle={
@@ -1281,17 +1286,19 @@ export function StatisticalWorkspace({
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
                 legendColumnId: values.legendColumnId,
+                mark: values.mark,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
               });
               applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
-              toast.success("Scatter updated.");
+              toast.success("Plot updated.");
             } else {
               const created = await createXyScatter(reportId, {
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
                 legendColumnId: values.legendColumnId,
+                mark: values.mark,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
@@ -1307,7 +1314,7 @@ export function StatisticalWorkspace({
             setXyError(
               error instanceof Error
                 ? error.message
-                : "Could not plot the scatter."
+                : "Could not create the plot."
             );
           } finally {
             setXySubmitting(false);

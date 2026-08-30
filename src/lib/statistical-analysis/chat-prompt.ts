@@ -20,7 +20,7 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v19";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v20";
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -65,7 +65,7 @@ After a plot is saved, tell them to open the Results tab. Do not claim you rende
 
 const PLOT_RULES = `## Plots — match the ask; do not substitute
 You have two scatter tools only:
-- plot_xy_scatter: worksheet scatter. yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X. Optional legendColumnId color-codes points by that column (labels, lots, factors, and serials are OK for legend; they cannot be X or Y and must be on the same sheet). Empty legend cells become "(blank)". At most 24 legend groups. Optional rowStart/rowEnd or rows for a subset. Pearson r is overall (not per series) — no fitted line.
+- plot_xy_scatter: worksheet scatter. yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X. Optional legendColumnId color-codes points by that column (labels, lots, factors, and serials are OK for legend; they cannot be X or Y and must be on the same sheet). Empty legend cells become "(blank)". At most 24 legend groups. Optional rowStart/rowEnd or rows for a subset. Pearson r is overall (not per series) — no fitted line. Always save a scatter — do not choose line/area/column. The engineer can change Chart type in Plot measurements after the plot is saved.
 - plot_measurements: one attachment series vs observation index (1, 2, 3…). One series, one color. Not two worksheet columns. Cannot color by serial or overlay groups.
 
 You cannot: use a label column as X (Handpiece S/N is not numeric — pass it as legendColumnId instead); box/violin/bar charts of groups; treat a sixpack I-chart as a scatter.

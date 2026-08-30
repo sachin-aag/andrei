@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CHART_MARKS } from "@/lib/charts/chart-marks";
 import {
   MAX_CELL_LENGTH,
   MAX_COLUMN_NAME_LENGTH,
@@ -254,6 +255,12 @@ const xyScatterColumnFields = {
   ...anovaRowFields,
 } as const;
 
+const xyScatterUiFields = {
+  ...xyScatterColumnFields,
+  mark: z.enum(CHART_MARKS).optional(),
+} as const;
+
+/** Chat tool body — scatter only. Do not add `mark` or the model will set it. */
 export const xyScatterBodySchema = z
   .object(xyScatterColumnFields)
   .superRefine(refineDistinctXyColumns);
@@ -261,8 +268,13 @@ export const xyScatterBodySchema = z
 export const xyScatterInputSchema = z
   .object({
     kind: z.literal(XY_SCATTER),
-    ...xyScatterColumnFields,
+    ...xyScatterUiFields,
   })
+  .superRefine(refineDistinctXyColumns);
+
+/** Edit/update from the Plot measurements dialog (chart type allowed). */
+export const xyScatterUpdateSchema = z
+  .object(xyScatterUiFields)
   .superRefine(refineDistinctXyColumns);
 
 export const patchAnalyticsBodySchema = z
