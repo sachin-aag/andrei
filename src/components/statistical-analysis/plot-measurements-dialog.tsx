@@ -85,14 +85,11 @@ export function PlotMeasurementsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="plot-measurements-dialog" className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Plot measurements</DialogTitle>
+          <DialogTitle>Edit measurement scatter</DialogTitle>
           <DialogDescription>
-            Extract cited numeric measurements from this report&apos;s
-            attachments and save a scatter of that series versus observation
-            index in Results. One series, one color — this is not a grouped
-            overlay. Use a requirement ID or measurement name, for example Assay
-            or REQ-042. LSL and USL are optional — leave them blank to use
-            limits cited in the files.
+            Update the query, axis labels, or optional LSL/USL for this
+            attachment scatter. To extract a new series from a file, ask the
+            assistant.
           </DialogDescription>
         </DialogHeader>
 

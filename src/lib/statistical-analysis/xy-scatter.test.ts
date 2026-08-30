@@ -4,25 +4,19 @@ import {
   createEmptyWorksheet,
   pasteTsv,
   renameColumn,
+  replaceColumnValues,
+  setCell,
   upsertSpecRow,
 } from "./worksheet";
-import { computeXyScatter, suggestXColumn } from "./xy-scatter";
+import { computeXyScatter, mergeXyScatterPatch, suggestXColumn } from "./xy-scatter";
 
 describe("computeXyScatter", () => {
   it("pairs rows where both cells are numeric and skips NA pairs", () => {
     let sheet = createEmptyWorksheet(2);
     sheet = pasteTsv(sheet, 0, 0, ["1", "2", "na", "4"].join("\n"));
     sheet = pasteTsv(sheet, 1, 0, ["10", "20", "30", "40"].join("\n"));
-    sheet = {
-      ...sheet,
-      columns: sheet.columns.map((column, index) =>
-        index === 0
-          ? { ...column, name: "Glucose" }
-          : index === 1
-            ? { ...column, name: "OD660" }
-            : column
-      ),
-    };
+    sheet = renameColumn(sheet, 0, "Glucose");
+    sheet = renameColumn(sheet, 1, "OD660");
     const outcome = computeXyScatter(sheet, {
       xColumnId: "c1",
       xColumnName: "Glucose",
@@ -112,6 +106,57 @@ describe("computeXyScatter", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.result.specs[0]?.limits).toEqual({ lower: 5, upper: 40 });
+    expect(outcome.result.specs[0]?.layout.showSpecLimits).toBe(false);
+  });
+
+  it("draws spec limits only when showSpecLimits is on", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = pasteTsv(sheet, 0, 0, ["1", "2", "3"].join("\n"));
+    sheet = pasteTsv(sheet, 1, 0, ["10", "20", "30"].join("\n"));
+    sheet = renameColumn(sheet, 1, "OD660");
+    sheet = upsertSpecRow(sheet, {
+      columnName: "OD660",
+      lsl: "5",
+      usl: "40",
+      target: "",
+    });
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: "c1",
+      xColumnName: "C1",
+      yColumnId: "c2",
+      yColumnName: "OD660",
+      title: "OD660 vs C1",
+      showSpecLimits: true,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.layout.showSpecLimits).toBe(true);
+    expect(outcome.result.specs[0]?.limits).toEqual({ lower: 5, upper: 40 });
+  });
+
+  it("applies axis window and custom axis titles", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = pasteTsv(sheet, 0, 0, ["1", "2", "3"].join("\n"));
+    sheet = pasteTsv(sheet, 1, 0, ["10", "20", "30"].join("\n"));
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: "c1",
+      xColumnName: "C1",
+      yColumnId: "c2",
+      yColumnName: "Assay",
+      title: "Assay vs C1",
+      xMin: 0,
+      xMax: 10,
+      yMin: 5,
+      yMax: 40,
+      xAxisLabel: "Time (h)",
+      yAxisLabel: "Assay (%)",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.layout.xRange).toEqual({ min: 0, max: 10 });
+    expect(outcome.result.specs[0]?.layout.yRange).toEqual({ min: 5, max: 40 });
+    expect(outcome.result.specs[0]?.xLabel).toBe("Time (h)");
+    expect(outcome.result.specs[0]?.yLabel).toBe("Assay (%)");
   });
 
   it("suggests the next column as X", () => {
@@ -134,5 +179,240 @@ describe("computeXyScatter", () => {
     if (!outcome.ok) return;
     const xs = outcome.result.specs[0]?.points.map((point) => point.x) ?? [];
     expect(Math.min(...xs)).toBe(20.7);
+  });
+
+  it("plots Y vs observation index when X is omitted", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = pasteTsv(sheet, 0, 0, ["10", "20", "na", "40"].join("\n"));
+    sheet = renameColumn(sheet, 0, "Assay");
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: null,
+      xColumnName: "Observation",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "Assay vs Observation",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.n).toBe(3);
+    expect(outcome.result.skipped).toBe(1);
+    expect(outcome.result.specs[0]?.xLabel).toBe("Observation");
+    expect(outcome.result.specs[0]?.layout.seriesBy).toBe("none");
+    expect(outcome.result.specs[0]?.layout.mark).toBe("scatter");
+    expect(outcome.result.specs[0]?.points.map((point) => point.x)).toEqual([
+      1, 2, 4,
+    ]);
+    expect(outcome.result.specs[0]?.points.map((point) => point.y)).toEqual([
+      10, 20, 40,
+    ]);
+  });
+
+  it("color-codes points from an optional legend column", () => {
+    let sheet = createEmptyWorksheet(3);
+    sheet = pasteTsv(sheet, 0, 0, ["1", "2", "3", "4"].join("\n"));
+    sheet = pasteTsv(sheet, 1, 0, ["10", "20", "30", "40"].join("\n"));
+    sheet = pasteTsv(sheet, 2, 0, ["A", "", "B", "A"].join("\n"));
+    sheet = renameColumn(sheet, 0, "Glucose");
+    sheet = renameColumn(sheet, 1, "OD660");
+    sheet = renameColumn(sheet, 2, "Lot");
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: "c1",
+      xColumnName: "Glucose",
+      yColumnId: "c2",
+      yColumnName: "OD660",
+      legendColumnId: "c3",
+      legendColumnName: "Lot",
+      title: "OD660 vs Glucose by Lot",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.layout.seriesBy).toBe("unit");
+    expect(outcome.result.specs[0]?.query).toBe("OD660 vs Glucose by Lot");
+    expect(outcome.result.specs[0]?.points.map((point) => point.series)).toEqual([
+      "A",
+      "(blank)",
+      "B",
+      "A",
+    ]);
+  });
+
+  it("rejects more than 24 legend groups", () => {
+    let sheet = createEmptyWorksheet(2);
+    const yValues = Array.from({ length: 25 }, (_, index) => String(index + 1));
+    const legendValues = Array.from({ length: 25 }, (_, index) => `G${index}`);
+    sheet = pasteTsv(sheet, 0, 0, yValues.join("\n"));
+    sheet = pasteTsv(sheet, 1, 0, legendValues.join("\n"));
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: null,
+      xColumnName: "Observation",
+      yColumnId: "c1",
+      yColumnName: "Y",
+      legendColumnId: "c2",
+      legendColumnName: "Group",
+      title: "too many",
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.code).toBe("too_many_series");
+  });
+
+  it("copies chart type onto the spec layout", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = pasteTsv(sheet, 0, 0, ["10", "20", "30"].join("\n"));
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: null,
+      xColumnName: "Observation",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "line",
+      mark: "line",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.layout.mark).toBe("line");
+  });
+
+  it("copies attachment citations from plotted columns onto the spec", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = replaceColumnValues(
+      sheet,
+      0,
+      ["10", "20", "30"],
+      "Assay",
+      [{ attachmentId: "att_1", page: 31 }]
+    );
+    sheet = replaceColumnValues(
+      sheet,
+      1,
+      ["1", "2", "3"],
+      "Time",
+      [{ attachmentId: "att_1", page: 32 }]
+    );
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: "c2",
+      xColumnName: "Time",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "Assay vs Time",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.citations).toEqual([
+      { attachmentId: "att_1", page: 31 },
+      { attachmentId: "att_1", page: 32 },
+    ]);
+  });
+
+  it("omits citations when columns were typed or pasted", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = pasteTsv(sheet, 0, 0, ["10", "20", "30"].join("\n"));
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: null,
+      xColumnName: "Observation",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "typed",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.citations).toEqual([]);
+  });
+
+  it("drops citations after a human edits a cited column", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = replaceColumnValues(
+      sheet,
+      0,
+      ["10", "20", "30"],
+      "Assay",
+      [{ attachmentId: "att_1", page: 31 }]
+    );
+    sheet = setCell(sheet, 0, 1, "21");
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: null,
+      xColumnName: "Observation",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "edited",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.citations).toEqual([]);
+  });
+});
+
+describe("mergeXyScatterPatch", () => {
+  const existing = {
+    xColumnId: "c1",
+    xColumnName: "Glucose",
+    yColumnId: "c2",
+    yColumnName: "OD660",
+    legendColumnId: "c3",
+    legendColumnName: "Lot",
+    title: "OD660 vs Glucose",
+    mark: "scatter" as const,
+    showSpecLimits: false,
+    xMin: 0,
+    xMax: 10,
+    yMin: 5,
+    yMax: 40,
+    xAxisLabel: "Time (h)",
+    yAxisLabel: "Assay (%)",
+    rowStart: 1,
+    rowEnd: 10,
+    rows: null,
+  };
+
+  it("keeps omitted axes, mark, spec lines, axis window, and row range", () => {
+    expect(mergeXyScatterPatch(existing, { title: "Retitled" })).toMatchObject({
+      yColumnId: "c2",
+      xColumnId: "c1",
+      legendColumnId: "c3",
+      title: "Retitled",
+      mark: "scatter",
+      showSpecLimits: false,
+      xMin: 0,
+      xMax: 10,
+      yMin: 5,
+      yMax: 40,
+      xAxisLabel: "Time (h)",
+      yAxisLabel: "Assay (%)",
+      rowStart: 1,
+      rowEnd: 10,
+    });
+  });
+
+  it("clears X to observation index when xColumnId is null", () => {
+    expect(
+      mergeXyScatterPatch(existing, { xColumnId: null }).xColumnId
+    ).toBeNull();
+  });
+
+  it("replaces Y, chart type, and spec-limit visibility", () => {
+    expect(
+      mergeXyScatterPatch(existing, {
+        yColumnId: "c4",
+        mark: "line",
+        showSpecLimits: true,
+      })
+    ).toMatchObject({
+      yColumnId: "c4",
+      xColumnId: "c1",
+      mark: "line",
+      showSpecLimits: true,
+    });
+  });
+
+  it("clears axis limits when the patch sends null", () => {
+    expect(
+      mergeXyScatterPatch(
+        { ...existing, xMin: 0, xMax: 10, yAxisLabel: "Assay" },
+        { xMin: null, xMax: null, yAxisLabel: null }
+      )
+    ).toMatchObject({
+      xMin: null,
+      xMax: null,
+      yAxisLabel: null,
+    });
   });
 });

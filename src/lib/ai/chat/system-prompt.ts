@@ -19,7 +19,7 @@ import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v53-drop-section-switch";
+export const CHAT_PROMPT_VERSION = "chat-v54-analytics-plot-chat";
 
 export type ChatMode = "plan" | "agent";
 
@@ -153,7 +153,7 @@ ${
 ${
     includePlotMeasurements
       ? "- Charts are the only generated pixels. When the engineer asked in words for a chart of cited attachment data, call plot_measurements (never invent a data point, and never volunteer a chart). Restyle reuses the stored chartSpec — do not extract again."
-      : "- Do not generate chart pixels in Document chat. When the engineer asked for a measurement plot, scatter, or capability chart, tell them to open **Analytics** (Document | Analytics at the top of the report) and use Plot measurements or the Statistical Analysis assistant. Do not call a chart tool here — it is not available."
+      : "- Do not generate chart pixels in Document chat. When the engineer asked for a measurement plot, scatter, or capability chart, tell them to open **Analytics** and ask the Statistical Analysis assistant to extract the numbers from attachments and plot them. Plot → Plot measurements is for worksheet columns only. Do not call a chart tool here — it is not available."
   }
 - Do not paste markdown like ![alt](narrative#1) into draft_field or propose_edit — those cannot create or remove figures.`;
 }
@@ -233,7 +233,7 @@ Choosing the right tool:
 - draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial prose rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it for incremental table edits — accepting a draft overwrites every cell, including filled placeholders. draft_field cannot insert or remove figures; use ${figureEditTools(opts.includePlotMeasurements)}. A full rewrite of a field that already has images will drop those images.
 - propose_edit — one small targeted change inside existing prose, or a list item (targeted with "scope"). Never use it for tables, and never quote a markdown pipe table as anchorText. Never put image markdown in insertText.
 - insert_image — place one existing image (chat attachment or a figure already in a section) into a rich field. ${committing ? "It is applied immediately." : "The engineer reviews it like any other suggestion."} Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}.
-${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric measurements from attachments and ${committing ? "insert" : "propose"} a scatter plot as a ${committing ? "figure in the document" : "reviewable figure"}. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec.` : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
+${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric measurements from attachments and ${committing ? "insert" : "propose"} a scatter plot as a ${committing ? "figure in the document" : "reviewable figure"}. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec.` : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and ask the Statistical Analysis assistant to extract from attachments and plot. Plot → Plot measurements is worksheet columns only."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). ${committing ? "The removal is applied immediately." : "The engineer reviews it like any other suggestion."} Do not rewrite the field with draft_field just to drop a figure.
 - search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is already filled or partial, call read_section first and only grep for a gap you found.
 - document_outline — list per-page context for one attachment so you can pick which pages to read. Not a substitute for search_documents.

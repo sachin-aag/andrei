@@ -411,16 +411,17 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("column-specs-dialog")).toHaveCount(0);
 
     await page.getByTestId("worksheet-plot-menu").click();
-    await page.getByTestId("stat-plot-measurements").click();
-    await expect(page.getByTestId("plot-measurements-dialog")).toBeVisible();
-    await expect(page.getByTestId("plot-measurements-submit")).toBeDisabled();
-    await expect(page.getByTestId("plot-lsl")).toHaveValue("");
-    await expect(page.getByTestId("plot-usl")).toHaveValue("");
-    await page.getByTestId("plot-query").fill("M3-SYS-FN-037");
-    await page.getByTestId("plot-lsl").fill("1");
-    await page.getByTestId("plot-usl").fill("6");
-    await page.getByTestId("plot-measurements-submit").click();
-    await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("stat-normal-sixpack")).toBeVisible();
+    await expect(page.getByTestId("stat-one-way-anova")).toBeVisible();
+    await expect(page.getByTestId("stat-xy-scatter")).toBeVisible();
+    await expect(page.getByTestId("stat-xy-scatter")).toHaveText(
+      /plot measurements/i
+    );
+    await page.getByTestId("stat-xy-scatter").click();
+    await expect(page.getByTestId("xy-scatter-dialog")).toBeVisible();
+    await expect(page.getByTestId("xy-show-spec-limits")).not.toBeChecked();
+    await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
+    await expect(page.getByTestId("xy-scatter-dialog")).toHaveCount(0);
   });
 
   test("renames the active data sheet from the tab and Data menu", async ({
@@ -552,10 +553,12 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("anova-factor")).toContainText("Lot");
 
     await page.getByTestId("analyze-plot-type").click();
-    await page.getByRole("option", { name: /plot measurements/i }).click();
-    await expect(page.getByTestId("plot-query")).toHaveValue("Assay");
-    await expect(page.getByTestId("plot-lsl")).toHaveValue("90");
-    await expect(page.getByTestId("plot-usl")).toHaveValue("110");
+    await expect(page.getByRole("option")).toHaveCount(2);
+    await expect(
+      page.getByRole("option", { name: /normal capability sixpack/i })
+    ).toBeVisible();
+    await expect(page.getByRole("option", { name: /one-way anova/i })).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
     await expect(page.getByTestId("analyze-dialog")).toHaveCount(0);
 

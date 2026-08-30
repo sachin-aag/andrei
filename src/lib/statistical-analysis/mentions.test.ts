@@ -185,6 +185,7 @@ describe("buildAnalyticsMentionBlock", () => {
     expect(block).toContain("Data sheets");
     expect(block).toContain('"Assay" [data-1]');
     expect(block).toContain("Saved plots");
+    expect(block).toContain("plot_xy_scatter with that analysisId");
     expect(block).toContain('"Assay scatter" [plot-1]');
   });
 });

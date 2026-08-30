@@ -42,7 +42,6 @@ import {
 } from "@/lib/statistical-analysis/worksheet";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import {
-  MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   isAnovaAnalysis,
   isScatterAnalysis,
@@ -547,14 +546,6 @@ export function StatisticalWorkspace({
     setCapabilityOpen(true);
   };
 
-  const openPlotMeasurements = async () => {
-    if (readOnly) return;
-    await flush().catch(() => undefined);
-    setEditingAnalysisId(null);
-    setPlotError(null);
-    setPlotOpen(true);
-  };
-
   const openOneWayAnova = async (
     columnId: string,
     rows: { start: number; end: number } | null = null
@@ -695,7 +686,6 @@ export function StatisticalWorkspace({
               onXyScatter={() =>
                 void openXyScatter(selectedColumnId, selectedRowRange)
               }
-              onPlotMeasurements={() => void openPlotMeasurements()}
               onAddDataSheet={() => {
                 setWorksheet((current) => addDataSheet(current));
                 setSelection(collapseSelection(0, 0));
@@ -824,10 +814,11 @@ export function StatisticalWorkspace({
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
                 Right-click a column and choose <strong>Analyze data…</strong>,
                 or use <strong>Plot → Normal Capability Sixpack</strong>,{" "}
-                <strong>Plot → One-Way ANOVA</strong>,{" "}
-                <strong>Plot → Scatter</strong> for two worksheet columns, or{" "}
-                <strong>Plot → Plot measurements</strong> for an attachment
-                scatter. Each run is saved as its own result.
+                <strong>Plot → One-Way ANOVA</strong>, or{" "}
+                <strong>Plot → Plot measurements</strong> for a worksheet
+                column (1D vs index, or 2D if you pick X). To extract numbers
+                from a file and plot them, ask the assistant. Each run is saved
+                as its own result.
               </p>
             </div>
           ) : (
@@ -1009,19 +1000,6 @@ export function StatisticalWorkspace({
                 title: payload.values.title || undefined,
                 rowStart: payload.values.rowStart,
                 rowEnd: payload.values.rowEnd,
-              });
-              applyAnalytics(created.analytics, {
-                selectAnalysisId: created.analysisId,
-              });
-            } else if (payload.kind === MEASUREMENT_SCATTER) {
-              const created = await createMeasurementScatter(reportId, {
-                query: payload.values.query,
-                title: payload.values.title || undefined,
-                xLabel: payload.values.xLabel || undefined,
-                yLabel: payload.values.yLabel || undefined,
-                layout: { mode: payload.values.mode },
-                lsl: payload.values.lsl,
-                usl: payload.values.usl,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,
@@ -1247,13 +1225,58 @@ export function StatisticalWorkspace({
         defaultXColumnId={
           editingAnalysis && isXyScatterAnalysis(editingAnalysis)
             ? editingAnalysis.config.xColumnId
-            : undefined
+            : null
+        }
+        defaultLegendColumnId={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.legendColumnId
+            : null
+        }
+        defaultMark={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.mark
+            : "scatter"
+        }
+        defaultShowSpecLimits={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showSpecLimits === true
+            : false
         }
         defaultRowStart={xyRowStart}
         defaultRowEnd={xyRowEnd}
         defaultTitle={
           editingAnalysis && isXyScatterAnalysis(editingAnalysis)
             ? editingAnalysis.config.title
+            : ""
+        }
+        defaultXMin={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xMin ?? null)
+            : null
+        }
+        defaultXMax={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xMax ?? null)
+            : null
+        }
+        defaultYMin={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yMin ?? null)
+            : null
+        }
+        defaultYMax={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yMax ?? null)
+            : null
+        }
+        defaultXAxisLabel={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xAxisLabel ?? "")
+            : ""
+        }
+        defaultYAxisLabel={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yAxisLabel ?? "")
             : ""
         }
         editMode={Boolean(
@@ -1274,19 +1297,37 @@ export function StatisticalWorkspace({
               const next = await updateAnalysis(reportId, editingAnalysisId, {
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
+                legendColumnId: values.legendColumnId,
+                mark: values.mark,
+                showSpecLimits: values.showSpecLimits,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xMin: values.xMin,
+                xMax: values.xMax,
+                yMin: values.yMin,
+                yMax: values.yMax,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
-              toast.success("Scatter updated.");
+              toast.success("Plot updated.");
             } else {
               const created = await createXyScatter(reportId, {
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
+                legendColumnId: values.legendColumnId,
+                mark: values.mark,
+                showSpecLimits: values.showSpecLimits,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xMin: values.xMin,
+                xMax: values.xMax,
+                yMin: values.yMin,
+                yMax: values.yMax,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,
@@ -1299,7 +1340,7 @@ export function StatisticalWorkspace({
             setXyError(
               error instanceof Error
                 ? error.message
-                : "Could not plot the scatter."
+                : "Could not create the plot."
             );
           } finally {
             setXySubmitting(false);

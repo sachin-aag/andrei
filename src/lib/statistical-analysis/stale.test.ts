@@ -163,6 +163,32 @@ describe("analysis stale flags", () => {
     expect(staleX?.stale).toBe(true);
   });
 
+  it("marks a 1D scatter stale only when Y cells change", () => {
+    const analysis = xyScatter();
+    analysis.config.xColumnId = null;
+    analysis.config.xColumnName = "Observation";
+    const persisted = applySampleAssay(createEmptyWorksheet(), 0);
+    const editedY = setCell(persisted, 0, 0, "99.00");
+    const [staleY] = withLocalStale([analysis], editedY, persisted);
+    expect(staleY?.stale).toBe(true);
+
+    const editedLot = setCell(persisted, 1, 0, "Z");
+    const [freshLot] = withLocalStale([analysis], editedLot, persisted);
+    expect(freshLot?.stale).toBe(false);
+  });
+
+  it("marks a scatter stale when the legend column cells change", () => {
+    const analysis = xyScatter();
+    analysis.config.xColumnId = null;
+    analysis.config.xColumnName = "Observation";
+    analysis.config.legendColumnId = "c2";
+    analysis.config.legendColumnName = "Lot";
+    const persisted = applySampleAssay(createEmptyWorksheet(), 0);
+    const editedLot = setCell(persisted, 1, 0, "Z");
+    const [staleLegend] = withLocalStale([analysis], editedLot, persisted);
+    expect(staleLegend?.stale).toBe(true);
+  });
+
   it("summarizes sixpack, scatter, and ANOVA rows for the results list", () => {
     expect(analysisListSubtitle(sixpack())).toContain("Assay");
     expect(analysisListSubtitle(scatter())).toMatch(/M3-SYS-FN-037|10 point|ozf-in|limits/i);

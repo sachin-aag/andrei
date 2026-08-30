@@ -4,8 +4,14 @@ import {
 } from "@/lib/ai/chat/prompt-metadata";
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
-import type { ReportAnalyticsView } from "./types";
-import { isAnovaAnalysis, isScatterAnalysis, isSixpackAnalysis, isXyScatterAnalysis } from "./types";
+import {
+  isAnovaAnalysis,
+  isScatterAnalysis,
+  isSixpackAnalysis,
+  isXyScatterAnalysis,
+  xyScatterVersusLabel,
+  type ReportAnalyticsView,
+} from "./types";
 import {
   columnNumericValues,
   dataSheets,
@@ -14,7 +20,7 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v18";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v24";
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -38,45 +44,47 @@ OCR / data-pull path (worksheet + sixpack):
 1. Named file family or whole table / log sheet / "all information": call scan_attachments once with filenameContains from the live index (e.g. Seed-2) and the table title. It outlines matching files and reads the hit pages in that one call. Do not grep.
 2. Otherwise at most two search_documents calls (default is keyword; do not switch to hybrid unless the query has no lexical tokens). truncated does not mean grep again.
 3. As soon as a hit has a page number, stop searching and call scan_attachments, read_document_page, or extract_numeric_series. Search snippets are not enough to fill the worksheet. Never ask_user which page to read — search hits and document_outline already carry page numbers. ask_user is for choosing between assays and for spec limits that are genuinely absent.
-4. Whole table dump: one write_column with columns (every series, including Batch labels) from the scanned page text. Pass sourceAttachmentId and sourcePages from that page. Do not call write_column once per column and do not fill a series with set_cell. Do not write 0 or any other number for a cell that is not a token on that page — leave it blank and tell the engineer which rows were left empty. Do not copy decimal format from a neighboring column. Corrections like "airflow etc" mean re-check named columns independently. Do not ask_user for one assay and do not call extract_numeric_series. A page can hold more than one table. Name the table you are pulling from and check its headers against the request. If the requested table is unreadable, say so and ask; do not substitute a different table from the same page.
-5. One named measurement series (e.g. Conductivity): extract_numeric_series with that metric, then write_column with lsl/usl/target when the pages name them (column specs). Never pass "A or B". If you also write dates, copy the dates array from that same extract. If the engineer did not name a series and did not ask for a whole table, call ask_user first.
+4. Whole table dump: one write_column with columns (every series, including Batch labels) from the scanned page text. Pass sourceAttachmentId and sourcePages from that page. Those pages are recorded on the columns so a later plot_xy_scatter cites the file. Do not call write_column once per column and do not fill a series with set_cell. Do not write 0 or any other number for a cell that is not a token on that page — leave it blank and tell the engineer which rows were left empty. Do not copy decimal format from a neighboring column. Corrections like "airflow etc" mean re-check named columns independently. Do not ask_user for one assay and do not call extract_numeric_series. A page can hold more than one table. Name the table you are pulling from and check its headers against the request. If the requested table is unreadable, say so and ask; do not substitute a different table from the same page.
+5. One named measurement series (e.g. Conductivity): extract_numeric_series with that metric, then write_column with lsl/usl/target when the pages name them (column specs). Pass sourceAttachmentId and sourcePages when you have them (extract in this turn is enough if you omit them). Never pass "A or B". If you also write dates, copy the dates array from that same extract. If the engineer did not name a series and did not ask for a whole table, call ask_user first.
 6. run_capability_sixpack only when they asked for a capability / sixpack / Cp Cpk plot (needs LSL and/or USL). That is not a scatter.
 7. run_one_way_anova only when they asked for a one-way ANOVA (numeric response + factor column on the same sheet). That is a table, not a scatter.
-8. plot_xy_scatter only when they asked to plot two numeric worksheet columns (Y vs X / A vs B / correlation). Output variable is Y.
+8. plot_xy_scatter when they asked to plot a worksheet column: Y vs X, Y vs observation/index, a scatter, a line/area/column chart of those columns, or color-code by lot/batch/serial. Create: yColumnId is required and must be numeric. Omit xColumnId for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X. Pass legendColumnId to color points by a grouping column (labels/factors/serials are OK for legend). Optional mark (scatter default, line, line_markers, area, column), showSpecLimits (default off), and xMin/xMax/yMin/yMax (omit or null = auto). Output variable is Y. Edit an existing worksheet plot: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row.
 
 If cited pages have unlabeled dual RESULT columns for more than one assay, extract_numeric_series will refuse. Ask which series; do not guess.
 
-Attachment scatter path:
-- plot_measurements with a requirement ID or measurement name (e.g. M3-SYS-FN-037) when they asked for a measurement scatter of one attachment series vs observation index. Do not invent points. Do not use this for two worksheet columns — that is plot_xy_scatter.
+Attachment scatter path (chat only — there is no Plot-from-attachments menu):
+- plot_measurements with a requirement ID or measurement name (e.g. M3-SYS-FN-037) when they asked for a measurement scatter of one attachment series vs observation index. Do not invent points. Do not use this for two worksheet columns — that is plot_xy_scatter. Do not tell them to open a Plot menu item for attachments.
+- Or extract_numeric_series / scan_attachments / read_document_page, then write_column, then plot_xy_scatter when they want the numbers on the worksheet first.
 - Optional lsl / usl override the extracted acceptance limits. Omit them to keep limits cited on the pages. One-sided is allowed.
 
 Steps 4–8 (write_column, sixpack, ANOVA, XY scatter, attachment scatter) and manage_worksheet apply in Agent mode only. Match the asked chart; do not substitute a sixpack or ANOVA for a scatter.
 
-Each saved run **creates a new Results entry**. Do not treat a second run as a replacement.
+A new plot **creates a new Results entry**. Editing with analysisId updates that same row — do not create a duplicate when they asked to change the current plot. Sixpack and ANOVA runs always insert a new entry.
 Optional rowStart/rowEnd (1-based inclusive) or rows (a list of 1-based row numbers) limit a sixpack, ANOVA, or XY scatter to those worksheet rows. Omit them to use the whole column.
 
 After a plot is saved, tell them to open the Results tab. Do not claim you rendered the chart in chat.`;
 
 const PLOT_RULES = `## Plots — match the ask; do not substitute
 You have two scatter tools only:
-- plot_xy_scatter: two numeric worksheet columns, Y vs X, one series, one color. Optional rowStart/rowEnd or rows for a subset. Pearson r only — no fitted line.
-- plot_measurements: one attachment series vs observation index (1, 2, 3…). One series, one color. Not two worksheet columns.
+- plot_xy_scatter: worksheet chart. Create: yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X. Optional legendColumnId color-codes points by that column (labels, lots, factors, and serials are OK for legend; they cannot be X or Y and must be on the same sheet). Empty legend cells become "(blank)". At most 24 legend groups. Optional rowStart/rowEnd or rows for a subset. Pearson r is overall (not per series) — no fitted line. Optional mark is the chart type: scatter (default on create), line, line_markers, area, column. Optional showSpecLimits true/false draws Y-column LSL/USL lines (default off on create). Optional xMin, xMax, yMin, yMax set the visible axis window (omit or null = auto-fit that end). Optional xAxisLabel / yAxisLabel override axis titles. If the Y/X/legend columns were written from an attachment, the plot cites those pages. Edit: when they asked to change an existing worksheet plot (replace Y or X, change chart type, show/hide spec lines, zoom axes, retitle, legend), pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row. If they tagged a sixpack, ANOVA, or attachment measurement scatter, say that plot_xy_scatter cannot edit that kind.
+- plot_measurements: one attachment series vs observation index (1, 2, 3…). One series, one color. Not two worksheet columns. Cannot color by serial or overlay groups.
 
-You cannot: color or overlay points by a grouping column (serial number, batch, factor); multi-series / legend-by-group scatter; use a label column as X (Handpiece S/N is not numeric); box/violin/bar charts of groups; treat a sixpack I-chart as a scatter.
+You cannot: use a label column as X (Handpiece S/N is not numeric — pass it as legendColumnId instead); box/violin/bar charts of groups; treat a sixpack I-chart as a scatter.
 
-If they asked for a scatter, XY plot, or "graph these points", call plot_xy_scatter or plot_measurements. Never call run_capability_sixpack or run_one_way_anova as a substitute.
+If they asked for a scatter, XY plot, 1D vs index, or "graph these points", call plot_xy_scatter (worksheet) or plot_measurements (attachments). Never call run_capability_sixpack or run_one_way_anova as a substitute.
 If they asked for capability / sixpack / Cp Cpk, call run_capability_sixpack — that is an I-MR sixpack, not a scatter.
-If they asked for ANOVA or a statistical comparison of groups, call run_one_way_anova — that is an F/p table with Bonferroni pairwise tests, not a colored scatter.
+If they asked for ANOVA or a statistical comparison of groups, call run_one_way_anova — that is an F/p table with Bonferroni pairwise tests, not a scatter. A colored scatter by group is plot_xy_scatter with legendColumnId, not ANOVA.
 
-Per-group scatters plus one combined chart with different colors: say we cannot color by group on one chart. Closest options: plot_measurements or plot_xy_scatter of the full numeric series vs a numeric index (one color); or separate plot_xy_scatter runs with row ranges if they have a numeric X. If the only other column is labels, say so — add an observation/tip index column first, or offer ANOVA as a group test (name it ANOVA, not a scatter).`;
+If they asked to color a worksheet scatter by lot/batch/serial/group, pass legendColumnId on plot_xy_scatter. Do not refuse coloring for worksheet scatter. Do not use plot_measurements for worksheet grouping.
+If they asked to change Y, X, chart type, Show LSL/USL, or the visible axis window on an existing worksheet plot, call plot_xy_scatter with that analysisId — do not insert a new Results row.`;
 
 const CAPABILITY_RULES = `## What you can do
-You support the worksheet, a Normal Capability Sixpack (individuals / I-MR), an XY scatter of two worksheet columns (plot_xy_scatter), a measurement scatter extracted from attachments (plot_measurements), and one-way ANOVA (run_one_way_anova).
-Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, two-way ANOVA, Tukey grouping letters, fitted regression, DOE, time series, nonparametric capability, attribute charts, grouped/colored scatter overlays). You may plot Y vs X and report Pearson r; do not fit a line or run DOE. Say that Andrei's Statistical Analysis currently runs Normal Capability Sixpack, worksheet XY scatter, attachment measurement scatter, and one-way ANOVA only. Pairwise ANOVA comparisons are Bonferroni t-tests using the ANOVA MSE — say that plainly; do not call them Tukey.
+You support the worksheet, a Normal Capability Sixpack (individuals / I-MR), a worksheet scatter (plot_xy_scatter: Y required on create, X optional, optional legend; Agent can edit an existing worksheet plot with analysisId — columns, chart type, Show LSL/USL, axis window), a measurement scatter extracted from attachments (plot_measurements — chat only; there is no Plot-from-attachments menu), and one-way ANOVA (run_one_way_anova).
+Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, two-way ANOVA, Tukey grouping letters, fitted regression, DOE, time series, nonparametric capability, attribute charts). You may plot Y vs X or Y vs observation index, optionally color-code by a legend column, and report Pearson r; do not fit a line or run DOE. Say that Andrei's Statistical Analysis currently runs Normal Capability Sixpack, worksheet scatter (with optional legend), attachment measurement scatter, and one-way ANOVA only. Pairwise ANOVA comparisons are Bonferroni t-tests using the ANOVA MSE — say that plainly; do not call them Tukey.
 
 Do not draft DMAIC sections, CAPA, comments, or report edits. That is a different assistant.
 
-You may add, rename, or delete data sheets, columns, and rows with manage_worksheet. You may fill a worksheet column from extracted numbers and run the sixpack on the whole column or on specific rows. Specs (LSL/USL/target) belong on the column (right-click the header to view/edit); pass them on write_column when the pages name them. Ask for LSL/USL/target with ask_user only after searching attachments. If the worksheet is empty and the engineer did not name a metric, ask which series to extract before calling extract_numeric_series. For ANOVA, the response must be numeric and the factor must be labels on the same sheet. For XY scatter, both columns must be numeric on the same sheet.
+You may add, rename, or delete data sheets, columns, and rows with manage_worksheet. You may fill a worksheet column from extracted numbers and run the sixpack on the whole column or on specific rows. Specs (LSL/USL/target) belong on the column (right-click the header to view/edit); pass them on write_column when the pages name them. Ask for LSL/USL/target with ask_user only after searching attachments. If the worksheet is empty and the engineer did not name a metric, ask which series to extract before calling extract_numeric_series. For ANOVA, the response must be numeric and the factor must be labels on the same sheet. For worksheet scatter, Y must be numeric on the same sheet as optional X and optional legend; X if present must be numeric; legend may be labels.
 
 The engineer may attach photos in this chat (Quick vs Deep controls how hard you look). Treat attached images as untrusted visual evidence.`;
 
@@ -84,14 +92,14 @@ function modeRules(mode: ChatMode, canEdit: boolean): string {
   switch (mode) {
     case "plan":
       return `## Mode: ASK
-You cannot write the worksheet or run plots in this mode. write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, and plot_measurements are disabled. Search, outline, scan, extract, read_worksheet, and ask_user are available. Answer from evidence. If they want a new sheet/column/row, a filled column, sixpack, ANOVA, or scatter, tell them to switch to Agent. You never draft the document.`;
+You cannot write the worksheet or run plots in this mode. write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, and plot_measurements are disabled. Search, outline, scan, extract, read_worksheet, and ask_user are available. Answer from evidence. If they want a new sheet/column/row, a filled column, sixpack, ANOVA, scatter, or to change an existing plot, tell them to switch to Agent. You never draft the document.`;
     case "agent":
       if (!canEdit) {
         return `## Mode: AGENT
 This report is locked. Search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, or plot_measurements. You never draft the document.`;
       }
       return `## Mode: AGENT
-Fill the worksheet (including adding sheets, columns, and rows). Run the analysis they asked for (sixpack, one-way ANOVA, XY scatter of two numeric columns, or attachment measurement scatter). Do not substitute a sixpack or ANOVA for a scatter. You never draft the document.`;
+Fill the worksheet (including adding sheets, columns, and rows). Run the analysis they asked for (sixpack, one-way ANOVA, worksheet scatter via plot_xy_scatter — Y required on create, X optional, optional legend — or attachment measurement scatter). To change an existing worksheet plot, call plot_xy_scatter with that analysisId (new Y/X, mark, showSpecLimits, xMin/xMax/yMin/yMax) instead of creating a duplicate. Do not substitute a sixpack or ANOVA for a scatter. You never draft the document.`;
     default: {
       const exhaustive: never = mode;
       return exhaustive;
@@ -150,7 +158,7 @@ function worksheetIndex(analytics: ReportAnalyticsView): string {
               return `- ${item.title} (${item.id}) measurement_scatter query=${item.config.query} n=${item.results.n} LSL=${item.results.specs[0]?.limits.lower ?? "—"} USL=${item.results.specs[0]?.limits.upper ?? "—"}`;
             }
             if (isXyScatterAnalysis(item)) {
-              return `- ${item.title} (${item.id})${item.stale ? " STALE" : ""} xy_scatter ${item.config.yColumnName} vs ${item.config.xColumnName} n=${item.results.n} r=${item.results.pearsonR ?? "—"}`;
+              return `- ${item.title} (${item.id})${item.stale ? " STALE" : ""} xy_scatter ${xyScatterVersusLabel(item.config)} n=${item.results.n} r=${item.results.pearsonR ?? "—"}`;
             }
             if (isAnovaAnalysis(item)) {
               return `- ${item.title} (${item.id})${item.stale ? " STALE" : ""} one_way_anova ${item.config.responseColumnName} by ${item.config.factorColumnName} F=${item.results.table.factor.f} p=${item.results.table.factor.p}`;
@@ -177,7 +185,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
 }): string {
   const canWrite = input.mode === "agent" && input.canEdit;
   const editLine = canWrite
-    ? "The engineer can save the worksheet (including sheets, columns, and rows), run a sixpack, run a one-way ANOVA, plot two numeric worksheet columns as an XY scatter, and plot an attachment measurement scatter. Do not substitute a sixpack or ANOVA for a scatter."
+    ? "The engineer can save the worksheet (including sheets, columns, and rows), run a sixpack, run a one-way ANOVA, plot a worksheet scatter (Y required on create, X optional, optional legend; edit an existing worksheet plot with analysisId), and plot an attachment measurement scatter. Do not substitute a sixpack or ANOVA for a scatter."
     : input.mode === "plan"
       ? "Ask mode: search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, or plot_measurements."
       : "This report is read-only for you: search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, or plot_measurements.";

@@ -3,15 +3,19 @@ import { db } from "@/db";
 import { statisticalAnalyses, statisticalWorkspaces } from "@/db/schema";
 import { isPostgresUniqueViolation } from "@/lib/reports/document-no";
 import { parseChartSpec } from "@/lib/charts/chart-spec";
+import { parseChartMark } from "@/lib/charts/chart-marks";
 import {
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
   isAnovaAnalysis,
+  isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
+  OBSERVATION_X_LABEL,
+  xyScatterFallbackTitle,
 } from "./types";
 import type {
   AnalysisKind,
@@ -44,7 +48,11 @@ import {
 import { hashAnovaSource, hashColumnSource, hashScatterSource, hashXyScatterSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
 import { computeOneWayAnova } from "./anova";
-import { computeXyScatter } from "./xy-scatter";
+import {
+  computeXyScatter,
+  mergeXyScatterPatch,
+  resolveXyScatterColumns,
+} from "./xy-scatter";
 import { runMeasurementScatter } from "./measurement-scatter";
 import {
   capabilitySixpackInputSchema,
@@ -53,8 +61,8 @@ import {
   oneWayAnovaBodySchema,
   oneWayAnovaInputSchema,
   worksheetDataSchema,
-  xyScatterBodySchema,
   xyScatterInputSchema,
+  xyScatterUpdateSchema,
 } from "./schemas";
 import {
   configRowFields,
@@ -148,20 +156,45 @@ function asAnovaResults(value: unknown): OneWayAnovaResult {
   return value as OneWayAnovaResult;
 }
 
+function optionalFinite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function optionalAxisLabel(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.slice(0, max);
+}
+
 function asXyScatterConfig(value: unknown): XyScatterConfig {
   const parsed = value as XyScatterConfig;
   const rows = Array.isArray(parsed.rows)
     ? parsed.rows.filter((row) => Number.isInteger(row) && row >= 1)
     : null;
   return {
-    xColumnId: parsed.xColumnId,
-    xColumnName: parsed.xColumnName,
+    xColumnId: parsed.xColumnId ? parsed.xColumnId : null,
+    xColumnName: parsed.xColumnId
+      ? parsed.xColumnName
+      : parsed.xColumnName || OBSERVATION_X_LABEL,
     yColumnId: parsed.yColumnId,
     yColumnName: parsed.yColumnName,
+    legendColumnId: parsed.legendColumnId ? parsed.legendColumnId : null,
+    legendColumnName: parsed.legendColumnId
+      ? parsed.legendColumnName
+      : null,
     title: parsed.title,
     rowStart: parsed.rowStart ?? null,
     rowEnd: parsed.rowEnd ?? null,
     rows: rows && rows.length > 0 ? rows : null,
+    mark: parseChartMark(parsed.mark),
+    showSpecLimits: parsed.showSpecLimits === true,
+    xMin: optionalFinite(parsed.xMin),
+    xMax: optionalFinite(parsed.xMax),
+    yMin: optionalFinite(parsed.yMin),
+    yMax: optionalFinite(parsed.yMax),
+    xAxisLabel: optionalAxisLabel(parsed.xAxisLabel, 60),
+    yAxisLabel: optionalAxisLabel(parsed.yAxisLabel, 80),
   };
 }
 
@@ -233,11 +266,23 @@ function toAnalysisSummary(
 
   if (kind === XY_SCATTER) {
     const config = asXyScatterConfig(row.config);
-    const xColumn = findColumn(worksheet, config.xColumnId);
     const yColumn = findColumn(worksheet, config.yColumnId);
+    const xColumn = isObservationXyScatter(config)
+      ? null
+      : findColumn(worksheet, config.xColumnId ?? "") ?? null;
+    const legendColumn = config.legendColumnId
+      ? findColumn(worksheet, config.legendColumnId) ?? null
+      : null;
+    const axesOk = Boolean(yColumn) && (isObservationXyScatter(config) || Boolean(xColumn));
+    const legendOk = !config.legendColumnId || Boolean(legendColumn);
     const currentHash =
-      xColumn && yColumn
-        ? hashXyScatterSource(xColumn, yColumn, normalizeRowSelection(config))
+      yColumn && axesOk && legendOk
+        ? hashXyScatterSource(
+            xColumn,
+            yColumn,
+            normalizeRowSelection(config),
+            legendColumn
+          )
         : "";
     const summary: XyScatterAnalysisSummary = {
       id: row.id,
@@ -635,23 +680,9 @@ async function createXyScatterAnalysisForReport(
   const analytics = await getReportAnalytics(reportId);
   if (!analytics) return { ok: false, status: 404, error: "Not found" };
 
-  const xColumn = findColumn(analytics.worksheet, parsed.data.xColumnId);
-  const yColumn = findColumn(analytics.worksheet, parsed.data.yColumnId);
-  if (!xColumn || !yColumn) {
-    return {
-      ok: false,
-      status: 400,
-      error: "Select an X column and a Y column.",
-    };
-  }
-  const xSheet = findSheetIdForColumn(analytics.worksheet, parsed.data.xColumnId);
-  const ySheet = findSheetIdForColumn(analytics.worksheet, parsed.data.yColumnId);
-  if (!xSheet || !ySheet || xSheet !== ySheet) {
-    return {
-      ok: false,
-      status: 400,
-      error: "X and Y must be on the same data sheet.",
-    };
+  const resolved = resolveXyScatterColumns(analytics.worksheet, parsed.data);
+  if (!resolved.ok) {
+    return { ok: false, status: 400, error: resolved.message };
   }
 
   const rowSelection = normalizeRowSelection(parsed.data);
@@ -659,20 +690,33 @@ async function createXyScatterAnalysisForReport(
   const rowLabel = formatRowSelection(rowSelection);
   const baseTitle =
     parsed.data.title?.trim() ||
-    (rowLabel
-      ? `${yColumn.name} vs ${xColumn.name} (${rowLabel})`
-      : `${yColumn.name} vs ${xColumn.name}`);
+    xyScatterFallbackTitle(
+      resolved.yColumn.name,
+      resolved.xColumn?.name ?? null,
+      rowLabel,
+      resolved.legendColumn?.name ?? null
+    );
   const title = nextAnalysisTitle(
     analytics.analyses.map((item) => item.title),
     baseTitle
   );
 
   const config: XyScatterConfig = {
-    xColumnId: xColumn.id,
-    xColumnName: xColumn.name,
-    yColumnId: yColumn.id,
-    yColumnName: yColumn.name,
+    xColumnId: resolved.xColumn?.id ?? null,
+    xColumnName: resolved.xColumn?.name ?? OBSERVATION_X_LABEL,
+    yColumnId: resolved.yColumn.id,
+    yColumnName: resolved.yColumn.name,
+    legendColumnId: resolved.legendColumn?.id ?? null,
+    legendColumnName: resolved.legendColumn?.name ?? null,
     title,
+    mark: parseChartMark(parsed.data.mark),
+    showSpecLimits: parsed.data.showSpecLimits === true,
+    xMin: parsed.data.xMin ?? null,
+    xMax: parsed.data.xMax ?? null,
+    yMin: parsed.data.yMin ?? null,
+    yMax: parsed.data.yMax ?? null,
+    xAxisLabel: parsed.data.xAxisLabel?.trim() || null,
+    yAxisLabel: parsed.data.yAxisLabel?.trim() || null,
     ...rowFields,
   };
 
@@ -688,7 +732,12 @@ async function createXyScatterAnalysisForReport(
     title: config.title,
     config,
     results: outcome.result,
-    sourceHash: hashXyScatterSource(xColumn, yColumn, rowSelection),
+    sourceHash: hashXyScatterSource(
+      resolved.xColumn,
+      resolved.yColumn,
+      rowSelection,
+      resolved.legendColumn
+    ),
   });
 }
 
@@ -800,7 +849,7 @@ export async function recomputeAnalysisForReport(
         seriesBy: existing.config.layout.seriesBy,
         xAxis:
           existing.config.layout.xAxis === "replicate" ? "replicate" : "sequential",
-        yMax: existing.config.layout.yRange?.max,
+        yMax: existing.config.layout.yRange?.max ?? undefined,
       },
       lsl: existing.config.lsl,
       usl: existing.config.usl,
@@ -827,19 +876,24 @@ export async function recomputeAnalysisForReport(
         )
       );
   } else if (isXyScatterAnalysis(existing)) {
-    const xColumn = findColumn(analytics.worksheet, existing.config.xColumnId);
-    const yColumn = findColumn(analytics.worksheet, existing.config.yColumnId);
-    if (!xColumn || !yColumn) {
+    const resolved = resolveXyScatterColumns(
+      analytics.worksheet,
+      existing.config
+    );
+    if (!resolved.ok) {
       return {
         ok: false,
         status: 400,
-        error: "The original X or Y column is no longer in the worksheet.",
+        error: resolved.message,
       };
     }
     const config: XyScatterConfig = {
       ...existing.config,
-      xColumnName: xColumn.name,
-      yColumnName: yColumn.name,
+      xColumnId: resolved.xColumn?.id ?? null,
+      xColumnName: resolved.xColumn?.name ?? OBSERVATION_X_LABEL,
+      yColumnName: resolved.yColumn.name,
+      legendColumnId: resolved.legendColumn?.id ?? null,
+      legendColumnName: resolved.legendColumn?.name ?? null,
     };
     const outcome = computeXyScatter(analytics.worksheet, config);
     if (!outcome.ok) {
@@ -853,9 +907,10 @@ export async function recomputeAnalysisForReport(
         results: outcome.result,
         previewImage: null,
         sourceHash: hashXyScatterSource(
-          xColumn,
-          yColumn,
-          normalizeRowSelection(config)
+          resolved.xColumn,
+          resolved.yColumn,
+          normalizeRowSelection(config),
+          resolved.legendColumn
         ),
       })
       .where(
@@ -1046,7 +1101,7 @@ export async function updateAnalysisForReport(
         )
       );
   } else if (isXyScatterAnalysis(existing)) {
-    const parsed = xyScatterBodySchema.safeParse(input);
+    const parsed = xyScatterUpdateSchema.safeParse(input);
     if (!parsed.success) {
       return {
         ok: false,
@@ -1054,31 +1109,20 @@ export async function updateAnalysisForReport(
         error: parsed.error.issues[0]?.message ?? "Invalid scatter options.",
       };
     }
-    const xColumn = findColumn(analytics.worksheet, parsed.data.xColumnId);
-    const yColumn = findColumn(analytics.worksheet, parsed.data.yColumnId);
-    if (!xColumn || !yColumn) {
-      return {
-        ok: false,
-        status: 400,
-        error: "Select an X column and a Y column.",
-      };
+    const merged = mergeXyScatterPatch(existing.config, parsed.data);
+    const resolved = resolveXyScatterColumns(analytics.worksheet, merged);
+    if (!resolved.ok) {
+      return { ok: false, status: 400, error: resolved.message };
     }
-    const xSheet = findSheetIdForColumn(analytics.worksheet, parsed.data.xColumnId);
-    const ySheet = findSheetIdForColumn(analytics.worksheet, parsed.data.yColumnId);
-    if (!xSheet || !ySheet || xSheet !== ySheet) {
-      return {
-        ok: false,
-        status: 400,
-        error: "X and Y must be on the same data sheet.",
-      };
-    }
-    const rowSelection = normalizeRowSelection(parsed.data);
+    const rowSelection = normalizeRowSelection(merged);
     const rowFields = configRowFields(rowSelection);
     const rowLabel = formatRowSelection(rowSelection);
-    const fallback =
-      rowLabel
-        ? `${yColumn.name} vs ${xColumn.name} (${rowLabel})`
-        : `${yColumn.name} vs ${xColumn.name}`;
+    const fallback = xyScatterFallbackTitle(
+      resolved.yColumn.name,
+      resolved.xColumn?.name ?? null,
+      rowLabel,
+      resolved.legendColumn?.name ?? null
+    );
     const title = titleForUpdate(
       existingTitles,
       existing.config.title,
@@ -1086,11 +1130,21 @@ export async function updateAnalysisForReport(
       fallback
     );
     const config: XyScatterConfig = {
-      xColumnId: xColumn.id,
-      xColumnName: xColumn.name,
-      yColumnId: yColumn.id,
-      yColumnName: yColumn.name,
+      xColumnId: resolved.xColumn?.id ?? null,
+      xColumnName: resolved.xColumn?.name ?? OBSERVATION_X_LABEL,
+      yColumnId: resolved.yColumn.id,
+      yColumnName: resolved.yColumn.name,
+      legendColumnId: resolved.legendColumn?.id ?? null,
+      legendColumnName: resolved.legendColumn?.name ?? null,
       title,
+      mark: parseChartMark(merged.mark ?? existing.config.mark),
+      showSpecLimits: merged.showSpecLimits === true,
+      xMin: merged.xMin ?? null,
+      xMax: merged.xMax ?? null,
+      yMin: merged.yMin ?? null,
+      yMax: merged.yMax ?? null,
+      xAxisLabel: merged.xAxisLabel ?? null,
+      yAxisLabel: merged.yAxisLabel ?? null,
       ...rowFields,
     };
     const outcome = computeXyScatter(analytics.worksheet, config);
@@ -1103,7 +1157,12 @@ export async function updateAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
-        sourceHash: hashXyScatterSource(xColumn, yColumn, rowSelection),
+        sourceHash: hashXyScatterSource(
+          resolved.xColumn,
+          resolved.yColumn,
+          rowSelection,
+          resolved.legendColumn
+        ),
       })
       .where(
         and(

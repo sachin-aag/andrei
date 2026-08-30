@@ -1,4 +1,13 @@
 import { z } from "zod";
+import {
+  CHART_MARKS,
+  parseChartMark,
+  stackedYExtent,
+  type ChartMark,
+} from "./chart-marks";
+
+export type { ChartMark };
+export { CHART_MARKS, parseChartMark };
 
 export type ChartPoint = {
   /** X position. Sequential/replicate layouts overwrite this; value keeps it. */
@@ -20,6 +29,38 @@ export type ChartCitation = {
   page: number;
 };
 
+/** Deduplicate `(attachmentId, page)` pairs; drop empty or non-positive pages. */
+export function uniqueChartCitations(
+  citations: readonly ChartCitation[]
+): ChartCitation[] {
+  const seen = new Set<string>();
+  const out: ChartCitation[] = [];
+  for (const citation of citations) {
+    const attachmentId = citation.attachmentId.trim();
+    const page = Math.trunc(citation.page);
+    if (!attachmentId || !Number.isInteger(page) || page < 1) continue;
+    const key = `${attachmentId}:${page}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ attachmentId, page });
+  }
+  return out;
+}
+
+/** Compact page label for a spec subtitle, e.g. `p. 31` or `p. 13–15`. */
+export function formatChartCitationPages(
+  citations: readonly ChartCitation[]
+): string | null {
+  const pages = [
+    ...new Set(
+      uniqueChartCitations(citations).map((citation) => citation.page)
+    ),
+  ].toSorted((a, b) => a - b);
+  if (pages.length === 0) return null;
+  if (pages.length === 1) return `p. ${pages[0]}`;
+  return `p. ${pages[0]}–${pages[pages.length - 1]}`;
+}
+
 export type ChartLayout = {
   /** "combined" = one chart. "per-series" = one chart per series group. */
   mode: "combined" | "per-series";
@@ -31,8 +72,24 @@ export type ChartLayout = {
    * as a numeric coordinate (worksheet XY scatter).
    */
   xAxis: "sequential" | "replicate" | "value";
-  /** null = auto from data and limits with padding. */
-  yRange: { min: number; max: number } | null;
+  /**
+   * Display window. Null = auto. Either min or max may be null to keep that
+   * end auto. Invalid (max ≤ min) falls back to auto.
+   */
+  yRange: { min: number | null; max: number | null } | null;
+  /** Same as yRange for the X axis. Omitted on older specs = auto. */
+  xRange?: { min: number | null; max: number | null } | null;
+  /**
+   * Visual mark the engineer sees. Spec `kind` stays `"scatter"` so document
+   * charts and stored JSON keep parsing. Omitted → scatter.
+   */
+  mark?: ChartMark;
+  /**
+   * Draw Y-column LSL/USL as dashed lines and include them in the y-range.
+   * Worksheet plots set this explicitly (default off). Omitted (attachment
+   * charts, older specs) still shows limits when they exist.
+   */
+  showSpecLimits?: boolean;
 };
 
 export type ChartSpec = {
@@ -59,7 +116,37 @@ export const DEFAULT_CHART_LAYOUT: ChartLayout = {
   seriesBy: "unit",
   xAxis: "sequential",
   yRange: null,
+  xRange: null,
+  mark: "scatter",
 };
+
+export type ChartAxisRange = {
+  min: number | null;
+  max: number | null;
+};
+
+/** Null when both ends are auto. */
+export function layoutRangeFromBounds(
+  min?: number | null,
+  max?: number | null
+): ChartAxisRange | null {
+  if (min == null && max == null) return null;
+  return { min: min ?? null, max: max ?? null };
+}
+
+export function applyAxisRangeOverride(
+  auto: { min: number; max: number },
+  override: ChartAxisRange | null | undefined
+): { min: number; max: number } {
+  if (!override) return auto;
+  const min = override.min;
+  const max = override.max;
+  if (min == null && max == null) return auto;
+  const nextMin = min ?? auto.min;
+  const nextMax = max ?? auto.max;
+  if (!(nextMax > nextMin)) return auto;
+  return { min: nextMin, max: nextMax };
+}
 
 const chartPointSchema = z.object({
   x: z.number().finite(),
@@ -78,16 +165,21 @@ const chartCitationSchema = z.object({
   page: z.number().int().positive(),
 });
 
+const chartAxisRangeSchema = z
+  .object({
+    min: z.number().finite().nullable(),
+    max: z.number().finite().nullable(),
+  })
+  .nullable();
+
 const chartLayoutSchema = z.object({
   mode: z.enum(["combined", "per-series"]),
   seriesBy: z.enum(["unit", "none"]),
   xAxis: z.enum(["sequential", "replicate", "value"]),
-  yRange: z
-    .object({
-      min: z.number().finite(),
-      max: z.number().finite(),
-    })
-    .nullable(),
+  yRange: chartAxisRangeSchema,
+  xRange: chartAxisRangeSchema.optional(),
+  mark: z.enum(CHART_MARKS).optional().default("scatter"),
+  showSpecLimits: z.boolean().optional(),
 });
 
 export const chartSpecSchema = z.object({
@@ -109,6 +201,13 @@ export const chartSpecSchema = z.object({
 export function parseChartSpec(raw: unknown): ChartSpec | null {
   const parsed = chartSpecSchema.safeParse(raw);
   return parsed.success ? parsed.data : null;
+}
+
+/** Worksheet plots default off (`false`). Omitted (attachment charts) still shows. */
+export function chartShowsSpecLimits(
+  layout: Pick<ChartLayout, "showSpecLimits">
+): boolean {
+  return layout.showSpecLimits !== false;
 }
 
 function seriesKey(series: string | null): string {
@@ -182,17 +281,20 @@ function niceNumber(range: number, round: boolean): number {
 
 function yValues(spec: ChartSpec): number[] {
   const values = spec.points.map((point) => point.y);
-  if (spec.limits.lower != null) values.push(spec.limits.lower);
-  if (spec.limits.upper != null) values.push(spec.limits.upper);
+  if (parseChartMark(spec.layout.mark) === "column" && spec.layout.seriesBy === "unit") {
+    const stacked = stackedYExtent(spec.points);
+    if (stacked) {
+      values.push(stacked.min, stacked.max);
+    }
+  }
+  if (chartShowsSpecLimits(spec.layout)) {
+    if (spec.limits.lower != null) values.push(spec.limits.lower);
+    if (spec.limits.upper != null) values.push(spec.limits.upper);
+  }
   return values;
 }
 
-/** Auto y-range: covers data and both limits, padded, snapped to a nice step. */
-export function resolveYRange(spec: ChartSpec): { min: number; max: number } {
-  if (spec.layout.yRange) {
-    const { min, max } = spec.layout.yRange;
-    if (max > min) return { min, max };
-  }
+function autoYRange(spec: ChartSpec): { min: number; max: number } {
   const values = yValues(spec);
   const dataMin = Math.min(...values);
   const dataMax = Math.max(...values);
@@ -209,6 +311,11 @@ export function resolveYRange(spec: ChartSpec): { min: number; max: number } {
   if (allNonNegative) min = 0;
   if (max <= min) max = min + step;
   return { min, max };
+}
+
+/** Auto y-range, then optional layout.yRange min/max (blank end stays auto). */
+export function resolveYRange(spec: ChartSpec): { min: number; max: number } {
+  return applyAxisRangeOverride(autoYRange(spec), spec.layout.yRange);
 }
 
 function niceTicks(min: number, max: number): number[] {
@@ -235,8 +342,7 @@ export function yTickValues(spec: ChartSpec): number[] {
   return niceTicks(min, max);
 }
 
-/** Auto x-range. Sequential/replicate pad 0.5 around 1..N; value pads data and does not snap xmin to 0. */
-export function resolveXRange(spec: ChartSpec): { min: number; max: number } {
+function autoXRange(spec: ChartSpec): { min: number; max: number } {
   const points = layoutPoints(spec);
   const xs = points.map((point) => point.x);
   if (xs.length === 0) return { min: 0, max: 1 };
@@ -260,6 +366,11 @@ export function resolveXRange(spec: ChartSpec): { min: number; max: number } {
   if (allNonNegative && min < 0) min = 0;
   if (max <= min) max = min + step;
   return { min, max };
+}
+
+/** Auto x-range, then optional layout.xRange min/max (blank end stays auto). */
+export function resolveXRange(spec: ChartSpec): { min: number; max: number } {
+  return applyAxisRangeOverride(autoXRange(spec), spec.layout.xRange);
 }
 
 export function xTickValues(spec: ChartSpec): number[] {
@@ -311,6 +422,7 @@ export function mergeChartLayout(
     seriesBy?: ChartLayout["seriesBy"];
     xAxis?: ChartLayout["xAxis"];
     yMax?: number;
+    mark?: ChartMark;
   }
 ): ChartLayout {
   const yRange =
@@ -325,6 +437,9 @@ export function mergeChartLayout(
     seriesBy: patch.seriesBy ?? base.seriesBy,
     xAxis: patch.xAxis ?? base.xAxis,
     yRange,
+    xRange: base.xRange ?? null,
+    mark: patch.mark ?? base.mark ?? "scatter",
+    showSpecLimits: base.showSpecLimits,
   };
 }
 
@@ -339,15 +454,7 @@ export function formatChartProvenance(spec: ChartSpec): string {
         : upper != null
           ? `limit ≤ ${upper}${spec.uom ? ` ${spec.uom}` : ""}`
           : "no limits";
-  const pages = [
-    ...new Set(spec.citations.map((citation) => citation.page).toSorted((a, b) => a - b)),
-  ];
-  const pageBit =
-    pages.length === 0
-      ? "no citations"
-      : pages.length === 1
-        ? `p. ${pages[0]}`
-        : `p. ${pages[0]}–${pages[pages.length - 1]}`;
+  const pageBit = formatChartCitationPages(spec.citations) ?? "no citations";
   return `${n} point${n === 1 ? "" : "s"}, ${limitBit}, ${spec.query}, ${pageBit}`;
 }
 

@@ -1,16 +1,16 @@
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 import {
   isAnovaAnalysis,
+  isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
-} from "./types";
-import type {
-  AnovaAnalysisSummary,
-  ScatterAnalysisSummary,
-  StatisticalAnalysisSummary,
-  WorksheetData,
-  XyScatterAnalysisSummary,
+  xyScatterVersusLabel,
+  type AnovaAnalysisSummary,
+  type ScatterAnalysisSummary,
+  type StatisticalAnalysisSummary,
+  type WorksheetData,
+  type XyScatterAnalysisSummary,
 } from "./types";
 import {
   analysisSourceKey,
@@ -75,18 +75,38 @@ function withXyScatterLocalStale(
   worksheet: WorksheetData,
   persisted: WorksheetData
 ): XyScatterAnalysisSummary {
-  const currentX = findColumn(worksheet, analysis.config.xColumnId);
   const currentY = findColumn(worksheet, analysis.config.yColumnId);
-  if (!currentX || !currentY) {
+  if (!currentY) {
     return { ...analysis, stale: true };
   }
-  const savedX = findColumn(persisted, analysis.config.xColumnId);
+  const indexMode = isObservationXyScatter(analysis.config);
+  const currentX = indexMode
+    ? null
+    : findColumn(worksheet, analysis.config.xColumnId ?? "") ?? null;
+  if (!indexMode && !currentX) {
+    return { ...analysis, stale: true };
+  }
+  const legendId = analysis.config.legendColumnId;
+  const currentLegend = legendId
+    ? findColumn(worksheet, legendId) ?? null
+    : null;
+  if (legendId && !currentLegend) {
+    return { ...analysis, stale: true };
+  }
   const savedY = findColumn(persisted, analysis.config.yColumnId);
-  if (!savedX || !savedY) return analysis;
+  if (!savedY) return analysis;
+  const savedX = indexMode
+    ? null
+    : findColumn(persisted, analysis.config.xColumnId ?? "") ?? null;
+  if (!indexMode && !savedX) return analysis;
+  const savedLegend = legendId
+    ? findColumn(persisted, legendId) ?? null
+    : null;
+  if (legendId && !savedLegend) return analysis;
   const selection = normalizeRowSelection(analysis.config);
   const changed =
-    xyScatterSourceKey(currentX, currentY, selection) !==
-    xyScatterSourceKey(savedX, savedY, selection);
+    xyScatterSourceKey(currentX, currentY, selection, currentLegend) !==
+    xyScatterSourceKey(savedX, savedY, selection, savedLegend);
   return { ...analysis, stale: analysis.stale || changed };
 }
 
@@ -124,7 +144,7 @@ function xyScatterListSubtitle(analysis: XyScatterAnalysisSummary): string {
       ? null
       : `r ${formatStat(analysis.results.pearsonR, 3)}`;
   return [
-    `${analysis.config.yColumnName} vs ${analysis.config.xColumnName}`,
+    xyScatterVersusLabel(analysis.config),
     rows,
     `${analysis.results.n} point${analysis.results.n === 1 ? "" : "s"}`,
     r,

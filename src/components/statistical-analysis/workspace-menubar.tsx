@@ -16,7 +16,6 @@ export function WorkspaceMenubar({
   onNormalSixpack,
   onOneWayAnova,
   onXyScatter,
-  onPlotMeasurements,
   onAddDataSheet,
   onRenameDataSheet,
 }: {
@@ -25,7 +24,6 @@ export function WorkspaceMenubar({
   onNormalSixpack: () => void;
   onOneWayAnova: () => void;
   onXyScatter: () => void;
-  onPlotMeasurements: () => void;
   onAddDataSheet: () => void;
   onRenameDataSheet: () => void;
 }) {
@@ -97,12 +95,6 @@ export function WorkspaceMenubar({
           <DropdownMenuItem
             data-testid="stat-xy-scatter"
             onSelect={onXyScatter}
-          >
-            Scatter…
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-testid="stat-plot-measurements"
-            onSelect={onPlotMeasurements}
           >
             Plot measurements…
           </DropdownMenuItem>
