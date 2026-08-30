@@ -16,6 +16,7 @@ import {
   deleteRow,
   findColumnIndex,
   findColumnIndexByName,
+  findPlaceholderColumnIndex,
   findSheet,
   findSheetIdForColumn,
   findSheetIdForColumnName,
@@ -87,7 +88,9 @@ const manageWorksheetOperationFields = {
     .min(1)
     .max(MAX_WORKSHEET_COLUMNS)
     .optional()
-    .describe("1-based insert position for add_column. Omit to append."),
+    .describe(
+      "1-based insert position for add_column. Omit to claim the leftmost empty C# column, or append if none remain."
+    ),
   value: z
     .union([z.number().finite(), z.string().max(MAX_CELL_LENGTH)])
     .optional()
@@ -351,6 +354,28 @@ export function applyManageWorksheet(
     case "add_column": {
       const activated = activateSheet(data, input.sheetId);
       if (!activated.ok) return fail(activated.result);
+      if (input.at == null) {
+        const placeholder = findPlaceholderColumnIndex(activated.worksheet);
+        if (placeholder >= 0) {
+          let next = activated.worksheet;
+          if (input.name?.trim()) {
+            next = renameColumn(next, placeholder, input.name);
+          }
+          const column = next.columns[placeholder];
+          if (!column) {
+            return fail({ status: "error", message: "Could not add a column." });
+          }
+          return ok(
+            next,
+            "add_column",
+            `Added column ${column.name} — check the worksheet`,
+            {
+              columnId: column.id,
+              columnName: column.name,
+            }
+          );
+        }
+      }
       if (activated.worksheet.columns.length >= MAX_WORKSHEET_COLUMNS) {
         return fail({
           status: "error",

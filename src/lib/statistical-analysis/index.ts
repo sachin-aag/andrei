@@ -31,6 +31,8 @@ export {
   findColumn,
   findColumnIndex,
   findColumnIndexByName,
+  findPlaceholderColumnIndex,
+  isPlaceholderColumn,
   pasteTsv,
   parseTsv,
   rowCount,

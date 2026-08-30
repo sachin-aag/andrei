@@ -12,6 +12,7 @@ import {
   deleteRow,
   deleteRows,
   findColumnIndexByName,
+  findPlaceholderColumnIndex,
   findSheet,
   clearColumn,
   clearRows,
@@ -45,6 +46,10 @@ describe("worksheet grid operations", () => {
     expect(sheet.columns[0]?.name).toBe("C1");
     expect(sheet.columns[7]?.name).toBe("C8");
     expect(rowCount(sheet)).toBe(0);
+    expect(findPlaceholderColumnIndex(sheet)).toBe(0);
+    expect(findPlaceholderColumnIndex(sheet, new Set([0]))).toBe(1);
+    const filled = replaceColumnValues(sheet, 0, ["101.2"], "Assay");
+    expect(findPlaceholderColumnIndex(filled)).toBe(1);
   });
 
   it("parses a numeric subset of rows without using the rest of the column", () => {

@@ -152,7 +152,8 @@ an existing one with `analysisId`. Ask mode cannot. Time series is not
 supported.
 Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
 assistant write; Agent `write_column` / `manage_worksheet` refresh the grid
-mid-turn. Analytics `search_documents` is keyword-first and stops after a cited page —
+mid-turn. New extract columns claim empty C1–C8 from the left (`write_column`
+and `add_column` without `at`) instead of appending on the right. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy.
 Document chat copies a saved Analytics plot with `insert_image` (`source=analytics`)
 and can propose attachment `plot_measurements` figures on every pack.

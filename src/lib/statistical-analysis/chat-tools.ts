@@ -44,6 +44,7 @@ import {
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
+  MAX_WORKSHEET_COLUMNS,
   MAX_WORKSHEET_ROWS,
   WARN_VALUES_FOR_SIXPACK,
   isAnovaAnalysis,
@@ -60,9 +61,11 @@ import {
   findColumn,
   findColumnIndex,
   findColumnIndexByName,
+  findPlaceholderColumnIndex,
   findSheet,
   findSheetIdForColumn,
   findSheetIdForColumnName,
+  insertColumn,
   isSpecsTab,
   replaceColumnValues,
   switchWorksheetTab,
@@ -459,22 +462,26 @@ function resolveWriteColumnIndex(
   occupied: Set<number>
 ):
   | { index: number }
+  | { append: true }
   | { status: "not_found"; columnId?: string; name?: string } {
-  // Prefer the header. add_column ignores a guessed columnId (c2) and
-  // returns a new id (c9); writing by c2 would overwrite the neighbor.
+  // Prefer the header. add_column may reuse C1 or assign a new id (c9);
+  // writing by a guessed c2 would overwrite the neighbor or skip empty
+  // columns on the left.
   if (entry.name) {
     const named = findColumnIndexByName(worksheet, entry.name);
     if (named >= 0 && !occupied.has(named)) return { index: named };
   }
-  if (entry.columnId) {
+  if (entry.columnId && !entry.name) {
     const index = findColumnIndex(worksheet, entry.columnId);
     if (index < 0) {
       return { status: "not_found" as const, columnId: entry.columnId };
     }
-    return { index };
+    if (!occupied.has(index)) return { index };
   }
-  for (let i = 0; i < worksheet.columns.length; i++) {
-    if (!occupied.has(i)) return { index: i };
+  const placeholder = findPlaceholderColumnIndex(worksheet, occupied);
+  if (placeholder >= 0) return { index: placeholder };
+  if (worksheet.columns.length < MAX_WORKSHEET_COLUMNS) {
+    return { append: true };
   }
   return { status: "not_found" as const, name: entry.name };
 }
@@ -493,15 +500,20 @@ function applyWriteColumnEntries(
     next = switchSheetForWrite(next, entry);
     const resolved = resolveWriteColumnIndex(next, entry, occupied);
     if ("status" in resolved) return { ok: false, ...resolved };
+    if ("append" in resolved) {
+      next = insertColumn(next, next.columns.length);
+    }
+    const index =
+      "append" in resolved ? next.columns.length - 1 : resolved.index;
     const cells = entry.values.map((value) => String(value));
     next = replaceColumnValues(
       next,
-      resolved.index,
+      index,
       cells,
       entry.name,
       citations
     );
-    const column = next.columns[resolved.index];
+    const column = next.columns[index];
     if (
       column &&
       (entry.lsl != null || entry.usl != null || entry.target != null)
@@ -513,8 +525,8 @@ function applyWriteColumnEntries(
         target: optionalSpecString(entry.target),
       });
     }
-    occupied.add(resolved.index);
-    indices.push(resolved.index);
+    occupied.add(index);
+    indices.push(index);
   }
   return { ok: true, worksheet: next, indices };
 }
@@ -1085,7 +1097,7 @@ export function buildAnalyticsChatTools(opts: {
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into worksheet columns (replaces those columns). Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so worksheet plots cite the file. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter or boxplot. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+        "Write values into worksheet columns (replaces those columns). New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so worksheet plots cite the file. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter or boxplot. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
       inputSchema: writeColumnInputSchema,
       execute: async (input) => {
         let entries = writeColumnEntriesFromInput(input);
@@ -1186,7 +1198,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.manage_worksheet = tool({
       description:
-        "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or row. Do not search attachments and do not extract numbers. Filling a column with values is write_column, not this tool. set_cell edits one cell. To set up several columns or sheets, pass operations (an array of the same fields) instead of calling this tool repeatedly.",
+        "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or row. Do not search attachments and do not extract numbers. Filling a column with values is write_column, not this tool — write_column reuses empty C1–C8 columns from the left. add_column without at also claims the leftmost empty C# instead of appending on the right. set_cell edits one cell. To set up several columns or sheets, pass operations (an array of the same fields) instead of calling this tool repeatedly.",
       inputSchema: manageWorksheetInputSchema,
       execute: async (input) => {
         const analytics = await getOrCreateReportAnalytics(reportId);
