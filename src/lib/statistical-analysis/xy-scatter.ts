@@ -1,6 +1,7 @@
 import { parseChartMark } from "@/lib/charts/chart-marks";
 import {
   DEFAULT_CHART_LAYOUT,
+  layoutRangeFromBounds,
   uniqueChartCitations,
   type ChartPoint,
   type ChartSpec,
@@ -150,8 +151,8 @@ function buildSpec(
     kind: "scatter",
     query: xyScatterVersusLabel(config),
     title: config.title,
-    xLabel: config.xColumnName,
-    yLabel: config.yColumnName,
+    xLabel: config.xAxisLabel?.trim() || config.xColumnName,
+    yLabel: config.yAxisLabel?.trim() || config.yColumnName,
     uom: "",
     limits,
     points,
@@ -161,6 +162,8 @@ function buildSpec(
       xAxis: "value",
       mark: parseChartMark(config.mark),
       showSpecLimits: config.showSpecLimits === true,
+      xRange: layoutRangeFromBounds(config.xMin, config.xMax),
+      yRange: layoutRangeFromBounds(config.yMin, config.yMax),
     },
     citations,
     sampleSizeMin: null,
@@ -197,10 +200,35 @@ export type XyScatterPatch = {
   title?: string;
   mark?: XyScatterConfig["mark"];
   showSpecLimits?: boolean;
+  xMin?: number | null;
+  xMax?: number | null;
+  yMin?: number | null;
+  yMax?: number | null;
+  xAxisLabel?: string | null;
+  yAxisLabel?: string | null;
   rowStart?: number | null;
   rowEnd?: number | null;
   rows?: number[] | null;
 };
+
+function mergeOptionalBound(
+  patch: number | null | undefined,
+  existing: number | null | undefined
+): number | null {
+  if (patch !== undefined) return patch;
+  return existing ?? null;
+}
+
+function mergeOptionalLabel(
+  patch: string | null | undefined,
+  existing: string | null | undefined
+): string | null {
+  if (patch !== undefined) {
+    const trimmed = patch?.trim() ?? "";
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return existing?.trim() ? existing.trim() : null;
+}
 
 /** Omitted patch fields keep the saved config. `xColumnId: null` clears X to observation index. */
 export function mergeXyScatterPatch(
@@ -223,6 +251,12 @@ export function mergeXyScatterPatch(
     mark: patch.mark ?? existing.mark,
     showSpecLimits:
       patch.showSpecLimits ?? existing.showSpecLimits === true,
+    xMin: mergeOptionalBound(patch.xMin, existing.xMin),
+    xMax: mergeOptionalBound(patch.xMax, existing.xMax),
+    yMin: mergeOptionalBound(patch.yMin, existing.yMin),
+    yMax: mergeOptionalBound(patch.yMax, existing.yMax),
+    xAxisLabel: mergeOptionalLabel(patch.xAxisLabel, existing.xAxisLabel),
+    yAxisLabel: mergeOptionalLabel(patch.yAxisLabel, existing.yAxisLabel),
     ...(useRowPatch
       ? {
           rowStart: patch.rowStart,

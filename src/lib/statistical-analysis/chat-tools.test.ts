@@ -159,6 +159,7 @@ describe("analytics chat tools", () => {
     );
     expect(writable.plot_xy_scatter?.description).toContain("analysisId");
     expect(writable.plot_xy_scatter?.description).toContain("showSpecLimits");
+    expect(writable.plot_xy_scatter?.description).toContain("xMin/xMax/yMin/yMax");
     expect(writable.plot_measurements?.description).toContain(
       "cannot color by serial number"
     );

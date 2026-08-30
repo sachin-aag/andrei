@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -53,6 +54,12 @@ export type XyScatterDialogValues = {
   title: string;
   rowStart: number | null;
   rowEnd: number | null;
+  xMin: number | null;
+  xMax: number | null;
+  yMin: number | null;
+  yMax: number | null;
+  xAxisLabel: string | null;
+  yAxisLabel: string | null;
 };
 
 function parseOptionalRow(raw: string): number | null {
@@ -61,6 +68,23 @@ function parseOptionalRow(raw: string): number | null {
   if (!/^\d+$/.test(text)) return null;
   const value = Number(text);
   return Number.isInteger(value) && value >= 1 ? value : null;
+}
+
+function parseOptionalFinite(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function optionalFiniteRawIsValid(raw: string): boolean {
+  const text = raw.trim();
+  if (text === "") return true;
+  return Number.isFinite(Number(text));
+}
+
+function boundRaw(value: number | null | undefined): string {
+  return value == null ? "" : String(value);
 }
 
 function toSelectX(xColumnId: string | null | undefined): string {
@@ -93,6 +117,12 @@ export function XyScatterDialog({
   defaultRowStart = null,
   defaultRowEnd = null,
   defaultTitle = "",
+  defaultXMin = null,
+  defaultXMax = null,
+  defaultYMin = null,
+  defaultYMax = null,
+  defaultXAxisLabel = "",
+  defaultYAxisLabel = "",
   editMode = false,
   submitting,
   error,
@@ -109,6 +139,12 @@ export function XyScatterDialog({
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
   defaultTitle?: string;
+  defaultXMin?: number | null;
+  defaultXMax?: number | null;
+  defaultYMin?: number | null;
+  defaultYMax?: number | null;
+  defaultXAxisLabel?: string | null;
+  defaultYAxisLabel?: string | null;
   editMode?: boolean;
   submitting: boolean;
   error: string | null;
@@ -133,6 +169,12 @@ export function XyScatterDialog({
   const [rowEnd, setRowEnd] = useState(
     defaultRowEnd != null ? String(defaultRowEnd) : ""
   );
+  const [xMin, setXMin] = useState(boundRaw(defaultXMin));
+  const [xMax, setXMax] = useState(boundRaw(defaultXMax));
+  const [yMin, setYMin] = useState(boundRaw(defaultYMin));
+  const [yMax, setYMax] = useState(boundRaw(defaultYMax));
+  const [xAxisLabel, setXAxisLabel] = useState(defaultXAxisLabel ?? "");
+  const [yAxisLabel, setYAxisLabel] = useState(defaultYAxisLabel ?? "");
 
   const yColumn = findColumn(worksheet, yColumnId) ?? worksheet.columns[0];
   const xColumn = xColumnId ? findColumn(worksheet, xColumnId) : null;
@@ -152,8 +194,20 @@ export function XyScatterDialog({
         legendColumn?.name ?? null
       )
     : "Analysis title";
+  const xMinValue = parseOptionalFinite(xMin);
+  const xMaxValue = parseOptionalFinite(xMax);
+  const yMinValue = parseOptionalFinite(yMin);
+  const yMaxValue = parseOptionalFinite(yMax);
+  const boundsValid =
+    optionalFiniteRawIsValid(xMin) &&
+    optionalFiniteRawIsValid(xMax) &&
+    optionalFiniteRawIsValid(yMin) &&
+    optionalFiniteRawIsValid(yMax) &&
+    (xMinValue == null || xMaxValue == null || xMinValue < xMaxValue) &&
+    (yMinValue == null || yMaxValue == null || yMinValue < yMaxValue);
   const canSubmit =
     Boolean(yColumnId) &&
+    boundsValid &&
     (xColumnId == null || yColumnId !== xColumnId) &&
     (legendColumnId == null ||
       (legendColumnId !== yColumnId && legendColumnId !== xColumnId));
@@ -161,7 +215,10 @@ export function XyScatterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="xy-scatter-dialog" className="max-w-md">
+      <DialogContent
+        data-testid="xy-scatter-dialog"
+        className="max-h-[min(92vh,44rem)] max-w-md overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle>Plot measurements</DialogTitle>
           <DialogDescription>
@@ -365,6 +422,99 @@ export function XyScatterDialog({
             />
           </div>
 
+          <details
+            data-testid="xy-advanced"
+            className="group rounded-md border border-[var(--border)]"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-medium text-[var(--foreground)] marker:content-none [&::-webkit-details-marker]:hidden">
+              Advanced
+              <ChevronDown className="h-4 w-4 shrink-0 text-[var(--muted-foreground)] transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="grid gap-3 border-t border-[var(--border)] px-3 py-3">
+              <p className="-mt-1 text-xs text-[var(--muted-foreground)]">
+                Leave a limit blank to auto-fit that end from the data.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="xy-xmin" className={fieldLabelClass}>
+                    Min X
+                  </Label>
+                  <Input
+                    id="xy-xmin"
+                    data-testid="xy-xmin"
+                    inputMode="decimal"
+                    placeholder="Auto"
+                    value={xMin}
+                    onChange={(event) => setXMin(event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="xy-xmax" className={fieldLabelClass}>
+                    Max X
+                  </Label>
+                  <Input
+                    id="xy-xmax"
+                    data-testid="xy-xmax"
+                    inputMode="decimal"
+                    placeholder="Auto"
+                    value={xMax}
+                    onChange={(event) => setXMax(event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="xy-ymin" className={fieldLabelClass}>
+                    Min Y
+                  </Label>
+                  <Input
+                    id="xy-ymin"
+                    data-testid="xy-ymin"
+                    inputMode="decimal"
+                    placeholder="Auto"
+                    value={yMin}
+                    onChange={(event) => setYMin(event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="xy-ymax" className={fieldLabelClass}>
+                    Max Y
+                  </Label>
+                  <Input
+                    id="xy-ymax"
+                    data-testid="xy-ymax"
+                    inputMode="decimal"
+                    placeholder="Auto"
+                    value={yMax}
+                    onChange={(event) => setYMax(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="xy-x-label" className={fieldLabelClass}>
+                  X axis title
+                </Label>
+                <Input
+                  id="xy-x-label"
+                  data-testid="xy-x-label"
+                  placeholder={xColumn?.name ?? OBSERVATION_X_LABEL}
+                  value={xAxisLabel}
+                  onChange={(event) => setXAxisLabel(event.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="xy-y-label" className={fieldLabelClass}>
+                  Y axis title
+                </Label>
+                <Input
+                  id="xy-y-label"
+                  data-testid="xy-y-label"
+                  placeholder={yColumn?.name ?? "Y"}
+                  value={yAxisLabel}
+                  onChange={(event) => setYAxisLabel(event.target.value)}
+                />
+              </div>
+            </div>
+          </details>
+
           {error ? (
             <p className="text-sm text-[var(--destructive)]" role="alert">
               {error}
@@ -395,6 +545,12 @@ export function XyScatterDialog({
                 title: title.trim(),
                 rowStart: parseOptionalRow(rowStart),
                 rowEnd: parseOptionalRow(rowEnd),
+                xMin: xMinValue,
+                xMax: xMaxValue,
+                yMin: yMinValue,
+                yMax: yMaxValue,
+                xAxisLabel: xAxisLabel.trim() || null,
+                yAxisLabel: yAxisLabel.trim() || null,
               })
             }
           >

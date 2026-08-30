@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyAxisRangeOverride,
   DEFAULT_CHART_LAYOUT,
   formatChartCitationPages,
   formatChartProvenance,
   layoutPoints,
+  layoutRangeFromBounds,
   parseChartSpec,
   resolveXRange,
   resolveYRange,
@@ -139,6 +141,51 @@ describe("resolveXRange", () => {
     expect(range.min).toBeGreaterThan(50);
     expect(range.max).toBeGreaterThan(110);
   });
+
+  it("honors a full x-range override and a max-only override", () => {
+    const valueLayout = { ...DEFAULT_CHART_LAYOUT, xAxis: "value" as const };
+    const base = spec({
+      points: [
+        { x: 10, y: 1, series: null, label: "a" },
+        { x: 20, y: 2, series: null, label: "b" },
+      ],
+      layout: valueLayout,
+    });
+    const auto = resolveXRange(base);
+    expect(
+      resolveXRange({
+        ...base,
+        layout: { ...valueLayout, xRange: { min: 0, max: 50 } },
+      })
+    ).toEqual({ min: 0, max: 50 });
+    expect(
+      resolveXRange({
+        ...base,
+        layout: { ...valueLayout, xRange: { min: null, max: 15 } },
+      }).max
+    ).toBe(15);
+    expect(auto.max).toBeGreaterThan(15);
+  });
+});
+
+describe("layoutRangeFromBounds", () => {
+  it("returns null when both ends are auto", () => {
+    expect(layoutRangeFromBounds(null, null)).toBeNull();
+    expect(layoutRangeFromBounds(undefined, undefined)).toBeNull();
+  });
+
+  it("keeps a one-sided bound", () => {
+    expect(layoutRangeFromBounds(0, null)).toEqual({ min: 0, max: null });
+    expect(layoutRangeFromBounds(null, 10)).toEqual({ min: null, max: 10 });
+  });
+});
+
+describe("applyAxisRangeOverride", () => {
+  it("falls back to auto when the override is inverted", () => {
+    expect(
+      applyAxisRangeOverride({ min: 0, max: 10 }, { min: 8, max: 2 })
+    ).toEqual({ min: 0, max: 10 });
+  });
 });
 
 describe("resolveYRange", () => {
@@ -175,6 +222,19 @@ describe("resolveYRange", () => {
       })
     );
     expect(range.max).toBeLessThan(50);
+  });
+
+  it("honors a y-range override without changing auto when unset", () => {
+    const auto = resolveYRange(spec({ limits: { lower: null, upper: null } }));
+    expect(
+      resolveYRange(
+        spec({
+          limits: { lower: null, upper: null },
+          layout: { ...DEFAULT_CHART_LAYOUT, yRange: { min: -2, max: 12 } },
+        })
+      )
+    ).toEqual({ min: -2, max: 12 });
+    expect(auto).not.toEqual({ min: -2, max: 12 });
   });
 });
 

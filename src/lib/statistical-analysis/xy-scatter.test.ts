@@ -134,6 +134,31 @@ describe("computeXyScatter", () => {
     expect(outcome.result.specs[0]?.limits).toEqual({ lower: 5, upper: 40 });
   });
 
+  it("applies axis window and custom axis titles", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = pasteTsv(sheet, 0, 0, ["1", "2", "3"].join("\n"));
+    sheet = pasteTsv(sheet, 1, 0, ["10", "20", "30"].join("\n"));
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: "c1",
+      xColumnName: "C1",
+      yColumnId: "c2",
+      yColumnName: "Assay",
+      title: "Assay vs C1",
+      xMin: 0,
+      xMax: 10,
+      yMin: 5,
+      yMax: 40,
+      xAxisLabel: "Time (h)",
+      yAxisLabel: "Assay (%)",
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.specs[0]?.layout.xRange).toEqual({ min: 0, max: 10 });
+    expect(outcome.result.specs[0]?.layout.yRange).toEqual({ min: 5, max: 40 });
+    expect(outcome.result.specs[0]?.xLabel).toBe("Time (h)");
+    expect(outcome.result.specs[0]?.yLabel).toBe("Assay (%)");
+  });
+
   it("suggests the next column as X", () => {
     const sheet = applySampleAssay(createEmptyWorksheet(), 0);
     expect(suggestXColumn(sheet, "c1")).toBe("c2");
@@ -327,12 +352,18 @@ describe("mergeXyScatterPatch", () => {
     title: "OD660 vs Glucose",
     mark: "scatter" as const,
     showSpecLimits: false,
+    xMin: 0,
+    xMax: 10,
+    yMin: 5,
+    yMax: 40,
+    xAxisLabel: "Time (h)",
+    yAxisLabel: "Assay (%)",
     rowStart: 1,
     rowEnd: 10,
     rows: null,
   };
 
-  it("keeps omitted axes, mark, spec lines, and row range", () => {
+  it("keeps omitted axes, mark, spec lines, axis window, and row range", () => {
     expect(mergeXyScatterPatch(existing, { title: "Retitled" })).toMatchObject({
       yColumnId: "c2",
       xColumnId: "c1",
@@ -340,6 +371,12 @@ describe("mergeXyScatterPatch", () => {
       title: "Retitled",
       mark: "scatter",
       showSpecLimits: false,
+      xMin: 0,
+      xMax: 10,
+      yMin: 5,
+      yMax: 40,
+      xAxisLabel: "Time (h)",
+      yAxisLabel: "Assay (%)",
       rowStart: 1,
       rowEnd: 10,
     });
@@ -363,6 +400,19 @@ describe("mergeXyScatterPatch", () => {
       xColumnId: "c1",
       mark: "line",
       showSpecLimits: true,
+    });
+  });
+
+  it("clears axis limits when the patch sends null", () => {
+    expect(
+      mergeXyScatterPatch(
+        { ...existing, xMin: 0, xMax: 10, yAxisLabel: "Assay" },
+        { xMin: null, xMax: null, yAxisLabel: null }
+      )
+    ).toMatchObject({
+      xMin: null,
+      xMax: null,
+      yAxisLabel: null,
     });
   });
 });

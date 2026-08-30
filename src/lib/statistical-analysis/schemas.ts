@@ -277,7 +277,38 @@ const xyScatterUiFields = {
   ...xyScatterColumnFields,
   mark: z.enum(CHART_MARKS).optional(),
   showSpecLimits: z.boolean().optional(),
+  xMin: z.number().finite().nullable().optional(),
+  xMax: z.number().finite().nullable().optional(),
+  yMin: z.number().finite().nullable().optional(),
+  yMax: z.number().finite().nullable().optional(),
+  xAxisLabel: z.string().trim().max(60).nullable().optional(),
+  yAxisLabel: z.string().trim().max(80).nullable().optional(),
 } as const;
+
+function refineAxisBounds(
+  value: {
+    xMin?: number | null;
+    xMax?: number | null;
+    yMin?: number | null;
+    yMax?: number | null;
+  },
+  ctx: z.RefinementCtx
+): void {
+  if (value.xMin != null && value.xMax != null && !(value.xMin < value.xMax)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Min X must be less than max X.",
+      path: ["xMax"],
+    });
+  }
+  if (value.yMin != null && value.yMax != null && !(value.yMin < value.yMax)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Min Y must be less than max Y.",
+      path: ["yMax"],
+    });
+  }
+}
 
 function refineXyScatterChatBody(
   value: {
@@ -285,6 +316,10 @@ function refineXyScatterChatBody(
     yColumnId?: string;
     xColumnId?: string | null;
     legendColumnId?: string | null;
+    xMin?: number | null;
+    xMax?: number | null;
+    yMin?: number | null;
+    yMax?: number | null;
   },
   ctx: z.RefinementCtx
 ): void {
@@ -296,6 +331,7 @@ function refineXyScatterChatBody(
     });
   }
   refineDistinctXyColumns(value, ctx);
+  refineAxisBounds(value, ctx);
 }
 
 /** Chat tool body — create (yColumnId required) or update (analysisId + changed fields). */
@@ -306,6 +342,12 @@ export const xyScatterBodySchema = z
     ...xyScatterAxisFields,
     mark: z.enum(CHART_MARKS).optional(),
     showSpecLimits: z.boolean().optional(),
+    xMin: z.number().finite().nullable().optional(),
+    xMax: z.number().finite().nullable().optional(),
+    yMin: z.number().finite().nullable().optional(),
+    yMax: z.number().finite().nullable().optional(),
+    xAxisLabel: z.string().trim().max(60).nullable().optional(),
+    yAxisLabel: z.string().trim().max(80).nullable().optional(),
   })
   .superRefine(refineXyScatterChatBody);
 
@@ -314,7 +356,10 @@ export const xyScatterInputSchema = z
     kind: z.literal(XY_SCATTER),
     ...xyScatterUiFields,
   })
-  .superRefine(refineDistinctXyColumns);
+  .superRefine((value, ctx) => {
+    refineDistinctXyColumns(value, ctx);
+    refineAxisBounds(value, ctx);
+  });
 
 /** Edit/update from the Plot measurements dialog or chat (omitted fields keep the saved config). */
 export const xyScatterUpdateSchema = z
@@ -323,8 +368,17 @@ export const xyScatterUpdateSchema = z
     ...xyScatterAxisFields,
     mark: z.enum(CHART_MARKS).optional(),
     showSpecLimits: z.boolean().optional(),
+    xMin: z.number().finite().nullable().optional(),
+    xMax: z.number().finite().nullable().optional(),
+    yMin: z.number().finite().nullable().optional(),
+    yMax: z.number().finite().nullable().optional(),
+    xAxisLabel: z.string().trim().max(60).nullable().optional(),
+    yAxisLabel: z.string().trim().max(80).nullable().optional(),
   })
-  .superRefine(refineDistinctXyColumns);
+  .superRefine((value, ctx) => {
+    refineDistinctXyColumns(value, ctx);
+    refineAxisBounds(value, ctx);
+  });
 
 export const patchAnalyticsBodySchema = z
   .object({

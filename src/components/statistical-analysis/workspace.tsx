@@ -1249,6 +1249,36 @@ export function StatisticalWorkspace({
             ? editingAnalysis.config.title
             : ""
         }
+        defaultXMin={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xMin ?? null)
+            : null
+        }
+        defaultXMax={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xMax ?? null)
+            : null
+        }
+        defaultYMin={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yMin ?? null)
+            : null
+        }
+        defaultYMax={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yMax ?? null)
+            : null
+        }
+        defaultXAxisLabel={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xAxisLabel ?? "")
+            : ""
+        }
+        defaultYAxisLabel={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yAxisLabel ?? "")
+            : ""
+        }
         editMode={Boolean(
           editingAnalysis && isXyScatterAnalysis(editingAnalysis)
         )}
@@ -1273,6 +1303,12 @@ export function StatisticalWorkspace({
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xMin: values.xMin,
+                xMax: values.xMax,
+                yMin: values.yMin,
+                yMax: values.yMax,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
               toast.success("Plot updated.");
@@ -1286,6 +1322,12 @@ export function StatisticalWorkspace({
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xMin: values.xMin,
+                xMax: values.xMax,
+                yMin: values.yMin,
+                yMax: values.yMax,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,

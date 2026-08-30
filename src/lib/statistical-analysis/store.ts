@@ -156,6 +156,17 @@ function asAnovaResults(value: unknown): OneWayAnovaResult {
   return value as OneWayAnovaResult;
 }
 
+function optionalFinite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function optionalAxisLabel(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.slice(0, max);
+}
+
 function asXyScatterConfig(value: unknown): XyScatterConfig {
   const parsed = value as XyScatterConfig;
   const rows = Array.isArray(parsed.rows)
@@ -178,6 +189,12 @@ function asXyScatterConfig(value: unknown): XyScatterConfig {
     rows: rows && rows.length > 0 ? rows : null,
     mark: parseChartMark(parsed.mark),
     showSpecLimits: parsed.showSpecLimits === true,
+    xMin: optionalFinite(parsed.xMin),
+    xMax: optionalFinite(parsed.xMax),
+    yMin: optionalFinite(parsed.yMin),
+    yMax: optionalFinite(parsed.yMax),
+    xAxisLabel: optionalAxisLabel(parsed.xAxisLabel, 60),
+    yAxisLabel: optionalAxisLabel(parsed.yAxisLabel, 80),
   };
 }
 
@@ -694,6 +711,12 @@ async function createXyScatterAnalysisForReport(
     title,
     mark: parseChartMark(parsed.data.mark),
     showSpecLimits: parsed.data.showSpecLimits === true,
+    xMin: parsed.data.xMin ?? null,
+    xMax: parsed.data.xMax ?? null,
+    yMin: parsed.data.yMin ?? null,
+    yMax: parsed.data.yMax ?? null,
+    xAxisLabel: parsed.data.xAxisLabel?.trim() || null,
+    yAxisLabel: parsed.data.yAxisLabel?.trim() || null,
     ...rowFields,
   };
 
@@ -1116,6 +1139,12 @@ export async function updateAnalysisForReport(
       title,
       mark: parseChartMark(merged.mark ?? existing.config.mark),
       showSpecLimits: merged.showSpecLimits === true,
+      xMin: merged.xMin ?? null,
+      xMax: merged.xMax ?? null,
+      yMin: merged.yMin ?? null,
+      yMax: merged.yMax ?? null,
+      xAxisLabel: merged.xAxisLabel ?? null,
+      yAxisLabel: merged.yAxisLabel ?? null,
       ...rowFields,
     };
     const outcome = computeXyScatter(analytics.worksheet, config);

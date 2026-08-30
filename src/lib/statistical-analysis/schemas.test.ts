@@ -122,6 +122,30 @@ describe("xyScatterInputSchema", () => {
     ).toBe(true);
   });
 
+  it("accepts axis window and labels, and rejects min ≥ max", () => {
+    expect(
+      xyScatterBodySchema.parse({
+        yColumnId: "c2",
+        xMin: 0,
+        xMax: 10,
+        yMin: null,
+        yAxisLabel: "Assay (%)",
+      })
+    ).toMatchObject({
+      xMin: 0,
+      xMax: 10,
+      yAxisLabel: "Assay (%)",
+    });
+    expect(
+      xyScatterInputSchema.safeParse({
+        kind: XY_SCATTER,
+        yColumnId: "c2",
+        xMin: 10,
+        xMax: 1,
+      }).success
+    ).toBe(false);
+  });
+
   it("requires yColumnId on create and allows a partial update with analysisId", () => {
     expect(xyScatterBodySchema.safeParse({ mark: "line" }).success).toBe(false);
     expect(

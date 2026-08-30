@@ -398,6 +398,14 @@ export type XyScatterConfig = {
   mark?: ChartMark;
   /** Draw Y-column LSL/USL on the chart. Default off. */
   showSpecLimits?: boolean;
+  /** Display window. Null = auto. Not part of sourceHash. */
+  xMin?: number | null;
+  xMax?: number | null;
+  yMin?: number | null;
+  yMax?: number | null;
+  /** Override axis titles. Null/empty uses the column name. */
+  xAxisLabel?: string | null;
+  yAxisLabel?: string | null;
 };
 
 export type XyScatterResult = {
