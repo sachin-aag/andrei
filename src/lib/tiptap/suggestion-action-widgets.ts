@@ -106,91 +106,28 @@ export type SuggestionActionWidgetAnchor = {
   pos: number;
 };
 
-type MarkedSpan = {
-  id: string;
-  start: number;
-  end: number;
-  isInsert: boolean;
-};
-
-type Cluster = {
-  end: number;
-  insertEnd: number | null;
-};
-
-function hasUnmarkedTextBetween(
-  doc: PMNode,
-  from: number,
-  to: number,
-  evaluationId: string
-): boolean {
-  if (to <= from) return false;
-  const insertType = doc.type.schema.marks[suggestionInsertMarkName];
-  const deleteType = doc.type.schema.marks[suggestionDeleteMarkName];
-  let found = false;
-  doc.nodesBetween(from, to, (node) => {
-    if (found || !node.isText) return !found;
-    const marked = node.marks.some((mark) => {
-      if (mark.type !== insertType && mark.type !== deleteType) return false;
-      const attrs = mark.attrs as { id?: string | null; authorId?: string };
-      return attrs.id === evaluationId && attrs.authorId === "ai";
-    });
-    if (!marked && (node.text?.length ?? 0) > 0) found = true;
-    return !found;
-  });
-  return found;
-}
-
-function clusterSpans(doc: PMNode, spans: MarkedSpan[]): Cluster[] {
-  const ordered = [...spans].sort((a, b) => a.start - b.start || a.end - b.end);
-  const clusters: Cluster[] = [];
-  for (const span of ordered) {
-    const last = clusters[clusters.length - 1];
-    if (last && !hasUnmarkedTextBetween(doc, last.end, span.start, span.id)) {
-      last.end = Math.max(last.end, span.end);
-      if (span.isInsert) {
-        last.insertEnd = Math.max(last.insertEnd ?? 0, span.end);
-      }
-      continue;
-    }
-    clusters.push({
-      end: span.end,
-      insertEnd: span.isInsert ? span.end : null,
-    });
-  }
-  return clusters;
-}
-
 /**
- * Widget anchors after each disjoint apply site. A contiguous replace (delete
- * then insert) is one cluster; a body edit plus a citation at the end of the
- * section is two. Clicking either widget accepts or dismisses the whole
- * suggestion. Prefer insert ends; delete-only clusters use the delete end.
+ * One widget per suggestion. Prefer the last insert mark; delete-only
+ * suggestions use the last delete mark. A split body edit plus citation still
+ * gets a single pair, after the last marked span.
  */
 export function collectSuggestionActionWidgetPositions(
   doc: PMNode,
   actionableEvaluationIds: Set<string>
 ): SuggestionActionWidgetAnchor[] {
+  const insertEnds = new Map<string, number>();
+  const deleteEnds = new Map<string, number>();
   const insertType = doc.type.schema.marks[suggestionInsertMarkName];
   const deleteType = doc.type.schema.marks[suggestionDeleteMarkName];
-  const spansById = new Map<string, MarkedSpan[]>();
-
-  const pushSpan = (span: MarkedSpan) => {
-    const list = spansById.get(span.id) ?? [];
-    list.push(span);
-    spansById.set(span.id, list);
-  };
 
   doc.descendants((node, pos) => {
     if (node.type.name === "imageInline") {
       const suggestionId = node.attrs.suggestionId as string | null | undefined;
       if (suggestionId && actionableEvaluationIds.has(suggestionId)) {
-        pushSpan({
-          id: suggestionId,
-          start: pos,
-          end: pos + node.nodeSize,
-          isInsert: true,
-        });
+        insertEnds.set(
+          suggestionId,
+          Math.max(insertEnds.get(suggestionId) ?? 0, pos + node.nodeSize)
+        );
       }
       return true;
     }
@@ -201,29 +138,28 @@ export function collectSuggestionActionWidgetPositions(
       const attrs = mark.attrs as { id?: string | null; authorId?: string };
       if (!attrs.id || attrs.authorId !== "ai") continue;
       if (!actionableEvaluationIds.has(attrs.id)) continue;
-      pushSpan({
-        id: attrs.id,
-        start: pos,
-        end: pos + len,
-        isInsert: mark.type === insertType,
-      });
+      const end = pos + len;
+      if (mark.type === insertType) {
+        insertEnds.set(attrs.id, Math.max(insertEnds.get(attrs.id) ?? 0, end));
+      } else {
+        deleteEnds.set(attrs.id, Math.max(deleteEnds.get(attrs.id) ?? 0, end));
+      }
     }
     return true;
   });
 
   const anchors: SuggestionActionWidgetAnchor[] = [];
   for (const id of actionableEvaluationIds) {
-    const spans = spansById.get(id);
-    if (!spans?.length) continue;
-    for (const cluster of clusterSpans(doc, spans)) {
-      const raw = cluster.insertEnd ?? cluster.end;
-      anchors.push({
-        evaluationId: id,
-        pos: extendPosPastOpenBracketClose(doc, raw),
-      });
-    }
+    const raw = insertEnds.get(id) ?? deleteEnds.get(id);
+    if (raw == null) continue;
+    anchors.push({
+      evaluationId: id,
+      pos: extendPosPastOpenBracketClose(doc, raw),
+    });
   }
-  return anchors.sort((a, b) => a.pos - b.pos || a.evaluationId.localeCompare(b.evaluationId));
+  return anchors.sort(
+    (a, b) => a.pos - b.pos || a.evaluationId.localeCompare(b.evaluationId)
+  );
 }
 
 function collectActionPositions(
@@ -241,7 +177,7 @@ function buildSet(doc: PMNode, state: SuggestionActionWidgetState) {
   for (const { evaluationId, pos } of positions) {
       decos.push(
       Decoration.widget(pos, () => widgetEl(evaluationId, state), {
-        key: `suggestion-action-${evaluationId}-${pos}-${state.pendingId ?? "idle"}`,
+        key: `suggestion-action-${evaluationId}-${state.pendingId ?? "idle"}`,
         side: 1,
         ignoreSelection: true,
         stopEvent: (event) => {

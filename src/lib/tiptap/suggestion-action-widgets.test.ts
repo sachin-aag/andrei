@@ -97,7 +97,7 @@ describe("collectSuggestionActionWidgetPositions", () => {
     ]);
   });
 
-  it("places a widget after the inline site and after a split citation", () => {
+  it("keeps one widget for a split body edit plus citation", () => {
     const schema = suggestionSchema(true);
     const { insert, del } = aiMarks(schema, "eval-cite");
     const placeholder = "[790-00134R Rev U Solea Model 3 Software: <to be filled>]";
@@ -114,9 +114,8 @@ describe("collectSuggestionActionWidgetPositions", () => {
     ]);
 
     const positions = positionsFor(doc, "eval-cite");
-    expect(positions).toHaveLength(2);
-    expect(doc.textBetween(positions[0]! - "[3]".length, positions[0]!)).toBe("[3]");
-    expect(doc.textBetween(positions[1]! - citation.length, positions[1]!)).toBe(
+    expect(positions).toHaveLength(1);
+    expect(doc.textBetween(positions[0]! - citation.length, positions[0]!)).toBe(
       citation
     );
   });
