@@ -32,8 +32,12 @@ export const voiceSessions: Map<string, VoiceSession> =
 
 function emit(session: VoiceSession, event: VoiceSseEvent): void {
   session.history.push(event);
-  for (const listener of session.listeners) {
-    listener(event);
+  for (const listener of [...session.listeners]) {
+    try {
+      listener(event);
+    } catch {
+      session.listeners.delete(listener);
+    }
   }
 }
 

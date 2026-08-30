@@ -46,31 +46,32 @@ export async function GET(request: Request, context: RouteContext) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      let closed = false;
       let unsubscribe: () => void = () => {};
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        unsubscribe();
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      };
       const send = (event: Parameters<typeof encodeVoiceSse>[0]) => {
+        if (closed) return;
         try {
           controller.enqueue(encoder.encode(encodeVoiceSse(event)));
-          if (event.type === "done") {
-            unsubscribe();
-            controller.close();
-          }
+          if (event.type === "done") close();
         } catch {
-          unsubscribe();
+          close();
         }
       };
       unsubscribe = subscribeVoiceSession(session, send);
-      request.signal.addEventListener(
-        "abort",
-        () => {
-          unsubscribe();
-          try {
-            controller.close();
-          } catch {
-            /* already closed */
-          }
-        },
-        { once: true }
-      );
+      request.signal.addEventListener("abort", close, { once: true });
+    },
+    cancel() {
+      /* client hung up — do not throw */
     },
   });
 
