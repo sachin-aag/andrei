@@ -386,16 +386,88 @@ function splitTrailingCitationBlock(text: string): TrailingCitationSplit {
   };
 }
 
-type TrailingDocRange = {
-  cut: number;
-  headingStart: number;
-  end: number;
+type BibliographyPartition = {
+  /** Body blocks, including tables/prose that had drifted below Citations. */
+  body: JSONContent[];
+  citationLines: string[];
 };
 
 /**
+ * First bibliography heading, or the last citation-only run even when a table
+ * or other body block was appended after it.
+ */
+function findBibliographyStart(blocks: JSONContent[]): number | null {
+  const heading = blocks.findIndex((block) => isCitationHeadingParagraph(block));
+  if (heading !== -1) return heading;
+
+  let i = blocks.length;
+  while (i > 0 && isEmptyParagraphBlock(blocks[i - 1]!)) i -= 1;
+  while (
+    i > 0 &&
+    !isCitationOnlyBlock(blocks[i - 1]!) &&
+    !isCitationHeadingParagraph(blocks[i - 1]!)
+  ) {
+    i -= 1;
+  }
+  let start = i;
+  while (start > 0 && isCitationOnlyBlock(blocks[start - 1]!)) start -= 1;
+  if (start === i) return null;
+  return start;
+}
+
+function citationLineFromBlock(block: JSONContent): string {
+  if (block.type === "paragraph" || block.type === "heading") {
+    return paragraphPlainText(block);
+  }
+  return nodePlainText(block);
+}
+
+function partitionBibliography(
+  blocks: JSONContent[]
+): BibliographyPartition | null {
+  const start = findBibliographyStart(blocks);
+  if (start === null) return null;
+
+  const body: JSONContent[] = [];
+  for (let i = 0; i < start; i++) body.push(blocks[i]!);
+  while (body.length > 0 && isEmptyParagraphBlock(body[body.length - 1]!)) {
+    body.pop();
+  }
+
+  const citationLines: string[] = [];
+  for (let i = start; i < blocks.length; i++) {
+    const block = blocks[i]!;
+    if (isCitationHeadingParagraph(block) || isEmptyParagraphBlock(block)) {
+      continue;
+    }
+    if (isCitationOnlyBlock(block)) {
+      citationLines.push(citationLineFromBlock(block));
+      continue;
+    }
+    body.push(block);
+  }
+  return { body, citationLines };
+}
+
+type TrailingDocRange = {
+  cut: number;
+};
+
+function findTrailingCitationRange(
+  blocks: JSONContent[]
+): TrailingDocRange | null {
+  const start = findBibliographyStart(blocks);
+  if (start === null) return null;
+  let cut = start;
+  while (cut > 0 && isEmptyParagraphBlock(blocks[cut - 1]!)) cut -= 1;
+  return { cut };
+}
+
+/**
  * Index at which new body content (prose, tables, figures) should land.
- * Trailing Citations:/References: stay after this index. Replaces a dangling
- * empty paragraph when the field has no citation block.
+ * Citations:/References: stay after this index even when a table was already
+ * appended below them. Replaces a dangling empty paragraph when the field
+ * has no citation block.
  */
 export function fieldBodyInsertIndex(doc: JSONContent): number {
   const blocks = doc.content;
@@ -408,54 +480,16 @@ export function fieldBodyInsertIndex(doc: JSONContent): number {
 }
 
 export function hasTrailingCitationBlock(doc: JSONContent): boolean {
-  return Array.isArray(doc.content) && findTrailingCitationRange(doc.content) !== null;
-}
-
-function findTrailingCitationRange(
-  blocks: JSONContent[]
-): TrailingDocRange | null {
-  let end = blocks.length;
-  while (end > 0 && isEmptyParagraphBlock(blocks[end - 1]!)) {
-    end -= 1;
-  }
-  let citeStart = end;
-  while (citeStart > 0 && isCitationOnlyBlock(blocks[citeStart - 1]!)) {
-    citeStart -= 1;
-  }
-  let headingStart = citeStart;
-  if (citeStart > 0 && isCitationHeadingParagraph(blocks[citeStart - 1]!)) {
-    headingStart = citeStart - 1;
-  }
-  if (headingStart === end) return null;
-
-  let cut = headingStart;
-  while (cut > 0 && isEmptyParagraphBlock(blocks[cut - 1]!)) {
-    cut -= 1;
-  }
-  return { cut, headingStart, end };
-}
-
-function trailingLinesFromDoc(blocks: JSONContent[], range: TrailingDocRange): string[] {
-  const lines: string[] = [];
-  for (let i = range.headingStart; i < range.end; i++) {
-    const block = blocks[i]!;
-    if (isCitationHeadingParagraph(block) || isEmptyParagraphBlock(block)) continue;
-    if (block.type === "paragraph" || block.type === "heading") {
-      lines.push(paragraphPlainText(block));
-    } else {
-      lines.push(nodePlainText(block));
-    }
-  }
-  return lines;
+  return Array.isArray(doc.content) && findBibliographyStart(doc.content) !== null;
 }
 
 function numberingFromDoc(doc: JSONContent): FieldCitationNumbering {
   if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
     return new FieldCitationNumbering();
   }
-  const range = findTrailingCitationRange(doc.content);
-  if (!range) return new FieldCitationNumbering();
-  return numberingFromTrailingLines(trailingLinesFromDoc(doc.content, range));
+  const part = partitionBibliography(doc.content);
+  if (!part) return new FieldCitationNumbering();
+  return numberingFromTrailingLines(part.citationLines);
 }
 
 /** Numbers assigned in the field's trailing Citations list. */
@@ -484,17 +518,13 @@ export function stripTrailingCitationBlockFromDoc(doc: JSONContent): JSONContent
   if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
     return doc;
   }
-  const blocks = doc.content;
-  const range = findTrailingCitationRange(blocks);
-  if (!range) return doc;
+  const part = partitionBibliography(doc.content);
+  if (!part) return doc;
 
-  const numbers = numberingFromTrailingLines(
-    trailingLinesFromDoc(blocks, range)
-  ).numbers();
-  const next = blocks.slice(0, range.cut);
+  const numbers = numberingFromTrailingLines(part.citationLines).numbers();
   const stripped: JSONContent = {
     ...doc,
-    content: next.length > 0 ? next : [{ type: "paragraph" }],
+    content: part.body.length > 0 ? part.body : [{ type: "paragraph" }],
   };
   if (numbers.size === 0) return stripped;
   return mapJsonTextNodes(stripped, (text) =>
@@ -641,32 +671,37 @@ export function normalizeTrailingCitationBlockInText(text: string): string {
   return bodyOut ? `${bodyOut}\n\n${block}` : block;
 }
 
-/** Rewrite a TipTap field's trailing citation list into numbered lines. */
+/** Rewrite a TipTap field's citation list into numbered lines at the end. */
 export function normalizeTrailingCitationBlockInDoc(doc: JSONContent): JSONContent {
   if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
     return doc;
   }
-  const range = findTrailingCitationRange(doc.content);
-  if (!range) return doc;
-  const numbering = numberingFromTrailingLines(
-    trailingLinesFromDoc(doc.content, range)
-  );
+  const part = partitionBibliography(doc.content);
+  if (!part) return doc;
+  const numbering = numberingFromTrailingLines(part.citationLines);
   const entries = numbering.entries();
-  if (entries.length === 0) return doc;
+  const start = findBibliographyStart(doc.content);
+  if (entries.length === 0 && (start === null || part.body.length === start)) {
+    return doc;
+  }
 
-  const prefix = doc.content.slice(0, range.cut);
-  const last = prefix[prefix.length - 1];
+  const last = part.body[part.body.length - 1];
   const withSpacer =
-    last && !isEmptyParagraphBlock(last) ? [...prefix, { type: "paragraph" }] : prefix;
+    last && !isEmptyParagraphBlock(last)
+      ? [...part.body, { type: "paragraph" }]
+      : part.body;
+  const citeNodes =
+    entries.length > 0
+      ? [
+          paragraphWithText(CITATIONS_HEADING),
+          ...entries.map(({ number, source }) =>
+            paragraphWithText(numberedCitationLine(number, source))
+          ),
+        ]
+      : [paragraphWithText(CITATIONS_HEADING)];
   return {
     ...doc,
-    content: [
-      ...withSpacer,
-      paragraphWithText(CITATIONS_HEADING),
-      ...entries.map(({ number, source }) =>
-        paragraphWithText(numberedCitationLine(number, source))
-      ),
-    ],
+    content: [...withSpacer, ...citeNodes],
   };
 }
 

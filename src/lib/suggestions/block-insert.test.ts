@@ -56,6 +56,20 @@ describe("fieldBodyInsertIndex", () => {
     expect(fieldBodyInsertIndex(withCitations)).toBe(1);
   });
 
+  it("cuts before a Citations heading even when a table was appended after it", () => {
+    expect(
+      fieldBodyInsertIndex({
+        type: "doc",
+        content: [
+          paragraph("Body."),
+          paragraph("Citations:"),
+          paragraph("1. [protocol.pdf, p. 1]"),
+          table(),
+        ],
+      })
+    ).toBe(1);
+  });
+
   it("replaces a dangling empty paragraph when there is no citation block", () => {
     expect(
       fieldBodyInsertIndex({
@@ -70,13 +84,13 @@ describe("insertNodesIntoFieldBody", () => {
   it("inserts before trailing Citations", () => {
     const doc = structuredClone(withCitations);
     insertNodesIntoFieldBody(doc, [table()]);
-    expect(doc.content?.map((n) => n.type)).toEqual([
-      "paragraph",
-      "table",
-      "paragraph",
-      "paragraph",
-    ]);
-    expect(doc.content?.[2]?.content?.[0]?.text).toBe("Citations:");
+    const types = doc.content?.map((n) => n.type) ?? [];
+    const citeAt = doc.content?.findIndex(
+      (n) => n.content?.[0]?.text === "Citations:"
+    );
+    expect(citeAt).toBeGreaterThan(0);
+    expect(types.slice(0, citeAt).includes("table")).toBe(true);
+    expect(types.slice(citeAt).includes("table")).toBe(false);
   });
 
   it("inserts before the last table when beforePairedBlock is table", () => {

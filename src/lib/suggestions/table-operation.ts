@@ -8,6 +8,7 @@ import {
   insertNodesAfterTopLevelIndex,
   insertNodesIntoFieldBody,
 } from "@/lib/suggestions/block-insert";
+import { normalizeTrailingCitationBlockInDoc } from "@/lib/suggestions/citations-at-end";
 
 /** Structured table mutation proposed via `edit_table` and stored on an `ai_fix`. */
 export type TableOperation =
@@ -316,7 +317,7 @@ export function applyTableOperation(
   operation: TableOperation,
   context?: TableOperationContext
 ): TableOperationResult {
-  const next = structuredClone(doc);
+  const next = normalizeTrailingCitationBlockInDoc(structuredClone(doc));
   if (operation.kind === "create_table") {
     return applyCreateTable(next, operation, context);
   }

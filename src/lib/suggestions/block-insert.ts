@@ -3,6 +3,7 @@ import {
   fieldBodyInsertIndex,
   hasTrailingCitationBlock,
   isEmptyParagraphBlock,
+  normalizeTrailingCitationBlockInDoc,
 } from "@/lib/suggestions/citations-at-end";
 
 export type PairedBlockKind = "table" | "image";
@@ -78,6 +79,8 @@ export function insertNodesIntoFieldBody(
   nodes: JSONContent[],
   opts?: { beforePairedBlock?: PairedBlockKind }
 ): void {
+  const parked = normalizeTrailingCitationBlockInDoc(doc);
+  if (parked.content) doc.content = parked.content;
   spliceTopLevelNodes(doc, bodyAppendIndex(doc, opts?.beforePairedBlock), nodes);
 }
 
@@ -86,5 +89,6 @@ export function insertNodesAfterTopLevelIndex(
   afterIndex: number,
   nodes: JSONContent[]
 ): void {
-  spliceTopLevelNodes(doc, afterIndex + 1, nodes);
+  const cut = fieldBodyInsertIndex(doc);
+  spliceTopLevelNodes(doc, Math.min(afterIndex + 1, cut), nodes);
 }

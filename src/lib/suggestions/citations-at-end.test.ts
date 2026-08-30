@@ -7,6 +7,7 @@ import {
   isCitationOnlyText,
   keepEmptyParagraphBeforeCitationHeading,
   moveCitationsToEndOfText,
+  normalizeTrailingCitationBlockInDoc,
   normalizeTrailingCitationBlockInText,
   prepareEditForCitationMode,
   splitEditForCitationsAtEnd,
@@ -533,6 +534,33 @@ describe("stripTrailingCitationBlockFromDoc", () => {
     ]);
   });
 
+  it("keeps a table that was appended after Citations when stripping the list", () => {
+    const table: JSONContent = {
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            {
+              type: "tableCell",
+              content: [paragraph("REQ-101")],
+            },
+          ],
+        },
+      ],
+    };
+    const stripped = stripTrailingCitationBlockFromDoc({
+      type: "doc",
+      content: [
+        paragraph("Body."),
+        paragraph("Citations:"),
+        paragraph("1. [protocol.pdf, p. 3]"),
+        table,
+      ],
+    });
+    expect(stripped.content?.map((n) => n.type)).toEqual(["paragraph", "table"]);
+  });
+
   it("does not strip inline body text that is not a trailing block", () => {
     const doc: JSONContent = {
       type: "doc",
@@ -576,5 +604,49 @@ describe("stripTrailingCitationsFromContent", () => {
       type: "doc",
       content: [{ type: "paragraph" }],
     });
+  });
+});
+
+describe("normalizeTrailingCitationBlockInDoc", () => {
+  function paragraph(text?: string): JSONContent {
+    return text
+      ? { type: "paragraph", content: [{ type: "text", text }] }
+      : { type: "paragraph" };
+  }
+
+  it("moves a table that landed below Citations back above the list", () => {
+    const table: JSONContent = {
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            {
+              type: "tableCell",
+              content: [paragraph("SW version")],
+            },
+          ],
+        },
+      ],
+    };
+    const next = normalizeTrailingCitationBlockInDoc({
+      type: "doc",
+      content: [
+        paragraph("This report covers Solea Model 3."),
+        paragraph("Citations:"),
+        paragraph("1. [790-00134R_Rev_U.docx, p. 1]"),
+        table,
+      ],
+    });
+    const types = next.content?.map((n) => n.type) ?? [];
+    const citeAt = next.content?.findIndex(
+      (n) => n.content?.[0] && "text" in n.content[0] && n.content[0].text === "Citations:"
+    );
+    expect(citeAt).toBeGreaterThan(0);
+    expect(types[citeAt! - 1] === "table" || types.slice(0, citeAt).includes("table")).toBe(
+      true
+    );
+    expect(types.slice(citeAt).includes("table")).toBe(false);
+    expect(types.at(-1)).toBe("paragraph");
   });
 });

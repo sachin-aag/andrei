@@ -461,11 +461,94 @@ describe("applyTableOperation", () => {
     });
     expect(result.status).toBe("ok");
     if (!result.ok) return;
+    const types = result.doc.content?.map((n) => n.type) ?? [];
+    const citeAt = result.doc.content?.findIndex(
+      (n) => flattenForAnchor(n).text.trim() === "Citations:"
+    );
+    expect(citeAt).toBeGreaterThan(0);
+    expect(types[1]).toBe("table");
+    expect(types.slice(citeAt).includes("table")).toBe(false);
+  });
+
+  it("parks a table that was appended below Citations, then inserts the new table above the list", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "This report covers Solea Model 3." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "1. [790-00134R_Rev_U.docx, p. 1]",
+            },
+          ],
+        },
+        tableDoc(["Solea Model 3.0 SW Application Version", "Reason for Build"], [
+          ["3.0.1", "Initial"],
+        ]).content![0]!,
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["Config", "Notes"],
+      rows: [["A", "Added"]],
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
     const types = result.doc.content?.map((n) => n.type);
-    expect(types).toEqual(["paragraph", "table", "paragraph", "paragraph"]);
-    expect(flattenForAnchor(result.doc.content![2]!).text.trim()).toBe(
+    expect(types?.slice(0, 3)).toEqual(["paragraph", "table", "table"]);
+    expect(types?.at(-2)).toBe("paragraph");
+    expect(flattenForAnchor(result.doc.content!.at(-2)!).text.trim()).toBe(
       "Citations:"
     );
+    expect(flattenForAnchor(result.doc.content!.at(-1)!).text.trim()).toMatch(
+      /790-00134R/
+    );
+    expect(cellText(result.doc, 0, 0, 0)).toBe("Solea Model 3.0 SW Application Version");
+    expect(cellText(result.doc, 0, 0, 1)).toBe("Config");
+  });
+
+  it("does not insert afterAnchor below a Citations heading", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Scope covers software." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 1]" }],
+        },
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["A"],
+      rows: [["1"]],
+      afterAnchor: "1. [protocol.pdf, p. 1]",
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    const types = result.doc.content?.map((n) => n.type) ?? [];
+    const citeAt = result.doc.content?.findIndex(
+      (n) => flattenForAnchor(n).text.trim() === "Citations:"
+    );
+    expect(citeAt).toBeGreaterThan(0);
+    expect(types.slice(0, citeAt).includes("table")).toBe(true);
+    expect(types.slice(citeAt).includes("table")).toBe(false);
   });
 
   it("inserts after a unique afterAnchor block", () => {
