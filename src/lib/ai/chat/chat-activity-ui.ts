@@ -104,13 +104,85 @@ function sectionLabel(section: unknown): string {
   return "section";
 }
 
-function documentTitleFromTool(info: ChatToolPartInfo): string | null {
-  return (
-    stringField(info.output?.filename) ??
-    stringField(info.output?.title) ??
-    stringField(info.input?.filename) ??
-    stringField(info.input?.title)
-  );
+export type AttachmentFilenameLookup = ReadonlyMap<string, string>;
+
+function displayFilename(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const base = trimmed.replace(/^.*[/\\]/, "").trim();
+  return base || trimmed;
+}
+
+function pushFilename(into: string[], raw: unknown): void {
+  const value = stringField(raw);
+  if (!value) return;
+  const name = displayFilename(value);
+  if (!name || into.includes(name)) return;
+  into.push(name);
+}
+
+function filenamesFromRecord(record: Record<string, unknown>, into: string[]): void {
+  pushFilename(into, record.filename);
+  if (record.page && typeof record.page === "object" && !Array.isArray(record.page)) {
+    pushFilename(into, (record.page as Record<string, unknown>).filename);
+  }
+  const citation = stringField(record.citation);
+  if (citation) {
+    const match = citation.match(/^\[([^,\]]+?)(?:,\s*p\.\s*\d+)?\]$/i);
+    if (match?.[1]) pushFilename(into, match[1]);
+  }
+  if (Array.isArray(record.seenPages)) {
+    for (const item of record.seenPages) {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        pushFilename(into, (item as Record<string, unknown>).filename);
+      }
+    }
+  }
+  if (Array.isArray(record.results)) {
+    for (const item of record.results) {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        pushFilename(into, (item as Record<string, unknown>).filename);
+      }
+    }
+  }
+  if (Array.isArray(record.files)) {
+    for (const item of record.files) {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        pushFilename(into, (item as Record<string, unknown>).filename);
+      }
+    }
+  }
+}
+
+function filenamesFromTool(
+  info: ChatToolPartInfo,
+  filenameById?: AttachmentFilenameLookup
+): string[] {
+  const names: string[] = [];
+  if (info.output) filenamesFromRecord(info.output, names);
+  if (info.input) filenamesFromRecord(info.input, names);
+
+  const ids = [
+    stringField(info.input?.attachmentId),
+    stringField(info.output?.attachmentId),
+  ];
+  if (info.output?.page && typeof info.output.page === "object" && !Array.isArray(info.output.page)) {
+    ids.push(stringField((info.output.page as Record<string, unknown>).attachmentId));
+  }
+  if (filenameById) {
+    for (const id of ids) {
+      if (!id) continue;
+      const mapped = filenameById.get(id);
+      if (mapped) pushFilename(names, mapped);
+    }
+  }
+  return names;
+}
+
+function formatNameList(names: readonly string[]): string {
+  if (names.length === 1) return names[0]!;
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
 function isDocumentActivityTool(toolName: string): boolean {
@@ -125,44 +197,68 @@ function failureDetail(info: ChatToolPartInfo): string | undefined {
   return fromOutput ?? undefined;
 }
 
-function documentActivityDetail(info: ChatToolPartInfo): ActivityChildNode {
+function documentActivityDetail(
+  info: ChatToolPartInfo,
+  filenameById?: AttachmentFilenameLookup
+): ActivityChildNode {
   const pending = isToolPending(info);
+  const names = filenamesFromTool(info, filenameById);
+  const named = names.length > 0 ? formatNameList(names) : null;
   switch (info.toolName) {
     case "search_documents":
       return {
         kind: "detail",
-        label: pending ? "Searching attachments…" : "Searched attachments",
+        label: named
+          ? pending
+            ? `Searching ${named}…`
+            : `Searched ${named}`
+          : pending
+            ? "Searching attachments…"
+            : "Searched attachments",
         pending,
       };
     case "scan_attachments":
       return {
         kind: "detail",
-        label: pending ? "Scanning attachments…" : "Scanned attachments",
+        label: named
+          ? pending
+            ? `Scanning ${named}…`
+            : `Scanned ${named}`
+          : pending
+            ? "Scanning attachments…"
+            : "Scanned attachments",
         pending,
       };
-    case "document_outline": {
-      const title = documentTitleFromTool(info);
+    case "document_outline":
       return {
         kind: "detail",
-        label: title
+        label: named
           ? pending
-            ? `Reading outline · ${title}…`
-            : `Read outline · ${title}`
+            ? `Reading outline · ${named}…`
+            : `Read outline · ${named}`
           : pending
             ? "Reading outline…"
             : "Read document outline",
         pending,
       };
-    }
     case "read_document_page": {
       const page =
-        typeof info.input?.pageNumber === "number" ? info.input.pageNumber : null;
-      const title = documentTitleFromTool(info);
+        typeof info.input?.pageNumber === "number"
+          ? info.input.pageNumber
+          : typeof info.output?.pageNumber === "number"
+            ? info.output.pageNumber
+            : info.output?.page &&
+                typeof info.output.page === "object" &&
+                !Array.isArray(info.output.page) &&
+                typeof (info.output.page as { pageNumber?: unknown }).pageNumber ===
+                  "number"
+              ? (info.output.page as { pageNumber: number }).pageNumber
+              : null;
       const pageLabel = page != null ? `page ${page}` : "page";
-      const label = title
+      const label = named
         ? pending
-          ? `Reading ${pageLabel} · ${title}…`
-          : `Read ${pageLabel} · ${title}`
+          ? `Reading ${named} · ${pageLabel}…`
+          : `Read ${named} · ${pageLabel}`
         : pending
           ? "Reading page…"
           : `Read ${pageLabel}`;
@@ -191,20 +287,35 @@ function countDocumentActivity(items: ActivityChildNode[]): {
   return { reads, searches };
 }
 
-function documentsSurfaceLabel(
-  counts: { reads: number; searches: number },
-  pending: boolean
-): string {
+function documentsSurfaceLabel(input: {
+  counts: { reads: number; searches: number };
+  pending: boolean;
+  filenames: readonly string[];
+}): string {
+  const { counts, pending, filenames } = input;
+  if (filenames.length > 0 && filenames.length <= 2) {
+    const named = formatNameList(filenames);
+    if (pending) {
+      return counts.reads > 0 ? `Reading ${named}…` : `Searching ${named}…`;
+    }
+    return counts.reads > 0 ? `Read ${named}` : `Searched ${named}`;
+  }
   if (pending) {
-    const total = counts.reads + counts.searches;
+    const total =
+      filenames.length > 2
+        ? filenames.length
+        : counts.reads + counts.searches;
     if (total === 0) return "Searching attachments…";
     if (counts.reads > 0 && counts.searches > 0) {
       return `Searching and reading ${total} documents…`;
     }
     if (counts.reads > 0) {
-      return `Reading ${counts.reads} document${counts.reads === 1 ? "" : "s"}…`;
+      return `Reading ${total} document${total === 1 ? "" : "s"}…`;
     }
-    return `Searching ${counts.searches} document${counts.searches === 1 ? "" : "s"}…`;
+    return `Searching ${total} document${total === 1 ? "" : "s"}…`;
+  }
+  if (filenames.length > 2) {
+    return `Read ${filenames.length} documents`;
   }
   const parts: string[] = [];
   if (counts.reads > 0) {
@@ -224,7 +335,10 @@ function documentsSurfaceLabel(
   return parts.join(", ");
 }
 
-function buildDocumentsNode(children: ActivityChildNode[]): ActivitySurfaceNode {
+function buildDocumentsNode(
+  children: ActivityChildNode[],
+  filenames: readonly string[]
+): ActivitySurfaceNode {
   const pending = children.some(
     (child) =>
       (child.kind === "detail" && child.pending) ||
@@ -233,7 +347,7 @@ function buildDocumentsNode(children: ActivityChildNode[]): ActivitySurfaceNode 
   const counts = countDocumentActivity(children);
   return {
     kind: "documents",
-    label: documentsSurfaceLabel(counts, pending),
+    label: documentsSurfaceLabel({ counts, pending, filenames }),
     pending,
     tone: "muted",
     expandable: children.length > 0,
@@ -611,7 +725,8 @@ export function documentReviewActivityNode(
 }
 
 export function buildChatActivityBlocks(
-  parts: UIMessage["parts"]
+  parts: UIMessage["parts"],
+  filenameById?: AttachmentFilenameLookup
 ): ChatActivityBlock[] {
   const blocks: ChatActivityBlock[] = [];
   let reviewBuffer: DocumentReviewToolPart[] = [];
@@ -694,6 +809,7 @@ export function buildChatActivityBlocks(
       flushReview();
       flushSectionReads();
       const children: ActivityChildNode[] = [];
+      const filenames: string[] = [];
       while (index < parts.length) {
         const inner = parts[index]!;
         const innerTool = readChatToolPart(inner);
@@ -719,7 +835,10 @@ export function buildChatActivityBlocks(
         }
 
         if (innerTool && isDocumentActivityTool(innerTool.toolName)) {
-          children.push(documentActivityDetail(innerTool));
+          children.push(documentActivityDetail(innerTool, filenameById));
+          for (const name of filenamesFromTool(innerTool, filenameById)) {
+            if (!filenames.includes(name)) filenames.push(name);
+          }
           index += 1;
           continue;
         }
@@ -727,7 +846,10 @@ export function buildChatActivityBlocks(
         break;
       }
       if (children.length > 0) {
-        blocks.push({ kind: "activity", node: buildDocumentsNode(children) });
+        blocks.push({
+          kind: "activity",
+          node: buildDocumentsNode(children, filenames),
+        });
       }
       continue;
     }

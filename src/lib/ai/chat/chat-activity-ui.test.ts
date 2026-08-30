@@ -22,24 +22,78 @@ function toolPart(
 describe("buildChatActivityBlocks", () => {
   it("groups consecutive document tools into one surface line", () => {
     const blocks = buildChatActivityBlocks([
-      toolPart("search_documents", "output-available"),
-      toolPart("read_document_page", "output-available", {
-        pageNumber: 3,
-        filename: "Protocol.pdf",
+      toolPart("search_documents", "output-available", undefined, {
+        seenPages: [{ filename: "Protocol.pdf", pageNumber: 3 }],
+        results: [{ filename: "Protocol.pdf", pageNumber: 3 }],
       }),
-      toolPart("read_document_page", "output-available", {
-        pageNumber: 4,
-        filename: "Protocol.pdf",
-      }),
+      toolPart(
+        "read_document_page",
+        "output-available",
+        { pageNumber: 3, attachmentId: "att_1" },
+        { page: { filename: "Protocol.pdf", pageNumber: 3 } }
+      ),
+      toolPart(
+        "read_document_page",
+        "output-available",
+        { pageNumber: 4, attachmentId: "att_1" },
+        { page: { filename: "Protocol.pdf", pageNumber: 4 } }
+      ),
     ] as never);
 
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.kind).toBe("activity");
     if (blocks[0]?.kind !== "activity") return;
     expect(blocks[0].node.kind).toBe("documents");
-    expect(blocks[0].node.label).toMatch(/Explored 2 pages, 1 search/);
+    expect(blocks[0].node.label).toBe("Read Protocol.pdf");
     expect(blocks[0].node.expandable).toBe(true);
     expect(blocks[0].node.children).toHaveLength(3);
+    expect(blocks[0].node.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Searched Protocol.pdf" }),
+        expect.objectContaining({ label: "Read Protocol.pdf · page 3" }),
+        expect.objectContaining({ label: "Read Protocol.pdf · page 4" }),
+      ])
+    );
+  });
+
+  it("names the attachment on a search-only line", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart("search_documents", "output-available", undefined, {
+        seenPages: [
+          { filename: "Assay COA.pdf", pageNumber: 1 },
+          { filename: "Assay COA.pdf", pageNumber: 4 },
+        ],
+      }),
+    ] as never);
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.label).toBe("Searched Assay COA.pdf");
+    expect(blocks[0].node.children[0]).toEqual(
+      expect.objectContaining({ label: "Searched Assay COA.pdf" })
+    );
+  });
+
+  it("resolves a pending page read from the attachment id lookup", () => {
+    const blocks = buildChatActivityBlocks(
+      [
+        toolPart("read_document_page", "input-available", {
+          pageNumber: 2,
+          attachmentId: "att_protocol",
+        }),
+      ] as never,
+      new Map([["att_protocol", "Protocol.pdf"]])
+    );
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.pending).toBe(true);
+    expect(blocks[0].node.label).toBe("Reading Protocol.pdf…");
+    expect(blocks[0].node.children[0]).toEqual(
+      expect.objectContaining({
+        label: "Reading Protocol.pdf · page 2…",
+      })
+    );
   });
 
   it("updates the pending document count while reads stream in", () => {

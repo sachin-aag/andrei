@@ -135,6 +135,7 @@ import {
   buildChatActivityBlocks,
   documentReviewActivityNode,
   readChatToolPart,
+  type AttachmentFilenameLookup,
   type ChatToolPartInfo,
 } from "@/lib/ai/chat/chat-activity-ui";
 import {
@@ -388,12 +389,14 @@ const MessageTurn = memo(function MessageTurn({
   askUserActive,
   onAnswerQuestions,
   streaming = false,
+  filenameByAttachmentId,
 }: {
   message: UIMessage;
   chatTarget: ChatMessageTarget | null;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
+  filenameByAttachmentId?: AttachmentFilenameLookup;
 }) {
   const isUser = message.role === "user";
   const targetLabel = chatTarget ? chatMessageTargetLabel(chatTarget) : null;
@@ -465,7 +468,10 @@ const MessageTurn = memo(function MessageTurn({
       {showEmptyError ? (
         <p className="text-sm text-red-600">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
       ) : (
-        buildChatActivityBlocks(filterPartsForActivityDisplay(parts)).map(
+        buildChatActivityBlocks(
+          filterPartsForActivityDisplay(parts),
+          filenameByAttachmentId
+        ).map(
           (block, i) => {
             if (block.kind === "text") {
               if (!block.text.trim()) return null;
@@ -635,6 +641,14 @@ export function ChatPanel({
       ? aiSuggestionLockReason(accessUser, report)
       : "You can't propose edits on this report right now.";
   const { attachments } = useReportAttachments();
+  const filenameByAttachmentId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const attachment of attachments) {
+      const name = attachment.filename.trim();
+      if (name) map.set(attachment.id, name);
+    }
+    return map;
+  }, [attachments]);
   const [input, setInput] = useState("");
   const showUploadingNotice = useDocumentUploadingNotice(input);
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
@@ -1652,6 +1666,7 @@ export function ChatPanel({
               key={m.id}
               message={m}
               chatTarget={m.chatTarget}
+              filenameByAttachmentId={filenameByAttachmentId}
               askUserActive={
                 visibleStartIndex + i === messages.length - 1 &&
                 !busy &&
