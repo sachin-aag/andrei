@@ -205,6 +205,12 @@ function headersOf(table: JSONContent): string[] {
   return header ? rowSnapshot(header) : [];
 }
 
+function liveHeadersHint(headers: readonly string[]): string {
+  if (headers.length === 0) return "Re-read with read_section.";
+  const line = headers.map((header) => header.trim() || "(empty)").join(" | ");
+  return `Live headers (${headers.length}): ${line}. Call read_section and copy those columns.`;
+}
+
 function cellsMatch(
   actual: readonly string[],
   expected: readonly string[] | undefined
@@ -470,7 +476,7 @@ function applyEditCells(
     if (!row) {
       return fail(
         "bad_scope",
-        `Row ${cell.row} does not exist. Re-read with read_section.`
+        `Row ${cell.row} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`
       );
     }
     const cells = rowCells(row);
@@ -478,7 +484,7 @@ function applyEditCells(
     if (!node) {
       return fail(
         "bad_scope",
-        `Cell [${cell.row},${cell.col}] does not exist. Re-read with read_section.`
+        `Cell [${cell.row},${cell.col}] does not exist. ${liveHeadersHint(headersOf(table))}`
       );
     }
     if (fixedColumns && cell.row === 0) {
@@ -533,7 +539,8 @@ function applyInsertRows(
       `Row ${operation.afterRow} no longer matches the expected snapshot. Re-read with read_section.`
     );
   }
-  const colCount = rowCells(anchor).length;
+  const headerCols = rows[0] ? rowCells(rows[0]).length : 0;
+  const colCount = Math.max(rowCells(anchor).length, headerCols);
   if (colCount === 0) {
     return fail("invalid", "Cannot insert into a table with no columns.");
   }
@@ -541,7 +548,7 @@ function applyInsertRows(
     if (row.length !== colCount) {
       return fail(
         "invalid",
-        `Inserted row ${i} has ${row.length} cell(s); the table has ${colCount} column(s).`
+        `Inserted row ${i} has ${row.length} cell(s); the table has ${colCount} column(s). ${liveHeadersHint(headersOf(table))}`
       );
     }
   }

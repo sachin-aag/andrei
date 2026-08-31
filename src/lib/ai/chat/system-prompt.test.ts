@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v71-voice-english");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v72-live-table-voice-english");
   });
 
   it("understands native-script dictation and replies in English", () => {
@@ -102,6 +102,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Pass/Fail");
     expect(prompt).toContain("Raw Data Ref");
     expect(prompt).toContain("never rename, reorder, add, or drop columns");
+    expect(prompt).toContain("copy fields[].tables[].headers");
+    expect(prompt).toContain("demo Traceability is five columns");
   });
 
   it("omits DV fixed table guidance for investigation reports", () => {
