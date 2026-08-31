@@ -184,6 +184,7 @@ import {
   recordAuditEvent,
 } from "@/lib/audit";
 import {
+  DOCUMENT_SEARCH_MODES,
   listDocumentPagesForReview,
   listReadyDocumentsForReport,
   readDocumentOutline,
@@ -480,6 +481,9 @@ export const SEARCH_DOCUMENTS_MAX_LIMIT = 16;
 export const SEARCH_DOCUMENTS_MAX_QUERIES = 8;
 export const SEARCH_DOCUMENTS_RESULT_CAP = 16;
 export const SEARCH_QUERY_MAX_CHARS = 500;
+/** Also caps `nextExcludePages`, which the model is told to pass straight back. */
+export const SEARCH_EXCLUDE_PAGES_MAX = 80;
+const SEARCH_SCOPES = ["tagged", "all"] as const;
 export const SEARCH_COVERAGE_HINT =
   "Grep loop: this list is ranked, not complete. Pass nextExcludePages as excludePages on the next call. For tables, grep complementary objects (UUT vs equipment, fixtures, serials) before drafting. Use mode=keyword for exact protocol terms. If truncated=true, grep again.";
 
@@ -490,10 +494,72 @@ function clampSearchQueryText(value: string): string {
     : query.slice(0, SEARCH_QUERY_MAX_CHARS);
 }
 
+function coerceSearchQueryList(raw: unknown): string[] {
+  const items = Array.isArray(raw) ? raw : [raw];
+  const out: string[] = [];
+  for (const item of items) {
+    if (typeof item !== "string") continue;
+    const query = clampSearchQueryText(item);
+    if (!query) continue;
+    out.push(query);
+    if (out.length >= SEARCH_DOCUMENTS_MAX_QUERIES) break;
+  }
+  return out;
+}
+
+/** Undefined drops the key so the Zod default applies. */
+function coerceSearchLimit(raw: unknown): number | undefined {
+  const value =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string"
+        ? Number(raw.trim())
+        : Number.NaN;
+  if (!Number.isFinite(value)) return undefined;
+  return Math.min(
+    SEARCH_DOCUMENTS_MAX_LIMIT,
+    Math.max(1, Math.trunc(value))
+  );
+}
+
+function coerceSearchEnum<T extends string>(
+  raw: unknown,
+  allowed: readonly T[]
+): T | undefined {
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim().toLowerCase();
+  return allowed.find((option) => option === value);
+}
+
+function coerceSearchExcludePages(
+  raw: unknown
+): Array<{ attachmentId: string; pageNumber: number }> | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: Array<{ attachmentId: string; pageNumber: number }> = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    const entry = item as Record<string, unknown>;
+    const attachmentId =
+      typeof entry.attachmentId === "string" ? entry.attachmentId.trim() : "";
+    const rawPage = entry.pageNumber ?? entry.page;
+    const pageNumber =
+      typeof rawPage === "number"
+        ? Math.trunc(rawPage)
+        : typeof rawPage === "string"
+          ? Math.trunc(Number(rawPage.trim()))
+          : Number.NaN;
+    if (!attachmentId || !Number.isFinite(pageNumber) || pageNumber < 1) continue;
+    out.push({ attachmentId, pageNumber });
+  }
+  // Keep the most recently seen pages when the model replays an oversized list.
+  return out.length > 0 ? out.slice(-SEARCH_EXCLUDE_PAGES_MAX) : undefined;
+}
+
 /**
- * Gemini sometimes ignores JSON Schema maxItems/maximum on search_documents
- * (e.g. 8 queries and limit 20). Clamp so Zod does not throw
- * AI_InvalidToolInputError and abort the assistant stream.
+ * Gemini ignores JSON Schema bounds and types on search_documents (the Vercel
+ * incident sent 8 queries with limit 20). Normalize every field so Zod cannot
+ * throw AI_InvalidToolInputError, which surfaces to the engineer as a failed
+ * turn. Only a call with no usable query at all is still rejected.
  */
 export function coerceSearchDocumentsInput(raw: unknown): unknown {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
@@ -501,30 +567,29 @@ export function coerceSearchDocumentsInput(raw: unknown): unknown {
   }
   const next: Record<string, unknown> = { ...raw };
 
-  if (typeof next.limit === "number" && Number.isFinite(next.limit)) {
-    next.limit = Math.min(
-      SEARCH_DOCUMENTS_MAX_LIMIT,
-      Math.max(1, Math.trunc(next.limit))
-    );
-  }
+  const limit = coerceSearchLimit(next.limit);
+  if (limit === undefined) delete next.limit;
+  else next.limit = limit;
 
-  if (typeof next.query === "string") {
-    const query = clampSearchQueryText(next.query);
-    if (query) next.query = query;
-    else delete next.query;
-  }
+  const mode = coerceSearchEnum(next.mode, DOCUMENT_SEARCH_MODES);
+  if (mode === undefined) delete next.mode;
+  else next.mode = mode;
 
-  if (Array.isArray(next.queries)) {
-    const queries: string[] = [];
-    for (const item of next.queries) {
-      if (typeof item !== "string") continue;
-      const query = clampSearchQueryText(item);
-      if (!query) continue;
-      queries.push(query);
-      if (queries.length >= SEARCH_DOCUMENTS_MAX_QUERIES) break;
-    }
-    next.queries = queries.length > 0 ? queries : undefined;
-  }
+  const scope = coerceSearchEnum(next.scope, SEARCH_SCOPES);
+  if (scope === undefined) delete next.scope;
+  else next.scope = scope;
+
+  const excludePages = coerceSearchExcludePages(next.excludePages);
+  if (excludePages === undefined) delete next.excludePages;
+  else next.excludePages = excludePages;
+
+  // A single string, a number, or an oversized list all become <= 8 strings.
+  const queries = coerceSearchQueryList(next.queries);
+  const query = coerceSearchQueryList(next.query);
+  if (queries.length > 0) next.queries = queries;
+  else delete next.queries;
+  if (query.length > 0) next.query = query[0];
+  else delete next.query;
 
   return next;
 }
@@ -547,6 +612,11 @@ export function collectSearchQueries(input: {
   return out;
 }
 
+/**
+ * Accumulate seen pages across grep rounds. Capped at the schema maximum,
+ * keeping the most recent pages: the model is told to pass this straight back
+ * as `excludePages`, so an unbounded list would fail its own tool schema.
+ */
 export function mergeExcludePages(
   previous: readonly { attachmentId: string; pageNumber: number }[] | undefined,
   hits: readonly { attachmentId: string; pageNumber: number }[]
@@ -559,7 +629,7 @@ export function mergeExcludePages(
     seen.add(key);
     out.push({ attachmentId: page.attachmentId, pageNumber: page.pageNumber });
   }
-  return out;
+  return out.slice(-SEARCH_EXCLUDE_PAGES_MAX);
 }
 
 function shouldGateDraftOnDocumentReview(input: {
@@ -605,7 +675,7 @@ const searchExcludePagesField = z
       pageNumber: z.number().int().min(1),
     })
   )
-  .max(80)
+  .max(SEARCH_EXCLUDE_PAGES_MAX)
   .optional()
   .describe(
     "Pages already seen. Pass nextExcludePages from the previous search_documents result so later greps skip them."

@@ -5,6 +5,7 @@ import {
   SEARCH_DOCUMENTS_MAX_LIMIT,
   SEARCH_DOCUMENTS_MAX_QUERIES,
   SEARCH_DOCUMENTS_RESULT_CAP,
+  SEARCH_EXCLUDE_PAGES_MAX,
   SEARCH_QUERY_MAX_CHARS,
   coerceSearchDocumentsInput,
   collectSearchQueries,
@@ -103,7 +104,7 @@ export function buildAnalyticsSearchDocumentsTool(opts: {
               pageNumber: z.number().int().min(1),
             })
           )
-          .max(80)
+          .max(SEARCH_EXCLUDE_PAGES_MAX)
           .optional()
           .describe(
             "Pages already seen. Pass nextExcludePages only on the second (last) search."

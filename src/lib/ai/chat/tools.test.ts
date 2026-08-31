@@ -9,6 +9,7 @@ import {
   mergeExcludePages,
   SEARCH_DOCUMENTS_MAX_LIMIT,
   SEARCH_DOCUMENTS_MAX_QUERIES,
+  SEARCH_EXCLUDE_PAGES_MAX,
 } from "@/lib/ai/chat/tools";
 import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 import {
@@ -137,6 +138,68 @@ describe("coerceSearchDocumentsInput", () => {
     }) as { limit: number };
     expect(coerced.limit).toBe(SEARCH_DOCUMENTS_MAX_LIMIT);
   });
+
+  it("accepts a numeric string limit and a bare-string queries value", () => {
+    const coerced = coerceSearchDocumentsInput({
+      queries: "UUT serial numbers",
+      limit: "20",
+    }) as { limit: number; queries: string[] };
+    expect(coerced.limit).toBe(SEARCH_DOCUMENTS_MAX_LIMIT);
+    expect(coerced.queries).toEqual(["UUT serial numbers"]);
+  });
+
+  it("drops unknown enum values so the schema default applies", () => {
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      mode: "lexical",
+      scope: "everything",
+    }) as Record<string, unknown>;
+    expect(coerced.mode).toBeUndefined();
+    expect(coerced.scope).toBeUndefined();
+    expect(coerced.query).toBe("UUT");
+  });
+
+  it("keeps the most recent pages when excludePages outgrows the cap", () => {
+    const pages = Array.from({ length: 120 }, (_, i) => ({
+      attachmentId: "att_1",
+      pageNumber: i + 1,
+    }));
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      excludePages: pages,
+    }) as { excludePages: Array<{ pageNumber: number }> };
+    expect(coerced.excludePages).toHaveLength(SEARCH_EXCLUDE_PAGES_MAX);
+    expect(coerced.excludePages.at(-1)?.pageNumber).toBe(120);
+  });
+
+  it("drops malformed excludePages entries instead of failing the call", () => {
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      excludePages: [
+        { attachmentId: "att_1", pageNumber: 3 },
+        { attachmentId: "att_1", pageNumber: 0 },
+        { attachmentId: "", pageNumber: 4 },
+        "nonsense",
+      ],
+    }) as { excludePages: Array<{ attachmentId: string; pageNumber: number }> };
+    expect(coerced.excludePages).toEqual([
+      { attachmentId: "att_1", pageNumber: 3 },
+    ]);
+  });
+});
+
+describe("mergeExcludePages cap", () => {
+  it("never returns more pages than the tool schema accepts", () => {
+    const hits = Array.from({ length: 200 }, (_, i) => ({
+      attachmentId: "att_1",
+      pageNumber: i + 1,
+    }));
+    const merged = mergeExcludePages(undefined, hits);
+    expect(merged).toHaveLength(SEARCH_EXCLUDE_PAGES_MAX);
+    // The model is told to pass nextExcludePages straight back, so the value we
+    // hand it must satisfy excludePages.max().
+    expect(merged.at(-1)?.pageNumber).toBe(200);
+  });
 });
 
 describe("collectSearchQueries", () => {
@@ -241,9 +304,13 @@ describe("buildChatTools search_documents scoping", () => {
     expect(
       accepts(tools, "search_documents", { query: "cleaning", scope: "all" })
     ).toBe(true);
-    expect(
-      accepts(tools, "search_documents", { query: "cleaning", scope: "everything" })
-    ).toBe(false);
+    // An unknown enum value falls back to the default instead of failing the
+    // tool call and ending the engineer's turn.
+    const unknownScope = inputSchemaOf(tools, "search_documents").parse({
+      query: "cleaning",
+      scope: "everything",
+    }) as Record<string, unknown>;
+    expect(unknownScope.scope).toBe("tagged");
   });
 });
 
