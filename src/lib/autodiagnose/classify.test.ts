@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { classifyVercelError, isPreviewEnvironment, isProductionEnvironment } from "./classify";
 import type { VercelErrorEvent } from "./types";
 
+/** Production Vercel runtime log — does not fail a deploy. */
+const CHAT_INVALID_TOOL_INPUT_LOG = `chat: assistant stream error {
+  reportId: 'i5hpsr8nwcmyp1dxn48dm97h',
+  sessionId: 'ld5cpa7x16o1sa4tqdractiu',
+  error: 'AI_InvalidToolInputError: Invalid input for tool search_documents: Type validation failed: Value: {"limit":20,"queries":["\\"M3-HRS-GN-001\\"","\\"M3-HRS-PS-003\\" OR \\"M3-HRS-PS-014\\""],"mode":"keyword"}.\\n' +
+    'Error message: [\\n' +
+    '  {\\n' +
+    '    "origin": "array",\\n' +
+    '    "code": "too_big",\\n' +
+    '    "maximum": 4,\\n' +
+    '    "path": ["queries"],\\n' +
+    '    "message": "Too big: expected array to have <=4 items"\\n' +
+    '  }\\n' +
+    ']'
+}`;
+
 function event(overrides: Partial<VercelErrorEvent> = {}): VercelErrorEvent {
   return {
     source: "deployment_status",
@@ -108,6 +124,58 @@ describe("classifyVercelError", () => {
     );
     expect(result.action).toBe("investigate");
     expect(result.confidence).toBe("low");
+  });
+
+  it("investigates chat InvalidToolInputError as a high-confidence AI bug", () => {
+    const result = classifyVercelError(
+      event({
+        source: "runtime",
+        text: CHAT_INVALID_TOOL_INPUT_LOG,
+      })
+    );
+    expect(result.action).toBe("investigate");
+    expect(result.category).toBe("ai");
+    expect(result.confidence).toBe("high");
+    expect(result.reason).toMatch(/tool input failed schema validation/i);
+  });
+
+  it("investigates analytics-chat stream errors as AI", () => {
+    const result = classifyVercelError(
+      event({
+        source: "runtime",
+        text: "analytics-chat: assistant stream error { error: 'boom' }",
+      })
+    );
+    expect(result.action).toBe("investigate");
+    expect(result.category).toBe("ai");
+    expect(result.confidence).toBe("high");
+  });
+
+  it("still skips Gemini 429 even when it arrives as a chat stream error", () => {
+    const result = classifyVercelError(
+      event({
+        source: "runtime",
+        text: "chat: assistant stream error generativelanguage.googleapis.com returned 429 rate limit",
+      })
+    );
+    expect(result.action).toBe("skip");
+    expect(result.category).toBe("third_party");
+  });
+
+  it("fingerprints the same chat schema error across report and session ids", () => {
+    const a = classifyVercelError(
+      event({ source: "runtime", text: CHAT_INVALID_TOOL_INPUT_LOG })
+    );
+    const b = classifyVercelError(
+      event({
+        source: "runtime",
+        text: CHAT_INVALID_TOOL_INPUT_LOG.replace(
+          "i5hpsr8nwcmyp1dxn48dm97h",
+          "zzzzzzzzzzzzzzzzzzzzzzzzz"
+        ).replace("ld5cpa7x16o1sa4tqdractiu", "yyyyyyyyyyyyyyyyyyyyyyyyy"),
+      })
+    );
+    expect(a.fingerprint).toBe(b.fingerprint);
   });
 
   it("fingerprints ignore volatile ids", () => {

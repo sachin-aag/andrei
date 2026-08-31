@@ -372,5 +372,6 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - Toast notifications via `sonner`.
 - Observability: Langfuse tracing + OpenTelemetry (`src/instrumentation.ts`).
   Unhandled server errors also go to PostHog (`onRequestError`). Production
-  Vercel failures can launch a Cursor autodiagnose agent
+  Vercel failures and runtime logs (including `chat: assistant stream error`)
+  can launch a Cursor autodiagnose agent
   (`docs/vercel-error-autodiagnose.md`).

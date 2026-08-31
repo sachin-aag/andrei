@@ -24,6 +24,13 @@ or an upstream outage, stop and do not open a PR.
    - missing `DATABASE_URL` or other env
    - Gemini / Vertex / AI Gateway quota, 429, 401, 403
    - preview/staging (do not PR a feature branch onto `main`)
+   Investigate and open a draft PR when:
+   - TypeScript / compile / SQL schema bugs
+   - function crash, TypeError, HTTP 500
+   - **chat runtime:** `chat: assistant stream error`,
+     `analytics-chat: assistant stream error`, `AI_InvalidToolInputError`,
+     `Invalid input for tool …` (caught stream failures do not fail the
+     deploy; still fix them)
 2. **Dedup.** Search open PRs and commit comments for
    `autodiagnose-fingerprint: <id>`. If one exists, stop.
 3. **Pull evidence** (fail-soft — missing MCP is not a reason to skip a clear

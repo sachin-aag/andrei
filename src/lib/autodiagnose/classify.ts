@@ -125,6 +125,19 @@ const RUNTIME_PATTERNS: Array<{ re: RegExp; reason: string }> = [
 
 const AI_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   {
+    re: /AI_InvalidToolInputError|InvalidToolInputError|Invalid input for tool /,
+    reason:
+      "Chat tool input failed schema validation and killed the assistant stream",
+  },
+  {
+    re: /AI_NoSuchToolError|NoSuchToolError/,
+    reason: "Chat called a tool that is not registered",
+  },
+  {
+    re: /(?:analytics-)?chat: assistant stream error/,
+    reason: "Chat assistant stream crashed in application code",
+  },
+  {
     re: /AI_APICallError|NoOutputGeneratedError|NoObjectGeneratedError/,
     reason: "AI SDK call failed in application code",
   },
@@ -229,11 +242,15 @@ export function classifyVercelError(event: VercelErrorEvent): ClassifyResult {
 
   const ai = firstMatch(text, AI_PATTERNS);
   if (ai) {
+    const highConfidence =
+      /InvalidToolInputError|Invalid input for tool |NoSuchToolError|(?:analytics-)?chat: assistant stream error/i.test(
+        text
+      );
     return {
       action: "investigate",
       category: "ai",
       reason: ai,
-      confidence: "medium",
+      confidence: highConfidence ? "high" : "medium",
       fingerprint: fingerprintError({ category: "ai", ...base }),
     };
   }

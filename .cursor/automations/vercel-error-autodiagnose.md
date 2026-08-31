@@ -28,6 +28,10 @@ Rules:
 
 - Cursor must **fix the application bug** and open a **draft** pull request.
   Do not stop at a written diagnosis when the defect is in this repo.
+- Runtime Vercel logs are in-scope even when the deploy succeeded. Example:
+  `chat: assistant stream error` / `AI_InvalidToolInputError` / `Invalid
+  input for tool search_documents` (schema rejected the model and killed
+  the stream). Same for `analytics-chat: assistant stream error`.
 - Do not open a PR for canceled deploys, Neon `28P01`, missing env vars,
   upstream 429/quota, or preview deployments.
 - Pull PostHog (exceptions + replay), Langfuse traces, and read-only Neon

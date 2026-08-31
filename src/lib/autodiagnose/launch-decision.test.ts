@@ -96,4 +96,30 @@ describe("buildAutodiagnoseAgentPrompt", () => {
     expect(prompt).toContain("abc123def456");
     expect(prompt).not.toContain("Do not merge. Do not merge");
   });
+
+  it("tells the agent that caught chat stream errors are in-scope", () => {
+    const event: VercelErrorEvent = {
+      source: "runtime",
+      environment: "production",
+      projectName: "andrei-v2",
+      deploymentUrl: null,
+      logUrl: null,
+      sha: null,
+      ref: "main",
+      text: "chat: assistant stream error AI_InvalidToolInputError",
+    };
+    const prompt = buildAutodiagnoseAgentPrompt({
+      event,
+      classification: {
+        action: "investigate",
+        category: "ai",
+        reason: "Chat tool input failed schema validation and killed the assistant stream",
+        confidence: "high",
+        fingerprint: "feedfacecafe",
+      },
+      repository: "https://github.com/sachin-aag/andrei",
+    });
+    expect(prompt).toContain("Caught chat stream errors are in-scope");
+    expect(prompt).toContain("AI_InvalidToolInputError");
+  });
 });

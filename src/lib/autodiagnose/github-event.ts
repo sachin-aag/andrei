@@ -112,12 +112,19 @@ function fromClientPayload(payload: Record<string, unknown>): VercelErrorEvent {
   return {
     source,
     environment: asString(client.environment),
-    projectName: asString(client.projectName),
-    deploymentUrl: asString(client.deploymentUrl),
+    projectName:
+      asString(client.projectName) ?? asString(client.project),
+    deploymentUrl:
+      asString(client.deploymentUrl) ?? asString(client.host),
     logUrl: asString(client.logUrl),
     sha: asString(client.sha),
-    ref: asString(client.ref),
-    text: asString(client.text) ?? asString(client.error) ?? "",
+    ref: asString(client.ref) ?? asString(client.branch),
+    text:
+      asString(client.text) ??
+      asString(client.error) ??
+      asString(client.message) ??
+      asString(client.log) ??
+      "",
   };
 }
 

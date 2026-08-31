@@ -66,6 +66,27 @@ describe("parseAutodiagnoseEvent", () => {
     expect(event.text).toBe("FUNCTION_INVOCATION_FAILED");
   });
 
+  it("parses a Vercel log-drain body without a GitHub event name", () => {
+    const event = parseAutodiagnoseEvent({
+      eventName: "",
+      env: {} as unknown as NodeJS.ProcessEnv,
+      payload: {
+        type: "stdout",
+        source: "lambda",
+        environment: "production",
+        host: "mj.andreihealth.com",
+        branch: "main",
+        message:
+          "chat: assistant stream error { error: 'AI_InvalidToolInputError' }",
+      },
+    });
+    expect(event.source).toBe("runtime");
+    expect(event.environment).toBe("production");
+    expect(event.ref).toBe("main");
+    expect(event.deploymentUrl).toBe("mj.andreihealth.com");
+    expect(event.text).toContain("AI_InvalidToolInputError");
+  });
+
   it("reads workflow_dispatch inputs from env", () => {
     const event = parseAutodiagnoseEvent({
       eventName: "workflow_dispatch",

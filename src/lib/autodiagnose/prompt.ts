@@ -9,7 +9,7 @@ function categoryPlaybook(category: ClassifyResult["category"]): string {
     case "runtime":
       return "Match the stack to a route or component, confirm with PostHog $exception events, then fix the null/timeout/500.";
     case "ai":
-      return "Pull the Langfuse trace around the timestamp, then fix the application path (not a model-provider outage).";
+      return "Pull the Langfuse trace around the timestamp, then fix the application path (not a model-provider outage). Caught chat stream errors are in-scope unless they are an upstream 429/quota.";
     case "database":
       return "Read the Neon error (read-only). If it is a query/schema bug in this repo, fix the SQL or Drizzle usage. Do not rewrite production data.";
     case "not_a_bug":

@@ -209,10 +209,13 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 
 ## Production error autodiagnose
 
-Failed **production** Vercel deploys can launch a Cursor cloud agent that
-classifies the error, reads PostHog / Langfuse / Neon, **fixes the code**,
-and opens a **draft** PR. This is a Cursor Automation (or the GitHub Action
-that POSTs to the Cloud Agents API) — not an in-app SDK. Preview, Neon
+Failed **production** Vercel deploys **and runtime logs** (for example
+`chat: assistant stream error` / `AI_InvalidToolInputError`) can launch a
+Cursor cloud agent that classifies the error, reads PostHog / Langfuse /
+Neon, **fixes the code**, and opens a **draft** PR. Deploy webhooks miss
+caught stream errors — use a production log drain or a scheduled PostHog /
+Langfuse poll. This is a Cursor Automation (or the GitHub Action that
+POSTs to the Cloud Agents API) — not an in-app SDK. Preview, Neon
 `28P01`, canceled deploys, and upstream 429s are skipped. Setup:
 `docs/vercel-error-autodiagnose.md`. Skill:
 `.agents/skills/vercel-error-autodiagnose/SKILL.md`. GitHub secret

@@ -55,11 +55,20 @@ trigger next to the webhook.
 4. Without `CURSOR_API_KEY` the job **succeeds and no-ops** (so forks and
    PRs from contributors are not red).
 
-Manual test:
+Manual test (deploy failure):
 
 ```bash
 gh workflow run "Autodiagnose Vercel error" \
   -f error_text='Type error: src/lib/foo.ts(1,1): error TS2322' \
+  -f environment=production \
+  -f project_name=andrei-v2
+```
+
+Manual test (runtime chat stream — does not fail a deploy):
+
+```bash
+gh workflow run "Autodiagnose Vercel error" \
+  -f error_text='chat: assistant stream error { error: AI_InvalidToolInputError: Invalid input for tool search_documents }' \
   -f environment=production \
   -f project_name=andrei-v2
 ```
@@ -69,16 +78,42 @@ This is a single `POST https://api.cursor.com/v1/agents` with
 
 ## Runtime errors (not just failed deploys)
 
-Deploy webhooks only see **build / deployment.error**. Production 500s need
-telemetry:
+Deploy webhooks only see **build / deployment.error**. Caught application
+errors in a live function (HTTP 200 + a logged failure) never fail the
+deploy. Canonical in-scope example from Vercel runtime logs:
+
+```
+chat: assistant stream error {
+  reportId: '…',
+  sessionId: '…',
+  error: 'AI_InvalidToolInputError: Invalid input for tool search_documents: … Too big: expected array to have <=4 items'
+}
+```
+
+`analytics-chat: assistant stream error` is the same class. The classifier
+treats `AI_InvalidToolInputError`, `Invalid input for tool`, and those
+stream prefixes as **investigate / ai** and Cursor should open a **draft
+PR**. Report/session ids and the tool `Value: {…}` blob are stripped so
+repeats fingerprint together.
+
+Those lines will not fire a Deployment Error webhook. Feed them with one of:
+
+1. **Vercel log drain** (production only) → Cursor Automation webhook or
+   GitHub `repository_dispatch` type `vercel-error`. The parser reads
+   `message` / `log` / `text` from a drain or `client_payload`.
+2. **Scheduled automation** (every 15–30 min) polling PostHog `$exception`
+   and Langfuse ERROR traces since the last run (Memories for the
+   high-water mark). Skip fingerprints already in open PRs.
+3. **Manual:** `gh workflow run "Autodiagnose Vercel error"` with the log
+   excerpt as `error_text`.
+
+Other runtime telemetry:
 
 - **PostHog:** client `capture_exceptions` plus server `onRequestError`
   (`posthog-node`). Query `$exception` / error tracking.
 - **Langfuse:** existing AI traces, plus `nextjs.request_error` spans.
-- **Schedule or Slack:** point the same Cursor Automation at those sources.
 
-A Vercel log drain that POSTs every 5xx at the Cursor webhook will also
-work; keep it production-only or the classifier will skip previews.
+Keep drains production-only or the classifier will skip previews.
 
 ## Classifier (what does *not* get a PR)
 
@@ -94,6 +129,7 @@ work; keep it production-only or the classifier will skip previews.
 | TypeScript / `Failed to compile` | Investigate + fix |
 | `column/relation does not exist`, SQL syntax | Investigate + fix |
 | `FUNCTION_INVOCATION_FAILED`, TypeError, HTTP 500 | Investigate + fix |
+| `chat: assistant stream error`, `AI_InvalidToolInputError`, invalid tool input | Investigate + fix (AI path) |
 
 Duplicates are keyed by `autodiagnose-fingerprint:` (normalized message,
 no deployment ids). The Action also writes that marker as a commit comment
