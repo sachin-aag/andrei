@@ -3,6 +3,16 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { DEMO_PACK, getCustomerPack, MJ_PACK } from "@/lib/customers/packs";
 import { POST } from "@/app/api/reports/import-preview/route";
 
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>();
+  return {
+    ...actual,
+    after: (task: unknown) => {
+      if (typeof task === "function") void (task as () => unknown)();
+    },
+  };
+});
+
 vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),
 }));
@@ -39,6 +49,13 @@ vi.mock("@/lib/import/docx-to-generic-document", () => ({
     narrative: { type: "doc", content: [{ type: "paragraph" }] },
     warnings: [],
   }),
+}));
+
+vi.mock("@/lib/observability/langfuse", () => ({
+  flushLangfuseTraces: vi.fn().mockResolvedValue(undefined),
+  observeWork: (_name: string, fn: () => unknown) => fn(),
+  setRouteObservationIO: vi.fn(),
+  withPropagatedAttributes: (_params: unknown, fn: () => unknown) => fn(),
 }));
 
 const engineer = {

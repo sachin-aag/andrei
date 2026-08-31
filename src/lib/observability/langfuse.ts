@@ -137,7 +137,17 @@ export function endActiveLangfuseObservation(): void {
   trace.getActiveSpan()?.end();
 }
 
-export type LangfuseTraceContext = PropagateAttributesParams & {
-  input?: unknown;
-  output?: unknown;
-};
+/** Run `fn` as a named root observation (background jobs, not route handlers). */
+export function observeWork<T>(
+  name: string,
+  fn: () => T,
+  options?: ObserveRouteOptions
+): T {
+  if (!isLangfuseEnabled()) return fn();
+  return observe(fn, {
+    name,
+    captureInput: false,
+    captureOutput: false,
+    endOnExit: options?.endOnExit ?? true,
+  })();
+}

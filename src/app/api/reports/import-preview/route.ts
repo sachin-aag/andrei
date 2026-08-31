@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import type { DocumentType } from "@/db/schema";
 import { documentTypeEnum } from "@/db/schema";
@@ -13,6 +13,12 @@ import {
   docxBufferToGenericDocument,
   GenericDocxImportError,
 } from "@/lib/import/docx-to-generic-document";
+import {
+  flushLangfuseTraces,
+  observeWork,
+  setRouteObservationIO,
+  withPropagatedAttributes,
+} from "@/lib/observability/langfuse";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -56,9 +62,24 @@ export async function POST(req: Request) {
 
     const buf = await readDocxUpload(file);
     const kind = wordImportFor(getDocumentType(documentType)).kind;
+    after(flushLangfuseTraces);
     switch (kind) {
       case "investigation": {
-        const imported = await docxBufferToImportedReportContent(buf);
+        const imported = await withPropagatedAttributes(
+          {
+            userId: user.id,
+            traceName: "word-import-preview",
+            tags: ["word-import", documentType],
+            metadata: { documentType, filename: file.name },
+          },
+          () =>
+            observeWork("word-import-preview", async () => {
+              setRouteObservationIO({
+                input: { documentType, filename: file.name },
+              });
+              return docxBufferToImportedReportContent(buf);
+            })
+        );
         const deviationNo = imported.header.deviationNo?.trim() ?? null;
         return NextResponse.json({
           deviationNo,
@@ -66,7 +87,21 @@ export async function POST(req: Request) {
         });
       }
       case "generic_body": {
-        await docxBufferToGenericDocument(buf);
+        await withPropagatedAttributes(
+          {
+            userId: user.id,
+            traceName: "word-import-preview",
+            tags: ["word-import", documentType],
+            metadata: { documentType, filename: file.name },
+          },
+          () =>
+            observeWork("word-import-preview", async () => {
+              setRouteObservationIO({
+                input: { documentType, filename: file.name },
+              });
+              return docxBufferToGenericDocument(buf);
+            })
+        );
         return NextResponse.json({
           deviationNo: null,
           documentNo: null,
