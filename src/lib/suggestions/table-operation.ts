@@ -470,7 +470,7 @@ function applyEditCells(
     if (!row) {
       return fail(
         "bad_scope",
-        `Row ${cell.row} does not exist. Re-read with read_section.`
+        `Row ${cell.row} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`
       );
     }
     const cells = rowCells(row);
@@ -533,7 +533,8 @@ function applyInsertRows(
       `Row ${operation.afterRow} no longer matches the expected snapshot. Re-read with read_section.`
     );
   }
-  const colCount = rowCells(anchor).length;
+  const headerCols = rows[0] ? rowCells(rows[0]).length : 0;
+  const colCount = Math.max(rowCells(anchor).length, headerCols);
   if (colCount === 0) {
     return fail("invalid", "Cannot insert into a table with no columns.");
   }

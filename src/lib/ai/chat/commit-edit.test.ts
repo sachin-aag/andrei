@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { applyCommitToSectionContent } from "@/lib/ai/chat/commit-edit";
+import {
+  DV_TRACEABILITY_HEADERS,
+  seededTableDoc,
+} from "@/lib/document-types/design-verification/sections";
+import { extractRawRows } from "@/lib/document-types/design-verification/matrix-parser";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 
@@ -96,6 +101,38 @@ describe("applyCommitToSectionContent", () => {
     expect(
       flattenForAnchor(getRichFieldValue(result.content, "narrative")).text
     ).toContain("approved");
+  });
+
+  it("applies demo traceability edit_cells without collapsing the 5-col matrix", () => {
+    const result = applyCommitToSectionContent({
+      content: { table: seededTableDoc(DV_TRACEABILITY_HEADERS) },
+      section: "traceability",
+      targetField: "table",
+      documentType: "design_verification",
+      input: {
+        kind: "table",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            { row: 1, col: 0, insertText: "SYS-006" },
+            { row: 1, col: 1, insertText: "Authentication required." },
+            { row: 1, col: 2, insertText: "TM-001" },
+            { row: 1, col: 3, insertText: "PASS" },
+            { row: 1, col: 4, insertText: "N/A" },
+          ],
+        },
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const raw = extractRawRows(
+      getRichFieldValue(result.content, "table")
+    );
+    expect(raw).not.toHaveProperty("error");
+    if ("error" in raw) return;
+    expect(raw.headers).toEqual([...DV_TRACEABILITY_HEADERS]);
+    expect(raw.dataRows[0]?.[0]).toBe("SYS-006");
   });
 
   it("returns placeholder_conflict when a redraft would wipe a filled placeholder", () => {

@@ -1,6 +1,9 @@
 import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
-import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
+import {
+  DV_TRACEABILITY_HEADERS,
+  seededTableDoc,
+} from "@/lib/document-types/design-verification/sections";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import {
   applyTableOperation,
@@ -189,6 +192,48 @@ describe("applyTableOperation", () => {
     expect(appended.ok).toBe(true);
     if (!appended.ok) return;
     expect(cellText(appended.doc, 3, 0)).toBe("end");
+  });
+
+  it("sizes insert_rows from the header when the last data row is narrower", () => {
+    const ragged = tableDoc(
+      [...DV_TRACEABILITY_HEADERS],
+      [["SYS-006", "Auth required"]]
+    );
+    const result = applyTableOperation(
+      ragged,
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [[
+          "SYS-007",
+          "Session timeout",
+          "TM-002",
+          "PASS",
+          "N/A",
+        ]],
+      },
+      { section: "traceability", targetField: "table" }
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 2, 0)).toBe("SYS-007");
+    expect(cellText(result.doc, 2, 4)).toBe("N/A");
+  });
+
+  it("tells the model to insert_rows when edit_cells targets a missing row", () => {
+    const result = applyTableOperation(
+      seededTableDoc(DV_TRACEABILITY_HEADERS),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 2, col: 0, insertText: "SYS-007" }],
+      },
+      { section: "traceability", targetField: "table" }
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("bad_scope");
+    expect(result.hint).toMatch(/insert_rows/);
   });
 
   it("deletes multiple rows from the highest index downward", () => {
