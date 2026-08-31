@@ -42,13 +42,20 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
-import { suggestionEditFromComment } from "@/lib/suggestions/validate-suggestion";
+import { suggestionEditFromComment, frozenPayloadStillPending } from "@/lib/suggestions/validate-suggestion";
+import type { PlannedOperation } from "@/lib/suggestions/diff-plan";
+import {
+  persistMergedAsTrackedChange,
+  resolveSuggestionMerge,
+  writeMergedField,
+} from "@/lib/suggestions/resolve-merge";
 import { findOpenBlockPair } from "@/lib/suggestions/same-turn-block-pair";
 
 export type AcceptSuggestionResult =
   | {
       ok: true;
       nextSection: Record<string, unknown>;
+      remainder?: "conflict";
       dismissed: CommentRecord[];
     }
   | {
@@ -85,8 +92,13 @@ export type ApplySuggestionToContentArgs = {
 };
 
 export type ApplySuggestionToContentResult =
-  | { ok: true; nextSection: Record<string, unknown> }
-  | { ok: false; reason: LocateStatus | "placeholder_conflict" };
+  | {
+      ok: true;
+      nextSection: Record<string, unknown>;
+      remainder?: "conflict";
+      operations?: PlannedOperation[];
+    }
+  | { ok: false; reason: LocateStatus | "noop" | "placeholder_conflict" };
 
 export const PLACEHOLDER_CONFLICT_MESSAGE =
   "This rewrite would wipe filled placeholders. Dismiss it or use a targeted edit.";
@@ -112,6 +124,58 @@ export function applySuggestionToContent(
     comment.contentPath,
     fieldContentPath ?? comment.contentPath ?? "narrative"
   );
+
+  const resolved = resolveSuggestionMerge({
+    section,
+    comment,
+    sectionContent,
+    fieldContentPath,
+  });
+  if (resolved.merge) {
+    if (resolved.merge.status === "noop") {
+      if (
+        !frozenPayloadStillPending(
+          comment,
+          section,
+          sectionContent,
+          fieldContentPath
+        )
+      ) {
+        return { ok: false, reason: "noop" };
+      }
+    } else {
+      const merged = resolved.merge.merged;
+      let nextSection = writeMergedField({
+        sectionContent,
+        section,
+        path: resolved.path,
+        merged,
+      });
+      if (
+        persistAsTrackedChange &&
+        isRichTargetField(section, resolved.path) &&
+        typeof resolved.current !== "string" &&
+        typeof merged !== "string"
+      ) {
+        nextSection = setRichFieldValue(
+          sectionContent,
+          resolved.path,
+          persistMergedAsTrackedChange({
+            current: resolved.current,
+            merged,
+            commentId: comment.id,
+            createdAt: comment.createdAt,
+          })
+        );
+      }
+      return {
+        ok: true,
+        nextSection,
+        remainder: resolved.merge.status === "conflict" ? "conflict" : undefined,
+        operations: resolved.operations,
+      };
+    }
+  }
 
   if (comment.kind === "ai_redraft") {
     const redraft = parseAiRedraftCommentContent(comment.content);
@@ -318,6 +382,8 @@ export async function acceptSuggestion(args: {
   );
   let content = args.sectionContent;
   const resolved: CommentRecord[] = [];
+  const operationsById = new Map<string, PlannedOperation[]>();
+  let remainder: "conflict" | undefined;
   for (const item of uniqueSequence) {
     const next = applySuggestionToContent({
       ...args,
@@ -327,13 +393,36 @@ export async function acceptSuggestion(args: {
         uniqueSequence.length > 1 && item.id === uniqueSequence[0]?.id,
     });
     if (!next.ok) {
-      if (item.id === args.comment.id) return next;
+      if (next.reason === "noop" && item.id === args.comment.id) {
+        try {
+          await patchCommentStatus(args.reportId, args.comment.id, "dismissed", {
+            content: withResolutionReason(
+              args.comment.content,
+              "already_present"
+            ),
+          });
+        } catch (error) {
+          return { ok: false, reason: "status_failed", error };
+        }
+        return { ok: true, nextSection: args.sectionContent, dismissed: [] };
+      }
+      if (item.id === args.comment.id) {
+        return {
+          ok: false,
+          reason: next.reason === "noop" ? "not_found" : next.reason,
+        };
+      }
       continue;
     }
     content = next.nextSection;
+    if (next.remainder === "conflict") {
+      if (item.id === args.comment.id) remainder = "conflict";
+      continue;
+    }
     resolved.push(item);
+    if (next.operations) operationsById.set(item.id, next.operations);
   }
-  if (resolved.length === 0) {
+  if (resolved.length === 0 && remainder !== "conflict") {
     return { ok: false, reason: "not_found" };
   }
   const resolvedIds = new Set(resolved.map((item) => item.id));
@@ -347,23 +436,44 @@ export async function acceptSuggestion(args: {
   } catch (error) {
     return { ok: false, reason: "save_failed", error };
   }
+  const dismissed =
+    remainder === "conflict" && resolved.length === 0
+      ? []
+      : superseded.map((sibling) => ({
+          ...sibling,
+          status: "dismissed" as const,
+          content: withResolutionReason(
+            sibling.content,
+            resolutionReasonSupersededBy(args.comment.id)
+          ),
+        }));
+  if (remainder === "conflict" && resolved.length === 0) {
+    return {
+      ok: true,
+      nextSection: content,
+      remainder: "conflict",
+      dismissed,
+    };
+  }
   try {
-    await patchCommentStatuses(
-      args.reportId,
-      resolved.map((item) => item.id),
-      "resolved"
-    );
-    const contentById: Record<string, string> = {};
-    for (const sibling of superseded) {
-      contentById[sibling.id] = withResolutionReason(
-        sibling.content,
-        resolutionReasonSupersededBy(args.comment.id)
-      );
+    for (const item of resolved) {
+      const operations = operationsById.get(item.id);
+      await patchCommentStatus(args.reportId, item.id, "resolved", {
+        operations: operations?.map((op) => ({
+          opIndex: op.opIndex,
+          coverage: op.coverage,
+          classification: op.classification,
+        })),
+      });
     }
-    if (superseded.length > 0) {
+    const contentById: Record<string, string> = {};
+    for (const sibling of dismissed) {
+      contentById[sibling.id] = sibling.content;
+    }
+    if (dismissed.length > 0) {
       await patchCommentStatuses(
         args.reportId,
-        superseded.map((c) => c.id),
+        dismissed.map((c) => c.id),
         "dismissed",
         contentById
       );
@@ -371,15 +481,7 @@ export async function acceptSuggestion(args: {
   } catch (error) {
     return { ok: false, reason: "status_failed", error };
   }
-  const dismissed = superseded.map((sibling) => ({
-    ...sibling,
-    status: "dismissed" as const,
-    content: withResolutionReason(
-      sibling.content,
-      resolutionReasonSupersededBy(args.comment.id)
-    ),
-  }));
-  return { ok: true, nextSection: content, dismissed };
+  return { ok: true, nextSection: content, remainder, dismissed };
 }
 
 /**

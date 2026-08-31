@@ -258,6 +258,12 @@ export function SuggestionCardFace({
         </p>
       ) : null}
 
+      {phase === "steady" && validation.mergeStatus === "conflict" ? (
+        <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200/80 rounded px-2 py-1.5 leading-snug">
+          {suggestionStaleMessage(validation)}
+        </p>
+      ) : null}
+
       {phase === "steady" && queueStaleHint ? (
         <p className="text-[10px] text-[var(--muted-foreground)]">{queueStaleHint}</p>
       ) : null}
@@ -352,6 +358,7 @@ export function SuggestionCardFace({
             >
               {pending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
               Apply
+              {validation.mergeStatus === "conflict" ? " compatible changes" : ""}
             </Button>
             <Button
               type="button"

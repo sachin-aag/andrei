@@ -20,7 +20,6 @@ export type CommitEditFailureStatus =
   | "ambiguous"
   | "cross_cell"
   | "bad_scope"
-  | "too_large"
   | "no_table"
   | "stale"
   | "fixed_schema"

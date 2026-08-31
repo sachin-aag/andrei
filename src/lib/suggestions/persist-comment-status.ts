@@ -19,20 +19,49 @@ function messageForStatus(status: number, serverMessage?: string): string {
   return "Could not update suggestion. Please try again.";
 }
 
+export type SuggestionOperationAudit = {
+  opIndex: number;
+  coverage: number;
+  classification: "edit" | "rewrite";
+};
+
+export type PatchCommentStatusExtra =
+  | string
+  | {
+      content?: string;
+      operations?: readonly SuggestionOperationAudit[];
+    };
+
+function extraContent(extra?: PatchCommentStatusExtra): string | undefined {
+  if (typeof extra === "string") return extra;
+  return extra?.content;
+}
+
+function extraOperations(
+  extra?: PatchCommentStatusExtra,
+): readonly SuggestionOperationAudit[] | undefined {
+  if (!extra || typeof extra === "string") return undefined;
+  return extra.operations;
+}
+
 export async function patchCommentStatus(
   reportId: string,
   commentId: string,
   status: "open" | "resolved" | "dismissed",
-  content?: string
+  extra?: PatchCommentStatusExtra,
 ): Promise<void> {
+  const content = extraContent(extra);
+  const operations = extraOperations(extra);
   let res: Response;
   try {
     res = await fetch(`/api/reports/${reportId}/comments/${commentId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        content !== undefined ? { status, content } : { status }
-      ),
+      body: JSON.stringify({
+        status,
+        ...(content != null ? { content } : {}),
+        ...(operations ? { operations } : {}),
+      }),
     });
   } catch {
     throw new CommentPersistError(0, "Could not update suggestion. Please try again.");

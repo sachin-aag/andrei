@@ -6,6 +6,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type FormEvent,
+  type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -21,6 +23,12 @@ import {
   placeholderSpanAtOffset,
 } from "@/lib/plain-text/placeholder-at-offset";
 import { getTextareaSelectionClientRect } from "@/lib/plain-text/textarea-selection-rect";
+import {
+  selectionTouchesLockedPlainText,
+  skipLockedPlainTextOnBackspace,
+  skipLockedPlainTextOnDelete,
+  type PlainTextRange,
+} from "@/lib/suggestions/plain-text-preview";
 import {
   useReportComments,
   useReportData,
@@ -49,6 +57,7 @@ export function PlainTextHighlightedInput({
   suggestionPreviewHeld,
   inlineSuggestionWidget,
   suggestionWidgetAnchorRef,
+  lockRanges,
   "aria-label": ariaLabel,
 }: {
   value: string;
@@ -68,6 +77,8 @@ export function PlainTextHighlightedInput({
   /** Accept/dismiss widget, positioned after the suggestion in the mirror layer. */
   inlineSuggestionWidget?: ReactNode;
   suggestionWidgetAnchorRef?: RefObject<HTMLSpanElement | null>;
+  /** Stored-value ranges that must not be typed into (preview delete runs). */
+  lockRanges?: readonly PlainTextRange[];
   "aria-label"?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -210,6 +221,58 @@ export function PlainTextHighlightedInput({
     });
   }, [refreshSelectionUi, selectPlaceholderAtCursor, value]);
 
+  const handleTextareaKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (!lockRanges?.length) return;
+      const el = event.currentTarget;
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      if (event.key === "Backspace") {
+        if (start !== end) {
+          if (selectionTouchesLockedPlainText(start, end, lockRanges)) {
+            event.preventDefault();
+          }
+          return;
+        }
+        const skipTo = skipLockedPlainTextOnBackspace(start, lockRanges);
+        if (skipTo == null) return;
+        event.preventDefault();
+        el.setSelectionRange(skipTo, skipTo);
+        return;
+      }
+      if (event.key === "Delete") {
+        if (start !== end) {
+          if (selectionTouchesLockedPlainText(start, end, lockRanges)) {
+            event.preventDefault();
+          }
+          return;
+        }
+        const skipTo = skipLockedPlainTextOnDelete(start, lockRanges);
+        if (skipTo == null) return;
+        event.preventDefault();
+        el.setSelectionRange(skipTo, skipTo);
+      }
+    },
+    [lockRanges]
+  );
+
+  const handleTextareaBeforeInput = useCallback(
+    (event: FormEvent<HTMLTextAreaElement>) => {
+      if (!lockRanges?.length) return;
+      const el = event.currentTarget;
+      if (
+        selectionTouchesLockedPlainText(
+          el.selectionStart,
+          el.selectionEnd,
+          lockRanges
+        )
+      ) {
+        event.preventDefault();
+      }
+    },
+    [lockRanges]
+  );
+
   const handleTextareaDoubleClick = useCallback(() => {
     window.requestAnimationFrame(() => {
       if (selectPlaceholderAtCursor()) return;
@@ -283,6 +346,8 @@ export function PlainTextHighlightedInput({
       }
     },
     onSelect: refreshSelectionUi,
+    onKeyDown: handleTextareaKeyDown,
+    onBeforeInput: handleTextareaBeforeInput,
     onKeyUp: refreshSelectionUi,
     onMouseUp: handleTextareaMouseUp,
     onDoubleClick: handleTextareaDoubleClick,
