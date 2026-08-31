@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { getAiBudgetStatus } from "@/lib/ai/usage";
 import { getAttachmentPageBudgetStatus } from "@/lib/attachments/page-budget";
+import { getVoiceBudgetStatus } from "@/lib/voice/budget";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +16,14 @@ export default async function AdminLimitsPage() {
   if (!user) redirect("/login");
   if (user.role !== "admin") redirect("/");
 
-  const [users, policy, aiBudget, attachmentPageBudget] = await Promise.all([
-    listAdminUsers(),
-    getPasswordPolicy(),
-    getAiBudgetStatus(),
-    getAttachmentPageBudgetStatus(),
-  ]);
+  const [users, policy, aiBudget, attachmentPageBudget, voiceBudget] =
+    await Promise.all([
+      listAdminUsers(),
+      getPasswordPolicy(),
+      getAiBudgetStatus(),
+      getAttachmentPageBudgetStatus(),
+      getVoiceBudgetStatus(),
+    ]);
   const shellUsers = users.map(({ id, name, email, role, title }) => ({
     id,
     name,
@@ -43,6 +46,7 @@ export default async function AdminLimitsPage() {
         <AdminLimitsPanel
           initialAiBudgetStatus={aiBudget}
           initialAttachmentPageBudgetStatus={attachmentPageBudget}
+          initialVoiceBudgetStatus={voiceBudget}
         />
       </ViewTransition>
     </AppShell>

@@ -18,7 +18,35 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v70-coalesce-nearby");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v74-intent-tool-availability");
+  });
+
+  it("tells an Agent read turn which write tools were stripped", () => {
+    const read = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "read",
+    });
+    expect(read).toContain("Tools available this turn");
+    expect(read).toContain("propose_edit");
+
+    expect(
+      buildChatSystemPrompt({ ...opts, mode: "agent", intent: "write" })
+    ).not.toContain("Tools available this turn");
+    // Ask mode already has its own no-write copy; do not stack a second warning.
+    expect(
+      buildChatSystemPrompt({ ...opts, mode: "plan", intent: "read" })
+    ).not.toContain("Tools available this turn");
+    expect(buildChatSystemPrompt({ ...opts, mode: "agent" })).not.toContain(
+      "Tools available this turn"
+    );
+  });
+
+  it("understands native-script dictation and replies in English", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("## Language");
+    expect(prompt).toContain("Devanagari");
+    expect(prompt).toContain("Reply only in English");
   });
 
   it("requires following the latest user message and forbids drafting on a greeting", () => {
@@ -95,6 +123,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Pass/Fail");
     expect(prompt).toContain("Raw Data Ref");
     expect(prompt).toContain("never rename, reorder, add, or drop columns");
+    expect(prompt).toContain("copy fields[].tables[].headers");
+    expect(prompt).toContain("demo Traceability is five columns");
   });
 
   it("omits DV fixed table guidance for investigation reports", () => {
@@ -347,7 +377,8 @@ describe("buildChatSystemPrompt", () => {
     expect(plan).toContain("Retrieval mode: ADAPTIVE");
     expect(plan).toContain("grep adaptively");
     expect(plan).toContain("excludePages=nextExcludePages");
-    expect(plan).toContain("requirement IDs");
+    expect(plan).toContain("Prefer queries[] in one call");
+    expect(plan).toContain("At most 8 strings per call");
     expect(plan).toContain("ECO/DCR");
     expect(plan).toContain("Do not start a document review");
     expect(plan).not.toContain("Escalate to start_document_review");

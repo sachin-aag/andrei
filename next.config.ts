@@ -22,7 +22,11 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   // Keep native / dynamic-require deps external so NFT copies real files (not pnpm symlinks).
   // mathlive omitted: client components import mathlive/static.css, which cannot be externalized.
-  serverExternalPackages: ["@google-cloud/storage", "@napi-rs/canvas", "wmf"],
+  serverExternalPackages: [
+    "@google-cloud/storage",
+    "@napi-rs/canvas",
+    "wmf",
+  ],
   turbopack: {
     root: appRoot,
   },

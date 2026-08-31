@@ -153,14 +153,57 @@ function flattenHeaders(
 }
 
 /**
+ * gRPC metadata plugins call `headers.forEach`. REST/gaxios and
+ * Vertex spread a plain `{ Authorization }` object. A Map with an enumerable
+ * `Authorization` field satisfies both; a bare object throws
+ * `headers.forEach is not a function` inside the Speech metadata plugin.
+ */
+export class WifAuthHeaders extends Map<string, string> {
+  Authorization: string;
+
+  constructor(accessToken: string) {
+    const authorization = `Bearer ${accessToken}`;
+    super([["Authorization", authorization]]);
+    this.Authorization = authorization;
+  }
+}
+
+function authHeadersRecord(
+  headers: WifAuthHeaders | Record<string, string>
+): Record<string, string> {
+  if (headers instanceof Map) {
+    return Object.fromEntries(headers.entries());
+  }
+  return { ...headers };
+}
+
+/**
  * Auth client for SDKs that accept `googleAuthOptions.authClient`.
  * Must implement `request` — `@google-cloud/storage` resumable uploads call it
  * via `GoogleAuth.request` → `authClient.request` (not just getRequestHeaders).
  */
 export function createWifAuthClient(config: WifConfig) {
+  const getRequestHeaders = async () =>
+    new WifAuthHeaders(await getWifAccessToken(config));
+
   const client = {
-    async getRequestHeaders() {
-      return { Authorization: `Bearer ${await getWifAccessToken(config)}` };
+    universeDomain: "googleapis.com",
+    getRequestHeaders,
+    /**
+     * grpc-js metadata generator. Same headers as getRequestHeaders; callback
+     * form is what older GoogleAuth adapters promisify.
+     */
+    getRequestMetadata(
+      _url?: string | URL | null,
+      callback?: (err: Error | null, headers?: WifAuthHeaders) => void
+    ) {
+      const pending = getRequestHeaders();
+      if (!callback) return pending;
+      pending.then(
+        (headers) => callback(null, headers),
+        (err) => callback(err)
+      );
+      return undefined;
     },
     async getAccessToken() {
       return { token: await getWifAccessToken(config) };
@@ -200,7 +243,7 @@ export function createWifAuthClient(config: WifConfig) {
       return body.signedBlob;
     },
     async request<T>(opts: WifAuthRequestOptions): Promise<WifAuthResponse<T>> {
-      const authHeaders = await client.getRequestHeaders();
+      const authHeaders = await getRequestHeaders();
       const rawUrl = opts.url ?? opts.uri;
       if (!rawUrl) {
         throw new Error("WIF auth client request requires url");
@@ -215,7 +258,7 @@ export function createWifAuthClient(config: WifConfig) {
 
       const headers: Record<string, string> = {
         ...flattenHeaders(opts.headers),
-        ...authHeaders,
+        ...authHeadersRecord(authHeaders),
       };
 
       let body: BodyInit | undefined;

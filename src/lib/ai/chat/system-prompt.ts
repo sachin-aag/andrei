@@ -16,9 +16,13 @@ import {
 } from "@/lib/ai/chat/already-drafted";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
+import {
+  intentToolAvailabilityRule,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v70-coalesce-nearby";
+export const CHAT_PROMPT_VERSION = "chat-v74-intent-tool-availability";
 
 export type ChatMode = "plan" | "agent";
 
@@ -78,6 +82,10 @@ The engineer tagged **${label}** for this conversation. Focus Ask questions and 
 - Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}`;
 }
 
+const LANGUAGE_RULES = `## Language
+The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
+Reply only in English. Drafts, proposed wording, questions, and user-visible tool arguments (insertText, field values) must be English. Quoted source text and proper names may stay in the original language.`;
+
 const USER_INTENT_RULES = `## User intent (required)
 Follow the latest user message. Agent mode means you MAY edit when they asked — not that you should draft because sections are empty, attachments exist, or a section recipe is in this prompt.
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not draft or edit any section.
@@ -105,14 +113,14 @@ function documentRules(
 - Retrieval mode: COMPREHENSIVE. The engineer asked for a complete inventory, matrix, full-document review, or an open set over a multi-page catalog (for example drafting the report when Results must list every executed test) — not a handful of search hits.
 - Reply with ONE short sentence that you are starting a complete review, then call start_document_review. Prefer tagged (@) documents. If several ready documents are untagged, pass attachmentIds for the evidence file rather than walking every file.
 - Call continue_document_review until the tool reports coverage is complete. Do not stop after a few batches. Do not draft from search_documents snippets or the evidence preview.
-- Call finish_document_review before draft_field, edit_table, propose_edit, or claiming completeness. finish_document_review returns allIdentifiers (every mention found — diagnostic only), recommendedInventory (the Requirements Verified / executed-test rows to publish), and a short findings sample (not every page). Draft the results matrix from recommendedInventory only. Preserve each Req. ID exactly, including its family prefix and any dotted suffix (M3-SYS-FN-037 is not SYS-FN-037; SW-SST-5.1.1 is not SW-SST-5). Do not dump allIdentifiers into the matrix. Cite [filename, p. N].
+- Call finish_document_review before draft_field, edit_table, propose_edit, or claiming completeness. finish_document_review returns allIdentifiers (every mention found — diagnostic only), recommendedInventory (the Requirements Verified / executed-test rows to publish), and a short findings sample (not every page). Draft the results matrix from recommendedInventory only. Copy that section's live table headers from read_section / the context map (demo Traceability is not Convergent Results). Preserve each requirement ID exactly, including its family prefix and any dotted suffix (M3-SYS-FN-037 is not SYS-FN-037; SW-SST-5.1.1 is not SW-SST-5). Do not dump allIdentifiers into the matrix. Cite [filename, p. N].
 - Preserve repeated executions and configurations as separate cited findings. If finish reports failed pages, say so — do not claim every page was read.
 - search_documents remains for later fact checks after the review finishes. It is not a substitute for the review. Use document_outline only as a map, not as evidence.`;
       break;
     case "adaptive":
       retrievalMode = `## Document evidence
 - Retrieval mode: ADAPTIVE. Treat search_documents as grep over the attachments. Work in rounds: grep → read the hits → grep complementary terms with excludePages set to nextExcludePages from the last result. Do not stop at the first matching table. Do not read every page unless the set is unbounded.
-- If this turn is a question or a write request and Documents are listed, you MUST grep before ask_user or draft_field — except when the target section is already filled or partial: call read_section first and grep only for a gap you found. Start with search_documents. Prefer queries[] in one call (equipment AND UUT AND fixtures). Use mode=keyword for exact protocol terms (UUT, Solea, 13.3). Do not grep because the report is empty or because you are in Agent mode.
+- If this turn is a question or a write request and Documents are listed, you MUST grep before ask_user or draft_field — except when the target section is already filled or partial: call read_section first and grep only for a gap you found. Start with search_documents. Prefer queries[] in one call (equipment AND UUT AND fixtures). At most 8 strings per call — OR related requirement IDs into those strings rather than sending more. Use mode=keyword for exact protocol terms (UUT, Solea, 13.3). Do not grep because the report is empty or because you are in Agent mode.
 - If hits look like one table or heading, call document_outline and read neighboring pages, then grep again for sibling objects.
 - If truncated=true or nextExcludePages grew, grep again with different terms. Never draft a table from a single truncated hit list.
 - For a single fact (one requirement ID, one date, one labelled page), one grep and one page read is enough.
@@ -245,7 +253,7 @@ function agentRules(opts: {
 You are in Agent mode. Use the tools to read sections and ${committing ? "apply changes. Successful edits are written to the document immediately — do not wait for the engineer to accept them, and do not mention review bubbles." : "propose changes. Every proposal goes to the engineer for review — nothing is applied until they accept it."}
 
 Choosing the right tool:
-- edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns, or delete_table to remove the whole table (keeps surrounding prose, figures, and citations). Also create_table (headers plus rows) to add a NEW table in a rich field. Omit afterAnchor to append before a trailing Citations heading. Call read_section FIRST — copy tableIndex from tables[] and [row,col] / header text from structuredText. Adding an example to a table is edit_cells or insert_column, never a bulleted list. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells. Do not use draft_field to create or delete a table.
+- edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns, or delete_table to remove the whole table (keeps surrounding prose, figures, and citations). Also create_table (headers plus rows) to add a NEW table in a rich field. Omit afterAnchor to append before a trailing Citations heading. Call read_section FIRST and copy the live headers from fields[].tables[] (also listed on the context map). Demo and Convergent matrices differ — never invent columns. Copy tableIndex and [row,col] from structuredText. Adding an example to a table is edit_cells or insert_column, never a bulleted list. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells. Do not use draft_field to create or delete a table.
 - draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty prose fields, or a genuine rewrite of a filled field (replaceFilledField: true, and the replacement must change more than half the current text). The tool refuses a field whose fillState is filled unless you pass replaceFilledField: true, and refuses again ("not_a_rewrite") when your replacement keeps most of the current text — removing or changing a few details in a written field is propose_edit, however many spans it touches. Adding or removing a table while keeping the surrounding prose is also not_a_rewrite — use edit_table create_table / delete_table so the rest of the section is not struck. Do not use it to create or delete a table or for incremental table edits. draft_field cannot insert or remove figures; use ${figureEditTools(opts.includePlotMeasurements)}. A full rewrite of a field that already has images will drop those images.
 - propose_edit — one targeted change inside existing prose, bullets, or headings (target a list item with "scope"). insertText may include markdown lists (\`- \`, \`1. \`) and headings (\`## \`). Nearby wording in the same field belongs in one call — span the unchanged words between the spots. Distant paragraphs can be separate calls; the server also merges spans that sit next to each other. Never put a GFM pipe table in insertText or anchorText — use edit_table create_table for a new table. Never put image markdown in insertText.
 - insert_image — place one existing image (chat attachment, a figure already in a section, or a saved Analytics plot) into a rich field. Same-field source=section with a non-empty anchorText moves that figure in one suggestion — do not also call remove_image. ${committing ? "It is applied immediately." : "The engineer reviews it like any other suggestion."} Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a new chart from attachments, not to copy a plot already in Analytics" : ""}. If they asked to insert "the plot" and only one is listed, insert that one. If they named a plot that is not listed, do not substitute another figure: name the available plots in prose once and stop — do not call insert_image again this turn. If the tool returns available_plots, that is not a proposal — do not tell them you inserted a figure. Never claim a figure was proposed unless insert_image returned proposed or applied.
@@ -258,6 +266,7 @@ ${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric 
 
 Drafting decisions (important):
 - Only draft or edit when this turn is a write request (see User intent). Do not volunteer drafts of empty sections.
+- Before edit_table or draft_field on a matrix, call read_section and copy fields[].tables[].headers (also listed on the context map). Use this report's live columns — demo Traceability is five columns; Convergent Results is four. Do not assume the other pack.
 - If the engineer asked to draft a section the context map marks filled or partial: call read_section on that section FIRST. Do not search_documents or ask_user yet. Compare the current text to that section's quality criteria. No material gaps → report that it is already drafted, summarize what is there, and ask if they want a specific change. Gaps → search only for the missing facts, then a targeted propose_edit (or edit_table). Do not draft_field a full rewrite unless they asked to replace the section.
 - Filenames and topics in the document index are not real information. Real information is retrieved evidence, current section text, and answers the engineer already gave.
 ${searchFirst}
@@ -334,6 +343,8 @@ export function buildChatSystemPrompt(opts: {
   includePlotMeasurements?: boolean;
   /** Server-derived. `commit` applies report edits immediately. */
   editPolicy?: ChatEditPolicy;
+  /** Latest-turn intent. Read/social turns run without the write tools. */
+  intent?: ChatUserIntentKind;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
@@ -378,9 +389,16 @@ export function buildChatSystemPrompt(opts: {
     ? `\n\n${chat.draftingGuidance.trim()}`
     : "";
 
+  const intentTools =
+    mode === "agent"
+      ? intentToolAvailabilityRule(opts.intent ?? "write", "document")
+      : null;
+
   return `${chat.persona}
 
-${USER_INTENT_RULES}
+${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}
+
+${LANGUAGE_RULES}
 
 ${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${draftedBlock}${mentions}
 

@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { DedupedReasonSample } from "@/lib/sample-eval/bulk-eval-aggregates";
 import { truncateOneLine } from "@/lib/sample-eval/bulk-eval-aggregates";
 import { CRITERIA_EVAL_GOOGLE_MODEL_ID, CRITERIA_EVAL_SEED } from "@/lib/ai/evaluate";
-import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
+import { langfuseGenerateTextTelemetry, withPropagatedAttributes } from "@/lib/observability/langfuse";
 
 const classificationSchema = z.object({
   assignments: z.array(
@@ -152,31 +152,39 @@ async function classifyWithBuckets(params: {
   });
 
   try {
-    const result = await generateText({
-      model,
-      temperature: REASONING_BUCKET_LAYER_LLM.temperature,
-      maxOutputTokens: REASONING_BUCKET_LAYER_LLM.maxOutputTokens,
-      providerOptions: {
-        google: { seed: CRITERIA_EVAL_SEED },
+    const result = await withPropagatedAttributes(
+      {
+        traceName: "sample-eval-cluster",
+        tags: ["sample-eval"],
+        metadata: { layerName },
       },
-      output: Output.object({ schema: classificationSchema }),
-      system:
-        `You classify pharmaceutical QA deviation review reasonings into ${layerName}s. ` +
-        "Use ONLY the supplied bucket labels. Do not create new labels. " +
-        "Each reason can have zero, one, or many buckets. Not every reason needs to be classified. " +
-        instructions,
-      prompt:
-        `Allowed buckets:\n${buckets.map((b) => `- ${b}`).join("\n")}\n\n` +
-        `Classify these reason buckets. Return assignments only for ids you classify; omit ids with no matching bucket.\n\n` +
-        `${lines.join("\n")}`,
-      ...langfuseGenerateTextTelemetry({
-        functionId: "sample-eval-cluster-non-met-reasonings",
-        metadata: {
-          feature: "sample_eval",
-          layerName,
-        },
-      }),
-    });
+      () =>
+        generateText({
+          model,
+          temperature: REASONING_BUCKET_LAYER_LLM.temperature,
+          maxOutputTokens: REASONING_BUCKET_LAYER_LLM.maxOutputTokens,
+          providerOptions: {
+            google: { seed: CRITERIA_EVAL_SEED },
+          },
+          output: Output.object({ schema: classificationSchema }),
+          system:
+            `You classify pharmaceutical QA deviation review reasonings into ${layerName}s. ` +
+            "Use ONLY the supplied bucket labels. Do not create new labels. " +
+            "Each reason can have zero, one, or many buckets. Not every reason needs to be classified. " +
+            instructions,
+          prompt:
+            `Allowed buckets:\n${buckets.map((b) => `- ${b}`).join("\n")}\n\n` +
+            `Classify these reason buckets. Return assignments only for ids you classify; omit ids with no matching bucket.\n\n` +
+            `${lines.join("\n")}`,
+          ...langfuseGenerateTextTelemetry({
+            functionId: "sample-eval-cluster-non-met-reasonings",
+            metadata: {
+              feature: "sample_eval",
+              layerName,
+            },
+          }),
+        })
+    );
 
     const parsed =
       result.experimental_output ??

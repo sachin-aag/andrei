@@ -5,6 +5,7 @@
 import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
+import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
@@ -68,6 +69,21 @@ export function resolveSuggestionMerge(args: {
       operations: [],
       conflicts: [],
     };
+  }
+  // Table ops mutate the TipTap matrix directly. Running stored intent through
+  // mergeField flattens cells into prose and drops fixed-schema columns.
+  if (args.comment.kind === "ai_fix") {
+    const payload = parseAiFixCommentContent(args.comment.content);
+    if (payload.tableOperation) {
+      return {
+        path,
+        current,
+        merge: null,
+        wholeField: false,
+        operations: [],
+        conflicts: [],
+      };
+    }
   }
   const merge = mergeField(record.base, current, record.intent);
   const blocks = extractMergeBlocks(current);

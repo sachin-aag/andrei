@@ -7,6 +7,8 @@ globs:
   - src/app/api/reports/**/analytics/chat/**/*.ts
   - src/app/api/reports/**/attachments/**/*.ts
   - src/components/report/chat-*.tsx
+  - src/hooks/use-voice-dictation.ts
+  - src/lib/voice/**/*.ts
   - src/lib/statistical-analysis/chat-*.ts
   - src/lib/statistical-analysis/mentions.ts
   - src/lib/statistical-analysis/worksheet-sheet-options.ts
@@ -57,7 +59,19 @@ mismatch banners) — not hiding the dropdown. Scope is `@` mentions
 `CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION` when prompt copy
 changes. Empty-state Document chips are `chat.examplePrompts` on the
 document type (not DMAIC-hardcoded); Analytics chips stay in
-`ANALYTICS_EXAMPLE_PROMPTS`.
+`ANALYTICS_EXAMPLE_PROMPTS`. Voice dictation is the shared composer mic
+(Document | Agent, Report | Analytics). Click start / click stop; no VAD.
+Recording chrome is a larger level wave + “Transcript appears when you stop”
++ language chevron + white stop square.
+MJ: `en-IN` / `hi-IN` / `mr-IN` in native script (Devanagari preferred). Demo/Convergent: `en-US`.
+Do not translate STT to English — `LANGUAGE_RULES` keep assistant output
+in English. PCM is buffered while recording; after stop, each PCM POST is one
+Vertex **Gemini** transcribe (Flash-Lite, same WIF/resolver as chat). Do not call Cloud Speech-to-Text / Chirp —
+the runtime SA 403s `PERMISSION_DENIED` without `roles/speech.client`.
+No sticky session / SSE. Stub: `ALLOW_TEST_STUB_SPEECH`.
+Monthly voice minutes are a separate Limits cap (`voice-budget`, default
+100,000 minutes) in addition to the Gemini token budget; usage is
+`voice_transcribe` in the AI feature table.
 
 ## Prompt / tools
 
@@ -68,6 +82,12 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
   Missing from the allowlist = silent Plan-mode gap. Analytics tools stay
   off that list.
+- A tool-input schema violation must never end the engineer's turn.
+  `repairChatToolCall` clamps `InvalidToolInputError` input to the tool's own
+  JSON Schema (`clampToolInputToSchema`: maxItems, maxLength, min/max, enum,
+  single value → array) and retries once. Malformed JSON is still not
+  rewritten. Prefer widening a bound over tightening one — the clamp is a net,
+  not a licence to add tight caps.
 - `insert_image` source=analytics copies a saved plot only when the named
   series matches (or they did not name one). If they asked for a plot that
   is not listed, return the available titles once this turn (`available_plots`)
@@ -89,13 +109,17 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   `editPolicy` on a locked report. Plan-mode allowlist does not gain edit tools.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.
-- Report and Analytics `stopWhen` is Cancel only. Do not add a tool-step
-  cap — users must never hit one. Abnormal turns abort at
-  `CHAT_SERVER_ABORT_MS`. Do not persist a “ran out of steps / ask me to
-  continue” notice. Loop guards live in `prepareStep`
+- Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
+  (`CHAT_SERVER_ABORT_MS` from request start, not from `streamText`).
+  Do not add a tool-step cap — users must never hit one. Do not persist
+  a “ran out of steps / ask me to continue” notice. Loop guards live in
+  `prepareStep`
   (`tableEditLoopDirective`, `prepareDocumentReviewStep`,
-  `alreadyDraftedReadStep`, Analytics search hide after a cited page or
-  two empty greps).
+  `alreadyDraftedReadStep`, `tableSchemaReadStep` on write turns whose
+  in-scope section already has a table, Analytics search hide after a
+  cited page or two empty greps). Live table headers are listed on the
+  context map; `read_section` / `edit_table` / `draft_field` must copy
+  those headers (demo vs Convergent matrices differ).
 
 ## Retrieval
 
@@ -118,7 +142,12 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
   on extract). `finish_document_review` caps the findings sample;
   follow-up turns strip prior findings arrays before the model call.
-  Orchestrator is `gemini-3.7-flash` with `thinkingLevel`
+  `search_documents` `queries[]` is at most 8 and `limit` at most 16;
+  `coerceSearchDocumentsInput` normalizes oversized model JSON, and
+  `nextExcludePages` is capped at `SEARCH_EXCLUDE_PAGES_MAX` because the model
+  is told to pass it back into `excludePages.max()`. Do not raise a tool bound
+  without capping what the tool hands back. Orchestrator is
+  `gemini-3.7-flash` with `thinkingLevel`
   `medium` until we route it by task (3.7 Flash rejects `minimal`); page
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.

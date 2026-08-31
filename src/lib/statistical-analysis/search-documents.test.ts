@@ -60,9 +60,16 @@ describe("buildAnalyticsSearchDocumentsTool", () => {
     ]);
     const tool = buildAnalyticsSearchDocumentsTool({ reportId: "report-1" });
     const schema = tool.inputSchema as unknown as {
-      parse: (value: unknown) => { mode: string };
+      parse: (value: unknown) => Record<string, unknown>;
     };
     expect(schema.parse({ query: "Conductivity" }).mode).toBe("keyword");
+    const oversized = schema.parse({
+      limit: 20,
+      queries: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+      mode: "keyword",
+    }) as unknown as { limit: number; queries: string[] };
+    expect(oversized.limit).toBe(16);
+    expect(oversized.queries).toEqual(["a", "b", "c", "d", "e", "f", "g", "h"]);
     expect(tool.description).not.toContain("truncated=true means keep grepping");
     expect(tool.description).toContain("At most two calls");
 

@@ -41,7 +41,7 @@ The guide describes the process. These notes cover the Langfuse-specific API and
 ```bash
 echo $LANGFUSE_PUBLIC_KEY   # pk-lf-...
 echo $LANGFUSE_SECRET_KEY   # sk-lf-...
-echo $LANGFUSE_HOST         # https://cloud.langfuse.com (EU), https://us.cloud.langfuse.com (US), https://jp.cloud.langfuse.com (JP) or self-hosted
+echo $LANGFUSE_HOST         # {LANGFUSE_HOST} (EU), https://us.cloud.langfuse.com (US), https://jp.cloud.langfuse.com (JP) or self-hosted
 ```
 
 If not set, check `.env` in the project root: `export $(grep -v '^#' .env | xargs)`. If `LANGFUSE_BASE_URL` is used instead of `LANGFUSE_HOST`, run `export LANGFUSE_HOST="$LANGFUSE_BASE_URL"`.
@@ -71,12 +71,27 @@ If status is not `200`, stop and ask the user to check their credentials and hos
 
 | Host | URL pattern |
 |------|-------------|
-| EU cloud | `https://cloud.langfuse.com/project/<projectId>/annotation-queues/<queueId>` |
+| EU cloud | `{LANGFUSE_HOST}/project/<projectId>/annotation-queues/<queueId>` |
 | US cloud | `https://us.cloud.langfuse.com/project/<projectId>/annotation-queues/<queueId>` |
 | Self-hosted | `<LANGFUSE_HOST>/project/<projectId>/annotation-queues/<queueId>` |
 
 Instruction to give: *"Please open code the first ~50 examples. For each trace, write what you observe in the `open_coding` field (describe behaviour, don't diagnose root causes), then set `pass_fail_assessment` to Pass or Fail."*
 
+### Reading traces (Observations API v2)
+
+Do **not** call the deprecated traces list/get endpoints. Use Observations API v2, always with a time bound, and group rows by `traceId`:
+
+```bash
+curl -sS -G -u "${LANGFUSE_PUBLIC_KEY}:${LANGFUSE_SECRET_KEY}" \
+  "${LANGFUSE_HOST}/api/public/v2/observations" \
+  --data-urlencode "fromStartTime=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)" \
+  --data-urlencode "toStartTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --data-urlencode "fields=core,basic,io,trace_context" \
+  --data-urlencode "isRootObservation=true" \
+  --data-urlencode "limit=50"
+```
+
+Follow `meta.cursor` until it is empty. For one former "trace", pass `traceId=`. In this repo the same mapping lives in `src/lib/observability/langfuse-observations.ts`.
 
 ### Prompt fixes
 
@@ -96,5 +111,5 @@ When a category warrants an evaluator setup, propose the type of evaluator and o
 | `objectType: TRACE` in queue | Use `objectType: OBSERVATION` with GENERATION obs ID |
 | Creating score config without checking existing | `GET /api/public/score-configs` first; can't delete |
 | Queue created before score configs | Create configs → collect IDs → create queue |
-| `--limit` > 100 on traces list | API hard cap; paginate with `--page` |
+| `--limit` > 1000 on observations v2 | API max is 1,000; paginate with `meta.cursor` (not page) |
 | No rate limiting on queue item creation | `sleep 0.4` between calls to avoid 429 |

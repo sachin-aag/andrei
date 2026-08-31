@@ -161,7 +161,10 @@ mid-turn. New extract columns claim empty C1–C8 from the left (`write_column`
 and `add_column` without `at`) instead of appending on the right. Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
 abort still apply). Do not tell the engineer they ran out of steps or to
-re-prompt. Loop guards live in `prepareStep`. Analytics `search_documents` is keyword-first and stops after a cited page —
+re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
+on write turns whose in-scope section already has a table). Live matrix
+headers come from the section (`read_section` / context map) — demo
+Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy.
 Document chat copies a saved Analytics plot with `insert_image` (`source=analytics`)
 and can propose attachment `plot_measurements` figures on every pack.
@@ -199,6 +202,7 @@ process serving the request is missing one of them.
 |---------|--------|---------------------------|
 | AI Check / suggestions | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | `ALLOW_TEST_SKIP_EVALUATION`, `ALLOW_TEST_SKIP_SUGGESTIONS` |
 | Report chat | Same resolver; Vertex `global` if `GOOGLE_VERTEX_PROJECT` is set | `ALLOW_TEST_STUB_CHAT` |
+| Composer voice dictation | Same Gemini resolver as chat (Vertex WIF when `GOOGLE_VERTEX_PROJECT` is set). Native-script transcripts; assistant replies in English. Not Cloud Speech-to-Text | `ALLOW_TEST_STUB_SPEECH` |
 | PDF/DOCX ingest + embeddings | **Vertex only** (`GOOGLE_VERTEX_PROJECT` + WIF or ADC). Gateway key is not enough | `ALLOW_TEST_STUB_DOCUMENT_INGEST` |
 
 CRUD, editor, review, and DOCX export work without AI keys.
@@ -230,12 +234,19 @@ POSTs to the Cloud Agents API) — not an in-app SDK. Preview, Neon
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   The report body is **not** chunk-indexed; use `read_section`.
 - Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. A sentence/paragraph rewrite is adaptive even on a large catalog, and an earlier “draft the report” turn must not force another full page walk. `finish_document_review` returns a capped findings sample; follow-up turns strip prior findings arrays before the model call so a 273-page review cannot 500 the next message. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
-- Follow the latest user message. Agent mode may edit when they asked to write; empty sections and ready attachments are not a request to draft. A greeting (“hi”) must not search or write — `classifyChatUserIntent` strips tools (Document and Analytics). Retrieval maps those turns to focused (`no_task`) and skips kickoff evidence.
+- Follow the latest user message. Agent mode may edit when they asked to write; empty sections and ready attachments are not a request to draft. A greeting (“hi”) must not search or write — `classifyChatUserIntent` strips tools (Document and Analytics). Retrieval maps those turns to focused (`no_task`) and skips kickoff evidence. A confirmation that carries its own instruction (“yes put it in the data worksheet”) is a **write**: the affirmation prefix is stripped and the remainder classified, and an Analytics worksheet/sheet/column destination counts as a write even when the verb is not in `WRITE_RE`. When intent strips the write tools, the prompt says so (`intentToolAvailabilityRule`) so the model cannot call a tool that is no longer loaded and fall back to pasting a markdown table.
 - Composer scope is `@` tags (`sectionScopeFromMentions` / analytics mentions),
   not dropdowns. Document and Analytics share `ChatPanel`; a composer or tool
   change must land on both surfaces and both chromes (Hard rules spectrum).
   Empty-state Document chips are `chat.examplePrompts` on the document type
   (not DMAIC-hardcoded). Analytics chips stay worksheet/plot copy.
+  Voice dictation is the shared mic (right of the image icon): click to start,
+  click to stop. PCM is buffered while recording (bigger wave + “Transcript
+  appears when you stop”); one Vertex Gemini transcribe (Flash-Lite) runs after
+  stop and fills the composer. No live interim text, no SSE. MJ transcribes English/Hindi/Marathi
+  in native script (Devanagari preferred); other packs are English. The LLM
+  still replies in English. Stub: `ALLOW_TEST_STUB_SPEECH`
+  (`e2e/report-chat.spec.ts`).
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 

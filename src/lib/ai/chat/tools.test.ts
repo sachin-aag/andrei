@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
 import { comments } from "@/db/schema";
-import { buildChatTools, collectSearchQueries, mergeExcludePages } from "@/lib/ai/chat/tools";
+import {
+  buildChatTools,
+  coerceSearchDocumentsInput,
+  collectSearchQueries,
+  mergeExcludePages,
+  SEARCH_DOCUMENTS_MAX_LIMIT,
+  SEARCH_DOCUMENTS_MAX_QUERIES,
+  SEARCH_EXCLUDE_PAGES_MAX,
+} from "@/lib/ai/chat/tools";
 import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 import {
   DocumentReviewSession,
@@ -93,14 +101,134 @@ async function executeDocumentOutline(
   return execute({ attachmentId }, TEST_TOOL_OPTIONS);
 }
 
+describe("coerceSearchDocumentsInput", () => {
+  it("clamps the Vercel incident payload (8 queries, limit 20) without dropping queries", () => {
+    const queries = [
+      '"M3-HRS-GN-001"',
+      '"M3-HRS-PS-003" OR "M3-HRS-PS-014"',
+      '"M3-HRS-WS-009" OR "M3-HRS-SM-013"',
+      '"M3-HRS-HP-001" OR "M3-HRS-HP-007" OR "M3-HRS-HP-008"',
+      '"M3-HRS-HP-009" OR "M3-HRS-HP-016" OR "M3-HRS-HP-018"',
+      '"M3-HRS-HP-020" OR "M3-HRS-HP-032" OR "M3-HRS-HP-033"',
+      '"M3-HRS-PM-004" OR "M3-HRS-BD-011"',
+      '"M3-HRS-AA-014" OR "M3-HRS-AA-015"',
+    ];
+    const coerced = coerceSearchDocumentsInput({
+      limit: 20,
+      queries,
+      mode: "keyword",
+    }) as { limit: number; queries: string[]; mode: string };
+    expect(coerced.limit).toBe(SEARCH_DOCUMENTS_MAX_LIMIT);
+    expect(coerced.queries).toEqual(queries);
+    expect(coerced.mode).toBe("keyword");
+  });
+
+  it("drops query strings beyond the per-call cap", () => {
+    const coerced = coerceSearchDocumentsInput({
+      queries: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+    }) as { queries: string[] };
+    expect(coerced.queries).toEqual(["a", "b", "c", "d", "e", "f", "g", "h"]);
+    expect(coerced.queries).toHaveLength(SEARCH_DOCUMENTS_MAX_QUERIES);
+  });
+
+  it("clamps a non-integer limit down into the allowed range", () => {
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      limit: 40.9,
+    }) as { limit: number };
+    expect(coerced.limit).toBe(SEARCH_DOCUMENTS_MAX_LIMIT);
+  });
+
+  it("accepts a numeric string limit and a bare-string queries value", () => {
+    const coerced = coerceSearchDocumentsInput({
+      queries: "UUT serial numbers",
+      limit: "20",
+    }) as { limit: number; queries: string[] };
+    expect(coerced.limit).toBe(SEARCH_DOCUMENTS_MAX_LIMIT);
+    expect(coerced.queries).toEqual(["UUT serial numbers"]);
+  });
+
+  it("drops unknown enum values so the schema default applies", () => {
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      mode: "lexical",
+      scope: "everything",
+    }) as Record<string, unknown>;
+    expect(coerced.mode).toBeUndefined();
+    expect(coerced.scope).toBeUndefined();
+    expect(coerced.query).toBe("UUT");
+  });
+
+  it("keeps the most recent pages when excludePages outgrows the cap", () => {
+    const pages = Array.from({ length: 120 }, (_, i) => ({
+      attachmentId: "att_1",
+      pageNumber: i + 1,
+    }));
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      excludePages: pages,
+    }) as { excludePages: Array<{ pageNumber: number }> };
+    expect(coerced.excludePages).toHaveLength(SEARCH_EXCLUDE_PAGES_MAX);
+    expect(coerced.excludePages.at(-1)?.pageNumber).toBe(120);
+  });
+
+  it("drops malformed excludePages entries instead of failing the call", () => {
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      excludePages: [
+        { attachmentId: "att_1", pageNumber: 3 },
+        { attachmentId: "att_1", pageNumber: 0 },
+        { attachmentId: "", pageNumber: 4 },
+        "nonsense",
+      ],
+    }) as { excludePages: Array<{ attachmentId: string; pageNumber: number }> };
+    expect(coerced.excludePages).toEqual([
+      { attachmentId: "att_1", pageNumber: 3 },
+    ]);
+  });
+});
+
+describe("mergeExcludePages cap", () => {
+  it("never returns more pages than the tool schema accepts", () => {
+    const hits = Array.from({ length: 200 }, (_, i) => ({
+      attachmentId: "att_1",
+      pageNumber: i + 1,
+    }));
+    const merged = mergeExcludePages(undefined, hits);
+    expect(merged).toHaveLength(SEARCH_EXCLUDE_PAGES_MAX);
+    // The model is told to pass nextExcludePages straight back, so the value we
+    // hand it must satisfy excludePages.max().
+    expect(merged.at(-1)?.pageNumber).toBe(200);
+  });
+});
+
 describe("collectSearchQueries", () => {
   it("dedupes and caps complementary queries", () => {
     expect(
       collectSearchQueries({
         query: "equipment",
-        queries: ["UUT", "equipment", "fixtures", "serials", "software"],
+        queries: [
+          "UUT",
+          "equipment",
+          "fixtures",
+          "serials",
+          "software",
+          "protocol",
+          "calibration",
+          "deviation",
+          "overflow",
+        ],
       })
-    ).toEqual(["UUT", "equipment", "fixtures", "serials"]);
+    ).toEqual([
+      "UUT",
+      "equipment",
+      "fixtures",
+      "serials",
+      "software",
+      "protocol",
+      "calibration",
+      "deviation",
+    ]);
   });
 
   it("accumulates excludePages across grep rounds", () => {
@@ -135,6 +263,22 @@ describe("buildChatTools search_documents scoping", () => {
     expect(
       accepts(tools, "search_documents", { queries: ["equipment", "UUT"] })
     ).toBe(true);
+    const oversized = inputSchemaOf(tools, "search_documents").parse({
+      limit: 20,
+      queries: [
+        '"M3-HRS-GN-001"',
+        '"M3-HRS-PS-003" OR "M3-HRS-PS-014"',
+        '"M3-HRS-WS-009" OR "M3-HRS-SM-013"',
+        '"M3-HRS-HP-001" OR "M3-HRS-HP-007" OR "M3-HRS-HP-008"',
+        '"M3-HRS-HP-009" OR "M3-HRS-HP-016" OR "M3-HRS-HP-018"',
+        '"M3-HRS-HP-020" OR "M3-HRS-HP-032" OR "M3-HRS-HP-033"',
+        '"M3-HRS-PM-004" OR "M3-HRS-BD-011"',
+        '"M3-HRS-AA-014" OR "M3-HRS-AA-015"',
+      ],
+      mode: "keyword",
+    }) as { limit: number; queries: string[] };
+    expect(oversized.limit).toBe(16);
+    expect(oversized.queries).toHaveLength(8);
     expect(
       accepts(tools, "search_documents", {
         query: "UUT",
@@ -160,9 +304,13 @@ describe("buildChatTools search_documents scoping", () => {
     expect(
       accepts(tools, "search_documents", { query: "cleaning", scope: "all" })
     ).toBe(true);
-    expect(
-      accepts(tools, "search_documents", { query: "cleaning", scope: "everything" })
-    ).toBe(false);
+    // An unknown enum value falls back to the default instead of failing the
+    // tool call and ending the engineer's turn.
+    const unknownScope = inputSchemaOf(tools, "search_documents").parse({
+      query: "cleaning",
+      scope: "everything",
+    }) as Record<string, unknown>;
+    expect(unknownScope.scope).toBe("tagged");
   });
 });
 

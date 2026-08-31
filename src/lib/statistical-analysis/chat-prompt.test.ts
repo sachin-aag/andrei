@@ -18,7 +18,30 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v28");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
+      "analytics-chat-v30-intent-tool-availability"
+    );
+  });
+
+  it("tells an Agent read turn which write tools were stripped", () => {
+    const base = {
+      documentNo: "DEV-1",
+      status: "draft",
+      documents: [],
+      analytics: emptyAnalytics,
+      canEdit: true,
+      mode: "agent" as const,
+    };
+    const read = buildAnalyticsChatSystemPrompt({ ...base, intent: "read" });
+    expect(read).toContain("Tools available this turn");
+    expect(read).toContain("are not loaded");
+
+    const write = buildAnalyticsChatSystemPrompt({ ...base, intent: "write" });
+    expect(write).not.toContain("Tools available this turn");
+    // Default (no intent passed) must not warn — it would fight the tool set.
+    expect(buildAnalyticsChatSystemPrompt(base)).not.toContain(
+      "Tools available this turn"
+    );
   });
 
   it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
@@ -77,6 +100,9 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("Column specs: none");
     expect(prompt).not.toContain("Specs tab");
     expect(prompt).toContain("Quick vs Deep");
+    expect(prompt).toContain("## Language");
+    expect(prompt).toContain("Devanagari");
+    expect(prompt).toContain("Reply only in English");
     expect(prompt).not.toContain("There is no Ask/Agent toggle here");
     expect(prompt).toContain("## User intent (required)");
     expect(prompt).toContain("An empty worksheet is not a request to fill it");

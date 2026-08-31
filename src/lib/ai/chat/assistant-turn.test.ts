@@ -15,8 +15,12 @@ import {
   CHAT_CLIENT_STALE_MS,
   CHAT_CONSUME_STREAM_BUDGET_MS,
   CHAT_FUNCTION_MAX_DURATION_SEC,
+  CHAT_HOBBY_MAX_DURATION_SEC,
   CHAT_SERVER_ABORT_MS,
   consumeAssistantStreamWithBudget,
+  isChatTurnDeadlineReached,
+  remainingChatAbortMs,
+  scheduleChatTurnDeadline,
 } from "./assistant-turn";
 import { CHAT_TURN_STALE_MS } from "./background-turn-status";
 
@@ -93,6 +97,8 @@ describe("shouldShowEmptyAssistantError", () => {
 describe("deadline constants", () => {
   it("aborts the stream before Vercel can kill the isolate", () => {
     expect(CHAT_FUNCTION_MAX_DURATION_SEC).toBe(300);
+    expect(CHAT_HOBBY_MAX_DURATION_SEC).toBe(300);
+    expect(CHAT_SERVER_ABORT_MS).toBeLessThan(CHAT_HOBBY_MAX_DURATION_SEC * 1000);
     expect(CHAT_SERVER_ABORT_MS).toBeLessThan(CHAT_FUNCTION_MAX_DURATION_SEC * 1000);
     expect(CHAT_CONSUME_STREAM_BUDGET_MS).toBeGreaterThan(CHAT_SERVER_ABORT_MS);
     expect(CHAT_CONSUME_STREAM_BUDGET_MS).toBeLessThan(
@@ -100,12 +106,62 @@ describe("deadline constants", () => {
     );
     expect(CHAT_CLIENT_GIVE_UP_MS).toBeGreaterThan(CHAT_SERVER_ABORT_MS);
     expect(CHAT_CLIENT_GIVE_UP_MS).toBeLessThan(
-      CHAT_FUNCTION_MAX_DURATION_SEC * 1000
+      CHAT_HOBBY_MAX_DURATION_SEC * 1000
     );
     expect(CHAT_CLIENT_STALE_MS).toBeLessThan(CHAT_CLIENT_GIVE_UP_MS);
     expect(CHAT_TURN_STALE_MS).toBeGreaterThan(
       CHAT_FUNCTION_MAX_DURATION_SEC * 1000
     );
+  });
+});
+
+describe("wall-clock chat deadline", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("subtracts pre-stream elapsed time from the SDK timeout budget", () => {
+    const startedAtMs = 1_000;
+    expect(remainingChatAbortMs(startedAtMs, startedAtMs)).toBe(
+      CHAT_SERVER_ABORT_MS
+    );
+    expect(remainingChatAbortMs(startedAtMs, startedAtMs + 40_000)).toBe(
+      CHAT_SERVER_ABORT_MS - 40_000
+    );
+    expect(
+      remainingChatAbortMs(startedAtMs, startedAtMs + CHAT_SERVER_ABORT_MS)
+    ).toBe(0);
+    expect(
+      remainingChatAbortMs(startedAtMs, startedAtMs + CHAT_SERVER_ABORT_MS + 5_000)
+    ).toBe(0);
+    expect(isChatTurnDeadlineReached(startedAtMs, startedAtMs + 40_000)).toBe(
+      false
+    );
+    expect(
+      isChatTurnDeadlineReached(startedAtMs, startedAtMs + CHAT_SERVER_ABORT_MS)
+    ).toBe(true);
+  });
+
+  it("aborts immediately when the deadline has already elapsed", () => {
+    const controller = new AbortController();
+    const cancel = scheduleChatTurnDeadline(controller, 0, CHAT_SERVER_ABORT_MS);
+    expect(controller.signal.aborted).toBe(true);
+    cancel();
+  });
+
+  it("aborts when remaining wall-clock time elapses", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const startedAtMs = Date.now();
+    const cancel = scheduleChatTurnDeadline(
+      controller,
+      startedAtMs,
+      startedAtMs + 40_000
+    );
+    expect(controller.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(CHAT_SERVER_ABORT_MS - 40_000);
+    expect(controller.signal.aborted).toBe(true);
+    cancel();
   });
 });
 

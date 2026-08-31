@@ -47,6 +47,9 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.statisticalAnalysisEnabled).toBe(true);
     expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
     expect(MJ_PACK.statisticalAnalysisEnabled).toBe(true);
+    expect(CONVERGENT_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
+    expect(DEMO_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
+    expect(MJ_PACK.voiceInputLanguageCodes).toEqual(["en-IN", "hi-IN", "mr-IN"]);
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."
     );

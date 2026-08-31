@@ -124,4 +124,8 @@ describe("MJ customer pack content", () => {
     expect(DEMO_PACK.branding.productName).toBe("Andrei");
     expect(fs.existsSync("public/logo-mj.png")).toBe(true);
   });
+
+  it("dictates Indian English, Hindi, and Marathi", () => {
+    expect(MJ_PACK.voiceInputLanguageCodes).toEqual(["en-IN", "hi-IN", "mr-IN"]);
+  });
 });

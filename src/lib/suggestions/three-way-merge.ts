@@ -165,9 +165,41 @@ function mergePlainText(base: string, current: string, intent: string): string |
   return out;
 }
 
+function rebuildDocWithTableCells(
+  template: JSONContent,
+  blocks: MergeBlock[]
+): JSONContent {
+  const doc = cloneJson(template);
+  const cells = blocks.filter((b) => b.kind === "table_cell");
+  let i = 0;
+  const walk = (node: JSONContent) => {
+    if (node.type === "table") {
+      for (const row of node.content ?? []) {
+        if (row.type !== "tableRow" || !row.content) continue;
+        for (let c = 0; c < row.content.length; c++) {
+          const next = cells[i++];
+          if (next && typeof next.node !== "string") {
+            row.content[c] = cloneJson(next.node) as JSONContent;
+          }
+        }
+      }
+      return;
+    }
+    for (const child of node.content ?? []) walk(child);
+  };
+  walk(doc);
+  return doc;
+}
+
 function rebuildFromBlocks(template: FieldContent, blocks: MergeBlock[]): FieldContent {
   if (typeof template === "string") {
     return blocks.map((b) => (typeof b.node === "string" ? b.node : b.text)).join("\n");
+  }
+  // Table cells are not top-level nodes. Flattening them into a fake doc makes
+  // extractMergeBlocks treat inner paragraphs as prose, then applyFieldPlan
+  // removes columns and spills header/body text after the table.
+  if (blocks.some((b) => b.kind === "table_cell")) {
+    return rebuildDocWithTableCells(template, blocks);
   }
   const ops = planFieldDiff(
     template,
@@ -212,6 +244,18 @@ export function mergeField(
   if (canonicalField(currentN, planOpts) === canonicalField(intentN, planOpts)) {
     const parked = parkCitations(currentN);
     return { status: "noop", operations: [], merged: parked };
+  }
+
+  // Agent commit always passes current === base (FOR UPDATE snapshot). Rebuilding
+  // table cells through a flattened doc collapses a 5-col DV matrix to leftover
+  // prose. If the live field has not diverged, take intent as-is.
+  if (canonicalField(currentN, planOpts) === canonicalField(baseN, planOpts)) {
+    const parked = parkCitations(intentN);
+    const operations = planFieldDiff(currentN, parked, planOpts);
+    if (operations.length === 0) {
+      return { status: "noop", operations: [], merged: parked };
+    }
+    return { status: "clean", operations, merged: parked };
   }
 
   const baseBlocks = extractMergeBlocks(baseN, planOpts);

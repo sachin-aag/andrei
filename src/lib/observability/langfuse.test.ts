@@ -28,6 +28,7 @@ import {
   langfuseGenerateTextTelemetry,
   observationMetadata,
   observeRouteHandler,
+  observeWork,
   setRouteObservationIO,
   withPropagatedAttributes,
 } from "@/lib/observability/langfuse";
@@ -153,6 +154,20 @@ describe("Langfuse v4 observation helpers", () => {
       captureInput: false,
       captureOutput: false,
       endOnExit: false,
+    });
+  });
+
+  it("runs background work as a named observation", () => {
+    vi.stubEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-test");
+    vi.stubEnv("LANGFUSE_SECRET_KEY", "sk-lf-test");
+    const inner = vi.fn(() => "done");
+    observe.mockImplementation((fn: unknown) => fn);
+    expect(observeWork("document-ingest", inner)).toBe("done");
+    expect(observe).toHaveBeenCalledWith(inner, {
+      name: "document-ingest",
+      captureInput: false,
+      captureOutput: false,
+      endOnExit: true,
     });
   });
 

@@ -75,11 +75,13 @@ import {
 } from "@/lib/ai/chat/user-intent";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  CHAT_SERVER_ABORT_MS,
   consumeAssistantStreamWithBudget,
   formatChatLlmError,
+  isChatTurnDeadlineReached,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
+  remainingChatAbortMs,
+  scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
 
 export const maxDuration = 300;
@@ -104,6 +106,7 @@ async function handleAnalyticsChatPost(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
+  const turnStartedAtMs = Date.now();
   const { reportId } = await params;
   const access = await requireAnalyticsAccess(reportId, "view");
   if (!access.ok) return access.response;
@@ -198,6 +201,7 @@ async function handleAnalyticsChatPost(
     canEdit,
     mode,
     mentionBlock: buildAnalyticsMentionBlock(mentions),
+    intent: userIntent.kind,
   });
   const tools = restrictToolsForIntent(
     buildAnalyticsChatTools({
@@ -219,12 +223,16 @@ async function handleAnalyticsChatPost(
     : resolveChatLanguageModel(pace);
 
   const turnAbort = new AbortController();
+  const stopDeadline = scheduleChatTurnDeadline(turnAbort, turnStartedAtMs);
   const cancelPoll = setInterval(() => {
     void isAssistantTurnCancelRequested(sessionId).then((requested) => {
       if (requested) turnAbort.abort();
     });
   }, 1_000);
-  const stopCancelPoll = () => clearInterval(cancelPoll);
+  const stopTurnGuards = () => {
+    stopDeadline();
+    clearInterval(cancelPoll);
+  };
 
   let result;
   try {
@@ -264,8 +272,9 @@ async function handleAnalyticsChatPost(
       tools,
       experimental_repairToolCall: repairChatToolCall,
       stopWhen: async () => {
-        // Cancel only. No tool-step cap — `CHAT_SERVER_ABORT_MS` is the
-        // abnormal-condition stop. Loop guards live in prepareStep.
+        // Cancel or wall-clock deadline. No tool-step cap. Loop guards
+        // live in prepareStep.
+        if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
         return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps }) =>
@@ -276,7 +285,7 @@ async function handleAnalyticsChatPost(
           intent: userIntent.kind,
         }),
       abortSignal: turnAbort.signal,
-      timeout: { totalMs: CHAT_SERVER_ABORT_MS },
+      timeout: { totalMs: Math.max(1, remainingChatAbortMs(turnStartedAtMs)) },
       providerOptions: buildGeminiThoughtSummaryProviderOptions({
         thinkingLevel: paceConfig.thinkingLevel,
       }),
@@ -309,7 +318,7 @@ async function handleAnalyticsChatPost(
     })
     );
   } catch (err) {
-    stopCancelPoll();
+    stopTurnGuards();
     endActiveLangfuseObservation();
     await clearAssistantTurn(sessionId);
     if (isAiBudgetExceededError(err)) {
@@ -349,7 +358,7 @@ async function handleAnalyticsChatPost(
       await flushLangfuseTraces();
       endActiveLangfuseObservation();
     } finally {
-      stopCancelPoll();
+      stopTurnGuards();
       await clearAssistantTurn(sessionId);
     }
   });
@@ -370,7 +379,7 @@ async function handleAnalyticsChatPost(
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
-      stopCancelPoll();
+      stopTurnGuards();
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,

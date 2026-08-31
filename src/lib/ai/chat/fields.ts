@@ -135,6 +135,32 @@ function fieldImageCount(
   return countImagesInDoc(getRichFieldValue(content, targetField));
 }
 
+/** Live tables in one rich field (headers from the section, not the pack recipe). */
+export function listFieldTables(
+  content: Record<string, unknown> | undefined,
+  section: SectionType,
+  targetField: string
+): Array<{ tableIndex: number; headers: string[]; dataRowCount: number }> {
+  if (!isRichTargetField(section, targetField)) return [];
+  return summarizeTablesInDoc(getRichFieldValue(content ?? {}, targetField)).map(
+    ({ tableIndex, headers, dataRowCount }) => ({
+      tableIndex,
+      headers,
+      dataRowCount,
+    })
+  );
+}
+
+/** True when any editable rich field in the section already has a table. */
+export function sectionHasTable(
+  content: Record<string, unknown> | undefined,
+  section: SectionType
+): boolean {
+  return chatTargetFields(section).some(
+    (field) => listFieldTables(content, section, field.targetField).length > 0
+  );
+}
+
 export function fieldFillState(
   content: Record<string, unknown> | undefined,
   section: SectionType,

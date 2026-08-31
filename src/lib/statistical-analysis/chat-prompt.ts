@@ -3,6 +3,10 @@ import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
+import {
+  intentToolAvailabilityRule,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import {
   isAnovaAnalysis,
@@ -21,7 +25,12 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v28";
+export const ANALYTICS_CHAT_PROMPT_VERSION =
+  "analytics-chat-v30-intent-tool-availability";
+
+const LANGUAGE_RULES = `## Language
+The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
+Reply only in English. Worksheet names, column headers you write, questions, and user-visible tool arguments must be English. Quoted source text and proper names may stay in the original language.`;
 
 const USER_INTENT_RULES = `## User intent (required)
 Follow the latest user message. Agent mode means you MAY fill the worksheet or run a plot when they asked — not because the sheet is empty or files are attached.
@@ -201,6 +210,8 @@ export function buildAnalyticsChatSystemPrompt(input: {
   canEdit: boolean;
   mode: ChatMode;
   mentionBlock?: string;
+  /** Latest-turn intent. Read/social turns run without the write tools. */
+  intent?: ChatUserIntentKind;
 }): string {
   const canWrite = input.mode === "agent" && input.canEdit;
   const editLine = canWrite
@@ -212,8 +223,12 @@ export function buildAnalyticsChatSystemPrompt(input: {
   const mentionBlock = input.mentionBlock?.trim();
   return [
     "You are Andrei's Statistical Analysis assistant for this report.",
+    LANGUAGE_RULES,
     editLine,
     USER_INTENT_RULES,
+    canWrite
+      ? intentToolAvailabilityRule(input.intent ?? "write", "analytics")
+      : null,
     modeRules(input.mode, input.canEdit),
     `Report ${quotePromptMetadata(sanitizePromptMetadata(input.documentNo, 80) || "untitled")} · status ${input.status}.`,
     mentionBlock || null,
