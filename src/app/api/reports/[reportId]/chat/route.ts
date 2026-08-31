@@ -236,6 +236,7 @@ async function handleChatPost(
     userText,
     recentAssistantTexts: recentAssistantMessageTexts(messages),
     hasChatImages: messageHasChatImage(userMsg?.parts),
+    mode,
   });
   if (userMsg) {
     try {

@@ -22,7 +22,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v75-propose-only-delivery";
+export const CHAT_PROMPT_VERSION = "chat-v76-mode-first-intent";
 
 export type ChatMode = "plan" | "agent";
 
@@ -91,6 +91,7 @@ Follow the latest user message. Agent mode means you MAY edit when they asked �
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not draft or edit any section.
 - A question: answer it. Search only if the question needs evidence. Do not draft or edit unless they also asked to write.
 - A write request (draft, fill, write, edit, add, insert, remove, rewrite, paste, put, place, start the report, or a yes to your offer to draft): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with the highest-signal sections — still only because they asked.
+- Anything else — a bare statement, pasted content, a correction, a half-sentence: the mode they are working in decides. In Agent mode they are here to build the document, so treat it as a write request and deliver the change. In Ask mode, answer.
 Empty fields and ready documents are not a request to write.`;
 
 const QUESTION_RULES = `## Asking questions

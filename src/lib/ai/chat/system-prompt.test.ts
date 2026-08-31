@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v75-propose-only-delivery");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v76-mode-first-intent");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -535,6 +535,14 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("nothing lands until they accept it");
     expect(prompt).toContain("Delivery in this chrome is ALWAYS a suggestion card");
     expect(prompt).not.toContain("written to the document immediately");
+  });
+
+  it("tells the model to resolve ambiguous turns by the mode it is in", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("the mode they are working in decides");
+    expect(prompt).toContain(
+      "In Agent mode they are here to build the document, so treat it as a write request"
+    );
   });
 
   it("forbids withholding a suggestion because the engineer wanted direct insertion", () => {

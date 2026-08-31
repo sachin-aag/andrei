@@ -148,6 +148,7 @@ async function handleAnalyticsChatPost(
     );
   }
 
+  const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
   const userIntent = classifyChatUserIntent({
@@ -155,6 +156,7 @@ async function handleAnalyticsChatPost(
     recentAssistantTexts: recentAssistantMessageTexts(messages),
     hasChatImages: messageHasChatImage(userMsg?.parts),
     surface: "analytics",
+    mode,
   });
   if (userMsg) {
     try {
@@ -190,7 +192,6 @@ async function handleAnalyticsChatPost(
   );
   const pinnedAttachmentIds = mentionedAnalyticsAttachmentIds(mentions);
   const focusedSheetId = primaryTaggedSheetId(mentions);
-  const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const canWrite = mode === "agent" && canEdit;
   const searchGate = createAnalyticsSearchGate();
   const system = buildAnalyticsChatSystemPrompt({

@@ -100,6 +100,13 @@ export type ClassifyChatUserIntentInput = {
   /** Chat-attached photo/screenshot — look at it, do not treat as small talk. */
   hasChatImages?: boolean;
   surface?: "document" | "analytics";
+  /**
+   * Where the engineer is working. This is the strongest intent signal we
+   * have: someone sitting in Agent mode is there to build the document, so
+   * text that matches neither a question nor a write verb resolves to write
+   * and keeps the edit tools loaded. Ask mode resolves the same text to read.
+   */
+  mode?: "plan" | "agent";
 };
 
 export function classifyChatUserIntent(
@@ -139,12 +146,13 @@ export function classifyChatUserIntent(
     }
   }
 
-  return classifyTaskText(task || latest, input.surface);
+  return classifyTaskText(task || latest, input.surface, input.mode ?? "agent");
 }
 
 function classifyTaskText(
   text: string,
-  surface: ClassifyChatUserIntentInput["surface"]
+  surface: ClassifyChatUserIntentInput["surface"],
+  mode: "plan" | "agent"
 ): ChatUserIntentDecision {
   if (CONTINUE_RE.test(text)) {
     return { kind: "write", reason: "continue_task" };
@@ -177,6 +185,13 @@ function classifyTaskText(
     return { kind: "write", reason: "produce_request" };
   }
 
+  // Neither a question nor a recognized write verb. Fall back to where the
+  // engineer is rather than to read: stripping the edit tools in Agent mode
+  // is what made the assistant claim it could not write and paste a markdown
+  // table into chat instead.
+  if (mode === "agent") {
+    return { kind: "write", reason: "ambiguous_agent_mode" };
+  }
   return { kind: "read", reason: "question_or_lookup" };
 }
 
