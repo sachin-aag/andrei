@@ -4,6 +4,11 @@ import {
 } from "@/lib/suggestions/accept-suggestion";
 import { buildSuggestionRecord, withSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import { serializeAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
+import { MECHANICAL_RESULTS_HEADERS } from "@/lib/document-types/mechanical/sections";
+import { extractRawRows } from "@/lib/document-types/design-verification/matrix-parser";
+import { applyTableOperation } from "@/lib/suggestions/table-operation";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { doc, para } from "@/lib/suggestions/merge-fixtures";
 import type { CommentRecord } from "@/types/report";
 import { resolveSuggestionMerge, injectMergePreview } from "@/lib/suggestions/resolve-merge";
@@ -266,5 +271,184 @@ describe("injectMergePreview", () => {
       attrs: PREVIEW_ATTRS,
     });
     expect(hasPreviewMarks(preview, PREVIEW_ATTRS.id)).toBe(true);
+  });
+});
+
+describe("resolveSuggestionMerge table operations", () => {
+  it("does not use mergeField for stored tableOperation suggestions", () => {
+    const baseSection = {
+      hardwareTable: seededTableDoc(MECHANICAL_RESULTS_HEADERS),
+    };
+    const operation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, insertText: "M3-HRS-GN-001" },
+        {
+          row: 1,
+          col: 1,
+          insertText: "All Components shall be RoHS compliant",
+        },
+        { row: 1, col: 2, insertText: "See data sheets in Appendix A." },
+        { row: 1, col: 3, insertText: "Pass" },
+      ],
+    };
+    const record = buildSuggestionRecord({
+      sectionContent: baseSection,
+      section: "requirements_verified",
+      targetField: "hardwareTable",
+      documentType: "mechanical_design_verification",
+      input: { kind: "table", operation },
+    });
+    expect(record).not.toBeNull();
+    const comment: CommentRecord = {
+      id: "c-table",
+      reportId: "r1",
+      parentId: null,
+      sectionId: "s1",
+      section: "requirements_verified",
+      authorId: "ai",
+      content: serializeAiFixCommentContent(
+        withSuggestionRecord(
+          {
+            deleteText: "",
+            insertText: "",
+            reasoning: "Add requirement row",
+            tableOperation: operation,
+          },
+          record
+        )
+      ),
+      anchorText: "Insert requirement row",
+      contentPath: "hardwareTable",
+      fromPos: null,
+      toPos: null,
+      status: "open",
+      kind: "ai_fix",
+      source: "ai",
+      evaluationId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      externalAuthorName: null,
+      externalAuthorInitials: null,
+      externalCommentId: null,
+      externalCreatedAt: null,
+      locked: false,
+    };
+
+    const resolved = resolveSuggestionMerge({
+      section: "requirements_verified",
+      comment,
+      sectionContent: baseSection,
+      fieldContentPath: "hardwareTable",
+    });
+    expect(resolved.merge).toBeNull();
+
+    const applied = applySuggestionToContent({
+      section: "requirements_verified",
+      comment,
+      sectionContent: baseSection,
+      fieldContentPath: "hardwareTable",
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const raw = extractRawRows(
+      getRichFieldValue(applied.nextSection, "hardwareTable")
+    );
+    expect(raw).not.toHaveProperty("error");
+    if ("error" in raw) return;
+    expect(raw.headers).toEqual([...MECHANICAL_RESULTS_HEADERS]);
+    expect(raw.dataRows).toHaveLength(1);
+    expect(raw.dataRows[0]?.[0]).toBe("M3-HRS-GN-001");
+    expect(raw.dataRows[0]?.[3]).toBe("Pass");
+  });
+
+  it("applies tableOperation when the engineer edited a cell first", () => {
+    const baseSection = {
+      hardwareTable: seededTableDoc(MECHANICAL_RESULTS_HEADERS),
+    };
+    const diverged = applyTableOperation(
+      baseSection.hardwareTable,
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "TYPED-BY-ENGINEER" }],
+      },
+      { section: "requirements_verified", targetField: "hardwareTable" }
+    );
+    expect(diverged.ok).toBe(true);
+    if (!diverged.ok) return;
+    const sectionContent = { hardwareTable: diverged.doc };
+
+    const operation = {
+      kind: "insert_rows" as const,
+      tableIndex: 0,
+      afterRow: 1,
+      rows: [
+        [
+          "M3-HRS-GN-001",
+          "All Components shall be RoHS compliant",
+          "See data sheets in Appendix A.",
+          "Pass",
+        ],
+      ],
+    };
+    const record = buildSuggestionRecord({
+      sectionContent: baseSection,
+      section: "requirements_verified",
+      targetField: "hardwareTable",
+      documentType: "mechanical_design_verification",
+      input: { kind: "table", operation },
+    });
+    const comment: CommentRecord = {
+      id: "c-table-diverged",
+      reportId: "r1",
+      parentId: null,
+      sectionId: "s1",
+      section: "requirements_verified",
+      authorId: "ai",
+      content: serializeAiFixCommentContent(
+        withSuggestionRecord(
+          {
+            deleteText: "",
+            insertText: "",
+            reasoning: "Add requirement row",
+            tableOperation: operation,
+          },
+          record
+        )
+      ),
+      anchorText: "Insert requirement row",
+      contentPath: "hardwareTable",
+      fromPos: null,
+      toPos: null,
+      status: "open",
+      kind: "ai_fix",
+      source: "ai",
+      evaluationId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      externalAuthorName: null,
+      externalAuthorInitials: null,
+      externalCommentId: null,
+      externalCreatedAt: null,
+      locked: false,
+    };
+
+    const applied = applySuggestionToContent({
+      section: "requirements_verified",
+      comment,
+      sectionContent,
+      fieldContentPath: "hardwareTable",
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const raw = extractRawRows(
+      getRichFieldValue(applied.nextSection, "hardwareTable")
+    );
+    expect(raw).not.toHaveProperty("error");
+    if ("error" in raw) return;
+    expect(raw.headers).toEqual([...MECHANICAL_RESULTS_HEADERS]);
+    expect(raw.dataRows).toHaveLength(2);
+    expect(raw.dataRows.some((row) => row[0] === "M3-HRS-GN-001")).toBe(true);
+    expect(raw.dataRows.some((row) => row[0] === "TYPED-BY-ENGINEER")).toBe(true);
   });
 });
