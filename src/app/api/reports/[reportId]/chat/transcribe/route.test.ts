@@ -19,6 +19,29 @@ vi.mock("@/lib/voice/speech-stream", () => ({
   })),
 }));
 
+vi.mock("@/lib/voice/budget", () => ({
+  assertVoiceBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  isVoiceBudgetExceededError: (error: unknown) =>
+    Boolean(
+      error &&
+        typeof error === "object" &&
+        "code" in error &&
+        (error as { code: string }).code === "voice_budget_exceeded"
+    ),
+  voiceBudgetExceededResponse: (error: { message: string }) =>
+    new Response(JSON.stringify({ error: error.message, code: "voice_budget_exceeded" }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    }),
+}));
+
+vi.mock("@/lib/ai/usage", () => ({
+  assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  isAiBudgetExceededError: () => false,
+  aiBudgetExceededResponse: () =>
+    new Response(JSON.stringify({ error: "AI budget" }), { status: 429 }),
+}));
+
 vi.mock("@/lib/customers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/customers")>();
   return {
@@ -30,6 +53,8 @@ vi.mock("@/lib/customers", async (importOriginal) => {
 import { getCurrentUser } from "@/lib/auth/session";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
 import { STUB_VOICE_FINAL } from "@/lib/voice/constants";
+import { VoiceBudgetExceededError } from "@/lib/voice/budget/errors";
+import { assertVoiceBudgetAvailable } from "@/lib/voice/budget";
 import { recognizePcmWindow } from "@/lib/voice/speech-stream";
 import { GET, POST } from "./route";
 
@@ -58,6 +83,7 @@ describe("/api/reports/[reportId]/chat/transcribe", () => {
       text: STUB_VOICE_FINAL,
       languageCode: "en-US",
     });
+    vi.mocked(assertVoiceBudgetAvailable).mockResolvedValue(undefined);
   });
 
   it("POST returns 401 when unauthenticated", async () => {
@@ -93,6 +119,23 @@ describe("/api/reports/[reportId]/chat/transcribe", () => {
     } as never);
     const response = await GET(new Request("http://localhost/transcribe"), params);
     expect(response.status).toBe(204);
+    expect(assertVoiceBudgetAvailable).toHaveBeenCalledWith({ audioSeconds: 1 });
+  });
+
+  it("GET returns 429 when the voice budget is exhausted", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(loadAccessibleReport).mockResolvedValueOnce({
+      report: { id: "report-1" },
+      canEdit: true,
+    } as never);
+    vi.mocked(assertVoiceBudgetAvailable).mockRejectedValueOnce(
+      new VoiceBudgetExceededError(100_000, 6_000_000, 1)
+    );
+    const response = await GET(new Request("http://localhost/transcribe"), params);
+    expect(response.status).toBe(429);
+    const payload = (await response.json()) as { error: string; code: string };
+    expect(payload.code).toBe("voice_budget_exceeded");
+    expect(payload.error).toMatch(/voice transcription limit/i);
   });
 
   it("POST audio returns a transcript without a sticky session", async () => {
@@ -132,6 +175,28 @@ describe("/api/reports/[reportId]/chat/transcribe", () => {
     );
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("POST audio returns 429 when the voice budget is exhausted", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(engineer);
+    vi.mocked(loadAccessibleReport).mockResolvedValue({
+      report: { id: "report-1" },
+      canEdit: true,
+    } as never);
+    vi.mocked(recognizePcmWindow).mockRejectedValueOnce(
+      new VoiceBudgetExceededError(100_000, 6_000_000, 30)
+    );
+    const response = await POST(
+      new Request("http://localhost/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Uint8Array(8_000),
+      }),
+      params
+    );
+    expect(response.status).toBe(429);
+    const payload = (await response.json()) as { error: string; code: string };
+    expect(payload.code).toBe("voice_budget_exceeded");
   });
 
   it("POST audio returns 502 when recognition fails", async () => {
@@ -174,7 +239,11 @@ describe("/api/reports/[reportId]/chat/transcribe", () => {
       params
     );
     expect(recognizePcmWindow).toHaveBeenCalledWith(
-      expect.objectContaining({ languageCodes: ["hi-IN"] })
+      expect.objectContaining({
+        languageCodes: ["hi-IN"],
+        reportId: "report-1",
+        userId: "engineer-1",
+      })
     );
   });
 });

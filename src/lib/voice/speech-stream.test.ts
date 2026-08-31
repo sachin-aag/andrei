@@ -21,11 +21,19 @@ vi.mock("@/lib/ai/resolve-google-language-model", () => ({
 
 vi.mock("@/lib/ai/usage", () => ({
   assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/lib/voice/budget", () => ({
+  assertVoiceBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordVoiceUsage: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { isTestStubSpeech } from "@/lib/test/ai-bypass";
 import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
+import { recordAiUsage } from "@/lib/ai/usage";
 import { VOICE_INPUT_MJ_CODES } from "@/lib/customers/packs";
+import { recordVoiceUsage } from "@/lib/voice/budget";
 import {
   STUB_VOICE_FINAL,
   VOICE_TRANSCRIBE_GOOGLE_MODEL_ID,
@@ -41,6 +49,8 @@ describe("recognizePcmWindow", () => {
     vi.mocked(isTestStubSpeech).mockReturnValue(true);
     generateTextMock.mockReset();
     vi.mocked(resolveGoogleLanguageModel).mockClear();
+    vi.mocked(recordVoiceUsage).mockClear();
+    vi.mocked(recordAiUsage).mockClear();
   });
 
   it("returns the canned stub transcript without calling Gemini", async () => {
@@ -51,6 +61,7 @@ describe("recognizePcmWindow", () => {
       })
     ).resolves.toEqual({ text: STUB_VOICE_FINAL, languageCode: "en-US" });
     expect(generateTextMock).not.toHaveBeenCalled();
+    expect(recordVoiceUsage).not.toHaveBeenCalled();
   });
 
   it("skips STT for a short window when not stubbed", async () => {
@@ -62,6 +73,7 @@ describe("recognizePcmWindow", () => {
       })
     ).resolves.toEqual({ text: "" });
     expect(generateTextMock).not.toHaveBeenCalled();
+    expect(recordVoiceUsage).not.toHaveBeenCalled();
   });
 
   it("sends a WAV clip to Vertex Gemini and keeps Devanagari", async () => {
@@ -100,5 +112,14 @@ describe("recognizePcmWindow", () => {
     expect(filePart?.mediaType).toBe("audio/wav");
     expect(filePart?.data).toEqual(pcmS16leMonoToWav(pcm));
     expect(call.messages[0]?.content[0]?.text).toContain("hi-IN");
+    expect(recordVoiceUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ audioSeconds: 1, reportId: undefined })
+    );
+    expect(recordAiUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feature: "voice_transcribe",
+        modelId: VOICE_TRANSCRIBE_GOOGLE_MODEL_ID,
+      })
+    );
   });
 });

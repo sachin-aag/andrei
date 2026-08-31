@@ -985,6 +985,7 @@ export const aiUsageFeatureEnum = pgEnum("ai_usage_feature", [
   "math_extraction",
   "chart_extraction",
   "docx_image_description",
+  "voice_transcribe",
 ]);
 
 export const aiBudgetSettings = pgTable("ai_budget_settings", {
@@ -1071,6 +1072,40 @@ export const attachmentPageUsageEvents = pgTable(
     ingestRunUnique: uniqueIndex(
       "attachment_page_usage_events_ingest_run_unique"
     ).on(t.ingestRunId),
+  })
+);
+
+export const voiceBudgetSettings = pgTable("voice_budget_settings", {
+  id: text("id").primaryKey().default("default"),
+  monthlyMinuteLimit: integer("monthly_minute_limit").notNull().default(100_000),
+  enforceHardLimit: boolean("enforce_hard_limit").notNull().default(true),
+  warningThresholdPercent: integer("warning_threshold_percent")
+    .notNull()
+    .default(80),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const voiceUsageEvents = pgTable(
+  "voice_usage_events",
+  {
+    id: text("id").primaryKey(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    yearMonth: text("year_month").notNull(),
+    audioSeconds: integer("audio_seconds").notNull(),
+    reportId: text("report_id").references(() => reports.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id").references(() => workspaceUsers.id, {
+      onDelete: "set null",
+    }),
+    metadata: jsonb("metadata").notNull().default({}),
+  },
+  (t) => ({
+    yearMonthIdx: index("voice_usage_events_year_month_idx").on(t.yearMonth),
   })
 );
 

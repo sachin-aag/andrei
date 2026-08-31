@@ -201,6 +201,10 @@ export function useVoiceDictation({
         cache: "no-store",
       });
       if (!warmup.ok) {
+        const payload = (await warmup.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        if (payload?.error) throw new Error(payload.error);
         throw new Error(
           warmup.status === 401
             ? "Sign in to use voice input."

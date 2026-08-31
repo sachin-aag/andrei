@@ -69,6 +69,9 @@ in English. PCM is buffered while recording; after stop, each PCM POST is one
 Vertex **Gemini** transcribe (Flash-Lite, same WIF/resolver as chat). Do not call Cloud Speech-to-Text / Chirp —
 the runtime SA 403s `PERMISSION_DENIED` without `roles/speech.client`.
 No sticky session / SSE. Stub: `ALLOW_TEST_STUB_SPEECH`.
+Monthly voice minutes are a separate Limits cap (`voice-budget`, default
+100,000 minutes) in addition to the Gemini token budget; usage is
+`voice_transcribe` in the AI feature table.
 
 ## Prompt / tools
 
