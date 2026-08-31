@@ -12,7 +12,6 @@ import { ANALYTICS_CHAT_PROMPT_VERSION } from "@/lib/statistical-analysis/chat-p
 import { buildAnalyticsChatTools } from "@/lib/statistical-analysis/chat-tools";
 import { auditActorFromUser } from "@/lib/audit";
 import {
-  ANALYTICS_CHAT_STEP_BUDGET,
   createAnalyticsSearchGate,
   prepareAnalyticsChatStep,
 } from "@/lib/statistical-analysis/search-loop";
@@ -226,7 +225,6 @@ async function handleAnalyticsChatPost(
     });
   }, 1_000);
   const stopCancelPoll = () => clearInterval(cancelPoll);
-  let stoppedForStepBudget = false;
 
   let result;
   try {
@@ -265,13 +263,10 @@ async function handleAnalyticsChatPost(
       messages: modelMessages,
       tools,
       experimental_repairToolCall: repairChatToolCall,
-      stopWhen: async ({ steps }) => {
-        if (await isAssistantTurnCancelRequested(sessionId)) return true;
-        if (steps.length >= ANALYTICS_CHAT_STEP_BUDGET) {
-          stoppedForStepBudget = true;
-          return true;
-        }
-        return false;
+      stopWhen: async () => {
+        // Cancel only. No tool-step cap — `CHAT_SERVER_ABORT_MS` is the
+        // abnormal-condition stop. Loop guards live in prepareStep.
+        return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps }) =>
         prepareAnalyticsChatStep({
@@ -379,7 +374,6 @@ async function handleAnalyticsChatPost(
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,
-        stepBudgetExhausted: stoppedForStepBudget,
         finishReason,
       });
       if (persisted.interrupted) {
@@ -388,12 +382,6 @@ async function handleAnalyticsChatPost(
           sessionId,
           finishReason: finishReason ?? "unknown",
           isAborted,
-        });
-      } else if (persisted.stepBudgetExhausted) {
-        console.warn("analytics-chat: step budget exhausted", {
-          reportId,
-          sessionId,
-          finishReason: finishReason ?? "unknown",
         });
       } else if (persisted.incomplete) {
         console.warn("analytics-chat: incomplete assistant turn", {

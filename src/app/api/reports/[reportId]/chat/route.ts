@@ -99,7 +99,6 @@ import {
   DocumentReviewSession,
   pickPlanModeChatTools,
   prepareDocumentReviewStep,
-  shouldStopChatSteps,
 } from "@/lib/ai/chat/document-review";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
@@ -295,8 +294,6 @@ async function handleChatPost(
     hasDocuments: documents.length > 0,
   });
   const documentReview = new DocumentReviewSession();
-  const reviewPageCount =
-    mentionedPageCount > 0 ? mentionedPageCount : totalReadyPages;
 
   const alreadyDrafted = detectAlreadyDraftedSection({
     userText,
@@ -455,15 +452,10 @@ async function handleChatPost(
       messages: modelMessages,
       tools,
       experimental_repairToolCall: repairChatToolCall,
-      stopWhen: async ({ steps }) => {
-        if (await isAssistantTurnCancelRequested(sessionId)) return true;
-        return shouldStopChatSteps({
-          stepsTaken: steps.length,
-          mode,
-          policy: retrieval.policy,
-          reviewPhase: documentReview.phase(),
-          totalPages: documentReview.progress().totalPages || reviewPageCount,
-        });
+      stopWhen: async () => {
+        // Cancel only. No tool-step cap — `CHAT_SERVER_ABORT_MS` is the
+        // abnormal-condition stop. Loop guards live in prepareStep.
+        return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps }) => {
         if (userIntent.kind === "social") {

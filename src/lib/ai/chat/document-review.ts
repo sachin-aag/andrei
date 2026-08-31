@@ -33,11 +33,6 @@ export const REVIEW_MAX_PAGES_PER_BATCH = 6;
 export const REVIEW_DENSE_PAGE_CHARS = 6_000;
 export const REVIEW_PAGE_TEXT_LIMIT = 12_000;
 export const REVIEW_PAGE_CAP = 300;
-export const FOCUSED_CHAT_STEP_BUDGET_PLAN = 8;
-export const FOCUSED_CHAT_STEP_BUDGET_AGENT = 24;
-export const ADAPTIVE_CHAT_STEP_BUDGET_PLAN = 16;
-export const ADAPTIVE_CHAT_STEP_BUDGET_AGENT = 40;
-export const COMPREHENSIVE_CHAT_STEP_BUDGET_CAP = 96;
 /** In-flight extract calls inside one continue_document_review. */
 export const REVIEW_EXTRACT_CONCURRENCY = 8;
 const REVIEW_DRAIN_MAX_EXTRACTS = 800;
@@ -528,60 +523,10 @@ export function pickPlanModeChatTools<T extends Record<string, unknown>>(
   return picked;
 }
 
-export function chatStepBudget(input: {
-  mode: "plan" | "agent";
-  policy: RetrievalPolicy;
-  totalPages: number;
-}): number {
-  switch (input.policy) {
-    case "focused":
-      return input.mode === "plan"
-        ? FOCUSED_CHAT_STEP_BUDGET_PLAN
-        : FOCUSED_CHAT_STEP_BUDGET_AGENT;
-    case "adaptive":
-      return input.mode === "plan"
-        ? ADAPTIVE_CHAT_STEP_BUDGET_PLAN
-        : ADAPTIVE_CHAT_STEP_BUDGET_AGENT;
-    case "comprehensive": {
-      const focused =
-        input.mode === "plan"
-          ? FOCUSED_CHAT_STEP_BUDGET_PLAN
-          : FOCUSED_CHAT_STEP_BUDGET_AGENT;
-      const continueSteps = Math.ceil(Math.max(input.totalPages, 1) / 2) + 12;
-      return Math.min(
-        COMPREHENSIVE_CHAT_STEP_BUDGET_CAP,
-        Math.max(focused, continueSteps)
-      );
-    }
-    default: {
-      const _exhaustive: never = input.policy;
-      throw new Error(`Unhandled retrieval policy: ${String(_exhaustive)}`);
-    }
-  }
-}
-
 export type DocumentReviewToolChoice = {
   activeTools: DocumentReviewToolName[] | string[];
   toolChoice?: { type: "tool"; toolName: DocumentReviewToolName };
 };
-
-export function shouldStopChatSteps(input: {
-  stepsTaken: number;
-  mode: "plan" | "agent";
-  policy: RetrievalPolicy;
-  reviewPhase: DocumentReviewPhase;
-  totalPages: number;
-}): boolean {
-  const reviewing =
-    input.reviewPhase === "in_progress" ||
-    input.reviewPhase === "ready_to_finish";
-  const budget = chatStepBudget({
-    mode: input.mode,
-    policy: reviewing ? "comprehensive" : input.policy,
-    totalPages: input.totalPages,
-  });
-  return input.stepsTaken >= budget;
-}
 
 export function prepareDocumentReviewStep(input: {
   policy: RetrievalPolicy;

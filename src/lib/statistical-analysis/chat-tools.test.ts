@@ -388,6 +388,12 @@ describe("analytics chat tools", () => {
       operationCount: 2,
     });
     expect(updateReportAnalytics).toHaveBeenCalledTimes(1);
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1];
+    expect(saved?.columns).toHaveLength(8);
+    expect(saved?.columns.slice(0, 2).map((column) => column.name)).toEqual([
+      "Time (hrs)",
+      "Temp (°C)",
+    ]);
   });
 
   it("reports destination and non-numeric cells after write_column", async () => {
@@ -421,6 +427,14 @@ describe("analytics chat tools", () => {
       nonNumericCells: 1,
     });
     expect(String((result as { note?: string }).note)).toMatch(/not numbers/i);
+    expect(result).toMatchObject({ columnId: "c1" });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1];
+    expect(saved?.columns[0]).toMatchObject({
+      id: "c1",
+      name: "Time",
+      values: ["0", "24", "not a number"],
+    });
+    expect(saved?.columns[1]?.name).toBe("C2");
   });
 
   it("writes serials to the named column when add_column assigned a new id", async () => {
@@ -474,6 +488,97 @@ describe("analytics chat tools", () => {
       "P33-0924-10012",
     ]);
     expect(saved?.columns.find((col) => col.id === "c2")?.values ?? []).toEqual([]);
+  });
+
+  it("fills the leftmost empty columns even when write_column guesses right-side ids", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    vi.mocked(readDocumentPage).mockResolvedValue(pageRead("101.2 6.8"));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        sourceAttachmentId: "att_1",
+        sourcePages: [1],
+        columns: [
+          { columnId: "c7", name: "Assay %", values: [101.2] },
+          { columnId: "c8", name: "pH", values: [6.8] },
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({ status: "written", columnCount: 2 });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1];
+    expect(saved?.columns).toHaveLength(8);
+    expect(saved?.columns[0]).toMatchObject({
+      id: "c1",
+      name: "Assay %",
+      values: ["101.2"],
+    });
+    expect(saved?.columns[1]).toMatchObject({
+      id: "c2",
+      name: "pH",
+      values: ["6.8"],
+    });
+    expect(saved?.columns[6]?.name).toBe("C7");
+    expect(saved?.columns[7]?.name).toBe("C8");
+  });
+
+  it("does not overwrite a filled column when writing a new named series", async () => {
+    const sheet = replaceColumnValues(
+      createEmptyWorksheet(),
+      0,
+      ["3", "2.5"],
+      "Torque (ozf-in)"
+    );
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(analyticsView(sheet));
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      { name: "Assay %", values: [101.2, 99.8] },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      columnId: "c2",
+      columnName: "Assay %",
+    });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1];
+    expect(saved?.columns[0]).toMatchObject({
+      name: "Torque (ozf-in)",
+      values: ["3", "2.5"],
+    });
+    expect(saved?.columns[1]).toMatchObject({
+      id: "c2",
+      name: "Assay %",
+      values: ["101.2", "99.8"],
+    });
   });
 
   it("retries write_column once after a version conflict", async () => {
@@ -533,6 +638,9 @@ describe("analytics chat tools", () => {
         ],
       }).success
     ).toBe(true);
+    expect(tools.write_column?.description).toContain(
+      "leftmost empty C1–C8 columns"
+    );
     expect(tools.write_column?.description).toContain(
       "do not call this tool once per column"
     );
@@ -685,6 +793,61 @@ describe("analytics chat tools", () => {
       "50.2",
       "58.3",
     ]);
+  });
+
+  it("keeps Tip N and split handpiece SNs on a torque table dump", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const page =
+      "Handpiece S/N P33-0924- 10012 - Tip 1: 3 ozf-in " +
+      "Handpiece S/N P33-0924- 10012 - Tip 2: 2.5 ozf-in";
+    vi.mocked(readDocumentPage).mockResolvedValue(pageRead(page));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        sourceAttachmentId: "att_1",
+        sourcePages: [13],
+        columns: [
+          { name: "Torque (ozf-in)", values: [3, 2.5] },
+          {
+            name: "Handpiece SN",
+            values: ["P33-0924-10012", "P33-0924-10012"],
+          },
+          { name: "Tip", values: ["Tip 1", "Tip 2"] },
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      blankedCount: 0,
+    });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(
+      saved.columns.find((column) => column.name === "Tip")?.values
+    ).toEqual(["Tip 1", "Tip 2"]);
+    expect(
+      saved.columns.find((column) => column.name === "Handpiece SN")?.values
+    ).toEqual(["P33-0924-10012", "P33-0924-10012"]);
+    expect(
+      saved.columns.find((column) => column.name === "Torque (ozf-in)")?.values
+    ).toEqual(["3", "2.5"]);
   });
 
   it("blanks invented 0.02 when the source token is 02", async () => {

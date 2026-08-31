@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ANALYTICS_CHAT_STEP_BUDGET,
   analyticsSearchLoopDirective,
   createAnalyticsSearchGate,
   prepareAnalyticsChatStep,
@@ -121,13 +120,15 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).toContain("extract_numeric_series");
   });
 
-  it("strips tools on the last budgeted step so the model must write", () => {
-    const steps = Array.from({ length: ANALYTICS_CHAT_STEP_BUDGET - 1 }, () =>
-      step(["read_worksheet"])
-    );
-    expect(
-      prepareAnalyticsChatStep({ steps, canEdit: true })?.activeTools
-    ).toEqual([]);
+  it("keeps write tools after many post-search steps — there is no step budget", () => {
+    const steps = [
+      step(["search_documents"], 2),
+      ...Array.from({ length: 40 }, () => step(["extract_numeric_series"])),
+    ];
+    const prepared = prepareAnalyticsChatStep({ steps, canEdit: true });
+    expect(prepared?.activeTools).toContain("write_column");
+    expect(prepared?.activeTools).toContain("extract_numeric_series");
+    expect(prepared?.activeTools).not.toContain("search_documents");
   });
 
   it("hides search from AI SDK content parts after a page read", () => {

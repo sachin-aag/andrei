@@ -18,8 +18,27 @@ import {
 } from "./types";
 import type { AnalysisRowSelection } from "./row-selection";
 
+const PLACEHOLDER_COLUMN_NAME = /^C\d+$/i;
+
 export function defaultColumnName(index: number): string {
   return `C${index + 1}`;
+}
+
+/** Empty starter columns (C1, C2, …) the grid shows so a new sheet is not blank. */
+export function isPlaceholderColumn(column: WorksheetColumn): boolean {
+  return (
+    trimTrailingEmpty(column.values).length === 0 &&
+    PLACEHOLDER_COLUMN_NAME.test(column.name.trim())
+  );
+}
+
+export function findPlaceholderColumnIndex(
+  data: WorksheetData,
+  occupied?: ReadonlySet<number>
+): number {
+  return data.columns.findIndex(
+    (column, index) => !occupied?.has(index) && isPlaceholderColumn(column)
+  );
 }
 
 export function defaultColumnId(index: number): string {

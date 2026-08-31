@@ -69,7 +69,12 @@ describe("applyManageWorksheet", () => {
       status: "ok",
       columnName: "Assay %",
     });
-    expect(added.worksheet?.columns).toHaveLength(9);
+    expect(added.worksheet?.columns).toHaveLength(8);
+    expect(added.worksheet?.columns[0]).toMatchObject({
+      id: "c1",
+      name: "Assay %",
+    });
+    expect(added.worksheet?.columns[1]?.name).toBe("C2");
 
     const renamed = applyManageWorksheet(added.worksheet!, {
       action: "rename_column",
@@ -83,7 +88,32 @@ describe("applyManageWorksheet", () => {
       columnId: "Assay",
     });
     expect(deleted.result.status).toBe("ok");
-    expect(deleted.worksheet?.columns).toHaveLength(8);
+    expect(deleted.worksheet?.columns).toHaveLength(7);
+  });
+
+  it("appends add_column when no empty C# placeholders remain", () => {
+    let sheet = createEmptyWorksheet();
+    for (let i = 0; i < sheet.columns.length; i++) {
+      sheet = setCell(sheet, i, 0, String(i + 1));
+    }
+    const added = applyManageWorksheet(sheet, {
+      action: "add_column",
+      name: "Extra",
+    });
+    expect(added.result).toMatchObject({ status: "ok", columnName: "Extra" });
+    expect(added.worksheet?.columns).toHaveLength(9);
+    expect(added.worksheet?.columns.at(-1)?.name).toBe("Extra");
+  });
+
+  it("honors an explicit add_column insert position", () => {
+    const added = applyManageWorksheet(createEmptyWorksheet(), {
+      action: "add_column",
+      name: "Inserted",
+      at: 1,
+    });
+    expect(added.worksheet?.columns).toHaveLength(9);
+    expect(added.worksheet?.columns[0]?.name).toBe("Inserted");
+    expect(added.worksheet?.columns[1]?.name).toBe("C1");
   });
 
   it("inserts a row in the middle of filled cells and deletes it", () => {
@@ -147,12 +177,11 @@ describe("applyManageWorksheet", () => {
       name: "Temp",
     });
     expect(second.result).toMatchObject({ status: "ok", columnName: "Temp" });
-    expect(second.worksheet?.columns.map((column) => column.name)).toContain(
-      "Time"
-    );
-    expect(second.worksheet?.columns.map((column) => column.name)).toContain(
-      "Temp"
-    );
+    expect(second.worksheet?.columns.map((column) => column.name).slice(0, 2)).toEqual([
+      "Time",
+      "Temp",
+    ]);
+    expect(second.worksheet?.columns).toHaveLength(8);
   });
 
   it("parses a batch of operations without a top-level action", () => {
