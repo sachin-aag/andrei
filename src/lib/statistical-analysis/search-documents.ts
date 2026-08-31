@@ -5,6 +5,8 @@ import {
   SEARCH_DOCUMENTS_MAX_LIMIT,
   SEARCH_DOCUMENTS_MAX_QUERIES,
   SEARCH_DOCUMENTS_RESULT_CAP,
+  SEARCH_QUERY_MAX_CHARS,
+  coerceSearchDocumentsInput,
   collectSearchQueries,
   mergeExcludePages,
 } from "@/lib/ai/chat/tools";
@@ -65,53 +67,58 @@ export function buildAnalyticsSearchDocumentsTool(opts: {
   );
   const tagged = pinnedAttachmentIds.length;
 
-  const inputSchema = z
-    .object({
-      query: z
-        .string()
-        .min(1)
-        .max(500)
-        .optional()
-        .describe("One locator, e.g. Conductivity or TABLE NO 01."),
-      queries: z
-        .array(z.string().min(1).max(500))
-        .max(SEARCH_DOCUMENTS_MAX_QUERIES)
-        .optional()
-        .describe("Optional extra locators. Prefer one query, then read."),
-      limit: z
-        .number()
-        .int()
-        .min(1)
-        .max(SEARCH_DOCUMENTS_MAX_LIMIT)
-        .default(SEARCH_DOCUMENTS_DEFAULT_LIMIT),
-      mode: z
-        .enum(["hybrid", "keyword"])
-        .default("keyword")
-        .describe(
-          "keyword = lexical grep (default). hybrid = semantic + keyword; use only when keyword would have no tokens."
-        ),
-      excludePages: z
-        .array(
-          z.object({
-            attachmentId: z.string().min(1),
-            pageNumber: z.number().int().min(1),
-          })
-        )
-        .max(80)
-        .optional()
-        .describe(
-          "Pages already seen. Pass nextExcludePages only on the second (last) search."
-        ),
-      scope: z
-        .enum(["tagged", "all"])
-        .optional()
-        .describe(
-          tagged > 0
-            ? 'Where to look: "tagged" prefers the engineer\'s @ mentions, "all" searches every attachment.'
-            : "Ignored when no documents are tagged."
-        ),
-    })
-    .refine(hasSearchQuery, { message: "Provide query or queries." });
+  const inputSchema = z.preprocess(
+    coerceSearchDocumentsInput,
+    z
+      .object({
+        query: z
+          .string()
+          .min(1)
+          .max(SEARCH_QUERY_MAX_CHARS)
+          .optional()
+          .describe("One locator, e.g. Conductivity or TABLE NO 01."),
+        queries: z
+          .array(z.string().min(1).max(SEARCH_QUERY_MAX_CHARS))
+          .max(SEARCH_DOCUMENTS_MAX_QUERIES)
+          .optional()
+          .describe(
+            "Optional extra locators. At most 4; extra items are dropped. Prefer one query, then read."
+          ),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(SEARCH_DOCUMENTS_MAX_LIMIT)
+          .default(SEARCH_DOCUMENTS_DEFAULT_LIMIT),
+        mode: z
+          .enum(["hybrid", "keyword"])
+          .default("keyword")
+          .describe(
+            "keyword = lexical grep (default). hybrid = semantic + keyword; use only when keyword would have no tokens."
+          ),
+        excludePages: z
+          .array(
+            z.object({
+              attachmentId: z.string().min(1),
+              pageNumber: z.number().int().min(1),
+            })
+          )
+          .max(80)
+          .optional()
+          .describe(
+            "Pages already seen. Pass nextExcludePages only on the second (last) search."
+          ),
+        scope: z
+          .enum(["tagged", "all"])
+          .optional()
+          .describe(
+            tagged > 0
+              ? 'Where to look: "tagged" prefers the engineer\'s @ mentions, "all" searches every attachment.'
+              : "Ignored when no documents are tagged."
+          ),
+      })
+      .refine(hasSearchQuery, { message: "Provide query or queries." })
+  );
 
   const description =
     tagged > 0

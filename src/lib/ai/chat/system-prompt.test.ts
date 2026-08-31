@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v70-coalesce-nearby");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v71-search-query-clamp");
   });
 
   it("requires following the latest user message and forbids drafting on a greeting", () => {
@@ -347,7 +347,8 @@ describe("buildChatSystemPrompt", () => {
     expect(plan).toContain("Retrieval mode: ADAPTIVE");
     expect(plan).toContain("grep adaptively");
     expect(plan).toContain("excludePages=nextExcludePages");
-    expect(plan).toContain("requirement IDs");
+    expect(plan).toContain("Prefer queries[] in one call");
+    expect(plan).toContain("At most 4 strings per call");
     expect(plan).toContain("ECO/DCR");
     expect(plan).toContain("Do not start a document review");
     expect(plan).not.toContain("Escalate to start_document_review");

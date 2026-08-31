@@ -479,8 +479,55 @@ export const SEARCH_DOCUMENTS_DEFAULT_LIMIT = 8;
 export const SEARCH_DOCUMENTS_MAX_LIMIT = 16;
 export const SEARCH_DOCUMENTS_MAX_QUERIES = 4;
 export const SEARCH_DOCUMENTS_RESULT_CAP = 16;
+export const SEARCH_QUERY_MAX_CHARS = 500;
 export const SEARCH_COVERAGE_HINT =
   "Grep loop: this list is ranked, not complete. Pass nextExcludePages as excludePages on the next call. For tables, grep complementary objects (UUT vs equipment, fixtures, serials) before drafting. Use mode=keyword for exact protocol terms. If truncated=true, grep again.";
+
+function clampSearchQueryText(value: string): string {
+  const query = value.replace(/\s+/g, " ").trim();
+  return query.length <= SEARCH_QUERY_MAX_CHARS
+    ? query
+    : query.slice(0, SEARCH_QUERY_MAX_CHARS);
+}
+
+/**
+ * Gemini sometimes ignores JSON Schema maxItems/maximum on search_documents
+ * (e.g. 8 queries and limit 20). Clamp so Zod does not throw
+ * AI_InvalidToolInputError and abort the assistant stream.
+ */
+export function coerceSearchDocumentsInput(raw: unknown): unknown {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+  const next: Record<string, unknown> = { ...raw };
+
+  if (typeof next.limit === "number" && Number.isFinite(next.limit)) {
+    next.limit = Math.min(
+      SEARCH_DOCUMENTS_MAX_LIMIT,
+      Math.max(1, Math.trunc(next.limit))
+    );
+  }
+
+  if (typeof next.query === "string") {
+    const query = clampSearchQueryText(next.query);
+    if (query) next.query = query;
+    else delete next.query;
+  }
+
+  if (Array.isArray(next.queries)) {
+    const queries: string[] = [];
+    for (const item of next.queries) {
+      if (typeof item !== "string") continue;
+      const query = clampSearchQueryText(item);
+      if (!query) continue;
+      queries.push(query);
+      if (queries.length >= SEARCH_DOCUMENTS_MAX_QUERIES) break;
+    }
+    next.queries = queries.length > 0 ? queries : undefined;
+  }
+
+  return next;
+}
 
 export function collectSearchQueries(input: {
   query?: string;
@@ -490,7 +537,7 @@ export function collectSearchQueries(input: {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of raw) {
-    const query = item.replace(/\s+/g, " ").trim();
+    const query = clampSearchQueryText(item);
     const key = query.toLowerCase();
     if (!query || seen.has(key)) continue;
     seen.add(key);
@@ -528,15 +575,15 @@ function shouldGateDraftOnDocumentReview(input: {
 const searchQueryField = z
   .string()
   .min(1)
-  .max(500)
+  .max(SEARCH_QUERY_MAX_CHARS)
   .optional()
   .describe("One evidence query, e.g. 'failed dissolution result batch 123'.");
 const searchQueriesField = z
-  .array(z.string().min(1).max(500))
+  .array(z.string().min(1).max(SEARCH_QUERY_MAX_CHARS))
   .max(SEARCH_DOCUMENTS_MAX_QUERIES)
   .optional()
   .describe(
-    "Complementary queries to run in parallel (equipment AND UUT AND fixtures). Prefer this for tables."
+    "At most 4 complementary queries (equipment AND UUT AND fixtures). OR related IDs into those 4 strings; extra items are dropped."
   );
 const searchLimitField = z
   .number()
@@ -544,7 +591,7 @@ const searchLimitField = z
   .min(1)
   .max(SEARCH_DOCUMENTS_MAX_LIMIT)
   .default(SEARCH_DOCUMENTS_DEFAULT_LIMIT)
-  .describe("Maximum snippets to return per query.");
+  .describe("Maximum snippets to return per query (at most 16).");
 const searchModeField = z
   .enum(["hybrid", "keyword"])
   .default("hybrid")
@@ -647,10 +694,13 @@ function buildSearchDocumentsTool(opts: {
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT). mode=keyword is lexical grep. truncated=true means keep grepping. Cite as [filename, p. N]. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
-      inputSchema: z
-        .object(searchDocumentsBaseShape)
-        .refine(hasSearchQuery, { message: "Provide query or queries." }),
+        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 4 strings per call. mode=keyword is lexical grep. truncated=true means keep grepping. Cite as [filename, p. N]. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
+      inputSchema: z.preprocess(
+        coerceSearchDocumentsInput,
+        z
+          .object(searchDocumentsBaseShape)
+          .refine(hasSearchQuery, { message: "Provide query or queries." })
+      ),
       execute: async ({ query, queries, limit, mode, excludePages }) =>
         runSearch({ query, queries, limit, mode, excludePages }),
     });
@@ -659,18 +709,21 @@ function buildSearchDocumentsTool(opts: {
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-        `Grep ready attachments in rounds. Prefer complementary queries for tables. Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Defaults to the ${tagged} document(s) the engineer tagged with @ (pinned=true; shortfall backfilled with pinned=false). Pass scope="all" to search every attachment. Cite as [filename, p. N]. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
-    inputSchema: z
-      .object({
-        ...searchDocumentsBaseShape,
-        scope: z
-          .enum(["tagged", "all"])
-          .default("tagged")
-          .describe(
-            'Where to look: "tagged" prefers the engineer\'s @ mentions, "all" searches every attachment.'
-          ),
-      })
-      .refine(hasSearchQuery, { message: "Provide query or queries." }),
+        `Grep ready attachments in rounds. Prefer complementary queries for tables (at most 4 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Defaults to the ${tagged} document(s) the engineer tagged with @ (pinned=true; shortfall backfilled with pinned=false). Pass scope="all" to search every attachment. Cite as [filename, p. N]. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
+    inputSchema: z.preprocess(
+      coerceSearchDocumentsInput,
+      z
+        .object({
+          ...searchDocumentsBaseShape,
+          scope: z
+            .enum(["tagged", "all"])
+            .default("tagged")
+            .describe(
+              'Where to look: "tagged" prefers the engineer\'s @ mentions, "all" searches every attachment.'
+            ),
+        })
+        .refine(hasSearchQuery, { message: "Provide query or queries." })
+    ),
     execute: async ({ query, queries, limit, mode, excludePages, scope }) => ({
       ...(await runSearch({
         query,

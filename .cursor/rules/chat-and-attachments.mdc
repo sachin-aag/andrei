@@ -118,7 +118,10 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
   on extract). `finish_document_review` caps the findings sample;
   follow-up turns strip prior findings arrays before the model call.
-  Orchestrator is `gemini-3.7-flash` with `thinkingLevel`
+  `search_documents` `queries[]` is at most 4 and `limit` at most 16; clamp
+  oversized model JSON (`coerceSearchDocumentsInput`) so Gemini ignoring
+  JSON Schema maxItems cannot throw `AI_InvalidToolInputError` and abort the
+  stream. Orchestrator is `gemini-3.7-flash` with `thinkingLevel`
   `medium` until we route it by task (3.7 Flash rejects `minimal`); page
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.
