@@ -50,8 +50,28 @@ export function speechRecognizerName(
   return `projects/${projectId}/locations/${VOICE_STT_LOCATION}/recognizers/_`;
 }
 
+export function speechApiHost(
+  location: string = VOICE_STT_LOCATION
+): string {
+  return location === "global"
+    ? "speech.googleapis.com"
+    : `${location}-speech.googleapis.com`;
+}
+
 export function speechRecognizeUrl(projectId: string = speechProjectId()): string {
-  return `https://speech.googleapis.com/v2/${speechRecognizerName(projectId)}:recognize`;
+  return `https://${speechApiHost()}/v2/${speechRecognizerName(projectId)}:recognize`;
+}
+
+function speechRecognizeErrorMessage(
+  payload: SpeechRecognizePayload,
+  status: number
+): string {
+  const code = payload.error?.status?.trim();
+  const message = payload.error?.message?.trim();
+  if (code && message) return `${code}: ${message}`;
+  if (code) return code;
+  if (message) return message;
+  return `Speech recognize failed (${status})`;
 }
 
 /**
@@ -130,15 +150,17 @@ export async function recognizePcmWindow(opts: {
   }
 
   const token = await speechAccessToken();
+  const projectId = speechProjectId();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), VOICE_RECOGNIZE_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(speechRecognizeUrl(), {
+    response = await fetch(speechRecognizeUrl(projectId), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
+        "x-goog-user-project": projectId,
       },
       body: JSON.stringify({
         config: buildVoiceRecognitionConfig(opts.languageCodes),
@@ -162,11 +184,7 @@ export async function recognizePcmWindow(opts: {
 
   const payload = (await response.json().catch(() => ({}))) as SpeechRecognizePayload;
   if (!response.ok) {
-    const detail =
-      payload.error?.status ||
-      payload.error?.message ||
-      `Speech recognize failed (${response.status})`;
-    throw new Error(detail);
+    throw new Error(speechRecognizeErrorMessage(payload, response.status));
   }
 
   const events = parseSpeechResults(payload.results);

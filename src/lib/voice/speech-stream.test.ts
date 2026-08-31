@@ -19,22 +19,25 @@ import {
   buildVoiceRecognitionConfig,
   parseSpeechResults,
   recognizePcmWindow,
+  speechApiHost,
   speechRecognizerName,
   speechRecognizeUrl,
 } from "./speech-stream";
 
 describe("speechRecognizerName", () => {
-  it("uses the global Chirp 3 recognizer wildcard", () => {
+  it("uses the us Chirp 3 recognizer wildcard", () => {
     expect(speechRecognizerName("andrei-493614")).toBe(
-      "projects/andrei-493614/locations/global/recognizers/_"
+      "projects/andrei-493614/locations/us/recognizers/_"
     );
   });
 });
 
 describe("speechRecognizeUrl", () => {
-  it("posts to the Speech v2 REST recognize custom method", () => {
+  it("posts to the us Speech v2 REST recognize custom method", () => {
+    expect(speechApiHost("global")).toBe("speech.googleapis.com");
+    expect(speechApiHost("us")).toBe("us-speech.googleapis.com");
     expect(speechRecognizeUrl("andrei-493614")).toBe(
-      "https://speech.googleapis.com/v2/projects/andrei-493614/locations/global/recognizers/_:recognize"
+      "https://us-speech.googleapis.com/v2/projects/andrei-493614/locations/us/recognizers/_:recognize"
     );
   });
 });
@@ -99,11 +102,12 @@ describe("recognizePcmWindow", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(
-      "https://speech.googleapis.com/v2/projects/andrei-493614/locations/global/recognizers/_:recognize"
+      "https://us-speech.googleapis.com/v2/projects/andrei-493614/locations/us/recognizers/_:recognize"
     );
     expect(init.method).toBe("POST");
     expect(init.headers).toMatchObject({
       Authorization: "Bearer ya29.test",
+      "x-goog-user-project": "andrei-493614",
     });
     const body = JSON.parse(String(init.body)) as {
       config: { languageCodes: string[]; model: string };
@@ -136,7 +140,7 @@ describe("recognizePcmWindow", () => {
         pcm: new Uint8Array(8_000),
         languageCodes: ["en-US"],
       })
-    ).rejects.toThrow(/PERMISSION_DENIED/);
+    ).rejects.toThrow(/PERMISSION_DENIED: Speech API/);
   });
 });
 

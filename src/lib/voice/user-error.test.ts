@@ -20,5 +20,10 @@ describe("voiceUserErrorMessage", () => {
     expect(voiceUserErrorMessage("PERMISSION_DENIED")).toBe(
       "Voice input is unavailable right now. Try again in a moment."
     );
+    expect(
+      voiceUserErrorMessage(
+        "PERMISSION_DENIED: Permission 'speech.recognizers.recognize' denied on resource (or it may not exist)."
+      )
+    ).toBe("Voice input is unavailable right now. Try again in a moment.");
   });
 });

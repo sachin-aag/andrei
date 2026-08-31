@@ -8,7 +8,12 @@ export const VOICE_MAX_DURATION_MS = 240_000;
 
 export const VOICE_STT_MODEL = "chirp_3";
 
-export const VOICE_STT_LOCATION = "global";
+/**
+ * Chirp 3 is GA only in the `us` and `eu` multi-regions — not `global`.
+ * Calling `locations/global` with this model 403s as PERMISSION_DENIED
+ * ("speech.recognizers.recognize denied … or it may not exist").
+ */
+export const VOICE_STT_LOCATION = "us";
 
 export const STUB_VOICE_INTERIM = "Checking the assay results";
 export const STUB_VOICE_FINAL = "Checking the assay results from the last batch.";
