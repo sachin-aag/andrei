@@ -65,6 +65,66 @@ describe("classifyChatUserIntent", () => {
     );
   });
 
+  it("classifies polite write requests as write, not questions", () => {
+    for (const text of [
+      "can you paste this into the equipment table?",
+      "could you put those rows in the report?",
+      "can you just place it in the section for me?",
+      "please go ahead and paste the table",
+      "would you kindly append that to the narrative?",
+    ]) {
+      expect(classifyChatUserIntent({ userText: text }).kind).toBe("write");
+    }
+  });
+
+  it("still reads polite lookups that only sound like requests", () => {
+    for (const text of [
+      "can you tell me what is in the equipment table?",
+      "could you summarize the protocol?",
+      "please explain why this criterion is red",
+    ]) {
+      expect(classifyChatUserIntent({ userText: text }).kind).toBe("read");
+    }
+  });
+
+  it("resolves ambiguous text by mode — Agent writes, Ask reads", () => {
+    for (const userText of [
+      "the equipment table needs the three UUTs from page 4",
+      "Solea system, serial 12345, calibrated 2026-01-02",
+      "same thing for the second fixture",
+    ]) {
+      expect(classifyChatUserIntent({ userText, mode: "agent" })).toEqual({
+        kind: "write",
+        reason: "ambiguous_agent_mode",
+      });
+      expect(classifyChatUserIntent({ userText, mode: "plan" }).kind).toBe("read");
+    }
+  });
+
+  it("defaults to Agent mode when the caller does not pass one", () => {
+    expect(
+      classifyChatUserIntent({ userText: "three more rows like that one" }).kind
+    ).toBe("write");
+  });
+
+  it("does not let Agent mode turn questions or greetings into writes", () => {
+    expect(
+      classifyChatUserIntent({
+        userText: "what is in the equipment table?",
+        mode: "agent",
+      }).kind
+    ).toBe("read");
+    expect(classifyChatUserIntent({ userText: "hi", mode: "agent" }).kind).toBe(
+      "social"
+    );
+    expect(
+      classifyChatUserIntent({
+        userText: "how should I write Purpose?",
+        mode: "agent",
+      }).kind
+    ).toBe("read");
+  });
+
   it("keeps writing-advice questions on the read path", () => {
     expect(
       classifyChatUserIntent({

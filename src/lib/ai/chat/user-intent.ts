@@ -66,6 +66,14 @@ const CONTINUE_RE =
 const POLITE_WRITE_RE =
   /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;
 
+/**
+ * "Can you", "could you", "please" read as questions to `QUESTION_START_RE`
+ * even when the verb after them is a write ("can you paste this into the
+ * table"). Strip the opener and classify the instruction that follows.
+ */
+const POLITE_REQUEST_PREFIX_RE =
+  /^(?:(?:can|could|would|will)\s+you\s+|please\s+)(?:please\s+|just\s+|go\s+ahead\s+and\s+|kindly\s+)*/i;
+
 const ANALYTICS_WRITE_RE =
   /\b(?:extract|plot|graph|chart|sixpack|anova|capability|boxplot|scatter|histogram)\b/i;
 
@@ -92,6 +100,13 @@ export type ClassifyChatUserIntentInput = {
   /** Chat-attached photo/screenshot — look at it, do not treat as small talk. */
   hasChatImages?: boolean;
   surface?: "document" | "analytics";
+  /**
+   * Where the engineer is working. This is the strongest intent signal we
+   * have: someone sitting in Agent mode is there to build the document, so
+   * text that matches neither a question nor a write verb resolves to write
+   * and keeps the edit tools loaded. Ask mode resolves the same text to read.
+   */
+  mode?: "plan" | "agent";
 };
 
 export function classifyChatUserIntent(
@@ -131,12 +146,13 @@ export function classifyChatUserIntent(
     }
   }
 
-  return classifyTaskText(task || latest, input.surface);
+  return classifyTaskText(task || latest, input.surface, input.mode ?? "agent");
 }
 
 function classifyTaskText(
   text: string,
-  surface: ClassifyChatUserIntentInput["surface"]
+  surface: ClassifyChatUserIntentInput["surface"],
+  mode: "plan" | "agent"
 ): ChatUserIntentDecision {
   if (CONTINUE_RE.test(text)) {
     return { kind: "write", reason: "continue_task" };
@@ -150,18 +166,32 @@ function classifyTaskText(
     return { kind: "write", reason: "produce_request" };
   }
 
-  if (QUESTION_START_RE.test(text) && !WRITE_RE.test(text.slice(0, 12))) {
+  const polite = POLITE_REQUEST_PREFIX_RE.exec(text);
+  const instruction = (polite ? text.slice(polite[0].length).trim() : text) || text;
+
+  if (
+    QUESTION_START_RE.test(instruction) &&
+    !WRITE_RE.test(instruction.slice(0, 12))
+  ) {
     return { kind: "read", reason: "question_or_lookup" };
   }
 
   if (
-    WRITE_RE.test(text) ||
+    WRITE_RE.test(instruction) ||
     (surface === "analytics" &&
-      (ANALYTICS_WRITE_RE.test(text) || ANALYTICS_DESTINATION_RE.test(text)))
+      (ANALYTICS_WRITE_RE.test(instruction) ||
+        ANALYTICS_DESTINATION_RE.test(instruction)))
   ) {
     return { kind: "write", reason: "produce_request" };
   }
 
+  // Neither a question nor a recognized write verb. Fall back to where the
+  // engineer is rather than to read: stripping the edit tools in Agent mode
+  // is what made the assistant claim it could not write and paste a markdown
+  // table into chat instead.
+  if (mode === "agent") {
+    return { kind: "write", reason: "ambiguous_agent_mode" };
+  }
   return { kind: "read", reason: "question_or_lookup" };
 }
 
@@ -217,7 +247,7 @@ None. This message is small talk — reply in one short sentence and call nothin
   ).join(", ");
   return `## Tools available this turn
 This message reads as a question, so the write tools (${hidden}) are not loaded. Do not call them — they will fail.
-Answer from evidence. If they actually want you to change the ${target}, say so in one line and ask them to confirm; the tools return on that next message.`;
+Answer from evidence. If they actually want you to change the ${target}, say so in one line and ask them to confirm; the tools return on that next message. Do not paste a draft, table, or worksheet block into chat as a stand-in for the edit, and do not tell them to switch modes.`;
 }
 
 export function restrictToolsForIntent<T extends Record<string, unknown>>(
