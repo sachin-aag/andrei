@@ -68,10 +68,10 @@ export type CustomerPack = {
    */
   statisticalAnalysisEnabled: boolean;
   /**
-   * Spoken locales for composer voice dictation (Speech-to-Text v2 Chirp 3).
-   * MJ includes Hindi and Marathi; other packs are English-only. Transcripts
-   * stay in the spoken script (Devanagari is fine). The assistant still
-   * replies in English.
+   * Spoken locales for composer voice dictation (Vertex Gemini, same
+   * resolver as chat). MJ includes Hindi and Marathi; other packs are
+   * English-only. Transcripts stay in the spoken script (Devanagari is
+   * fine). The assistant still replies in English.
    */
   voiceInputLanguageCodes: readonly string[];
   branding: CustomerBranding;

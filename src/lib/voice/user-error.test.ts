@@ -16,6 +16,16 @@ describe("voiceUserErrorMessage", () => {
     );
   });
 
+  it("keeps the monthly AI budget message", () => {
+    expect(
+      voiceUserErrorMessage(
+        "This workspace has reached its monthly AI usage limit. Contact your administrator."
+      )
+    ).toBe(
+      "This workspace has reached its monthly AI usage limit. Contact your administrator."
+    );
+  });
+
   it("maps PERMISSION_DENIED to a short unavailable toast", () => {
     expect(voiceUserErrorMessage("PERMISSION_DENIED")).toBe(
       "Voice input is unavailable right now. Try again in a moment."

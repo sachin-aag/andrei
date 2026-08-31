@@ -64,12 +64,10 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
 Recording chrome is level bars + language chevron + white stop square.
 MJ: `en-IN` / `hi-IN` / `mr-IN` in native script (Devanagari preferred). Demo/Convergent: `en-US`.
 Do not translate STT to English — `LANGUAGE_RULES` keep assistant output
-in English. Each PCM POST is one Chirp **REST** recognize in that request
-(`us-speech.googleapis.com` / `locations/us` — Chirp 3 is not on `global`).
-No sticky session / SSE — Vercel Fluid will 404 an in-memory stream;
-do not use Speech gRPC on Fluid. WIF bearer token is the same path as
-Document AI (`getWifAccessToken`).
-Terraform: `infra/speech`. Stub: `ALLOW_TEST_STUB_SPEECH`.
+in English. Each PCM POST is one Vertex **Gemini** transcribe (Flash-Lite,
+same WIF/resolver as chat). Do not call Cloud Speech-to-Text / Chirp —
+the runtime SA 403s `PERMISSION_DENIED` without `roles/speech.client`.
+No sticky session / SSE. Stub: `ALLOW_TEST_STUB_SPEECH`.
 
 ## Prompt / tools
 

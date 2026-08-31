@@ -1,26 +1,18 @@
-# Speech-to-Text v2 (Terraform)
+# Speech-to-Text v2 (Terraform) — unused at runtime
 
-Enables Cloud Speech-to-Text for composer voice dictation. Each `POST /api/reports/[id]/chat/transcribe` with LINEAR16 PCM is one Chirp 3 recognize in that request (Vercel Fluid does not pin POSTs to one isolate):
+Composer voice dictation transcribes through **Vertex Gemini** (same WIF /
+resolver as chat). It does **not** call `speech.googleapis.com`. The Vercel
+runtime SA can already use Vertex; Chirp 3 needs `roles/speech.client` and
+preview 403s without it (`PERMISSION_DENIED`).
+
+This stack remains only if we later switch STT back to Chirp:
 
 - Enables `speech.googleapis.com`
 - Grants the Vercel WIF runtime SA `roles/speech.client`
 
-The app calls Speech-to-Text v2 **Chirp 3** over **HTTPS REST**
-(`POST https://us-speech.googleapis.com/v2/projects/{project}/locations/us/recognizers/_:recognize`).
-Chirp 3 is not served on `locations/global` — that path 403s as `PERMISSION_DENIED`.
-Do not use the `@google-cloud/speech` gRPC client on Vercel Fluid. Hindi and Marathi stay in native script (Devanagari). Do not enable Translation API for this path — assistant English replies are a chat prompt rule, not STT translation.
+Do not use the `@google-cloud/speech` gRPC client on Vercel Fluid.
 
-WIF trust (`GCP_WIF_AUDIENCE`, OIDC) is **not** managed here — that already exists for Vertex.
-
-## Prerequisites
-
-```bash
-gcloud auth application-default login
-gcloud config set project andrei-493614
-# ADC / user needs permission to enable APIs and set project IAM
-```
-
-## Apply
+## Apply (optional)
 
 ```bash
 cd infra/speech
@@ -30,10 +22,4 @@ terraform plan
 terraform apply
 ```
 
-No extra Vercel env vars. Dictation reuses `GOOGLE_VERTEX_PROJECT` plus WIF (`GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`).
-
 Local/E2E stub: `ALLOW_TEST_STUB_SPEECH=true` (never on Vercel production or preview).
-
-## State
-
-State is local (`terraform.tfstate`, gitignored). Move to a remote backend before sharing across machines.
