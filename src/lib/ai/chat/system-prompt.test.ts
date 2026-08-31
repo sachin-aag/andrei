@@ -18,7 +18,28 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v73-search-query-clamp");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v74-intent-tool-availability");
+  });
+
+  it("tells an Agent read turn which write tools were stripped", () => {
+    const read = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "read",
+    });
+    expect(read).toContain("Tools available this turn");
+    expect(read).toContain("propose_edit");
+
+    expect(
+      buildChatSystemPrompt({ ...opts, mode: "agent", intent: "write" })
+    ).not.toContain("Tools available this turn");
+    // Ask mode already has its own no-write copy; do not stack a second warning.
+    expect(
+      buildChatSystemPrompt({ ...opts, mode: "plan", intent: "read" })
+    ).not.toContain("Tools available this turn");
+    expect(buildChatSystemPrompt({ ...opts, mode: "agent" })).not.toContain(
+      "Tools available this turn"
+    );
   });
 
   it("understands native-script dictation and replies in English", () => {

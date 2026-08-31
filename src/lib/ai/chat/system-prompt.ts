@@ -16,9 +16,13 @@ import {
 } from "@/lib/ai/chat/already-drafted";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
+import {
+  intentToolAvailabilityRule,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v73-search-query-clamp";
+export const CHAT_PROMPT_VERSION = "chat-v74-intent-tool-availability";
 
 export type ChatMode = "plan" | "agent";
 
@@ -339,6 +343,8 @@ export function buildChatSystemPrompt(opts: {
   includePlotMeasurements?: boolean;
   /** Server-derived. `commit` applies report edits immediately. */
   editPolicy?: ChatEditPolicy;
+  /** Latest-turn intent. Read/social turns run without the write tools. */
+  intent?: ChatUserIntentKind;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
@@ -383,9 +389,14 @@ export function buildChatSystemPrompt(opts: {
     ? `\n\n${chat.draftingGuidance.trim()}`
     : "";
 
+  const intentTools =
+    mode === "agent"
+      ? intentToolAvailabilityRule(opts.intent ?? "write", "document")
+      : null;
+
   return `${chat.persona}
 
-${USER_INTENT_RULES}
+${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}
 
 ${LANGUAGE_RULES}
 
