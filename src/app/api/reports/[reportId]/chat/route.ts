@@ -45,7 +45,12 @@ import {
   type ChatPace,
 } from "@/lib/ai/chat/pace";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
-import { primaryFieldForSection } from "@/lib/ai/chat/fields";
+import {
+  chatSectionsInScope,
+  primaryFieldForSection,
+  sectionHasTable,
+} from "@/lib/ai/chat/fields";
+import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
@@ -491,6 +496,17 @@ async function handleChatPost(
           hasReadSectionTool: Boolean(tools.read_section),
         });
         if (alreadyDraftedStep) return alreadyDraftedStep;
+
+        const schemaStep = tableSchemaReadStep({
+          stepsTaken: steps.length,
+          isWrite: userIntent.kind === "write",
+          hasReadSectionTool: Boolean(tools.read_section),
+          inScopeHasTable: chatSectionsInScope(
+            sectionScope ?? "all",
+            report.documentType
+          ).some((section) => sectionHasTable(mergedSections[section], section)),
+        });
+        if (schemaStep) return schemaStep;
 
         const prepared = prepareDocumentReviewStep({
           policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,

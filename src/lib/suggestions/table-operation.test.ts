@@ -236,6 +236,23 @@ describe("applyTableOperation", () => {
     expect(result.hint).toMatch(/insert_rows/);
   });
 
+  it("names live headers when insert_rows width does not match the table", () => {
+    const result = applyTableOperation(
+      seededTableDoc(DV_TRACEABILITY_HEADERS),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [["SYS-007", "Timeout"]],
+      },
+      { section: "traceability", targetField: "table" }
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("invalid");
+    expect(result.hint).toMatch(/Live headers \(5\): Requirement ID/);
+    expect(result.hint).toMatch(/Risk Control Link/);
+  });
+
   it("deletes multiple rows from the highest index downward", () => {
     const result = applyTableOperation(
       tableDoc(["H"], [["a"], ["b"], ["c"]]),

@@ -72,6 +72,7 @@ import {
   sectionFieldForChat,
   sectionFieldPlainText,
 } from "@/lib/ai/chat/fields";
+import { liveTableHeadersMismatch } from "@/lib/ai/chat/table-schema";
 import {
   dataUrlToBase64,
   type SectionInlineImage,
@@ -292,6 +293,7 @@ export type DraftFieldResult =
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "table_not_supported"; message: string }
+  | { status: "header_mismatch"; message: string }
   | { status: "figures_not_supported"; message: string }
   | { status: "review_incomplete"; message: string }
   | { status: typeof NOT_A_REWRITE_STATUS; hint: string; coverage: number }
@@ -2768,6 +2770,18 @@ export function buildChatTools(opts: {
         const loaded = await loadMergedSection(reportId, section);
         if (!loaded) {
           return { status: "section_not_found", message: "Section not found." };
+        }
+        const headerMismatch = liveTableHeadersMismatch({
+          content: loaded.content,
+          section,
+          targetField: resolvedField,
+          markdown,
+        });
+        if (headerMismatch) {
+          return {
+            status: "header_mismatch",
+            message: headerMismatch,
+          };
         }
         const staleDraft = unchangedOrStale(section, resolvedField, loaded.content);
         if (staleDraft) return staleDraft;

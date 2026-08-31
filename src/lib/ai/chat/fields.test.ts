@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { documentTypeEnum } from "@/db/schema";
 import { getDocumentType } from "@/lib/document-types";
-import { sectionLabel, sectionFieldForChat } from "./fields";
+import {
+  DV_TRACEABILITY_HEADERS,
+  seededTableDoc,
+} from "@/lib/document-types/design-verification/sections";
+import {
+  listFieldTables,
+  sectionHasTable,
+  sectionLabel,
+  sectionFieldForChat,
+} from "./fields";
 
 describe("sectionLabel", () => {
   it("uses registry titles for mechanical DV and QRA history", () => {
@@ -67,5 +76,32 @@ describe("sectionFieldForChat", () => {
     ]);
     expect(chat.structuredText).toContain("tableIndex=0");
     expect(chat.structuredText).toContain("[1,0] mm");
+  });
+});
+
+describe("listFieldTables", () => {
+  it("reads the live demo traceability headers from the section", () => {
+    expect(
+      listFieldTables(
+        { table: seededTableDoc(DV_TRACEABILITY_HEADERS) },
+        "traceability",
+        "table"
+      )
+    ).toEqual([
+      {
+        tableIndex: 0,
+        headers: [...DV_TRACEABILITY_HEADERS],
+        dataRowCount: 1,
+      },
+    ]);
+    expect(
+      sectionHasTable(
+        { table: seededTableDoc(DV_TRACEABILITY_HEADERS) },
+        "traceability"
+      )
+    ).toBe(true);
+    expect(sectionHasTable({ narrative: { type: "doc", content: [] } }, "define")).toBe(
+      false
+    );
   });
 });
