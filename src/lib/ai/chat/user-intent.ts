@@ -46,8 +46,16 @@ const SMALL_TALK_RE =
 const CONFIRM_RE =
   /^(?:yes|yeah|yep|yup|sure|ok|okay|k|go ahead|do it|please do|sounds good|yes please|please|go for it|do that|that works)(?:\s*[!.]*)?$/i;
 
+/**
+ * A confirmation that carries its own instruction ("yes put it in the data
+ * worksheet"). `CONFIRM_RE` is anchored, so these fall through to the generic
+ * matchers and the affirmation swallows the verb.
+ */
+const AFFIRMATION_PREFIX_RE =
+  /^(?:yes|yeah|yep|yup|sure|ok|okay|alright|absolutely|definitely|go ahead|do it|please do|sounds good|yes please|go for it|do that)\b[\s,.!:;–—-]*/i;
+
 const WRITE_RE =
-  /\b(?:draft|write(?:\s+(?:up|out|the))?|prepare|populate|fill(?:\s+(?:in|out|the))?|complete|do this section|edit|change|update|add|insert|remove|delete|rewrite|replace|fix|tighten|move|drop|append|propose|apply|redraft|start over|from scratch)\b/i;
+  /\b(?:draft|write(?:\s+(?:up|out|the))?|prepare|populate|fill(?:\s+(?:in|out|the))?|complete|do this section|edit|change|update|add|insert|remove|delete|rewrite|replace|fix|tighten|move|drop|append|propose|apply|redraft|put|place|paste|enter|load|import|save|start over|from scratch)\b/i;
 
 const START_REPORT_RE =
   /\b(?:start|begin|kick ?off)\b.{0,48}\b(?:report|draft|document|writing|this)\b|\b(?:let'?s|please)\s+(?:start|begin|go)\b/i;
@@ -59,7 +67,15 @@ const POLITE_WRITE_RE =
   /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;
 
 const ANALYTICS_WRITE_RE =
-  /\b(?:extract|plot|graph|chart|sixpack|anova|capability)\b/i;
+  /\b(?:extract|plot|graph|chart|sixpack|anova|capability|boxplot|scatter|histogram)\b/i;
+
+/**
+ * A worksheet destination is a write even when the verb is not in `WRITE_RE`
+ * ("put it in the data worksheet", "stick those numbers into c3"). Lookups
+ * phrased against the same nouns return earlier on `QUESTION_START_RE`.
+ */
+const ANALYTICS_DESTINATION_RE =
+  /\b(?:in|into|onto|to)\s+(?:the\s+|a\s+|my\s+)?(?:\w+\s+){0,2}(?:worksheet|work sheet|spreadsheet|sheet|grid|column)s?\b/i;
 
 const ADVICE_QUESTION_RE =
   /\b(?:how should i|what should i (?:write|draft|put|say|include)|which section should i|how do i (?:write|draft))\b/i;
@@ -96,35 +112,52 @@ export function classifyChatUserIntent(
     return { kind: "social", reason: "greeting" };
   }
 
+  const offeredWrite = (input.recentAssistantTexts ?? []).some((text) =>
+    ASSISTANT_WRITE_OFFER_RE.test(text)
+  );
+
   if (CONFIRM_RE.test(latest)) {
-    const offered = (input.recentAssistantTexts ?? []).some((text) =>
-      ASSISTANT_WRITE_OFFER_RE.test(text)
-    );
-    if (offered) {
+    if (offeredWrite) {
       return { kind: "write", reason: "confirm_write_offer" };
     }
     return { kind: "social", reason: "ack_without_task" };
   }
 
-  if (CONTINUE_RE.test(latest)) {
+  const affirmation = AFFIRMATION_PREFIX_RE.exec(latest);
+  const task = affirmation ? latest.slice(affirmation[0].length).trim() : latest;
+  if (affirmation && task) {
+    if (offeredWrite) {
+      return { kind: "write", reason: "confirm_write_offer" };
+    }
+  }
+
+  return classifyTaskText(task || latest, input.surface);
+}
+
+function classifyTaskText(
+  text: string,
+  surface: ClassifyChatUserIntentInput["surface"]
+): ChatUserIntentDecision {
+  if (CONTINUE_RE.test(text)) {
     return { kind: "write", reason: "continue_task" };
   }
 
-  if (ADVICE_QUESTION_RE.test(latest)) {
+  if (ADVICE_QUESTION_RE.test(text)) {
     return { kind: "read", reason: "writing_advice" };
   }
 
-  if (POLITE_WRITE_RE.test(latest) || START_REPORT_RE.test(latest)) {
+  if (POLITE_WRITE_RE.test(text) || START_REPORT_RE.test(text)) {
     return { kind: "write", reason: "produce_request" };
   }
 
-  if (QUESTION_START_RE.test(latest) && !WRITE_RE.test(latest.slice(0, 12))) {
+  if (QUESTION_START_RE.test(text) && !WRITE_RE.test(text.slice(0, 12))) {
     return { kind: "read", reason: "question_or_lookup" };
   }
 
   if (
-    WRITE_RE.test(latest) ||
-    (input.surface === "analytics" && ANALYTICS_WRITE_RE.test(latest))
+    WRITE_RE.test(text) ||
+    (surface === "analytics" &&
+      (ANALYTICS_WRITE_RE.test(text) || ANALYTICS_DESTINATION_RE.test(text)))
   ) {
     return { kind: "write", reason: "produce_request" };
   }
@@ -161,6 +194,30 @@ export function messageHasChatImage(
       type.startsWith("image-")
     );
   });
+}
+
+/**
+ * Prompt copy for the tools `restrictToolsForIntent` just removed. Without it
+ * the prompt still advertises the write tools and the model calls one that is
+ * no longer loaded, which surfaces as `AI_NoSuchToolError` and a chat-only
+ * markdown table instead of a written worksheet or section.
+ */
+export function intentToolAvailabilityRule(
+  intent: ChatUserIntentKind,
+  surface: "document" | "analytics"
+): string | null {
+  if (intent === "write") return null;
+  const target = surface === "analytics" ? "worksheet or plot" : "document";
+  if (intent === "social") {
+    return `## Tools available this turn
+None. This message is small talk — reply in one short sentence and call nothing.`;
+  }
+  const hidden = (
+    surface === "analytics" ? ANALYTICS_WRITE_TOOLS : DOCUMENT_WRITE_TOOLS
+  ).join(", ");
+  return `## Tools available this turn
+This message reads as a question, so the write tools (${hidden}) are not loaded. Do not call them — they will fail.
+Answer from evidence. If they actually want you to change the ${target}, say so in one line and ask them to confirm; the tools return on that next message.`;
 }
 
 export function restrictToolsForIntent<T extends Record<string, unknown>>(

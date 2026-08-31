@@ -370,6 +370,7 @@ async function handleChatPost(
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
     editPolicy,
+    intent: userIntent.kind,
   });
 
   const allTools = buildChatTools({
