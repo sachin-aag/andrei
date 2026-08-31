@@ -338,13 +338,20 @@ test.describe("report editor", () => {
       name: /collapse document panel/i,
     });
     const reportTab = page.getByTestId("report-surface-document");
-    const [collapseBox, reportBox] = await Promise.all([
-      collapse.boundingBox(),
-      reportTab.boundingBox(),
-    ]);
-    expect(collapseBox).toBeTruthy();
-    expect(reportBox).toBeTruthy();
-    expect(collapseBox!.x + collapseBox!.width).toBeLessThan(reportBox!.x);
+    await expect(collapse).toBeVisible();
+    await expect(reportTab).toBeVisible();
+    // Collapse sits left of Report in the expanded header (gap-2). Poll until
+    // the width transition settles; allow 1px for WebKit sub-pixel boxes.
+    await expect
+      .poll(async () => {
+        const [collapseBox, reportBox] = await Promise.all([
+          collapse.boundingBox(),
+          reportTab.boundingBox(),
+        ]);
+        if (!collapseBox || !reportBox) return Number.POSITIVE_INFINITY;
+        return collapseBox.x + collapseBox.width - reportBox.x;
+      })
+      .toBeLessThan(1);
     await expect(page.getByRole("switch", { name: /comments/i })).toHaveCount(0);
 
     const docsBox = await documentsPanel(page).boundingBox();
