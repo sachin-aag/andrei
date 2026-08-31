@@ -1,8 +1,8 @@
 /**
- * Merge streaming Speech-to-Text results into the composer.
+ * Apply a finished dictation to the composer.
  *
- * Finals append; the current interim replaces the previous interim.
- * Prefix is the typed text captured when recording started.
+ * Prefix is the typed text captured when recording started. The live
+ * recorder applies once at stop (`isFinal: true`); interim remains for tests.
  */
 
 export type VoiceTranscriptState = {

@@ -445,7 +445,7 @@ test.describe("report chat", () => {
     await expect(chatMessageTargetTag(page, "analytics")).toHaveCount(2);
   });
 
-  test("streams stub dictation into Document and Analytics composers", async ({
+  test("fills the composer with stub dictation after stop", async ({
     page,
     browserName,
   }) => {
@@ -478,18 +478,20 @@ test.describe("report chat", () => {
     await expect(reportMic).toHaveAttribute("aria-pressed", "true", {
       timeout: 15_000,
     });
+    await expect(sidebar.getByTestId("chat-voice-hint")).toContainText(
+      /transcript appears when you stop/i
+    );
+    await page.waitForTimeout(500);
     const send = sidebar.getByRole("button", { name: /^send message$/i });
     await expect(send).toBeDisabled();
     await reportComposer.press("Enter");
     await expect(chatUserMessage(page, STUB_VOICE_FINAL)).toHaveCount(0);
+    await expect(reportComposer).toHaveValue(/^Prefix\s*$/);
+    await reportMic.click();
     await expect(reportComposer).toHaveValue(
       new RegExp(`Prefix\\s+${STUB_VOICE_FINAL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
       { timeout: 15_000 }
     );
-    await expect(send).toBeDisabled();
-    await reportComposer.press("Enter");
-    await expect(chatUserMessage(page, STUB_VOICE_FINAL)).toHaveCount(0);
-    await reportMic.click();
     await expect(reportComposer).not.toHaveAttribute("readonly");
     await expect(send).toBeEnabled();
 
@@ -507,14 +509,18 @@ test.describe("report chat", () => {
     await expect(analyticsMic).toHaveAttribute("aria-pressed", "true", {
       timeout: 15_000,
     });
+    await expect(sidebar.getByTestId("analytics-chat-voice-hint")).toContainText(
+      /transcript appears when you stop/i
+    );
+    await page.waitForTimeout(500);
     const analyticsSend = sidebar.getByRole("button", { name: /^send message$/i });
     await expect(analyticsSend).toBeDisabled();
-    await expect(analyticsComposer).toHaveValue(STUB_VOICE_FINAL, {
-      timeout: 15_000,
-    });
-    await expect(analyticsSend).toBeDisabled();
+    await expect(analyticsComposer).toHaveValue("");
     await analyticsComposer.press("Enter");
     await expect(chatUserMessage(page, STUB_VOICE_FINAL)).toHaveCount(0);
     await analyticsMic.click();
+    await expect(analyticsComposer).toHaveValue(STUB_VOICE_FINAL, {
+      timeout: 15_000,
+    });
   });
 });

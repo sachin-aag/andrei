@@ -1925,6 +1925,7 @@ export function ChatPanel({
               <ChatVoiceButton
                 recording={voice.recording}
                 requesting={voice.status === "requesting"}
+                transcribing={voice.status === "stopping"}
                 level={voice.level}
                 disabled={busy || initializing || attaching || !hostReady}
                 targetingAnalytics={targetingAnalytics}

@@ -61,13 +61,12 @@ changes. Empty-state Document chips are `chat.examplePrompts` on the
 document type (not DMAIC-hardcoded); Analytics chips stay in
 `ANALYTICS_EXAMPLE_PROMPTS`. Voice dictation is the shared composer mic
 (Document | Agent, Report | Analytics). Click start / click stop; no VAD.
-Recording chrome is level bars + language chevron + white stop square.
+Recording chrome is a larger level wave + “Transcript appears when you stop”
++ language chevron + white stop square.
 MJ: `en-IN` / `hi-IN` / `mr-IN` in native script (Devanagari preferred). Demo/Convergent: `en-US`.
 Do not translate STT to English — `LANGUAGE_RULES` keep assistant output
-in English. Each PCM POST is one Vertex **Gemini** transcribe (Flash-Lite,
-same WIF/resolver as chat). The composer posts the growing window as soon as
-200 ms of audio exists, then about every 300 ms, with up to two overlapping
-unary POSTs; extra ticks coalesce. Do not call Cloud Speech-to-Text / Chirp —
+in English. PCM is buffered while recording; after stop, each PCM POST is one
+Vertex **Gemini** transcribe (Flash-Lite, same WIF/resolver as chat). Do not call Cloud Speech-to-Text / Chirp —
 the runtime SA 403s `PERMISSION_DENIED` without `roles/speech.client`.
 No sticky session / SSE. Stub: `ALLOW_TEST_STUB_SPEECH`.
 

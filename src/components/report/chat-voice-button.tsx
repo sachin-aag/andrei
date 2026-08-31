@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Loader2, Mic, Square } from "lucide-react";
 import { voiceInputLanguageCodes } from "@/lib/customers";
 import {
@@ -17,25 +17,52 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const BAR_BASES = [0.35, 0.7, 1, 0.55] as const;
+const WAVE_BAR_COUNT = 18;
+const WAVE_SAMPLE_MS = 80;
+const WAVE_MIN_PX = 10;
+const WAVE_MAX_PX = 44;
+
+export const VOICE_RECORDING_HINT = "Transcript appears when you stop";
+export const VOICE_TRANSCRIBING_HINT = "Transcribing…";
 
 function VoiceLevelBars({ level }: { level: number }) {
+  const latestRef = useRef(level);
+  const [samples, setSamples] = useState(() =>
+    Array.from({ length: WAVE_BAR_COUNT }, () => 0.12)
+  );
+
+  useEffect(() => {
+    latestRef.current = level;
+  }, [level]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const boosted = Math.min(1, 0.1 + latestRef.current * 2.8);
+      setSamples((prev) => {
+        const next = prev.slice(1);
+        next.push(boosted);
+        return next;
+      });
+    }, WAVE_SAMPLE_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
   return (
     <span
-      className="flex h-4 items-end gap-[3px]"
+      className="flex h-11 items-end gap-[3px]"
       aria-hidden="true"
       data-testid="chat-voice-level"
     >
-      {BAR_BASES.map((base, index) => {
-        const height = 4 + Math.round((0.18 + level * base) * 12);
-        return (
-          <span
-            key={index}
-            className="w-[3px] rounded-full bg-[var(--muted-foreground)] transition-[height] duration-75"
-            style={{ height }}
-          />
-        );
-      })}
+      {samples.map((sample, index) => (
+        <span
+          key={index}
+          className="w-1 rounded-full bg-[var(--brand-500)] transition-[height] duration-75"
+          style={{
+            height:
+              WAVE_MIN_PX + Math.round(sample * (WAVE_MAX_PX - WAVE_MIN_PX)),
+          }}
+        />
+      ))}
     </span>
   );
 }
@@ -96,6 +123,7 @@ function VoiceLanguageMenu({
 export function ChatVoiceButton({
   recording,
   requesting,
+  transcribing,
   level,
   disabled,
   targetingAnalytics,
@@ -103,6 +131,7 @@ export function ChatVoiceButton({
 }: {
   recording: boolean;
   requesting: boolean;
+  transcribing: boolean;
   level: number;
   disabled: boolean;
   targetingAnalytics: boolean;
@@ -112,6 +141,9 @@ export function ChatVoiceButton({
   const micTestId = targetingAnalytics
     ? "analytics-chat-voice-input"
     : "chat-voice-input";
+  const hintTestId = targetingAnalytics
+    ? "analytics-chat-voice-hint"
+    : "chat-voice-hint";
 
   if (!live) {
     return (
@@ -132,14 +164,22 @@ export function ChatVoiceButton({
 
   return (
     <span
-      className="flex items-center gap-1.5"
+      className="flex items-center gap-2"
       data-testid={
         targetingAnalytics
           ? "analytics-chat-voice-recording"
           : "chat-voice-recording"
       }
     >
-      <VoiceLevelBars level={level} />
+      <span className="flex min-w-0 flex-col items-end gap-0.5">
+        <VoiceLevelBars level={level} />
+        <span
+          className="max-w-[9.5rem] text-right text-[11px] leading-snug text-[var(--muted-foreground)]"
+          data-testid={hintTestId}
+        >
+          {transcribing ? VOICE_TRANSCRIBING_HINT : VOICE_RECORDING_HINT}
+        </span>
+      </span>
       <VoiceLanguageMenu targetingAnalytics={targetingAnalytics} />
       <button
         type="button"
@@ -147,10 +187,11 @@ export function ChatVoiceButton({
         title="Stop voice input"
         aria-pressed={true}
         data-testid={micTestId}
+        disabled={transcribing}
         onClick={onToggle}
-        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-[var(--foreground)] shadow-sm ring-1 ring-[var(--border)] transition-colors hover:bg-[var(--secondary)]"
+        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-[var(--foreground)] shadow-sm ring-1 ring-[var(--border)] transition-colors hover:bg-[var(--secondary)] disabled:opacity-60"
       >
-        {requesting ? (
+        {requesting || transcribing ? (
           <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
         ) : (
           <Square className="size-2.5 fill-current" aria-hidden="true" />

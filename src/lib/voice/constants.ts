@@ -13,19 +13,15 @@ export const VOICE_MAX_DURATION_MS = 240_000;
  */
 export const VOICE_TRANSCRIBE_GOOGLE_MODEL_ID = "gemini-3.5-flash-lite" as const;
 
-export const STUB_VOICE_INTERIM = "Checking the assay results";
 export const STUB_VOICE_FINAL = "Checking the assay results from the last batch.";
-
-/** How often the composer POSTs the current PCM window while a slot is free. */
-export const VOICE_FLUSH_MS = 300;
-
-/** Overlapping unary Gemini transcribes. Extra ticks coalesce into one follow-up. */
-export const VOICE_MAX_IN_FLIGHT = 2;
 
 /** Skip STT for less than 200 ms of 16 kHz s16le audio. */
 export const VOICE_MIN_WINDOW_BYTES = 16_000 * 2 * 0.2;
 
-/** Roll the window so a POST stays under typical Vercel body limits. */
-export const VOICE_MAX_WINDOW_BYTES = 16_000 * 2 * 10;
+/**
+ * Max PCM bytes per POST at stop. 30s of 16 kHz s16le stays well under
+ * typical Vercel body limits; longer recordings are sequential chunks.
+ */
+export const VOICE_TRANSCRIBE_CHUNK_BYTES = 16_000 * 2 * 30;
 
 export const VOICE_RECOGNIZE_TIMEOUT_MS = 20_000;
