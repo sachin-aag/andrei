@@ -795,6 +795,61 @@ describe("analytics chat tools", () => {
     ]);
   });
 
+  it("keeps Tip N and split handpiece SNs on a torque table dump", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const page =
+      "Handpiece S/N P33-0924- 10012 - Tip 1: 3 ozf-in " +
+      "Handpiece S/N P33-0924- 10012 - Tip 2: 2.5 ozf-in";
+    vi.mocked(readDocumentPage).mockResolvedValue(pageRead(page));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        sourceAttachmentId: "att_1",
+        sourcePages: [13],
+        columns: [
+          { name: "Torque (ozf-in)", values: [3, 2.5] },
+          {
+            name: "Handpiece SN",
+            values: ["P33-0924-10012", "P33-0924-10012"],
+          },
+          { name: "Tip", values: ["Tip 1", "Tip 2"] },
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      blankedCount: 0,
+    });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(
+      saved.columns.find((column) => column.name === "Tip")?.values
+    ).toEqual(["Tip 1", "Tip 2"]);
+    expect(
+      saved.columns.find((column) => column.name === "Handpiece SN")?.values
+    ).toEqual(["P33-0924-10012", "P33-0924-10012"]);
+    expect(
+      saved.columns.find((column) => column.name === "Torque (ozf-in)")?.values
+    ).toEqual(["3", "2.5"]);
+  });
+
   it("blanks invented 0.02 when the source token is 02", async () => {
     const initial = analyticsView();
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
