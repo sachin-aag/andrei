@@ -81,6 +81,7 @@ export function useVoiceDictation({
   const pcmChunksRef = useRef<Uint8Array[]>([]);
   const pcmBytesRef = useRef(0);
   const liveRef = useRef(false);
+  const failedRef = useRef(false);
   const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const flushChainRef = useRef(Promise.resolve());
   const maxDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -119,16 +120,17 @@ export function useVoiceDictation({
     publish(applyVoiceTranscript(current, current.interim, true));
   }, [publish]);
 
-  const fail = useCallback(
-    (error: unknown) => {
-      toast.error(voiceUserErrorMessage(error));
-      void stopRef.current();
-    },
-    []
-  );
+  const fail = useCallback((error: unknown) => {
+    if (failedRef.current) return;
+    failedRef.current = true;
+    liveRef.current = false;
+    toast.error(voiceUserErrorMessage(error), { id: "chat-voice-error" });
+    void stopRef.current();
+  }, []);
 
   const flushWindow = useCallback(
     async (opts: { force: boolean }) => {
+      if (failedRef.current) return;
       if (pcmBytesRef.current === 0) {
         if (opts.force) commitInterimLocally();
         return;
@@ -208,7 +210,9 @@ export function useVoiceDictation({
       maxDurationTimerRef.current = null;
     }
     tearDownAudio();
-    await enqueueFlush({ force: true });
+    if (!failedRef.current) {
+      await enqueueFlush({ force: true });
+    }
     pcmChunksRef.current = [];
     pcmBytesRef.current = 0;
     transcriptRef.current = null;
@@ -222,6 +226,7 @@ export function useVoiceDictation({
     transcriptRef.current = createVoiceTranscriptState(getPrefixRef.current());
     pcmChunksRef.current = [];
     pcmBytesRef.current = 0;
+    failedRef.current = false;
     flushChainRef.current = Promise.resolve();
 
     try {

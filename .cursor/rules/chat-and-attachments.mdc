@@ -56,9 +56,10 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
 Recording chrome is level bars + language chevron + white stop square.
 MJ: `en-IN` / `hi-IN` / `mr-IN` in native script (Devanagari preferred). Demo/Convergent: `en-US`.
 Do not translate STT to English — `LANGUAGE_RULES` keep assistant output
-in English. Each PCM POST is one Chirp recognize in that request (no sticky
-session / SSE — Vercel Fluid will 404 an in-memory stream). WIF
-`getRequestHeaders` must implement `forEach` for Speech gRPC.
+in English. Each PCM POST is one Chirp **REST** recognize in that request
+(no sticky session / SSE — Vercel Fluid will 404 an in-memory stream;
+do not use Speech gRPC on Fluid). WIF bearer token is the same path as
+Document AI (`getWifAccessToken`).
 Terraform: `infra/speech`. Stub: `ALLOW_TEST_STUB_SPEECH`.
 
 ## Prompt / tools

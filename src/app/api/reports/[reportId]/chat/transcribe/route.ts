@@ -58,6 +58,7 @@ export async function POST(request: Request, context: RouteContext) {
     });
     return NextResponse.json(result);
   } catch (error) {
+    console.error("voice-transcribe: recognize failed", error);
     return NextResponse.json(
       { error: voiceUserErrorMessage(error) },
       { status: 502 }

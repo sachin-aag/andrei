@@ -15,4 +15,10 @@ describe("voiceUserErrorMessage", () => {
       "Could not start voice input."
     );
   });
+
+  it("maps PERMISSION_DENIED to a short unavailable toast", () => {
+    expect(voiceUserErrorMessage("PERMISSION_DENIED")).toBe(
+      "Voice input is unavailable right now. Try again in a moment."
+    );
+  });
 });

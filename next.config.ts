@@ -24,7 +24,6 @@ const nextConfig: NextConfig = {
   // mathlive omitted: client components import mathlive/static.css, which cannot be externalized.
   serverExternalPackages: [
     "@google-cloud/storage",
-    "@google-cloud/speech",
     "@napi-rs/canvas",
     "wmf",
   ],

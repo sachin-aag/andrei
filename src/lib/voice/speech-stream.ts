@@ -1,5 +1,5 @@
-import { v2 } from "@google-cloud/speech";
-import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
+import { GoogleAuth } from "google-auth-library";
+import { getWifAccessToken, getWifConfig } from "@/lib/gcp/wif-token";
 import { isTestStubSpeech } from "@/lib/test/ai-bypass";
 import {
   STUB_VOICE_FINAL,
@@ -17,19 +17,22 @@ export type VoiceTranscriptEvent = {
   languageCode?: string;
 };
 
-type SpeechClient = InstanceType<typeof v2.SpeechClient>;
-
-export type SpeechStream = {
-  writeAudio: (chunk: Uint8Array) => void;
-  end: () => void;
-};
-
 export type VoiceRecognizeResult = {
   text: string;
   languageCode?: string;
 };
 
-let cachedSpeechClient: SpeechClient | null = null;
+type SpeechErrorPayload = {
+  error?: { message?: string; status?: string };
+};
+
+type SpeechRecognizePayload = {
+  results?: Array<{
+    alternatives?: Array<{ transcript?: string | null } | null> | null;
+    languageCode?: string | null;
+  }>;
+  error?: SpeechErrorPayload["error"];
+};
 
 function speechProjectId(): string {
   const project = process.env.GOOGLE_VERTEX_PROJECT?.trim();
@@ -41,45 +44,32 @@ function speechProjectId(): string {
   return project;
 }
 
-export function speechRecognizerName(projectId: string = speechProjectId()): string {
+export function speechRecognizerName(
+  projectId: string = speechProjectId()
+): string {
   return `projects/${projectId}/locations/${VOICE_STT_LOCATION}/recognizers/_`;
 }
 
-export function createSpeechClient(): SpeechClient {
-  if (cachedSpeechClient) return cachedSpeechClient;
-  const wif = getWifConfig();
-  cachedSpeechClient = new v2.SpeechClient({
-    apiEndpoint: "speech.googleapis.com",
-    projectId: speechProjectId(),
-    ...(wif
-      ? { authClient: createWifAuthClient(wif) as never }
-      : {}),
-  });
-  return cachedSpeechClient;
+export function speechRecognizeUrl(projectId: string = speechProjectId()): string {
+  return `https://speech.googleapis.com/v2/${speechRecognizerName(projectId)}:recognize`;
 }
 
 /**
- * Chirp 3 streaming config. Do not add translationConfig — Hindi/Marathi
- * stay in native script (Devanagari). Gemini understands that; only the
- * assistant reply is English (chat prompt Language rule).
+ * Chirp 3 unary config. Do not add translationConfig — Hindi/Marathi stay in
+ * native script (Devanagari). Gemini understands that; only the assistant
+ * reply is English (chat prompt Language rule).
  */
-export function buildVoiceStreamingConfig(languageCodes: readonly string[]) {
+export function buildVoiceRecognitionConfig(languageCodes: readonly string[]) {
   return {
-    config: {
-      explicitDecodingConfig: {
-        encoding: "LINEAR16" as const,
-        sampleRateHertz: VOICE_SAMPLE_RATE_HZ,
-        audioChannelCount: 1,
-      },
-      languageCodes: [...languageCodes],
-      model: VOICE_STT_MODEL,
-      features: {
-        enableAutomaticPunctuation: true,
-      },
+    explicitDecodingConfig: {
+      encoding: "LINEAR16" as const,
+      sampleRateHertz: VOICE_SAMPLE_RATE_HZ,
+      audioChannelCount: 1,
     },
-    streamingFeatures: {
-      interimResults: true,
-      enableVoiceActivityEvents: false,
+    languageCodes: [...languageCodes],
+    model: VOICE_STT_MODEL,
+    features: {
+      enableAutomaticPunctuation: true,
     },
   };
 }
@@ -99,63 +89,34 @@ export function parseSpeechResults(
     events.push({
       type: "transcript",
       text,
-      isFinal: Boolean(result.isFinal),
+      isFinal: result.isFinal == null ? true : Boolean(result.isFinal),
       languageCode: result.languageCode?.trim() || undefined,
     });
   }
   return events;
 }
 
-export function openSpeechRecognizeStream(opts: {
-  languageCodes: readonly string[];
-  onTranscript: (event: VoiceTranscriptEvent) => void;
-  onError: (error: Error) => void;
-  onEnd: () => void;
-}): SpeechStream {
-  const client = createSpeechClient();
-  const stream = client._streamingRecognize();
-  let closed = false;
+async function speechAccessToken(): Promise<string> {
+  const wif = getWifConfig();
+  if (wif) return getWifAccessToken(wif);
 
-  const finish = (error?: Error) => {
-    if (closed) return;
-    closed = true;
-    if (error) opts.onError(error);
-    else opts.onEnd();
-  };
-
-  stream.on("data", (response: {
-    results?: Array<{
-      alternatives?: Array<{ transcript?: string | null } | null> | null;
-      isFinal?: boolean | null;
-      languageCode?: string | null;
-    }> | null;
-  }) => {
-    for (const event of parseSpeechResults(response.results)) {
-      opts.onTranscript(event);
-    }
+  const auth = new GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
   });
-  stream.on("error", (error: Error) => finish(error));
-  stream.on("end", () => finish());
-
-  stream.write({
-    recognizer: speechRecognizerName(),
-    streamingConfig: buildVoiceStreamingConfig(opts.languageCodes),
-  });
-
-  return {
-    writeAudio(chunk) {
-      if (closed || chunk.byteLength === 0) return;
-      stream.write({ audio: Buffer.from(chunk) });
-    },
-    end() {
-      stream.end();
-    },
-  };
+  const client = await auth.getClient();
+  const token = await client.getAccessToken();
+  if (!token.token) {
+    throw new Error(
+      "No Google access token for Speech-to-Text. Run `gcloud auth application-default login` or set WIF."
+    );
+  }
+  return token.token;
 }
 
 /**
- * One Chirp 3 turn in this request. Vercel Fluid does not pin POSTs to the
- * isolate that handled `start`, so a long-lived in-memory stream 404s.
+ * One Chirp 3 unary recognize over HTTPS. Do not use the Speech gRPC stream
+ * on Vercel Fluid — grpc-js never shows up as an outbound HTTP call and
+ * fails in ~150ms with a 502.
  */
 export async function recognizePcmWindow(opts: {
   pcm: Uint8Array;
@@ -168,45 +129,53 @@ export async function recognizePcmWindow(opts: {
     return { text: "" };
   }
 
-  return new Promise((resolve, reject) => {
-    const finals: string[] = [];
-    let interim = "";
-    let languageCode: string | undefined;
-    let settled = false;
-    let stream: SpeechStream | null = null;
-
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        stream?.end();
-      } catch {
-        /* already ended */
-      }
-      if (error) {
-        reject(error);
-        return;
-      }
-      const text = (finals.join(" ").trim() || interim).trim();
-      resolve({ text, languageCode });
-    };
-
-    const timer = setTimeout(() => {
-      finish(new Error("Voice input timed out."));
-    }, VOICE_RECOGNIZE_TIMEOUT_MS);
-
-    stream = openSpeechRecognizeStream({
-      languageCodes: opts.languageCodes,
-      onTranscript: (event) => {
-        languageCode = event.languageCode ?? languageCode;
-        if (event.isFinal) finals.push(event.text);
-        else interim = event.text;
+  const token = await speechAccessToken();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), VOICE_RECOGNIZE_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(speechRecognizeUrl(), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
       },
-      onError: (error) => finish(error),
-      onEnd: () => finish(),
+      body: JSON.stringify({
+        config: buildVoiceRecognitionConfig(opts.languageCodes),
+        configMask: "*",
+        content: Buffer.from(
+          opts.pcm.buffer,
+          opts.pcm.byteOffset,
+          opts.pcm.byteLength
+        ).toString("base64"),
+      }),
+      signal: controller.signal,
     });
-    stream.writeAudio(opts.pcm);
-    stream.end();
-  });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("Voice input timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as SpeechRecognizePayload;
+  if (!response.ok) {
+    const detail =
+      payload.error?.status ||
+      payload.error?.message ||
+      `Speech recognize failed (${response.status})`;
+    throw new Error(detail);
+  }
+
+  const events = parseSpeechResults(payload.results);
+  const text = events
+    .map((event) => event.text)
+    .join(" ")
+    .trim();
+  return {
+    text,
+    languageCode: events.find((event) => event.languageCode)?.languageCode,
+  };
 }

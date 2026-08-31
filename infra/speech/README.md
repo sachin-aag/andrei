@@ -5,7 +5,9 @@ Enables Cloud Speech-to-Text for composer voice dictation. Each `POST /api/repor
 - Enables `speech.googleapis.com`
 - Grants the Vercel WIF runtime SA `roles/speech.client`
 
-The app uses Speech-to-Text v2 **Chirp 3** at `speech.googleapis.com` (`locations/global/recognizers/_`). Hindi and Marathi stay in native script (Devanagari). Do not enable Translation API for this path — assistant English replies are a chat prompt rule, not STT translation.
+The app calls Speech-to-Text v2 **Chirp 3** over **HTTPS REST**
+(`POST https://speech.googleapis.com/v2/projects/{project}/locations/global/recognizers/_:recognize`).
+Do not use the `@google-cloud/speech` gRPC client on Vercel Fluid. Hindi and Marathi stay in native script (Devanagari). Do not enable Translation API for this path — assistant English replies are a chat prompt rule, not STT translation.
 
 WIF trust (`GCP_WIF_AUDIENCE`, OIDC) is **not** managed here — that already exists for Vertex.
 

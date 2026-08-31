@@ -214,10 +214,11 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
   Empty-state Document chips are `chat.examplePrompts` on the document type
   (not DMAIC-hardcoded). Analytics chips stay worksheet/plot copy.
   Voice dictation is the shared mic (right of the image icon): click to start,
-  click to stop. Each audio POST is one Chirp recognize in that request (no
-  sticky session). MJ transcribes English/Hindi/Marathi in native script
-  (Devanagari preferred); other packs are English. The LLM still replies in
-  English. Stub: `ALLOW_TEST_STUB_SPEECH` (`e2e/report-chat.spec.ts`).
+  click to stop. Each audio POST is one Chirp REST recognize in that request
+  (no sticky session, no Speech gRPC). MJ transcribes English/Hindi/Marathi
+  in native script (Devanagari preferred); other packs are English. The LLM
+  still replies in English. Stub: `ALLOW_TEST_STUB_SPEECH`
+  (`e2e/report-chat.spec.ts`).
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 

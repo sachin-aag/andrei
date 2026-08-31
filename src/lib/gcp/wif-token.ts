@@ -153,7 +153,7 @@ function flattenHeaders(
 }
 
 /**
- * gRPC (`@google-cloud/speech`) calls `headers.forEach`. REST/gaxios and
+ * gRPC metadata plugins call `headers.forEach`. REST/gaxios and
  * Vertex spread a plain `{ Authorization }` object. A Map with an enumerable
  * `Authorization` field satisfies both; a bare object throws
  * `headers.forEach is not a function` inside the Speech metadata plugin.
