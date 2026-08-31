@@ -10,6 +10,7 @@ import {
   VOICE_MIN_WINDOW_BYTES,
   VOICE_PCM_MIME,
 } from "@/lib/voice/constants";
+import { createVoiceFlushScheduler } from "@/lib/voice/flush-scheduler";
 import {
   languageCodesForPreference,
   readStoredVoiceLanguage,
@@ -82,8 +83,11 @@ export function useVoiceDictation({
   const pcmBytesRef = useRef(0);
   const liveRef = useRef(false);
   const failedRef = useRef(false);
+  const primedFlushRef = useRef(false);
+  const seqRef = useRef(0);
+  const appliedSeqRef = useRef(0);
+  const sessionRef = useRef(0);
   const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const flushChainRef = useRef(Promise.resolve());
   const maxDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -143,6 +147,15 @@ export function useVoiceDictation({
         return;
       }
 
+      const commit =
+        opts.force || pcm.byteLength >= VOICE_MAX_WINDOW_BYTES;
+      if (commit) {
+        pcmChunksRef.current = [];
+        pcmBytesRef.current = 0;
+      }
+      const seq = ++seqRef.current;
+      const session = sessionRef.current;
+
       try {
         const res = await fetch(transcribeUrl(reportId), {
           method: "POST",
@@ -166,20 +179,17 @@ export function useVoiceDictation({
           return;
         }
         const payload = (await res.json()) as { text?: string };
+        if (session !== sessionRef.current) return;
         const text = payload.text?.trim() ?? "";
+        if (seq <= appliedSeqRef.current) return;
+        appliedSeqRef.current = seq;
         const current = transcriptRef.current;
         if (!current) return;
         if (!text) {
           if (opts.force) commitInterimLocally();
           return;
         }
-        const commit =
-          opts.force || pcm.byteLength >= VOICE_MAX_WINDOW_BYTES;
         publish(applyVoiceTranscript(current, text, commit));
-        if (commit) {
-          pcmChunksRef.current = [];
-          pcmBytesRef.current = 0;
-        }
       } catch (error) {
         fail(error);
       }
@@ -187,17 +197,16 @@ export function useVoiceDictation({
     [commitInterimLocally, fail, publish, reportId]
   );
 
-  const enqueueFlush = useCallback(
-    (opts: { force: boolean }) => {
-      flushChainRef.current = flushChainRef.current
-        .then(() => flushWindow(opts))
-        .catch((error) => {
-          fail(error);
-        });
-      return flushChainRef.current;
-    },
-    [fail, flushWindow]
+  const flushWindowRef = useRef(flushWindow);
+  const schedulerRef = useRef<ReturnType<typeof createVoiceFlushScheduler> | null>(
+    null
   );
+  const getScheduler = () => {
+    schedulerRef.current ??= createVoiceFlushScheduler({
+      run: (force) => flushWindowRef.current({ force }),
+    });
+    return schedulerRef.current;
+  };
 
   const stop = useCallback(async () => {
     if (statusRef.current === "idle" || statusRef.current === "stopping") {
@@ -211,13 +220,14 @@ export function useVoiceDictation({
     }
     tearDownAudio();
     if (!failedRef.current) {
-      await enqueueFlush({ force: true });
+      getScheduler().request(true);
     }
+    await getScheduler().whenIdle();
     pcmChunksRef.current = [];
     pcmBytesRef.current = 0;
     transcriptRef.current = null;
     setStatus("idle");
-  }, [enqueueFlush, tearDownAudio]);
+  }, [tearDownAudio]);
   stopRef.current = stop;
 
   const start = useCallback(async () => {
@@ -227,7 +237,11 @@ export function useVoiceDictation({
     pcmChunksRef.current = [];
     pcmBytesRef.current = 0;
     failedRef.current = false;
-    flushChainRef.current = Promise.resolve();
+    primedFlushRef.current = false;
+    sessionRef.current += 1;
+    seqRef.current = 0;
+    appliedSeqRef.current = 0;
+    schedulerRef.current?.reset();
 
     try {
       const warmup = await fetch(transcribeUrl(reportId), {
@@ -286,8 +300,15 @@ export function useVoiceDictation({
         const chunk = new Uint8Array(data.pcm);
         pcmChunksRef.current.push(chunk);
         pcmBytesRef.current += chunk.byteLength;
+        if (
+          !primedFlushRef.current &&
+          pcmBytesRef.current >= VOICE_MIN_WINDOW_BYTES
+        ) {
+          primedFlushRef.current = true;
+          getScheduler().request(false);
+        }
         if (pcmBytesRef.current >= VOICE_MAX_WINDOW_BYTES) {
-          enqueueFlush({ force: true });
+          getScheduler().request(true);
         }
       };
       liveRef.current = true;
@@ -297,7 +318,7 @@ export function useVoiceDictation({
 
       setStatus("recording");
       flushTimerRef.current = setInterval(() => {
-        if (liveRef.current) enqueueFlush({ force: false });
+        if (liveRef.current) getScheduler().request(false);
       }, VOICE_FLUSH_MS);
       maxDurationTimerRef.current = setTimeout(() => {
         void stop();
@@ -314,7 +335,7 @@ export function useVoiceDictation({
       }
       toast.error(voiceUserErrorMessage(error));
     }
-  }, [disabled, enqueueFlush, reportId, stop, tearDownAudio]);
+  }, [disabled, reportId, stop, tearDownAudio]);
 
   const toggle = useCallback(() => {
     if (
@@ -326,6 +347,10 @@ export function useVoiceDictation({
     }
     void start();
   }, [start, stop]);
+
+  useEffect(() => {
+    flushWindowRef.current = flushWindow;
+  }, [flushWindow]);
 
   useEffect(() => {
     return () => {

@@ -224,7 +224,9 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
   (not DMAIC-hardcoded). Analytics chips stay worksheet/plot copy.
   Voice dictation is the shared mic (right of the image icon): click to start,
   click to stop. Each audio POST is one Vertex Gemini transcribe (Flash-Lite,
-  same resolver as chat — not Cloud Speech-to-Text). MJ transcribes English/Hindi/Marathi
+  same resolver as chat — not Cloud Speech-to-Text). The composer flushes the
+  growing window immediately (~200 ms) then about every 300 ms, with up to two
+  overlapping unary POSTs (no SSE). MJ transcribes English/Hindi/Marathi
   in native script (Devanagari preferred); other packs are English. The LLM
   still replies in English. Stub: `ALLOW_TEST_STUB_SPEECH`
   (`e2e/report-chat.spec.ts`).
