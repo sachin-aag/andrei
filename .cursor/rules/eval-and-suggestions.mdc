@@ -36,17 +36,28 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - Entry: `generateSuggestionsForSection()`. Gate ≡ apply via
   `probeRichEdit` / `probePlainEdit` in `src/lib/suggestions/locator.ts`.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
-- Accept/dismiss always: locate → apply → PATCH section → flip comment.
-  Never resolve a suggestion without a successful apply. A superseded sibling
-  is `dismissed` with `resolutionReason: "superseded_by:<id>"`, never `resolved`.
-- Bulk apply locates overlapping edits in a section and applies those
-  recursively; non-overlapping edits persist as one section PATCH.
-  Preview the applied section content before that PATCH so insert text
-  does not vanish during save. Range-contained siblings are dismissed, not
-  applied into an overwrite. Locate failures stay open; the toast reports
-  them. Do not dismiss a skip — that is a silent failure.
+- Accept/dismiss: three-way merge when `suggestionBase`/`suggestionIntent`
+  are stored (`mergeField` in `three-way-merge.ts`); otherwise locate the
+  frozen span. If merge reports identity but the stored delete/insert still
+  locates and the insert is not already in the field, preview and apply that
+  span — do not hide inline marks behind "already in the document." PATCH
+  section → flip comment. Never resolve without a successful apply. Zero-ops
+  dismiss (`already_present`), not resolve. A superseded sibling is
+  `dismissed` with `resolutionReason: "superseded_by:<id>"`, never `resolved`.
+- Bulk apply re-merges each open suggestion against the in-memory doc.
+  Overlapping edits in a section apply recursively; non-overlapping edits
+  persist as one section PATCH. Preview applied wording before that PATCH
+  so insert text does not vanish during save. Range-contained siblings are
+  dismissed, not applied into an overwrite. Locate failures stay open; the
+  toast reports them. Do not dismiss a skip — that is a silent failure.
 - `draft_field` refuses a filled field unless `replaceFilledField: true`.
   After a redraft, filled `[Label: value]` placeholders must be preserved
   unless the caller opted into replacing them.
+- Same-turn Document-chrome `propose_edit` cards fold when locatable
+  ranges sit within `COALESCING_GAP` (20) characters. There is no max-cards
+  budget. Do not fold lead-ins, tables, figures, citation splits, or cells.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
-- Whole-field rewrites are redrafts (`apply-redraft.ts`), not anchored edits.
+  Bump `CHAT_PROMPT_VERSION` when chat edit-tool copy changes.
+- Whole-field is derived: planned operations cover every merge block
+  (`operationsCoverWholeField`), plus `ai_redraft`. Coverage classifies
+  edit vs rewrite; `propose_edit` does not refuse large spans.

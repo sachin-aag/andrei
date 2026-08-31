@@ -8,7 +8,6 @@ import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
   parseAiFixCommentContent,
   serializeAiFixCommentContent,
-  sectionContentHash,
   type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
 import {
@@ -121,6 +120,7 @@ export type PlotMeasurementsResult =
   | { status: "ambiguous"; hint: string }
   | { status: "cross_cell"; hint: string }
   | { status: "bad_scope"; hint: string }
+  | { status: "table_as_list"; hint: string }
   | { status: "review_incomplete"; message: string };
 
 type LoadedSection = { sectionId: string; content: Record<string, unknown> };
@@ -346,9 +346,6 @@ function checkStatusResult(
   anchorText: string
 ): PlotMeasurementsResult | null {
   if (check.status === "ok") return null;
-  if (check.status === "too_large") {
-    return { status: "too_large", message: "The proposed chart edit is too large for this field." };
-  }
   const hint = proposedEditHint(check, { anchorText, fieldDoc });
   if (check.status === "not_found") {
     return { status: "not_found_anchor", hint };
@@ -369,7 +366,6 @@ async function persistChartEdit(args: {
   loaded: LoadedSection;
   input: PlotMeasurementsInput;
   resolvedField: string;
-  hash: string;
   insertImage?: SuggestionImageInsert;
   removeImage?: SuggestionImageRemove;
   anchorText: string;
@@ -449,7 +445,6 @@ async function persistChartEdit(args: {
     insertImage: args.insertImage,
     removeImage: args.removeImage,
     reasoning: args.input.reasoning,
-    contentHashAtSuggestion: args.hash,
   };
   if (appendImage && args.ctx.blockPairing) {
     const leadIn = takeUnusedLeadIn(
@@ -619,9 +614,6 @@ export async function executePlotMeasurements(
   const rendered = await renderSpecs(specs, deps.renderChartPng);
   if (!rendered.ok) return renderErrorResult(rendered.error);
 
-  const hash = sectionContentHash(input.section, loaded.content, {
-    documentType: ctx.documentType,
-  });
   const anchorText = input.anchorText ?? "";
 
   if (mode === "pending-restyle") {
@@ -652,7 +644,6 @@ export async function executePlotMeasurements(
         insertImage,
         removeImage,
         reasoning: input.reasoning,
-        contentHashAtSuggestion: hash,
       });
       if (existing) {
         await deps.updateComment({ id: existing.comment.id, content });
@@ -718,7 +709,6 @@ export async function executePlotMeasurements(
         loaded,
         input,
         resolvedField,
-        hash,
         insertImage,
         removeImage,
         anchorText: removeImage ? "" : anchorText,
@@ -748,7 +738,6 @@ export async function executePlotMeasurements(
         loaded,
         input,
         resolvedField,
-        hash,
         removeImage,
         anchorText: "",
       });
@@ -786,7 +775,6 @@ export async function executePlotMeasurements(
       loaded,
       input,
       resolvedField,
-      hash,
       insertImage,
       anchorText,
     });

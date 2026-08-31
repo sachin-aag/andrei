@@ -140,6 +140,7 @@ export function layoutSpecLimitLabels(
 export type ControlLimitKind = "ucl" | "lcl";
 export type HorizontalSpecKind = "lsl" | "usl";
 export type HorizontalLimitKind = ControlLimitKind | HorizontalSpecKind;
+export type HorizontalLimitEdge = "left" | "right";
 
 export type ControlLimitInput = {
   kind: ControlLimitKind;
@@ -151,6 +152,7 @@ export type HorizontalLimitInput = {
   kind: HorizontalLimitKind;
   value: number;
   lineY: number;
+  edge?: HorizontalLimitEdge;
 };
 
 export type ControlLimitLabelLayout = {
@@ -160,6 +162,7 @@ export type ControlLimitLabelLayout = {
   x: number;
   y: number;
   textAnchor: "start" | "middle" | "end";
+  edge: HorizontalLimitEdge;
 };
 
 const ABOVE_LINE = 4;
@@ -186,23 +189,22 @@ function placeAlongLine(
   const maxY = plot.bottom - BOTTOM_INNER_OFFSET;
   const yUnclamped =
     side === "above" ? input.lineY - ABOVE_LINE : input.lineY + BELOW_LINE;
+  const edge = input.edge ?? "right";
   return {
     kind: input.kind,
     text,
     lineY: input.lineY,
-    x: plot.right - EDGE_PAD,
+    x: edge === "left" ? plot.left + EDGE_PAD : plot.right - EDGE_PAD,
     y: Math.min(maxY, Math.max(minY, yUnclamped)),
-    textAnchor: "end",
+    textAnchor: edge === "left" ? "start" : "end",
+    edge,
   };
 }
 
-export function layoutHorizontalLimitLabels(
-  limits: HorizontalLimitInput[],
+function layoutOneEdge(
+  finite: HorizontalLimitInput[],
   plot: PlotBox
 ): ControlLimitLabelLayout[] {
-  const finite = limits.filter(
-    (limit) => Number.isFinite(limit.value) && Number.isFinite(limit.lineY)
-  );
   const placed = finite.map((limit) =>
     placeAlongLine(
       limit,
@@ -235,6 +237,18 @@ export function layoutHorizontalLimitLabels(
   return [top, bottom];
 }
 
+export function layoutHorizontalLimitLabels(
+  limits: HorizontalLimitInput[],
+  plot: PlotBox
+): ControlLimitLabelLayout[] {
+  const finite = limits.filter(
+    (limit) => Number.isFinite(limit.value) && Number.isFinite(limit.lineY)
+  );
+  const left = finite.filter((limit) => (limit.edge ?? "right") === "left");
+  const right = finite.filter((limit) => (limit.edge ?? "right") === "right");
+  return [...layoutOneEdge(left, plot), ...layoutOneEdge(right, plot)];
+}
+
 export function layoutControlLimitLabels(
   limits: ControlLimitInput[],
   plot: PlotBox
@@ -243,7 +257,12 @@ export function layoutControlLimitLabels(
 }
 
 export function layoutHorizontalSpecLabels(
-  limits: Array<{ kind: HorizontalSpecKind; value: number; lineY: number }>,
+  limits: Array<{
+    kind: HorizontalSpecKind;
+    value: number;
+    lineY: number;
+    edge?: HorizontalLimitEdge;
+  }>,
   plot: PlotBox
 ): ControlLimitLabelLayout[] {
   return layoutHorizontalLimitLabels(limits, plot);

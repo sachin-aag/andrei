@@ -8,14 +8,6 @@ export const CHAT_ASSISTANT_ERROR_MESSAGE =
 export const CHAT_ASSISTANT_INTERRUPTED_MESSAGE =
   "The assistant stopped before finishing. Please try again.";
 
-/** User-facing copy when the turn hits the tool-step budget with no prose. */
-export const CHAT_ASSISTANT_STEP_BUDGET_MESSAGE =
-  "I reached the search/read step limit for this turn before I could finish. Ask me to continue from the last hits, or name the file and page.";
-
-/** User-facing copy when the model ends on tool-calls with no wrap-up text. */
-export const CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE =
-  "I stopped after tools and did not finish this turn. Ask me to continue if anything is still missing.";
-
 /** Vercel `maxDuration` for the chat route, in seconds. */
 export const CHAT_FUNCTION_MAX_DURATION_SEC = 300;
 
@@ -46,8 +38,8 @@ type ChatTurnPart = {
 
 /**
  * True when the assistant turn would render something in the chat panel.
- * Reasoning / step markers are not shown (`sendReasoning: false`), so a
- * thought-only Gemini reply looks empty to the user.
+ * Reasoning parts render as collapsible Thought lines when streamed
+ * (`sendReasoning: true`). Tool chips and prose also count as visible.
  */
 export function assistantPartsHaveVisibleContent(
   parts: readonly ChatTurnPart[] | null | undefined
@@ -57,6 +49,11 @@ export function assistantPartsHaveVisibleContent(
     if (!part || typeof part.type !== "string") continue;
     if (part.type === "text") {
       if (typeof part.text === "string" && part.text.trim()) return true;
+      continue;
+    }
+    if (part.type === "reasoning") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (text) return true;
       continue;
     }
     if (part.type === "file" || part.type.startsWith("tool-")) return true;
@@ -101,6 +98,11 @@ export function assistantProgressSignature(
       if (part.type === "text") {
         const text = typeof part.text === "string" ? part.text : "";
         return `text:${text.length}`;
+      }
+      if (part.type === "reasoning") {
+        const text = typeof part.text === "string" ? part.text : "";
+        const state = typeof part.state === "string" ? part.state : "";
+        return `reasoning:${text.length}:${state}`;
       }
       if (part.type.startsWith("tool-")) {
         const state = typeof part.state === "string" ? part.state : "";
@@ -153,75 +155,21 @@ function appendInterruptedNotice(parts: UIMessage["parts"]): UIMessage["parts"] 
   return appendNoticeIfMissing(parts, CHAT_ASSISTANT_INTERRUPTED_MESSAGE);
 }
 
-function formatWrittenColumnList(names: readonly string[]): string {
-  if (names.length === 1) return names[0]!;
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
-  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
-}
-
-function stringField(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
-/** Column headers from successful `write_column` tool parts in this turn. */
-export function writtenColumnNamesFromParts(
-  parts: readonly ChatTurnPart[] | null | undefined
-): string[] {
-  if (!parts || parts.length === 0) return [];
-  const names: string[] = [];
-  const seen = new Set<string>();
-  const push = (raw: unknown) => {
-    const name = stringField(raw);
-    if (!name || seen.has(name)) return;
-    seen.add(name);
-    names.push(name);
-  };
-  for (const part of parts) {
-    if (!part || typeof part.type !== "string") continue;
-    if (part.type !== "tool-write_column") continue;
-    const record = part as ChatTurnPart & { output?: unknown };
-    const output = record.output;
-    if (!output || typeof output !== "object" || Array.isArray(output)) continue;
-    const payload = output as Record<string, unknown>;
-    if (payload.status !== "written") continue;
-    if (Array.isArray(payload.columns)) {
-      for (const column of payload.columns) {
-        if (!column || typeof column !== "object" || Array.isArray(column)) {
-          continue;
-        }
-        push((column as Record<string, unknown>).columnName);
-      }
-    }
-    push(payload.columnName);
-  }
-  return names;
-}
-
-function incompleteTurnNotice(parts: UIMessage["parts"]): string {
-  const names = writtenColumnNamesFromParts(parts);
-  if (names.length === 0) return CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE;
-  return `I stopped after writing ${formatWrittenColumnList(names)} and did not finish this turn. Ask me to continue if any columns are still empty.`;
-}
-
 /**
  * Persist a user-visible assistant row when the stream finishes empty, or
  * when it is aborted (explicit Cancel / deadline) so history is not an
  * orphaned user turn. Tab close no longer aborts the server turn.
- * A `tool-calls` stop with only tool chips is an incomplete turn — never
- * persist that silently.
+ * A `tool-calls` stop with only tool chips is logged as incomplete — do
+ * not append a “continue / re-prompt” notice. There is no tool-step cap.
  */
 export function partsForPersistedAssistantTurn(options: {
   parts: UIMessage["parts"] | undefined;
   isAborted: boolean;
-  stepBudgetExhausted?: boolean;
   finishReason?: string;
 }): {
   parts: UIMessage["parts"];
   emptyFailure: boolean;
   interrupted: boolean;
-  stepBudgetExhausted: boolean;
   incomplete: boolean;
 } {
   const parts = options.parts ?? [];
@@ -234,7 +182,6 @@ export function partsForPersistedAssistantTurn(options: {
         parts,
         emptyFailure: false,
         interrupted: false,
-        stepBudgetExhausted: false,
         incomplete: false,
       };
     }
@@ -243,7 +190,6 @@ export function partsForPersistedAssistantTurn(options: {
         parts: appendInterruptedNotice(parts),
         emptyFailure: false,
         interrupted: true,
-        stepBudgetExhausted: false,
         incomplete: true,
       };
     }
@@ -251,34 +197,15 @@ export function partsForPersistedAssistantTurn(options: {
       parts: INTERRUPTED_ASSISTANT_PARTS,
       emptyFailure: true,
       interrupted: true,
-      stepBudgetExhausted: false,
       incomplete: true,
     };
   }
 
-  if (options.stepBudgetExhausted && !hasVisibleText) {
+  if (options.finishReason === "tool-calls" && !hasVisibleText && visible) {
     return {
-      parts:
-        parts.length === 0
-          ? [{ type: "text", text: CHAT_ASSISTANT_STEP_BUDGET_MESSAGE }]
-          : appendNoticeIfMissing(parts, CHAT_ASSISTANT_STEP_BUDGET_MESSAGE),
+      parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: true,
-      incomplete: true,
-    };
-  }
-
-  if (options.finishReason === "tool-calls" && !hasVisibleText) {
-    const notice = incompleteTurnNotice(parts);
-    return {
-      parts:
-        parts.length === 0
-          ? [{ type: "text", text: notice }]
-          : appendNoticeIfMissing(parts, notice),
-      emptyFailure: false,
-      interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: true,
     };
   }
@@ -288,7 +215,6 @@ export function partsForPersistedAssistantTurn(options: {
       parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: false,
     };
   }
@@ -296,7 +222,6 @@ export function partsForPersistedAssistantTurn(options: {
     parts: EMPTY_ASSISTANT_ERROR_PARTS,
     emptyFailure: true,
     interrupted: false,
-    stepBudgetExhausted: false,
     incomplete: false,
   };
 }

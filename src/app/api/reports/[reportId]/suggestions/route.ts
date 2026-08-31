@@ -158,10 +158,6 @@ async function handleSuggestionsPost(
     documentType: report.documentType,
     allSections,
   });
-  // Suggestion staleness is section-local (validateSuggestionLocate has no allSections).
-  const suggestionContentHash = sectionContentHash(section, sectionContent, {
-    documentType: report.documentType,
-  });
   const stale = gap.some((g) => g.evaluatedContentHash && g.evaluatedContentHash !== hash);
   const blockedReason =
     gap.length === 0 ? "no_gap_criteria" : stale ? "stale_evaluation" : null;
@@ -260,7 +256,6 @@ async function handleSuggestionsPost(
         reasoning: s.reasoning,
         scope: s.scope,
         second,
-        contentHashAtSuggestion: suggestionContentHash,
         evidenceSources: s.evidenceSources,
       },
       buildSuggestionRecord({
@@ -336,7 +331,6 @@ async function handleSuggestionsPost(
         insertText,
         reasoning: s.reasoning,
         second,
-        contentHashAtSuggestion: suggestionContentHash,
         evidenceSources: s.evidenceSources,
       },
       buildSuggestionRecord({

@@ -4,6 +4,7 @@ import {
   countStaleOpenSuggestions,
   fieldContentHash,
   firstPreviewableOpenSuggestion,
+  frozenPayloadStillPending,
   preferredOpenSuggestion,
   reviewOrderOpenSuggestions,
   validateSuggestionLocate,
@@ -13,7 +14,10 @@ import {
   serializeAiRedraftCommentContent,
   parseAiFixCommentContent,
 } from "@/lib/ai/suggestion-gating";
-import { sectionContentHash } from "@/lib/ai/suggestion-gating";
+import { applySuggestionToContent } from "@/lib/suggestions/accept-suggestion";
+import { withSuggestionRecord } from "@/lib/suggestions/suggestion-record";
+import { doc, para } from "@/lib/suggestions/merge-fixtures";
+import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
 function aiFixComment(
   overrides: Partial<CommentRecord> & { content: string }
@@ -68,6 +72,66 @@ describe("validateSuggestionLocate", () => {
     const v = validateSuggestionLocate(comment, "define", sectionContent);
     expect(v.locateStatus).toBe("locatable");
     expect(v.canApply).toBe(true);
+  });
+
+  it("previews a frozen replace when merge identity hid a still-pending edit", () => {
+    const current = doc(
+      para("The purpose of this revision is to present results.")
+    );
+    const comment = aiFixComment({
+      anchorText: "present results",
+      content: serializeAiFixCommentContent(
+        withSuggestionRecord(
+          {
+            deleteText: "present results",
+            insertText: "present the testing results from protocol DV-3",
+            reasoning: "Name the protocol.",
+          },
+          { base: current, intent: current }
+        )
+      ),
+    });
+    const section = { narrative: current };
+    expect(frozenPayloadStillPending(comment, "define", section)).toBe(true);
+    const v = validateSuggestionLocate(comment, "define", section);
+    expect(v.canPreview).toBe(true);
+    expect(v.canApply).toBe(true);
+    expect(v.mergeStatus).toBe("legacy");
+
+    const applied = applySuggestionToContent({
+      section: "define",
+      comment,
+      sectionContent: section,
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(
+      richJsonToPlainText(applied.nextSection.narrative as typeof current)
+    ).toContain("protocol DV-3");
+  });
+
+  it("keeps already-in-document when the insert is already in the field", () => {
+    const current = doc(
+      para("The assay failed at 68 percent versus the 80 percent limit.")
+    );
+    const comment = aiFixComment({
+      anchorText: "68 percent",
+      content: serializeAiFixCommentContent(
+        withSuggestionRecord(
+          {
+            deleteText: "68 percent",
+            insertText: "68 percent versus the 80 percent limit",
+            reasoning: "Already applied.",
+          },
+          { base: current, intent: current }
+        )
+      ),
+    });
+    const section = { narrative: current };
+    expect(frozenPayloadStillPending(comment, "define", section)).toBe(false);
+    const v = validateSuggestionLocate(comment, "define", section);
+    expect(v.canPreview).toBe(false);
+    expect(v.mergeStatus).toBe("noop");
   });
 
   it("returns locatable for a split body edit plus end citation", () => {
@@ -193,15 +257,13 @@ describe("validateSuggestionLocate", () => {
     expect(v.canPreview).toBe(true);
   });
 
-  it("flags documentChanged when content hash differs from snapshot", () => {
-    const hash = sectionContentHash("define", sectionContent);
+  it("flags documentChanged when the frozen span no longer locates", () => {
     const comment = aiFixComment({
       anchorText: "hello",
       content: serializeAiFixCommentContent({
         deleteText: "",
         insertText: " there",
         reasoning: "",
-        contentHashAtSuggestion: hash,
       }),
     });
     const edited = {
@@ -304,7 +366,7 @@ describe("validateSuggestionLocate — ai_redraft", () => {
       correctiveActions: "CA-1: Retrain operator. CA-2: Update SOP.",
     };
     const v = validateSuggestionLocate(comment, "improve", targetFieldEdited);
-    expect(v.documentChanged).toBe(true);
+    expect(v.documentChanged).toBe(false);
     expect(v.canApply).toBe(true);
   });
 });

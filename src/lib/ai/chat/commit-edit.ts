@@ -10,7 +10,6 @@ import {
   type CommitEditFailureStatus,
   type CommitEditInput,
 } from "@/lib/suggestions/apply-commit-content";
-import { isSuggestionThreeWayMergeEnabled } from "@/lib/suggestions/suggestion-merge-flag";
 import { extractFieldContent } from "@/lib/suggestions/suggestion-record";
 import { mergeField } from "@/lib/suggestions/three-way-merge";
 import { setPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
@@ -84,25 +83,22 @@ export async function commitChatEdit(args: {
     if (!next.ok) return next;
 
     let content = next.content;
-    if (isSuggestionThreeWayMergeEnabled()) {
-      const base = extractFieldContent(previous, args.section, args.targetField);
-      const current = base;
-      const intent = extractFieldContent(content, args.section, args.targetField);
-      const merged = mergeField(base, current, intent);
-      if (merged.status === "conflict") {
-        return {
-          ok: false as const,
-          status: "conflict" as const,
-          hint: "This edit conflicts with the current field. Re-read and retry.",
-        };
-      }
-      content = writeFieldContent(
-        previous,
-        args.section,
-        args.targetField,
-        merged.merged
-      );
+    const base = extractFieldContent(previous, args.section, args.targetField);
+    const intent = extractFieldContent(content, args.section, args.targetField);
+    const merged = mergeField(base, base, intent);
+    if (merged.status === "conflict") {
+      return {
+        ok: false as const,
+        status: "conflict" as const,
+        hint: "This edit conflicts with the current field. Re-read and retry.",
+      };
     }
+    content = writeFieldContent(
+      previous,
+      args.section,
+      args.targetField,
+      merged.merged
+    );
 
     await persistSectionContent({
       actor: args.actor,

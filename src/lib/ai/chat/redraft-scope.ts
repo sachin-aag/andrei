@@ -67,7 +67,7 @@ export function classifyRedraftScope(args: {
 
 export function redraftTooSmallHint(coverage: number): string {
   const percent = Math.round(coverage * 100);
-  return `This replacement keeps ${100 - percent}% of the field — it is a targeted edit, not a rewrite, and draft_field would strike the whole field in review. Call read_section, then make one propose_edit per changed span (several calls are fine). Use edit_table for table cells. Only use draft_field here if the engineer asked to rewrite or replace the whole field.`;
+  return `This replacement keeps ${100 - percent}% of the field — it is a targeted edit, not a rewrite, and draft_field would strike the whole field in review. Call read_section, then propose_edit. Nearby wording in the same field belongs in one call (span the unchanged words between); distant paragraphs can be separate. Use edit_table for table cells. Only use draft_field here if the engineer asked to rewrite or replace the whole field.`;
 }
 
 export function redraftTableStructureHint(adding: boolean): string {

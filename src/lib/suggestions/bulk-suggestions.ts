@@ -80,6 +80,10 @@ function applyOneInMemory(args: {
     args.skippedIds.push(args.comment.id);
     return args.sectionContent;
   }
+  if (result.remainder === "conflict") {
+    args.skippedIds.push(args.comment.id);
+    return result.nextSection;
+  }
   args.appliedIds.push(args.comment.id);
   return result.nextSection;
 }

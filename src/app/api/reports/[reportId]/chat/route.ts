@@ -49,6 +49,12 @@ import { primaryFieldForSection } from "@/lib/ai/chat/fields";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
+  classifyChatUserIntent,
+  messageHasChatImage,
+  recentAssistantMessageTexts,
+  restrictToolsForIntent,
+} from "@/lib/ai/chat/user-intent";
+import {
   alreadyDraftedGapHints,
   detectAlreadyDraftedSection,
   alreadyDraftedReadStep,
@@ -93,7 +99,6 @@ import {
   DocumentReviewSession,
   pickPlanModeChatTools,
   prepareDocumentReviewStep,
-  shouldStopChatSteps,
 } from "@/lib/ai/chat/document-review";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
@@ -217,6 +222,11 @@ async function handleChatPost(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const userIntent = classifyChatUserIntent({
+    userText,
+    recentAssistantTexts: recentAssistantMessageTexts(messages),
+    hasChatImages: messageHasChatImage(userMsg?.parts),
+  });
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -284,8 +294,6 @@ async function handleChatPost(
     hasDocuments: documents.length > 0,
   });
   const documentReview = new DocumentReviewSession();
-  const reviewPageCount =
-    mentionedPageCount > 0 ? mentionedPageCount : totalReadyPages;
 
   const alreadyDrafted = detectAlreadyDraftedSection({
     userText,
@@ -320,7 +328,7 @@ async function handleChatPost(
   });
 
   const autoEvidenceBlock =
-    retrieval.policy === "focused"
+    retrieval.policy === "focused" && userIntent.kind !== "social"
       ? await buildAutoEvidence({
     reportId,
     userText,
@@ -368,10 +376,15 @@ async function handleChatPost(
     editPolicy,
     turnEdits,
   });
-  const tools: ToolSet =
+  const scopedTools: ToolSet =
     mode === "plan"
       ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
+  const tools: ToolSet = restrictToolsForIntent(
+    scopedTools,
+    userIntent.kind,
+    "document"
+  );
 
   const stubSection =
     sectionScope === "all"
@@ -384,6 +397,8 @@ async function handleChatPost(
         targetField: primaryFieldForSection(stubSection),
         insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
         reasoning: "Demo stub proposal.",
+        allowEdits: userIntent.kind === "write",
+        intent: userIntent.kind,
       })
     : resolveChatLanguageModel(pace);
 
@@ -437,17 +452,15 @@ async function handleChatPost(
       messages: modelMessages,
       tools,
       experimental_repairToolCall: repairChatToolCall,
-      stopWhen: async ({ steps }) => {
-        if (await isAssistantTurnCancelRequested(sessionId)) return true;
-        return shouldStopChatSteps({
-          stepsTaken: steps.length,
-          mode,
-          policy: retrieval.policy,
-          reviewPhase: documentReview.phase(),
-          totalPages: documentReview.progress().totalPages || reviewPageCount,
-        });
+      stopWhen: async () => {
+        // Cancel only. No tool-step cap — `CHAT_SERVER_ABORT_MS` is the
+        // abnormal-condition stop. Loop guards live in prepareStep.
+        return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps }) => {
+        if (userIntent.kind === "social") {
+          return { activeTools: [] };
+        }
         const tableEditDirective = tableEditLoopDirective(steps);
         if (tableEditDirective === "finish") {
           // Force a plain-language explanation after the second failed table
@@ -517,6 +530,8 @@ async function handleChatPost(
           chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
           retrievalPolicy: retrieval.policy,
           retrievalPolicyReason: retrieval.reason,
+          userIntent: userIntent.kind,
+          userIntentReason: userIntent.reason,
         },
       }),
     })
@@ -569,9 +584,8 @@ async function handleChatPost(
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
-    // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
-    // do not stream or persist them as chat message parts.
-    sendReasoning: false,
+    // Stream thought summaries to the chat activity UI (expandable Thought lines).
+    sendReasoning: true,
     messageMetadata: () => ({ chatTarget: "report" as const }),
     // Drain the teed SSE now. Wrapping this in Next `after()` waits until the
     // HTTP response finishes — and the tee only finishes if this copy is

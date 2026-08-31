@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v68-voice-english");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v71-voice-english");
   });
 
   it("understands native-script dictation and replies in English", () => {
@@ -26,6 +26,17 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("## Language");
     expect(prompt).toContain("Devanagari");
     expect(prompt).toContain("Reply only in English");
+  });
+
+  it("requires following the latest user message and forbids drafting on a greeting", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("## User intent (required)");
+    expect(prompt).toContain("Greeting, thanks, or small talk");
+    expect(prompt).toContain("Do not call any tools");
+    expect(prompt).toContain("Empty fields and ready documents are not a request to write");
+    expect(prompt).toContain("Only draft or edit when this turn is a write request");
+    expect(prompt).toContain("Empty sections are not a request to draft");
+    expect(prompt).not.toContain("Agent mode drafts; Ask mode does not");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -211,8 +222,7 @@ describe("buildChatSystemPrompt", () => {
   it("sends a small change in a filled field back to propose_edit", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
     expect(prompt).toContain("not_a_rewrite");
-    expect(prompt).toContain("The two tools meet at half the field");
-    expect(prompt).toContain("Call it once per changed span");
+    expect(prompt).toContain("Nearby wording in the same field belongs in one propose_edit");
   });
 
   it("routes existing table changes to edit_table instead of draft_field", () => {
@@ -220,6 +230,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("edit_table");
     expect(prompt).toContain("Any change to an existing table uses edit_table");
     expect(prompt).toContain("do not fall through to draft_field");
+    expect(prompt).not.toContain("That fallback is for prose only — never for tables");
+    expect(prompt).not.toContain("too_large");
+    expect(prompt).toContain("A large rewrite is stored as a rewrite, not refused");
     expect(prompt).toContain("Never use that fallback for tables or images");
     expect(prompt).toContain("Row 0 is the header; the first data row is row 1");
     expect(prompt).toContain("never a single representative row");

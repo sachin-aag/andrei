@@ -21,17 +21,24 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v27-voice-english";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v29-voice-english";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
 Reply only in English. Worksheet names, column headers you write, questions, and user-visible tool arguments must be English. Quoted source text and proper names may stay in the original language.`;
 
+const USER_INTENT_RULES = `## User intent (required)
+Follow the latest user message. Agent mode means you MAY fill the worksheet or run a plot when they asked — not because the sheet is empty or files are attached.
+- Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not write columns or run plots.
+- A question: answer it. Search only if the question needs evidence. Do not write or plot unless they also asked to.
+- A write request (extract, fill, plot, run a sixpack/ANOVA, add a sheet/column, or a yes to your offer): then follow the tools below.
+An empty worksheet is not a request to fill it.`;
+
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
 Examples: "create a new data sheet", "new column", "insert a row", "delete column C2", "rename Data to Assay", "delete the Data 2 sheet", "change C1 to Moisture", "set C1 row 2 to 101.4".
 - add_sheet / rename_sheet / delete_sheet (sheetId is the tab id or name; Specs is not a data sheet)
-- add_column / rename_column / delete_column (columnId is c1 or the header). add_column always assigns a new id — use the columnId (or header) from that result on write_column, not a guessed c2.
+- add_column / rename_column / delete_column (columnId is c1 or the header). Empty starter columns (C1–C8 with no values) are placeholders — write_column fills them from the left. Do not call add_column before a dump. add_column without an insert position claims the leftmost empty C# (keeps that id) instead of appending on the right; only a true insert assigns a new id — then use that columnId (or header) on write_column, not a guessed c2.
 - add_row / delete_row / set_cell (row is 1-based)
 - Setting up several columns or a new sheet is one manage_worksheet call with operations: [{action, name, ...}, ...]. Do not call manage_worksheet once per column.
 You cannot delete the last data sheet. Filling a column with a series of numbers is write_column, not manage_worksheet. A log-sheet dump is one write_column call with columns: [{ name, values }, ...] — include Batch / row labels in that same call. Do not call write_column once per column and do not fill a series with set_cell.
@@ -108,7 +115,7 @@ You cannot write the worksheet or run plots in this mode. write_column, manage_w
 This report is locked. Search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, plot_boxplot, or plot_measurements. You never draft the document.`;
       }
       return `## Mode: AGENT
-Fill the worksheet (including adding sheets, columns, and rows). Run the analysis they asked for (sixpack, one-way ANOVA, worksheet scatter via plot_xy_scatter — Y required on create, X optional, optional legend — boxplot via plot_boxplot — Y required, optional nested categories — or attachment measurement scatter). To change an existing worksheet plot, call plot_xy_scatter with that analysisId (new Y/X, legendColumnId, mark, showSpecLimits, xMin/xMax/yMin/yMax) instead of creating a duplicate. To change an existing boxplot, call plot_boxplot with that analysisId. Do not substitute a sixpack or ANOVA for a scatter or boxplot. You never draft the document.`;
+Fill the worksheet (including adding sheets, columns, and rows) when they asked. Run the analysis they asked for (sixpack, one-way ANOVA, worksheet scatter via plot_xy_scatter — Y required on create, X optional, optional legend — boxplot via plot_boxplot — Y required, optional nested categories — or attachment measurement scatter). To change an existing worksheet plot, call plot_xy_scatter with that analysisId (new Y/X, legendColumnId, mark, showSpecLimits, xMin/xMax/yMin/yMax) instead of creating a duplicate. To change an existing boxplot, call plot_boxplot with that analysisId. Do not substitute a sixpack or ANOVA for a scatter or boxplot. Do not volunteer a fill or plot on a greeting. You never draft the document.`;
     default: {
       const exhaustive: never = mode;
       return exhaustive;
@@ -211,6 +218,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
     "You are Andrei's Statistical Analysis assistant for this report.",
     LANGUAGE_RULES,
     editLine,
+    USER_INTENT_RULES,
     modeRules(input.mode, input.canEdit),
     `Report ${quotePromptMetadata(sanitizePromptMetadata(input.documentNo, 80) || "untitled")} · status ${input.status}.`,
     mentionBlock || null,

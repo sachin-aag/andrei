@@ -61,6 +61,7 @@ import {
   TrackChangesExtension,
   TrackChangesKeyboardExtension,
 } from "@/lib/tiptap/suggestion-marks";
+import { SuggestionPreviewLock } from "@/lib/tiptap/suggestion-preview-lock";
 import {
   createSuggestionActionWidgetsExtension,
   suggestionActionWidgetsRefreshMeta,
@@ -82,6 +83,8 @@ import {
 } from "@/lib/ai/suggestion-gating";
 import { buildInactiveSuggestionCss } from "@/lib/tiptap/inactive-suggestion-css";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
+import { injectMergePreview, resolveSuggestionMerge } from "@/lib/suggestions/resolve-merge";
+import { readSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import {
@@ -503,6 +506,7 @@ export function TiptapSectionField({
         TableHeaderWithVerticalAlign,
         SuggestionInsert,
         SuggestionDelete,
+        SuggestionPreviewLock,
         TrackChangesKeyboardExtension,
         TrackChangesExtension,
         highlightExtension,
@@ -1008,21 +1012,35 @@ export function TiptapSectionField({
           sectionContent,
           contentPath
         );
-        if (validation.canPreview && comment.kind === "ai_redraft") {
-          // Full-field redraft: current content struck through, replacement
-          // highlighted. Same mark machinery as fixes handles accept/dismiss.
-          const redraft = parseAiRedraftCommentContent(comment.content);
-          json = buildRedraftPreviewDoc(
-            json,
-            markdownToDoc(redraft.markdown, markdownOptions),
-            {
+        if (validation.canPreview) {
+          const record = readSuggestionRecord(comment.content);
+          const mergeRecord =
+            record && typeof record.intent !== "string" ? record : null;
+          const richIntent =
+            mergeRecord && typeof mergeRecord.intent !== "string"
+              ? mergeRecord.intent
+              : null;
+          const resolved = mergeRecord
+            ? resolveSuggestionMerge({
+                section,
+                comment,
+                sectionContent: sectionContent as Record<string, unknown>,
+                fieldContentPath: contentPath,
+              })
+            : null;
+          const rewritePreview = Boolean(
+            resolved &&
+              (resolved.wholeField ||
+                resolved.operations.some((op) => op.classification === "rewrite"))
+          );
+          const mergeAttrs = {
             id: activeSuggestionId,
             authorId: AI_AUTHOR_ID,
-            status: "pending",
+            status: "pending" as const,
             createdAt: comment.createdAt,
-            kind: "redraft",
-          });
-        } else if (validation.canPreview) {
+            kind: (resolved?.wholeField ? "redraft" : "fix") as "redraft" | "fix",
+          };
+
           const payload = parseAiFixCommentContent(comment.content);
           if (payload.tableOperation) {
             const preview = buildTableOperationPreviewDoc(
@@ -1065,6 +1083,27 @@ export function TiptapSectionField({
                 }
               }
             }
+          } else if (comment.kind === "ai_redraft" && richIntent) {
+            json = injectMergePreview({
+              current: json,
+              intent: richIntent,
+              operations: resolved?.operations ?? [],
+              wholeField: true,
+              attrs: mergeAttrs,
+            });
+          } else if (comment.kind === "ai_redraft") {
+            const redraft = parseAiRedraftCommentContent(comment.content);
+            json = buildRedraftPreviewDoc(
+              json,
+              markdownToDoc(redraft.markdown, markdownOptions),
+              {
+                id: activeSuggestionId,
+                authorId: AI_AUTHOR_ID,
+                status: "pending",
+                createdAt: comment.createdAt,
+                kind: "redraft",
+              }
+            );
           } else if (!payload.tableOperationInvalid) {
             const edit = buildSuggestionEdit({
               anchorText: comment.anchorText,
@@ -1083,9 +1122,16 @@ export function TiptapSectionField({
               createdAt: comment.createdAt,
               kind: "fix",
             });
-            // Never paint a preview (or enable inline accept) unless locate succeeded.
             if (injected.located) {
               json = normalizeRichField(injected.doc, richFieldOptions);
+            } else if (richIntent) {
+              json = injectMergePreview({
+                current: json,
+                intent: richIntent,
+                operations: resolved?.operations ?? [],
+                wholeField: resolved?.wholeField ?? rewritePreview,
+                attrs: mergeAttrs,
+              });
             }
           }
         }

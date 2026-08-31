@@ -72,4 +72,93 @@ describe("table-row-verify", () => {
     ).toEqual(["38", "2", "50.2", "0.50", "0"]);
     expect(cellMatchesToken("0", "0.50")).toBe(false);
   });
+
+  const TORQUE_PAGE =
+    "Handpiece S/N P33-0924- 10012 - Tip 1: 3 ozf-in " +
+    "Handpiece S/N P33-0924- 10012 - Tip 2: 2.5 ozf-in " +
+    "Handpiece S/N P33-0924- 10017- Tip 4: 5 ozf-in " +
+    "Handpiece S/N P33-0924- 10018 - Tip 1: 3.5 ozf-in";
+
+  it("keeps Tip N and split handpiece SNs from a torque dump", () => {
+    const verified = verifyTableWrite({
+      sourceText: TORQUE_PAGE,
+      columns: [
+        [3, 2.5, 5, 3.5],
+        [
+          "P33-0924-10012",
+          "P33-0924-10012",
+          "P33-0924-10017",
+          "P33-0924-10018",
+        ],
+        ["Tip 1", "Tip 2", "Tip 4", "Tip 1"],
+      ],
+    });
+    expect(verified.columns[0]).toEqual(["3", "2.5", "5", "3.5"]);
+    expect(verified.columns[1]).toEqual([
+      "P33-0924-10012",
+      "P33-0924-10012",
+      "P33-0924-10017",
+      "P33-0924-10018",
+    ]);
+    expect(verified.columns[2]).toEqual(["Tip 1", "Tip 2", "Tip 4", "Tip 1"]);
+    expect(verified.blanked).toEqual([]);
+  });
+
+  it("keeps labels when the dump lists torque before SN and Tip", () => {
+    const verified = verifyTableWrite({
+      sourceText: TORQUE_PAGE,
+      columns: [
+        [3, 2.5],
+        ["P33-0924-10012", "P33-0924-10012"],
+        ["Tip 1", "Tip 2"],
+      ],
+    });
+    expect(verified.columns[2]).toEqual(["Tip 1", "Tip 2"]);
+    expect(verified.columns[1]).toEqual([
+      "P33-0924-10012",
+      "P33-0924-10012",
+    ]);
+    expect(verified.blanked).toEqual([]);
+  });
+
+  it("does not match a handpiece SN to a different serial on the page", () => {
+    const verified = verifyTableWrite({
+      sourceText: TORQUE_PAGE,
+      columns: [[3], ["P33-0924-99999"], ["Tip 1"]],
+    });
+    expect(verified.columns[0]).toEqual(["3"]);
+    expect(verified.columns[1]).toEqual([""]);
+    expect(verified.columns[2]).toEqual(["Tip 1"]);
+    expect(verified.blanked).toEqual([{ row: 1, column: 1 }]);
+  });
+
+  it("keeps all 30 Solea torque rows when OCR splits SN and Tip", () => {
+    const sourceText = [
+      "Using a torque screwdriver, measure the torque required to fully remove the Perioguide Tip from the handpiece. Verify this measured value is greater than or equal to 1 ozf-in and less than or equal to 6 ozf-in.",
+      "Handpiece S/N P33-0924- 10012 - Tip 1: 3 ozf-in Handpiece S/N P33-0924- 10012 - Tip 2: 2.5 ozf-in Handpiece S/N P33-0924- 10012 - Tip 3: 4.25 ozf-in Handpiece S/N P33-0924- 10012 - Tip 4: 3.5 ozf-in Handpiece S/N P33-0924- 10012 - Tip 5: 4 ozf-in Handpiece S/N P33-0924- 10012 - Tip 6: 5 ozf-in Handpiece S/N P33-0924- 10012 - Tip 7: 2.5 ozf-in Handpiece S/N P33-0924- 10012 - Tip 8: 3.5 ozf-in Handpiece S/N P33-0924- 10012 - Tip 9: 4 ozf-in Handpiece S/N P33-0924- 10012 - Tip 10: 5 ozf-in Handpiece S/N P33-0924- 10017 - Tip 1: 3.5 ozf-in Handpiece S/N P33-0924- 10017 - Tip 2: 3 ozf-in Handpiece S/N P33-0924- 10017 - Tip 3: 4 ozf-in",
+      "Handpiece S/N P33-0924- 10017 - Tip 4: 5 ozf-in Handpiece S/N P33-0924- 10017- Tip 5: 3 ozf-in Handpiece S/N P33-0924- 10017 - Tip 6: 4 ozf-in Handpiece S/N P33-0924- 10017 - Tip 7: 4 ozf-in Handpiece S/N P33-0924- 10017- Tip 8: 4 ozf-in Handpiece S/N P33-0924- 10017- Tip 9: 4.5 ozf-in Handpiece S/N P33-0924- 10017- Tip 10: 5 ozf-in Handpiece S/N P33-0924- 10018 - Tip 1: 3.5 ozf-in Handpiece S/N P33-0924- 10018- Tip 2: 2.5 ozf-in Handpiece S/N P33-0924- 10018 - Tip 3: 3 ozf-in Handpiece S/N P33-0924- 10018- Tip 4: 3.5 ozf-in Handpiece S/N P33-0924- 10018 - Tip 5: 3 ozf-in Handpiece S/N P33-0924- 10018- Tip 6: 5 ozf-in Handpiece S/N P33-0924- 10018 - Tip 7: 5 ozf-in Handpiece S/N P33-0924- 10018- Tip 8: 4 ozf-in Handpiece S/N P33-0924- 10018- Tip 9: 5.5 ozf-in Handpiece S/N P33-0924- 10018- Tip 10: 5 ozf-in",
+    ].join(" ");
+    const tips = [
+      ...Array.from({ length: 10 }, (_, i) => `Tip ${i + 1}`),
+      ...Array.from({ length: 10 }, (_, i) => `Tip ${i + 1}`),
+      ...Array.from({ length: 10 }, (_, i) => `Tip ${i + 1}`),
+    ];
+    const serials = [
+      ...Array.from({ length: 10 }, () => "P33-0924-10012"),
+      ...Array.from({ length: 10 }, () => "P33-0924-10017"),
+      ...Array.from({ length: 10 }, () => "P33-0924-10018"),
+    ];
+    const torque = [
+      3, 2.5, 4.25, 3.5, 4, 5, 2.5, 3.5, 4, 5, 3.5, 3, 4, 5, 3, 4, 4, 4, 4.5, 5,
+      3.5, 2.5, 3, 3.5, 3, 5, 5, 4, 5.5, 5,
+    ];
+    const verified = verifyTableWrite({
+      sourceText,
+      columns: [torque, serials, tips],
+    });
+    expect(verified.columns[2]).toEqual(tips);
+    expect(verified.columns[1]).toEqual(serials);
+    expect(verified.columns[0]).toEqual(torque.map(String));
+    expect(verified.blanked).toEqual([]);
+  });
 });

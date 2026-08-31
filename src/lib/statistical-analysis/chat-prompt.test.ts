@@ -18,7 +18,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v27-voice-english");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v29-voice-english");
   });
 
   it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
@@ -41,7 +41,9 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("create a new data sheet");
     expect(prompt).toContain("Do not search attachments, scan files, extract numbers");
     expect(prompt).toContain("one manage_worksheet call with operations");
-    expect(prompt).toContain("add_column always assigns a new id");
+    expect(prompt).toContain("Empty starter columns (C1–C8 with no values) are placeholders");
+    expect(prompt).toContain("Do not call add_column before a dump");
+    expect(prompt).toContain("claims the leftmost empty C#");
     expect(prompt).toContain("one write_column call with columns");
     expect(prompt).toContain("Do not call write_column once per column");
     expect(prompt).toContain("do not fill a series with set_cell");
@@ -79,6 +81,9 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("Devanagari");
     expect(prompt).toContain("Reply only in English");
     expect(prompt).not.toContain("There is no Ask/Agent toggle here");
+    expect(prompt).toContain("## User intent (required)");
+    expect(prompt).toContain("An empty worksheet is not a request to fill it");
+    expect(prompt).toContain("Do not volunteer a fill or plot on a greeting");
     expect(prompt).not.toContain("draft_field");
   });
 

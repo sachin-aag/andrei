@@ -24,6 +24,7 @@ import {
   suggestionApplyModeFor,
 } from "@/lib/document-types";
 import { redraftPlainTextValue } from "@/lib/suggestions/apply-redraft";
+import { readSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import {
   acceptSuggestion,
   dismissSuggestion,
@@ -33,8 +34,10 @@ import {
 } from "@/lib/suggestions/accept-suggestion";
 import {
   buildPlainTextSuggestionPreview,
+  lockedValueRangesFromPreviewSegments,
   splitPlainTextPreviewSegments,
   type PlainTextPreviewSegment,
+  type PlainTextRange,
 } from "@/lib/suggestions/plain-text-preview";
 import { trackChangesOverlaySegments } from "@/lib/suggestions/plain-text-track-changes";
 import {
@@ -243,13 +246,25 @@ export function PlainTextSuggestionField({
     }
 
     const payload = parseAiFixCommentContent(activeComment.content);
-    return buildPlainTextSuggestionPreview(
+    const located = buildPlainTextSuggestionPreview(
       value,
       payload.deleteText,
       normalizeSuggestionInsertText(payload.insertText),
       activeComment.anchorText,
       payload.second
     );
+    if (located) return located;
+    const record = readSuggestionRecord(activeComment.content);
+    if (typeof record?.intent === "string" && record.intent !== value) {
+      const segments: PlainTextPreviewSegment[] = [];
+      if (value) segments.push({ kind: "delete", text: value });
+      segments.push({
+        kind: "insert",
+        text: value ? ` ${record.intent}` : record.intent,
+      });
+      return segments;
+    }
+    return null;
   }, [activeComment, activeValidation, value]);
 
   const showInlineSuggestion = Boolean(
@@ -264,6 +279,11 @@ export function PlainTextSuggestionField({
       contentPath
     );
   }, [focusedPanelPlaceholderId, section, contentPath]);
+
+  const suggestionLockRanges = useMemo((): PlainTextRange[] => {
+    if (!showInlineSuggestion || !previewSegments) return [];
+    return lockedValueRangesFromPreviewSegments(previewSegments);
+  }, [showInlineSuggestion, previewSegments]);
 
   const trackChangeSegments = useMemo(() => {
     if (showInlineSuggestion || !trackChangesMode || tcBaseline === null) {
@@ -547,6 +567,7 @@ export function PlainTextSuggestionField({
         className={className}
         mirrorContent={mirrorContent}
         suggestionActive={showInlineSuggestion}
+        lockRanges={suggestionLockRanges}
         suggestionWidgetAnchorRef={suggestionWidgetAnchorRef}
         inlineSuggestionWidget={
           showInlineSuggestion && activeComment ? (

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { SUGGESTION_THREE_WAY_MERGE } from "@/lib/suggestions/suggestion-merge-flag";
 import {
   buildSuggestionRecord,
   mergeStoredSuggestion,
@@ -14,10 +13,6 @@ const sectionContent = {
 };
 
 describe("suggestion record (dual-read)", () => {
-  it("keeps the three-way merge flag off in this PR", () => {
-    expect(SUGGESTION_THREE_WAY_MERGE).toBe(false);
-  });
-
   it("returns null for legacy frozen-diff payloads", () => {
     const content = serializeAiFixCommentContent({
       deleteText: "68 percent",

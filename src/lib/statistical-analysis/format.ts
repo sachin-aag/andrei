@@ -8,6 +8,13 @@ export function formatStat(value: number | null | undefined, digits = 4): string
   return value.toFixed(digits);
 }
 
+/** Sixpack Process Capability table — three decimals so values stay on one line. */
+export function formatCapabilityStat(
+  value: number | null | undefined
+): string {
+  return formatStat(value, 3);
+}
+
 export function formatPValue(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "*";
   if (value < 0.001) return "<0.001";
@@ -19,7 +26,7 @@ export function formatPpm(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "*";
   if (value >= 100) return value.toFixed(1);
   if (value >= 1) return value.toFixed(2);
-  return value.toFixed(4);
+  return value.toFixed(3);
 }
 
 export function formatLimit(value: number): string {

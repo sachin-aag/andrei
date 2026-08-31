@@ -9,11 +9,8 @@ import {
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
   shouldShowEmptyAssistantError,
-  writtenColumnNamesFromParts,
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE,
   CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
-  CHAT_ASSISTANT_STEP_BUDGET_MESSAGE,
   CHAT_CLIENT_GIVE_UP_MS,
   CHAT_CLIENT_STALE_MS,
   CHAT_CONSUME_STREAM_BUDGET_MS,
@@ -32,7 +29,7 @@ describe("assistantPartsHaveVisibleContent", () => {
     );
     expect(
       assistantPartsHaveVisibleContent([{ type: "reasoning", text: "thoughts" }])
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("is true for visible text, files, or tool parts", () => {
@@ -184,7 +181,6 @@ describe("partsForPersistedAssistantTurn", () => {
       parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: false,
     });
   });
@@ -196,7 +192,6 @@ describe("partsForPersistedAssistantTurn", () => {
       parts: [{ type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE }],
       emptyFailure: true,
       interrupted: true,
-      stepBudgetExhausted: false,
       incomplete: true,
     });
   });
@@ -214,7 +209,6 @@ describe("partsForPersistedAssistantTurn", () => {
       ],
       emptyFailure: false,
       interrupted: true,
-      stepBudgetExhausted: false,
       incomplete: true,
     });
   });
@@ -227,7 +221,6 @@ describe("partsForPersistedAssistantTurn", () => {
       parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: false,
     });
   });
@@ -239,34 +232,11 @@ describe("partsForPersistedAssistantTurn", () => {
       parts: [{ type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE }],
       emptyFailure: true,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: false,
     });
   });
 
-  it("appends a step-budget notice when tools ran but there is no prose", () => {
-    const parts = [
-      { type: "tool-search_documents", toolCallId: "call_1" },
-    ] as unknown as UIMessage["parts"];
-    expect(
-      partsForPersistedAssistantTurn({
-        parts,
-        isAborted: false,
-        stepBudgetExhausted: true,
-      })
-    ).toEqual({
-      parts: [
-        parts[0],
-        { type: "text", text: CHAT_ASSISTANT_STEP_BUDGET_MESSAGE },
-      ],
-      emptyFailure: false,
-      interrupted: false,
-      stepBudgetExhausted: true,
-      incomplete: true,
-    });
-  });
-
-  it("appends an incomplete notice when the model stops on tool-calls with no prose", () => {
+  it("persists tool chips without a continue notice when the model stops on tool-calls", () => {
     const parts = [
       {
         type: "tool-write_column",
@@ -286,7 +256,6 @@ describe("partsForPersistedAssistantTurn", () => {
         },
       },
     ] as unknown as UIMessage["parts"];
-    expect(writtenColumnNamesFromParts(parts)).toEqual(["Temp", "pH"]);
     expect(
       partsForPersistedAssistantTurn({
         parts,
@@ -294,22 +263,14 @@ describe("partsForPersistedAssistantTurn", () => {
         finishReason: "tool-calls",
       })
     ).toEqual({
-      parts: [
-        parts[0],
-        parts[1],
-        {
-          type: "text",
-          text: "I stopped after writing Temp and pH and did not finish this turn. Ask me to continue if any columns are still empty.",
-        },
-      ],
+      parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: true,
     });
   });
 
-  it("uses the generic incomplete line when tool-calls stop with no writes", () => {
+  it("does not append wrap-up copy when tool-calls stop after a search chip", () => {
     const parts = [
       { type: "tool-search_documents", toolCallId: "call_1" },
     ] as unknown as UIMessage["parts"];
@@ -320,13 +281,9 @@ describe("partsForPersistedAssistantTurn", () => {
         finishReason: "tool-calls",
       })
     ).toEqual({
-      parts: [
-        parts[0],
-        { type: "text", text: CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE },
-      ],
+      parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: true,
     });
   });
