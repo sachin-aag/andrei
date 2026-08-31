@@ -12,6 +12,7 @@ import type {
 } from "@/lib/statistical-analysis/types";
 import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import {
+  formatCapabilityStat,
   formatLimit,
   formatPpm,
   formatPValue,
@@ -23,8 +24,10 @@ import {
 } from "@/lib/statistical-analysis/row-selection";
 import {
   layoutControlLimitLabels,
+  layoutHorizontalSpecLabels,
   layoutSpecLimitLabels,
   type ControlLimitInput,
+  type HorizontalLimitEdge,
   type SpecLimitInput,
 } from "@/lib/statistical-analysis/spec-limit-labels";
 import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
@@ -220,6 +223,9 @@ function ControlChart({
   yLabel,
   ariaLabel,
   chartTestId,
+  lsl = null,
+  usl = null,
+  showControlLimits = true,
 }: {
   series: ControlChartSeries;
   xOffset?: number;
@@ -227,10 +233,21 @@ function ControlChart({
   yLabel: string;
   ariaLabel: string;
   chartTestId: string;
+  lsl?: number | null;
+  usl?: number | null;
+  showControlLimits?: boolean;
 }) {
   const xs = series.values.map((_, i) => i + xOffset);
+  const specValues = [lsl, usl].filter(
+    (value): value is number => value != null && Number.isFinite(value)
+  );
   const [yMin, yMax] = domain(
-    [...series.values, series.ucl, series.lcl, series.center],
+    [
+      ...series.values,
+      series.center,
+      ...(showControlLimits ? [series.ucl, series.lcl] : []),
+      ...specValues,
+    ],
     0.12
   );
   const xMin = (xs[0] ?? 1) - 0.5;
@@ -241,11 +258,25 @@ function ControlChart({
   const path = series.values
     .map((value, i) => `${i === 0 ? "M" : "L"} ${x(xs[i]!)} ${y(value)}`)
     .join(" ");
-  const controlLimits: ControlLimitInput[] = [
-    { kind: "ucl", value: series.ucl, lineY: y(series.ucl) },
-    { kind: "lcl", value: series.lcl, lineY: y(series.lcl) },
-  ];
+  const controlLimits: ControlLimitInput[] = showControlLimits
+    ? [
+        { kind: "ucl", value: series.ucl, lineY: y(series.ucl) },
+        { kind: "lcl", value: series.lcl, lineY: y(series.lcl) },
+      ]
+    : [];
   const controlLabels = layoutControlLimitLabels(controlLimits, PLOT);
+  const specEdge: HorizontalLimitEdge = showControlLimits ? "left" : "right";
+  const specLabels = layoutHorizontalSpecLabels(
+    [
+      ...(lsl != null
+        ? [{ kind: "lsl" as const, value: lsl, lineY: y(lsl), edge: specEdge }]
+        : []),
+      ...(usl != null
+        ? [{ kind: "usl" as const, value: usl, lineY: y(usl), edge: specEdge }]
+        : []),
+    ],
+    PLOT
+  );
 
   return (
     <ChartSvg ariaLabel={ariaLabel}>
@@ -257,28 +288,43 @@ function ControlChart({
         xLabel={xLabel}
         yLabel={yLabel}
       />
-      <line
-        x1={PLOT.left}
-        x2={PLOT.right}
-        y1={y(series.ucl)}
-        y2={y(series.ucl)}
-        stroke="var(--destructive)"
-        strokeDasharray="4 3"
-      />
+      {specValues.map((value) => (
+        <line
+          key={`spec-${value}`}
+          x1={PLOT.left}
+          x2={PLOT.right}
+          y1={y(value)}
+          y2={y(value)}
+          stroke="var(--destructive)"
+          strokeDasharray="3 2"
+        />
+      ))}
+      {showControlLimits ? (
+        <>
+          <line
+            x1={PLOT.left}
+            x2={PLOT.right}
+            y1={y(series.ucl)}
+            y2={y(series.ucl)}
+            stroke="var(--destructive)"
+            strokeDasharray="4 3"
+          />
+          <line
+            x1={PLOT.left}
+            x2={PLOT.right}
+            y1={y(series.lcl)}
+            y2={y(series.lcl)}
+            stroke="var(--destructive)"
+            strokeDasharray="4 3"
+          />
+        </>
+      ) : null}
       <line
         x1={PLOT.left}
         x2={PLOT.right}
         y1={y(series.center)}
         y2={y(series.center)}
         stroke="var(--brand-600)"
-      />
-      <line
-        x1={PLOT.left}
-        x2={PLOT.right}
-        y1={y(series.lcl)}
-        y2={y(series.lcl)}
-        stroke="var(--destructive)"
-        strokeDasharray="4 3"
       />
       <path d={path} fill="none" stroke="var(--foreground)" strokeWidth="1.1" />
       {series.values.map((value, i) => (
@@ -291,6 +337,17 @@ function ControlChart({
         />
       ))}
       {controlLabels.map((label) => (
+        <LimitLabel
+          key={label.kind}
+          testId={`sixpack-${chartTestId}-label-${label.kind}`}
+          name={label.kind.toUpperCase()}
+          x={label.x}
+          y={label.y}
+          textAnchor={label.textAnchor}
+          text={label.text}
+        />
+      ))}
+      {specLabels.map((label) => (
         <LimitLabel
           key={label.kind}
           testId={`sixpack-${chartTestId}-label-${label.kind}`}
@@ -496,11 +553,13 @@ function StatRow({
   testId?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-0.5">
-      <dt className="text-[11px] text-[var(--muted-foreground)]">{label}</dt>
+    <div className="flex items-baseline justify-between gap-2 py-0.5">
+      <dt className="min-w-0 pr-1 text-[11px] text-[var(--muted-foreground)]">
+        {label}
+      </dt>
       <dd
         data-testid={testId}
-        className="text-[11px] font-medium tabular-nums"
+        className="shrink-0 whitespace-nowrap text-[11px] font-medium tabular-nums"
       >
         {value}
       </dd>
@@ -511,9 +570,9 @@ function StatRow({
 function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
   const cap = result.capability;
   return (
-    <div className="grid h-full grid-cols-2 gap-x-4 gap-y-2 overflow-auto px-1 text-xs">
+    <div className="grid h-full grid-cols-2 gap-x-3 gap-y-2 overflow-auto px-1 text-xs">
       <dl>
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+        <p className="mb-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
           Process data
         </p>
         <StatRow
@@ -524,33 +583,45 @@ function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
         {result.skipped > 0 ? (
           <StatRow label="Skipped" value={String(result.skipped)} />
         ) : null}
-        <StatRow label="Mean" value={formatStat(result.mean)} />
-        <StatRow label="StDev (overall)" value={formatStat(result.overallStdev)} />
-        <StatRow label="StDev (within)" value={formatStat(result.withinStdev)} />
-        <StatRow label="MR̄" value={formatStat(result.mrBar)} />
-        <StatRow label="LSL" value={formatStat(cap.lsl)} />
-        <StatRow label="Target" value={formatStat(cap.target)} />
-        <StatRow label="USL" value={formatStat(cap.usl)} />
+        <StatRow
+          label="Mean"
+          value={formatCapabilityStat(result.mean)}
+          testId="sixpack-mean"
+        />
+        <StatRow
+          label="StDev (overall)"
+          value={formatCapabilityStat(result.overallStdev)}
+          testId="sixpack-stdev-overall"
+        />
+        <StatRow
+          label="StDev (within)"
+          value={formatCapabilityStat(result.withinStdev)}
+          testId="sixpack-stdev-within"
+        />
+        <StatRow label="MR̄" value={formatCapabilityStat(result.mrBar)} />
+        <StatRow label="LSL" value={formatCapabilityStat(cap.lsl)} />
+        <StatRow label="Target" value={formatCapabilityStat(cap.target)} />
+        <StatRow label="USL" value={formatCapabilityStat(cap.usl)} />
       </dl>
       <div>
         <dl>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+          <p className="mb-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             Potential (within)
           </p>
-          <StatRow label="Cp" value={formatStat(cap.cp)} />
-          <StatRow label="CPL" value={formatStat(cap.cpl)} />
-          <StatRow label="CPU" value={formatStat(cap.cpu)} />
-          <StatRow label="Cpk" value={formatStat(cap.cpk)} />
+          <StatRow label="Cp" value={formatCapabilityStat(cap.cp)} />
+          <StatRow label="CPL" value={formatCapabilityStat(cap.cpl)} />
+          <StatRow label="CPU" value={formatCapabilityStat(cap.cpu)} />
+          <StatRow label="Cpk" value={formatCapabilityStat(cap.cpk)} />
           <StatRow label="PPM (exp.)" value={formatPpm(cap.ppmWithin)} />
         </dl>
         <dl className="mt-2">
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+          <p className="mb-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             Overall
           </p>
-          <StatRow label="Pp" value={formatStat(cap.pp)} />
-          <StatRow label="PPL" value={formatStat(cap.ppl)} />
-          <StatRow label="PPU" value={formatStat(cap.ppu)} />
-          <StatRow label="Ppk" value={formatStat(cap.ppk)} />
+          <StatRow label="Pp" value={formatCapabilityStat(cap.pp)} />
+          <StatRow label="PPL" value={formatCapabilityStat(cap.ppl)} />
+          <StatRow label="PPU" value={formatCapabilityStat(cap.ppu)} />
+          <StatRow label="Ppk" value={formatCapabilityStat(cap.ppk)} />
           <StatRow label="PPM (exp.)" value={formatPpm(cap.ppmOverall)} />
           <StatRow label="PPM (obs.)" value={formatPpm(cap.ppmObserved)} />
         </dl>
@@ -675,6 +746,8 @@ export function SixpackView({
               yLabel="Individual"
               ariaLabel="Individuals control chart"
               chartTestId="ichart"
+              lsl={results.capability.lsl}
+              usl={results.capability.usl}
             />
           </Panel>
           <Panel title="Last 25 Observations">
@@ -691,6 +764,9 @@ export function SixpackView({
               yLabel="Value"
               ariaLabel="Last 25 observations"
               chartTestId="last25"
+              lsl={results.capability.lsl}
+              usl={results.capability.usl}
+              showControlLimits={false}
             />
           </Panel>
           <Panel title="Capability Histogram">

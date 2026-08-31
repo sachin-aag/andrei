@@ -7,6 +7,7 @@ import {
   replaceColumnValues,
 } from "@/lib/statistical-analysis/worksheet";
 import {
+  chatMessageTargetTag,
   chatUserMessage,
   expandReportSidebar,
   openReportAnalytics,
@@ -148,7 +149,10 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("sixpack-spec-label-lsl")).toHaveText("90.00");
     await expect(page.getByTestId("sixpack-spec-label-usl")).toHaveText("110.00");
     await expect(page.getByTestId("sixpack-ichart-label-ucl")).toBeVisible();
-    await expect(page.getByTestId("sixpack-last25-label-ucl")).toBeVisible();
+    await expect(page.getByTestId("sixpack-ichart-label-lsl")).toHaveText("90.00");
+    await expect(page.getByTestId("sixpack-ichart-label-usl")).toHaveText("110.00");
+    await expect(page.getByTestId("sixpack-last25-label-lsl")).toHaveText("90.00");
+    await expect(page.getByTestId("sixpack-last25-label-usl")).toHaveText("110.00");
     await expect(page.getByTestId("sixpack-mr-label-ucl")).toBeVisible();
     await expect(page.getByText("Cpk")).toBeVisible();
     await expect(page.getByTestId("analysis-list")).toBeVisible();
@@ -404,6 +408,9 @@ test.describe("report analytics", () => {
     await expect(
       chatUserMessage(page, "extract assay numbers from the attachments")
     ).toBeVisible({ timeout: 15_000 });
+    await expect(chatMessageTargetTag(page, "analytics").first()).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(
       sidebar.getByText(/normal capability sixpack/i)
     ).toBeVisible({ timeout: 30_000 });

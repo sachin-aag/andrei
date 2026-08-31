@@ -690,6 +690,29 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).not.toContain('w:orient="landscape"');
   });
 
+  it("forceLandscapeTables rotates a 4-column table onto a landscape page", () => {
+    const xml = narrativeToDocxXml(
+      {
+        type: "doc",
+        content: [nColTable(4)],
+      },
+      undefined,
+      { forceLandscapeTables: true }
+    );
+    expect(xml).toContain('w:orient="landscape"');
+    expect(xml.indexOf("w:orient")).toBeGreaterThan(xml.indexOf("<w:tbl>"));
+
+    const innerMatch = xml.match(/<w:tbl>[\s\S]*?(<w:tbl>[\s\S]*?<\/w:tbl>)/);
+    const innerXml = innerMatch?.[1] ?? "";
+    const cols = [...innerXml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+      parseInt(m[1]!, 10)
+    );
+    expect(cols).toHaveLength(4);
+    const sum = cols.reduce((a, b) => a + b, 0);
+    expect(sum).toBeGreaterThan(10469);
+    expect(sum).toBeLessThanOrEqual(15394);
+  });
+
   it("puts a many-column table on a landscape section and uses the landscape content band", () => {
     const xml = narrativeToDocxXml({
       type: "doc",

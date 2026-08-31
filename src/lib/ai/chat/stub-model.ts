@@ -9,6 +9,9 @@ export type StubChatPlan = {
   targetField: string;
   insertText: string;
   reasoning: string;
+  /** False for greetings / questions — do not script a propose_edit. */
+  allowEdits?: boolean;
+  intent?: "social" | "read" | "write";
 };
 
 /**
@@ -18,9 +21,9 @@ export type StubChatPlan = {
  * dynamically so it never enters the production bundle.
  *
  * - Ask mode: replies with follow-up questions (no edit tool call).
- * - Agent mode: `read_section` first (matches already-drafted prepareStep),
- *   then `propose_edit`, then a summary. A first-step propose_edit is dropped
- *   when the section is already filled.
+ * - Agent mode with allowEdits: `read_section` first (matches already-drafted
+ *   prepareStep), then `propose_edit`, then a summary.
+ * - Agent mode without allowEdits (greeting / question): prose only.
  */
 export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageModel> {
   const { MockLanguageModelV3, convertArrayToReadableStream } = await import("ai/test");
@@ -41,6 +44,9 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
     `I drafted an addition to the **${label}** section — review the highlighted insertion in the document and accept or reject it. ` +
     `Replace any \`[bracketed placeholders]\` with the real values. I skipped sections I had too little information for.`;
 
+  const socialText =
+    `Hi — I can draft sections from your attachments when you ask, or answer questions about the report. What would you like to work on?`;
+
   const doStream = async () => {
     const stubDelayMs = Number.parseInt(process.env.CHAT_STUB_DELAY_MS ?? "", 10);
     if (Number.isFinite(stubDelayMs) && stubDelayMs > 0) {
@@ -48,12 +54,14 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
     }
     const step = call++;
 
-    if (plan.mode === "plan") {
+    if (plan.mode === "plan" || plan.allowEdits === false) {
+      const delta =
+        plan.mode === "plan" || plan.intent === "read" ? askText : socialText;
       return {
         stream: convertArrayToReadableStream([
           { type: "stream-start", warnings: [] },
           { type: "text-start", id: "t1" },
-          { type: "text-delta", id: "t1", delta: askText },
+          { type: "text-delta", id: "t1", delta },
           { type: "text-end", id: "t1" },
           { type: "finish", finishReason: "stop", usage },
         ]),

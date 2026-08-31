@@ -267,8 +267,9 @@ export async function fetchAnalysisImage(
 export async function saveAnalysisPreview(
   reportId: string,
   analysisId: string,
-  previewImage: AnalysisImageExport
-): Promise<ReportAnalyticsView> {
+  previewImage: AnalysisImageExport,
+  matchKey?: string
+): Promise<ReportAnalyticsView | null> {
   const response = await fetch(
     analyticsUrl(
       reportId,
@@ -277,9 +278,10 @@ export async function saveAnalysisPreview(
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ previewImage }),
+      body: JSON.stringify({ previewImage, matchKey }),
     }
   );
+  if (response.status === 409) return null;
   if (!response.ok) throw new Error(await readError(response));
   const body = (await response.json()) as { analytics: ReportAnalyticsView };
   return body.analytics;

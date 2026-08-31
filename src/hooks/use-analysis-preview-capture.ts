@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { captureAnalysisPreviewFromElement } from "@/lib/statistical-analysis/capture-analysis-preview";
 import { isGraphAnalysisKind } from "@/lib/statistical-analysis/insertable-graphs";
+import { analysisPreviewMatchKey } from "@/lib/statistical-analysis/preview-image";
 import { saveAnalysisPreview } from "@/lib/statistical-analysis/client";
 import {
   isAnovaAnalysis,
@@ -51,6 +52,7 @@ export function useAnalysisPreviewCapture({
 
     let cancelled = false;
     uploadingRef.current = true;
+    const matchKey = analysisPreviewMatchKey(analysis);
 
     const run = async () => {
       await new Promise<void>((resolve) => {
@@ -69,20 +71,24 @@ export function useAnalysisPreviewCapture({
         const analytics = await saveAnalysisPreview(
           reportId,
           analysis.id,
-          preview
+          preview,
+          matchKey
         );
-        if (!cancelled) onUploaded(analytics);
+        if (!cancelled && analytics) onUploaded(analytics);
       } catch (error) {
         console.error(error);
       }
     };
 
     void run().finally(() => {
-      uploadingRef.current = false;
+      if (!cancelled) uploadingRef.current = false;
     });
 
     return () => {
       cancelled = true;
+      // Allow a follow-up effect (edit / recompute) to recapture. Leaving this
+      // true would skip the new capture and keep downloading the old PNG.
+      uploadingRef.current = false;
     };
   }, [
     analysis,

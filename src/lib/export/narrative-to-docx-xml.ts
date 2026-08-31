@@ -25,6 +25,15 @@ export type NarrativeDocxXmlResult = {
   ctx: DocxExportContext;
 };
 
+/** Options for TipTap → OOXML conversion. */
+export type NarrativeToDocxOptions = {
+  /**
+   * Put every table onto a landscape section even when column count would
+   * still fit portrait (e.g. Convergent mechanical DV Req ID results tables).
+   */
+  forceLandscapeTables?: boolean;
+};
+
 /**
  * Convert a Tiptap JSONContent narrative document to OOXML (Word XML).
  * Paragraphs become `<w:p>` elements; table nodes become `<w:tbl>` with
@@ -33,9 +42,10 @@ export type NarrativeDocxXmlResult = {
  */
 export function narrativeToDocxXml(
   doc: JSONContent | undefined | null,
-  ctx: DocxExportContext = createDocxExportContext()
+  ctx: DocxExportContext = createDocxExportContext(),
+  options?: NarrativeToDocxOptions
 ): string {
-  return narrativeToDocxXmlWithContext(doc, ctx).xml;
+  return narrativeToDocxXmlWithContext(doc, ctx, options).xml;
 }
 
 function sanitizeDocTextNodes(doc: JSONContent): JSONContent {
@@ -53,7 +63,8 @@ function sanitizeDocTextNodes(doc: JSONContent): JSONContent {
 
 export function narrativeToDocxXmlWithContext(
   doc: JSONContent | undefined | null,
-  ctx: DocxExportContext = createDocxExportContext()
+  ctx: DocxExportContext = createDocxExportContext(),
+  options?: NarrativeToDocxOptions
 ): NarrativeDocxXmlResult {
   if (!doc || !doc.content?.length) {
     return { xml: wrapParagraph("Not Applicable"), ctx };
@@ -80,7 +91,10 @@ export function narrativeToDocxXmlWithContext(
   for (const node of sanitized.content ?? []) {
     if (node.type === "table") {
       const colCount = Math.max(1, getLogicalColumnCount(node.content ?? []));
-      if (tableNeedsLandscapePage(colCount, portraitMax)) {
+      const useLandscape =
+        options?.forceLandscapeTables === true ||
+        tableNeedsLandscapePage(colCount, portraitMax);
+      if (useLandscape) {
         openLandscape();
         parts.push(tableToXml(node, ctx, landscapeMax));
       } else {

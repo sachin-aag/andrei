@@ -306,7 +306,8 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 **Entry point:** `POST /api/reports/[reportId]/chat` — `streamText()` (via `resolveChatLanguageModel()`) with tools from `buildChatTools()`, streamed back with `toUIMessageStreamResponse()`. Sessions/messages persist in `chatSessions`/`chatMessages` and are managed under `chat/sessions/[sessionId]`. Body includes `workspaceChrome`; the server derives `editPolicy` (`propose` in Document chrome, `commit` in Agent chrome when `canSaveReportSection`). Do not trust a client `editPolicy`.
 
 **Logic in `src/lib/ai/chat/`:**
-- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`; commit copy when `editPolicy` is `commit`
+- `user-intent.ts` — latest-turn classifier (`social` / `read` / `write`). Greetings strip tools; empty sections are not a draft request. Same classifier on Analytics chat.
+- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`; commit copy when `editPolicy` is `commit`; user-intent rules above the recipe
 - `edit-policy.ts` / `commit-edit.ts` — Agent chrome writes `report_sections` in a `FOR UPDATE` transaction; Document chrome still inserts suggestion comments
 - `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
 - `context-map.ts` — serializes report state + ready docs (sanitized `summary=`) + insertable Analytics plots
@@ -314,6 +315,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - `fields.ts` — type-specific editable sections (`chatEditableSections`); tagged `@` sections set chat scope. Do not keep investigation-only constants like `CHAT_EDITABLE_SECTIONS`.
 - `mentions.ts` — `@` documents/sections/plots. Scope is `sectionScopeFromMentions` (one tagged section focuses prompt/tools; none tagged = all). There is no composer section dropdown and no `body.sectionScope`.
 - `propose-edit.ts`, `session-title.ts`, `access.ts`
+- `message-target.ts` — per-turn Report | Analytics tags on mixed threads (`chat_messages.metadata.chatTarget`, stamped by the route). Legacy rows use `promptVersion` / exclusive tools. Fully unknown history stays untagged.
 
 **Plan-mode allowlist** in `src/lib/ai/chat/document-review.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, plus document-review tools. New tools must be added here or they are silently missing in Plan. Analytics worksheet/plot tools stay off this list.
 

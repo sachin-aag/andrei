@@ -138,13 +138,16 @@ function ExpandedDocumentsPanel({
   tableOfContents: ReturnType<typeof getReportTableOfContents>;
   onJumpToSection: (section: SectionType) => void;
 }) {
-  const { attachments, folders, canMutateAttachments, uploadFiles } =
+  const { attachments, folders, canMutateAttachments, uploadFiles, uploadProgress } =
     useReportAttachments();
   const { dragging, endDrag } = useDocumentDrag();
   const inputRef = useRef<HTMLInputElement>(null);
+  const inflightUploads = useRef(0);
   const [isUploading, setIsUploading] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [rootDropActive, setRootDropActive] = useState(false);
+  const hasActiveUpload =
+    isUploading || Object.keys(uploadProgress).length > 0;
 
   const tree = useMemo(
     () => buildDocumentTree(folders, attachments),
@@ -154,11 +157,15 @@ function ExpandedDocumentsPanel({
   const handleFiles = useCallback(
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
+      inflightUploads.current += 1;
       setIsUploading(true);
       try {
         await uploadFiles(files, null);
       } finally {
-        setIsUploading(false);
+        inflightUploads.current -= 1;
+        if (inflightUploads.current === 0) {
+          setIsUploading(false);
+        }
         if (inputRef.current) inputRef.current.value = "";
       }
     },
@@ -188,6 +195,15 @@ function ExpandedDocumentsPanel({
 
   const attachmentActions = canMutateAttachments ? (
     <>
+      {hasActiveUpload ? (
+        <span
+          className="flex size-7 items-center justify-center text-[var(--muted-foreground)]"
+          role="status"
+          aria-label="Uploading document"
+        >
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        </span>
+      ) : null}
       <Button
         type="button"
         variant="ghost"
@@ -206,14 +222,9 @@ function ExpandedDocumentsPanel({
         className="size-7"
         aria-label="Upload PDF or Word document"
         title="Upload PDF or Word document"
-        disabled={isUploading}
         onClick={() => inputRef.current?.click()}
       >
-        {isUploading ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        ) : (
-          <Upload className="size-4" aria-hidden="true" />
-        )}
+        <Upload className="size-4" aria-hidden="true" />
       </Button>
       <input
         ref={inputRef}

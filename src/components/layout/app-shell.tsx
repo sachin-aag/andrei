@@ -9,6 +9,7 @@ import {
   BarChart3,
   FileText,
   Gauge,
+  ScrollText,
   Users,
   PanelLeftClose,
   PanelLeftOpen,
@@ -49,6 +50,7 @@ export function AppShell({
           { href: "/admin/reports", label: "Reports", icon: FileText },
           { href: "/admin/users", label: "Users", icon: Users },
           { href: "/admin/limits", label: "Limits", icon: Gauge },
+          { href: "/admin/prompts", label: "Prompts", icon: ScrollText },
         ]
       : [
           { href: "/", label: "Reports", icon: FileText },

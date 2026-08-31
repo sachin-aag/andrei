@@ -1,0 +1,191 @@
+/**
+ * Latest-turn intent for Document and Analytics chat.
+ *
+ * Agent mode means the assistant *may* write when asked — not that empty
+ * sections or ready attachments are a request to draft. Greetings must not
+ * search or mutate.
+ */
+
+export const CHAT_USER_INTENTS = ["social", "read", "write"] as const;
+export type ChatUserIntentKind = (typeof CHAT_USER_INTENTS)[number];
+
+export type ChatUserIntentDecision = {
+  kind: ChatUserIntentKind;
+  reason: string;
+};
+
+export const DOCUMENT_WRITE_TOOLS = [
+  "draft_field",
+  "propose_edit",
+  "edit_table",
+  "insert_image",
+  "remove_image",
+  "plot_measurements",
+  "select_analyze_method",
+] as const;
+
+export const ANALYTICS_WRITE_TOOLS = [
+  "write_column",
+  "manage_worksheet",
+  "run_capability_sixpack",
+  "run_one_way_anova",
+  "plot_xy_scatter",
+  "plot_boxplot",
+  "plot_measurements",
+] as const;
+
+const GREETING_RE =
+  /^(?:hi+|hello|hey+|yo|hiya|howdy|sup|what'?s up|whats up|good (?:morning|afternoon|evening|night))(?:\s+there)?(?:\s*[!.]*)?$/i;
+
+const THANKS_RE =
+  /^(?:thanks|thank you|thx|ty|cheers|appreciate it)(?:\s+(?:so much|a lot))?(?:\s*[!.]*)?$/i;
+
+const SMALL_TALK_RE =
+  /^(?:how are you(?: doing)?|what'?s going on|nice to meet you)(?:\s*[?.!]*)?$/i;
+
+const CONFIRM_RE =
+  /^(?:yes|yeah|yep|yup|sure|ok|okay|k|go ahead|do it|please do|sounds good|yes please|please|go for it|do that|that works)(?:\s*[!.]*)?$/i;
+
+const WRITE_RE =
+  /\b(?:draft|write(?:\s+(?:up|out|the))?|prepare|populate|fill(?:\s+(?:in|out|the))?|complete|do this section|edit|change|update|add|insert|remove|delete|rewrite|replace|fix|tighten|move|drop|append|propose|apply|redraft|start over|from scratch)\b/i;
+
+const START_REPORT_RE =
+  /\b(?:start|begin|kick ?off)\b.{0,48}\b(?:report|draft|document|writing|this)\b|\b(?:let'?s|please)\s+(?:start|begin|go)\b/i;
+
+const CONTINUE_RE =
+  /\b(?:keep going|continue|you missed|still missing|go on|finish (?:it|the (?:draft|report|section|review)))\b/i;
+
+const POLITE_WRITE_RE =
+  /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;
+
+const ANALYTICS_WRITE_RE =
+  /\b(?:extract|plot|graph|chart|sixpack|anova|capability)\b/i;
+
+const ADVICE_QUESTION_RE =
+  /\b(?:how should i|what should i (?:write|draft|put|say|include)|which section should i|how do i (?:write|draft))\b/i;
+
+const QUESTION_START_RE =
+  /^(?:what|who|when|where|which|why|how|is|are|do|does|did|can|could|would|should|tell me|summar(?:y|ize)|explain|show|list|find|search|look)\b/i;
+
+const ASSISTANT_WRITE_OFFER_RE =
+  /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot)|ready to draft|start drafting|i(?:'ll| will) draft)\b/i;
+
+export type ClassifyChatUserIntentInput = {
+  userText: string;
+  recentAssistantTexts?: readonly string[];
+  /** Chat-attached photo/screenshot — look at it, do not treat as small talk. */
+  hasChatImages?: boolean;
+  surface?: "document" | "analytics";
+};
+
+export function classifyChatUserIntent(
+  input: ClassifyChatUserIntentInput
+): ChatUserIntentDecision {
+  const latest = input.userText.replace(/\s+/g, " ").trim();
+  if (!latest) {
+    if (input.hasChatImages) {
+      return { kind: "read", reason: "chat_image" };
+    }
+    return { kind: "social", reason: "empty" };
+  }
+
+  if (GREETING_RE.test(latest) || THANKS_RE.test(latest) || SMALL_TALK_RE.test(latest)) {
+    if (input.hasChatImages) {
+      return { kind: "read", reason: "chat_image" };
+    }
+    return { kind: "social", reason: "greeting" };
+  }
+
+  if (CONFIRM_RE.test(latest)) {
+    const offered = (input.recentAssistantTexts ?? []).some((text) =>
+      ASSISTANT_WRITE_OFFER_RE.test(text)
+    );
+    if (offered) {
+      return { kind: "write", reason: "confirm_write_offer" };
+    }
+    return { kind: "social", reason: "ack_without_task" };
+  }
+
+  if (CONTINUE_RE.test(latest)) {
+    return { kind: "write", reason: "continue_task" };
+  }
+
+  if (ADVICE_QUESTION_RE.test(latest)) {
+    return { kind: "read", reason: "writing_advice" };
+  }
+
+  if (POLITE_WRITE_RE.test(latest) || START_REPORT_RE.test(latest)) {
+    return { kind: "write", reason: "produce_request" };
+  }
+
+  if (QUESTION_START_RE.test(latest) && !WRITE_RE.test(latest.slice(0, 12))) {
+    return { kind: "read", reason: "question_or_lookup" };
+  }
+
+  if (
+    WRITE_RE.test(latest) ||
+    (input.surface === "analytics" && ANALYTICS_WRITE_RE.test(latest))
+  ) {
+    return { kind: "write", reason: "produce_request" };
+  }
+
+  return { kind: "read", reason: "question_or_lookup" };
+}
+
+export function recentAssistantMessageTexts(
+  messages: ReadonlyArray<{ role: string; parts?: readonly unknown[] }>,
+  limit = 2
+): string[] {
+  const texts: string[] = [];
+  for (let i = messages.length - 1; i >= 0 && texts.length < Math.max(1, limit); i--) {
+    const message = messages[i];
+    if (!message || message.role !== "assistant") continue;
+    const text = textFromParts(message.parts).trim();
+    if (text) texts.push(text);
+  }
+  return texts;
+}
+
+export function messageHasChatImage(
+  parts: readonly unknown[] | undefined
+): boolean {
+  if (!parts) return false;
+  return parts.some((part) => {
+    if (typeof part !== "object" || part === null) return false;
+    const type = (part as { type?: unknown }).type;
+    if (typeof type !== "string") return false;
+    return (
+      type === "file" ||
+      type === "image" ||
+      type.startsWith("file-") ||
+      type.startsWith("image-")
+    );
+  });
+}
+
+export function restrictToolsForIntent<T extends Record<string, unknown>>(
+  tools: T,
+  intent: ChatUserIntentKind,
+  surface: "document" | "analytics"
+): T {
+  if (intent === "write") return tools;
+  if (intent === "social") return {} as T;
+  const hide = new Set<string>(
+    surface === "document" ? DOCUMENT_WRITE_TOOLS : ANALYTICS_WRITE_TOOLS
+  );
+  return Object.fromEntries(
+    Object.entries(tools).filter(([name]) => !hide.has(name))
+  ) as T;
+}
+
+function textFromParts(parts: readonly unknown[] | undefined): string {
+  if (!parts) return "";
+  return parts
+    .flatMap((part) => {
+      if (typeof part !== "object" || part === null) return [];
+      const record = part as { type?: unknown; text?: unknown };
+      if (record.type !== "text" || typeof record.text !== "string") return [];
+      return [record.text];
+    })
+    .join(" ");
+}

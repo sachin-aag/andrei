@@ -38,6 +38,7 @@ import {
   chatPaceConfig,
   resolveChatLanguageModel,
 } from "@/lib/ai/chat/model";
+import { chatUserTurnMetadata } from "@/lib/ai/chat/message-target";
 import {
   DEFAULT_CHAT_PACE,
   isChatPace,
@@ -47,6 +48,12 @@ import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
 import { primaryFieldForSection } from "@/lib/ai/chat/fields";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
+import {
+  classifyChatUserIntent,
+  messageHasChatImage,
+  recentAssistantMessageTexts,
+  restrictToolsForIntent,
+} from "@/lib/ai/chat/user-intent";
 import {
   alreadyDraftedGapHints,
   detectAlreadyDraftedSection,
@@ -216,6 +223,11 @@ async function handleChatPost(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const userIntent = classifyChatUserIntent({
+    userText,
+    recentAssistantTexts: recentAssistantMessageTexts(messages),
+    hasChatImages: messageHasChatImage(userMsg?.parts),
+  });
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -223,6 +235,7 @@ async function handleChatPost(
         sessionId,
         role: "user",
         parts: userMsg.parts ?? [],
+        metadata: chatUserTurnMetadata("report"),
         authorId: user.id,
       });
       await touchChatSession(sessionId, userText || null);
@@ -318,7 +331,7 @@ async function handleChatPost(
   });
 
   const autoEvidenceBlock =
-    retrieval.policy === "focused"
+    retrieval.policy === "focused" && userIntent.kind !== "social"
       ? await buildAutoEvidence({
     reportId,
     userText,
@@ -366,10 +379,15 @@ async function handleChatPost(
     editPolicy,
     turnEdits,
   });
-  const tools: ToolSet =
+  const scopedTools: ToolSet =
     mode === "plan"
       ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
+  const tools: ToolSet = restrictToolsForIntent(
+    scopedTools,
+    userIntent.kind,
+    "document"
+  );
 
   const stubSection =
     sectionScope === "all"
@@ -382,6 +400,8 @@ async function handleChatPost(
         targetField: primaryFieldForSection(stubSection),
         insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
         reasoning: "Demo stub proposal.",
+        allowEdits: userIntent.kind === "write",
+        intent: userIntent.kind,
       })
     : resolveChatLanguageModel(pace);
 
@@ -446,6 +466,9 @@ async function handleChatPost(
         });
       },
       prepareStep: ({ steps }) => {
+        if (userIntent.kind === "social") {
+          return { activeTools: [] };
+        }
         const tableEditDirective = tableEditLoopDirective(steps);
         if (tableEditDirective === "finish") {
           // Force a plain-language explanation after the second failed table
@@ -515,6 +538,8 @@ async function handleChatPost(
           chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
           retrievalPolicy: retrieval.policy,
           retrievalPolicyReason: retrieval.reason,
+          userIntent: userIntent.kind,
+          userIntentReason: userIntent.reason,
         },
       }),
     })
@@ -567,9 +592,9 @@ async function handleChatPost(
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
-    // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
-    // do not stream or persist them as chat message parts.
-    sendReasoning: false,
+    // Stream thought summaries to the chat activity UI (expandable Thought lines).
+    sendReasoning: true,
+    messageMetadata: () => ({ chatTarget: "report" as const }),
     // Drain the teed SSE now. Wrapping this in Next `after()` waits until the
     // HTTP response finishes — and the tee only finishes if this copy is
     // already being read. That deadlock wedged `next start` after a client
@@ -637,6 +662,7 @@ async function handleChatPost(
               pace,
               mode,
               promptVersion: CHAT_PROMPT_VERSION,
+              chatTarget: "report",
               changeSummary:
                 changeItems.length > 0 ? { items: changeItems } : undefined,
             }),
@@ -664,6 +690,7 @@ async function handleChatPost(
                   pace,
                   mode,
                   promptVersion: CHAT_PROMPT_VERSION,
+                  chatTarget: "report",
                   changeSummary: {
                     items: changeItems,
                     revisionNo: revision.revisionNo,

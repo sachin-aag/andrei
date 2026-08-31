@@ -844,9 +844,11 @@ export const chatMessages = pgTable(
     parts: jsonb("parts").notNull().default([]),
     /**
      * Which config produced an assistant turn — `ChatAssistantTurnMetadata`
-     * (pace, model id, thinking level, prompt version). The composer shows the
-     * user "Quick"/"Deep" and never a model name, so this is the only record
-     * of what actually answered. Empty for user turns and legacy rows.
+     * (pace, model id, thinking level, prompt version, chatTarget). The
+     * composer shows the user "Quick"/"Deep" and never a model name, so this
+     * is the only record of what actually answered. User turns store
+     * `{ chatTarget }` so mixed Report + Analytics threads stay readable.
+     * Empty for legacy rows.
      */
     metadata: jsonb("metadata").notNull().default({}),
     /** workspace_users.id for user turns; null for assistant turns. */

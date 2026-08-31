@@ -18,7 +18,18 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v69-coalesce-nearby");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v70-coalesce-nearby");
+  });
+
+  it("requires following the latest user message and forbids drafting on a greeting", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("## User intent (required)");
+    expect(prompt).toContain("Greeting, thanks, or small talk");
+    expect(prompt).toContain("Do not call any tools");
+    expect(prompt).toContain("Empty fields and ready documents are not a request to write");
+    expect(prompt).toContain("Only draft or edit when this turn is a write request");
+    expect(prompt).toContain("Empty sections are not a request to draft");
+    expect(prompt).not.toContain("Agent mode drafts; Ask mode does not");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {

@@ -42,7 +42,11 @@ import {
   applyNumberingToDocxZip,
   loadListNumberingBasesFromZip,
 } from "@/lib/export/docx-numbering";
-import { narrativeToDocxXmlWithContext, plainTextToDocxXml } from "@/lib/export/narrative-to-docx-xml";
+import {
+  narrativeToDocxXmlWithContext,
+  plainTextToDocxXml,
+  type NarrativeToDocxOptions,
+} from "@/lib/export/narrative-to-docx-xml";
 import { improveControlCheckpointsToDocxXml } from "@/lib/export/improve-control-checkpoints-docx";
 import {
   legacyStringToDoc,
@@ -69,6 +73,10 @@ import {
   type ReportDocxComment,
 } from "@/lib/export/docx-comments";
 import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images";
+import {
+  applyTocHeadingStylesToDocxZip,
+  tocHeadingSpecsForDocumentType,
+} from "@/lib/export/docx-toc-headings";
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -82,9 +90,16 @@ function isTiptapDoc(value: unknown): value is JSONContent {
   );
 }
 
+/** Convergent mechanical DV: Req ID results tables match the landscape source report. */
+const MECHANICAL_DV_LANDSCAPE_TABLE_KEYS = new Set([
+  "hardwareResultsTableXml",
+  "systemResultsTableXml",
+]);
+
 function stringifyDvTemplateValue(
   value: unknown,
-  ctx: DocxExportContext
+  ctx: DocxExportContext,
+  options?: NarrativeToDocxOptions
 ): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
@@ -92,7 +107,11 @@ function stringifyDvTemplateValue(
     return String(value);
   }
   if (isTiptapDoc(value)) {
-    return narrativeToDocxXmlWithContext(normalizeRichField(value), ctx).xml;
+    return narrativeToDocxXmlWithContext(
+      normalizeRichField(value),
+      ctx,
+      options
+    ).xml;
   }
   return "";
 }
@@ -649,10 +668,19 @@ async function generateDesignVerificationDocx({
     data.revision = meta.revision;
   }
   for (const [key, value] of Object.entries(built)) {
-    data[key] = stringifyDvTemplateValue(value, ctx);
+    const landscapeTables =
+      documentType === "mechanical_design_verification" &&
+      MECHANICAL_DV_LANDSCAPE_TABLE_KEYS.has(key)
+        ? { forceLandscapeTables: true }
+        : undefined;
+    data[key] = stringifyDvTemplateValue(value, ctx, landscapeTables);
   }
 
   doc.render(data);
+  const headingSpecs = tocHeadingSpecsForDocumentType(pack.id, documentType);
+  if (headingSpecs) {
+    applyTocHeadingStylesToDocxZip(doc.getZip(), headingSpecs);
+  }
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);

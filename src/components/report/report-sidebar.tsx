@@ -243,7 +243,9 @@ export function ReportSidebar({
       {/* ChatPanel stays mounted across collapse, tab, and work-product
           changes so the thread, composer prefs, and rendered markdown are
           not reset. Hide with visibility (not display:none) so the scroller
-          keeps its layout box and scrollTop through the width animation. */}
+          keeps its layout box and scrollTop through the width animation.
+          Criteria / Placeholders / Comments share this flex-1 box; parked
+          chat is position:absolute so it does not steal the top half. */}
       <div
         className={cn(
           "relative min-h-0 flex-1",
@@ -274,25 +276,28 @@ export function ReportSidebar({
             mentionSheets={analyticsMentionSheets}
           />
         </div>
+        {!collapsed && !analyticsSurface && activeTab !== "assistant" ? (
+          <div
+            className="h-full min-h-0 overflow-y-auto p-4 min-w-0"
+            data-testid="sidebar-tab-panel"
+          >
+            {activeTab === "placeholders" && (
+              <PlaceholdersPanelContent
+                onJumpToPlaceholder={onJumpToPlaceholder}
+              />
+            )}
+            {activeTab === "criteria" && (
+              <CriteriaPanelContent
+                onJumpToSection={onJumpToSection}
+                initialSection={initialCriteriaSection}
+              />
+            )}
+            {activeTab === "comments" && (
+              <CommentsPanelContent onJumpToComment={onJumpToComment} />
+            )}
+          </div>
+        ) : null}
       </div>
-      {!collapsed && !analyticsSurface && activeTab !== "assistant" ? (
-        <div className="flex-1 overflow-y-auto p-4 min-w-0">
-          {activeTab === "placeholders" && (
-            <PlaceholdersPanelContent
-              onJumpToPlaceholder={onJumpToPlaceholder}
-            />
-          )}
-          {activeTab === "criteria" && (
-            <CriteriaPanelContent
-              onJumpToSection={onJumpToSection}
-              initialSection={initialCriteriaSection}
-            />
-          )}
-          {activeTab === "comments" && (
-            <CommentsPanelContent onJumpToComment={onJumpToComment} />
-          )}
-        </div>
-      ) : null}
     </aside>
   );
 }

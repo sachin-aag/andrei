@@ -1,3 +1,4 @@
+import { classifyChatUserIntent } from "@/lib/ai/chat/user-intent";
 import type { DocumentType } from "@/db/schema";
 import type { ChatSectionScope } from "@/lib/ai/chat/fields";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
@@ -101,6 +102,10 @@ export function classifyRetrievalPolicy(
 
   if (input.hasDocuments === false) {
     return { policy: "focused", reason: "no_documents" };
+  }
+
+  if (classifyChatUserIntent({ userText: latest }).kind === "social") {
+    return { policy: "focused", reason: "no_task" };
   }
 
   const scope = input.sectionScope ?? "all";
