@@ -49,3 +49,25 @@ export function register() {
 
   tracerProvider.register();
 }
+
+/**
+ * Unhandled App Router / route errors → PostHog + Langfuse (fail-soft).
+ * Edge is skipped: posthog-node and the Langfuse Node exporter are Node-only.
+ */
+export async function onRequestError(
+  error: unknown,
+  request: {
+    path: string;
+    method: string;
+    headers: Record<string, string | string[] | undefined>;
+  },
+  context: {
+    routerKind?: string;
+    routePath?: string;
+    routeType?: string;
+  }
+): Promise<void> {
+  if (process.env.NEXT_RUNTIME === "edge") return;
+  const { reportRequestError } = await import("@/lib/observability/request-error");
+  await reportRequestError(error, request, context);
+}
