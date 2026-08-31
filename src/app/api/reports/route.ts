@@ -208,7 +208,7 @@ export async function POST(req: Request) {
           sourceUpload = { buffer: buf, filename: file.name };
           const kind = wordImportFor(getDocumentType(documentType)).kind;
           after(flushLangfuseTraces);
-          await withPropagatedAttributes(
+          const parsed = await withPropagatedAttributes(
             {
               userId: user.id,
               traceName: "word-import",
@@ -216,26 +216,38 @@ export async function POST(req: Request) {
               metadata: { documentType, filename: file.name },
             },
             () =>
-              observeWork("word-import", async () => {
-                setRouteObservationIO({
-                  input: { documentType, filename: file.name },
-                });
-                switch (kind) {
-                  case "investigation":
-                    importedContent = await docxBufferToImportedReportContent(buf);
-                    return;
-                  case "generic_body":
-                    genericImported = await docxBufferToGenericDocument(buf);
-                    return;
-                  case "none":
-                    return;
-                  default: {
-                    const exhaustive: never = kind;
-                    return exhaustive;
+              observeWork(
+                "word-import",
+                async (): Promise<{
+                  importedContent: ImportedReportContent | null;
+                  genericImported: GenericImportedDocument | null;
+                }> => {
+                  setRouteObservationIO({
+                    input: { documentType, filename: file.name },
+                  });
+                  switch (kind) {
+                    case "investigation":
+                      return {
+                        importedContent: await docxBufferToImportedReportContent(buf),
+                        genericImported: null,
+                      };
+                    case "generic_body":
+                      return {
+                        importedContent: null,
+                        genericImported: await docxBufferToGenericDocument(buf),
+                      };
+                    case "none":
+                      return { importedContent: null, genericImported: null };
+                    default: {
+                      const exhaustive: never = kind;
+                      return exhaustive;
+                    }
                   }
                 }
-              })
+              )
           );
+          importedContent = parsed.importedContent;
+          genericImported = parsed.genericImported;
           if (kind === "none") {
             return NextResponse.json(
               { error: "Word import is not supported for this document type." },

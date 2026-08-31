@@ -161,7 +161,7 @@ describe("Langfuse v4 observation helpers", () => {
     vi.stubEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-test");
     vi.stubEnv("LANGFUSE_SECRET_KEY", "sk-lf-test");
     const inner = vi.fn(() => "done");
-    observe.mockImplementation((fn: () => unknown, _opts: unknown) => fn);
+    observe.mockImplementation((fn: unknown) => fn);
     expect(observeWork("document-ingest", inner)).toBe("done");
     expect(observe).toHaveBeenCalledWith(inner, {
       name: "document-ingest",

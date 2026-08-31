@@ -29,7 +29,11 @@ describe("Langfuse span processor v4 ingestion", () => {
     vi.stubEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-test");
     vi.stubEnv("LANGFUSE_SECRET_KEY", "sk-lf-test");
     vi.stubEnv("LANGFUSE_HOST", "https://langfuse.example.test");
-    const ctor = vi.fn(() => ({ forceFlush: vi.fn() }));
+    const ctor = vi.fn(function MockLangfuseSpanProcessor(this: {
+      forceFlush: ReturnType<typeof vi.fn>;
+    }) {
+      this.forceFlush = vi.fn();
+    });
     vi.doMock("@langfuse/otel", () => ({ LangfuseSpanProcessor: ctor }));
     vi.doMock("@opentelemetry/sdk-trace-node", () => ({
       NodeTracerProvider: vi.fn(),
@@ -51,7 +55,11 @@ describe("Langfuse span processor v4 ingestion", () => {
     vi.stubEnv("LANGFUSE_SECRET_KEY", "sk-lf-test");
     vi.stubEnv("LANGFUSE_BASE_URL", "https://example.langfuse.internal");
     vi.stubEnv("LANGFUSE_HOST", "https://langfuse.example.test");
-    const ctor = vi.fn(() => ({ forceFlush: vi.fn() }));
+    const ctor = vi.fn(function MockLangfuseSpanProcessor(this: {
+      forceFlush: ReturnType<typeof vi.fn>;
+    }) {
+      this.forceFlush = vi.fn();
+    });
     vi.doMock("@langfuse/otel", () => ({ LangfuseSpanProcessor: ctor }));
     vi.doMock("@opentelemetry/sdk-trace-node", () => ({
       NodeTracerProvider: vi.fn(),
