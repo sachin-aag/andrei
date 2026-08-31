@@ -89,13 +89,17 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   `editPolicy` on a locked report. Plan-mode allowlist does not gain edit tools.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.
-- Report and Analytics `stopWhen` is Cancel only. Do not add a tool-step
-  cap — users must never hit one. Abnormal turns abort at
-  `CHAT_SERVER_ABORT_MS`. Do not persist a “ran out of steps / ask me to
-  continue” notice. Loop guards live in `prepareStep`
+- Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
+  (`CHAT_SERVER_ABORT_MS` from request start, not from `streamText`).
+  Do not add a tool-step cap — users must never hit one. Do not persist
+  a “ran out of steps / ask me to continue” notice. Loop guards live in
+  `prepareStep`
   (`tableEditLoopDirective`, `prepareDocumentReviewStep`,
-  `alreadyDraftedReadStep`, Analytics search hide after a cited page or
-  two empty greps).
+  `alreadyDraftedReadStep`, `tableSchemaReadStep` on write turns whose
+  in-scope section already has a table, Analytics search hide after a
+  cited page or two empty greps). Live table headers are listed on the
+  context map; `read_section` / `edit_table` / `draft_field` must copy
+  those headers (demo vs Convergent matrices differ).
 
 ## Retrieval
 

@@ -83,22 +83,26 @@ export async function commitChatEdit(args: {
     if (!next.ok) return next;
 
     let content = next.content;
-    const base = extractFieldContent(previous, args.section, args.targetField);
-    const intent = extractFieldContent(content, args.section, args.targetField);
-    const merged = mergeField(base, base, intent);
-    if (merged.status === "conflict") {
-      return {
-        ok: false as const,
-        status: "conflict" as const,
-        hint: "This edit conflicts with the current field. Re-read and retry.",
-      };
+    // Table ops already mutate the TipTap matrix. Running that result through
+    // mergeField used to flatten cells into prose and drop demo DV columns.
+    if (args.input.kind !== "table") {
+      const base = extractFieldContent(previous, args.section, args.targetField);
+      const intent = extractFieldContent(content, args.section, args.targetField);
+      const merged = mergeField(base, base, intent);
+      if (merged.status === "conflict") {
+        return {
+          ok: false as const,
+          status: "conflict" as const,
+          hint: "This edit conflicts with the current field. Re-read and retry.",
+        };
+      }
+      content = writeFieldContent(
+        previous,
+        args.section,
+        args.targetField,
+        merged.merged
+      );
     }
-    content = writeFieldContent(
-      previous,
-      args.section,
-      args.targetField,
-      merged.merged
-    );
 
     await persistSectionContent({
       actor: args.actor,

@@ -45,7 +45,12 @@ import {
   type ChatPace,
 } from "@/lib/ai/chat/pace";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
-import { primaryFieldForSection } from "@/lib/ai/chat/fields";
+import {
+  chatSectionsInScope,
+  primaryFieldForSection,
+  sectionHasTable,
+} from "@/lib/ai/chat/fields";
+import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
@@ -105,11 +110,13 @@ import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-histo
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  CHAT_SERVER_ABORT_MS,
   consumeAssistantStreamWithBudget,
   formatChatLlmError,
+  isChatTurnDeadlineReached,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
+  remainingChatAbortMs,
+  scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
 import { tableEditLoopDirective } from "@/lib/ai/chat/table-edit-loop";
 import {
@@ -153,6 +160,9 @@ async function handleChatPost(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
+  // Vercel maxDuration starts here. The SDK timeout used to start at
+  // streamText, so pre-stream work ate the persist margin.
+  const turnStartedAtMs = Date.now();
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -403,14 +413,18 @@ async function handleChatPost(
     : resolveChatLanguageModel(pace);
 
   // Tab close / refresh abort the HTTP request. Keep generating anyway —
-  // only an explicit Cancel (DB flag) or the deadline stops the model.
+  // only an explicit Cancel (DB flag) or the wall-clock deadline stops it.
   const turnAbort = new AbortController();
+  const stopDeadline = scheduleChatTurnDeadline(turnAbort, turnStartedAtMs);
   const cancelPoll = setInterval(() => {
     void isAssistantTurnCancelRequested(sessionId).then((requested) => {
       if (requested) turnAbort.abort();
     });
   }, 1_000);
-  const stopCancelPoll = () => clearInterval(cancelPoll);
+  const stopTurnGuards = () => {
+    stopDeadline();
+    clearInterval(cancelPoll);
+  };
 
   let result;
   try {
@@ -453,8 +467,9 @@ async function handleChatPost(
       tools,
       experimental_repairToolCall: repairChatToolCall,
       stopWhen: async () => {
-        // Cancel only. No tool-step cap — `CHAT_SERVER_ABORT_MS` is the
-        // abnormal-condition stop. Loop guards live in prepareStep.
+        // Cancel or wall-clock deadline. No tool-step cap. Loop guards
+        // live in prepareStep.
+        if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
         return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps }) => {
@@ -482,6 +497,17 @@ async function handleChatPost(
         });
         if (alreadyDraftedStep) return alreadyDraftedStep;
 
+        const schemaStep = tableSchemaReadStep({
+          stepsTaken: steps.length,
+          isWrite: userIntent.kind === "write",
+          hasReadSectionTool: Boolean(tools.read_section),
+          inScopeHasTable: chatSectionsInScope(
+            sectionScope ?? "all",
+            report.documentType
+          ).some((section) => sectionHasTable(mergedSections[section], section)),
+        });
+        if (schemaStep) return schemaStep;
+
         const prepared = prepareDocumentReviewStep({
           policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
@@ -494,8 +520,8 @@ async function handleChatPost(
         };
       },
       abortSignal: turnAbort.signal,
-      // Leave time to persist an interrupted row before Vercel kills the isolate.
-      timeout: { totalMs: CHAT_SERVER_ABORT_MS },
+      // Remaining time from request start so persist still runs.
+      timeout: { totalMs: Math.max(1, remainingChatAbortMs(turnStartedAtMs)) },
       // Gemini 3.x: thinkingLevel only. Do not set temperature / topP / topK /
       // seed — Google warns that sampling overrides degrade reasoning.
       // includeThoughts stays on for Langfuse; UI does not stream them.
@@ -537,7 +563,7 @@ async function handleChatPost(
     })
     );
   } catch (err) {
-    stopCancelPoll();
+    stopTurnGuards();
     endActiveLangfuseObservation();
     await clearAssistantTurn(sessionId);
     if (isAiBudgetExceededError(err)) {
@@ -577,7 +603,7 @@ async function handleChatPost(
       await flushLangfuseTraces();
       endActiveLangfuseObservation();
     } finally {
-      stopCancelPoll();
+      stopTurnGuards();
       await clearAssistantTurn(sessionId);
     }
   });
@@ -603,7 +629,7 @@ async function handleChatPost(
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
-      stopCancelPoll();
+      stopTurnGuards();
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,

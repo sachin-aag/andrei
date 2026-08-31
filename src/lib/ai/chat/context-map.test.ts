@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildReportContextMap } from "@/lib/ai/chat/context-map";
 import { chatEditableSections } from "@/lib/ai/chat/fields";
+import {
+  CONVERGENT_RESULTS_HEADERS,
+  DV_TRACEABILITY_HEADERS,
+  seededTableDoc,
+} from "@/lib/document-types/design-verification/sections";
 
 function docWith(text: string) {
   return {
@@ -160,6 +165,23 @@ describe("buildReportContextMap", () => {
       if (section === "cover_page") continue;
       expect(map).toContain(`[${section}]`);
     }
+  });
+
+  it("lists live table headers from the section, not a pack recipe", () => {
+    const demo = buildReportContextMap({
+      documentType: "design_verification",
+      report: { documentNo: "DV-1", date: "2026-01-01", status: "draft" },
+      sections: {
+        traceability: { table: seededTableDoc(DV_TRACEABILITY_HEADERS) },
+      },
+      evaluations: [],
+      comments: [],
+    });
+    expect(demo).toContain("Live table N headers are this report's schema");
+    expect(demo).toContain(
+      `table 0 headers: ${DV_TRACEABILITY_HEADERS.join(" | ")} (1 data row)`
+    );
+    expect(demo).not.toContain(CONVERGENT_RESULTS_HEADERS.join(" | "));
   });
 
   it("notes inline images so the model knows to call read_section for vision", () => {
