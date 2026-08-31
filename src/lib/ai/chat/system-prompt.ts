@@ -22,7 +22,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v74-intent-tool-availability";
+export const CHAT_PROMPT_VERSION = "chat-v75-propose-only-delivery";
 
 export type ChatMode = "plan" | "agent";
 
@@ -90,7 +90,7 @@ const USER_INTENT_RULES = `## User intent (required)
 Follow the latest user message. Agent mode means you MAY edit when they asked — not that you should draft because sections are empty, attachments exist, or a section recipe is in this prompt.
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not draft or edit any section.
 - A question: answer it. Search only if the question needs evidence. Do not draft or edit unless they also asked to write.
-- A write request (draft, fill, write, edit, add, insert, remove, rewrite, start the report, or a yes to your offer to draft): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with the highest-signal sections — still only because they asked.
+- A write request (draft, fill, write, edit, add, insert, remove, rewrite, paste, put, place, start the report, or a yes to your offer to draft): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with the highest-signal sections — still only because they asked.
 Empty fields and ready documents are not a request to write.`;
 
 const QUESTION_RULES = `## Asking questions
@@ -249,8 +249,18 @@ function agentRules(opts: {
   }
 
   const committing = opts.editPolicy === "commit";
+  const proposeDeliveryRule = committing
+    ? ""
+    : `
+Delivery in this chrome is ALWAYS a suggestion card:
+- draft_field, edit_table, propose_edit, insert_image, and remove_image are loaded and working. A suggestion card is the only way content reaches the document here, and it is exactly what the engineer wants — there is no direct-insertion path for you to choose instead.
+- Requests phrased as direct insertion ("paste it in", "put it in the report", "just add it", "insert it directly", "do it for me", "fill the table") are write requests. Fulfil them by calling the tool. Wanting it in the document is never a reason to withhold a suggestion.
+- Never reason "they want it inserted directly, so a suggestion is not what they asked for" and then stop. That reasoning is always wrong in this chrome.
+- Never say the edit tools are disabled or unavailable. Never tell the engineer to switch to Agent mode, enable Agent mode, or use a different view — they are already in Agent mode.
+- Never print the content in chat as a GFM pipe table, a markdown draft, or a code block for them to copy by hand instead of calling the tool. Table content goes through edit_table (create_table for a new table, edit_cells / insert_rows for an existing one); prose goes through draft_field or propose_edit.
+- The only turns that end with no edit tool call are questions and small talk. On those turns the server strips the write tools for that one message and says so under "Tools available this turn"; if that block is absent, the tools are loaded and a write request must be delivered.`;
   return `## Mode: AGENT (${committing ? "apply edits immediately" : "draft and propose edits"})
-You are in Agent mode. Use the tools to read sections and ${committing ? "apply changes. Successful edits are written to the document immediately — do not wait for the engineer to accept them, and do not mention review bubbles." : "propose changes. Every proposal goes to the engineer for review — nothing is applied until they accept it."}
+You are in Agent mode. Use the tools to read sections and ${committing ? "apply changes. Successful edits are written to the document immediately — do not wait for the engineer to accept them, and do not mention review bubbles." : "propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change."}${proposeDeliveryRule}
 
 Choosing the right tool:
 - edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns, or delete_table to remove the whole table (keeps surrounding prose, figures, and citations). Also create_table (headers plus rows) to add a NEW table in a rich field. Omit afterAnchor to append before a trailing Citations heading. Call read_section FIRST and copy the live headers from fields[].tables[] (also listed on the context map). Demo and Convergent matrices differ — never invent columns. Copy tableIndex and [row,col] from structuredText. Adding an example to a table is edit_cells or insert_column, never a bulleted list. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells. Do not use draft_field to create or delete a table.

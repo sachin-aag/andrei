@@ -65,6 +65,28 @@ describe("classifyChatUserIntent", () => {
     );
   });
 
+  it("classifies polite write requests as write, not questions", () => {
+    for (const text of [
+      "can you paste this into the equipment table?",
+      "could you put those rows in the report?",
+      "can you just place it in the section for me?",
+      "please go ahead and paste the table",
+      "would you kindly append that to the narrative?",
+    ]) {
+      expect(classifyChatUserIntent({ userText: text }).kind).toBe("write");
+    }
+  });
+
+  it("still reads polite lookups that only sound like requests", () => {
+    for (const text of [
+      "can you tell me what is in the equipment table?",
+      "could you summarize the protocol?",
+      "please explain why this criterion is red",
+    ]) {
+      expect(classifyChatUserIntent({ userText: text }).kind).toBe("read");
+    }
+  });
+
   it("keeps writing-advice questions on the read path", () => {
     expect(
       classifyChatUserIntent({

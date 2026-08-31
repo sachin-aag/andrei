@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v74-intent-tool-availability");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v75-propose-only-delivery");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -27,18 +27,18 @@ describe("buildChatSystemPrompt", () => {
       mode: "agent",
       intent: "read",
     });
-    expect(read).toContain("Tools available this turn");
+    expect(read).toContain("## Tools available this turn");
     expect(read).toContain("propose_edit");
 
     expect(
       buildChatSystemPrompt({ ...opts, mode: "agent", intent: "write" })
-    ).not.toContain("Tools available this turn");
+    ).not.toContain("## Tools available this turn");
     // Ask mode already has its own no-write copy; do not stack a second warning.
     expect(
       buildChatSystemPrompt({ ...opts, mode: "plan", intent: "read" })
-    ).not.toContain("Tools available this turn");
+    ).not.toContain("## Tools available this turn");
     expect(buildChatSystemPrompt({ ...opts, mode: "agent" })).not.toContain(
-      "Tools available this turn"
+      "## Tools available this turn"
     );
   });
 
@@ -532,7 +532,37 @@ describe("buildChatSystemPrompt", () => {
       mode: "agent",
       editPolicy: "propose",
     });
-    expect(prompt).toContain("nothing is applied until they accept it");
+    expect(prompt).toContain("nothing lands until they accept it");
+    expect(prompt).toContain("Delivery in this chrome is ALWAYS a suggestion card");
     expect(prompt).not.toContain("written to the document immediately");
+  });
+
+  it("forbids withholding a suggestion because the engineer wanted direct insertion", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      editPolicy: "propose",
+    });
+    expect(prompt).toContain("there is no direct-insertion path");
+    expect(prompt).toContain(
+      'Never reason "they want it inserted directly, so a suggestion is not what they asked for"'
+    );
+    expect(prompt).toContain("Never say the edit tools are disabled");
+    expect(prompt).toContain("Never tell the engineer to switch to Agent mode");
+    expect(prompt).toContain("for them to copy by hand instead of calling the tool");
+    expect(prompt).toContain(
+      "The only turns that end with no edit tool call are questions and small talk"
+    );
+  });
+
+  it("omits propose-only delivery guidance when editPolicy is commit", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      editPolicy: "commit",
+    });
+    expect(prompt).not.toContain("Delivery in this chrome is ALWAYS a suggestion card");
+    expect(prompt).not.toContain("there is no direct-insertion path");
+    expect(prompt).not.toContain("Never tell the engineer to switch to Agent mode");
   });
 });
