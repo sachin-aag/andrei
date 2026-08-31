@@ -35,7 +35,32 @@ export type BoxplotPatch = {
   rowStart?: number | null;
   rowEnd?: number | null;
   rows?: number[] | null;
+  xAxisLabel?: string | null;
+  yAxisLabel?: string | null;
 };
+
+function mergeOptionalLabel(
+  patch: string | null | undefined,
+  existing: string | null | undefined
+): string | null {
+  if (patch !== undefined) {
+    const trimmed = patch?.trim() ?? "";
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return existing?.trim() ? existing.trim() : null;
+}
+
+export function boxplotYAxisLabel(config: BoxplotConfig): string {
+  return config.yAxisLabel?.trim() || config.yColumnName;
+}
+
+export function boxplotXAxisLabel(config: BoxplotConfig): string | null {
+  const custom = config.xAxisLabel?.trim();
+  if (custom) return custom;
+  const outermost =
+    config.categoryColumnNames[config.categoryColumnNames.length - 1];
+  return outermost?.trim() ? outermost : null;
+}
 
 export type ResolvedBoxplotColumns =
   | {
@@ -214,6 +239,8 @@ export function mergeBoxplotPatch(
         ? uniqueIds(patch.categoryColumnIds)
         : [...existing.categoryColumnIds],
     title: patch.title,
+    xAxisLabel: mergeOptionalLabel(patch.xAxisLabel, existing.xAxisLabel),
+    yAxisLabel: mergeOptionalLabel(patch.yAxisLabel, existing.yAxisLabel),
     ...(useRowPatch
       ? {
           rowStart: patch.rowStart,

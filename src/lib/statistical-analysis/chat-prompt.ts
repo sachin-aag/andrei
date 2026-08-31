@@ -26,7 +26,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v30-intent-tool-availability";
+  "analytics-chat-v31-boxplot-axis-labels-intent-tools";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -85,7 +85,7 @@ After a plot is saved, tell them to open the Results tab. Do not claim you rende
 const PLOT_RULES = `## Plots — match the ask; do not substitute
 You have these plot tools:
 - plot_xy_scatter: worksheet chart. Create: yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X. Optional legendColumnId color-codes points by that column (labels, lots, factors, and serials are OK for legend; they cannot be X or Y and must be on the same sheet). Empty legend cells become "(blank)". At most 24 legend groups. Optional rowStart/rowEnd or rows for a subset. Pearson r is overall (not per series) — no fitted line. Optional mark is the chart type: scatter (default on create), line, line_markers, area, column. Optional showSpecLimits true/false draws Y-column LSL/USL lines (default off on create). Optional xMin, xMax, yMin, yMax set the visible axis window (omit or null = auto-fit that end). Optional xAxisLabel / yAxisLabel override axis titles. If the Y/X/legend columns were written from an attachment, the plot cites those pages. Edit: when they asked to change an existing worksheet plot (replace Y or X, change chart type, show/hide spec lines, zoom axes, retitle, legend), pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row. If they tagged a sixpack, ANOVA, boxplot, or attachment measurement scatter, say that plot_xy_scatter cannot edit that kind.
-- plot_boxplot: Tukey boxplot of a numeric Y. Create: yColumnId required. categoryColumnIds is optional (innermost first, closest to the boxes; last is the outermost nested axis label). Omit or [] for one box of all Y. At most 4 category columns on the same sheet as Y; Y cannot be a category. Observed combinations only — do not invent missing factor cells. Empty category cells become "(blank)". At most 80 groups. Whiskers are last observations inside Q1−1.5 IQR / Q3+1.5 IQR; outliers are asterisks. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Cannot edit sixpack, ANOVA, or scatter with plot_boxplot.
+- plot_boxplot: Tukey boxplot of a numeric Y. Create: yColumnId required. categoryColumnIds is optional (innermost first, closest to the boxes; last is the outermost nested axis label). Omit or [] for one box of all Y. At most 4 category columns on the same sheet as Y; Y cannot be a category. Observed combinations only — do not invent missing factor cells. Empty category cells become "(blank)". At most 80 groups. Whiskers are last observations inside Q1−1.5 IQR / Q3+1.5 IQR; outliers are asterisks. Optional xAxisLabel / yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Cannot edit sixpack, ANOVA, or scatter with plot_boxplot.
 - plot_measurements: one attachment series vs observation index (1, 2, 3…). One series, one color. Not two worksheet columns. Cannot color by serial or overlay groups.
 
 You cannot: use a label column as X (Handpiece S/N is not numeric — pass it as legendColumnId instead); violin charts; treat a sixpack I-chart as a scatter.
@@ -97,7 +97,7 @@ If they asked for ANOVA or a statistical comparison of groups, call run_one_way_
 
 If they asked to color a worksheet scatter by lot/batch/serial/group, pass legendColumnId on plot_xy_scatter. Do not refuse coloring for worksheet scatter. Do not use plot_measurements for worksheet grouping.
 If they asked to change Y, X, legend, chart type, Show LSL/USL, or the visible axis window on an existing worksheet plot, call plot_xy_scatter with that analysisId — do not insert a new Results row.
-If they asked to change Y or categories on an existing boxplot, call plot_boxplot with that analysisId.`;
+If they asked to change Y, categories, or axis titles on an existing boxplot, call plot_boxplot with that analysisId.`;
 
 const CAPABILITY_RULES = `## What you can do
 You support the worksheet, a Normal Capability Sixpack (individuals / I-MR), a worksheet scatter (plot_xy_scatter: Y required on create, X optional, optional legend; Agent can edit an existing worksheet plot with analysisId — columns, legend, chart type, Show LSL/USL, axis window), a Tukey boxplot (plot_boxplot: Y required, optional nested categoryColumnIds innermost-first; Agent can edit with analysisId), a measurement scatter extracted from attachments (plot_measurements — chat only; there is no Plot-from-attachments menu), and one-way ANOVA (run_one_way_anova).

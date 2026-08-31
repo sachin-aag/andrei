@@ -47,6 +47,29 @@ describe("BoxplotDialog", () => {
         title: "",
         rowStart: null,
         rowEnd: null,
+        xAxisLabel: null,
+        yAxisLabel: null,
+      })
+    );
+  });
+
+  it("exposes axis title fields in Advanced", async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderDialog();
+
+    expect(screen.getByTestId("boxplot-advanced")).toBeInTheDocument();
+    await user.click(screen.getByText("Advanced"));
+    expect(screen.getByLabelText("X axis title")).toBeInTheDocument();
+    expect(screen.getByLabelText("Y axis title")).toBeInTheDocument();
+
+    await user.type(screen.getByTestId("boxplot-x-label"), "Factor");
+    await user.type(screen.getByTestId("boxplot-y-label"), "Assay (%)");
+    await user.click(screen.getByTestId("boxplot-ok"));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        xAxisLabel: "Factor",
+        yAxisLabel: "Assay (%)",
       })
     );
   });

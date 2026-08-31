@@ -474,6 +474,9 @@ export type BoxplotConfig = {
   rowEnd?: number | null;
   /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
   rows?: number[] | null;
+  /** Override axis titles. Null/empty uses the column name (Y) or outermost category column (X). */
+  xAxisLabel?: string | null;
+  yAxisLabel?: string | null;
 };
 
 export type BoxplotGroupStats = {

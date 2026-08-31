@@ -1,8 +1,12 @@
 import { chartBrandColors, type ChartBrandColors } from "@/lib/charts/brand-colors";
 import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
 import { resolveCustomerId } from "@/lib/customers/resolve";
-import { boxplotAxisLayout } from "./boxplot-chart-layout";
-import { nestedCategorySpans } from "./boxplot";
+import {
+  boxplotXAxisLabel,
+  boxplotYAxisLabel,
+  nestedCategorySpans,
+} from "./boxplot";
+import { boxplotAxisLayout, boxplotXAxisTitleY } from "./boxplot-chart-layout";
 import { formatStat } from "./format";
 import type { BoxplotAnalysisSummary, BoxplotGroupStats } from "./types";
 
@@ -104,6 +108,9 @@ function drawBoxplot(
   const yToPx = (y: number) => plotBottom - ((y - yMin) / ySpan) * plotHeight;
   const boxWidth = Math.min(42, (plotWidth / groups.length) * 0.55);
   const ticks = [yMin, (yMin + yMax) / 2, yMax];
+  const yLabel = boxplotYAxisLabel(analysis.config);
+  const xLabel = boxplotXAxisLabel(analysis.config);
+  const xTitleY = xLabel ? boxplotXAxisTitleY(layout, categoryCount) : 0;
 
   ctx.fillStyle = "#f4f6f9";
   ctx.fillRect(0, 0, width, height);
@@ -125,7 +132,7 @@ function drawBoxplot(
   ctx.rotate(-Math.PI / 2);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(analysis.config.yColumnName, 0, 0);
+  ctx.fillText(yLabel, 0, 0);
   ctx.restore();
 
   ctx.strokeStyle = colors.grid;
@@ -209,5 +216,13 @@ function drawBoxplot(
       ctx.fillText(span.label, 0, 0);
       ctx.restore();
     }
+  }
+
+  if (xLabel) {
+    ctx.fillStyle = colors.axis;
+    ctx.font = `12px ${chartFontFamily()}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(xLabel, (plotLeft + plotRight) / 2, xTitleY);
   }
 }

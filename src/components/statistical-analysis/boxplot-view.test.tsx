@@ -102,6 +102,24 @@ describe("BoxplotView", () => {
     expect(screen.getAllByText("OP1").length).toBeGreaterThan(0);
   });
 
+  it("renders custom axis titles", () => {
+    const analysis = summaryFromConfig({
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      categoryColumnIds: ["c2"],
+      categoryColumnNames: ["Operator"],
+      title: "Boxplot of Assay by Operator",
+      xAxisLabel: "Operator ID",
+      yAxisLabel: "Assay (%)",
+    });
+    render(<BoxplotView analysis={analysis} {...viewProps} />);
+
+    expect(screen.getByTestId("boxplot-x-axis-title")).toHaveTextContent(
+      "Operator ID"
+    );
+    expect(screen.getByTestId("boxplot-chart")).toHaveTextContent("Assay (%)");
+  });
+
   it("keeps rotated serial-number labels inside the chart frame", () => {
     const groups = [
       { labels: ["924-10012"], n: 5, min: 3, q1: 3.5, median: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },

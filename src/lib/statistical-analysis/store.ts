@@ -249,6 +249,8 @@ function asBoxplotConfig(value: unknown): BoxplotConfig {
     rowStart: parsed.rowStart ?? null,
     rowEnd: parsed.rowEnd ?? null,
     rows: rows && rows.length > 0 ? rows : null,
+    xAxisLabel: optionalAxisLabel(parsed.xAxisLabel, 60),
+    yAxisLabel: optionalAxisLabel(parsed.yAxisLabel, 80),
   };
 }
 
@@ -900,6 +902,8 @@ async function createBoxplotAnalysisForReport(
     categoryColumnIds: resolved.categoryColumns.map((column) => column.id),
     categoryColumnNames: categoryNames,
     title,
+    xAxisLabel: parsed.data.xAxisLabel?.trim() || null,
+    yAxisLabel: parsed.data.yAxisLabel?.trim() || null,
     ...rowFields,
   };
 
@@ -1434,6 +1438,8 @@ export async function updateAnalysisForReport(
       categoryColumnIds: resolved.categoryColumns.map((column) => column.id),
       categoryColumnNames: categoryNames,
       title,
+      xAxisLabel: merged.xAxisLabel ?? null,
+      yAxisLabel: merged.yAxisLabel ?? null,
       ...rowFields,
     };
     const outcome = computeBoxplot(analytics.worksheet, config);

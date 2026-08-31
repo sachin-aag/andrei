@@ -1,8 +1,15 @@
 "use client";
 
 import { useRef } from "react";
-import { boxplotAxisLayout } from "@/lib/statistical-analysis/boxplot-chart-layout";
-import { nestedCategorySpans } from "@/lib/statistical-analysis/boxplot";
+import {
+  boxplotXAxisLabel,
+  boxplotYAxisLabel,
+  nestedCategorySpans,
+} from "@/lib/statistical-analysis/boxplot";
+import {
+  boxplotAxisLayout,
+  boxplotXAxisTitleY,
+} from "@/lib/statistical-analysis/boxplot-chart-layout";
 import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import { formatStat } from "@/lib/statistical-analysis/format";
 import {
@@ -60,6 +67,7 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
   const categoryCount = analysis.config.categoryColumnNames.length;
   if (groups.length === 0) return null;
 
+  const layout = boxplotAxisLayout(groups, categoryCount);
   const {
     width,
     height,
@@ -71,7 +79,7 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
     plotHeight,
     rotateInner,
     categoryLabelY,
-  } = boxplotAxisLayout(groups, categoryCount);
+  } = layout;
   const { min: yMin, max: yMax } = yExtent(groups);
   const ySpan = yMax - yMin || 1;
   const xToPx = (index: number) =>
@@ -79,6 +87,9 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
   const yToPx = (y: number) => plotBottom - ((y - yMin) / ySpan) * plotHeight;
   const boxWidth = Math.min(42, (plotWidth / groups.length) * 0.55);
   const ticks = yTicks(yMin, yMax);
+  const yLabel = boxplotYAxisLabel(analysis.config);
+  const xLabel = boxplotXAxisLabel(analysis.config);
+  const xTitleY = xLabel ? boxplotXAxisTitleY(layout, categoryCount) : 0;
 
   return (
     <svg
@@ -115,7 +126,7 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
         fill={colors.axis}
         transform={`rotate(-90 22 ${(plotTop + plotBottom) / 2})`}
       >
-        {analysis.config.yColumnName}
+        {yLabel}
       </text>
       {ticks.map((tick) => (
         <g key={`y-${tick}`}>
@@ -255,6 +266,18 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
               </g>
             );
           })}
+      {xLabel ? (
+        <text
+          x={(plotLeft + plotRight) / 2}
+          y={xTitleY}
+          textAnchor="middle"
+          fontSize="12"
+          fill={colors.axis}
+          data-testid="boxplot-x-axis-title"
+        >
+          {xLabel}
+        </text>
+      ) : null}
     </svg>
   );
 }

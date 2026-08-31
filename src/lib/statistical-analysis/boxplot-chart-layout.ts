@@ -107,3 +107,11 @@ export function rotatedInnerLabelBottomY(
   const rotatedDepth = textWidth * Math.SQRT1_2;
   return layout.categoryLabelY(0) + rotatedDepth;
 }
+
+/** Y coordinate for an optional X-axis title below category tiers. */
+export function boxplotXAxisTitleY(
+  layout: BoxplotAxisLayout,
+  categoryCount: number
+): number {
+  return layout.height - BOTTOM_PADDING + (categoryCount > 0 ? 14 : 8);
+}
