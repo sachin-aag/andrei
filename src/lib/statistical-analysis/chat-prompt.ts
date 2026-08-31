@@ -3,6 +3,10 @@ import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
+import {
+  intentToolAvailabilityRule,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import {
   isAnovaAnalysis,
@@ -21,7 +25,8 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v30-boxplot-axis-labels";
+export const ANALYTICS_CHAT_PROMPT_VERSION =
+  "analytics-chat-v31-boxplot-axis-labels-intent-tools";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -205,6 +210,8 @@ export function buildAnalyticsChatSystemPrompt(input: {
   canEdit: boolean;
   mode: ChatMode;
   mentionBlock?: string;
+  /** Latest-turn intent. Read/social turns run without the write tools. */
+  intent?: ChatUserIntentKind;
 }): string {
   const canWrite = input.mode === "agent" && input.canEdit;
   const editLine = canWrite
@@ -219,6 +226,9 @@ export function buildAnalyticsChatSystemPrompt(input: {
     LANGUAGE_RULES,
     editLine,
     USER_INTENT_RULES,
+    canWrite
+      ? intentToolAvailabilityRule(input.intent ?? "write", "analytics")
+      : null,
     modeRules(input.mode, input.canEdit),
     `Report ${quotePromptMetadata(sanitizePromptMetadata(input.documentNo, 80) || "untitled")} · status ${input.status}.`,
     mentionBlock || null,

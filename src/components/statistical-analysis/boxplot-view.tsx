@@ -1,7 +1,15 @@
 "use client";
 
 import { useRef } from "react";
-import { nestedCategorySpans, boxplotXAxisLabel, boxplotYAxisLabel } from "@/lib/statistical-analysis/boxplot";
+import {
+  boxplotXAxisLabel,
+  boxplotYAxisLabel,
+  nestedCategorySpans,
+} from "@/lib/statistical-analysis/boxplot";
+import {
+  boxplotAxisLayout,
+  boxplotXAxisTitleY,
+} from "@/lib/statistical-analysis/boxplot-chart-layout";
 import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import { formatStat } from "@/lib/statistical-analysis/format";
 import {
@@ -18,9 +26,6 @@ import { chartBrandColors } from "@/lib/charts/brand-colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
-
-const WIDTH = 960;
-const HEIGHT = 520;
 
 function yExtent(groups: BoxplotGroupStats[]): { min: number; max: number } {
   const ys = groups.flatMap((group) => [
@@ -62,23 +67,19 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
   const categoryCount = analysis.config.categoryColumnNames.length;
   if (groups.length === 0) return null;
 
-  const innerLabels = groups.map((group) => group.labels[0] ?? "");
-  const longestInner = innerLabels.reduce(
-    (max, label) => Math.max(max, label.length),
-    0
-  );
-  const rotateInner =
-    categoryCount > 0 && (groups.length > 6 || longestInner > 8);
-  const innerBand = categoryCount === 0 ? 8 : rotateInner ? 58 : 22;
-  const outerBand = 26;
-  const axisHeight =
-    categoryCount === 0 ? innerBand : innerBand + Math.max(0, categoryCount - 1) * outerBand;
-  const plotLeft = 72;
-  const plotRight = WIDTH - 28;
-  const plotTop = 52;
-  const plotBottom = HEIGHT - 16 - axisHeight;
-  const plotWidth = plotRight - plotLeft;
-  const plotHeight = plotBottom - plotTop;
+  const layout = boxplotAxisLayout(groups, categoryCount);
+  const {
+    width,
+    height,
+    plotLeft,
+    plotRight,
+    plotTop,
+    plotBottom,
+    plotWidth,
+    plotHeight,
+    rotateInner,
+    categoryLabelY,
+  } = layout;
   const { min: yMin, max: yMax } = yExtent(groups);
   const ySpan = yMax - yMin || 1;
   const xToPx = (index: number) =>
@@ -88,21 +89,18 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
   const ticks = yTicks(yMin, yMax);
   const yLabel = boxplotYAxisLabel(analysis.config);
   const xLabel = boxplotXAxisLabel(analysis.config);
-  const xTitleY =
-    plotBottom +
-    axisHeight +
-    (xLabel && categoryCount > 0 ? 14 : xLabel ? 8 : 0);
+  const xTitleY = xLabel ? boxplotXAxisTitleY(layout, categoryCount) : 0;
 
   return (
     <svg
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      viewBox={`0 0 ${width} ${height}`}
       width="100%"
       role="img"
       aria-label={analysis.title}
       data-testid="boxplot-chart"
       className="max-h-[480px] rounded-md border border-[var(--border)] bg-white"
     >
-      <rect width={WIDTH} height={HEIGHT} fill="#f4f6f9" />
+      <rect width={width} height={height} fill="#f4f6f9" />
       <rect
         x={plotLeft}
         y={plotTop}
@@ -227,9 +225,7 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
         ? null
         : Array.from({ length: categoryCount }, (_, level) => {
             const spans = nestedCategorySpans(groups, level);
-            const y =
-              plotBottom +
-              (level === 0 ? (rotateInner ? 38 : 16) : innerBand + (level - 1) * outerBand + 16);
+            const y = categoryLabelY(level);
             return (
               <g
                 key={`axis-${level}`}

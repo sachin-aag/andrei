@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyChatUserIntent,
+  intentToolAvailabilityRule,
   messageHasChatImage,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
@@ -109,6 +110,70 @@ describe("classifyChatUserIntent", () => {
     ).toBe("write");
   });
 
+  it("keeps the instruction that follows a yes", () => {
+    // Langfuse: "yes put it in the data worksheet" scored read, so write_column
+    // was stripped and the model printed a markdown table instead.
+    expect(
+      classifyChatUserIntent({
+        userText: "yes put it in the data worksheet",
+        surface: "analytics",
+        recentAssistantTexts: [
+          "Would you like me to extract and populate these values into the worksheet?",
+        ],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+
+    expect(
+      classifyChatUserIntent({
+        userText: "yes put it in the data worksheet",
+        surface: "analytics",
+      }).kind
+    ).toBe("write");
+
+    expect(
+      classifyChatUserIntent({
+        userText: "ok, add a Batch column",
+        surface: "analytics",
+      }).kind
+    ).toBe("write");
+  });
+
+  it("treats a worksheet destination as write even without a known verb", () => {
+    for (const text of [
+      "put those numbers in the worksheet",
+      "stick the torque readings into the data sheet",
+      "drop them into column c3",
+    ]) {
+      expect(
+        classifyChatUserIntent({ userText: text, surface: "analytics" }).kind
+      ).toBe("write");
+    }
+  });
+
+  it("still reads a question about the worksheet", () => {
+    for (const text of [
+      "what is in the worksheet?",
+      "is there anything in the data sheet",
+      "show me the columns in the worksheet",
+    ]) {
+      expect(
+        classifyChatUserIntent({ userText: text, surface: "analytics" }).kind
+      ).toBe("read");
+    }
+  });
+
+  it("does not turn a bare yes into a write on the document surface", () => {
+    expect(
+      classifyChatUserIntent({ userText: "yes", surface: "document" }).kind
+    ).toBe("social");
+    expect(
+      classifyChatUserIntent({
+        userText: "sure, what does the protocol say?",
+        surface: "document",
+      }).kind
+    ).toBe("read");
+  });
+
   it("continues a prior drafting task on keep-going", () => {
     expect(
       classifyChatUserIntent({ userText: "keep going — you missed SST" }).kind
@@ -161,6 +226,32 @@ describe("restrictToolsForIntent", () => {
     expect(
       Object.keys(restrictToolsForIntent(analyticsTools, "read", "analytics"))
     ).toEqual(["search_documents", "read_worksheet"]);
+  });
+});
+
+describe("intentToolAvailabilityRule", () => {
+  it("says nothing on a write turn — every tool is loaded", () => {
+    expect(intentToolAvailabilityRule("write", "analytics")).toBeNull();
+    expect(intentToolAvailabilityRule("write", "document")).toBeNull();
+  });
+
+  it("names the stripped analytics tools on a read turn", () => {
+    const rule = intentToolAvailabilityRule("read", "analytics");
+    expect(rule).toContain("write_column");
+    expect(rule).toContain("manage_worksheet");
+    expect(rule).toContain("plot_xy_scatter");
+    expect(rule).not.toContain("propose_edit");
+  });
+
+  it("names the stripped document tools on a read turn", () => {
+    const rule = intentToolAvailabilityRule("read", "document");
+    expect(rule).toContain("propose_edit");
+    expect(rule).toContain("draft_field");
+    expect(rule).not.toContain("write_column");
+  });
+
+  it("tells a social turn that no tools are loaded", () => {
+    expect(intentToolAvailabilityRule("social", "document")).toContain("None");
   });
 });
 

@@ -4,6 +4,11 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { computeBoxplot } from "@/lib/statistical-analysis/boxplot";
 import {
+  boxplotAxisLayout,
+  BOXPLOT_CHART_HEIGHT,
+  rotatedInnerLabelBottomY,
+} from "@/lib/statistical-analysis/boxplot-chart-layout";
+import {
   BOXPLOT,
   type BoxplotAnalysisSummary,
 } from "@/lib/statistical-analysis/types";
@@ -113,5 +118,38 @@ describe("BoxplotView", () => {
       "Operator ID"
     );
     expect(screen.getByTestId("boxplot-chart")).toHaveTextContent("Assay (%)");
+  });
+
+  it("keeps rotated serial-number labels inside the chart frame", () => {
+    const groups = [
+      { labels: ["924-10012"], n: 5, min: 3, q1: 3.5, median: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },
+      { labels: ["924-10017"], n: 5, min: 3, q1: 3.5, median: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },
+      { labels: ["924-10018"], n: 5, min: 3, q1: 3.5, median: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },
+    ];
+    const layout = boxplotAxisLayout(groups, 1);
+    expect(
+      rotatedInnerLabelBottomY(layout, "924-10012")
+    ).toBeLessThanOrEqual(BOXPLOT_CHART_HEIGHT - 4);
+
+    const analysis: BoxplotAnalysisSummary = {
+      id: "an-box-serial",
+      workspaceId: "ws-1",
+      kind: BOXPLOT,
+      title: "Boxplot of Detach Torque (ozf-in) by Handpiece S/N",
+      config: {
+        yColumnId: "c1",
+        yColumnName: "Detach Torque (ozf-in)",
+        categoryColumnIds: ["c2"],
+        categoryColumnNames: ["Handpiece S/N"],
+        title: "Boxplot of Detach Torque (ozf-in) by Handpiece S/N",
+      },
+      results: { n: 15, skipped: 0, groups },
+      sourceHash: "box",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    render(<BoxplotView analysis={analysis} {...viewProps} />);
+    expect(screen.getByText("924-10012")).toBeTruthy();
   });
 });

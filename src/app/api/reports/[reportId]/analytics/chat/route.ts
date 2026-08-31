@@ -201,6 +201,7 @@ async function handleAnalyticsChatPost(
     canEdit,
     mode,
     mentionBlock: buildAnalyticsMentionBlock(mentions),
+    intent: userIntent.kind,
   });
   const tools = restrictToolsForIntent(
     buildAnalyticsChatTools({
