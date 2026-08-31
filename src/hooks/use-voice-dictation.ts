@@ -149,7 +149,10 @@ export function useVoiceDictation({
             "Content-Type": VOICE_PCM_MIME,
             "x-voice-languages": currentLanguageCodes().join(","),
           },
-          body: pcm,
+          body: pcm.buffer.slice(
+            pcm.byteOffset,
+            pcm.byteOffset + pcm.byteLength
+          ) as ArrayBuffer,
         });
         if (!res.ok) {
           const payload = (await res.json().catch(() => null)) as {
