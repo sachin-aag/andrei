@@ -592,9 +592,8 @@ async function handleChatPost(
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
-    // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
-    // do not stream or persist them as chat message parts.
-    sendReasoning: false,
+    // Stream thought summaries to the chat activity UI (expandable Thought lines).
+    sendReasoning: true,
     messageMetadata: () => ({ chatTarget: "report" as const }),
     // Drain the teed SSE now. Wrapping this in Next `after()` waits until the
     // HTTP response finishes — and the tee only finishes if this copy is

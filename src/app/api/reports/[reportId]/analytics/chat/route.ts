@@ -361,7 +361,7 @@ async function handleAnalyticsChatPost(
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
-    sendReasoning: false,
+    sendReasoning: true,
     messageMetadata: () => ({ chatTarget: "analytics" as const }),
     consumeSseStream: ({ stream }) => {
       void drainSseStream(stream);

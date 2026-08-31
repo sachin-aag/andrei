@@ -20,21 +20,17 @@ import { formatDistanceToNow } from "date-fns";
 import {
   ArrowUp,
   Sparkles,
-  PencilLine,
   Table2,
-  BookOpen,
   FileText,
   Loader2,
   Plus,
   History,
   ClipboardList,
-  Wrench,
-  Check,
-  ImagePlus,
-  ImageMinus,
   LineChart,
   Square,
   X,
+  Check,
+  ImagePlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -47,7 +43,6 @@ import {
 } from "@/lib/ai/chat/message-target";
 import {
   isRedundantInsertImageChip,
-  type InsertImageChipInfo,
 } from "@/components/report/chat-insert-image-chips";
 import {
   AskUserForm,
@@ -135,15 +130,18 @@ import {
   type ChatSessionRuntime,
 } from "@/components/report/chat-session-host";
 import { ChatSessionTabs } from "@/components/report/chat-session-tabs";
-import { DocumentReviewProgress } from "@/components/report/document-review-progress";
+import { ChatActivityLine } from "@/components/report/chat-activity-line";
+import {
+  buildChatActivityBlocks,
+  documentReviewActivityNode,
+  readChatToolPart,
+  type AttachmentFilenameLookup,
+  type ChatToolPartInfo,
+} from "@/lib/ai/chat/chat-activity-ui";
 import {
   DocumentUploadingNotice,
   useDocumentUploadingNotice,
 } from "@/components/report/document-uploading-notice";
-import {
-  isDocumentReviewToolName,
-  type DocumentReviewToolPart,
-} from "@/lib/ai/chat/document-review-ui";
 import {
   CHAT_VISIBLE_TAIL,
   nextVisibleCount,
@@ -160,7 +158,6 @@ import {
   type ChatScrollPosition,
 } from "@/components/report/chat-scroll-position";
 import { getDocumentType } from "@/lib/document-types";
-import { formatReplacedOlderSuggestionsNote } from "@/lib/suggestions/supersession";
 import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
 import {
   agentDoneNotificationCopy,
@@ -171,10 +168,7 @@ import {
   shouldShowAgentDonePendingHint,
   unlockAgentDoneAudio,
 } from "@/lib/notifications/notify-agent-done";
-import {
-  AnalyticsChatToolChip,
-  isAnalyticsWorksheetMutationTool,
-} from "@/components/statistical-analysis/analytics-chat-tool-chip";
+import { isAnalyticsWorksheetMutationTool } from "@/components/statistical-analysis/analytics-chat-tool-chip";
 import { getReportAnalytics } from "@/lib/statistical-analysis/client";
 import {
   analyticsSheetMentionCandidates,
@@ -210,82 +204,22 @@ function announceCompletedAssistantTurn(
   );
 }
 
-type ToolPartInfo = {
-  toolName: string;
-  state: string;
-  toolCallId: string | undefined;
-  input: Record<string, unknown> | undefined;
-  output: Record<string, unknown> | undefined;
-  errorText: string | undefined;
-};
-
-function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
-  if (typeof part.type !== "string" || !part.type.startsWith("tool-")) return null;
-  const p = part as unknown as {
-    type: string;
-    state?: string;
-    toolCallId?: string;
-    input?: Record<string, unknown>;
-    output?: Record<string, unknown>;
-    errorText?: string;
-  };
-  return {
-    toolName: p.type.slice("tool-".length),
-    state: p.state ?? "",
-    toolCallId: typeof p.toolCallId === "string" ? p.toolCallId : undefined,
-    input: p.input,
-    output: p.output,
-    errorText: p.errorText,
-  };
-}
-
-type AssistantPartGroup =
-  | { kind: "text"; text: string }
-  | { kind: "document-review"; parts: DocumentReviewToolPart[] }
-  | { kind: "other"; part: UIMessagePart<never, never> };
-
-function groupAssistantParts(
-  parts: UIMessage["parts"]
-): AssistantPartGroup[] {
-  const groups: AssistantPartGroup[] = [];
-  for (const part of parts) {
-    if (part.type === "text") {
-      groups.push({ kind: "text", text: (part as { text: string }).text });
-      continue;
-    }
-    const tool = readToolPart(part as UIMessagePart<never, never>);
-    if (tool && isDocumentReviewToolName(tool.toolName)) {
-      const reviewPart: DocumentReviewToolPart = {
-        toolName: tool.toolName,
-        state: tool.state,
-        input: tool.input,
-        output: tool.output,
-      };
-      const existing = groups.find(
-        (group): group is Extract<AssistantPartGroup, { kind: "document-review" }> =>
-          group.kind === "document-review"
-      );
-      if (existing) {
-        existing.parts.push(reviewPart);
-      } else {
-        groups.push({ kind: "document-review", parts: [reviewPart] });
-      }
-      continue;
-    }
-    groups.push({ kind: "other", part: part as UIMessagePart<never, never> });
-  }
-  return groups;
-}
-
 function sectionLabel(section: unknown): string {
   if (typeof section === "string") return chatSectionLabel(section as SectionType);
   return "section";
 }
 
-function replacedOlderSuffix(output: { supersededSuggestionIds?: unknown } | undefined): string {
-  const ids = output?.supersededSuggestionIds;
-  if (!Array.isArray(ids)) return "";
-  return formatReplacedOlderSuggestionsNote(ids.length);
+function filterPartsForActivityDisplay(
+  parts: UIMessage["parts"]
+): UIMessage["parts"] {
+  const shown: ChatToolPartInfo[] = [];
+  return parts.filter((part) => {
+    const tool = readChatToolPart(part);
+    if (!tool || tool.toolName !== "insert_image") return true;
+    if (isRedundantInsertImageChip(shown, tool)) return false;
+    shown.push(tool);
+    return true;
+  });
 }
 
 function parseAskUserQuestions(input: Record<string, unknown> | undefined): AskUserQuestionInput[] {
@@ -305,7 +239,7 @@ function appliedEditsFromParts(
   const items: Array<{ section: string; targetField: string; reasoning: string }> =
     [];
   for (const part of parts ?? []) {
-    const tool = readToolPart(part as UIMessagePart<never, never>);
+    const tool = readChatToolPart(part);
     if (!tool?.output) continue;
     const status = tool.output.status;
     if (status !== "applied") continue;
@@ -327,7 +261,7 @@ function persistedEditCountFromParts(
 ): number {
   let count = 0;
   for (const part of parts ?? []) {
-    const tool = readToolPart(part as UIMessagePart<never, never>);
+    const tool = readChatToolPart(part);
     if (!tool?.output) continue;
     const status = tool.output.status;
     if (status === "applied" || status === "proposed" || status === "drafted") {
@@ -335,295 +269,6 @@ function persistedEditCountFromParts(
     }
   }
   return count;
-}
-
-function ToolChip({
-  info,
-  askUserActive,
-  onAnswerQuestions,
-}: {
-  info: ToolPartInfo;
-  askUserActive?: boolean;
-  onAnswerQuestions?: (message: string) => void;
-}) {
-  const pending = info.state === "input-streaming" || info.state === "input-available";
-
-  if (isDocumentReviewToolName(info.toolName)) return null;
-
-  if (info.toolName === "read_section") {
-    const section = sectionLabel(info.input?.section);
-    return (
-      <ToolLine icon={<BookOpen className="size-3.5" />}>
-        {pending ? "Reading" : "Read"} {section || "section"}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "propose_edit") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<PencilLine className="size-3.5" />}>
-          Proposing edit to {section}…
-        </ToolLine>
-      );
-    }
-    const status = info.output?.status;
-    if (status === "applied") {
-      return (
-        <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
-          Applied to {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (status === "proposed") {
-      return (
-        <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
-          Proposed edit to {section}
-          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
-        </ToolLine>
-      );
-    }
-    const hint =
-      typeof info.output?.hint === "string"
-        ? info.output.hint
-        : typeof info.output?.message === "string"
-          ? info.output.message
-          : info.errorText
-            ? info.errorText
-            : "Could not place this edit.";
-    return (
-      <ToolLine icon={<PencilLine className="size-3.5 text-amber-500" />} tone="warn">
-        Edit not applied: {hint}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "insert_image") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<ImagePlus className="size-3.5" />}>
-          Inserting image in {section}…
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "applied") {
-      return (
-        <ToolLine icon={<ImagePlus className="size-3.5 text-emerald-500" />} tone="success">
-          Applied image in {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "proposed") {
-      return (
-        <ToolLine icon={<ImagePlus className="size-3.5 text-emerald-500" />} tone="success">
-          Proposed image in {section}
-          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "available_plots") {
-      return (
-        <ToolLine icon={<ImagePlus className="size-3.5" />}>
-          No figure was inserted — listing available Analytics plots.
-        </ToolLine>
-      );
-    }
-    const hint =
-      typeof info.output?.hint === "string"
-        ? info.output.hint
-        : typeof info.output?.message === "string"
-          ? info.output.message
-          : info.errorText
-            ? info.errorText
-            : "Could not place this image.";
-    return (
-      <ToolLine icon={<ImagePlus className="size-3.5 text-amber-500" />} tone="warn">
-        Image not inserted: {hint}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "remove_image") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<ImageMinus className="size-3.5" />}>
-          Removing image in {section}…
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "applied") {
-      return (
-        <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
-          Removed figure in {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "proposed") {
-      return (
-        <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
-          Proposed figure removal in {section}
-          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
-        </ToolLine>
-      );
-    }
-    const hint =
-      typeof info.output?.hint === "string"
-        ? info.output.hint
-        : typeof info.output?.message === "string"
-          ? info.output.message
-          : info.errorText
-            ? info.errorText
-            : "Could not remove this image.";
-    return (
-      <ToolLine icon={<ImageMinus className="size-3.5 text-amber-500" />} tone="warn">
-        Image not removed: {hint}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "edit_table") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<Table2 className="size-3.5" />}>
-          Editing table in {section}…
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "applied") {
-      return (
-        <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
-          Applied table edit to {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "proposed") {
-      return (
-        <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
-          Proposed table edit to {section}
-          {field ? ` · ${field}` : ""} — review it in the document.{replacedOlderSuffix(info.output)}
-        </ToolLine>
-      );
-    }
-    const hint =
-      typeof info.output?.hint === "string"
-        ? info.output.hint
-        : typeof info.output?.message === "string"
-          ? info.output.message
-          : info.errorText
-            ? info.errorText
-            : "Could not place this table edit.";
-    return (
-      <ToolLine icon={<Table2 className="size-3.5 text-amber-500" />} tone="warn">
-        Table edit not applied: {hint}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "draft_field") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<FileText className="size-3.5" />}>
-          Drafting {section}
-          {field ? ` · ${field}` : ""}…
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "applied") {
-      return (
-        <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
-          Applied draft to {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "drafted") {
-      return (
-        <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
-          Drafted {section}
-          {field ? ` · ${field}` : ""} — review the full draft in the document.{replacedOlderSuffix(info.output)}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "not_a_rewrite") {
-      return (
-        <ToolLine icon={<FileText className="size-3.5" />}>
-          Switching to a targeted edit on {section}
-          {field ? ` · ${field}` : ""}…
-        </ToolLine>
-      );
-    }
-    const message =
-      typeof info.output?.message === "string"
-        ? info.output.message
-        : typeof info.output?.hint === "string"
-          ? info.output.hint
-          : info.errorText
-            ? info.errorText
-            : "Could not create this draft.";
-    return (
-      <ToolLine icon={<FileText className="size-3.5 text-amber-500" />} tone="warn">
-        Draft not created: {message}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "ask_user") {
-    const questions = parseAskUserQuestions(info.input);
-    if (questions.length === 0) return null;
-    return (
-      <AskUserForm
-        questions={questions}
-        disabled={!askUserActive || !onAnswerQuestions}
-        onSubmit={(message) => onAnswerQuestions?.(message)}
-      />
-    );
-  }
-
-  const analyticsChip = AnalyticsChatToolChip({ info });
-  if (analyticsChip) return analyticsChip;
-
-  return <ToolLine icon={<Wrench className="size-3.5" />}>{info.toolName}</ToolLine>;
-}
-
-function ToolLine({
-  icon,
-  tone = "muted",
-  children,
-}: {
-  icon: React.ReactNode;
-  tone?: "muted" | "success" | "warn";
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]",
-        tone === "success" &&
-          "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-        tone === "warn" &&
-          "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-        tone === "muted" &&
-          "border-[var(--border)] bg-[var(--secondary)]/40 text-[var(--muted-foreground)]"
-      )}
-    >
-      {icon}
-      <span className="min-w-0 break-words">{children}</span>
-    </div>
-  );
 }
 
 function mentionIcon(type: MentionCandidate["type"]) {
@@ -744,12 +389,14 @@ const MessageTurn = memo(function MessageTurn({
   askUserActive,
   onAnswerQuestions,
   streaming = false,
+  filenameByAttachmentId,
 }: {
   message: UIMessage;
   chatTarget: ChatMessageTarget | null;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
+  filenameByAttachmentId?: AttachmentFilenameLookup;
 }) {
   const isUser = message.role === "user";
   const targetLabel = chatTarget ? chatMessageTargetLabel(chatTarget) : null;
@@ -821,33 +468,35 @@ const MessageTurn = memo(function MessageTurn({
       {showEmptyError ? (
         <p className="text-sm text-red-600">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
       ) : (
-        (() => {
-          const shownInsertImage: InsertImageChipInfo[] = [];
-          return groupAssistantParts(parts).map((group, i) => {
-            if (group.kind === "text") {
-              if (!group.text.trim()) return null;
-              return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
+        buildChatActivityBlocks(
+          filterPartsForActivityDisplay(parts),
+          filenameByAttachmentId
+        ).map(
+          (block, i) => {
+            if (block.kind === "text") {
+              if (!block.text.trim()) return null;
+              return <ChatMarkdown key={i}>{block.text}</ChatMarkdown>;
             }
-            if (group.kind === "document-review") {
-              return <DocumentReviewProgress key={i} parts={group.parts} />;
+            if (block.kind === "document-review") {
+              const node = documentReviewActivityNode(block.parts);
+              if (!node) return null;
+              return <ChatActivityLine key={i} node={node} />;
             }
-            const tool = readToolPart(group.part as UIMessagePart<never, never>);
-            if (!tool) return null;
-            if (isRedundantInsertImageChip(shownInsertImage, tool)) {
-              shownInsertImage.push(tool);
-              return null;
+            if (block.kind === "ask-user") {
+              const questions = parseAskUserQuestions(block.tool.input);
+              if (questions.length === 0) return null;
+              return (
+                <AskUserForm
+                  key={i}
+                  questions={questions}
+                  disabled={!askUserActive || !onAnswerQuestions}
+                  onSubmit={(message) => onAnswerQuestions?.(message)}
+                />
+              );
             }
-            shownInsertImage.push(tool);
-            return (
-              <ToolChip
-                key={i}
-                info={tool}
-                askUserActive={askUserActive}
-                onAnswerQuestions={onAnswerQuestions}
-              />
-            );
-          });
-        })()
+            return <ChatActivityLine key={i} node={block.node} />;
+          }
+        )
       )}
       <TurnChangeSummary
         parts={parts}
@@ -992,6 +641,14 @@ export function ChatPanel({
       ? aiSuggestionLockReason(accessUser, report)
       : "You can't propose edits on this report right now.";
   const { attachments } = useReportAttachments();
+  const filenameByAttachmentId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const attachment of attachments) {
+      const name = attachment.filename.trim();
+      if (name) map.set(attachment.id, name);
+    }
+    return map;
+  }, [attachments]);
   const [input, setInput] = useState("");
   const showUploadingNotice = useDocumentUploadingNotice(input);
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
@@ -1151,7 +808,7 @@ export function ChatPanel({
     let found = false;
     for (const message of messages) {
       for (const part of message.parts ?? []) {
-        const info = readToolPart(part as UIMessagePart<never, never>);
+        const info = readChatToolPart(part);
         if (!info || info.state !== "output-available") continue;
         if (!isAnalyticsWorksheetMutationTool(info.toolName)) continue;
         const id = info.toolCallId ?? `${info.toolName}:${JSON.stringify(info.output)}`;
@@ -2009,6 +1666,7 @@ export function ChatPanel({
               key={m.id}
               message={m}
               chatTarget={m.chatTarget}
+              filenameByAttachmentId={filenameByAttachmentId}
               askUserActive={
                 visibleStartIndex + i === messages.length - 1 &&
                 !busy &&
