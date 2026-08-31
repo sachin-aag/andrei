@@ -18,7 +18,7 @@ export function voiceUserErrorMessage(error: unknown): string {
   if (/NotAllowedError|PermissionDenied|microphone access/i.test(raw)) {
     return "Microphone access is required for voice input.";
   }
-  if (/monthly AI usage limit/i.test(raw)) {
+  if (/monthly AI usage limit|monthly voice transcription limit/i.test(raw)) {
     return raw;
   }
   if (
