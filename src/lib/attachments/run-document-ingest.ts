@@ -50,6 +50,12 @@ import {
 } from "@/lib/attachments/pdf-split";
 import { recordAttachmentPageUsage } from "@/lib/attachments/page-budget";
 import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachments";
+import {
+  flushLangfuseTraces,
+  observeWork,
+  setRouteObservationIO,
+  withPropagatedAttributes,
+} from "@/lib/observability/langfuse";
 
 export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
 
@@ -100,12 +106,38 @@ export async function runDocumentIngest(
   try {
     init = await initializeIngestRun(attachmentId, generation, options);
     if (!init) return "done";
-    if (init.kind === "docx") {
-      await runDocxIngest(init);
-    } else {
-      await runPdfIngest(init);
-    }
-    return "done";
+    const outcome = await withPropagatedAttributes(
+      {
+        sessionId: init.reportId,
+        traceName: "document-ingest",
+        tags: ["document-ingest", init.kind],
+        metadata: {
+          reportId: init.reportId,
+          attachmentId: init.attachmentId,
+          filename: init.filename,
+          kind: init.kind,
+        },
+      },
+      () =>
+        observeWork("document-ingest", async () => {
+          setRouteObservationIO({
+            input: {
+              reportId: init!.reportId,
+              attachmentId: init!.attachmentId,
+              filename: init!.filename,
+              kind: init!.kind,
+            },
+          });
+          if (init!.kind === "docx") {
+            await runDocxIngest(init!);
+          } else {
+            await runPdfIngest(init!);
+          }
+          setRouteObservationIO({ output: { status: "done" } });
+          return "done" as const;
+        })
+    );
+    return outcome;
   } catch (error) {
     if (isIngestNeedsContinuation(error) || isRuntimeTimeoutError(error)) {
       keepTempObjects = true;
@@ -123,6 +155,7 @@ export async function runDocumentIngest(
     });
     throw error;
   } finally {
+    await flushLangfuseTraces();
     if (init && !keepTempObjects) {
       await cleanupTempObjects(init.runId);
     }

@@ -13,6 +13,12 @@ import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
 import { getInvestigationEvaluatableSections } from "@/lib/ai/criteria";
 import { hasEnoughContextInFirstSection } from "@/lib/ai/first-section-context";
 import type { BulkEvalRow } from "@/lib/sample-eval/bulk-eval-aggregates";
+import {
+  flushLangfuseTraces,
+  observeWork,
+  setRouteObservationIO,
+  withPropagatedAttributes,
+} from "@/lib/observability/langfuse";
 
 export type ReportSectionLlmQuery = {
   section: SectionType;
@@ -80,7 +86,17 @@ export async function evaluateOneDocx(
 
   let imported: ImportedReportContent;
   try {
-    imported = await docxBufferToImportedReportContent(buf);
+    imported = await withPropagatedAttributes(
+      {
+        traceName: "sample-eval-import",
+        tags: ["sample-eval", "word-import"],
+        metadata: { sourceFile },
+      },
+      () =>
+        observeWork("sample-eval-import", () =>
+          docxBufferToImportedReportContent(buf)
+        )
+    );
   } catch (e) {
     return {
       sourcePath: absPath,
@@ -138,37 +154,51 @@ export async function evaluateOneDocx(
     }
   );
 
-  const sectionResults = await Promise.all(
-    evaluatableSections.map(async (sectionKey) => {
-      const payload =
-        imported.sections[sectionKey as keyof typeof imported.sections];
+  const sectionResults = await withPropagatedAttributes(
+    {
+      traceName: "sample-eval-docx",
+      tags: ["sample-eval"],
+      metadata: { sourceFile, deviationNo },
+    },
+    () =>
+      observeWork("sample-eval-docx", () => {
+        setRouteObservationIO({
+          input: { sourceFile, deviationNo },
+        });
+        return Promise.all(
+          evaluatableSections.map(async (sectionKey) => {
+            const payload =
+              imported.sections[sectionKey as keyof typeof imported.sections];
 
-      let evaluations = await evaluateSection({
-        section: sectionKey,
-        content: payload,
-        reportContext: { deviationNo, date: reportDate },
-        allSections,
-      });
+            let evaluations = await evaluateSection({
+              section: sectionKey,
+              content: payload,
+              reportContext: { deviationNo, date: reportDate },
+              allSections,
+            });
 
-      if (sectionKey === "analyze") {
-        evaluations = normalizeAnalyzeToolResults(
-          payload as unknown,
-          evaluations
+            if (sectionKey === "analyze") {
+              evaluations = normalizeAnalyzeToolResults(
+                payload as unknown,
+                evaluations
+              );
+            }
+
+            const rowsChunk: BulkEvalRow[] = evaluations.map((ev) => ({
+              sourceFile,
+              deviationNo,
+              section: sectionKey,
+              criterionKey: ev.criterionKey,
+              criterionLabel: ev.criterionLabel,
+              status: ev.status,
+              reasoning: ev.reasoning,
+            }));
+            return rowsChunk;
+          })
         );
-      }
-
-      const rowsChunk: BulkEvalRow[] = evaluations.map((ev) => ({
-        sourceFile,
-        deviationNo,
-        section: sectionKey,
-        criterionKey: ev.criterionKey,
-        criterionLabel: ev.criterionLabel,
-        status: ev.status,
-        reasoning: ev.reasoning,
-      }));
-      return rowsChunk;
-    })
+      })
   );
+  await flushLangfuseTraces();
 
   return {
     sourcePath: absPath,

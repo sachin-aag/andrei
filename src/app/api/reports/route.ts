@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -40,6 +40,12 @@ import {
   type GenericImportedDocument,
 } from "@/lib/import/docx-to-generic-document";
 import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
+import {
+  flushLangfuseTraces,
+  observeWork,
+  setRouteObservationIO,
+  withPropagatedAttributes,
+} from "@/lib/observability/langfuse";
 import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 import {
   insertReportManagers,
@@ -201,22 +207,40 @@ export async function POST(req: Request) {
           const buf = await readDocxUpload(file);
           sourceUpload = { buffer: buf, filename: file.name };
           const kind = wordImportFor(getDocumentType(documentType)).kind;
-          switch (kind) {
-            case "investigation":
-              importedContent = await docxBufferToImportedReportContent(buf);
-              break;
-            case "generic_body":
-              genericImported = await docxBufferToGenericDocument(buf);
-              break;
-            case "none":
-              return NextResponse.json(
-                { error: "Word import is not supported for this document type." },
-                { status: 400 }
-              );
-            default: {
-              const exhaustive: never = kind;
-              return exhaustive;
-            }
+          after(flushLangfuseTraces);
+          await withPropagatedAttributes(
+            {
+              userId: user.id,
+              traceName: "word-import",
+              tags: ["word-import", documentType],
+              metadata: { documentType, filename: file.name },
+            },
+            () =>
+              observeWork("word-import", async () => {
+                setRouteObservationIO({
+                  input: { documentType, filename: file.name },
+                });
+                switch (kind) {
+                  case "investigation":
+                    importedContent = await docxBufferToImportedReportContent(buf);
+                    return;
+                  case "generic_body":
+                    genericImported = await docxBufferToGenericDocument(buf);
+                    return;
+                  case "none":
+                    return;
+                  default: {
+                    const exhaustive: never = kind;
+                    return exhaustive;
+                  }
+                }
+              })
+          );
+          if (kind === "none") {
+            return NextResponse.json(
+              { error: "Word import is not supported for this document type." },
+              { status: 400 }
+            );
           }
         } catch (e) {
           const message = e instanceof Error ? e.message : "";
