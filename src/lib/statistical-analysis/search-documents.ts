@@ -82,7 +82,7 @@ export function buildAnalyticsSearchDocumentsTool(opts: {
           .max(SEARCH_DOCUMENTS_MAX_QUERIES)
           .optional()
           .describe(
-            "Optional extra locators. At most 4; extra items are dropped. Prefer one query, then read."
+            "Optional extra locators. At most 8; extra items are dropped. Prefer one query, then read."
           ),
         limit: z
           .number()

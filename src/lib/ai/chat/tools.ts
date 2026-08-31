@@ -477,7 +477,7 @@ const tableOperationSchema = z.preprocess(
 
 export const SEARCH_DOCUMENTS_DEFAULT_LIMIT = 8;
 export const SEARCH_DOCUMENTS_MAX_LIMIT = 16;
-export const SEARCH_DOCUMENTS_MAX_QUERIES = 4;
+export const SEARCH_DOCUMENTS_MAX_QUERIES = 8;
 export const SEARCH_DOCUMENTS_RESULT_CAP = 16;
 export const SEARCH_QUERY_MAX_CHARS = 500;
 export const SEARCH_COVERAGE_HINT =
@@ -583,7 +583,7 @@ const searchQueriesField = z
   .max(SEARCH_DOCUMENTS_MAX_QUERIES)
   .optional()
   .describe(
-    "At most 4 complementary queries (equipment AND UUT AND fixtures). OR related IDs into those 4 strings; extra items are dropped."
+    "At most 8 complementary queries (equipment AND UUT AND fixtures). OR related IDs into those strings; extra items are dropped."
   );
 const searchLimitField = z
   .number()
@@ -694,7 +694,7 @@ function buildSearchDocumentsTool(opts: {
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 4 strings per call. mode=keyword is lexical grep. truncated=true means keep grepping. Cite as [filename, p. N]. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
+        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 8 strings per call. mode=keyword is lexical grep. truncated=true means keep grepping. Cite as [filename, p. N]. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
       inputSchema: z.preprocess(
         coerceSearchDocumentsInput,
         z
@@ -709,7 +709,7 @@ function buildSearchDocumentsTool(opts: {
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-        `Grep ready attachments in rounds. Prefer complementary queries for tables (at most 4 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Defaults to the ${tagged} document(s) the engineer tagged with @ (pinned=true; shortfall backfilled with pinned=false). Pass scope="all" to search every attachment. Cite as [filename, p. N]. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
+        `Grep ready attachments in rounds. Prefer complementary queries for tables (at most 8 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Defaults to the ${tagged} document(s) the engineer tagged with @ (pinned=true; shortfall backfilled with pinned=false). Pass scope="all" to search every attachment. Cite as [filename, p. N]. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
     inputSchema: z.preprocess(
       coerceSearchDocumentsInput,
       z

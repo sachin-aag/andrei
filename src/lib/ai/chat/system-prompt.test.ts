@@ -348,7 +348,7 @@ describe("buildChatSystemPrompt", () => {
     expect(plan).toContain("grep adaptively");
     expect(plan).toContain("excludePages=nextExcludePages");
     expect(plan).toContain("Prefer queries[] in one call");
-    expect(plan).toContain("At most 4 strings per call");
+    expect(plan).toContain("At most 8 strings per call");
     expect(plan).toContain("ECO/DCR");
     expect(plan).toContain("Do not start a document review");
     expect(plan).not.toContain("Escalate to start_document_review");

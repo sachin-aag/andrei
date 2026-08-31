@@ -101,25 +101,33 @@ async function executeDocumentOutline(
 }
 
 describe("coerceSearchDocumentsInput", () => {
-  it("clamps the Vercel incident payload (8 queries, limit 20) to schema caps", () => {
+  it("clamps the Vercel incident payload (8 queries, limit 20) without dropping queries", () => {
+    const queries = [
+      '"M3-HRS-GN-001"',
+      '"M3-HRS-PS-003" OR "M3-HRS-PS-014"',
+      '"M3-HRS-WS-009" OR "M3-HRS-SM-013"',
+      '"M3-HRS-HP-001" OR "M3-HRS-HP-007" OR "M3-HRS-HP-008"',
+      '"M3-HRS-HP-009" OR "M3-HRS-HP-016" OR "M3-HRS-HP-018"',
+      '"M3-HRS-HP-020" OR "M3-HRS-HP-032" OR "M3-HRS-HP-033"',
+      '"M3-HRS-PM-004" OR "M3-HRS-BD-011"',
+      '"M3-HRS-AA-014" OR "M3-HRS-AA-015"',
+    ];
     const coerced = coerceSearchDocumentsInput({
       limit: 20,
-      queries: [
-        '"M3-HRS-GN-001"',
-        '"M3-HRS-PS-003" OR "M3-HRS-PS-014"',
-        '"M3-HRS-WS-009" OR "M3-HRS-SM-013"',
-        '"M3-HRS-HP-001" OR "M3-HRS-HP-007" OR "M3-HRS-HP-008"',
-        '"M3-HRS-HP-009" OR "M3-HRS-HP-016" OR "M3-HRS-HP-018"',
-        '"M3-HRS-HP-020" OR "M3-HRS-HP-032" OR "M3-HRS-HP-033"',
-        '"M3-HRS-PM-004" OR "M3-HRS-BD-011"',
-        '"M3-HRS-AA-014" OR "M3-HRS-AA-015"',
-      ],
+      queries,
       mode: "keyword",
     }) as { limit: number; queries: string[]; mode: string };
     expect(coerced.limit).toBe(SEARCH_DOCUMENTS_MAX_LIMIT);
-    expect(coerced.queries).toHaveLength(SEARCH_DOCUMENTS_MAX_QUERIES);
-    expect(coerced.queries[0]).toBe('"M3-HRS-GN-001"');
+    expect(coerced.queries).toEqual(queries);
     expect(coerced.mode).toBe("keyword");
+  });
+
+  it("drops query strings beyond the per-call cap", () => {
+    const coerced = coerceSearchDocumentsInput({
+      queries: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+    }) as { queries: string[] };
+    expect(coerced.queries).toEqual(["a", "b", "c", "d", "e", "f", "g", "h"]);
+    expect(coerced.queries).toHaveLength(SEARCH_DOCUMENTS_MAX_QUERIES);
   });
 
   it("clamps a non-integer limit down into the allowed range", () => {
@@ -136,9 +144,28 @@ describe("collectSearchQueries", () => {
     expect(
       collectSearchQueries({
         query: "equipment",
-        queries: ["UUT", "equipment", "fixtures", "serials", "software"],
+        queries: [
+          "UUT",
+          "equipment",
+          "fixtures",
+          "serials",
+          "software",
+          "protocol",
+          "calibration",
+          "deviation",
+          "overflow",
+        ],
       })
-    ).toEqual(["UUT", "equipment", "fixtures", "serials"]);
+    ).toEqual([
+      "UUT",
+      "equipment",
+      "fixtures",
+      "serials",
+      "software",
+      "protocol",
+      "calibration",
+      "deviation",
+    ]);
   });
 
   it("accumulates excludePages across grep rounds", () => {
@@ -188,7 +215,7 @@ describe("buildChatTools search_documents scoping", () => {
       mode: "keyword",
     }) as { limit: number; queries: string[] };
     expect(oversized.limit).toBe(16);
-    expect(oversized.queries).toHaveLength(4);
+    expect(oversized.queries).toHaveLength(8);
     expect(
       accepts(tools, "search_documents", {
         query: "UUT",
