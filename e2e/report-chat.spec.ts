@@ -19,6 +19,7 @@ import {
   setChatWorkProductTarget,
   setReportChrome,
 } from "./helpers/workspace";
+import { installFakeMicrophone, STUB_VOICE_FINAL } from "./helpers/voice";
 
 test.describe.configure({ mode: "serial" });
 
@@ -59,6 +60,7 @@ test.describe("report chat", () => {
   let reportId: string | null = null;
 
   test.beforeEach(async ({ page }) => {
+    await installFakeMicrophone(page);
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAsEngineer(page);
     const created = await createReport(page);
@@ -441,5 +443,84 @@ test.describe("report chat", () => {
     await expect(chatUserMessage(page, "analytics history ping")).toBeVisible();
     await expect(chatMessageTargetTag(page, "report")).toHaveCount(2);
     await expect(chatMessageTargetTag(page, "analytics")).toHaveCount(2);
+  });
+
+  test("fills the composer with stub dictation after stop", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(
+      browserName !== "chromium",
+      "AudioWorklet dictation is covered on Chromium."
+    );
+    await page.context().grantPermissions(["microphone"], {
+      origin: "http://127.0.0.1:3000",
+    });
+    await openReportAssistant(page);
+    const sidebar = reportSidebar(page);
+    await setReportChrome(page, "document");
+    await setChatWorkProductTarget(page, "report");
+    if (!reportId) throw new Error("expected a report id");
+    await expect
+      .poll(async () => {
+        const warmup = await page.request.get(
+          `/api/reports/${reportId}/chat/transcribe`
+        );
+        return warmup.status();
+      })
+      .toBe(204);
+    const reportMic = sidebar.getByTestId("chat-voice-input");
+    await expect(reportMic).toBeVisible({ timeout: 15_000 });
+    const reportComposer = sidebar.getByTestId("chat-input");
+    await expect(reportComposer).toBeEnabled({ timeout: 15_000 });
+    await reportComposer.fill("Prefix ");
+    await reportMic.click();
+    await expect(reportMic).toHaveAttribute("aria-pressed", "true", {
+      timeout: 15_000,
+    });
+    await expect(sidebar.getByTestId("chat-voice-hint")).toContainText(
+      /transcript appears when you stop/i
+    );
+    await page.waitForTimeout(500);
+    const send = sidebar.getByRole("button", { name: /^send message$/i });
+    await expect(send).toBeDisabled();
+    await reportComposer.press("Enter");
+    await expect(chatUserMessage(page, STUB_VOICE_FINAL)).toHaveCount(0);
+    await expect(reportComposer).toHaveValue(/^Prefix\s*$/);
+    await reportMic.click();
+    await expect(reportComposer).toHaveValue(
+      new RegExp(`Prefix\\s+${STUB_VOICE_FINAL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+      { timeout: 15_000 }
+    );
+    await expect(reportComposer).not.toHaveAttribute("readonly");
+    await expect(send).toBeEnabled();
+
+    await setReportChrome(page, "agent");
+    await openReportAssistant(page);
+    await expect(sidebar.getByTestId("chat-voice-input")).toBeVisible();
+
+    await setChatWorkProductTarget(page, "analytics");
+    const analyticsComposer = sidebar.getByTestId("analytics-chat-input");
+    await expect(analyticsComposer).toBeEnabled({ timeout: 15_000 });
+    await expect(sidebar.getByTestId("analytics-chat-voice-input")).toBeVisible();
+    await analyticsComposer.fill("");
+    const analyticsMic = sidebar.getByTestId("analytics-chat-voice-input");
+    await analyticsMic.click();
+    await expect(analyticsMic).toHaveAttribute("aria-pressed", "true", {
+      timeout: 15_000,
+    });
+    await expect(sidebar.getByTestId("analytics-chat-voice-hint")).toContainText(
+      /transcript appears when you stop/i
+    );
+    await page.waitForTimeout(500);
+    const analyticsSend = sidebar.getByRole("button", { name: /^send message$/i });
+    await expect(analyticsSend).toBeDisabled();
+    await expect(analyticsComposer).toHaveValue("");
+    await analyticsComposer.press("Enter");
+    await expect(chatUserMessage(page, STUB_VOICE_FINAL)).toHaveCount(0);
+    await analyticsMic.click();
+    await expect(analyticsComposer).toHaveValue(STUB_VOICE_FINAL, {
+      timeout: 15_000,
+    });
   });
 });

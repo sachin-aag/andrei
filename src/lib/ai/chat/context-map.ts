@@ -5,11 +5,13 @@ import {
   chatTargetFields,
   countSectionInlineImages,
   fieldFillState,
+  listFieldTables,
   primaryFieldForSection,
   sectionFieldPlainText,
   sectionFillState,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
+import { formatLiveHeaders } from "@/lib/ai/chat/table-schema";
 import {
   quotePromptMetadata,
   sanitizePromptMetadata,
@@ -119,6 +121,7 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
   const lines: string[] = [
     `Report: ${documentNoun} ${report.documentNo || "(unset)"} · date ${dateStr} · status ${report.status}`,
     "Sections (empty = draft after searching attachments; filled/partial = already drafted — read_section first):",
+    "Live table N headers are this report's schema — call read_section and copy fields[].tables[].headers before edit_table or draft_field. Do not assume another pack's columns.",
   ];
 
   for (const section of chatEditableSections(documentType)) {
@@ -150,6 +153,15 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
       } else {
         lines.push(
           `    ${field.targetField}:${fieldState} "${summarize(fieldText)}"`
+        );
+      }
+      for (const table of listFieldTables(content, section, field.targetField)) {
+        const headerLine = sanitizePromptMetadata(
+          formatLiveHeaders(table.headers),
+          400
+        );
+        lines.push(
+          `    table ${table.tableIndex} headers: ${headerLine || "(empty)"} (${table.dataRowCount} data row${table.dataRowCount === 1 ? "" : "s"})`
         );
       }
     }

@@ -34,6 +34,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ChatVoiceButton } from "@/components/report/chat-voice-button";
+import { useVoiceDictation } from "@/hooks/use-voice-dictation";
 import { ChatMarkdown } from "@/components/report/chat-markdown";
 import { ChatMessageTargetTag } from "@/components/report/chat-message-target-tag";
 import {
@@ -772,6 +774,15 @@ export function ChatPanel({
     silentMs,
   } = runtime;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
+  const voice = useVoiceDictation({
+    reportId: report.id,
+    getPrefix: () => input,
+    onComposerValue: setInput,
+    disabled: busy || initializing || attaching || !hostReady,
+  });
+  const voiceLock = voice.locked;
+  const voiceLockRef = useRef(voiceLock);
+  voiceLockRef.current = voiceLock;
   const watchdog = chatWatchdogPhase({
     busy: streamBusy,
     elapsedMs,
@@ -1397,7 +1408,13 @@ export function ChatPanel({
       const attached = images ?? pendingImages;
       const trimmed = text.trim();
       const files = attached.map((image) => image.part);
-      if ((!trimmed && files.length === 0) || busy || initializing || attaching) {
+      if (
+        (!trimmed && files.length === 0) ||
+        busy ||
+        initializing ||
+        attaching ||
+        voiceLockRef.current
+      ) {
         return;
       }
       const agentDonePrefs = readAgentDonePrefs(currentUserId);
@@ -1651,7 +1668,8 @@ export function ChatPanel({
                 <button
                   key={p}
                   type="button"
-                  disabled={busy || initializing || !hostReady}
+                  disabled={busy || initializing || voiceLock || !hostReady}
+                  title={voiceLock ? "Stop voice input to send" : undefined}
                   onClick={() => void send(p, [])}
                   className="w-full rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 text-left text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] disabled:opacity-50"
                 >
@@ -1670,7 +1688,8 @@ export function ChatPanel({
               askUserActive={
                 visibleStartIndex + i === messages.length - 1 &&
                 !busy &&
-                !initializing
+                !initializing &&
+                !voiceLock
               }
               onAnswerQuestions={(answerText) => void send(answerText, [])}
               streaming={
@@ -1703,6 +1722,7 @@ export function ChatPanel({
         className="border-t border-[var(--border)] p-3"
         onSubmit={(e) => {
           e.preventDefault();
+          if (voiceLockRef.current) return;
           void send(input);
         }}
       >
@@ -1782,7 +1802,7 @@ export function ChatPanel({
             <textarea
               ref={textareaRef}
               value={input}
-              data-testid={targetingAnalytics ? "analytics-chat-input" : undefined}
+              data-testid={targetingAnalytics ? "analytics-chat-input" : "chat-input"}
               role="combobox"
               aria-expanded={mentionMenuOpen}
               aria-controls={mentionMenuOpen ? "chat-mention-menu" : undefined}
@@ -1792,11 +1812,16 @@ export function ChatPanel({
                   : undefined
               }
               onChange={(e) => {
+                if (voiceLock) return;
                 const value = e.target.value;
                 setInput(value);
                 updateMentionQuery(value, e.target.selectionStart ?? value.length);
               }}
               onPaste={(event) => {
+                if (voiceLock) {
+                  event.preventDefault();
+                  return;
+                }
                 const items = Array.from(event.clipboardData?.items ?? []);
                 const imageFiles = items
                   .filter(
@@ -1809,6 +1834,10 @@ export function ChatPanel({
                 void addImageFiles(imageFiles);
               }}
               onKeyDown={(e) => {
+                if (voiceLock) {
+                  e.preventDefault();
+                  return;
+                }
                 if (mentionMenuOpen) {
                   if (e.key === "ArrowDown") {
                     e.preventDefault();
@@ -1842,6 +1871,7 @@ export function ChatPanel({
               }}
               rows={3}
               disabled={initializing}
+              readOnly={voiceLock}
               placeholder={composerPlaceholder({
                 targetingAnalytics,
                 mode,
@@ -1879,7 +1909,7 @@ export function ChatPanel({
             <div className="flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                disabled={busy || initializing || attaching || !hostReady}
+                disabled={busy || initializing || attaching || voiceLock || !hostReady}
                 aria-label="Attach image"
                 title="Attach image"
                 data-testid={targetingAnalytics ? "analytics-chat-attach-image" : undefined}
@@ -1892,6 +1922,15 @@ export function ChatPanel({
                   <ImagePlus className="size-3.5" aria-hidden="true" />
                 )}
               </button>
+              <ChatVoiceButton
+                recording={voice.recording}
+                requesting={voice.status === "requesting"}
+                transcribing={voice.status === "stopping"}
+                level={voice.level}
+                disabled={busy || initializing || attaching || !hostReady}
+                targetingAnalytics={targetingAnalytics}
+                onToggle={voice.toggle}
+              />
               {busy ? (
                 <button
                   type="button"
@@ -1908,11 +1947,13 @@ export function ChatPanel({
                   disabled={
                     initializing ||
                     attaching ||
+                    voiceLock ||
                     !hostReady ||
                     (!input.trim() && pendingImages.length === 0)
                   }
                   aria-label="Send message"
-                  className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  title={voiceLock ? "Stop voice input to send" : "Send message"}
+                  className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
                 >
                   <ArrowUp className="size-3.5" strokeWidth={2.5} />
                 </button>

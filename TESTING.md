@@ -201,6 +201,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, collapse/expand keeps the thread, reload still shows it; the turn is tagged **Report** |
 | tags Report and Analytics turns in the same thread | Send on Report, switch the composer to Analytics, send again — each pair keeps its tag after reload |
 | starting a new chat while a turn is in flight leaves the composer usable | Hold the first `/chat` POST (do not forward it), click +, type and send in the empty thread; open-chat tabs show the parked turn as still working. Abort the held POST on teardown so `next start` is not left waiting on a half-open body. |
+| fills the composer with stub dictation after stop | Fake mic + `ALLOW_TEST_STUB_SPEECH`; transcribe `GET` 204; while recording the composer stays at the typed prefix, the wave + “Transcript appears when you stop” hint show, and Send stays disabled; after stop a unary PCM `POST` returns the canned phrase (no SSE session) and fills `chat-input`; Agent chrome still shows the mic; Analytics counterpart uses `analytics-chat-voice-input`. Chromium only (AudioWorklet). |
 
 </details>
 

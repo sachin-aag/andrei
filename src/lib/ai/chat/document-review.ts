@@ -87,6 +87,7 @@ export type DocumentReviewBatch = {
 export type ExtractReviewBatchFn = (input: {
   objective: string;
   pages: ReviewPageSource[];
+  abortSignal?: AbortSignal;
 }) => Promise<DocumentReviewFinding[]>;
 
 export type DocumentReviewProgressSnapshot = {
@@ -212,7 +213,7 @@ export class DocumentReviewSession {
     };
   }
 
-  async continue(): Promise<{
+  async continue(options?: { abortSignal?: AbortSignal }): Promise<{
     status: "in_progress" | "ready_to_finish" | "not_started";
     reviewedPages: number;
     totalPages: number;
@@ -237,7 +238,7 @@ export class DocumentReviewSession {
       return this.progressPayload("ready_to_finish", "finish_document_review");
     }
 
-    await this.drainQueue();
+    await this.drainQueue(options?.abortSignal);
 
     if (this.queue.length === 0) {
       this.phaseState = "ready_to_finish";
@@ -247,10 +248,11 @@ export class DocumentReviewSession {
     return this.progressPayload("in_progress", "continue_document_review");
   }
 
-  private async drainQueue() {
+  private async drainQueue(abortSignal?: AbortSignal) {
     let started = 0;
     const worker = async () => {
       while (started < REVIEW_DRAIN_MAX_EXTRACTS) {
+        if (abortSignal?.aborted) return;
         const batch = this.queue.shift();
         if (!batch) return;
         started += 1;
@@ -258,10 +260,19 @@ export class DocumentReviewSession {
           const extracted = await this.extractBatch({
             objective: this.objective,
             pages: batch.pages,
+            abortSignal,
           });
+          if (abortSignal?.aborted) {
+            this.queue.unshift(batch);
+            return;
+          }
           this.absorbFindings(extracted);
           this.markReviewed(batch.pages);
         } catch {
+          if (abortSignal?.aborted) {
+            this.queue.unshift(batch);
+            return;
+          }
           this.retryOrFailBatch(batch);
         }
       }
@@ -487,14 +498,19 @@ export function extractReviewFindingsFromPages(
 export async function extractReviewBatch(input: {
   objective: string;
   pages: ReviewPageSource[];
+  abortSignal?: AbortSignal;
 }): Promise<DocumentReviewFinding[]> {
   const deterministic = extractReviewFindingsFromPages(input.pages);
   if (isTestStubChat() || input.pages.length === 0) return deterministic;
+  if (input.abortSignal?.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
 
   try {
     const llmFindings = await extractReviewBatchWithLlm(input);
     return mergeFindings(deterministic, llmFindings);
-  } catch {
+  } catch (error) {
+    if (input.abortSignal?.aborted) throw error;
     return deterministic;
   }
 }
@@ -590,6 +606,7 @@ function splitBatch(batch: DocumentReviewBatch): DocumentReviewBatch[] {
 async function extractReviewBatchWithLlm(input: {
   objective: string;
   pages: ReviewPageSource[];
+  abortSignal?: AbortSignal;
 }): Promise<DocumentReviewFinding[]> {
   const pageBlock = input.pages
     .map((page) => {
@@ -602,6 +619,7 @@ async function extractReviewBatchWithLlm(input: {
   const result = await generateText({
     model: resolveChatExtractLanguageModel(),
     output: Output.object({ schema: llmFindingSchema }),
+    abortSignal: input.abortSignal,
     providerOptions: buildGeminiThoughtSummaryProviderOptions({
       thinkingLevel: "minimal",
       includeThoughts: false,

@@ -212,6 +212,28 @@ describe("DocumentReviewSession", () => {
     expect(maxInflight).toBe(REVIEW_EXTRACT_CONCURRENCY);
   });
 
+  it("stops draining when the turn abort fires and leaves remaining batches", async () => {
+    const abort = new AbortController();
+    let calls = 0;
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => {
+        calls += 1;
+        if (calls === 2) abort.abort();
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        return extractReviewFindingsFromPages(pages);
+      },
+    });
+    const manyPages = Array.from({ length: 24 }, (_, index) =>
+      page(index + 1, `${"x".repeat(7_000)} SW-SST-${index + 1} Pass`)
+    );
+    session.start({ objective: "ids", pages: manyPages });
+    const first = await session.continue({ abortSignal: abort.signal });
+    expect(first.status).toBe("in_progress");
+    expect(first.remainingBatches).toBeGreaterThan(0);
+    expect(first.reviewedPages).toBeLessThan(24);
+    expect(calls).toBeLessThan(24);
+  });
+
   it("recommends the 14-row Requirements Verified inventory, not protocol mentions", async () => {
     const session = new DocumentReviewSession({
       extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
