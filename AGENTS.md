@@ -201,6 +201,7 @@ process serving the request is missing one of them.
 |---------|--------|---------------------------|
 | AI Check / suggestions | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | `ALLOW_TEST_SKIP_EVALUATION`, `ALLOW_TEST_SKIP_SUGGESTIONS` |
 | Report chat | Same resolver; Vertex `global` if `GOOGLE_VERTEX_PROJECT` is set | `ALLOW_TEST_STUB_CHAT` |
+| Composer voice dictation | Same Gemini resolver as chat (Vertex WIF when `GOOGLE_VERTEX_PROJECT` is set). Native-script transcripts; assistant replies in English. Not Cloud Speech-to-Text | `ALLOW_TEST_STUB_SPEECH` |
 | PDF/DOCX ingest + embeddings | **Vertex only** (`GOOGLE_VERTEX_PROJECT` + WIF or ADC). Gateway key is not enough | `ALLOW_TEST_STUB_DOCUMENT_INGEST` |
 
 CRUD, editor, review, and DOCX export work without AI keys.
@@ -224,6 +225,13 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
   change must land on both surfaces and both chromes (Hard rules spectrum).
   Empty-state Document chips are `chat.examplePrompts` on the document type
   (not DMAIC-hardcoded). Analytics chips stay worksheet/plot copy.
+  Voice dictation is the shared mic (right of the image icon): click to start,
+  click to stop. PCM is buffered while recording (bigger wave + “Transcript
+  appears when you stop”); one Vertex Gemini transcribe (Flash-Lite) runs after
+  stop and fills the composer. No live interim text, no SSE. MJ transcribes English/Hindi/Marathi
+  in native script (Devanagari preferred); other packs are English. The LLM
+  still replies in English. Stub: `ALLOW_TEST_STUB_SPEECH`
+  (`e2e/report-chat.spec.ts`).
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 

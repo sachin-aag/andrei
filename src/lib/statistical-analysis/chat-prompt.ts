@@ -21,7 +21,11 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v28";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v29-voice-english";
+
+const LANGUAGE_RULES = `## Language
+The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
+Reply only in English. Worksheet names, column headers you write, questions, and user-visible tool arguments must be English. Quoted source text and proper names may stay in the original language.`;
 
 const USER_INTENT_RULES = `## User intent (required)
 Follow the latest user message. Agent mode means you MAY fill the worksheet or run a plot when they asked — not because the sheet is empty or files are attached.
@@ -212,6 +216,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
   const mentionBlock = input.mentionBlock?.trim();
   return [
     "You are Andrei's Statistical Analysis assistant for this report.",
+    LANGUAGE_RULES,
     editLine,
     USER_INTENT_RULES,
     modeRules(input.mode, input.canEdit),

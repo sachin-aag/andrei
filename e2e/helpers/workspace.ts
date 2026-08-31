@@ -181,6 +181,9 @@ export async function openReportEditor(
   await waitForReportEditor(page);
 }
 
+/** Matches `PREVIEW_ABS_MIN_PX` in workspace-layout — expanded preview is never this narrow. */
+const EXPANDED_WORK_PRODUCT_MIN_PX = 320;
+
 export async function expandWorkProductPanel(page: Page): Promise<void> {
   const panel = page.getByTestId("report-work-product");
   const expand = panel.getByRole("button", { name: /expand document panel/i });
@@ -190,10 +193,13 @@ export async function expandWorkProductPanel(page: Page): Promise<void> {
   await expect(
     panel.getByRole("button", { name: /collapse document panel/i })
   ).toBeVisible();
-  // report-workspace animates width for 200ms when the Agent rail expands.
-  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBeGreaterThan(
-    52
-  );
+  await expect(page.getByTestId("work-product-tab-strip")).toBeVisible();
+  // Width animates 200ms from COLLAPSED_RAIL_PX (48). Waiting only for >52
+  // succeeds on the first transition frame, so later geometry checks flake on
+  // WebKit (collapse control vs Report tab).
+  await expect
+    .poll(async () => (await panel.boundingBox())?.width ?? 0)
+    .toBeGreaterThanOrEqual(EXPANDED_WORK_PRODUCT_MIN_PX);
 }
 
 /** Resize handle is absolutely positioned on the work-product column's left edge. */

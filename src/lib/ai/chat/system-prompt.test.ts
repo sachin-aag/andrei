@@ -18,7 +18,14 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v71-live-table-schema");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v72-live-table-voice-english");
+  });
+
+  it("understands native-script dictation and replies in English", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("## Language");
+    expect(prompt).toContain("Devanagari");
+    expect(prompt).toContain("Reply only in English");
   });
 
   it("requires following the latest user message and forbids drafting on a greeting", () => {

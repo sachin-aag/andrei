@@ -18,7 +18,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v28");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v29-voice-english");
   });
 
   it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
@@ -77,6 +77,9 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("Column specs: none");
     expect(prompt).not.toContain("Specs tab");
     expect(prompt).toContain("Quick vs Deep");
+    expect(prompt).toContain("## Language");
+    expect(prompt).toContain("Devanagari");
+    expect(prompt).toContain("Reply only in English");
     expect(prompt).not.toContain("There is no Ask/Agent toggle here");
     expect(prompt).toContain("## User intent (required)");
     expect(prompt).toContain("An empty worksheet is not a request to fill it");

@@ -18,7 +18,7 @@ import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v71-live-table-schema";
+export const CHAT_PROMPT_VERSION = "chat-v72-live-table-voice-english";
 
 export type ChatMode = "plan" | "agent";
 
@@ -77,6 +77,10 @@ The engineer tagged **${label}** for this conversation. Focus Ask questions and 
 - Ask mode: answer questions about ${label}; do not address other sections unless they tag a different @ section.
 - Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}`;
 }
+
+const LANGUAGE_RULES = `## Language
+The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
+Reply only in English. Drafts, proposed wording, questions, and user-visible tool arguments (insertText, field values) must be English. Quoted source text and proper names may stay in the original language.`;
 
 const USER_INTENT_RULES = `## User intent (required)
 Follow the latest user message. Agent mode means you MAY edit when they asked — not that you should draft because sections are empty, attachments exist, or a section recipe is in this prompt.
@@ -382,6 +386,8 @@ export function buildChatSystemPrompt(opts: {
   return `${chat.persona}
 
 ${USER_INTENT_RULES}
+
+${LANGUAGE_RULES}
 
 ${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${draftedBlock}${mentions}
 

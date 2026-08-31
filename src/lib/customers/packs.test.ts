@@ -40,6 +40,10 @@ describe("customer packs (demo)", () => {
     expect(isStatisticalAnalysisEnabled(DEMO_PACK)).toBe(true);
   });
 
+  it("dictates English only on demo", () => {
+    expect(DEMO_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
+  });
+
   it("lists investigation, design verification, and document types on demo", () => {
     expect(listDocumentTypes().map((d) => d.key)).toEqual([
       "investigation_report",
