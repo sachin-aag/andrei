@@ -1,11 +1,21 @@
 import { v2 } from "@google-cloud/speech";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
+import { isTestStubSpeech } from "@/lib/test/ai-bypass";
 import {
+  STUB_VOICE_FINAL,
+  VOICE_MIN_WINDOW_BYTES,
+  VOICE_RECOGNIZE_TIMEOUT_MS,
   VOICE_SAMPLE_RATE_HZ,
   VOICE_STT_LOCATION,
   VOICE_STT_MODEL,
 } from "@/lib/voice/constants";
-import type { VoiceTranscriptEvent } from "@/lib/voice/events";
+
+export type VoiceTranscriptEvent = {
+  type: "transcript";
+  text: string;
+  isFinal: boolean;
+  languageCode?: string;
+};
 
 type SpeechClient = InstanceType<typeof v2.SpeechClient>;
 
@@ -13,6 +23,13 @@ export type SpeechStream = {
   writeAudio: (chunk: Uint8Array) => void;
   end: () => void;
 };
+
+export type VoiceRecognizeResult = {
+  text: string;
+  languageCode?: string;
+};
+
+let cachedSpeechClient: SpeechClient | null = null;
 
 function speechProjectId(): string {
   const project = process.env.GOOGLE_VERTEX_PROJECT?.trim();
@@ -29,14 +46,16 @@ export function speechRecognizerName(projectId: string = speechProjectId()): str
 }
 
 export function createSpeechClient(): SpeechClient {
+  if (cachedSpeechClient) return cachedSpeechClient;
   const wif = getWifConfig();
-  return new v2.SpeechClient({
+  cachedSpeechClient = new v2.SpeechClient({
     apiEndpoint: "speech.googleapis.com",
     projectId: speechProjectId(),
     ...(wif
       ? { authClient: createWifAuthClient(wif) as never }
       : {}),
   });
+  return cachedSpeechClient;
 }
 
 /**
@@ -132,4 +151,62 @@ export function openSpeechRecognizeStream(opts: {
       stream.end();
     },
   };
+}
+
+/**
+ * One Chirp 3 turn in this request. Vercel Fluid does not pin POSTs to the
+ * isolate that handled `start`, so a long-lived in-memory stream 404s.
+ */
+export async function recognizePcmWindow(opts: {
+  pcm: Uint8Array;
+  languageCodes: readonly string[];
+}): Promise<VoiceRecognizeResult> {
+  if (isTestStubSpeech()) {
+    return { text: STUB_VOICE_FINAL, languageCode: "en-US" };
+  }
+  if (opts.pcm.byteLength < VOICE_MIN_WINDOW_BYTES) {
+    return { text: "" };
+  }
+
+  return new Promise((resolve, reject) => {
+    const finals: string[] = [];
+    let interim = "";
+    let languageCode: string | undefined;
+    let settled = false;
+    let stream: SpeechStream | null = null;
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        stream?.end();
+      } catch {
+        /* already ended */
+      }
+      if (error) {
+        reject(error);
+        return;
+      }
+      const text = (finals.join(" ").trim() || interim).trim();
+      resolve({ text, languageCode });
+    };
+
+    const timer = setTimeout(() => {
+      finish(new Error("Voice input timed out."));
+    }, VOICE_RECOGNIZE_TIMEOUT_MS);
+
+    stream = openSpeechRecognizeStream({
+      languageCodes: opts.languageCodes,
+      onTranscript: (event) => {
+        languageCode = event.languageCode ?? languageCode;
+        if (event.isFinal) finals.push(event.text);
+        else interim = event.text;
+      },
+      onError: (error) => finish(error),
+      onEnd: () => finish(),
+    });
+    stream.writeAudio(opts.pcm);
+    stream.end();
+  });
 }

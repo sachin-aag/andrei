@@ -1,8 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/test/ai-bypass", () => ({
+  isTestStubSpeech: vi.fn(() => true),
+}));
+
+import { isTestStubSpeech } from "@/lib/test/ai-bypass";
 import { VOICE_INPUT_MJ_CODES } from "@/lib/customers/packs";
+import { STUB_VOICE_FINAL } from "./constants";
 import {
   buildVoiceStreamingConfig,
   parseSpeechResults,
+  recognizePcmWindow,
   speechRecognizerName,
 } from "./speech-stream";
 
@@ -22,6 +30,31 @@ describe("buildVoiceStreamingConfig", () => {
     expect(config.streamingFeatures.enableVoiceActivityEvents).toBe(false);
     expect(config.streamingFeatures.interimResults).toBe(true);
     expect(JSON.stringify(config)).not.toContain("translation");
+  });
+});
+
+describe("recognizePcmWindow", () => {
+  beforeEach(() => {
+    vi.mocked(isTestStubSpeech).mockReturnValue(true);
+  });
+
+  it("returns the canned stub transcript without opening Chirp", async () => {
+    await expect(
+      recognizePcmWindow({
+        pcm: new Uint8Array(4),
+        languageCodes: ["en-US"],
+      })
+    ).resolves.toEqual({ text: STUB_VOICE_FINAL, languageCode: "en-US" });
+  });
+
+  it("skips Chirp for a short window when not stubbed", async () => {
+    vi.mocked(isTestStubSpeech).mockReturnValue(false);
+    await expect(
+      recognizePcmWindow({
+        pcm: new Uint8Array(10),
+        languageCodes: ["en-US"],
+      })
+    ).resolves.toEqual({ text: "" });
   });
 });
 

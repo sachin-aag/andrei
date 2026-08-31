@@ -1,6 +1,6 @@
 # Speech-to-Text v2 (Terraform)
 
-Enables Cloud Speech-to-Text for composer voice dictation (`POST /api/reports/[id]/chat/transcribe`):
+Enables Cloud Speech-to-Text for composer voice dictation. Each `POST /api/reports/[id]/chat/transcribe` with LINEAR16 PCM is one Chirp 3 recognize in that request (Vercel Fluid does not pin POSTs to one isolate):
 
 - Enables `speech.googleapis.com`
 - Grants the Vercel WIF runtime SA `roles/speech.client`

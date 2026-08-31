@@ -11,8 +11,8 @@ describe("voiceUserErrorMessage", () => {
   });
 
   it("keeps a short product message", () => {
-    expect(voiceUserErrorMessage("Voice session expired. Try again.")).toBe(
-      "Voice session expired. Try again."
+    expect(voiceUserErrorMessage("Could not start voice input.")).toBe(
+      "Could not start voice input."
     );
   });
 });

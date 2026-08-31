@@ -3,8 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { voiceInputLanguageCodes } from "@/lib/customers";
-import { VOICE_MAX_DURATION_MS } from "@/lib/voice/constants";
-import { parseVoiceSseBlock } from "@/lib/voice/events";
+import {
+  VOICE_FLUSH_MS,
+  VOICE_MAX_DURATION_MS,
+  VOICE_MAX_WINDOW_BYTES,
+  VOICE_MIN_WINDOW_BYTES,
+  VOICE_PCM_MIME,
+} from "@/lib/voice/constants";
 import {
   languageCodesForPreference,
   readStoredVoiceLanguage,
@@ -31,10 +36,24 @@ type Options = {
   onComposerValue: (text: string) => void;
 };
 
-function transcribeUrl(reportId: string, sessionId?: string): string {
-  const path = `/api/reports/${reportId}/chat/transcribe`;
-  if (!sessionId) return path;
-  return `${path}?session=${encodeURIComponent(sessionId)}`;
+function transcribeUrl(reportId: string): string {
+  return `/api/reports/${reportId}/chat/transcribe`;
+}
+
+function concatBuffers(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+function currentLanguageCodes(): readonly string[] {
+  const allowed = voiceInputLanguageCodes();
+  return languageCodesForPreference(readStoredVoiceLanguage(allowed), allowed);
 }
 
 export function useVoiceDictation({
@@ -54,18 +73,25 @@ export function useVoiceDictation({
   onComposerValueRef.current = onComposerValue;
 
   const transcriptRef = useRef<VoiceTranscriptState | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const workletRef = useRef<AudioWorkletNode | null>(null);
   const gainRef = useRef<GainNode | null>(null);
-  const sseAbortRef = useRef<AbortController | null>(null);
-  const sseDoneRef = useRef<Promise<void>>(Promise.resolve());
-  const audioQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const maxDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pcmChunksRef = useRef<Uint8Array[]>([]);
+  const pcmBytesRef = useRef(0);
+  const liveRef = useRef(false);
+  const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const flushChainRef = useRef(Promise.resolve());
+  const maxDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   const tearDownAudio = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearInterval(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
     workletRef.current?.port.close();
     workletRef.current?.disconnect();
     workletRef.current = null;
@@ -82,158 +108,132 @@ export function useVoiceDictation({
 
   const stopRef = useRef<() => Promise<void>>(async () => {});
 
-  const applyEvent = useCallback((raw: string) => {
-    const event = parseVoiceSseBlock(raw);
-    if (!event) return;
-    if (event.type === "error") {
-      toast.error(voiceUserErrorMessage(event.message));
-      void stopRef.current();
-      return;
-    }
-    if (event.type === "transcript") {
-      const current = transcriptRef.current;
-      if (!current) return;
-      transcriptRef.current = applyVoiceTranscript(
-        current,
-        event.text,
-        event.isFinal
-      );
-      onComposerValueRef.current(voiceComposerValue(transcriptRef.current));
-    }
+  const publish = useCallback((next: VoiceTranscriptState) => {
+    transcriptRef.current = next;
+    onComposerValueRef.current(voiceComposerValue(next));
   }, []);
 
-  const listenSse = useCallback(
-    async (sessionId: string, signal: AbortSignal) => {
-      const response = await fetch(transcribeUrl(reportId, sessionId), {
-        method: "GET",
-        credentials: "include",
-        signal,
-        cache: "no-store",
-      });
-      if (!response.ok || !response.body) {
-        throw new Error(
-          response.status === 404
-            ? "Voice session expired. Try again."
-            : "Could not start voice input."
-        );
-      }
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (!signal.aborted) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          applyEvent(part);
-        }
-      }
-      if (buffer.trim()) applyEvent(buffer);
+  const commitInterimLocally = useCallback(() => {
+    const current = transcriptRef.current;
+    if (!current?.interim) return;
+    publish(applyVoiceTranscript(current, current.interim, true));
+  }, [publish]);
+
+  const fail = useCallback(
+    (error: unknown) => {
+      toast.error(voiceUserErrorMessage(error));
+      void stopRef.current();
     },
-    [applyEvent, reportId]
+    []
   );
 
-  const enqueueAudio = useCallback(
-    (pcm: ArrayBuffer) => {
-      const sessionId = sessionIdRef.current;
-      if (!sessionId) return;
-      audioQueueRef.current = audioQueueRef.current
-        .then(async () => {
-          if (!sessionIdRef.current) return;
-          await fetch(transcribeUrl(reportId), {
-            method: "POST",
-            credentials: "include",
-            headers: {
-              "Content-Type": "application/octet-stream",
-              "x-voice-session": sessionId,
-            },
-            body: pcm,
-          });
-        })
-        .catch(() => {
-          /* a dropped chunk is better than stalling the mic */
+  const flushWindow = useCallback(
+    async (opts: { force: boolean }) => {
+      if (pcmBytesRef.current === 0) {
+        if (opts.force) commitInterimLocally();
+        return;
+      }
+      if (!opts.force && pcmBytesRef.current < VOICE_MIN_WINDOW_BYTES) return;
+
+      const pcm = concatBuffers(pcmChunksRef.current);
+      if (pcm.byteLength === 0) {
+        if (opts.force) commitInterimLocally();
+        return;
+      }
+
+      try {
+        const res = await fetch(transcribeUrl(reportId), {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": VOICE_PCM_MIME,
+            "x-voice-languages": currentLanguageCodes().join(","),
+          },
+          body: pcm,
         });
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          fail(
+            payload?.error ?? `Voice transcription failed (${res.status}).`
+          );
+          return;
+        }
+        const payload = (await res.json()) as { text?: string };
+        const text = payload.text?.trim() ?? "";
+        const current = transcriptRef.current;
+        if (!current) return;
+        if (!text) {
+          if (opts.force) commitInterimLocally();
+          return;
+        }
+        const commit =
+          opts.force || pcm.byteLength >= VOICE_MAX_WINDOW_BYTES;
+        publish(applyVoiceTranscript(current, text, commit));
+        if (commit) {
+          pcmChunksRef.current = [];
+          pcmBytesRef.current = 0;
+        }
+      } catch (error) {
+        fail(error);
+      }
     },
-    [reportId]
+    [commitInterimLocally, fail, publish, reportId]
+  );
+
+  const enqueueFlush = useCallback(
+    (opts: { force: boolean }) => {
+      flushChainRef.current = flushChainRef.current
+        .then(() => flushWindow(opts))
+        .catch((error) => {
+          fail(error);
+        });
+      return flushChainRef.current;
+    },
+    [fail, flushWindow]
   );
 
   const stop = useCallback(async () => {
-    if (statusRef.current === "idle" || statusRef.current === "stopping") return;
+    if (statusRef.current === "idle" || statusRef.current === "stopping") {
+      return;
+    }
     setStatus("stopping");
+    liveRef.current = false;
     if (maxDurationTimerRef.current) {
       clearTimeout(maxDurationTimerRef.current);
       maxDurationTimerRef.current = null;
     }
     tearDownAudio();
-    const sessionId = sessionIdRef.current;
-    try {
-      await audioQueueRef.current;
-    } catch {
-      /* ignore */
-    }
-    if (sessionId) {
-      try {
-        await fetch(transcribeUrl(reportId), {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "stop", sessionId }),
-        });
-      } catch {
-        /* SSE done still ends the turn */
-      }
-    }
-    try {
-      await Promise.race([
-        sseDoneRef.current,
-        new Promise((resolve) => setTimeout(resolve, 8_000)),
-      ]);
-    } catch {
-      /* listenSse already toasted */
-    }
-    sseAbortRef.current?.abort();
-    sseAbortRef.current = null;
-    sessionIdRef.current = null;
+    await enqueueFlush({ force: true });
+    pcmChunksRef.current = [];
+    pcmBytesRef.current = 0;
     transcriptRef.current = null;
     setStatus("idle");
-  }, [reportId, tearDownAudio]);
+  }, [enqueueFlush, tearDownAudio]);
   stopRef.current = stop;
 
   const start = useCallback(async () => {
     if (disabled || statusRef.current !== "idle") return;
     setStatus("requesting");
     transcriptRef.current = createVoiceTranscriptState(getPrefixRef.current());
+    pcmChunksRef.current = [];
+    pcmBytesRef.current = 0;
+    flushChainRef.current = Promise.resolve();
 
     try {
-      const allowed = voiceInputLanguageCodes();
-      const languageCodes = languageCodesForPreference(
-        readStoredVoiceLanguage(allowed),
-        allowed
-      );
-      const startResponse = await fetch(transcribeUrl(reportId), {
-        method: "POST",
+      const warmup = await fetch(transcribeUrl(reportId), {
+        method: "GET",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "start", languageCodes }),
+        cache: "no-store",
       });
-      if (!startResponse.ok) {
-        throw new Error("Could not start voice input.");
+      if (!warmup.ok) {
+        throw new Error(
+          warmup.status === 401
+            ? "Sign in to use voice input."
+            : "Could not start voice input."
+        );
       }
-      const { sessionId } = (await startResponse.json()) as { sessionId?: string };
-      if (!sessionId) {
-        throw new Error("Could not start voice input.");
-      }
-      sessionIdRef.current = sessionId;
-
-      const sseAbort = new AbortController();
-      sseAbortRef.current = sseAbort;
-      const ssePromise = listenSse(sessionId, sseAbort.signal);
-      sseDoneRef.current = ssePromise.catch((error) => {
-        if (sseAbort.signal.aborted) return;
-        throw error;
-      });
 
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -274,27 +274,29 @@ export function useVoiceDictation({
       worklet.port.onmessage = (event: MessageEvent) => {
         const data = event.data as { pcm?: ArrayBuffer; rms?: number };
         if (typeof data.rms === "number") setLevel(data.rms);
-        if (data.pcm) enqueueAudio(data.pcm);
+        if (!data.pcm || !liveRef.current) return;
+        const chunk = new Uint8Array(data.pcm);
+        pcmChunksRef.current.push(chunk);
+        pcmBytesRef.current += chunk.byteLength;
+        if (pcmBytesRef.current >= VOICE_MAX_WINDOW_BYTES) {
+          enqueueFlush({ force: true });
+        }
       };
+      liveRef.current = true;
       source.connect(worklet);
       worklet.connect(mute);
       mute.connect(audioContext.destination);
 
       setStatus("recording");
+      flushTimerRef.current = setInterval(() => {
+        if (liveRef.current) enqueueFlush({ force: false });
+      }, VOICE_FLUSH_MS);
       maxDurationTimerRef.current = setTimeout(() => {
         void stop();
       }, VOICE_MAX_DURATION_MS);
-
-      void ssePromise.catch((error) => {
-        if (sseAbort.signal.aborted) return;
-        toast.error(voiceUserErrorMessage(error));
-        void stop();
-      });
     } catch (error) {
+      liveRef.current = false;
       tearDownAudio();
-      sseAbortRef.current?.abort();
-      sseAbortRef.current = null;
-      sessionIdRef.current = null;
       transcriptRef.current = null;
       setStatus("idle");
       const name = error instanceof DOMException ? error.name : "";
@@ -304,10 +306,13 @@ export function useVoiceDictation({
       }
       toast.error(voiceUserErrorMessage(error));
     }
-  }, [disabled, enqueueAudio, listenSse, reportId, stop, tearDownAudio]);
+  }, [disabled, enqueueFlush, reportId, stop, tearDownAudio]);
 
   const toggle = useCallback(() => {
-    if (statusRef.current === "recording" || statusRef.current === "requesting") {
+    if (
+      statusRef.current === "recording" ||
+      statusRef.current === "requesting"
+    ) {
       void stop();
       return;
     }
@@ -317,7 +322,6 @@ export function useVoiceDictation({
   useEffect(() => {
     return () => {
       if (maxDurationTimerRef.current) clearTimeout(maxDurationTimerRef.current);
-      sseAbortRef.current?.abort();
       tearDownAudio();
     };
   }, [tearDownAudio]);

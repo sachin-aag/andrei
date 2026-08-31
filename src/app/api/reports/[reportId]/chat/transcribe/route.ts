@@ -2,18 +2,12 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
 import { voiceInputLanguageCodes } from "@/lib/customers";
-import { encodeVoiceSse } from "@/lib/voice/events";
 import { resolveVoiceLanguageCodes } from "@/lib/voice/languages";
-import {
-  createVoiceSession,
-  getVoiceSession,
-  stopVoiceSession,
-  subscribeVoiceSession,
-  writeVoiceAudio,
-} from "@/lib/voice/sessions";
+import { recognizePcmWindow } from "@/lib/voice/speech-stream";
+import { voiceUserErrorMessage } from "@/lib/voice/user-error";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ reportId: string }> };
@@ -30,61 +24,20 @@ async function authorize(reportId: string) {
   return { user };
 }
 
-export async function GET(request: Request, context: RouteContext) {
+function languageCodesFromRequest(request: Request): readonly string[] {
+  const raw = request.headers.get("x-voice-languages");
+  if (!raw?.trim()) return voiceInputLanguageCodes();
+  return resolveVoiceLanguageCodes(
+    raw.split(",").map((code) => code.trim()),
+    voiceInputLanguageCodes()
+  );
+}
+
+export async function GET(_request: Request, context: RouteContext) {
   const { reportId } = await context.params;
   const auth = await authorize(reportId);
   if (auth.error) return auth.error;
-
-  const sessionId = new URL(request.url).searchParams.get("session");
-  if (!sessionId) {
-    return new NextResponse(null, { status: 204 });
-  }
-
-  const session = getVoiceSession(sessionId, reportId, auth.user.id);
-  if (!session) {
-    return NextResponse.json({ error: "Session not found" }, { status: 404 });
-  }
-
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      let closed = false;
-      let unsubscribe: () => void = () => {};
-      const close = () => {
-        if (closed) return;
-        closed = true;
-        unsubscribe();
-        try {
-          controller.close();
-        } catch {
-          /* already closed */
-        }
-      };
-      const send = (event: Parameters<typeof encodeVoiceSse>[0]) => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(encodeVoiceSse(event)));
-          if (event.type === "done") close();
-        } catch {
-          close();
-        }
-      };
-      unsubscribe = subscribeVoiceSession(session, send);
-      request.signal.addEventListener("abort", close, { once: true });
-    },
-    cancel() {
-      /* client hung up — do not throw */
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return new NextResponse(null, { status: 204 });
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -93,53 +46,21 @@ export async function POST(request: Request, context: RouteContext) {
   if (auth.error) return auth.error;
 
   const contentType = request.headers.get("content-type") ?? "";
-
-  if (contentType.includes("application/octet-stream")) {
-    const sessionId = request.headers.get("x-voice-session");
-    if (!sessionId) {
-      return NextResponse.json({ error: "Missing session" }, { status: 400 });
-    }
-    const session = getVoiceSession(sessionId, reportId, auth.user.id);
-    if (!session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
-    }
-    const bytes = new Uint8Array(await request.arrayBuffer());
-    if (bytes.byteLength > 0) {
-      writeVoiceAudio(session, bytes);
-    }
-    return new NextResponse(null, { status: 204 });
-  }
-
-  let action: "start" | "stop" = "start";
-  let sessionId: string | null = null;
-  let languageCodes: readonly string[] = voiceInputLanguageCodes();
   if (contentType.includes("application/json")) {
-    try {
-      const body = (await request.json()) as {
-        action?: string;
-        sessionId?: string;
-        languageCodes?: unknown;
-      };
-      if (body.action === "stop") action = "stop";
-      if (typeof body.sessionId === "string") sessionId = body.sessionId;
-      languageCodes = resolveVoiceLanguageCodes(
-        body.languageCodes,
-        voiceInputLanguageCodes()
-      );
-    } catch {
-      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-    }
+    return NextResponse.json({ ok: true });
   }
 
-  if (action === "stop") {
-    if (!sessionId) {
-      return NextResponse.json({ error: "Missing session" }, { status: 400 });
-    }
-    const session = getVoiceSession(sessionId, reportId, auth.user.id);
-    if (session) stopVoiceSession(session);
-    return new NextResponse(null, { status: 204 });
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  try {
+    const result = await recognizePcmWindow({
+      pcm: bytes,
+      languageCodes: languageCodesFromRequest(request),
+    });
+    return NextResponse.json(result);
+  } catch (error) {
+    return NextResponse.json(
+      { error: voiceUserErrorMessage(error) },
+      { status: 502 }
+    );
   }
-
-  const session = createVoiceSession(reportId, auth.user.id, languageCodes);
-  return NextResponse.json({ sessionId: session.id });
 }

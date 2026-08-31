@@ -25,9 +25,6 @@ export function voiceUserErrorMessage(error: unknown): string {
   ) {
     return "Voice input is unavailable right now. Try again in a moment.";
   }
-  if (/session expired/i.test(raw)) {
-    return "Voice session expired. Try again.";
-  }
   if (raw.length > 140 || /\bUNKNOWN:|\bgrpc\b/i.test(raw)) {
     return "Voice input failed. Try again.";
   }

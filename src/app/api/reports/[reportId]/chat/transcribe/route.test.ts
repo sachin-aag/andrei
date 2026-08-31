@@ -13,14 +13,24 @@ vi.mock("@/lib/test/ai-bypass", () => ({
 }));
 
 vi.mock("@/lib/voice/speech-stream", () => ({
-  openSpeechRecognizeStream: vi.fn(),
+  recognizePcmWindow: vi.fn(async () => ({
+    text: "Checking the assay results from the last batch.",
+    languageCode: "en-US",
+  })),
 }));
+
+vi.mock("@/lib/customers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/customers")>();
+  return {
+    ...actual,
+    voiceInputLanguageCodes: vi.fn(() => ["en-IN", "hi-IN", "mr-IN"]),
+  };
+});
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
-import { isTestStubSpeech } from "@/lib/test/ai-bypass";
 import { STUB_VOICE_FINAL } from "@/lib/voice/constants";
-import { voiceSessions } from "@/lib/voice/sessions";
+import { recognizePcmWindow } from "@/lib/voice/speech-stream";
 import { GET, POST } from "./route";
 
 const engineer = {
@@ -44,8 +54,10 @@ function jsonRequest(url: string, body: unknown) {
 describe("/api/reports/[reportId]/chat/transcribe", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    voiceSessions.clear();
-    vi.mocked(isTestStubSpeech).mockReturnValue(true);
+    vi.mocked(recognizePcmWindow).mockResolvedValue({
+      text: STUB_VOICE_FINAL,
+      languageCode: "en-US",
+    });
   });
 
   it("POST returns 401 when unauthenticated", async () => {
@@ -83,60 +95,86 @@ describe("/api/reports/[reportId]/chat/transcribe", () => {
     expect(response.status).toBe(204);
   });
 
-  it("POST start returns a session, GET streams the canned stub transcript", async () => {
+  it("POST audio returns a transcript without a sticky session", async () => {
     vi.mocked(getCurrentUser).mockResolvedValue(engineer);
     vi.mocked(loadAccessibleReport).mockResolvedValue({
       report: { id: "report-1" },
       canEdit: true,
     } as never);
-    const started = await POST(
-      jsonRequest("http://localhost/transcribe", { action: "start" }),
-      params
-    );
-    expect(started.status).toBe(200);
-    const { sessionId } = (await started.json()) as { sessionId: string };
-    expect(sessionId).toBeTruthy();
-
-    const sse = await GET(
-      new Request(`http://localhost/transcribe?session=${sessionId}`),
-      params
-    );
-    expect(sse.status).toBe(200);
-    expect(sse.headers.get("Content-Type")).toContain("text/event-stream");
-    const body = await sse.text();
-    expect(body).toContain(STUB_VOICE_FINAL);
-    expect(body).toContain('"type":"done"');
-  });
-
-  it("POST audio and stop return 204 for a live session", async () => {
-    vi.mocked(getCurrentUser).mockResolvedValue(engineer);
-    vi.mocked(loadAccessibleReport).mockResolvedValue({
-      report: { id: "report-1" },
-      canEdit: true,
-    } as never);
-    const started = await POST(
-      jsonRequest("http://localhost/transcribe", { action: "start" }),
-      params
-    );
-    const { sessionId } = (await started.json()) as { sessionId: string };
-
     const audio = await POST(
       new Request("http://localhost/transcribe", {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
-          "x-voice-session": sessionId,
+          "x-voice-languages": "en-US",
         },
-        body: new Uint8Array([0, 0, 1, 0]),
+        body: new Uint8Array(8_000),
       }),
       params
     );
-    expect(audio.status).toBe(204);
+    expect(audio.status).toBe(200);
+    await expect(audio.json()).resolves.toEqual({
+      text: STUB_VOICE_FINAL,
+      languageCode: "en-US",
+    });
+    expect(recognizePcmWindow).toHaveBeenCalledOnce();
+  });
 
-    const stopped = await POST(
-      jsonRequest("http://localhost/transcribe", { action: "stop", sessionId }),
+  it("POST json is a no-op warmup", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(engineer);
+    vi.mocked(loadAccessibleReport).mockResolvedValue({
+      report: { id: "report-1" },
+      canEdit: true,
+    } as never);
+    const response = await POST(
+      jsonRequest("http://localhost/transcribe", { action: "start" }),
       params
     );
-    expect(stopped.status).toBe(204);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("POST audio returns 502 when recognition fails", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(engineer);
+    vi.mocked(loadAccessibleReport).mockResolvedValue({
+      report: { id: "report-1" },
+      canEdit: true,
+    } as never);
+    vi.mocked(recognizePcmWindow).mockRejectedValueOnce(
+      new Error("2 UNKNOWN: Getting metadata from plugin failed")
+    );
+    const response = await POST(
+      new Request("http://localhost/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Uint8Array(8_000),
+      }),
+      params
+    );
+    expect(response.status).toBe(502);
+    const payload = (await response.json()) as { error: string };
+    expect(payload.error).not.toMatch(/UNKNOWN|metadata/i);
+  });
+
+  it("forwards x-voice-languages to recognizePcmWindow", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(engineer);
+    vi.mocked(loadAccessibleReport).mockResolvedValue({
+      report: { id: "report-1" },
+      canEdit: true,
+    } as never);
+    await POST(
+      new Request("http://localhost/transcribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-voice-languages": "hi-IN",
+        },
+        body: new Uint8Array(8_000),
+      }),
+      params
+    );
+    expect(recognizePcmWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ languageCodes: ["hi-IN"] })
+    );
   });
 });
