@@ -159,7 +159,8 @@ assistant write; Agent `write_column` / `manage_worksheet` refresh the grid
 mid-turn. New extract columns claim empty C1–C8 from the left (`write_column`
 and `add_column` without `at`) instead of appending on the right. Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
-abort still apply). Loop guards live in `prepareStep`. Analytics `search_documents` is keyword-first and stops after a cited page —
+abort still apply). Do not tell the engineer they ran out of steps or to
+re-prompt. Loop guards live in `prepareStep`. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy.
 Document chat copies a saved Analytics plot with `insert_image` (`source=analytics`)
 and can propose attachment `plot_measurements` figures on every pack.

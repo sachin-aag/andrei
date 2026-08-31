@@ -91,7 +91,8 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   `""`). Do not block the turn on embeddings.
 - Report and Analytics `stopWhen` is Cancel only. Do not add a tool-step
   cap — users must never hit one. Abnormal turns abort at
-  `CHAT_SERVER_ABORT_MS`. Loop guards live in `prepareStep`
+  `CHAT_SERVER_ABORT_MS`. Do not persist a “ran out of steps / ask me to
+  continue” notice. Loop guards live in `prepareStep`
   (`tableEditLoopDirective`, `prepareDocumentReviewStep`,
   `alreadyDraftedReadStep`, Analytics search hide after a cited page or
   two empty greps).

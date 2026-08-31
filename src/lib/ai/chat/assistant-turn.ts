@@ -8,10 +8,6 @@ export const CHAT_ASSISTANT_ERROR_MESSAGE =
 export const CHAT_ASSISTANT_INTERRUPTED_MESSAGE =
   "The assistant stopped before finishing. Please try again.";
 
-/** User-facing copy when the model ends on tool-calls with no wrap-up text. */
-export const CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE =
-  "I stopped after tools and did not finish this turn. Ask me to continue if anything is still missing.";
-
 /** Vercel `maxDuration` for the chat route, in seconds. */
 export const CHAT_FUNCTION_MAX_DURATION_SEC = 300;
 
@@ -159,64 +155,12 @@ function appendInterruptedNotice(parts: UIMessage["parts"]): UIMessage["parts"] 
   return appendNoticeIfMissing(parts, CHAT_ASSISTANT_INTERRUPTED_MESSAGE);
 }
 
-function formatWrittenColumnList(names: readonly string[]): string {
-  if (names.length === 1) return names[0]!;
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
-  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
-}
-
-function stringField(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
-/** Column headers from successful `write_column` tool parts in this turn. */
-export function writtenColumnNamesFromParts(
-  parts: readonly ChatTurnPart[] | null | undefined
-): string[] {
-  if (!parts || parts.length === 0) return [];
-  const names: string[] = [];
-  const seen = new Set<string>();
-  const push = (raw: unknown) => {
-    const name = stringField(raw);
-    if (!name || seen.has(name)) return;
-    seen.add(name);
-    names.push(name);
-  };
-  for (const part of parts) {
-    if (!part || typeof part.type !== "string") continue;
-    if (part.type !== "tool-write_column") continue;
-    const record = part as ChatTurnPart & { output?: unknown };
-    const output = record.output;
-    if (!output || typeof output !== "object" || Array.isArray(output)) continue;
-    const payload = output as Record<string, unknown>;
-    if (payload.status !== "written") continue;
-    if (Array.isArray(payload.columns)) {
-      for (const column of payload.columns) {
-        if (!column || typeof column !== "object" || Array.isArray(column)) {
-          continue;
-        }
-        push((column as Record<string, unknown>).columnName);
-      }
-    }
-    push(payload.columnName);
-  }
-  return names;
-}
-
-function incompleteTurnNotice(parts: UIMessage["parts"]): string {
-  const names = writtenColumnNamesFromParts(parts);
-  if (names.length === 0) return CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE;
-  return `I stopped after writing ${formatWrittenColumnList(names)} and did not finish this turn. Ask me to continue if any columns are still empty.`;
-}
-
 /**
  * Persist a user-visible assistant row when the stream finishes empty, or
  * when it is aborted (explicit Cancel / deadline) so history is not an
  * orphaned user turn. Tab close no longer aborts the server turn.
- * A `tool-calls` stop with only tool chips is an incomplete turn — never
- * persist that silently.
+ * A `tool-calls` stop with only tool chips is logged as incomplete — do
+ * not append a “continue / re-prompt” notice. There is no tool-step cap.
  */
 export function partsForPersistedAssistantTurn(options: {
   parts: UIMessage["parts"] | undefined;
@@ -257,13 +201,9 @@ export function partsForPersistedAssistantTurn(options: {
     };
   }
 
-  if (options.finishReason === "tool-calls" && !hasVisibleText) {
-    const notice = incompleteTurnNotice(parts);
+  if (options.finishReason === "tool-calls" && !hasVisibleText && visible) {
     return {
-      parts:
-        parts.length === 0
-          ? [{ type: "text", text: notice }]
-          : appendNoticeIfMissing(parts, notice),
+      parts,
       emptyFailure: false,
       interrupted: false,
       incomplete: true,
