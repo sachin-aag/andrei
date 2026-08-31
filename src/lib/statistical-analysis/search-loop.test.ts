@@ -172,4 +172,25 @@ describe("prepareAnalyticsChatStep", () => {
     });
     expect(searchGate.closed).toBe(true);
   });
+
+  it("strips every tool on a greeting", () => {
+    expect(
+      prepareAnalyticsChatStep({
+        steps: [],
+        canEdit: true,
+        intent: "social",
+      })
+    ).toEqual({ activeTools: [] });
+  });
+
+  it("hides write tools on a read question before search closes", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [],
+      canEdit: true,
+      intent: "read",
+    });
+    expect(prepared?.activeTools).toContain("search_documents");
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).not.toContain("plot_xy_scatter");
+  });
 });

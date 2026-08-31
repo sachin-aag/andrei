@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPlainTextSuggestionPreview,
+  lockedValueRangesFromPreviewSegments,
+  selectionTouchesLockedPlainText,
+  skipLockedPlainTextOnBackspace,
+  skipLockedPlainTextOnDelete,
   splitPlainTextPreviewSegments,
 } from "./plain-text-preview";
 
@@ -117,5 +121,26 @@ describe("splitPlainTextPreviewSegments", () => {
       { kind: "context", text: " rest" },
       { kind: "insert", text: "\n\nCitations:\n1. [protocol.pdf, p. 3]" },
     ]);
+  });
+});
+
+describe("lockedValueRangesFromPreviewSegments", () => {
+  it("locks delete runs in the stored value and ignores overlay inserts", () => {
+    const segments = buildPlainTextSuggestionPreview(
+      "abc OLD rest",
+      "OLD",
+      "NEW"
+    )!;
+    expect(lockedValueRangesFromPreviewSegments(segments)).toEqual([
+      { from: 4, to: 7 },
+    ]);
+    expect(selectionTouchesLockedPlainText(5, 5, [{ from: 4, to: 7 }])).toBe(
+      true
+    );
+    expect(selectionTouchesLockedPlainText(4, 4, [{ from: 4, to: 7 }])).toBe(
+      false
+    );
+    expect(skipLockedPlainTextOnBackspace(7, [{ from: 4, to: 7 }])).toBe(4);
+    expect(skipLockedPlainTextOnDelete(4, [{ from: 4, to: 7 }])).toBe(7);
   });
 });

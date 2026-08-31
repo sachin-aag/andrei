@@ -1,3 +1,5 @@
+import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
+
 export const ANALYTICS_SEARCH_LOOP_LIMIT = 2;
 
 const SEARCH_TOOL = "search_documents";
@@ -185,16 +187,25 @@ export function prepareAnalyticsChatStep(input: {
   steps: readonly AnalyticsChatStep[];
   canEdit: boolean;
   searchGate?: AnalyticsSearchGate;
+  intent?: ChatUserIntentKind;
 }): { activeTools: string[] } | undefined {
+  if (input.intent === "social") {
+    return { activeTools: [] };
+  }
   if (
     input.searchGate &&
     analyticsSearchLoopDirective(input.steps) === "read"
   ) {
     input.searchGate.closed = true;
   }
-  if (analyticsSearchLoopDirective(input.steps) !== "read") return undefined;
+  if (analyticsSearchLoopDirective(input.steps) !== "read") {
+    if (input.intent === "read") {
+      return { activeTools: [...READ_AFTER_SEARCH_TOOLS, SEARCH_TOOL] };
+    }
+    return undefined;
+  }
   const activeTools: string[] = [...READ_AFTER_SEARCH_TOOLS];
-  if (input.canEdit) {
+  if (input.canEdit && input.intent !== "read") {
     activeTools.push(...WRITE_AFTER_SEARCH_TOOLS);
   }
   return { activeTools };

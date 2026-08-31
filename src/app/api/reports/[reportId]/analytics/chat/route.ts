@@ -68,6 +68,12 @@ import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
+  classifyChatUserIntent,
+  messageHasChatImage,
+  recentAssistantMessageTexts,
+  restrictToolsForIntent,
+} from "@/lib/ai/chat/user-intent";
+import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   CHAT_SERVER_ABORT_MS,
   consumeAssistantStreamWithBudget,
@@ -141,6 +147,12 @@ async function handleAnalyticsChatPost(
 
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const userIntent = classifyChatUserIntent({
+    userText,
+    recentAssistantTexts: recentAssistantMessageTexts(messages),
+    hasChatImages: messageHasChatImage(userMsg?.parts),
+    surface: "analytics",
+  });
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -187,15 +199,19 @@ async function handleAnalyticsChatPost(
     mode,
     mentionBlock: buildAnalyticsMentionBlock(mentions),
   });
-  const tools = buildAnalyticsChatTools({
-    reportId,
-    canEdit: canWrite,
-    documentType: report.documentType,
-    searchGate,
-    pinnedAttachmentIds,
-    focusedSheetId,
-    actor: auditActorFromUser(user),
-  });
+  const tools = restrictToolsForIntent(
+    buildAnalyticsChatTools({
+      reportId,
+      canEdit: canWrite,
+      documentType: report.documentType,
+      searchGate,
+      pinnedAttachmentIds,
+      focusedSheetId,
+      actor: auditActorFromUser(user),
+    }),
+    userIntent.kind,
+    "analytics"
+  );
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
   const model = isTestStubChat()
@@ -253,7 +269,12 @@ async function handleAnalyticsChatPost(
         return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps }) =>
-        prepareAnalyticsChatStep({ steps, canEdit: canWrite, searchGate }),
+        prepareAnalyticsChatStep({
+          steps,
+          canEdit: canWrite,
+          searchGate,
+          intent: userIntent.kind,
+        }),
       abortSignal: turnAbort.signal,
       timeout: { totalMs: CHAT_SERVER_ABORT_MS },
       providerOptions: buildGeminiThoughtSummaryProviderOptions({
@@ -281,6 +302,8 @@ async function handleAnalyticsChatPost(
           taggedDocuments: mentions.documents.length,
           taggedSheets: mentions.sheets.length,
           taggedAnalyses: mentions.analyses.length,
+          userIntent: userIntent.kind,
+          userIntentReason: userIntent.reason,
         },
       }),
     })
@@ -333,7 +356,7 @@ async function handleAnalyticsChatPost(
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
-    sendReasoning: false,
+    sendReasoning: true,
     messageMetadata: () => ({ chatTarget: "analytics" as const }),
     consumeSseStream: ({ stream }) => {
       void drainSseStream(stream);

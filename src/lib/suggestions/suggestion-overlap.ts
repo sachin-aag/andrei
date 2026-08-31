@@ -13,6 +13,7 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { suggestionEditFromComment } from "@/lib/suggestions/validate-suggestion";
+import { resolveSuggestionMerge } from "@/lib/suggestions/resolve-merge";
 
 export type FlatRange = { start: number; end: number };
 
@@ -111,10 +112,25 @@ export function spanForSuggestionComment(args: {
     return { commentId: args.comment.id, path, ranges: [], wholeField: true };
   }
 
+  const resolved = resolveSuggestionMerge({
+    section: args.section,
+    comment: args.comment,
+    sectionContent: args.sectionContent,
+    fieldContentPath: args.fieldContentPath,
+  });
+  if (resolved.merge) {
+    return {
+      commentId: args.comment.id,
+      path,
+      ranges: [],
+      wholeField: resolved.wholeField,
+    };
+  }
+
   const payload = parseAiFixCommentContent(args.comment.content);
   if (payload.tableOperationInvalid) return null;
   if (payload.tableOperation) {
-    return { commentId: args.comment.id, path, ranges: [], wholeField: true };
+    return { commentId: args.comment.id, path, ranges: [], wholeField: false };
   }
 
   const parts = suggestionEditParts(suggestionEditFromComment(args.comment));

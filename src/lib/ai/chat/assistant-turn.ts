@@ -42,8 +42,8 @@ type ChatTurnPart = {
 
 /**
  * True when the assistant turn would render something in the chat panel.
- * Reasoning / step markers are not shown (`sendReasoning: false`), so a
- * thought-only Gemini reply looks empty to the user.
+ * Reasoning parts render as collapsible Thought lines when streamed
+ * (`sendReasoning: true`). Tool chips and prose also count as visible.
  */
 export function assistantPartsHaveVisibleContent(
   parts: readonly ChatTurnPart[] | null | undefined
@@ -53,6 +53,11 @@ export function assistantPartsHaveVisibleContent(
     if (!part || typeof part.type !== "string") continue;
     if (part.type === "text") {
       if (typeof part.text === "string" && part.text.trim()) return true;
+      continue;
+    }
+    if (part.type === "reasoning") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (text) return true;
       continue;
     }
     if (part.type === "file" || part.type.startsWith("tool-")) return true;
@@ -97,6 +102,11 @@ export function assistantProgressSignature(
       if (part.type === "text") {
         const text = typeof part.text === "string" ? part.text : "";
         return `text:${text.length}`;
+      }
+      if (part.type === "reasoning") {
+        const text = typeof part.text === "string" ? part.text : "";
+        const state = typeof part.state === "string" ? part.state : "";
+        return `reasoning:${text.length}:${state}`;
       }
       if (part.type.startsWith("tool-")) {
         const state = typeof part.state === "string" ? part.state : "";

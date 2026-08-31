@@ -71,8 +71,12 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 - **Untrusted PDF/DOCX text** (`documentSummary`, `pageContext`, filenames,
   descriptions) goes through `sanitizePromptMetadata` before any prompt.
 - **Bump versions** when prompts change: `PROMPT_VERSION` (eval),
-  `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`,
-  `ANALYTICS_CHAT_PROMPT_VERSION`.
+ `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`,
+ `ANALYTICS_CHAT_PROMPT_VERSION`. Chat suggestions persist `suggestionBase`
+ + `suggestionIntent` and merge at apply (`mergeField`); do not restore a
+ frozen-diff hash or a `too_large` → `draft_field` funnel. Same-turn
+ `propose_edit` cards in Document chrome fold when locatable spans sit
+ within 20 characters (no per-field card budget).
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
   are silently missing in Plan.
@@ -210,6 +214,7 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   The report body is **not** chunk-indexed; use `read_section`.
 - Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. A sentence/paragraph rewrite is adaptive even on a large catalog, and an earlier “draft the report” turn must not force another full page walk. `finish_document_review` returns a capped findings sample; follow-up turns strip prior findings arrays before the model call so a 273-page review cannot 500 the next message. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
+- Follow the latest user message. Agent mode may edit when they asked to write; empty sections and ready attachments are not a request to draft. A greeting (“hi”) must not search or write — `classifyChatUserIntent` strips tools (Document and Analytics). Retrieval maps those turns to focused (`no_task`) and skips kickoff evidence.
 - Composer scope is `@` tags (`sectionScopeFromMentions` / analytics mentions),
   not dropdowns. Document and Analytics share `ChatPanel`; a composer or tool
   change must land on both surfaces and both chromes (Hard rules spectrum).

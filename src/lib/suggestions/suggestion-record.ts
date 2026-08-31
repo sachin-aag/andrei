@@ -1,7 +1,7 @@
 /**
  * Additive suggestion record: persist `suggestionBase` + `suggestionIntent`
  * on the comment JSON payload. Dual-read: old rows without these fields
- * return null and keep the frozen-diff path. No schema migration.
+ * return null and keep the locator path. No schema migration.
  */
 import type { DocumentType, SectionType } from "@/db/schema";
 import {
@@ -93,7 +93,7 @@ export function withSuggestionRecord<T extends object>(
 
 /**
  * Dual-read resolve. Returns null when the row is legacy (no stored record)
- * so callers keep the frozen-diff path.
+ * so callers keep the locator path.
  */
 export function mergeStoredSuggestion(args: {
   commentContent: string;

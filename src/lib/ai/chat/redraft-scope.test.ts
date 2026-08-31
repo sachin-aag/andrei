@@ -148,6 +148,7 @@ describe("redraftTooSmallHint", () => {
     const hint = redraftTooSmallHint(0.37);
     expect(hint).toContain("63%");
     expect(hint).toContain("propose_edit");
+    expect(hint).toContain("Nearby wording in the same field belongs in one call");
   });
 });
 

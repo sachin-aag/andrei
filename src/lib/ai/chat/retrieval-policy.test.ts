@@ -229,16 +229,16 @@ describe("classifyRetrievalPolicy", () => {
     expect(decision.reason).toBe("bounded_locator");
   });
 
-  it("keeps a quick summary on an inventory section focused", () => {
+  it("keeps a greeting on the focused path so it cannot start a page walk", () => {
     const decision = classifyRetrievalPolicy({
-      userText: "quick summary of this section",
-      sectionScope: "traceability",
-      documentType: "design_verification",
+      userText: "hi",
+      sectionScope: "all",
+      documentType: "mechanical_design_verification",
       hasDocuments: true,
       totalReadyPages: 62,
     });
     expect(decision.policy).toBe("focused");
-    expect(decision.reason).toBe("explicit_quick_overview");
+    expect(decision.reason).toBe("no_task");
   });
 
   it("treats many outline siblings as distributed evidence", () => {

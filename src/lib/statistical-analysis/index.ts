@@ -65,7 +65,14 @@ export { computeCapabilitySixpack } from "./sixpack";
 export { computeOneWayAnova, suggestFactorColumn } from "./anova";
 export { computeXyScatter, suggestXColumn } from "./xy-scatter";
 export { computeBoxplot, suggestCategoryColumn } from "./boxplot";
-export { formatLimit, formatPpm, formatPValue, formatStat, formatSpecSummary } from "./format";
+export {
+  formatCapabilityStat,
+  formatLimit,
+  formatPpm,
+  formatPValue,
+  formatStat,
+  formatSpecSummary,
+} from "./format";
 export {
   formatRowSelection,
   normalizeRowSelection,
