@@ -1316,7 +1316,8 @@ export function buildChatTools(opts: {
       description:
         "Process the next page batch of the current document review. Returns progress only — not raw page text. Repeat until coverage is complete.",
       inputSchema: z.object({}),
-      execute: async () => documentReview.continue(),
+      execute: async (_input, { abortSignal }) =>
+        documentReview.continue({ abortSignal }),
     }),
 
     finish_document_review: tool({

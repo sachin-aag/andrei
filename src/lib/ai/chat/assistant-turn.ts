@@ -11,8 +11,16 @@ export const CHAT_ASSISTANT_INTERRUPTED_MESSAGE =
 /** Vercel `maxDuration` for the chat route, in seconds. */
 export const CHAT_FUNCTION_MAX_DURATION_SEC = 300;
 
-/** Must stay below `CHAT_FUNCTION_MAX_DURATION_SEC` so persist can run. */
+/**
+ * Must stay below `CHAT_FUNCTION_MAX_DURATION_SEC` so persist can run.
+ * Measured from request start, not from `streamText` — pre-stream DB /
+ * context / convertToModelMessages work counts against Vercel too.
+ * Hobby Fluid Compute still kills at 300s even if Pro raises maxDuration.
+ */
 export const CHAT_SERVER_ABORT_MS = 270_000;
+
+/** Hobby Fluid Compute isolate cap. Abort must stay under this. */
+export const CHAT_HOBBY_MAX_DURATION_SEC = 300;
 
 /**
  * Bound `consumeStream()` so Next `after()` can still `clearAssistantTurn`
@@ -245,6 +253,42 @@ export function formatChatLlmError(error: unknown): string {
  * A hung consume after `NoSuchToolError` used to pin `after()` until
  * Vercel killed the function, so `onFinish` never cleared the turn.
  */
+/** Milliseconds left on the chat deadline (0 once it has elapsed). */
+export function remainingChatAbortMs(
+  startedAtMs: number,
+  nowMs = Date.now()
+): number {
+  return Math.max(0, CHAT_SERVER_ABORT_MS - (nowMs - startedAtMs));
+}
+
+export function isChatTurnDeadlineReached(
+  startedAtMs: number,
+  nowMs = Date.now()
+): boolean {
+  return nowMs - startedAtMs >= CHAT_SERVER_ABORT_MS;
+}
+
+/**
+ * Abort `controller` when the wall-clock deadline elapses. Call at request
+ * start so pre-stream work cannot eat the persist margin. Returns a cancel
+ * function for the timer.
+ */
+export function scheduleChatTurnDeadline(
+  controller: AbortController,
+  startedAtMs: number,
+  nowMs = Date.now()
+): () => void {
+  const remainingMs = remainingChatAbortMs(startedAtMs, nowMs);
+  if (remainingMs === 0) {
+    if (!controller.signal.aborted) controller.abort();
+    return () => undefined;
+  }
+  const timeoutId = setTimeout(() => {
+    if (!controller.signal.aborted) controller.abort();
+  }, remainingMs);
+  return () => clearTimeout(timeoutId);
+}
+
 export async function consumeAssistantStreamWithBudget(
   consume: () => PromiseLike<void>,
   budgetMs = CHAT_CONSUME_STREAM_BUDGET_MS
