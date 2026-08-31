@@ -1,12 +1,10 @@
 import { chartBrandColors, type ChartBrandColors } from "@/lib/charts/brand-colors";
 import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
 import { resolveCustomerId } from "@/lib/customers/resolve";
+import { boxplotAxisLayout } from "./boxplot-chart-layout";
 import { nestedCategorySpans } from "./boxplot";
 import { formatStat } from "./format";
 import type { BoxplotAnalysisSummary, BoxplotGroupStats } from "./types";
-
-const WIDTH = 960;
-const HEIGHT = 520;
 
 type Canvas2d = {
   fillStyle: string;
@@ -55,10 +53,11 @@ export function renderBoxplotPng(
   const canvasMod = load();
   if (!canvasMod) return { error: "canvas_unavailable" };
   const colors = chartBrandColors(options.packId ?? resolveCustomerId());
-  const canvas = canvasMod.createCanvas(WIDTH, HEIGHT);
+  const layout = boxplotAxisLayout(analysis.results.groups, analysis.config.categoryColumnNames.length);
+  const canvas = canvasMod.createCanvas(layout.width, layout.height);
   const ctx = canvas.getContext("2d");
   if (!ctx) return { error: "canvas_unavailable" };
-  drawBoxplot(ctx, analysis, colors);
+  drawBoxplot(ctx, analysis, colors, layout);
   return canvas.toBuffer("image/png");
 }
 
@@ -81,23 +80,23 @@ function yExtent(groups: BoxplotGroupStats[]): { min: number; max: number } {
 function drawBoxplot(
   ctx: Canvas2d,
   analysis: BoxplotAnalysisSummary,
-  colors: ChartBrandColors
+  colors: ChartBrandColors,
+  layout: ReturnType<typeof boxplotAxisLayout>
 ): void {
   const groups = analysis.results.groups;
   const categoryCount = analysis.config.categoryColumnNames.length;
-  const rotateInner = categoryCount > 0 && groups.length > 6;
-  const innerBand = categoryCount === 0 ? 8 : rotateInner ? 58 : 22;
-  const outerBand = 26;
-  const axisHeight =
-    categoryCount === 0
-      ? innerBand
-      : innerBand + Math.max(0, categoryCount - 1) * outerBand;
-  const plotLeft = 72;
-  const plotRight = WIDTH - 28;
-  const plotTop = 52;
-  const plotBottom = HEIGHT - 16 - axisHeight;
-  const plotWidth = plotRight - plotLeft;
-  const plotHeight = plotBottom - plotTop;
+  const {
+    width,
+    height,
+    plotLeft,
+    plotRight,
+    plotTop,
+    plotBottom,
+    plotWidth,
+    plotHeight,
+    rotateInner,
+    categoryLabelY,
+  } = layout;
   const { min: yMin, max: yMax } = yExtent(groups);
   const ySpan = yMax - yMin || 1;
   const xToPx = (index: number) =>
@@ -107,7 +106,7 @@ function drawBoxplot(
   const ticks = [yMin, (yMin + yMax) / 2, yMax];
 
   ctx.fillStyle = "#f4f6f9";
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = colors.plotFill;
   ctx.fillRect(plotLeft, plotTop, plotWidth, plotHeight);
   ctx.strokeStyle = colors.grid;
@@ -187,9 +186,7 @@ function drawBoxplot(
   if (categoryCount === 0) return;
   for (let level = 0; level < categoryCount; level++) {
     const spans = nestedCategorySpans(groups, level);
-    const y =
-      plotBottom +
-      (level === 0 ? (rotateInner ? 38 : 16) : innerBand + (level - 1) * outerBand + 16);
+    const y = categoryLabelY(level);
     ctx.fillStyle = colors.axis;
     ctx.font = `${level === 0 ? 11 : 12}px ${chartFontFamily()}`;
     for (const span of spans) {
