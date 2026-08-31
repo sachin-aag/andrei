@@ -167,6 +167,8 @@ export async function createBoxplot(
     rowStart?: number | null;
     rowEnd?: number | null;
     rows?: number[];
+    xAxisLabel?: string | null;
+    yAxisLabel?: string | null;
   }
 ): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   return postAnalysis(reportId, {

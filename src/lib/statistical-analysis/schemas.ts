@@ -421,6 +421,8 @@ export const boxplotBodySchema = z
     yColumnId: z.string().trim().min(1).optional(),
     categoryColumnIds: boxplotCategoryIdsSchema,
     title: z.string().trim().max(120).optional(),
+    xAxisLabel: z.string().trim().max(60).nullable().optional(),
+    yAxisLabel: z.string().trim().max(80).nullable().optional(),
     ...boxplotRowFields,
   })
   .superRefine(refineBoxplotChatBody);
@@ -431,6 +433,8 @@ export const boxplotInputSchema = z
     yColumnId: z.string().trim().min(1),
     categoryColumnIds: boxplotCategoryIdsSchema,
     title: z.string().trim().max(120).optional(),
+    xAxisLabel: z.string().trim().max(60).nullable().optional(),
+    yAxisLabel: z.string().trim().max(80).nullable().optional(),
     ...boxplotRowFields,
   })
   .superRefine(refineBoxplotColumns);
@@ -441,6 +445,8 @@ export const boxplotUpdateSchema = z
     yColumnId: z.string().trim().min(1).optional(),
     categoryColumnIds: boxplotCategoryIdsSchema,
     title: z.string().trim().max(120).optional(),
+    xAxisLabel: z.string().trim().max(60).nullable().optional(),
+    yAxisLabel: z.string().trim().max(80).nullable().optional(),
     ...boxplotRowFields,
   })
   .superRefine(refineBoxplotColumns);

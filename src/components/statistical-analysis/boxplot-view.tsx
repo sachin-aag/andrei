@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { nestedCategorySpans } from "@/lib/statistical-analysis/boxplot";
+import { nestedCategorySpans, boxplotXAxisLabel, boxplotYAxisLabel } from "@/lib/statistical-analysis/boxplot";
 import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import { formatStat } from "@/lib/statistical-analysis/format";
 import {
@@ -86,6 +86,12 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
   const yToPx = (y: number) => plotBottom - ((y - yMin) / ySpan) * plotHeight;
   const boxWidth = Math.min(42, (plotWidth / groups.length) * 0.55);
   const ticks = yTicks(yMin, yMax);
+  const yLabel = boxplotYAxisLabel(analysis.config);
+  const xLabel = boxplotXAxisLabel(analysis.config);
+  const xTitleY =
+    plotBottom +
+    axisHeight +
+    (xLabel && categoryCount > 0 ? 14 : xLabel ? 8 : 0);
 
   return (
     <svg
@@ -122,7 +128,7 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
         fill={colors.axis}
         transform={`rotate(-90 22 ${(plotTop + plotBottom) / 2})`}
       >
-        {analysis.config.yColumnName}
+        {yLabel}
       </text>
       {ticks.map((tick) => (
         <g key={`y-${tick}`}>
@@ -264,6 +270,18 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
               </g>
             );
           })}
+      {xLabel ? (
+        <text
+          x={(plotLeft + plotRight) / 2}
+          y={xTitleY}
+          textAnchor="middle"
+          fontSize="12"
+          fill={colors.axis}
+          data-testid="boxplot-x-axis-title"
+        >
+          {xLabel}
+        </text>
+      ) : null}
     </svg>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,6 +39,8 @@ export type BoxplotDialogValues = {
   title: string;
   rowStart: number | null;
   rowEnd: number | null;
+  xAxisLabel: string | null;
+  yAxisLabel: string | null;
 };
 
 function parseOptionalRow(raw: string): number | null {
@@ -67,6 +69,8 @@ export function BoxplotDialog({
   defaultRowStart = null,
   defaultRowEnd = null,
   defaultTitle = "",
+  defaultXAxisLabel = "",
+  defaultYAxisLabel = "",
   editMode = false,
   submitting,
   error,
@@ -80,6 +84,8 @@ export function BoxplotDialog({
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
   defaultTitle?: string;
+  defaultXAxisLabel?: string | null;
+  defaultYAxisLabel?: string | null;
   editMode?: boolean;
   submitting: boolean;
   error: string | null;
@@ -99,6 +105,8 @@ export function BoxplotDialog({
   const [rowEnd, setRowEnd] = useState(
     defaultRowEnd != null ? String(defaultRowEnd) : ""
   );
+  const [xAxisLabel, setXAxisLabel] = useState(defaultXAxisLabel ?? "");
+  const [yAxisLabel, setYAxisLabel] = useState(defaultYAxisLabel ?? "");
 
   const yColumn = findColumn(worksheet, yColumnId) ?? worksheet.columns[0];
   const categoryColumns = categoryColumnIds
@@ -124,6 +132,10 @@ export function BoxplotDialog({
     Boolean(yColumnId) &&
     categoryColumnIds.every((id) => id && id !== yColumnId) &&
     new Set(categoryColumnIds).size === categoryColumnIds.length;
+  const xAxisPlaceholder =
+    categoryColumns.length > 0
+      ? categoryColumns[categoryColumns.length - 1]?.name ?? "Category"
+      : "Category";
 
   const addCategory = () => {
     const next = suggestCategoryColumn(worksheet, yColumnId, categoryColumnIds);
@@ -136,7 +148,7 @@ export function BoxplotDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="boxplot-dialog" className="max-w-md">
+      <DialogContent data-testid="boxplot-dialog" className="max-h-[min(92vh,44rem)] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Boxplot</DialogTitle>
           <DialogDescription>
@@ -308,6 +320,42 @@ export function BoxplotDialog({
             />
           </div>
 
+          <details
+            data-testid="boxplot-advanced"
+            className="group rounded-md border border-[var(--border)]"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-medium text-[var(--foreground)] marker:content-none [&::-webkit-details-marker]:hidden">
+              Advanced
+              <ChevronDown className="h-4 w-4 shrink-0 text-[var(--muted-foreground)] transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="grid gap-3 border-t border-[var(--border)] px-3 py-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="boxplot-x-label" className={fieldLabelClass}>
+                  X axis title
+                </Label>
+                <Input
+                  id="boxplot-x-label"
+                  data-testid="boxplot-x-label"
+                  placeholder={xAxisPlaceholder}
+                  value={xAxisLabel}
+                  onChange={(event) => setXAxisLabel(event.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="boxplot-y-label" className={fieldLabelClass}>
+                  Y axis title
+                </Label>
+                <Input
+                  id="boxplot-y-label"
+                  data-testid="boxplot-y-label"
+                  placeholder={yColumn?.name ?? "Y"}
+                  value={yAxisLabel}
+                  onChange={(event) => setYAxisLabel(event.target.value)}
+                />
+              </div>
+            </div>
+          </details>
+
           {error ? (
             <p className="text-sm text-[var(--destructive)]" role="alert">
               {error}
@@ -335,6 +383,8 @@ export function BoxplotDialog({
                 title: title.trim(),
                 rowStart: parseOptionalRow(rowStart),
                 rowEnd: parseOptionalRow(rowEnd),
+                xAxisLabel: xAxisLabel.trim() || null,
+                yAxisLabel: yAxisLabel.trim() || null,
               })
             }
           >

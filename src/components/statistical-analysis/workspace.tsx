@@ -1336,6 +1336,16 @@ export function StatisticalWorkspace({
             ? editingAnalysis.config.title
             : ""
         }
+        defaultXAxisLabel={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xAxisLabel ?? "")
+            : ""
+        }
+        defaultYAxisLabel={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yAxisLabel ?? "")
+            : ""
+        }
         editMode={Boolean(
           editingAnalysis && isBoxplotAnalysis(editingAnalysis)
         )}
@@ -1357,6 +1367,8 @@ export function StatisticalWorkspace({
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
               toast.success("Boxplot updated.");
@@ -1367,6 +1379,8 @@ export function StatisticalWorkspace({
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,

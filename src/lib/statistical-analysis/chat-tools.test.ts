@@ -167,6 +167,7 @@ describe("analytics chat tools", () => {
     expect(writable.plot_xy_scatter?.description).toContain("xMin/xMax/yMin/yMax");
     expect(writable.plot_boxplot?.description).toContain("categoryColumnIds");
     expect(writable.plot_boxplot?.description).toContain("innermost first");
+    expect(writable.plot_boxplot?.description).toContain("xAxisLabel");
     expect(writable.plot_boxplot?.description).toContain("analysisId");
     expect(writable.plot_measurements?.description).toContain(
       "cannot color by serial number"

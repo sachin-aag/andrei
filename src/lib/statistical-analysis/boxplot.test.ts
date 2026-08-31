@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  boxplotXAxisLabel,
+  boxplotYAxisLabel,
   computeBoxplot,
+  mergeBoxplotPatch,
   nestedCategorySpans,
   quantileType7,
   suggestCategoryColumn,
@@ -216,5 +219,44 @@ describe("computeBoxplot", () => {
     expect(suggestCategoryColumn(sheet, "c1", ["c2"])).toBeNull();
     const wider = insertColumn(sheet, 2);
     expect(suggestCategoryColumn(wider, "c1", ["c2"])).toBe("c3");
+  });
+
+  it("merges optional axis labels on patch", () => {
+    const existing = {
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      categoryColumnIds: ["c2"],
+      categoryColumnNames: ["Operator"],
+      title: "Boxplot",
+      xAxisLabel: "Operator",
+      yAxisLabel: "Assay (%)",
+    };
+    expect(
+      mergeBoxplotPatch(existing, { yAxisLabel: "Response" }).yAxisLabel
+    ).toBe("Response");
+    expect(
+      mergeBoxplotPatch(existing, { yAxisLabel: null }).yAxisLabel
+    ).toBeNull();
+    expect(
+      mergeBoxplotPatch(existing, {}).yAxisLabel
+    ).toBe("Assay (%)");
+  });
+
+  it("resolves display axis labels with defaults", () => {
+    const config = {
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      categoryColumnIds: ["c2"],
+      categoryColumnNames: ["Operator"],
+      title: "Boxplot",
+    };
+    expect(boxplotYAxisLabel(config)).toBe("Assay");
+    expect(boxplotXAxisLabel(config)).toBe("Operator");
+    expect(
+      boxplotYAxisLabel({ ...config, yAxisLabel: "Response (%)" })
+    ).toBe("Response (%)");
+    expect(
+      boxplotXAxisLabel({ ...config, xAxisLabel: "Op" })
+    ).toBe("Op");
   });
 });

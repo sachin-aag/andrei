@@ -18,7 +18,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v29-voice-english");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v30-boxplot-axis-labels");
   });
 
   it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
