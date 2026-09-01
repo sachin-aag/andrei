@@ -119,7 +119,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   in-scope section already has a table, Analytics search hide after a
   cited page or two empty greps). Live table headers are listed on the
   context map; `read_section` / `edit_table` / `draft_field` must copy
-  those headers (demo vs Convergent matrices differ).
+  those headers (demo vs Convergent matrices differ). Analytics
+  `write_column` / `manage_worksheet` serialize per report and re-apply
+  onto the latest sheet on 409 so a parallel dump cannot empty columns
+  the grid just showed.
 
 ## Retrieval
 

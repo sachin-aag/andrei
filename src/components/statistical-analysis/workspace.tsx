@@ -33,6 +33,7 @@ import {
   deleteDataSheet,
   dropSpecRow,
   insertColumn,
+  isStaleAnalyticsVersion,
   mergeDirtyWorksheet,
   normalizeWorksheet,
   renameDataSheet,
@@ -76,6 +77,9 @@ import {
   type ColumnMenuAction,
 } from "@/components/statistical-analysis/worksheet-grid";
 import { WorkspaceMenubar } from "@/components/statistical-analysis/workspace-menubar";
+
+/** Coalesce mid-turn grid reloads so parallel column writes paint once. */
+const AGENT_WORKSHEET_RELOAD_DEBOUNCE_MS = 200;
 
 export type AnalyticsFocusApi = {
   focusSheet: (sheetId: string) => void;
@@ -219,6 +223,7 @@ export function StatisticalWorkspace({
     next: ReportAnalyticsView,
     opts?: { selectAnalysisId?: string }
   ) => {
+    if (isStaleAnalyticsVersion(next.version, versionRef.current)) return;
     setWorksheet(next.worksheet);
     setPersistedWorksheet(next.worksheet);
     versionRef.current = next.version;
@@ -242,6 +247,7 @@ export function StatisticalWorkspace({
 
   const ingestRemote = useCallback(
     (next: ReportAnalyticsView) => {
+      if (isStaleAnalyticsVersion(next.version, versionRef.current)) return;
       const merged = mergeDirtyWorksheet(
         worksheetRef.current,
         persistedRef.current,
@@ -292,23 +298,27 @@ export function StatisticalWorkspace({
   useEffect(() => {
     if (reloadEpoch === 0) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        const next = await getReportAnalytics(reportId);
-        if (cancelled) return;
-        ingestRemote(next);
-        setLoadError(null);
-      } catch (error) {
-        if (cancelled) return;
-        setLoadError(
-          error instanceof Error ? error.message : "Could not load analytics."
-        );
-      }
-    })();
+    const delay = agentBusy ? AGENT_WORKSHEET_RELOAD_DEBOUNCE_MS : 0;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const next = await getReportAnalytics(reportId);
+          if (cancelled) return;
+          ingestRemote(next);
+          setLoadError(null);
+        } catch (error) {
+          if (cancelled) return;
+          setLoadError(
+            error instanceof Error ? error.message : "Could not load analytics."
+          );
+        }
+      })();
+    }, delay);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [ingestRemote, reloadEpoch, reportId]);
+  }, [agentBusy, ingestRemote, reloadEpoch, reportId]);
 
   useEffect(() => {
     if (analyses.length > analysisCountRef.current) {
@@ -319,6 +329,9 @@ export function StatisticalWorkspace({
 
   const applySavedWorksheet = useCallback(
     (saved: ReportAnalyticsView, sent: WorksheetData): WorksheetData => {
+      if (isStaleAnalyticsVersion(saved.version, versionRef.current)) {
+        return worksheetRef.current;
+      }
       versionRef.current = saved.version;
       setVersion(saved.version);
       setAnalyses(saved.analyses);

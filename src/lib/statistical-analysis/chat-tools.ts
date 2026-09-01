@@ -20,6 +20,7 @@ import {
   listReadyDocumentsForReport,
   readDocumentPage,
 } from "@/lib/attachments/retrieval";
+import { withWorksheetMutationLock } from "./worksheet-write-lock";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
@@ -72,7 +73,12 @@ import {
   trimTrailingEmpty,
   upsertSpecRow,
 } from "./worksheet";
-import { applyManageWorksheet, manageWorksheetInputSchema } from "./manage-worksheet";
+import {
+  applyManageWorksheet,
+  manageWorksheetInputSchema,
+  type ManageWorksheetInput,
+  type ManageWorksheetOperation,
+} from "./manage-worksheet";
 import { normalizeRowSelection } from "./row-selection";
 import {
   verifyTableWrite,
@@ -120,12 +126,8 @@ async function persistWorksheet(
   worksheet: WorksheetData,
   expectedVersion?: number
 ): Promise<UpdateReportAnalyticsResult> {
-  const first = await updateReportAnalytics(reportId, worksheet, {
-    expectedVersion,
-  });
-  if (first.ok || first.reason !== "conflict") return first;
   return updateReportAnalytics(reportId, worksheet, {
-    expectedVersion: first.analytics.version,
+    expectedVersion,
   });
 }
 
@@ -529,6 +531,41 @@ function applyWriteColumnEntries(
     indices.push(index);
   }
   return { ok: true, worksheet: next, indices };
+}
+
+function applyManageOperations(
+  worksheet: WorksheetData,
+  operations: ReadonlyArray<ManageWorksheetOperation | ManageWorksheetInput>
+):
+  | {
+      ok: true;
+      worksheet: WorksheetData;
+      applied: Array<{
+        status: "ok";
+        action: string;
+        message: string;
+        sheetId: string;
+        sheetName: string;
+      }>;
+    }
+  | { ok: false; result: ReturnType<typeof applyManageWorksheet>["result"] } {
+  let next = worksheet;
+  const applied: Array<{
+    status: "ok";
+    action: string;
+    message: string;
+    sheetId: string;
+    sheetName: string;
+  }> = [];
+  for (const operation of operations) {
+    const appliedStep = applyManageWorksheet(next, operation);
+    if (appliedStep.result.status !== "ok" || !appliedStep.worksheet) {
+      return { ok: false, result: appliedStep.result };
+    }
+    next = appliedStep.worksheet;
+    applied.push(appliedStep.result);
+  }
+  return { ok: true, worksheet: next, applied };
 }
 
 function writtenColumnResult(
@@ -1057,14 +1094,22 @@ export function buildAnalyticsChatTools(opts: {
           label &&
           (lsl != null || usl != null || target != null)
         ) {
-          const analytics = await getOrCreateReportAnalytics(reportId);
-          const withSpecs = upsertSpecRow(analytics.worksheet, {
-            columnName: label,
-            lsl: optionalSpecString(lsl),
-            usl: optionalSpecString(usl),
-            target: optionalSpecString(target),
+          await withWorksheetMutationLock(reportId, async () => {
+            const persistSpecs = async (base: WorksheetData, version: number) => {
+              const withSpecs = upsertSpecRow(base, {
+                columnName: label,
+                lsl: optionalSpecString(lsl),
+                usl: optionalSpecString(usl),
+                target: optionalSpecString(target),
+              });
+              return persistAndRecord(withSpecs, version);
+            };
+            const analytics = await getOrCreateReportAnalytics(reportId);
+            const first = await persistSpecs(analytics.worksheet, analytics.version);
+            if (!first.ok && first.reason === "conflict") {
+              await persistSpecs(first.analytics.worksheet, first.analytics.version);
+            }
           });
-          await persistAndRecord(withSpecs, analytics.version);
         }
 
         return {
@@ -1120,79 +1165,103 @@ export function buildAnalyticsChatTools(opts: {
             values: verified.columns[index] ?? [],
           }));
         }
-        const analytics = await getOrCreateReportAnalytics(reportId);
-        const worksheet = worksheetWithPreferredSheet(
-          analytics.worksheet,
-          focusedSheetId
-        );
-        const applied = applyWriteColumnEntries(
-          worksheet,
-          entries,
-          citationsForWrite(input, sourceCitations)
-        );
-        if (!applied.ok) {
-          return {
-            status: "not_found" as const,
-            columnId: applied.columnId,
-            name: applied.name,
+        const citations = citationsForWrite(input, sourceCitations);
+        return withWorksheetMutationLock(reportId, async () => {
+          const writeOnto = async (base: WorksheetData, version: number) => {
+            const applied = applyWriteColumnEntries(base, entries, citations);
+            if (!applied.ok) return { applied };
+            const saved = await persistAndRecord(applied.worksheet, version);
+            return { applied, saved };
           };
-        }
-        const savedResult = await persistAndRecord(
-          applied.worksheet,
-          analytics.version
-        );
-        if (!savedResult.ok) {
-          return {
-            status: "error" as const,
-            message: persistErrorMessage(savedResult),
-          };
-        }
-        const saved = savedResult.analytics;
-        const columns: WrittenColumnResult[] = [];
-        for (let i = 0; i < applied.indices.length; i++) {
-          const written = writtenColumnResult(
-            saved.worksheet,
-            applied.indices[i]!
+
+          const analytics = await getOrCreateReportAnalytics(reportId);
+          let outcome = await writeOnto(
+            worksheetWithPreferredSheet(analytics.worksheet, focusedSheetId),
+            analytics.version
           );
-          if (!written) {
+          if (outcome.applied.ok === false) {
             return {
-              status: "error" as const,
-              message: "Column missing after save.",
+              status: "not_found" as const,
+              columnId: outcome.applied.columnId,
+              name: outcome.applied.name,
             };
           }
-          columns.push(written);
-        }
-        const first = columns[0];
-        if (!first) {
-          return { status: "error" as const, message: "Column missing after save." };
-        }
-        const sheet =
-          findSheet(saved.worksheet, saved.worksheet.activeSheetId) ??
-          dataSheets(saved.worksheet)[0];
-        return {
-          status: "written" as const,
-          sheetId: sheet?.id ?? saved.worksheet.activeSheetId,
-          sheetName: sheet?.name ?? "Data",
-          columnId: first.columnId,
-          columnName: first.columnName,
-          rowsWritten: first.rowsWritten,
-          valueCount: first.rowsWritten,
-          numericCount: first.numericCells,
-          numericCells: first.numericCells,
-          nonNumericCells: first.nonNumericCells,
-          note: first.note,
-          columns,
-          columnCount: columns.length,
-          blankedCells: blanked.map((cell) => ({
-            row: cell.row,
-            columnIndex: cell.column,
-            columnName:
-              entries[cell.column]?.name ??
-              columns[cell.column]?.columnName ??
-              null,
-          })),
-          blankedCount: blanked.length,
-        };
+          if (
+            outcome.saved &&
+            !outcome.saved.ok &&
+            outcome.saved.reason === "conflict"
+          ) {
+            outcome = await writeOnto(
+              worksheetWithPreferredSheet(
+                outcome.saved.analytics.worksheet,
+                focusedSheetId
+              ),
+              outcome.saved.analytics.version
+            );
+          }
+          if (outcome.applied.ok === false) {
+            return {
+              status: "not_found" as const,
+              columnId: outcome.applied.columnId,
+              name: outcome.applied.name,
+            };
+          }
+          const savedResult = outcome.saved;
+          if (!savedResult?.ok) {
+            return {
+              status: "error" as const,
+              message: persistErrorMessage(
+                savedResult ?? { ok: false, reason: "not_found" }
+              ),
+            };
+          }
+          const saved = savedResult.analytics;
+          const columns: WrittenColumnResult[] = [];
+          for (let i = 0; i < outcome.applied.indices.length; i++) {
+            const written = writtenColumnResult(
+              saved.worksheet,
+              outcome.applied.indices[i]!
+            );
+            if (!written) {
+              return {
+                status: "error" as const,
+                message: "Column missing after save.",
+              };
+            }
+            columns.push(written);
+          }
+          const first = columns[0];
+          if (!first) {
+            return { status: "error" as const, message: "Column missing after save." };
+          }
+          const sheet =
+            findSheet(saved.worksheet, saved.worksheet.activeSheetId) ??
+            dataSheets(saved.worksheet)[0];
+          return {
+            status: "written" as const,
+            sheetId: sheet?.id ?? saved.worksheet.activeSheetId,
+            sheetName: sheet?.name ?? "Data",
+            columnId: first.columnId,
+            columnName: first.columnName,
+            rowsWritten: first.rowsWritten,
+            valueCount: first.rowsWritten,
+            numericCount: first.numericCells,
+            numericCells: first.numericCells,
+            nonNumericCells: first.nonNumericCells,
+            note: first.note,
+            columns,
+            columnCount: columns.length,
+            blankedCells: blanked.map((cell) => ({
+              row: cell.row,
+              columnIndex: cell.column,
+              columnName:
+                entries[cell.column]?.name ??
+                columns[cell.column]?.columnName ??
+                null,
+            })),
+            blankedCount: blanked.length,
+          };
+        });
       },
     });
 
@@ -1201,49 +1270,50 @@ export function buildAnalyticsChatTools(opts: {
         "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or row. Do not search attachments and do not extract numbers. Filling a column with values is write_column, not this tool — write_column reuses empty C1–C8 columns from the left. add_column without at also claims the leftmost empty C# instead of appending on the right. set_cell edits one cell. To set up several columns or sheets, pass operations (an array of the same fields) instead of calling this tool repeatedly.",
       inputSchema: manageWorksheetInputSchema,
       execute: async (input) => {
-        const analytics = await getOrCreateReportAnalytics(reportId);
         const operations = input.operations?.length
           ? input.operations
           : [input];
-        let worksheet = analytics.worksheet;
-        if (
-          focusedSheetId &&
-          !operations.some((operation) => operation.sheetId?.trim())
-        ) {
-          worksheet = worksheetWithPreferredSheet(worksheet, focusedSheetId);
-        }
-        const applied: Array<{
-          status: "ok";
-          action: string;
-          message: string;
-          sheetId: string;
-          sheetName: string;
-        }> = [];
-        for (const operation of operations) {
-          const appliedStep = applyManageWorksheet(worksheet, operation);
-          if (appliedStep.result.status !== "ok" || !appliedStep.worksheet) {
-            return appliedStep.result;
-          }
-          worksheet = appliedStep.worksheet;
-          applied.push(appliedStep.result);
-        }
-        const saved = await persistAndRecord(worksheet, analytics.version);
-        if (!saved.ok) {
-          return {
-            status: "error" as const,
-            message: persistErrorMessage(saved),
+        return withWorksheetMutationLock(reportId, async () => {
+          const run = (base: WorksheetData) => {
+            let worksheet = base;
+            if (
+              focusedSheetId &&
+              !operations.some((operation) => operation.sheetId?.trim())
+            ) {
+              worksheet = worksheetWithPreferredSheet(worksheet, focusedSheetId);
+            }
+            return applyManageOperations(worksheet, operations);
           };
-        }
-        if (applied.length === 1) return applied[0];
-        const last = applied[applied.length - 1]!;
-        return {
-          status: "ok" as const,
-          action: last.action,
-          message: `Applied ${applied.length} worksheet changes — check the worksheet`,
-          sheetId: last.sheetId,
-          sheetName: last.sheetName,
-          operationCount: applied.length,
-        };
+
+          const analytics = await getOrCreateReportAnalytics(reportId);
+          let applied = run(analytics.worksheet);
+          if (!applied.ok) return applied.result;
+          let saved = await persistAndRecord(applied.worksheet, analytics.version);
+          if (!saved.ok && saved.reason === "conflict") {
+            applied = run(saved.analytics.worksheet);
+            if (!applied.ok) return applied.result;
+            saved = await persistAndRecord(
+              applied.worksheet,
+              saved.analytics.version
+            );
+          }
+          if (!saved.ok) {
+            return {
+              status: "error" as const,
+              message: persistErrorMessage(saved),
+            };
+          }
+          if (applied.applied.length === 1) return applied.applied[0];
+          const last = applied.applied[applied.applied.length - 1]!;
+          return {
+            status: "ok" as const,
+            action: last.action,
+            message: `Applied ${applied.applied.length} worksheet changes — check the worksheet`,
+            sheetId: last.sheetId,
+            sheetName: last.sheetName,
+            operationCount: applied.applied.length,
+          };
+        });
       },
     });
 

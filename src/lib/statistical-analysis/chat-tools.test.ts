@@ -582,14 +582,22 @@ describe("analytics chat tools", () => {
     });
   });
 
-  it("retries write_column once after a version conflict", async () => {
+  it("retries write_column by re-applying onto the latest worksheet", async () => {
     const initial = analyticsView();
+    const withTorque = analyticsView(
+      replaceColumnValues(
+        createEmptyWorksheet(),
+        0,
+        ["3", "2.5"],
+        "Torque (ozf-in)"
+      )
+    );
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
     vi.mocked(updateReportAnalytics)
       .mockResolvedValueOnce({
         ok: false,
         reason: "conflict",
-        analytics: { ...initial, version: 2 },
+        analytics: { ...withTorque, version: 2 },
       })
       .mockImplementation(async (_id, worksheet) => ({
         ok: true,
@@ -618,6 +626,60 @@ describe("analytics chat tools", () => {
       expect.anything(),
       { expectedVersion: 2 }
     );
+    const retried = vi.mocked(updateReportAnalytics).mock.calls[1]?.[1];
+    expect(retried?.columns[0]).toMatchObject({
+      name: "Torque (ozf-in)",
+      values: ["3", "2.5"],
+    });
+    expect(retried?.columns[1]).toMatchObject({
+      name: "Time",
+      values: ["0", "24"],
+    });
+  });
+
+  it("keeps the first column when two write_column calls run in parallel", async () => {
+    let current = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockImplementation(async () => current);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => {
+      current = {
+        ...current,
+        worksheet,
+        version: current.version + 1,
+      };
+      await Promise.resolve();
+      return { ok: true, analytics: current };
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-parallel",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const extra = {
+      messages: [] as never[],
+      abortSignal: new AbortController().signal,
+    };
+    const [first, second] = await Promise.all([
+      execute(
+        { name: "Torque", values: ["3", "2.5"] },
+        { toolCallId: "w1", ...extra }
+      ),
+      execute(
+        { name: "Assay %", values: ["101.2", "99.8"] },
+        { toolCallId: "w2", ...extra }
+      ),
+    ]);
+    expect(first).toMatchObject({ status: "written", columnName: "Torque" });
+    expect(second).toMatchObject({ status: "written", columnName: "Assay %" });
+    expect(current.worksheet.columns[0]).toMatchObject({
+      name: "Torque",
+      values: ["3", "2.5"],
+    });
+    expect(current.worksheet.columns[1]).toMatchObject({
+      name: "Assay %",
+      values: ["101.2", "99.8"],
+    });
   });
 
   it("requires values or columns on write_column", () => {
