@@ -178,7 +178,7 @@ describe("ScatterView spec limits", () => {
     expect(screen.getByTestId("scatter-spec-line-usl")).toBeTruthy();
   });
 
-  it("shows attachment page citations on a worksheet plot subtitle", () => {
+  it("omits attachment page citations from a worksheet plot subtitle", () => {
     const spec = {
       ...TORQUE_MOCK_SPEC,
       query: "Assay vs Observation",
@@ -212,6 +212,23 @@ describe("ScatterView spec limits", () => {
       previewImage: null,
     };
     render(<ScatterView analysis={analysis} {...viewProps} />);
-    expect(screen.getByText(/p\. 31/)).toBeTruthy();
+    expect(screen.getByTestId("analysis-preview-figure").textContent).not.toMatch(
+      /p\.\s*31/
+    );
+    expect(
+      screen.getByText(/Assay vs Observation · \d+ points/)
+    ).toBeTruthy();
+  });
+
+  it("omits attachment page citations from a measurement scatter subtitle", () => {
+    const analysis = scatterSummary({ lower: 1, upper: 6 });
+    analysis.results.specs[0] = {
+      ...analysis.results.specs[0]!,
+      citations: [{ attachmentId: "att_1", page: 13 }],
+    };
+    render(<ScatterView analysis={analysis} {...viewProps} />);
+    const figure = screen.getByTestId("analysis-preview-figure");
+    expect(figure.textContent).not.toMatch(/p\.\s*13/);
+    expect(figure.textContent).not.toContain("no citations");
   });
 });

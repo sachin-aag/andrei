@@ -140,10 +140,10 @@ Analytics chat can create a plot or edit an existing worksheet plot
 (`analysisId` from Results or an `@` tag): replace Y/X, set or clear the
 legend, change chart type, toggle Show LSL/USL, or set the axis window. Ask mode cannot. New plots default to scatter with
 spec lines off. **Show LSL, USL values** under Y is off by default (no spec
-lines until checked or the assistant turns them on). Worksheet plots cite
-the attachment page when the plotted columns were
-written from a file (`write_column` after extract/scan/read). Editing a
-cell drops that citation. Attachment extract-and-plot is Analytics chat
+lines until checked or the assistant turns them on). Columns written from a
+file (`write_column` after extract/scan/read) keep page citations on the
+column and chart spec for CSV download. Plot figures do not show `p. N`.
+Editing a cell drops that citation. Attachment extract-and-plot is Analytics chat
 only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
 There is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA
 for a scatter or boxplot.
