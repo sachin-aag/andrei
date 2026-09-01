@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v31-boxplot-axis-labels-intent-tools"
+      "analytics-chat-v32-plot-no-page-citation"
     );
   });
 
@@ -76,6 +76,7 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("A page can hold more than one table");
     expect(prompt).toContain("do not substitute a different table");
     expect(prompt).toContain("sourceAttachmentId and sourcePages");
+    expect(prompt).toContain("plot figures do not show page numbers");
     expect(prompt).toContain("Do not write 0 or any other number");
     expect(prompt).toContain("Do not copy decimal format from a neighboring column");
     expect(prompt).toContain("whether you are stuck");

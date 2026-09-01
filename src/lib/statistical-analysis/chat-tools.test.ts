@@ -647,7 +647,10 @@ describe("analytics chat tools", () => {
     );
     expect(tools.write_column?.description).toContain("never invent 0");
     expect(tools.write_column?.description).toContain(
-      "worksheet plots cite the file"
+      "CSV download keeps the source page"
+    );
+    expect(tools.write_column?.description).toContain(
+      "Plot figures do not show page numbers"
     );
     expect(tools.write_column?.description).toContain(
       "Do not substitute a sixpack or ANOVA for a scatter"

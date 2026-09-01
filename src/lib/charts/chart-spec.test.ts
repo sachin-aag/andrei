@@ -260,9 +260,9 @@ describe("splitSpec", () => {
 });
 
 describe("formatChartProvenance", () => {
-  it("summarizes count, limits, query, and pages", () => {
+  it("summarizes count, limits, and query without page citations", () => {
     expect(formatChartProvenance(spec())).toBe(
-      "4 points, limits 1–6 ozf-in, M3-SYS-FN-037, p. 13"
+      "4 points, limits 1–6 ozf-in, M3-SYS-FN-037"
     );
   });
 });

@@ -47,7 +47,7 @@ export function uniqueChartCitations(
   return out;
 }
 
-/** Compact page label for a spec subtitle, e.g. `p. 31` or `p. 13–15`. */
+/** Compact page label for downloads, e.g. `p. 31` or `p. 13–15`. Not shown on plot figures. */
 export function formatChartCitationPages(
   citations: readonly ChartCitation[]
 ): string | null {
@@ -454,7 +454,6 @@ export function formatChartProvenance(spec: ChartSpec): string {
         : upper != null
           ? `limit ≤ ${upper}${spec.uom ? ` ${spec.uom}` : ""}`
           : "no limits";
-  const pageBit = formatChartCitationPages(spec.citations) ?? "no citations";
-  return `${n} point${n === 1 ? "" : "s"}, ${limitBit}, ${spec.query}, ${pageBit}`;
+  return `${n} point${n === 1 ? "" : "s"}, ${limitBit}, ${spec.query}`;
 }
 
