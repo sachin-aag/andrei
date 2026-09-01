@@ -320,13 +320,14 @@ test.describe("report editor", () => {
     await expandReportSidebar(page);
     await setReportChrome(page, "agent");
 
-    const collapsedPanel = page.getByTestId("report-work-product");
+    const workProductPanel = page.getByTestId("report-work-product");
     await expect(
-      collapsedPanel.getByRole("button", { name: /expand document panel/i })
+      workProductPanel.getByRole("button", { name: /collapse document panel/i })
     ).toBeVisible();
-    const collapsedBox = await collapsedPanel.boundingBox();
-    expect(collapsedBox).toBeTruthy();
-    expect(collapsedBox!.width).toBeLessThanOrEqual(52);
+    await expect(page.getByTestId("work-product-tab-strip")).toBeVisible();
+    const expandedBox = await workProductPanel.boundingBox();
+    expect(expandedBox).toBeTruthy();
+    expect(expandedBox!.width).toBeGreaterThan(52);
 
     const previewHandle = page.getByRole("separator", {
       name: /resize document panel/i,
@@ -410,7 +411,7 @@ test.describe("report editor", () => {
     await page.getByTestId("report-surface-analytics").click();
     await expect(page.getByTestId("report-analytics-workspace")).toBeVisible();
     await collapseWorkProductPanel(page);
-    await expect(collapsedPanel.getByRole("button", { name: /expand document panel/i })).toBeVisible();
+    await expect(workProductPanel.getByRole("button", { name: /expand document panel/i })).toBeVisible();
     // Collapsed Agent rail only shows the active tab. Expand to reach Analytics.
     await expandWorkProductPanel(page);
     await page.getByTestId("report-surface-analytics").click();

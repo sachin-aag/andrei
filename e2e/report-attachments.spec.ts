@@ -123,7 +123,7 @@ test.describe("report PDF documents", () => {
     await setReportChrome(page, "agent");
     const workProduct = page.getByTestId("report-work-product");
     await expect(
-      workProduct.getByRole("button", { name: /expand document panel/i })
+      workProduct.getByRole("button", { name: /collapse document panel/i })
     ).toBeVisible();
 
     const fileName = await uploadPdf(page);
