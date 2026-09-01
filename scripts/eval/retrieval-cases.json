@@ -1,0 +1,126 @@
+[
+  {
+    "id": "appendix-b-sw-lwb-4",
+    "query": "SW-LWB-4",
+    "kind": "identifier",
+    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 31 }],
+    "notes": "Table 4 software requirements; fixture tests treat SW-LWB-4 on page 31."
+  },
+  {
+    "id": "appendix-b-laser-wavelength",
+    "query": "laser wavelength bandwidth",
+    "kind": "semantic",
+    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 31 }]
+  },
+  {
+    "id": "appendix-b-table-4-heading",
+    "query": "TABLE 4 SOFTWARE REQUIREMENTS",
+    "kind": "semantic",
+    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 31 }]
+  },
+  {
+    "id": "appendix-b-page-31-locator",
+    "query": "appendix-b-790-00134r-revu.pdf page 31",
+    "kind": "locator",
+    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 31 }]
+  },
+  {
+    "id": "sop-fmea-grid",
+    "query": "FMEA grid potential failure severity",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 37 }],
+    "notes": "docs/sop-010-r04-transcription.md §2 FMEA grid."
+  },
+  {
+    "id": "sop-f02-cover",
+    "query": "Template for Risk Assessment by FMEA",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 28 }]
+  },
+  {
+    "id": "sop-f02-toc",
+    "query": "F02 table of contents Pre-Approval Risk identification",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 29 }]
+  },
+  {
+    "id": "sop-f02-pre-approval",
+    "query": "Performed By User Dept Reviewed By Risk Assessment Team",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 30 }]
+  },
+  {
+    "id": "sop-r01-fmea",
+    "query": "Risk IDs start at R01",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 37 }]
+  },
+  {
+    "id": "sop-risk-communication",
+    "query": "Risk Assessment Summary and Conclusion Before Implementation",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 38 }]
+  },
+  {
+    "id": "sop-mitigation-tracker",
+    "query": "Mitigation plan and closure tracker",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 39 }]
+  },
+  {
+    "id": "sop-f04-template",
+    "query": "Template for New Risk Residual Risk F04",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 43 }]
+  },
+  {
+    "id": "sop-f04-grid",
+    "query": "F04 residual risk grid page 45",
+    "kind": "locator",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 45 }]
+  },
+  {
+    "id": "sop-rpn-table-06",
+    "query": "RPN bands Low 1-8 Medium 9-24",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 15 }]
+  },
+  {
+    "id": "sop-quantitative-rubric",
+    "query": "RPN equals severity times probability times detectability",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 13 }]
+  },
+  {
+    "id": "sop-a02-decision",
+    "query": "A02 informal qualitative versus formal quantitative QRM",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 23 }]
+  },
+  {
+    "id": "sop-f01-questions",
+    "query": "F01 potential impact on product quality scope well defined",
+    "kind": "semantic",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 26 }]
+  },
+  {
+    "id": "sop-dp-qa-010-identifier",
+    "query": "SOP-DP-QA-010",
+    "kind": "identifier",
+    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 1 }],
+    "notes": "Document number shaped like requirementIds(); cover is printed page 1 of 51."
+  },
+  {
+    "id": "dev-qc-filename-locator",
+    "query": "DEV-QC-25-010 Copy (1).pdf",
+    "kind": "identifier",
+    "gold": [{ "filename": "DEV-QC-25-010 Copy (1).pdf", "page": 1 }],
+    "notes": "Filename contains DEV-QC-25-010, which requirementIds() treats as an identifier. Scan with little native text — gold is page 1, do not invent inner pages."
+  },
+  {
+    "id": "appendix-b-filename-locator",
+    "query": "790-00134r-revu.pdf",
+    "kind": "locator",
+    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 1 }]
+  }
+]

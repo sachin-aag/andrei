@@ -289,6 +289,10 @@ async function markAttachmentReadyForTests(
       "Batch B-441 failed dissolution at 68 percent versus the 80 percent specification.",
     visualInterpretation: "",
     pageContext: "Dissolution COA for the failed batch.",
+    identifiers: [],
+    outlineTitle: null,
+    hasTable: null,
+    hasFigure: null,
   });
 
   const chunks = chunkDocumentPages({

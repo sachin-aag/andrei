@@ -5,6 +5,7 @@ import {
   normalizeAttachmentIdFilter,
   reciprocalRankFusion,
   searchReportDocuments,
+  searchReportDocumentsDetailed,
   verifyCitation,
 } from "@/lib/attachments/retrieval";
 
@@ -152,7 +153,10 @@ describe("searchReportDocuments with tagged attachments", () => {
 
   it("marks tagged hits and skips backfill when they fill the limit", async () => {
     limitMock
-      .mockResolvedValueOnce([chunkRow("c1", "att_1"), chunkRow("c2", "att_1")])
+      .mockResolvedValueOnce([
+        chunkRow("c1", "att_1", 1),
+        chunkRow("c2", "att_1", 2),
+      ])
       .mockResolvedValueOnce([]);
 
     const results = await searchReportDocuments({
@@ -242,6 +246,42 @@ describe("searchReportDocuments with tagged attachments", () => {
     });
 
     expect(results.map((r) => r.pageNumber)).toEqual([32]);
+  });
+
+  it("collapses to one chunk per page", async () => {
+    limitMock
+      .mockResolvedValueOnce([
+        chunkRow("c1", "att_1", 1),
+        chunkRow("c2", "att_1", 1),
+        chunkRow("c3", "att_1", 2),
+      ])
+      .mockResolvedValueOnce([]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "dissolution failure",
+      limit: 5,
+    });
+
+    expect(results.map((r) => r.chunkId)).toEqual(["c1", "c3"]);
+    expect(limitMock).toHaveBeenCalledTimes(2);
+    expect(embedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the query embedding when exact identifier hits fill the limit", async () => {
+    limitMock.mockResolvedValueOnce([chunkRow("c31", "att_1", 31)]);
+
+    const { results, timing } = await searchReportDocumentsDetailed({
+      reportId: "report-1",
+      query: "SW-LWB-4",
+      limit: 1,
+    });
+
+    expect(results.map((r) => r.pageNumber)).toEqual([31]);
+    expect(timing.skippedEmbedding).toBe(true);
+    expect(timing.queryKind).toBe("identifier");
+    expect(embedMock).not.toHaveBeenCalled();
+    expect(limitMock).toHaveBeenCalledTimes(1);
   });
 });
 

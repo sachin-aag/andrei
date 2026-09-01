@@ -125,8 +125,15 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 
 - Hybrid: vector (`embedding <=>`) + English FTS with OR tokens
   (`buildKeywordTsQuery`). Skip the keyword arm when tokenization is empty.
+- Identifier queries (`classifyRetrievalQuery` / `requirementIds()`) search
+  `document_pages.identifiers` first (GIN overlap; empty arrays fall back to
+  `ILIKE` on `raw_text`). If exact hits fill `limit`, skip `embedRetrievalQuery`.
+  Every mode collapses to one chunk per `(attachmentId, pageNumber)`.
 - FTS expression must stay `to_tsvector('english', contextual_text)` to hit
   `document_chunks_contextual_text_fts_en_idx`.
+- `readDocumentOutline` prefers stored `document_outline_spans` on the active
+  ingest run and falls back to `buildOutlineFromStoredPages`.
+- Plan and gold cases: `docs/retrieval.md`, `pnpm retrieval-eval`.
 - Default retrieval is adaptive (agentic grep: complementary
   `search_documents` queries, `excludePages` / `nextExcludePages` rounds,
   `mode=keyword` for lexical hits, `document_outline`). Classifier forces

@@ -6,6 +6,7 @@ import {
   attachmentIngestRuns,
   documentChunks,
   documentIngestBatches,
+  documentOutlineSpans,
   documentPages,
   reportAttachments,
   type AttachmentIngestRunStatus,
@@ -49,6 +50,10 @@ import {
   splitPdfIntoBatches,
 } from "@/lib/attachments/pdf-split";
 import { recordAttachmentPageUsage } from "@/lib/attachments/page-budget";
+import {
+  buildOutlineSpanRows,
+  toDocumentPageRetrievalFields,
+} from "@/lib/attachments/page-metadata";
 import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachments";
 import {
   flushLangfuseTraces,
@@ -59,7 +64,7 @@ import {
 
 export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
 
-const PARSER_VERSION = "v3";
+const PARSER_VERSION = "v4";
 const SUMMARY_MAX_CHARS = 12_000;
 const FAILED_ATTACHMENT_PROGRESS = 0;
 /** Yield before Vercel’s 300s isolate budget so a later slice can resume. */
@@ -372,6 +377,7 @@ async function runDocxIngest(init: IngestInit): Promise<void> {
           visualInterpretation: visualByPage.get(page.pageNumber) ?? "",
           pageContext: init.filename,
           confidence: null,
+          ...toDocumentPageRetrievalFields({ transcript: page.text }),
         }))
       );
     }
@@ -723,6 +729,11 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
             visualInterpretation: page.visualInterpretation,
             pageContext: page.pageContext,
             confidence: page.confidence,
+            ...toDocumentPageRetrievalFields({
+              transcript: page.transcript,
+              hasTable: page.hasTable,
+              hasFigure: page.hasFigure,
+            }),
           }))
         );
       }
@@ -789,6 +800,11 @@ async function persistGapPagesForBatch(
           visualInterpretation: page.visualInterpretation,
           pageContext: page.pageContext,
           confidence: page.confidence,
+          ...toDocumentPageRetrievalFields({
+            transcript: page.transcript,
+            hasTable: page.hasTable,
+            hasFigure: page.hasFigure,
+          }),
         }))
       );
     }
@@ -868,7 +884,41 @@ async function buildDocumentSummary(runId: string): Promise<{ batchCount: number
   return { batchCount: batches.length };
 }
 
+async function persistOutlineSpansForRun(input: IngestInit): Promise<void> {
+  const pages = await db
+    .select({
+      pageNumber: documentPages.pageNumber,
+      printedPageLabel: documentPages.printedPageLabel,
+      pageContext: documentPages.pageContext,
+      transcript: documentPages.transcript,
+      identifiers: documentPages.identifiers,
+    })
+    .from(documentPages)
+    .where(eq(documentPages.ingestRunId, input.runId))
+    .orderBy(asc(documentPages.pageNumber));
+
+  const rows = buildOutlineSpanRows(pages);
+  await db
+    .delete(documentOutlineSpans)
+    .where(eq(documentOutlineSpans.ingestRunId, input.runId));
+  if (rows.length === 0) return;
+
+  await db.insert(documentOutlineSpans).values(
+    rows.map((row) => ({
+      ingestRunId: input.runId,
+      attachmentId: input.attachmentId,
+      reportId: input.reportId,
+      ordinal: row.ordinal,
+      title: row.title,
+      pageStart: row.pageStart,
+      pageEnd: row.pageEnd,
+      identifiers: row.identifiers,
+    }))
+  );
+}
+
 async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number }> {
+  await persistOutlineSpansForRun(input);
   const pages = await db
     .select({
       id: documentPages.id,
