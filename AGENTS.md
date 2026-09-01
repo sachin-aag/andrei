@@ -155,8 +155,11 @@ are labeled `(blank)`. Agent Analytics chat can create a boxplot or edit
 an existing one with `analysisId`. Ask mode cannot. Time series is not
 supported.
 Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
-assistant write; Agent `write_column` / `manage_worksheet` refresh the grid
-mid-turn. New extract columns claim empty C1–C8 from the left (`write_column`
+assistant write; Agent `write_column` / `manage_worksheet` run one at a time
+per report and re-apply onto the latest sheet on 409 (parallel column dumps
+must not wipe each other). The grid ignores older snapshots and coalesces
+mid-turn reloads so extraction does not flash empty. New extract columns
+claim empty C1–C8 from the left (`write_column`
 and `add_column` without `at`) instead of appending on the right. Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
 abort still apply). Do not tell the engineer they ran out of steps or to

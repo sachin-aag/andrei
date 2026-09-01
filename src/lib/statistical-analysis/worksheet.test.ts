@@ -19,6 +19,7 @@ import {
   insertColumn,
   insertRow,
   isSpecsTab,
+  isStaleAnalyticsVersion,
   mergeDirtyWorksheet,
   normalizeWorksheet,
   parseTsv,
@@ -332,6 +333,12 @@ describe("worksheet grid operations", () => {
   it("refuses to delete the last data sheet", () => {
     const sheet = deleteDataSheet(createEmptyWorksheet(), PRIMARY_DATA_SHEET_ID);
     expect(sheet.sheets).toHaveLength(1);
+  });
+
+  it("treats only a strictly older analytics version as stale", () => {
+    expect(isStaleAnalyticsVersion(1, 2)).toBe(true);
+    expect(isStaleAnalyticsVersion(2, 2)).toBe(false);
+    expect(isStaleAnalyticsVersion(3, 2)).toBe(false);
   });
 
   it("keeps local cell edits when merging a newer remote worksheet", () => {

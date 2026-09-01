@@ -506,6 +506,18 @@ function mergeColumnValues(
 }
 
 /**
+ * True when `incomingVersion` is from an older snapshot than the grid already
+ * applied. Equal versions still apply (plot create does not bump worksheet
+ * version). A stale GET of an empty sheet must not wipe a newer fill.
+ */
+export function isStaleAnalyticsVersion(
+  incomingVersion: number,
+  appliedVersion: number
+): boolean {
+  return incomingVersion < appliedVersion;
+}
+
+/**
  * Keep in-progress local cell edits when a newer server worksheet arrives
  * (assistant write or 409). Remote wins for cells the user did not change.
  */
