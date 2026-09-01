@@ -986,6 +986,7 @@ export const aiUsageFeatureEnum = pgEnum("ai_usage_feature", [
   "chart_extraction",
   "docx_image_description",
   "voice_transcribe",
+  "inline_proofread",
 ]);
 
 export const aiBudgetSettings = pgTable("ai_budget_settings", {

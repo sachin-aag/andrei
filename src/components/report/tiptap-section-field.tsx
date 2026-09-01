@@ -56,6 +56,14 @@ import {
   placeholderRefreshMeta,
 } from "@/lib/tiptap/placeholder-highlights";
 import {
+  createProofreadHighlightExtension,
+  issueIdAtPos,
+  proofreadPluginLocated,
+  proofreadRefreshMeta,
+  type ProofreadHighlightState,
+} from "@/lib/tiptap/proofread-highlights";
+import { useInlineProofread } from "@/hooks/use-inline-proofread";
+import {
   SuggestionInsert,
   SuggestionDelete,
   TrackChangesExtension,
@@ -373,6 +381,13 @@ export function TiptapSectionField({
     onAccept: () => {},
     onIgnore: () => {},
   });
+  const proofreadStateRef = useRef<ProofreadHighlightState>({
+    issues: [],
+    activeIssueId: null,
+    onActivate: () => {},
+    onAccept: () => {},
+    onDismiss: () => {},
+  });
   const tablePreviewSuggestionIdRef = useRef<string | null>(null);
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
@@ -461,6 +476,26 @@ export function TiptapSectionField({
     readOnly,
     trackChangesMode,
   });
+  const proofreadEnabled =
+    editable && !suggestionApplyTransition?.[section];
+  const {
+    issues: proofreadIssues,
+    activeIssueId: proofreadActiveId,
+    activateIssue: activateProofreadIssue,
+    dismissIssue: dismissProofreadIssue,
+  } = useInlineProofread({
+    reportId: report.id,
+    section,
+    contentPath,
+    doc: value,
+    enabled: proofreadEnabled,
+  });
+  const proofreadHighlightExtension = useMemo(
+    () =>
+      // eslint-disable-next-line react-hooks/refs -- ProseMirror reads this getter from plugin callbacks, not during React render
+      createProofreadHighlightExtension(() => proofreadStateRef.current),
+    []
+  );
   const manager = getUser(currentUserId)?.role === "manager";
   const canInlineComment =
     (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&
@@ -512,6 +547,7 @@ export function TiptapSectionField({
         highlightExtension,
         suggestionWidgetsExtension,
         placeholderHighlightExtension,
+        proofreadHighlightExtension,
         ...(citationHighlightExtension ? [citationHighlightExtension] : []),
       ],
       content: normalizeRichField(value, richFieldOptions),
@@ -522,7 +558,7 @@ export function TiptapSectionField({
         onChangeRef.current(json);
       },
     },
-    [highlightExtension, placeholder, placeholderHighlightExtension, citationHighlightExtension, suggestionWidgetsExtension]
+    [highlightExtension, placeholder, placeholderHighlightExtension, proofreadHighlightExtension, citationHighlightExtension, suggestionWidgetsExtension]
   );
 
 
@@ -1188,6 +1224,77 @@ export function TiptapSectionField({
         .setMeta("addToHistory", false)
     );
   }, [editor, focusedPanelPlaceholderId, section, contentPath]);
+
+  useLayoutEffect(() => {
+    proofreadStateRef.current = {
+      issues: proofreadIssues,
+      activeIssueId: proofreadActiveId,
+      onActivate: (id) => {
+        activateProofreadIssue(id);
+      },
+      onAccept: (id) => {
+        if (!editor || editor.isDestroyed) return;
+        const located = proofreadPluginLocated(editor.state).find(
+          (issue) => issue.id === id
+        );
+        if (!located) {
+          dismissProofreadIssue(id);
+          return;
+        }
+        editor
+          .chain()
+          .focus()
+          .command(({ tr, dispatch }) => {
+            if (located.insertText) {
+              tr.replaceWith(
+                located.from,
+                located.to,
+                editor.schema.text(located.insertText)
+              );
+            } else {
+              tr.delete(located.from, located.to);
+            }
+            dispatch?.(tr);
+            return true;
+          })
+          .run();
+        dismissProofreadIssue(id);
+      },
+      onDismiss: (id) => {
+        dismissProofreadIssue(id);
+      },
+    };
+  }, [
+    editor,
+    proofreadIssues,
+    proofreadActiveId,
+    activateProofreadIssue,
+    dismissProofreadIssue,
+  ]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta(proofreadRefreshMeta, true)
+        .setMeta("addToHistory", false)
+    );
+  }, [editor, proofreadIssues, proofreadActiveId]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const onSelection = () => {
+      const id = issueIdAtPos(
+        proofreadPluginLocated(editor.state),
+        editor.state.selection.from
+      );
+      activateProofreadIssue(id ?? "");
+    };
+    editor.on("selectionUpdate", onSelection);
+    return () => {
+      editor.off("selectionUpdate", onSelection);
+    };
+  }, [editor, activateProofreadIssue]);
 
   const cancelCommentCompose = useCallback(() => {
     setCommentComposing(false);

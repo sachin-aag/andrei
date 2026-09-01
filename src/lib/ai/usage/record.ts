@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { aiUsageEvents, type AiUsageFeature } from "@/db/schema";
 import { currentYearMonthUtc } from "./cycle";
 import { estimateAiUsageCostUsd, roundUsd } from "./estimate-cost";
@@ -116,4 +116,20 @@ export async function getAiUsageMonthSummary(
 export async function getCurrentMonthSpendUsd(): Promise<number> {
   const summary = await getAiUsageMonthSummary();
   return summary.spendUsd;
+}
+
+export async function getFeatureSpendUsd(
+  feature: AiUsageFeature,
+  yearMonth = currentYearMonthUtc()
+): Promise<number> {
+  const { db } = await import("@/db");
+  const [row] = await db
+    .select({
+      spendUsd: sql<number>`coalesce(sum(${aiUsageEvents.estimatedCostUsd}), 0)`,
+    })
+    .from(aiUsageEvents)
+    .where(
+      and(eq(aiUsageEvents.yearMonth, yearMonth), eq(aiUsageEvents.feature, feature))
+    );
+  return roundUsd(Number(row?.spendUsd ?? 0));
 }

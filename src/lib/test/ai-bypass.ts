@@ -43,6 +43,14 @@ export function isTestStubSpeech(): boolean {
   return process.env.ALLOW_TEST_STUB_SPEECH === "true";
 }
 
+/**
+ * Returns canned grammar issues instead of calling Gemini for inline proofread.
+ * Never set ALLOW_TEST_STUB_PROOFREAD on Vercel production or preview.
+ */
+export function isTestStubProofread(): boolean {
+  return process.env.ALLOW_TEST_STUB_PROOFREAD === "true";
+}
+
 export function isTestLoginEnabled(): boolean {
   return (
     process.env.ALLOW_TEST_LOGIN === "true" &&

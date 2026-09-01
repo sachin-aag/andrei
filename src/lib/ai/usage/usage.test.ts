@@ -29,6 +29,15 @@ describe("ai usage pricing", () => {
     expect(cost).toBe(pricing.inputPerMillionUsd);
   });
 
+  it("prices 2.5 Flash-Lite cheaper than 3.5 Flash-Lite", () => {
+    const lite25 = resolveModelPricing("gemini-2.5-flash-lite");
+    const lite35 = resolveModelPricing("gemini-3.5-flash-lite");
+    expect(lite25.inputPerMillionUsd).toBe(0.1);
+    expect(lite25.outputPerMillionUsd).toBe(0.4);
+    expect(lite35.inputPerMillionUsd).toBe(0.3);
+    expect(lite35.outputPerMillionUsd).toBe(2.5);
+  });
+
   it("normalizes embedding token usage", () => {
     expect(normalizeTokenUsage({ tokens: 128 })).toEqual({
       inputTokens: 128,

@@ -4,6 +4,7 @@ import {
   isTestStubChat,
   isTestStubDocumentIngest,
   isTestStubMathExtraction,
+  isTestStubProofread,
 } from "@/lib/test/ai-bypass";
 
 /** Skip budget checks and usage persistence in CI/E2E stub modes. */
@@ -13,6 +14,7 @@ export function isAiBudgetTrackingSkipped(): boolean {
     isTestSkipSuggestions() ||
     isTestStubChat() ||
     isTestStubDocumentIngest() ||
-    isTestStubMathExtraction()
+    isTestStubMathExtraction() ||
+    isTestStubProofread()
   );
 }
