@@ -42,6 +42,7 @@ import {
   applyNumberingToDocxZip,
   loadListNumberingBasesFromZip,
 } from "@/lib/export/docx-numbering";
+import { applyMechanicalResultsColWidths } from "@/lib/export/mechanical-table-footnotes";
 import {
   narrativeToDocxXmlWithContext,
   plainTextToDocxXml,
@@ -96,10 +97,15 @@ const MECHANICAL_DV_LANDSCAPE_TABLE_KEYS = new Set([
   "systemResultsTableXml",
 ]);
 
+const MECHANICAL_DV_RESULTS_TABLE_KEYS = new Set([
+  "hardwareResultsTableXml",
+  "systemResultsTableXml",
+]);
+
 function stringifyDvTemplateValue(
   value: unknown,
   ctx: DocxExportContext,
-  options?: NarrativeToDocxOptions
+  options?: NarrativeToDocxOptions & { resultsColWidths?: boolean }
 ): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
@@ -107,11 +113,15 @@ function stringifyDvTemplateValue(
     return String(value);
   }
   if (isTiptapDoc(value)) {
-    return narrativeToDocxXmlWithContext(
-      normalizeRichField(value),
-      ctx,
-      options
-    ).xml;
+    const { resultsColWidths, ...docxOptions } = options ?? {};
+    const normalized = normalizeRichField(value);
+    const doc = resultsColWidths
+      ? applyMechanicalResultsColWidths(
+          normalized,
+          ctx.pageSetup.landscapeContentWidthDxa
+        )
+      : normalized;
+    return narrativeToDocxXmlWithContext(doc, ctx, docxOptions).xml;
   }
   return "";
 }
@@ -668,12 +678,19 @@ async function generateDesignVerificationDocx({
     data.revision = meta.revision;
   }
   for (const [key, value] of Object.entries(built)) {
-    const landscapeTables =
+    const isMechanicalResults =
       documentType === "mechanical_design_verification" &&
-      MECHANICAL_DV_LANDSCAPE_TABLE_KEYS.has(key)
-        ? { forceLandscapeTables: true }
-        : undefined;
-    data[key] = stringifyDvTemplateValue(value, ctx, landscapeTables);
+      MECHANICAL_DV_LANDSCAPE_TABLE_KEYS.has(key);
+    data[key] = stringifyDvTemplateValue(
+      value,
+      ctx,
+      isMechanicalResults
+        ? {
+            forceLandscapeTables: true,
+            resultsColWidths: MECHANICAL_DV_RESULTS_TABLE_KEYS.has(key),
+          }
+        : undefined
+    );
   }
 
   doc.render(data);

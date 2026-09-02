@@ -9,6 +9,7 @@ import {
   checkEquipmentCalibrationDates,
   checkEquipmentTablePresent,
 } from "@/lib/document-types/convergent/deterministic-checks";
+import { placeRequirementsVerifiedFootnotes, placeUutTableFootnotes } from "@/lib/export/mechanical-table-footnotes";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
@@ -838,6 +839,15 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         const content = byKey[key] as Record<string, unknown> | undefined;
         return content?.[name] ?? null;
       };
+      const placedResults = placeRequirementsVerifiedFootnotes({
+        narrative: field("requirements_verified", "narrative"),
+        hardwareTable: field("requirements_verified", "hardwareTable"),
+        systemTable: field("requirements_verified", "systemTable"),
+      });
+      const placedUut = placeUutTableFootnotes({
+        narrative: field("units_under_test", "narrative"),
+        table: field("units_under_test", "table"),
+      });
       const meta =
         report.metadata && typeof report.metadata === "object"
           ? (report.metadata as Partial<
@@ -859,18 +869,15 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         testersXml: field("testers_dates", "testers"),
         executedProtocolXml: narrative("executed_protocol"),
         protocolDeviationsXml: narrative("protocol_deviations"),
-        uutNarrativeXml: field("units_under_test", "narrative"),
-        uutTableXml: field("units_under_test", "table"),
+        uutNarrativeXml: placedUut.narrative,
+        uutTableXml: placedUut.table,
         equipmentNarrativeXml: field("equipment_and_calibration", "narrative"),
         equipmentTableXml: field("equipment_and_calibration", "table"),
         failuresXml: narrative("failure_forms"),
         dataCollectionXml: narrative("data_collection_forms"),
-        requirementsLeadInXml: field("requirements_verified", "narrative"),
-        hardwareResultsTableXml: field(
-          "requirements_verified",
-          "hardwareTable"
-        ),
-        systemResultsTableXml: field("requirements_verified", "systemTable"),
+        requirementsLeadInXml: placedResults.leadIn,
+        hardwareResultsTableXml: placedResults.hardwareTable,
+        systemResultsTableXml: placedResults.systemTable,
         observationsXml: narrative("observations"),
         problemsXml: narrative("problems_resolution"),
         conclusionXml: narrative("conclusion"),

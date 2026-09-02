@@ -118,7 +118,7 @@ const RESULTS_FOOTNOTE_IN_LEAD_IN_RE =
  * A prototype or functional equivalent carries an asterisk on its revision and
  * a footnote beneath the table (in the table field). A footnote still sitting
  * only in the lead-in narrative is accepted so older drafts are not failed
- * solely for field placement.
+ * solely for field placement. A star only inside a table cell does not count.
  */
 export function checkUutPrototypeFootnote(ctx: EvaluationContext) {
   const parsed = parseUutMatrix(ctx.content);

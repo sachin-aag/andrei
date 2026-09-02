@@ -179,11 +179,11 @@ describe("mechanical design verification definition", () => {
   });
 
   it("has a prompt version distinct from the software DV type", () => {
-    expect(getDocumentType(TYPE).prompts.promptVersion).not.toBe(
-      getDocumentType("design_verification").prompts.promptVersion
-    );
     expect(getDocumentType(TYPE).prompts.promptVersion).toBe(
       "convergent-mechanical-dv-v2"
+    );
+    expect(getDocumentType(TYPE).prompts.promptVersion).not.toBe(
+      getDocumentType("design_verification").prompts.promptVersion
     );
   });
 
@@ -201,6 +201,13 @@ describe("mechanical design verification definition", () => {
     expect(guidance).not.toContain(
       "*See Deviation #02, deemed Not Applicable to the current testing execution*"
     );
+  });
+
+  it("tells Agent to put table footnotes after the table, not in the lead-in", () => {
+    const guidance = getDocumentType(TYPE).chat.draftingGuidance ?? "";
+    expect(guidance).toContain("Do not put this note in the 4.2 lead-in");
+    expect(guidance).toContain("immediately beneath Table 1");
+    expect(guidance).toContain("three paragraphs only");
   });
 
   it("runs the reused equipment check against the mechanical content shape", () => {
@@ -319,6 +326,28 @@ describe("mechanical deterministic checks", () => {
             "*The adapter was a prototype that was functionally equivalent to SUB-00450 Rev. 6"
           ),
           table: starred,
+        })
+      ).status
+    ).toBe("met");
+    expect(
+      checkUutPrototypeFootnote(
+        ctx({
+          narrative: narrativeDoc("Three assemblies were used."),
+          table: {
+            type: "doc",
+            content: [
+              ...(starred.content ?? []),
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "*The adapter was a prototype that was functionally equivalent to SUB-00450 Rev. 6",
+                  },
+                ],
+              },
+            ],
+          },
         })
       ).status
     ).toBe("met");

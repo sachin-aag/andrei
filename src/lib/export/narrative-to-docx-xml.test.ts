@@ -713,6 +713,32 @@ describe("narrativeToDocxXml tables", () => {
     expect(sum).toBeLessThanOrEqual(15394);
   });
 
+  it("keeps trailing paragraphs in the landscape section when forceLandscapeTables is on", () => {
+    const xml = narrativeToDocxXml(
+      {
+        type: "doc",
+        content: [
+          nColTable(4),
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "*See Deviation #02, deemed Not Applicable to the current testing execution*",
+              },
+            ],
+          },
+        ],
+      },
+      undefined,
+      { forceLandscapeTables: true }
+    );
+    const footnoteAt = xml.indexOf("Deviation #02");
+    const landscapeAt = xml.indexOf('w:orient="landscape"');
+    expect(footnoteAt).toBeGreaterThan(-1);
+    expect(landscapeAt).toBeGreaterThan(footnoteAt);
+  });
+
   it("puts a many-column table on a landscape section and uses the landscape content band", () => {
     const xml = narrativeToDocxXml({
       type: "doc",

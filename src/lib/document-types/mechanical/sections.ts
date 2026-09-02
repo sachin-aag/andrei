@@ -58,6 +58,9 @@ export const MECHANICAL_RESULTS_HEADERS = [
   "Pass/Fail",
 ] as const;
 
+/** Landscape tblGrid shares so Req ID and Pass/Fail stay on one line. */
+export const MECHANICAL_RESULTS_COL_WIDTH_SHARES = [16, 42, 28, 14] as const;
+
 /** Table 5 — one row per revision of the report, oldest at the top. */
 export const MECHANICAL_REVISION_HISTORY_HEADERS = [
   "Revision Level",
