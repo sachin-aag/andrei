@@ -13,6 +13,8 @@ import {
   upsertSpecRow,
 } from "./worksheet";
 
+const ASSAY = [...SAMPLE_ASSAY_VALUES];
+
 const config = {
   columnId: "c1",
   columnName: "Assay",
@@ -23,11 +25,11 @@ const config = {
 
 describe("computeHistogramFromValues", () => {
   it("uses the same bins and curves as the sixpack histogram", () => {
-    const sixpack = computeCapabilitySixpackFromValues(SAMPLE_ASSAY_VALUES, 0, {
+    const sixpack = computeCapabilitySixpackFromValues(ASSAY, 0, {
       ...config,
       target: 100,
     });
-    const histogram = computeHistogramFromValues(SAMPLE_ASSAY_VALUES, 0, config);
+    const histogram = computeHistogramFromValues(ASSAY, 0, config);
     expect(sixpack.ok).toBe(true);
     expect(histogram.ok).toBe(true);
     if (!sixpack.ok || !histogram.ok) return;
@@ -38,19 +40,19 @@ describe("computeHistogramFromValues", () => {
   });
 
   it("allows a histogram without spec limits", () => {
-    const outcome = computeHistogramFromValues(SAMPLE_ASSAY_VALUES, 0, {
+    const outcome = computeHistogramFromValues(ASSAY, 0, {
       ...config,
       lsl: null,
       usl: null,
     });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.result.n).toBe(SAMPLE_ASSAY_VALUES.length);
+    expect(outcome.result.n).toBe(ASSAY.length);
     expect(outcome.result.histogram.bins.length).toBeGreaterThan(0);
   });
 
   it("rejects inverted spec limits", () => {
-    const outcome = computeHistogramFromValues(SAMPLE_ASSAY_VALUES, 0, {
+    const outcome = computeHistogramFromValues(ASSAY, 0, {
       ...config,
       lsl: 110,
       usl: 90,
@@ -78,11 +80,11 @@ describe("computeHistogramFromValues", () => {
 describe("computeHistogram", () => {
   it("reads numeric values from the worksheet column", () => {
     let worksheet = createEmptyWorksheet();
-    worksheet = replaceColumnValues(worksheet, 0, SAMPLE_ASSAY_VALUES.map(String));
+    worksheet = replaceColumnValues(worksheet, 0, ASSAY.map(String));
     const outcome = computeHistogram(worksheet, config);
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.result.n).toBe(SAMPLE_ASSAY_VALUES.length);
+    expect(outcome.result.n).toBe(ASSAY.length);
   });
 });
 
@@ -92,7 +94,7 @@ describe("histogramLimitsFromColumnSpecs", () => {
     worksheet = replaceColumnValues(
       worksheet,
       0,
-      SAMPLE_ASSAY_VALUES.map(String)
+      ASSAY.map(String)
     );
     expect(histogramLimitsFromColumnSpecs(worksheet, "C1")).toEqual({
       lsl: null,
