@@ -16,6 +16,14 @@ import {
   markGeometry,
   parseChartMark,
 } from "@/lib/charts/chart-marks";
+import {
+  chartShowsMeanLine,
+  MEAN_LINE_INDIVIDUAL_FILL,
+  MEAN_LINE_MARKER_RADIUS,
+  meanLineGroups,
+  SCATTER_MEAN_LINE_JITTER_PX,
+  scatterJitterPxByIndex,
+} from "@/lib/charts/mean-line";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
 import { readRasterDimensions } from "@/lib/export/raster-dimensions";
 import {
@@ -228,14 +236,24 @@ function drawChart(
     seriesBy: spec.layout.seriesBy,
   });
   const mark = parseChartMark(spec.layout.mark);
+  const showMeanLine = chartShowsMeanLine(spec.layout);
+  const jitterPx =
+    showMeanLine && geometry.type === "points"
+      ? scatterJitterPxByIndex(geometry.points, SCATTER_MEAN_LINE_JITTER_PX)
+      : null;
+  const pointFill = (series: string | null) =>
+    showMeanLine && spec.layout.seriesBy !== "unit"
+      ? MEAN_LINE_INDIVIDUAL_FILL
+      : colorFor(series);
 
   if (geometry.type === "points") {
-    for (const point of geometry.points) {
-      const px = xToPx(point.x);
+    for (let i = 0; i < geometry.points.length; i++) {
+      const point = geometry.points[i]!;
+      const px = xToPx(point.x) + (jitterPx?.[i] ?? 0);
       const py = yToPx(point.y);
       ctx.beginPath();
       ctx.arc(px, py, 5, 0, Math.PI * 2);
-      ctx.fillStyle = colorFor(point.series);
+      ctx.fillStyle = pointFill(point.series);
       ctx.fill();
       ctx.lineWidth = 1;
       ctx.strokeStyle = colors.plotFill;
@@ -300,6 +318,40 @@ function drawChart(
         width,
         Math.max(1, bottom - top)
       );
+    }
+  }
+
+  if (showMeanLine) {
+    const groups = meanLineGroups(points, spec.layout.seriesBy);
+    for (const group of groups) {
+      const color = colorFor(group.series);
+      const first = group.points[0];
+      if (group.points.length >= 2 && first) {
+        ctx.beginPath();
+        ctx.moveTo(xToPx(first.x), yToPx(first.y));
+        for (let i = 1; i < group.points.length; i++) {
+          const point = group.points[i]!;
+          ctx.lineTo(xToPx(point.x), yToPx(point.y));
+        }
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      for (const point of group.points) {
+        ctx.beginPath();
+        ctx.arc(
+          xToPx(point.x),
+          yToPx(point.y),
+          MEAN_LINE_MARKER_RADIUS,
+          0,
+          Math.PI * 2
+        );
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.lineWidth = 1.25;
+        ctx.strokeStyle = colors.plotFill;
+        ctx.stroke();
+      }
     }
   }
 

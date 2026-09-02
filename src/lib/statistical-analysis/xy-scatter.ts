@@ -162,6 +162,7 @@ function buildSpec(
       xAxis: "value",
       mark: parseChartMark(config.mark),
       showSpecLimits: config.showSpecLimits === true,
+      showMeanLine: config.showMeanLine === true,
       xRange: layoutRangeFromBounds(config.xMin, config.xMax),
       yRange: layoutRangeFromBounds(config.yMin, config.yMax),
     },
@@ -200,6 +201,7 @@ export type XyScatterPatch = {
   title?: string;
   mark?: XyScatterConfig["mark"];
   showSpecLimits?: boolean;
+  showMeanLine?: boolean;
   xMin?: number | null;
   xMax?: number | null;
   yMin?: number | null;
@@ -251,6 +253,7 @@ export function mergeXyScatterPatch(
     mark: patch.mark ?? existing.mark,
     showSpecLimits:
       patch.showSpecLimits ?? existing.showSpecLimits === true,
+    showMeanLine: patch.showMeanLine ?? existing.showMeanLine === true,
     xMin: mergeOptionalBound(patch.xMin, existing.xMin),
     xMax: mergeOptionalBound(patch.xMax, existing.xMax),
     yMin: mergeOptionalBound(patch.yMin, existing.yMin),

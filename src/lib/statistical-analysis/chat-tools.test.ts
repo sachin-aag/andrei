@@ -164,9 +164,11 @@ describe("analytics chat tools", () => {
     );
     expect(writable.plot_xy_scatter?.description).toContain("analysisId");
     expect(writable.plot_xy_scatter?.description).toContain("showSpecLimits");
+    expect(writable.plot_xy_scatter?.description).toContain("showMeanLine");
     expect(writable.plot_xy_scatter?.description).toContain("xMin/xMax/yMin/yMax");
     expect(writable.plot_boxplot?.description).toContain("categoryColumnIds");
     expect(writable.plot_boxplot?.description).toContain("innermost first");
+    expect(writable.plot_boxplot?.description).toContain("showMeanLine");
     expect(writable.plot_boxplot?.description).toContain("xAxisLabel");
     expect(writable.plot_boxplot?.description).toContain("analysisId");
     expect(writable.plot_measurements?.description).toContain(
@@ -1088,6 +1090,7 @@ describe("analytics chat tools", () => {
         yColumnName: "Moisture",
         mark: "line",
         showSpecLimits: true,
+        showMeanLine: true,
       },
     };
     vi.mocked(updateAnalysisForReport).mockResolvedValue({
@@ -1108,6 +1111,7 @@ describe("analytics chat tools", () => {
         yColumnId: "c2",
         mark: "line",
         showSpecLimits: true,
+        showMeanLine: true,
       },
       {
         toolCallId: "plot",
@@ -1123,6 +1127,7 @@ describe("analytics chat tools", () => {
         yColumnId: "c2",
         mark: "line",
         showSpecLimits: true,
+        showMeanLine: true,
       })
     );
     expect(output).toMatchObject({
@@ -1131,6 +1136,7 @@ describe("analytics chat tools", () => {
       yColumnId: "c2",
       mark: "line",
       showSpecLimits: true,
+      showMeanLine: true,
       analysisCount: 1,
     });
   });
@@ -1270,6 +1276,7 @@ describe("analytics chat tools", () => {
             min: 1,
             q1: 1,
             median: 2,
+            mean: 2,
             q3: 3,
             max: 3,
             whiskerLow: 1,
@@ -1344,6 +1351,7 @@ describe("analytics chat tools", () => {
             min: 1,
             q1: 1,
             median: 2,
+            mean: 2,
             q3: 3,
             max: 3,
             whiskerLow: 1,

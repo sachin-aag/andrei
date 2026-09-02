@@ -416,6 +416,11 @@ export type XyScatterConfig = {
   mark?: ChartMark;
   /** Draw Y-column LSL/USL on the chart. Default off. */
   showSpecLimits?: boolean;
+  /**
+   * Connect mean Y at each X. Default off. Not part of sourceHash.
+   * Useful when several values share an X (samples, lots, replicates).
+   */
+  showMeanLine?: boolean;
   /** Display window. Null = auto. Not part of sourceHash. */
   xMin?: number | null;
   xMax?: number | null;
@@ -477,6 +482,8 @@ export type BoxplotConfig = {
   /** Override axis titles. Null/empty uses the column name (Y) or outermost category column (X). */
   xAxisLabel?: string | null;
   yAxisLabel?: string | null;
+  /** Connect the mean of each box. Default off. Not part of sourceHash. */
+  showMeanLine?: boolean;
 };
 
 export type BoxplotGroupStats = {
@@ -486,6 +493,8 @@ export type BoxplotGroupStats = {
   min: number;
   q1: number;
   median: number;
+  /** Arithmetic mean of the group's Y values. Null on legacy saved rows. */
+  mean: number | null;
   q3: number;
   max: number;
   whiskerLow: number;

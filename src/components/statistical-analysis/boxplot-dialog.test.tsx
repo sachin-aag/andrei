@@ -49,7 +49,20 @@ describe("BoxplotDialog", () => {
         rowEnd: null,
         xAxisLabel: null,
         yAxisLabel: null,
+        showMeanLine: false,
       })
+    );
+  });
+
+  it("submits Show mean line when checked", async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderDialog();
+
+    await user.click(screen.getByTestId("boxplot-show-mean-line"));
+    await user.click(screen.getByTestId("boxplot-ok"));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ showMeanLine: true })
     );
   });
 

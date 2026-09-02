@@ -131,6 +131,35 @@ describe("computeXyScatter", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.result.specs[0]?.layout.showSpecLimits).toBe(true);
+  });
+
+  it("draws a mean line only when showMeanLine is on", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = pasteTsv(sheet, 0, 0, ["1", "1", "2", "2"].join("\n"));
+    sheet = pasteTsv(sheet, 1, 0, ["10", "14", "20", "24"].join("\n"));
+    const off = computeXyScatter(sheet, {
+      xColumnId: "c1",
+      xColumnName: "Sample",
+      yColumnId: "c2",
+      yColumnName: "Torque",
+      title: "Torque vs Sample",
+    });
+    expect(off.ok).toBe(true);
+    if (!off.ok) return;
+    expect(off.result.specs[0]?.layout.showMeanLine).toBe(false);
+
+    const on = computeXyScatter(sheet, {
+      xColumnId: "c1",
+      xColumnName: "Sample",
+      yColumnId: "c2",
+      yColumnName: "Torque",
+      title: "Torque vs Sample",
+      showMeanLine: true,
+    });
+    expect(on.ok).toBe(true);
+    if (!on.ok) return;
+    expect(on.result.specs[0]?.layout.showMeanLine).toBe(true);
+  });
     expect(outcome.result.specs[0]?.limits).toEqual({ lower: 5, upper: 40 });
   });
 
@@ -352,6 +381,7 @@ describe("mergeXyScatterPatch", () => {
     title: "OD660 vs Glucose",
     mark: "scatter" as const,
     showSpecLimits: false,
+    showMeanLine: false,
     xMin: 0,
     xMax: 10,
     yMin: 5,
@@ -371,6 +401,7 @@ describe("mergeXyScatterPatch", () => {
       title: "Retitled",
       mark: "scatter",
       showSpecLimits: false,
+      showMeanLine: false,
       xMin: 0,
       xMax: 10,
       yMin: 5,
@@ -388,18 +419,20 @@ describe("mergeXyScatterPatch", () => {
     ).toBeNull();
   });
 
-  it("replaces Y, chart type, and spec-limit visibility", () => {
+  it("replaces Y, chart type, spec-limit visibility, and mean line", () => {
     expect(
       mergeXyScatterPatch(existing, {
         yColumnId: "c4",
         mark: "line",
         showSpecLimits: true,
+        showMeanLine: true,
       })
     ).toMatchObject({
       yColumnId: "c4",
       xColumnId: "c1",
       mark: "line",
       showSpecLimits: true,
+      showMeanLine: true,
     });
   });
 

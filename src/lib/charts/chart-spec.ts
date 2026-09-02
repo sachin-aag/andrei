@@ -90,6 +90,11 @@ export type ChartLayout = {
    * charts, older specs) still shows limits when they exist.
    */
   showSpecLimits?: boolean;
+  /**
+   * Connect mean Y at each X (and draw mean markers). Default off.
+   * Not part of sourceHash.
+   */
+  showMeanLine?: boolean;
 };
 
 export type ChartSpec = {
@@ -180,6 +185,7 @@ const chartLayoutSchema = z.object({
   xRange: chartAxisRangeSchema.optional(),
   mark: z.enum(CHART_MARKS).optional().default("scatter"),
   showSpecLimits: z.boolean().optional(),
+  showMeanLine: z.boolean().optional(),
 });
 
 export const chartSpecSchema = z.object({
@@ -440,6 +446,7 @@ export function mergeChartLayout(
     xRange: base.xRange ?? null,
     mark: patch.mark ?? base.mark ?? "scatter",
     showSpecLimits: base.showSpecLimits,
+    showMeanLine: base.showMeanLine,
   };
 }
 
