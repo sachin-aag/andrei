@@ -75,6 +75,7 @@ describe("boxplot quartiles and Tukey fences", () => {
       min: 42,
       q1: 42,
       median: 42,
+      mean: 42,
       q3: 42,
       max: 42,
       whiskerLow: 42,
@@ -101,6 +102,7 @@ describe("computeBoxplot", () => {
     expect(outcome.result.groups[0]?.labels).toEqual([]);
     expect(outcome.result.n).toBe(4);
     expect(outcome.result.groups[0]?.median).toBeCloseTo(2.5, 10);
+    expect(outcome.result.groups[0]?.mean).toBeCloseTo(2.5, 10);
   });
 
   it("groups observed combinations and nest-sorts outermost first", () => {
@@ -240,6 +242,10 @@ describe("computeBoxplot", () => {
     expect(
       mergeBoxplotPatch(existing, {}).yAxisLabel
     ).toBe("Assay (%)");
+    expect(mergeBoxplotPatch(existing, { showMeanLine: true }).showMeanLine).toBe(
+      true
+    );
+    expect(mergeBoxplotPatch(existing, {}).showMeanLine).toBe(false);
   });
 
   it("resolves display axis labels with defaults", () => {

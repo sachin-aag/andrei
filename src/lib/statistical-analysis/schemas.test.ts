@@ -121,6 +121,13 @@ describe("xyScatterInputSchema", () => {
         showSpecLimits: true,
       }).showSpecLimits
     ).toBe(true);
+    expect(
+      xyScatterInputSchema.parse({
+        kind: XY_SCATTER,
+        yColumnId: "c2",
+        showMeanLine: true,
+      }).showMeanLine
+    ).toBe(true);
   });
 
   it("accepts axis window and labels, and rejects min ≥ max", () => {
@@ -160,6 +167,12 @@ describe("xyScatterInputSchema", () => {
       mark: "line",
       showSpecLimits: true,
     });
+    expect(
+      xyScatterBodySchema.parse({
+        analysisId: "plot-1",
+        showMeanLine: true,
+      }).showMeanLine
+    ).toBe(true);
   });
 });
 
@@ -184,6 +197,12 @@ describe("boxplotBodySchema", () => {
       analysisId: "box-1",
       categoryColumnIds: ["c2"],
     });
+    expect(
+      boxplotBodySchema.parse({
+        analysisId: "box-1",
+        showMeanLine: true,
+      }).showMeanLine
+    ).toBe(true);
   });
 
   it("rejects Y as a category and duplicate category columns", () => {

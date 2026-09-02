@@ -279,6 +279,7 @@ const xyScatterUiFields = {
   ...xyScatterColumnFields,
   mark: z.enum(CHART_MARKS).optional(),
   showSpecLimits: z.boolean().optional(),
+  showMeanLine: z.boolean().optional(),
   xMin: z.number().finite().nullable().optional(),
   xMax: z.number().finite().nullable().optional(),
   yMin: z.number().finite().nullable().optional(),
@@ -344,6 +345,7 @@ export const xyScatterBodySchema = z
     ...xyScatterAxisFields,
     mark: z.enum(CHART_MARKS).optional(),
     showSpecLimits: z.boolean().optional(),
+    showMeanLine: z.boolean().optional(),
     xMin: z.number().finite().nullable().optional(),
     xMax: z.number().finite().nullable().optional(),
     yMin: z.number().finite().nullable().optional(),
@@ -423,6 +425,7 @@ export const boxplotBodySchema = z
     title: z.string().trim().max(120).optional(),
     xAxisLabel: z.string().trim().max(60).nullable().optional(),
     yAxisLabel: z.string().trim().max(80).nullable().optional(),
+    showMeanLine: z.boolean().optional(),
     ...boxplotRowFields,
   })
   .superRefine(refineBoxplotChatBody);
@@ -435,6 +438,7 @@ export const boxplotInputSchema = z
     title: z.string().trim().max(120).optional(),
     xAxisLabel: z.string().trim().max(60).nullable().optional(),
     yAxisLabel: z.string().trim().max(80).nullable().optional(),
+    showMeanLine: z.boolean().optional(),
     ...boxplotRowFields,
   })
   .superRefine(refineBoxplotColumns);
@@ -447,6 +451,7 @@ export const boxplotUpdateSchema = z
     title: z.string().trim().max(120).optional(),
     xAxisLabel: z.string().trim().max(60).nullable().optional(),
     yAxisLabel: z.string().trim().max(80).nullable().optional(),
+    showMeanLine: z.boolean().optional(),
     ...boxplotRowFields,
   })
   .superRefine(refineBoxplotColumns);
@@ -458,6 +463,7 @@ export const xyScatterUpdateSchema = z
     ...xyScatterAxisFields,
     mark: z.enum(CHART_MARKS).optional(),
     showSpecLimits: z.boolean().optional(),
+    showMeanLine: z.boolean().optional(),
     xMin: z.number().finite().nullable().optional(),
     xMax: z.number().finite().nullable().optional(),
     yMin: z.number().finite().nullable().optional(),
