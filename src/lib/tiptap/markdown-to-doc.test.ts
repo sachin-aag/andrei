@@ -111,6 +111,28 @@ describe("markdownToDoc", () => {
     );
   });
 
+  it("keeps a GFM table plus an italic footnote as table then paragraph", () => {
+    const doc = markdownToDoc(
+      [
+        "| Req ID | Pass/Fail |",
+        "| --- | --- |",
+        "| M3-HRS-BD-011 | N/A* |",
+        "",
+        "_See Deviation #02, deemed Not Applicable to the current testing execution._",
+      ].join("\n")
+    );
+    expect(doc.content).toHaveLength(2);
+    expect(doc.content![0]!.type).toBe("table");
+    expect(doc.content![1]!.type).toBe("paragraph");
+    expect(doc.content![1]!.content).toEqual([
+      {
+        type: "text",
+        text: "See Deviation #02, deemed Not Applicable to the current testing execution.",
+        marks: [{ type: "italic" }],
+      },
+    ]);
+  });
+
   it("converts a GFM table with header row", () => {
     const doc = markdownToDoc(
       ["| Parameter | Result |", "| --- | --- |", "| pH | 6.8 |", "| Temp | 22 C |"].join(
