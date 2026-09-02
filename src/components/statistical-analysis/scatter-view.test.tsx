@@ -178,6 +178,65 @@ describe("ScatterView spec limits", () => {
     expect(screen.getByTestId("scatter-spec-line-usl")).toBeTruthy();
   });
 
+  it("hides the mean line until showMeanLine is on", () => {
+    const spec = {
+      ...TORQUE_MOCK_SPEC,
+      layout: { ...TORQUE_MOCK_SPEC.layout, showMeanLine: false },
+    };
+    const analysis: XyScatterAnalysisSummary = {
+      id: "an-xy-mean",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: spec.title,
+      config: {
+        xColumnId: null,
+        xColumnName: "Observation",
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        title: spec.title,
+        showMeanLine: false,
+      },
+      results: {
+        specs: [spec],
+        n: spec.points.length,
+        skipped: 0,
+        pearsonR: null,
+      },
+      sourceHash: "xy-mean",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    const { rerender } = render(
+      <ScatterView analysis={analysis} {...viewProps} />
+    );
+    expect(screen.queryByTestId("scatter-mean-line")).toBeNull();
+    expect(screen.queryByTestId("scatter-mean-marker")).toBeNull();
+
+    rerender(
+      <ScatterView
+        analysis={{
+          ...analysis,
+          config: { ...analysis.config, showMeanLine: true },
+          results: {
+            ...analysis.results,
+            specs: [
+              {
+                ...spec,
+                layout: { ...spec.layout, showMeanLine: true },
+              },
+            ],
+          },
+        }}
+        {...viewProps}
+      />
+    );
+    expect(screen.getByTestId("scatter-mean-line")).toBeTruthy();
+    expect(screen.getAllByTestId("scatter-mean-marker")).toHaveLength(
+      spec.points.length
+    );
+  });
+
   it("omits attachment page citations from a worksheet plot subtitle", () => {
     const spec = {
       ...TORQUE_MOCK_SPEC,

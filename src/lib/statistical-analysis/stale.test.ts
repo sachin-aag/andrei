@@ -153,6 +153,7 @@ function boxplot(): BoxplotAnalysisSummary {
           min: 90,
           q1: 95,
           median: 100,
+          mean: 100,
           q3: 105,
           max: 110,
           whiskerLow: 90,

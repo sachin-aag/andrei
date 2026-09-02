@@ -23,6 +23,11 @@ import type {
 } from "@/lib/statistical-analysis/types";
 import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import { chartBrandColors } from "@/lib/charts/brand-colors";
+import {
+  chartShowsMeanLine,
+  finiteMean,
+  MEAN_LINE_MARKER_RADIUS,
+} from "@/lib/charts/mean-line";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
@@ -221,6 +226,47 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
           </g>
         );
       })}
+      {chartShowsMeanLine(analysis.config) ? (
+        <g data-testid="boxplot-mean-line">
+          {groups.filter((group) => finiteMean(group.mean) != null).length >=
+          2 ? (
+            <polyline
+              points={groups
+                .map((group, index) => {
+                  const mean = finiteMean(group.mean);
+                  return mean == null
+                    ? null
+                    : `${xToPx(index)},${yToPx(mean)}`;
+                })
+                .filter((point): point is string => point != null)
+                .join(" ")}
+              fill="none"
+              stroke={colors.brand600}
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          ) : null}
+          {groups.map((group, index) => {
+            const mean = finiteMean(group.mean);
+            if (mean == null) return null;
+            return (
+              <circle
+                key={`mean-${index}`}
+                data-testid={`boxplot-mean-marker-${index}`}
+                cx={xToPx(index)}
+                cy={yToPx(mean)}
+                r={MEAN_LINE_MARKER_RADIUS}
+                fill={colors.brand600}
+                stroke="#fff"
+                strokeWidth="1.25"
+              >
+                <title>Mean: {formatStat(mean, 3)}</title>
+              </circle>
+            );
+          })}
+        </g>
+      ) : null}
       {categoryCount === 0
         ? null
         : Array.from({ length: categoryCount }, (_, level) => {

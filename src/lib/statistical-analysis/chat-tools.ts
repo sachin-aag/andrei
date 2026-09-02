@@ -1426,7 +1426,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.plot_xy_scatter = tool({
       description:
-        "Plot or update a worksheet chart on the Results tab. Create: yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X — a serial-number / factor / label column cannot be X. Optional legendColumnId color-codes points by that grouping column (labels, lots, factors, and serials are OK for legend; it cannot be X or Y and must be on the same sheet). Optional mark is the chart type (scatter default, line, line_markers, area, column). Optional showSpecLimits true/false draws Y-column LSL/USL lines (default off on create). Optional xMin/xMax/yMin/yMax set the visible axis window (omit or null = auto). Optional xAxisLabel/yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current plot. Cannot edit sixpack, ANOVA, boxplot, histogram, or attachment measurement scatter. Use when they asked to plot A vs B, color by lot/batch/serial/group, change Y/X/legend, switch chart type, zoom axes, or show/hide spec lines. Output variable is Y. Optional rowStart/rowEnd or rows limits the rows. Reports overall Pearson r; does not fit a regression line. Tell them to open Results.",
+        "Plot or update a worksheet chart on the Results tab. Create: yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X — a serial-number / factor / label column cannot be X. Optional legendColumnId color-codes points by that grouping column (labels, lots, factors, and serials are OK for legend; it cannot be X or Y and must be on the same sheet). Optional mark is the chart type (scatter default, line, line_markers, area, column). Optional showSpecLimits true/false draws Y-column LSL/USL lines (default off on create). Optional showMeanLine true/false connects the mean Y at each X (default off; use when several values share an X). Optional xMin/xMax/yMin/yMax set the visible axis window (omit or null = auto). Optional xAxisLabel/yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current plot. Cannot edit sixpack, ANOVA, boxplot, histogram, or attachment measurement scatter. Use when they asked to plot A vs B, color by lot/batch/serial/group, change Y/X/legend, switch chart type, zoom axes, show/hide spec lines, or add a mean line. Output variable is Y. Optional rowStart/rowEnd or rows limits the rows. Reports overall Pearson r; does not fit a regression line. Tell them to open Results.",
       inputSchema: xyScatterBodySchema,
       execute: async (input) => {
         const { analysisId, ...patch } = input;
@@ -1444,7 +1444,7 @@ export function buildAnalyticsChatTools(opts: {
             return {
               status: "error" as const,
               message:
-                "That Results row is not a worksheet scatter. plot_xy_scatter can only edit worksheet plots (kind=xy_scatter), not sixpack, ANOVA, boxplot, or attachment measurement scatter.",
+                "That Results row is not a worksheet scatter. plot_xy_scatter can only edit worksheet plots (kind=xy_scatter), not sixpack, ANOVA, boxplot, histogram, or attachment measurement scatter.",
             };
           }
           const result = await updateAnalysisAndRecord(analysisId, patch);
@@ -1473,6 +1473,7 @@ export function buildAnalyticsChatTools(opts: {
             legendColumnName: result.analysis.config.legendColumnName ?? null,
             mark: result.analysis.config.mark ?? "scatter",
             showSpecLimits: result.analysis.config.showSpecLimits === true,
+            showMeanLine: result.analysis.config.showMeanLine === true,
             observationX: isObservationXyScatter(result.analysis.config),
             n: result.analysis.results.n,
             skipped: result.analysis.results.skipped,
@@ -1511,6 +1512,7 @@ export function buildAnalyticsChatTools(opts: {
           legendColumnName: result.analysis.config.legendColumnName ?? null,
           mark: result.analysis.config.mark ?? "scatter",
           showSpecLimits: result.analysis.config.showSpecLimits === true,
+          showMeanLine: result.analysis.config.showMeanLine === true,
           observationX: isObservationXyScatter(result.analysis.config),
           n: result.analysis.results.n,
           skipped: result.analysis.results.skipped,
@@ -1524,7 +1526,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.plot_boxplot = tool({
       description:
-        "Plot or update a Tukey boxplot of a numeric Y on the Results tab. Create: yColumnId is required and must be numeric. Optional categoryColumnIds groups boxes on a nested axis — innermost first (closest to the boxes), last is the outermost label. Omit or [] for one box of all Y. At most 4 category columns on the same sheet as Y; Y cannot be a category. Observed combinations only — do not invent missing factor cells. Empty category cells become \"(blank)\". At most 80 groups. Whiskers are last observations inside Q1−1.5 IQR / Q3+1.5 IQR; outliers are asterisks. Optional xAxisLabel/yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current boxplot. Cannot edit sixpack, ANOVA, scatter, or histogram with plot_boxplot. Optional rowStart/rowEnd or rows limits the rows. Tell them to open Results.",
+        "Plot or update a Tukey boxplot of a numeric Y on the Results tab. Create: yColumnId is required and must be numeric. Optional categoryColumnIds groups boxes on a nested axis — innermost first (closest to the boxes), last is the outermost label. Omit or [] for one box of all Y. At most 4 category columns on the same sheet as Y; Y cannot be a category. Observed combinations only — do not invent missing factor cells. Empty category cells become \"(blank)\". At most 80 groups. Whiskers are last observations inside Q1−1.5 IQR / Q3+1.5 IQR; outliers are asterisks. Optional showMeanLine true/false connects the mean of each box (default off). Optional xAxisLabel/yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current boxplot. Cannot edit sixpack, ANOVA, scatter, or histogram with plot_boxplot. Optional rowStart/rowEnd or rows limits the rows. Tell them to open Results.",
       inputSchema: boxplotBodySchema,
       execute: async (input) => {
         const { analysisId, ...patch } = input;
@@ -1567,6 +1569,7 @@ export function buildAnalyticsChatTools(opts: {
             yColumnName: result.analysis.config.yColumnName,
             categoryColumnIds: result.analysis.config.categoryColumnIds,
             categoryColumnNames: result.analysis.config.categoryColumnNames,
+            showMeanLine: result.analysis.config.showMeanLine === true,
             n: result.analysis.results.n,
             skipped: result.analysis.results.skipped,
             groupCount: result.analysis.results.groups.length,
@@ -1600,6 +1603,7 @@ export function buildAnalyticsChatTools(opts: {
           yColumnName: result.analysis.config.yColumnName,
           categoryColumnIds: result.analysis.config.categoryColumnIds,
           categoryColumnNames: result.analysis.config.categoryColumnNames,
+          showMeanLine: result.analysis.config.showMeanLine === true,
           n: result.analysis.results.n,
           skipped: result.analysis.results.skipped,
           groupCount: result.analysis.results.groups.length,

@@ -220,6 +220,7 @@ function asXyScatterConfig(value: unknown): XyScatterConfig {
     rows: rows && rows.length > 0 ? rows : null,
     mark: parseChartMark(parsed.mark),
     showSpecLimits: parsed.showSpecLimits === true,
+    showMeanLine: parsed.showMeanLine === true,
     xMin: optionalFinite(parsed.xMin),
     xMax: optionalFinite(parsed.xMax),
     yMin: optionalFinite(parsed.yMin),
@@ -267,6 +268,7 @@ function asBoxplotConfig(value: unknown): BoxplotConfig {
     rows: rows && rows.length > 0 ? rows : null,
     xAxisLabel: optionalAxisLabel(parsed.xAxisLabel, 60),
     yAxisLabel: optionalAxisLabel(parsed.yAxisLabel, 80),
+    showMeanLine: parsed.showMeanLine === true,
   };
 }
 
@@ -283,6 +285,10 @@ function asBoxplotResults(value: unknown): BoxplotResult {
         const min = typeof group.min === "number" ? group.min : 0;
         const q1 = typeof group.q1 === "number" ? group.q1 : 0;
         const median = typeof group.median === "number" ? group.median : 0;
+        const mean =
+          typeof group.mean === "number" && Number.isFinite(group.mean)
+            ? group.mean
+            : null;
         const q3 = typeof group.q3 === "number" ? group.q3 : 0;
         const max = typeof group.max === "number" ? group.max : 0;
         const whiskerLow =
@@ -299,6 +305,7 @@ function asBoxplotResults(value: unknown): BoxplotResult {
             min,
             q1,
             median,
+            mean,
             q3,
             max,
             whiskerLow,
@@ -895,6 +902,7 @@ async function createXyScatterAnalysisForReport(
     title,
     mark: parseChartMark(parsed.data.mark),
     showSpecLimits: parsed.data.showSpecLimits === true,
+    showMeanLine: parsed.data.showMeanLine === true,
     xMin: parsed.data.xMin ?? null,
     xMax: parsed.data.xMax ?? null,
     yMin: parsed.data.yMin ?? null,
@@ -969,6 +977,7 @@ async function createBoxplotAnalysisForReport(
     title,
     xAxisLabel: parsed.data.xAxisLabel?.trim() || null,
     yAxisLabel: parsed.data.yAxisLabel?.trim() || null,
+    showMeanLine: parsed.data.showMeanLine === true,
     ...rowFields,
   };
 
@@ -1536,6 +1545,7 @@ export async function updateAnalysisForReport(
       title,
       mark: parseChartMark(merged.mark ?? existing.config.mark),
       showSpecLimits: merged.showSpecLimits === true,
+      showMeanLine: merged.showMeanLine === true,
       xMin: merged.xMin ?? null,
       xMax: merged.xMax ?? null,
       yMin: merged.yMin ?? null,
@@ -1605,6 +1615,7 @@ export async function updateAnalysisForReport(
       title,
       xAxisLabel: merged.xAxisLabel ?? null,
       yAxisLabel: merged.yAxisLabel ?? null,
+      showMeanLine: merged.showMeanLine === true,
       ...rowFields,
     };
     const outcome = computeBoxplot(analytics.worksheet, config);

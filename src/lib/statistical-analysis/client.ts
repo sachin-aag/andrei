@@ -140,6 +140,7 @@ export async function createXyScatter(
     legendColumnId?: string | null;
     mark?: ChartMark;
     showSpecLimits?: boolean;
+    showMeanLine?: boolean;
     xMin?: number | null;
     xMax?: number | null;
     yMin?: number | null;
@@ -169,6 +170,7 @@ export async function createBoxplot(
     rows?: number[];
     xAxisLabel?: string | null;
     yAxisLabel?: string | null;
+    showMeanLine?: boolean;
   }
 ): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   return postAnalysis(reportId, {

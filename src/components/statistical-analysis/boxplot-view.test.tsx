@@ -120,11 +120,38 @@ describe("BoxplotView", () => {
     expect(screen.getByTestId("boxplot-chart")).toHaveTextContent("Assay (%)");
   });
 
+  it("hides the mean line until showMeanLine is on", () => {
+    const analysis = summaryFromConfig({
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      categoryColumnIds: ["c2"],
+      categoryColumnNames: ["Operator"],
+      title: "Boxplot of Assay by Operator",
+    });
+    const { rerender } = render(
+      <BoxplotView analysis={analysis} {...viewProps} />
+    );
+    expect(screen.queryByTestId("boxplot-mean-line")).toBeNull();
+
+    rerender(
+      <BoxplotView
+        analysis={{
+          ...analysis,
+          config: { ...analysis.config, showMeanLine: true },
+        }}
+        {...viewProps}
+      />
+    );
+    expect(screen.getByTestId("boxplot-mean-line")).toBeTruthy();
+    expect(screen.getByTestId("boxplot-mean-marker-0")).toBeTruthy();
+    expect(screen.getByTestId("boxplot-mean-marker-1")).toBeTruthy();
+  });
+
   it("keeps rotated serial-number labels inside the chart frame", () => {
     const groups = [
-      { labels: ["924-10012"], n: 5, min: 3, q1: 3.5, median: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },
-      { labels: ["924-10017"], n: 5, min: 3, q1: 3.5, median: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },
-      { labels: ["924-10018"], n: 5, min: 3, q1: 3.5, median: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },
+      { labels: ["924-10012"], n: 5, min: 3, q1: 3.5, median: 4, mean: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },
+      { labels: ["924-10017"], n: 5, min: 3, q1: 3.5, median: 4, mean: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },
+      { labels: ["924-10018"], n: 5, min: 3, q1: 3.5, median: 4, mean: 4, q3: 4.5, max: 5, whiskerLow: 3, whiskerHigh: 5, outliers: [] },
     ];
     const layout = boxplotAxisLayout(groups, 1);
     expect(

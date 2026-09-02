@@ -138,9 +138,13 @@ markers, area, column). Column charts stack when a legend is on. **Advanced**
 Those display limits are not part of `sourceHash`. Agent
 Analytics chat can create a plot or edit an existing worksheet plot
 (`analysisId` from Results or an `@` tag): replace Y/X, set or clear the
-legend, change chart type, toggle Show LSL/USL, or set the axis window. Ask mode cannot. New plots default to scatter with
+legend, change chart type, toggle Show LSL/USL, Show mean line, or set the axis window. Ask mode cannot. New plots default to scatter with
 spec lines off. **Show LSL, USL values** under Y is off by default (no spec
-lines until checked or the assistant turns them on). Columns written from a
+lines until checked or the assistant turns them on). **Show mean line** is
+off by default (not in `sourceHash`): on a scatter it connects mean Y at
+each X (gray individuals when there is no legend; one line per legend
+series); on a boxplot it connects each box’s mean (the median line inside
+the box stays). Columns written from a
 file (`write_column` after extract/scan/read) keep page citations on the
 column and chart spec for CSV download. Plot figures do not show `p. N`.
 Editing a cell drops that citation. Attachment extract-and-plot is Analytics chat
@@ -160,7 +164,7 @@ Optional category columns (innermost first, closest to the boxes; last is
 the outermost nested axis label) group observed combinations only — not a
 full factorial. Zero categories is one box of all Y. Empty category cells
 are labeled `(blank)`. Agent Analytics chat can create a boxplot or edit
-an existing one with `analysisId`. Ask mode cannot. Time series is not
+an existing one with `analysisId` (including `showMeanLine`). Ask mode cannot. Time series is not
 supported.
 Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
 assistant write; Agent `write_column` / `manage_worksheet` run one at a time

@@ -1421,6 +1421,11 @@ export function StatisticalWorkspace({
             ? (editingAnalysis.config.yAxisLabel ?? "")
             : ""
         }
+        defaultShowMeanLine={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showMeanLine === true
+            : false
+        }
         editMode={Boolean(
           editingAnalysis && isBoxplotAnalysis(editingAnalysis)
         )}
@@ -1444,6 +1449,7 @@ export function StatisticalWorkspace({
                 rowEnd: values.rowEnd,
                 xAxisLabel: values.xAxisLabel,
                 yAxisLabel: values.yAxisLabel,
+                showMeanLine: values.showMeanLine,
               });
               applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
               toast.success("Boxplot updated.");
@@ -1456,6 +1462,7 @@ export function StatisticalWorkspace({
                 rowEnd: values.rowEnd,
                 xAxisLabel: values.xAxisLabel,
                 yAxisLabel: values.yAxisLabel,
+                showMeanLine: values.showMeanLine,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,
@@ -1601,6 +1608,11 @@ export function StatisticalWorkspace({
             ? editingAnalysis.config.showSpecLimits === true
             : false
         }
+        defaultShowMeanLine={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showMeanLine === true
+            : false
+        }
         defaultRowStart={xyRowStart}
         defaultRowEnd={xyRowEnd}
         defaultTitle={
@@ -1659,6 +1671,7 @@ export function StatisticalWorkspace({
                 legendColumnId: values.legendColumnId,
                 mark: values.mark,
                 showSpecLimits: values.showSpecLimits,
+                showMeanLine: values.showMeanLine,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
@@ -1678,6 +1691,7 @@ export function StatisticalWorkspace({
                 legendColumnId: values.legendColumnId,
                 mark: values.mark,
                 showSpecLimits: values.showSpecLimits,
+                showMeanLine: values.showMeanLine,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,

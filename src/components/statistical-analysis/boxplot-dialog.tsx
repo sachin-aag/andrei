@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -41,6 +42,7 @@ export type BoxplotDialogValues = {
   rowEnd: number | null;
   xAxisLabel: string | null;
   yAxisLabel: string | null;
+  showMeanLine: boolean;
 };
 
 function parseOptionalRow(raw: string): number | null {
@@ -71,6 +73,7 @@ export function BoxplotDialog({
   defaultTitle = "",
   defaultXAxisLabel = "",
   defaultYAxisLabel = "",
+  defaultShowMeanLine = false,
   editMode = false,
   submitting,
   error,
@@ -86,6 +89,7 @@ export function BoxplotDialog({
   defaultTitle?: string;
   defaultXAxisLabel?: string | null;
   defaultYAxisLabel?: string | null;
+  defaultShowMeanLine?: boolean;
   editMode?: boolean;
   submitting: boolean;
   error: string | null;
@@ -107,6 +111,7 @@ export function BoxplotDialog({
   );
   const [xAxisLabel, setXAxisLabel] = useState(defaultXAxisLabel ?? "");
   const [yAxisLabel, setYAxisLabel] = useState(defaultYAxisLabel ?? "");
+  const [showMeanLine, setShowMeanLine] = useState(defaultShowMeanLine);
 
   const yColumn = findColumn(worksheet, yColumnId) ?? worksheet.columns[0];
   const categoryColumns = categoryColumnIds
@@ -183,6 +188,25 @@ export function BoxplotDialog({
                 )}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2 pt-0.5">
+              <Checkbox
+                id="boxplot-show-mean-line"
+                data-testid="boxplot-show-mean-line"
+                checked={showMeanLine}
+                onCheckedChange={(next) => setShowMeanLine(next === true)}
+              />
+              <Label
+                htmlFor="boxplot-show-mean-line"
+                className={`${fieldLabelClass} cursor-pointer font-normal`}
+              >
+                Show mean line
+              </Label>
+              <FieldInfoIcon
+                label="Mean line"
+                testId="boxplot-mean-line-info"
+                text="Connects the mean of each box. The median line inside the box stays."
+              />
+            </div>
           </div>
 
           <div className="grid gap-2">
@@ -385,6 +409,7 @@ export function BoxplotDialog({
                 rowEnd: parseOptionalRow(rowEnd),
                 xAxisLabel: xAxisLabel.trim() || null,
                 yAxisLabel: yAxisLabel.trim() || null,
+                showMeanLine,
               })
             }
           >

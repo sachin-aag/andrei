@@ -18,7 +18,9 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v33-histogram");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
+      "analytics-chat-v34-histogram-mean-line"
+    );
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -92,6 +94,7 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("Never call run_capability_sixpack or run_one_way_anova as a substitute");
     expect(prompt).toContain("Editing with analysisId updates that same row");
     expect(prompt).toContain("showSpecLimits true/false");
+    expect(prompt).toContain("showMeanLine true/false");
     expect(prompt).toContain("xMin, xMax, yMin, yMax");
     expect(prompt).toContain("the plot cites those pages");
     expect(prompt).toContain("no Plot-from-attachments menu");

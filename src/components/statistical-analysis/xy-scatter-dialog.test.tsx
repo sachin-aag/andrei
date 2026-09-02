@@ -103,6 +103,8 @@ describe("XyScatterDialog Advanced", () => {
         yMax: null,
         xAxisLabel: null,
         yAxisLabel: null,
+        showMeanLine: false,
+        showSpecLimits: false,
       })
     );
   });
@@ -116,5 +118,17 @@ describe("XyScatterDialog Advanced", () => {
     await user.type(screen.getByTestId("xy-xmax"), "1");
 
     expect(screen.getByTestId("xy-scatter-ok")).toBeDisabled();
+  });
+
+  it("submits Show mean line when checked", async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderDialog();
+
+    await user.click(screen.getByTestId("xy-show-mean-line"));
+    await user.click(screen.getByTestId("xy-scatter-ok"));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ showMeanLine: true })
+    );
   });
 });

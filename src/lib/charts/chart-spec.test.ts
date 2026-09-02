@@ -64,6 +64,24 @@ describe("parseChartSpec", () => {
     ).toBeUndefined();
   });
 
+  it("does not inject showMeanLine when the stored spec omitted it", () => {
+    const raw = spec();
+    const { showMeanLine: _omitted, ...layoutWithoutMeanLine } = raw.layout;
+    expect(_omitted).toBeUndefined();
+    expect(
+      parseChartSpec({ ...raw, layout: layoutWithoutMeanLine })?.layout
+        .showMeanLine
+    ).toBeUndefined();
+  });
+
+  it("preserves showMeanLine when set", () => {
+    expect(
+      parseChartSpec(
+        spec({ layout: { ...DEFAULT_CHART_LAYOUT, showMeanLine: true } })
+      )?.layout.showMeanLine
+    ).toBe(true);
+  });
+
   it("rejects a missing query", () => {
     expect(parseChartSpec({ ...spec(), query: "" })).toBeNull();
   });

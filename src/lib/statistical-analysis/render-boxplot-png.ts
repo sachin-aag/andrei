@@ -1,5 +1,10 @@
 import { chartBrandColors, type ChartBrandColors } from "@/lib/charts/brand-colors";
 import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
+import {
+  chartShowsMeanLine,
+  finiteMean,
+  MEAN_LINE_MARKER_RADIUS,
+} from "@/lib/charts/mean-line";
 import { resolveCustomerId } from "@/lib/customers/resolve";
 import {
   boxplotXAxisLabel,
@@ -26,6 +31,7 @@ type Canvas2d = {
   fillRect: (x: number, y: number, w: number, h: number) => void;
   strokeRect: (x: number, y: number, w: number, h: number) => void;
   fillText: (text: string, x: number, y: number) => void;
+  arc: (x: number, y: number, r: number, start: number, end: number) => void;
   save: () => void;
   restore: () => void;
   translate: (x: number, y: number) => void;
@@ -189,6 +195,34 @@ function drawBoxplot(
       ctx.fillText("*", x, yToPx(value));
     }
   });
+
+  if (chartShowsMeanLine(analysis.config)) {
+    const meanPoints = groups.flatMap((group, index) => {
+      const mean = finiteMean(group.mean);
+      return mean == null ? [] : [{ x: xToPx(index), y: yToPx(mean) }];
+    });
+    const first = meanPoints[0];
+    if (meanPoints.length >= 2 && first) {
+      ctx.beginPath();
+      ctx.moveTo(first.x, first.y);
+      for (let i = 1; i < meanPoints.length; i++) {
+        const point = meanPoints[i]!;
+        ctx.lineTo(point.x, point.y);
+      }
+      ctx.strokeStyle = colors.brand600;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    for (const point of meanPoints) {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, MEAN_LINE_MARKER_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = colors.brand600;
+      ctx.fill();
+      ctx.lineWidth = 1.25;
+      ctx.strokeStyle = colors.plotFill;
+      ctx.stroke();
+    }
+  }
 
   if (categoryCount === 0) return;
   for (let level = 0; level < categoryCount; level++) {
