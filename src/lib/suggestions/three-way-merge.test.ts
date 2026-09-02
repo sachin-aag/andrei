@@ -9,6 +9,8 @@ import { planFieldDiff } from "@/lib/suggestions/diff-plan";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { mergeField } from "@/lib/suggestions/three-way-merge";
 import { FIXTURES, doc, para } from "@/lib/suggestions/merge-fixtures";
+import { moveCitationsToEndOfText } from "@/lib/suggestions/citations-at-end";
+import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 
 describe("mergeField", () => {
   it("is a noop when current already equals intent", () => {
@@ -63,6 +65,42 @@ describe("mergeField", () => {
       FIXTURES.citations
     );
     expect(planFieldDiff(result.merged, FIXTURES.citations)).toEqual([]);
+  });
+
+  it("keeps parked citations on Agent draft_field commit (current === base)", () => {
+    const base = doc(para("The assay failed at 68 percent."));
+    const parkedMarkdown = moveCitationsToEndOfText(
+      "The assay failed at 68 percent [protocol.pdf, p. 4]."
+    );
+    const intent = markdownToDoc(parkedMarkdown);
+    const result = mergeField(base, base, intent);
+    const merged = JSON.stringify(result.merged);
+    expect(merged).toContain("[1]");
+    expect(merged).toContain("[protocol.pdf, p. 4]");
+    expect(merged).toMatch(/Citations/i);
+  });
+
+  it("keeps parked citations on unchanged prose while another line diverges", () => {
+    const base = doc(
+      para("The assay failed at 68 percent."),
+      para("Batch traceability was documented.")
+    );
+    const current = doc(
+      para("The assay failed at 68 percent."),
+      para("Batch traceability was documented on B-2024-117.")
+    );
+    const parkedMarkdown = moveCitationsToEndOfText(
+      [
+        "The assay failed at 68 percent [protocol.pdf, p. 4].",
+        "Batch traceability was documented.",
+      ].join("\n")
+    );
+    const intent = markdownToDoc(parkedMarkdown);
+    const result = mergeField(base, current, intent);
+    const merged = JSON.stringify(result.merged);
+    expect(merged).toContain("B-2024-117");
+    expect(merged).toContain("[protocol.pdf, p. 4]");
+    expect(merged).toMatch(/Citations/i);
   });
 
   it("keeps the demo 5-col traceability matrix after Agent edit_cells (current === base)", () => {
