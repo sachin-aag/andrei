@@ -184,6 +184,68 @@ export function analyticsSearchLoopDirective(
   return emptySearches >= ANALYTICS_SEARCH_LOOP_LIMIT ? "read" : "continue";
 }
 
+const WRITE_COLUMN_TOOL = "write_column";
+
+function withoutWriteColumn(tools: readonly string[]): string[] {
+  return tools.filter((name) => name !== WRITE_COLUMN_TOOL);
+}
+
+function writeColumnWasEmpty(output: unknown): boolean {
+  const payload = unwrapToolPayload(output);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const record = payload as Record<string, unknown>;
+  return (
+    record.status === "written" &&
+    typeof record.rowsWritten === "number" &&
+    record.rowsWritten === 0
+  );
+}
+
+function stepEmptyWriteColumnCount(step: AnalyticsChatStep): {
+  writes: number;
+  empty: number;
+} {
+  let writes = 0;
+  let empty = 0;
+  for (const result of step.toolResults ?? []) {
+    if (callToolName(result) !== WRITE_COLUMN_TOOL) continue;
+    writes += 1;
+    if (writeColumnWasEmpty(toolPayload(result))) empty += 1;
+  }
+  for (const part of step.content ?? []) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    if (contentToolName(part) !== WRITE_COLUMN_TOOL) continue;
+    const record = part as Record<string, unknown>;
+    writes += 1;
+    if (writeColumnWasEmpty(unwrapToolPayload(record.output ?? record.result))) {
+      empty += 1;
+    }
+  }
+  return { writes, empty };
+}
+
+/**
+ * A blanked dump that the model retries (same rowsWritten 0) used to loop
+ * write_column. Two consecutive empty writes hide the tool so it can explain.
+ */
+export function analyticsWriteLoopDirective(
+  steps: readonly AnalyticsChatStep[]
+): "continue" | "finish" {
+  let consecutiveEmpty = 0;
+  for (const step of steps) {
+    const { writes, empty } = stepEmptyWriteColumnCount(step);
+    if (writes === 0) continue;
+    if (empty > 0 && empty === writes) {
+      consecutiveEmpty += empty;
+    } else {
+      consecutiveEmpty = 0;
+    }
+  }
+  return consecutiveEmpty >= 2 ? "finish" : "continue";
+}
+
 export function prepareAnalyticsChatStep(input: {
   steps: readonly AnalyticsChatStep[];
   canEdit: boolean;
@@ -193,21 +255,32 @@ export function prepareAnalyticsChatStep(input: {
   if (input.intent === "social") {
     return { activeTools: [] };
   }
-  if (
-    input.searchGate &&
-    analyticsSearchLoopDirective(input.steps) === "read"
-  ) {
+  const searchDirective = analyticsSearchLoopDirective(input.steps);
+  const writeDirective = analyticsWriteLoopDirective(input.steps);
+  if (input.searchGate && searchDirective === "read") {
     input.searchGate.closed = true;
   }
-  if (analyticsSearchLoopDirective(input.steps) !== "read") {
+  if (searchDirective !== "read") {
     if (input.intent === "read") {
       return { activeTools: [...READ_AFTER_SEARCH_TOOLS, SEARCH_TOOL] };
+    }
+    if (writeDirective === "finish" && input.canEdit) {
+      return {
+        activeTools: withoutWriteColumn([
+          SEARCH_TOOL,
+          ...READ_AFTER_SEARCH_TOOLS,
+          ...WRITE_AFTER_SEARCH_TOOLS,
+        ]),
+      };
     }
     return undefined;
   }
   const activeTools: string[] = [...READ_AFTER_SEARCH_TOOLS];
   if (input.canEdit && input.intent !== "read") {
     activeTools.push(...WRITE_AFTER_SEARCH_TOOLS);
+  }
+  if (writeDirective === "finish") {
+    return { activeTools: withoutWriteColumn(activeTools) };
   }
   return { activeTools };
 }

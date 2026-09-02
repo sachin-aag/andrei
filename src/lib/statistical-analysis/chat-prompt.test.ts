@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v34-histogram-mean-line"
+      "analytics-chat-v35-sheet-write-target"
     );
   });
 
@@ -70,6 +70,9 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("claims the leftmost empty C#");
     expect(prompt).toContain("one write_column call with columns");
     expect(prompt).toContain("Do not call write_column once per column");
+    expect(prompt).toContain("Pass sheetId");
+    expect(prompt).toContain("last new tab is active");
+    expect(prompt).toContain("do not retry the same dump");
     expect(prompt).toContain("do not fill a series with set_cell");
     expect(prompt).toContain("Never say the worksheet was filled");
     expect(prompt).toContain("Pasting a table into chat is not writing it");

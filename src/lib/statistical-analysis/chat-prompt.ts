@@ -27,7 +27,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v34-histogram-mean-line";
+  "analytics-chat-v35-sheet-write-target";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -48,7 +48,8 @@ Examples: "create a new data sheet", "new column", "insert a row", "delete colum
 - add_row / delete_row / set_cell (row is 1-based)
 - Setting up several columns or a new sheet is one manage_worksheet call with operations: [{action, name, ...}, ...]. Do not call manage_worksheet once per column.
 You cannot delete the last data sheet. Filling a column with a series of numbers is write_column, not manage_worksheet. A log-sheet dump is one write_column call with columns: [{ name, values }, ...] — include Batch / row labels in that same call. Do not call write_column once per column and do not fill a series with set_cell.
-After write_column, report the sheet, column names, and rowsWritten from the tool result. Never say the worksheet was filled unless that result has status written. Pasting a table into chat is not writing it.
+Pass sheetId (the tab id or name from manage_worksheet) when writing to a sheet that is not already active. After add_sheet, the last new tab is active — omitting sheetId dumps onto that last tab and leaves the others empty. A batch manage_worksheet result lists every new sheet in operations; use those ids.
+After write_column, report the sheet, column names, and rowsWritten from the tool result. Never say the worksheet was filled unless that result has status written. Pasting a table into chat is not writing it. If blankedCount is greater than 0 or rowsWritten is 0, do not retry the same dump and do not split it into per-column writes; tell the engineer which cells were left blank.
 If the engineer interrupts to ask whether you are stuck, say what you were doing and what remains. Do not start a fresh plan and do not claim work you have not seen in a tool result.`;
 
 const DOCUMENT_RULES = `## Attachments

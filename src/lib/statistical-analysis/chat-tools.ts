@@ -395,6 +395,14 @@ const writeColumnInputSchema = z
       .max(80)
       .optional()
       .describe("Column header, e.g. Assay %."),
+    sheetId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "Data-sheet id or tab name from manage_worksheet / the sheet list. Required when writing to a sheet that is not already active — the last add_sheet becomes active, so omitting this dumps onto that last tab."
+      ),
     lsl: z.number().finite().nullable().optional(),
     usl: z.number().finite().nullable().optional(),
     target: z.number().finite().nullable().optional(),
@@ -457,10 +465,29 @@ function writeColumnEntriesFromInput(input: WriteColumnInput): WriteColumnEntry[
   ];
 }
 
+function activateSheetForWrite(
+  worksheet: WorksheetData,
+  sheetIdOrName: string | undefined
+):
+  | { ok: true; worksheet: WorksheetData; locked: boolean }
+  | { ok: false; sheetId: string } {
+  const key = sheetIdOrName?.trim();
+  if (!key) return { ok: true, worksheet, locked: false };
+  const sheet = findSheet(worksheet, key);
+  if (!sheet) return { ok: false, sheetId: key };
+  return {
+    ok: true,
+    worksheet: switchWorksheetTab(worksheet, sheet.id),
+    locked: true,
+  };
+}
+
 function switchSheetForWrite(
   worksheet: WorksheetData,
-  entry: WriteColumnEntry
+  entry: WriteColumnEntry,
+  locked: boolean
 ): WorksheetData {
+  if (locked) return worksheet;
   if (entry.name) {
     const sheetId = findSheetIdForColumnName(worksheet, entry.name);
     if (sheetId) return switchWorksheetTab(worksheet, sheetId);
@@ -506,15 +533,20 @@ function resolveWriteColumnIndex(
 function applyWriteColumnEntries(
   worksheet: WorksheetData,
   entries: readonly WriteColumnEntry[],
-  citations?: ChartCitation[]
+  citations?: ChartCitation[],
+  sheetIdOrName?: string
 ):
   | { ok: true; worksheet: WorksheetData; indices: number[] }
-  | { ok: false; status: "not_found"; columnId?: string; name?: string } {
-  let next = worksheet;
+  | { ok: false; status: "not_found"; columnId?: string; name?: string; sheetId?: string } {
+  const activated = activateSheetForWrite(worksheet, sheetIdOrName);
+  if (!activated.ok) {
+    return { ok: false, status: "not_found", sheetId: activated.sheetId };
+  }
+  let next = activated.worksheet;
   const occupied = new Set<number>();
   const indices: number[] = [];
   for (const entry of entries) {
-    next = switchSheetForWrite(next, entry);
+    next = switchSheetForWrite(next, entry, activated.locked);
     const resolved = resolveWriteColumnIndex(next, entry, occupied);
     if ("status" in resolved) return { ok: false, ...resolved };
     if ("append" in resolved) {
@@ -1157,19 +1189,19 @@ export function buildAnalyticsChatTools(opts: {
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into worksheet columns (replaces those columns). New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), plot_histogram for a frequency histogram of one numeric column (same chart as the sixpack histogram; optional LSL/USL and overlay checkboxes; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+        "Write values into worksheet columns (replaces those columns). Pass sheetId (tab id or name from manage_worksheet) when the destination is not already the active sheet — after adding several sheets, the last add_sheet is active, so omitting sheetId dumps onto that last tab and leaves the others empty. New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. If the result has blankedCount > 0 or rowsWritten 0, do not retry the same dump and do not split it into per-column writes to bypass the check; tell the engineer which cells were left blank. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), plot_histogram for a frequency histogram of one numeric column (same chart as the sixpack histogram; optional LSL/USL and overlay checkboxes; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
       inputSchema: writeColumnInputSchema,
       execute: async (input) => {
         let entries = writeColumnEntriesFromInput(input);
         let blanked: BlankedTableCell[] = [];
-        if (entries.length >= 2) {
-          const sourceText = await loadWriteSourceText(input);
-          if (!sourceText.trim()) {
-            return {
-              status: "need_source" as const,
-              message: WRITE_COLUMN_NEED_SOURCE_MESSAGE,
-            };
-          }
+        const sourceText = await loadWriteSourceText(input);
+        if (entries.length >= 2 && !sourceText.trim()) {
+          return {
+            status: "need_source" as const,
+            message: WRITE_COLUMN_NEED_SOURCE_MESSAGE,
+          };
+        }
+        if (sourceText.trim()) {
           const verified = verifyTableWrite({
             sourceText,
             columns: entries.map((entry) => entry.values),
@@ -1183,7 +1215,12 @@ export function buildAnalyticsChatTools(opts: {
         const citations = citationsForWrite(input, sourceCitations);
         return withWorksheetMutationLock(reportId, async () => {
           const writeOnto = async (base: WorksheetData, version: number) => {
-            const applied = applyWriteColumnEntries(base, entries, citations);
+            const applied = applyWriteColumnEntries(
+              base,
+              entries,
+              citations,
+              input.sheetId
+            );
             if (!applied.ok) return { applied };
             const saved = await persistAndRecord(applied.worksheet, version);
             return { applied, saved };
@@ -1199,6 +1236,7 @@ export function buildAnalyticsChatTools(opts: {
               status: "not_found" as const,
               columnId: outcome.applied.columnId,
               name: outcome.applied.name,
+              sheetId: outcome.applied.sheetId,
             };
           }
           if (
@@ -1219,6 +1257,7 @@ export function buildAnalyticsChatTools(opts: {
               status: "not_found" as const,
               columnId: outcome.applied.columnId,
               name: outcome.applied.name,
+              sheetId: outcome.applied.sheetId,
             };
           }
           const savedResult = outcome.saved;
@@ -1282,7 +1321,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.manage_worksheet = tool({
       description:
-        "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or row. Do not search attachments and do not extract numbers. Filling a column with values is write_column, not this tool — write_column reuses empty C1–C8 columns from the left. add_column without at also claims the leftmost empty C# instead of appending on the right. set_cell edits one cell. To set up several columns or sheets, pass operations (an array of the same fields) instead of calling this tool repeatedly.",
+        "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or row. Do not search attachments and do not extract numbers. Filling a column with values is write_column, not this tool — write_column reuses empty C1–C8 columns from the left. add_column without at also claims the leftmost empty C# instead of appending on the right. set_cell edits one cell. To set up several columns or sheets, pass operations (an array of the same fields) instead of calling this tool repeatedly. A batch add_sheet result lists every new sheetId in operations — pass that id on the matching write_column. The last add_sheet becomes active.",
       inputSchema: manageWorksheetInputSchema,
       execute: async (input) => {
         const operations = input.operations?.length
@@ -1327,6 +1366,7 @@ export function buildAnalyticsChatTools(opts: {
             sheetId: last.sheetId,
             sheetName: last.sheetName,
             operationCount: applied.applied.length,
+            operations: applied.applied,
           };
         });
       },

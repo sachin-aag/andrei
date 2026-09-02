@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   analyticsSearchLoopDirective,
+  analyticsWriteLoopDirective,
   createAnalyticsSearchGate,
   prepareAnalyticsChatStep,
   type AnalyticsChatStep,
@@ -193,5 +194,71 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).toContain("search_documents");
     expect(prepared?.activeTools).not.toContain("write_column");
     expect(prepared?.activeTools).not.toContain("plot_xy_scatter");
+  });
+});
+
+function emptyWriteStep(): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "write_column" }],
+    toolResults: [
+      {
+        toolName: "write_column",
+        output: { status: "written", rowsWritten: 0, blankedCount: 20 },
+      },
+    ],
+  };
+}
+
+function filledWriteStep(): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "write_column" }],
+    toolResults: [
+      {
+        toolName: "write_column",
+        output: { status: "written", rowsWritten: 29, blankedCount: 1 },
+      },
+    ],
+  };
+}
+
+describe("analyticsWriteLoopDirective", () => {
+  it("lets a successful dump then one blanked dump continue", () => {
+    expect(
+      analyticsWriteLoopDirective([filledWriteStep(), emptyWriteStep()])
+    ).toBe("continue");
+  });
+
+  it("stops after two consecutive empty write_column results", () => {
+    expect(
+      analyticsWriteLoopDirective([
+        filledWriteStep(),
+        emptyWriteStep(),
+        emptyWriteStep(),
+      ])
+    ).toBe("finish");
+  });
+
+  it("hides write_column after two empty dumps once search is closed", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        step(["scan_attachments"]),
+        emptyWriteStep(),
+        emptyWriteStep(),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).toContain("manage_worksheet");
+    expect(prepared?.activeTools).toContain("read_worksheet");
+  });
+
+  it("hides write_column after two empty dumps even if search is still open", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [emptyWriteStep(), emptyWriteStep()],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).toContain("search_documents");
+    expect(prepared?.activeTools).toContain("manage_worksheet");
   });
 });

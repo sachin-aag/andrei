@@ -172,11 +172,14 @@ per report and re-apply onto the latest sheet on 409 (parallel column dumps
 must not wipe each other). The grid ignores older snapshots and coalesces
 mid-turn reloads so extraction does not flash empty. New extract columns
 claim empty C1–C8 from the left (`write_column`
-and `add_column` without `at`) instead of appending on the right. Report and
+and `add_column` without `at`) instead of appending on the right. Pass
+`sheetId` on `write_column` when the destination is not the active tab
+(the last `add_sheet` becomes active). Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
 abort still apply). Do not tell the engineer they ran out of steps or to
 re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
-on write turns whose in-scope section already has a table). Live matrix
+on write turns whose in-scope section already has a table, and Analytics
+hiding `write_column` after two consecutive empty dumps). Live matrix
 headers come from the section (`read_section` / context map) — demo
 Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy.
