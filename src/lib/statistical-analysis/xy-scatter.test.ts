@@ -160,8 +160,6 @@ describe("computeXyScatter", () => {
     if (!on.ok) return;
     expect(on.result.specs[0]?.layout.showMeanLine).toBe(true);
   });
-    expect(outcome.result.specs[0]?.limits).toEqual({ lower: 5, upper: 40 });
-  });
 
   it("applies axis window and custom axis titles", () => {
     let sheet = createEmptyWorksheet(2);
