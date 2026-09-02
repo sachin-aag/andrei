@@ -1,6 +1,8 @@
+import { formatAxisTick, xTickAnchor } from "@/lib/charts/axis-ticks";
 import { chartBrandColors, type ChartBrandColors } from "@/lib/charts/brand-colors";
 import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
 import { resolveCustomerId } from "@/lib/customers/resolve";
+import { histogramChartScale } from "./histogram-chart-scale";
 import { layoutSpecLimitLabels } from "./spec-limit-labels";
 import { histogramOverlays } from "./types";
 import type {
@@ -50,18 +52,6 @@ function defaultLoadCanvas(): CanvasModule | null {
 
 export type RenderHistogramPlotError = { error: "canvas_unavailable" };
 
-function domain(values: number[], pad = 0.08): [number, number] {
-  if (values.length === 0) return [-1, 1];
-  let min = Math.min(...values);
-  let max = Math.max(...values);
-  if (min === max) {
-    min -= 1;
-    max += 1;
-  }
-  const span = max - min;
-  return [min - span * pad, max + span * pad];
-}
-
 function scale(min: number, max: number, start: number, end: number) {
   const span = max - min || 1;
   return (value: number) => start + ((value - min) / span) * (end - start);
@@ -90,21 +80,18 @@ function drawHistogramPanel(
 ): void {
   const drawLsl = overlays.showLsl && lsl != null;
   const drawUsl = overlays.showUsl && usl != null;
-  const curvePoints = overlays.showDistributionLines
-    ? [...overallCurve, ...withinCurve]
-    : [];
-  const counts = bins.map((bin) => bin.count);
-  const curveYs = curvePoints.map((point) => point.y);
-  const xValues = [
-    ...bins.flatMap((bin) => [bin.x0, bin.x1]),
-    ...curvePoints.map((point) => point.x),
-    ...(drawLsl ? [lsl] : []),
-    ...(drawUsl ? [usl] : []),
-  ].filter((value): value is number => value != null && Number.isFinite(value));
-  const [xMin, xMax] = domain(xValues, 0.02);
-  const yMax = Math.max(1, ...counts, ...curveYs) * 1.12;
-  const x = scale(xMin, xMax, PLOT.left, PLOT.right);
-  const y = scale(0, yMax, PLOT.bottom, PLOT.top);
+  const scaleBox = histogramChartScale({
+    bins,
+    overallCurve,
+    withinCurve,
+    lsl,
+    usl,
+    showDistributionLines: overlays.showDistributionLines,
+    showLsl: overlays.showLsl,
+    showUsl: overlays.showUsl,
+  });
+  const x = scale(scaleBox.xMin, scaleBox.xMax, PLOT.left, PLOT.right);
+  const y = scale(scaleBox.yMin, scaleBox.yMax, PLOT.bottom, PLOT.top);
 
   ctx.fillStyle = colors.plotFill;
   ctx.fillRect(PLOT.left, PLOT.top, PLOT.right - PLOT.left, PLOT.bottom - PLOT.top);
@@ -117,13 +104,32 @@ function drawHistogramPanel(
     PLOT.bottom - PLOT.top - 1
   );
 
+  ctx.font = font(10);
   ctx.fillStyle = colors.axis;
-  ctx.font = font(9);
-  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "end";
+  for (const tick of scaleBox.yTicks) {
+    ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = colors.grid;
+    ctx.beginPath();
+    ctx.moveTo(PLOT.left, y(tick));
+    ctx.lineTo(PLOT.right, y(tick));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = colors.axis;
+    ctx.fillText(formatAxisTick(tick), PLOT.left - 6, y(tick));
+  }
+
   ctx.textBaseline = "top";
-  ctx.fillText("Measurement", (PLOT.left + PLOT.right) / 2, PLOT.bottom + 18);
+  for (const [index, tick] of scaleBox.xTicks.entries()) {
+    ctx.textAlign = canvasTextAlign(xTickAnchor(index, scaleBox.xTicks.length));
+    ctx.fillText(formatAxisTick(tick), x(tick), PLOT.bottom + 6);
+  }
+  ctx.font = font(11);
+  ctx.textAlign = "center";
+  ctx.fillText("Measurement", (PLOT.left + PLOT.right) / 2, PLOT.bottom + 22);
   ctx.save();
-  ctx.translate(14, (PLOT.top + PLOT.bottom) / 2);
+  ctx.translate(16, (PLOT.top + PLOT.bottom) / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText("Frequency", 0, 0);
   ctx.restore();

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { axisTickValues, niceNumber } from "./axis-ticks";
 import {
   CHART_MARKS,
   parseChartMark,
@@ -263,28 +264,6 @@ export function layoutPoints(spec: ChartSpec): ChartPoint[] {
   return exhaustive;
 }
 
-function niceNumber(range: number, round: boolean): number {
-  if (!Number.isFinite(range) || range <= 0) return 1;
-  const exponent = Math.floor(Math.log10(range));
-  const fraction = range / 10 ** exponent;
-  let nice: number;
-  if (round) {
-    if (fraction < 1.5) nice = 1;
-    else if (fraction < 3) nice = 2;
-    else if (fraction < 7) nice = 5;
-    else nice = 10;
-  } else if (fraction <= 1) {
-    nice = 1;
-  } else if (fraction <= 2) {
-    nice = 2;
-  } else if (fraction <= 5) {
-    nice = 5;
-  } else {
-    nice = 10;
-  }
-  return nice * 10 ** exponent;
-}
-
 function yValues(spec: ChartSpec): number[] {
   const values = spec.points.map((point) => point.y);
   if (parseChartMark(spec.layout.mark) === "column" && spec.layout.seriesBy === "unit") {
@@ -324,28 +303,9 @@ export function resolveYRange(spec: ChartSpec): { min: number; max: number } {
   return applyAxisRangeOverride(autoYRange(spec), spec.layout.yRange);
 }
 
-function niceTicks(min: number, max: number): number[] {
-  const span = max - min;
-  const step = niceNumber(span / 6, true);
-  const ticks: number[] = [];
-  const start = Math.ceil(min / step) * step;
-  for (let value = start; value <= max + step / 2; value += step) {
-    const rounded = Number(value.toPrecision(12));
-    if (rounded >= min - step / 100 && rounded <= max + step / 100) {
-      ticks.push(rounded);
-    }
-    if (ticks.length > 24) break;
-  }
-  if (!ticks.includes(min)) ticks.unshift(min);
-  if (!ticks.includes(max)) ticks.push(max);
-  return [...new Set(ticks.map((tick) => Number(tick.toPrecision(12))))].toSorted(
-    (a, b) => a - b
-  );
-}
-
 export function yTickValues(spec: ChartSpec): number[] {
   const { min, max } = resolveYRange(spec);
-  return niceTicks(min, max);
+  return axisTickValues(min, max);
 }
 
 function autoXRange(spec: ChartSpec): { min: number; max: number } {
@@ -382,7 +342,7 @@ export function resolveXRange(spec: ChartSpec): { min: number; max: number } {
 export function xTickValues(spec: ChartSpec): number[] {
   if (spec.layout.xAxis === "value") {
     const { min, max } = resolveXRange(spec);
-    return niceTicks(min, max);
+    return axisTickValues(min, max);
   }
   const points = layoutPoints(spec);
   const xs = points.map((point) => point.x);
