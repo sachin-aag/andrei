@@ -104,6 +104,40 @@ describe("rehydrateDocumentReviewIfCoverageUnchanged", () => {
     expect(session.isFinished()).toBe(true);
   });
 
+  it("does not restore when skipRestore is set (pushback re-review)", () => {
+    const session = new DocumentReviewSession();
+    const messages: UIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "f1",
+            state: "output-available",
+            input: {},
+            output: {
+              status: "complete",
+              coverageKey: "att_a:3:unknown",
+              coverageComplete: true,
+            },
+          },
+        ],
+      },
+    ];
+    const result = rehydrateDocumentReviewIfCoverageUnchanged({
+      session,
+      messages,
+      readyDocuments: [
+        { attachmentId: "att_a", pageCount: 3, ingestRunId: null },
+      ],
+      skipRestore: true,
+    });
+    expect(result.restored).toBe(false);
+    expect(session.isFinished()).toBe(false);
+    expect(result.prior?.coverageKey).toBe("att_a:3:unknown");
+  });
+
   it("does not restore when page coverage changed", () => {
     const session = new DocumentReviewSession();
     const messages: UIMessage[] = [
@@ -145,6 +179,16 @@ describe("retrievalPolicyAfterCoverageDelta", () => {
         coverageUnchanged: true,
       })
     ).toBe("adaptive");
+  });
+
+  it("keeps comprehensive on pushback even when coverage is unchanged", () => {
+    expect(
+      retrievalPolicyAfterCoverageDelta({
+        policy: "comprehensive",
+        coverageUnchanged: true,
+        keepComprehensive: true,
+      })
+    ).toBe("comprehensive");
   });
 
   it("keeps comprehensive when coverage grew", () => {

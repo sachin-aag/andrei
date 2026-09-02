@@ -176,6 +176,11 @@ export function rehydrateDocumentReviewIfCoverageUnchanged(input: {
   session: DocumentReviewSession;
   messages: readonly UIMessage[];
   readyDocuments: readonly DocumentReviewCoverageSource[];
+  /**
+   * Pushback ("you missed SST", "look again") must be able to start a new
+   * walk. Restoring `complete` hides `start_document_review`.
+   */
+  skipRestore?: boolean;
 }): {
   restored: boolean;
   prior: PriorFinishedDocumentReview | null;
@@ -185,7 +190,11 @@ export function rehydrateDocumentReviewIfCoverageUnchanged(input: {
     input.readyDocuments
   );
   const prior = findPriorFinishedDocumentReview(input.messages);
-  if (!prior || !coverageKeysMatch(prior.coverageKey, currentCoverageKey)) {
+  if (
+    input.skipRestore ||
+    !prior ||
+    !coverageKeysMatch(prior.coverageKey, currentCoverageKey)
+  ) {
     return { restored: false, prior, currentCoverageKey };
   }
   input.session.restoreFromFinishedReview({
@@ -198,13 +207,19 @@ export function rehydrateDocumentReviewIfCoverageUnchanged(input: {
 /**
  * Comprehensive page-walks are for coverage growth. If a prior finish already
  * covers the current ready attachments, keep adaptive retrieval instead of
- * forcing another start_document_review.
+ * forcing another start_document_review — unless this turn is explicit
+ * pushback (missed family, look again).
  */
 export function retrievalPolicyAfterCoverageDelta(input: {
   policy: "focused" | "adaptive" | "comprehensive";
   coverageUnchanged: boolean;
+  keepComprehensive?: boolean;
 }): "focused" | "adaptive" | "comprehensive" {
-  if (input.policy === "comprehensive" && input.coverageUnchanged) {
+  if (
+    input.policy === "comprehensive" &&
+    input.coverageUnchanged &&
+    !input.keepComprehensive
+  ) {
     return "adaptive";
   }
   return input.policy;

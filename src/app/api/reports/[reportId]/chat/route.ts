@@ -54,11 +54,14 @@ import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
-  classifyChatUserIntent,
   messageHasChatImage,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
 } from "@/lib/ai/chat/user-intent";
+import {
+  documentIntentFocus,
+  resolveChatUserIntent,
+} from "@/lib/ai/chat/resolve-user-intent";
 import {
   alreadyDraftedGapHints,
   detectAlreadyDraftedSection,
@@ -99,6 +102,7 @@ import { getReportAnalytics } from "@/lib/statistical-analysis/store";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import {
   classifyRetrievalPolicy,
+  isRetrievalPushback,
   recentUserMessageTexts,
 } from "@/lib/ai/chat/retrieval-policy";
 import {
@@ -241,12 +245,6 @@ async function handleChatPost(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
-  const userIntent = classifyChatUserIntent({
-    userText,
-    recentAssistantTexts: recentAssistantMessageTexts(messages),
-    hasChatImages: messageHasChatImage(userMsg?.parts),
-    mode,
-  });
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -304,6 +302,24 @@ async function handleChatPost(
     (sum, doc) => sum + (doc.pageCount ?? 0),
     0
   );
+  const intentFocus = documentIntentFocus({
+    userText,
+    sectionScope,
+    documentType: report.documentType,
+    sections: mergedSections,
+  });
+  const userIntent = await resolveChatUserIntent({
+    userText,
+    recentAssistantTexts: recentAssistantMessageTexts(messages),
+    hasChatImages: messageHasChatImage(userMsg?.parts),
+    mode,
+    surface: "document",
+    workspaceChrome,
+    sectionLabel: intentFocus.sectionLabel,
+    fillState: intentFocus.fillState,
+    reportId,
+    userId: user.id,
+  });
   const retrievalDecision = classifyRetrievalPolicy({
     userText,
     recentUserTexts: recentUserMessageTexts(messages),
@@ -314,6 +330,7 @@ async function handleChatPost(
     hasDocuments: documents.length > 0,
   });
   const documentReview = new DocumentReviewSession();
+  const pushback = isRetrievalPushback(userText);
   const coverageRehydrate = rehydrateDocumentReviewIfCoverageUnchanged({
     session: documentReview,
     messages,
@@ -322,11 +339,13 @@ async function handleChatPost(
       pageCount: doc.pageCount ?? 0,
       ingestRunId: doc.ingestRunId,
     })),
+    skipRestore: pushback,
   });
-  // Only escalate to a fresh comprehensive walk when attachment coverage grew.
+  // Coverage growth or explicit pushback can start a fresh comprehensive walk.
   const retrievalPolicy = retrievalPolicyAfterCoverageDelta({
     policy: retrievalDecision.policy,
     coverageUnchanged: coverageRehydrate.restored,
+    keepComprehensive: pushback,
   });
   const retrieval = {
     ...retrievalDecision,

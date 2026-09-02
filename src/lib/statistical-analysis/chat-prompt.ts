@@ -27,7 +27,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v34-histogram-mean-line";
+  "analytics-chat-v35-intent-gate";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -36,7 +36,7 @@ Reply only in English. Worksheet names, column headers you write, questions, and
 const USER_INTENT_RULES = `## User intent (required)
 Follow the latest user message. Agent mode means you MAY fill the worksheet or run a plot when they asked — not because the sheet is empty or files are attached.
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not write columns or run plots.
-- A question: answer it. Search only if the question needs evidence. Do not write or plot unless they also asked to.
+- A question, a plan, or an outline: answer it. Search only if the question needs evidence. Do not write or plot unless they also asked to.
 - A write request (extract, fill, plot, run a sixpack/ANOVA, add a sheet/column, or a yes to your offer): then follow the tools below.
 An empty worksheet is not a request to fill it.`;
 

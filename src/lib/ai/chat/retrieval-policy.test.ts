@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getDocumentType } from "@/lib/document-types";
 import {
   classifyRetrievalPolicy,
+  isRetrievalPushback,
   recentUserMessageTexts,
 } from "./retrieval-policy";
 
@@ -35,6 +36,29 @@ describe("classifyRetrievalPolicy", () => {
       hasDocuments: true,
     });
     expect(decision.policy).toBe("comprehensive");
+  });
+
+  it("escalates look-again / re-check as a completeness follow-up", () => {
+    expect(
+      classifyRetrievalPolicy({
+        userText: "look again — you missed the figures",
+        hasDocuments: true,
+      })
+    ).toEqual({ policy: "comprehensive", reason: "completeness_follow_up" });
+    expect(
+      classifyRetrievalPolicy({
+        userText: "re-check the attachments",
+        hasDocuments: true,
+      }).policy
+    ).toBe("comprehensive");
+  });
+
+  it("treats missed-family language as pushback, not keep-going", () => {
+    expect(isRetrievalPushback("you missed SST")).toBe(true);
+    expect(isRetrievalPushback("look again")).toBe(true);
+    expect(isRetrievalPushback("re-check")).toBe(true);
+    expect(isRetrievalPushback("keep going")).toBe(false);
+    expect(isRetrievalPushback("what about the conclusion")).toBe(false);
   });
 
   it("keeps a single requirement-id lookup on the agentic path, not a page walk", () => {

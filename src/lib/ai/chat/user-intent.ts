@@ -189,11 +189,19 @@ function classifyTaskText(
   // Neither a question nor a recognized write verb. Fall back to where the
   // engineer is rather than to read: stripping the edit tools in Agent mode
   // is what made the assistant claim it could not write and paste a markdown
-  // table into chat instead.
+  // table into chat instead. `resolveChatUserIntent` may replace this with a
+  // Flash-Lite call — keep this as the timeout/stub fallback.
   if (mode === "agent") {
     return { kind: "write", reason: "ambiguous_agent_mode" };
   }
   return { kind: "read", reason: "question_or_lookup" };
+}
+
+/** The unresolvable hole: rules would default Agent mush to write. */
+export function needsLlmIntentClassification(
+  decision: ChatUserIntentDecision
+): boolean {
+  return decision.reason === "ambiguous_agent_mode";
 }
 
 export function recentAssistantMessageTexts(

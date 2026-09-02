@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v78-citation-digest");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v79-intent-gate");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -537,11 +537,12 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("written to the document immediately");
   });
 
-  it("tells the model to resolve ambiguous turns by the mode it is in", () => {
+  it("tells the model that a plan/outline is chat-only, not a write", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
-    expect(prompt).toContain("the mode they are working in decides");
+    expect(prompt).toContain("plan the first 3 sections");
+    expect(prompt).toContain("answer in chat");
     expect(prompt).toContain(
-      "In Agent mode they are here to build the document, so treat it as a write request"
+      'if this prompt has a "Tools available this turn" block saying write tools are not loaded'
     );
   });
 
