@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITY_SIXPACK_NORMAL, MEASUREMENT_SCATTER, ONE_WAY_ANOVA, XY_SCATTER, BOXPLOT } from "./types";
+import { CAPABILITY_SIXPACK_NORMAL, MEASUREMENT_SCATTER, ONE_WAY_ANOVA, XY_SCATTER, BOXPLOT, HISTOGRAM } from "./types";
 import type { StatisticalAnalysisSummary } from "./types";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import { computeBoxplot } from "./boxplot";
+import { computeHistogramFromValues } from "./histogram";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
 import { computeOneWayAnova } from "./anova";
 import { computeXyScatter } from "./xy-scatter";
@@ -269,5 +270,43 @@ describe("analysis download", () => {
     expect(csv).toContain("Median");
     expect(csv).toContain("A");
     expect(csv).toContain("B");
+  });
+
+  it("downloads histogram bin counts", () => {
+    const outcome = computeHistogramFromValues(
+      [10, 12, 11, 13, 14],
+      0,
+      {
+        columnId: "c1",
+        columnName: "Assay",
+        title: "Histogram of Assay",
+        lsl: 8,
+        usl: 16,
+      }
+    );
+    if (!outcome.ok) throw new Error(outcome.message);
+    const analysis: StatisticalAnalysisSummary = {
+      id: "an-hist",
+      workspaceId: "ws-1",
+      kind: HISTOGRAM,
+      title: "Histogram of Assay",
+      config: {
+        columnId: "c1",
+        columnName: "Assay",
+        title: "Histogram of Assay",
+        lsl: 8,
+        usl: 16,
+      },
+      results: outcome.result,
+      sourceHash: "hist",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    expect(analysisDownloadFilename(analysis)).toBe("Histogram-of-Assay-histogram.csv");
+    const csv = analysisToCsv(analysis);
+    expect(csv).toContain("Histogram");
+    expect(csv).toContain("x0");
+    expect(csv).toContain("Count");
   });
 });

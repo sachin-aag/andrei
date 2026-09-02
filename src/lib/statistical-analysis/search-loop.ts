@@ -28,6 +28,7 @@ const WRITE_AFTER_SEARCH_TOOLS = [
   "run_one_way_anova",
   "plot_xy_scatter",
   "plot_boxplot",
+  "plot_histogram",
   "plot_measurements",
 ] as const;
 

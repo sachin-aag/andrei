@@ -15,11 +15,17 @@ Five tables, each with a fixed header set. Use EXACTLY these headers, in this
 order — never rename, reorder, add, or drop a column.
 
 - When creating a table, or when the engineer explicitly asks for a full
-  replacement via draft_field, emit ONE GFM markdown table only (header +
-  separator + data rows).
+  replacement via draft_field, emit ONE GFM markdown table (header +
+  separator + data rows). The only extra markdown allowed in a table field is
+  an italic footnote paragraph immediately after that table, when the recipe
+  for that field requires one (Units Under Test prototype; a qualified
+  Pass/Fail on Table 3 or Table 4).
 - If the section already has a table, use edit_table to change cells or add and
   delete rows. Never use draft_field for an incremental change — it overwrites
-  filled cells.
+  filled cells. To add a missing footnote under an existing table, propose_edit
+  with a unique after-table anchor (quote the last data row) so the note lands
+  beneath the table. Never empty-anchor propose_edit a footnote — that pairs as
+  a lead-in and lands ABOVE the table.
 - Fill known cells; use bracketed placeholders like [serial number] for
   unknowns. Leave an optional cell blank rather than inventing a column.
 
@@ -54,11 +60,13 @@ ${gfm(MECHANICAL_REVISION_HISTORY_HEADERS)}
     3. a statement that the requirement is not applicable, naming the deviation
        that establishes it — "Not Applicable / Refer to Deviation #2".
 - Pass/Fail carries Pass, Fail or N/A only. A qualified verdict carries a
-  trailing asterisk keyed to a footnote paragraph after the GFM table in
-  \`hardwareTable\` or \`systemTable\` (whichever table contains the starred
-  verdict), written between asterisks: \`*See Deviation #02, deemed Not
-  Applicable to the current testing execution*\`. Do not put that footnote in
-  the 4.2 lead-in (\`narrative\`).
+  trailing asterisk keyed to a footnote beneath THAT table, in the same table
+  field (hardwareTable or systemTable), as an italic paragraph immediately
+  after the GFM table: \`_See Deviation #02, deemed Not Applicable to the
+  current testing execution._\` Copy the deviation number from the approved
+  form; do not mint a new one. Do not put this note in the 4.2 lead-in, and
+  do not prefix it with a list marker, a stray "i", or wrapping asterisks
+  that sit on their own line.
 - A requirement satisfied by another report's testing is marked Pass with the
   satisfying report cited. It is NEVER omitted from the table.
 - Requirement IDs keep their full prefix: M3-SYS-FN-037, not SYS-FN-037.`;
@@ -81,7 +89,37 @@ const HOW_TO_USE = `## How to use this recipe
   protocol first and the hardware protocol second throughout.
 - Do not copy sample names, dates, part numbers, serial numbers, asset tags,
   requirement IDs or change-order numbers unless they appear in the attachments.
-- If a fact is missing, use a bracketed placeholder. Do not invent or pad.`;
+- If a fact is missing, use a bracketed placeholder. Do not invent or pad.
+
+## Identifiers (required)
+
+Mint a sequential \`#NN\` only when this report is the join key — even if there
+is only one. Copy every other identifier from evidence. Never invent a number
+to look complete.
+
+**Mint (zero-padded, sequential):**
+- Section 3 failures: \`Failure #01:\` matching subsection 3.1, reused in
+  section 5 as the same number. Always number when there is at least one
+  failure. If there are zero failures, say so in prose and do not mint \`#01\`.
+
+**Copy from evidence — never mint:**
+- Requirement IDs, protocol/document numbers and revisions, part numbers,
+  serials, asset tags, ECO/DCO, JIRA.
+- Method deviations: 2.2 is count-only ("five (5) deviations" and where the
+  forms sit). Individual numbered forms live on the executed protocol. Results
+  cells and observations cite the existing form id as written ("Refer to
+  Deviation #2", "Deviation #02"). Do not invent \`Deviation #01\` in 2.2.
+
+**Count in prose, no \`#\`:** "one (1) failure", "five (5) deviations",
+"Six (6) Solea systems".
+
+**Leave unnumbered:** 4.3 Observations (one paragraph each — never
+\`Observation #01\`). Section 5 reuses section 3's failure number; it does not
+mint a second series.
+
+**Structure labels (not evidence ids):** Table 1–5 captions, revision letters
+A/B/C, \`Pass*\` plus the italic footnote under that table, Convergent \`[n]\`
+citations.`
 
 const REPORT_SHAPE = `## Report shape (required)
 
@@ -127,9 +165,9 @@ const OMIT_IF = `## Omit-if switches (required)
   completed the tests, why they could not sign, and who signed in their place
   with their title.
 - 2.3 prototype footnote: include only where a part was a prototype or a
-  functional equivalent. Mark its revision with an asterisk and add the footnote
-  as a paragraph after the GFM table in targetField \`table\`, not in the three
-  lead-in paragraphs.
+  functional equivalent. Mark its revision with an asterisk and add the italic
+  footnote in the \`table\` field, immediately beneath Table 1 — not in the
+  lead-in narrative.
 - 3 Failure entries: one per failure. If no failure was encountered, say so
   plainly rather than padding the section.
 - 4.1 supplemental test sentence: include only where a supplemental test case
@@ -226,9 +264,10 @@ spelled out and in numerals; why they were needed — what the method as written
 could not do; where the original approved deviation forms are attached, relative
 to the executed protocol and the appendix holding it.
 
-**Do not** list the individual deviations or their content — the forms are the
-record, and individual deviations are cited from the requirement tables where
-they matter. **Do not** record a failed result here; that is section 3.
+**Do not** list the individual deviations, mint \`Deviation #01\`, or recap
+their content — the forms are the record, and individual deviations are cited
+from the requirement tables where they matter using the form's own number.
+**Do not** record a failed result here; that is section 3.
 
 SAMPLE: Throughout the execution of the test protocol, the test engineers
 implemented five (5) deviations to the protocol method to properly perform
@@ -238,8 +277,8 @@ Appendix A of this report.
 
 ## 2.3 UNITS UNDER TEST (UUT's) — 3 paragraphs + Table 1
 
-targetFields \`narrative\` (three paragraphs only) and \`table\` (the matrix plus
-any prototype footnote after the GFM table).
+targetFields \`narrative\` (three paragraphs only) and \`table\` (Table 1 plus
+any prototype footnote beneath it).
 
 **Paragraph 1 criteria:** how many systems were required, broken down by
 configuration, reconciled against the number of unique UUTs where the two
@@ -257,8 +296,9 @@ within each executed protocol, and the appendix the protocols are attached in.
 N/A; systems under test first, then component assemblies grouped by type;
 Revision carries the component revision, or N/A for a system whose configuration
 is defined by its part number; a prototype or functional equivalent carries an
-asterisk on its revision and a footnote paragraph after the GFM table in
-\`table\` (not in the three lead-in paragraphs) saying what it was equivalent to.
+asterisk on its revision and an italic footnote in this same \`table\` field,
+immediately after the GFM table, saying what it was equivalent to. Do not put
+that footnote in \`narrative\`.
 
 **Do not** list measurement instruments here — those are Table 2 — and do not
 omit the reconciliation between system count and UUT count. Do not list a unit
@@ -277,8 +317,8 @@ executed Solea Model 3 System Design Verification Protocol and section 14.6 of
 the Solea Model 3 Hardware Design Verification Protocol, which are attached in
 Appendix A of this report.
 
-SAMPLE (footnote): *The adapter was a prototype that was functionally equivalent
-to SUB-00450 Rev. 6
+SAMPLE (footnote, after Table 1 in targetField \`table\`):
+_The adapter was a prototype that was functionally equivalent to SUB-00450 Rev. 6_
 
 ## 2.4 TEST EQUIPMENT — 1 sentence + Table 2
 
@@ -311,6 +351,8 @@ characterise the failures — the entries do that.
 
 1. Identifier, two bold lines — \`Failure #NN:\` with the number zero-padded and
    sequential and matching the subsection number, then \`Requirement: <ID>\`.
+   Mint this number even when there is only one failure. Do not mint \`#01\`
+   when there were zero failures.
 2. Narrative — the observed shortfall stated plainly, in the present tense where
    it describes a standing product limitation; the technical cause, naming the
    hardware or software element responsible; any field deviation, change record
@@ -363,12 +405,12 @@ targetFields \`narrative\` (lead-in only), \`hardwareTable\`, \`systemTable\`.
 **Lead-in criteria:** that all requirements detailed in the test plan were
 verified during the executions, naming the test plan with number and revision
 and each protocol with number and revision, and directing the reader to the
-tables that follow.
+tables that follow. Nothing else — no deviation footnote, no stray "i", no
+italic note.
 
 **Do not** claim that all requirements in the requirements document were
-verified — the scope is the test plan. **Do not** put a table footnote in the
-lead-in. A qualified-verdict footnote is a paragraph after the GFM table in
-\`hardwareTable\` or \`systemTable\`.
+verified — the scope is the test plan. **Do not** put a Table 3 / Table 4
+footnote in this field.
 
 Table schemas and cell rules are given under "Fixed table schemas" above.
 Caption each table "Table n. <discipline> Requirement Results per Test Plan
@@ -378,6 +420,9 @@ SAMPLE (lead-in): All requirements detailed in the Solea M3 Perioguide System &
 Hardware Test Plan (825-00104 Rev. B) were verified during the partial
 executions of test protocols 825-00024 Rev. G and 825-00025 Rev F, respectively.
 See the tables below for a summary of results.
+
+SAMPLE (Table 3 footnote, after the GFM table in targetField \`hardwareTable\`):
+_See Deviation #02, deemed Not Applicable to the current testing execution._
 
 ## 4.3 OBSERVATIONS — 1 paragraph per observation
 
@@ -397,7 +442,8 @@ with number and revision.
 
 **Do not** record a failure here — a failure has its own numbered entry at
 section 3 — and do not rely on an earlier revision's results without stating why
-the revisions are equivalent.
+the revisions are equivalent. **Do not** mint \`Observation #01\`; observations
+are unnumbered paragraphs.
 
 SAMPLE: Prior to the start of testing, it was determined that the Perioguide
 Feature on TOP-00017 systems with an LCD-2 laser controller was not applicable,

@@ -12,6 +12,7 @@ import {
 import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
+  isHistogramAnalysis,
   isScatterAnalysis,
   isXyScatterAnalysis,
   type StatisticalAnalysisSummary,
@@ -21,7 +22,7 @@ function chartSpecForAnalysis(analysis: StatisticalAnalysisSummary) {
   if (isScatterAnalysis(analysis) || isXyScatterAnalysis(analysis)) {
     return analysis.results.specs[0] ?? null;
   }
-  if (isAnovaAnalysis(analysis) || isBoxplotAnalysis(analysis)) {
+  if (isAnovaAnalysis(analysis) || isBoxplotAnalysis(analysis) || isHistogramAnalysis(analysis)) {
     return null;
   }
   return null;

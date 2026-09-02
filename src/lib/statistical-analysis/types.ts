@@ -27,6 +27,7 @@ export const MEASUREMENT_SCATTER = "measurement_scatter" as const;
 export const XY_SCATTER = "xy_scatter" as const;
 export const ONE_WAY_ANOVA = "one_way_anova" as const;
 export const BOXPLOT = "boxplot" as const;
+export const HISTOGRAM = "histogram" as const;
 
 export const MIN_ANOVA_GROUPS = 2;
 export const MAX_ANOVA_GROUPS = 40;
@@ -35,6 +36,8 @@ export const MAX_BOXPLOT_CATEGORIES = 4;
 export const MAX_BOXPLOT_GROUPS = 80;
 /** A single numeric point still draws a degenerate box. */
 export const MIN_BOXPLOT_N = 1;
+/** A single numeric point still draws one histogram bar. */
+export const MIN_HISTOGRAM_N = 1;
 export const MIN_XY_POINTS = 2;
 export const MAX_SCATTER_LEGEND_GROUPS = 24;
 /** X-axis label when a worksheet scatter has no second column (1D vs index). */
@@ -82,7 +85,8 @@ export type AnalysisKind =
   | typeof MEASUREMENT_SCATTER
   | typeof XY_SCATTER
   | typeof ONE_WAY_ANOVA
-  | typeof BOXPLOT;
+  | typeof BOXPLOT
+  | typeof HISTOGRAM;
 
 export function boxplotFallbackTitle(
   yColumnName: string,
@@ -93,6 +97,33 @@ export function boxplotFallbackTitle(
     categoryNames.length > 0 ? ` by ${categoryNames.join(", ")}` : "";
   const base = `Boxplot of ${yColumnName}${by}`;
   return rowLabel ? `${base} (${rowLabel})` : base;
+}
+
+export function histogramFallbackTitle(
+  columnName: string,
+  rowLabel: string
+): string {
+  const base = `Histogram of ${columnName}`;
+  return rowLabel ? `${base} (${rowLabel})` : base;
+}
+
+export type HistogramOverlayFlags = {
+  showDistributionLines: boolean;
+  showLsl: boolean;
+  showUsl: boolean;
+};
+
+/** Overlay checkboxes default on (same as the sixpack histogram). */
+export function histogramOverlays(config: {
+  showDistributionLines?: boolean;
+  showLsl?: boolean;
+  showUsl?: boolean;
+}): HistogramOverlayFlags {
+  return {
+    showDistributionLines: config.showDistributionLines !== false,
+    showLsl: config.showLsl !== false,
+    showUsl: config.showUsl !== false,
+  };
 }
 
 export const PRIMARY_DATA_SHEET_ID = "data-1";
@@ -537,12 +568,71 @@ export type BoxplotAnalysisSummary = AnalysisSummaryBase & {
   results: BoxplotResult;
 };
 
+export type HistogramConfig = {
+  columnId: string;
+  columnName: string;
+  title: string;
+  lsl: number | null;
+  usl: number | null;
+  /** Overall + within normal curves. Default on. */
+  showDistributionLines?: boolean;
+  /** Draw the LSL line when `lsl` is set. Default on. */
+  showLsl?: boolean;
+  /** Draw the USL line when `usl` is set. Default on. */
+  showUsl?: boolean;
+  /** 1-based inclusive. Null with `rowEnd` null means the whole column. */
+  rowStart?: number | null;
+  rowEnd?: number | null;
+  /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
+  rows?: number[] | null;
+};
+
+export type HistogramResult = {
+  n: number;
+  skipped: number;
+  mean: number;
+  overallStdev: number;
+  withinStdev: number;
+  histogram: {
+    bins: HistogramBin[];
+    overallCurve: CurvePoint[];
+    withinCurve: CurvePoint[];
+  };
+};
+
+export type HistogramComputeErrorCode =
+  | "too_few_values"
+  | "invalid_specs"
+  | "missing_column";
+
+export type HistogramComputeSuccess = {
+  ok: true;
+  result: HistogramResult;
+};
+
+export type HistogramComputeFailure = {
+  ok: false;
+  code: HistogramComputeErrorCode;
+  message: string;
+};
+
+export type HistogramComputeOutcome =
+  | HistogramComputeSuccess
+  | HistogramComputeFailure;
+
+export type HistogramAnalysisSummary = AnalysisSummaryBase & {
+  kind: typeof HISTOGRAM;
+  config: HistogramConfig;
+  results: HistogramResult;
+};
+
 export type StatisticalAnalysisSummary =
   | SixpackAnalysisSummary
   | ScatterAnalysisSummary
   | XyScatterAnalysisSummary
   | AnovaAnalysisSummary
-  | BoxplotAnalysisSummary;
+  | BoxplotAnalysisSummary
+  | HistogramAnalysisSummary;
 
 export function isSixpackAnalysis(
   analysis: StatisticalAnalysisSummary
@@ -572,6 +662,12 @@ export function isBoxplotAnalysis(
   analysis: StatisticalAnalysisSummary
 ): analysis is BoxplotAnalysisSummary {
   return analysis.kind === BOXPLOT;
+}
+
+export function isHistogramAnalysis(
+  analysis: StatisticalAnalysisSummary
+): analysis is HistogramAnalysisSummary {
+  return analysis.kind === HISTOGRAM;
 }
 
 /**

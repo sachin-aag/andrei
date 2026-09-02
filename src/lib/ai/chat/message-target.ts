@@ -47,6 +47,7 @@ const ANALYTICS_ONLY_TOOLS = new Set([
   "run_one_way_anova",
   "plot_xy_scatter",
   "plot_boxplot",
+  "plot_histogram",
   "extract_numeric_series",
   "scan_attachments",
 ]);

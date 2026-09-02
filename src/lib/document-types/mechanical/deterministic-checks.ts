@@ -1,11 +1,12 @@
+import type { JSONContent } from "@tiptap/core";
 import type { CriterionStatus } from "@/db/schema";
 import type { EvaluationContext } from "@/lib/document-types/types";
-import { sectionHasPrototypeFootnote } from "@/lib/export/mechanical-table-footnotes";
 import {
   normalizeMechanicalVerdict,
   parseMechanicalResultsMatrix,
   parseRevisionHistoryMatrix,
   parseUutMatrix,
+  tableFieldDoc,
 } from "./matrix-parser";
 
 function verdict(
@@ -71,11 +72,53 @@ export function checkUutRowsIdentified(ctx: EvaluationContext) {
   );
 }
 
+function nodePlainText(node: JSONContent | undefined): string {
+  if (!node) return "";
+  if (node.type === "text") return node.text ?? "";
+  if (node.type === "hardBreak") return "\n";
+  return (node.content ?? []).map(nodePlainText).join("");
+}
+
+function nodeHasItalic(node: JSONContent | undefined): boolean {
+  if (!node) return false;
+  if ((node.marks ?? []).some((mark) => mark.type === "italic")) return true;
+  return (node.content ?? []).some(nodeHasItalic);
+}
+
+function nodesAfterTable(doc: JSONContent | null | undefined): JSONContent[] {
+  const content = doc?.content ?? [];
+  const index = content.findIndex((node) => node.type === "table");
+  if (index < 0) return [];
+  return content.slice(index + 1);
+}
+
+function proseAfterTable(
+  content: unknown,
+  field: string
+): { text: string; italic: boolean } {
+  const nodes = nodesAfterTable(tableFieldDoc(content, field));
+  const text = nodes.map(nodePlainText).join("\n").trim();
+  return { text, italic: nodes.some(nodeHasItalic) };
+}
+
+function looksLikeFootnote(text: string, italic: boolean): boolean {
+  if (!text) return false;
+  if (italic) return true;
+  return (
+    text.includes("*") ||
+    /see\s+deviation/i.test(text) ||
+    (/prototype/i.test(text) && /equivalent/i.test(text))
+  );
+}
+
+const RESULTS_FOOTNOTE_IN_LEAD_IN_RE =
+  /see\s+deviation|deemed not applicable to the current testing/i;
+
 /**
  * A prototype or functional equivalent carries an asterisk on its revision and
- * a footnote beneath the table. An asterisked revision with no footnote in a
- * paragraph (lead-in or after the table) is the failure this catches. A star
- * only inside a table cell does not count.
+ * a footnote beneath the table (in the table field). A footnote still sitting
+ * only in the lead-in narrative is accepted so older drafts are not failed
+ * solely for field placement. A star only inside a table cell does not count.
  */
 export function checkUutPrototypeFootnote(ctx: EvaluationContext) {
   const parsed = parseUutMatrix(ctx.content);
@@ -87,19 +130,86 @@ export function checkUutPrototypeFootnote(ctx: EvaluationContext) {
       "No revision is asterisked, so no equivalence footnote is required"
     );
   }
-  const content = ctx.content as {
-    narrative?: unknown;
-    table?: unknown;
-  } | null;
-  if (!sectionHasPrototypeFootnote(content?.narrative, content?.table)) {
+  const afterTable = proseAfterTable(ctx.content, "table");
+  const narrative = nodePlainText(
+    tableFieldDoc(ctx.content, "narrative") ?? undefined
+  );
+  const narrativeItalic = nodeHasItalic(
+    tableFieldDoc(ctx.content, "narrative") ?? undefined
+  );
+  if (
+    looksLikeFootnote(afterTable.text, afterTable.italic) ||
+    looksLikeFootnote(narrative, narrativeItalic) ||
+    JSON.stringify(
+      (ctx.content as { narrative?: unknown } | null)?.narrative ?? ""
+    ).includes("*")
+  ) {
+    return verdict(
+      "met",
+      `${starred.length} asterisked revision(s) with a footnote present`
+    );
+  }
+  return verdict(
+    "not_met",
+    `${starred.length} row(s) carry an asterisked revision but no footnote explains what the part was equivalent to`
+  );
+}
+
+/** 4.2 lead-in must not carry the Table 3 / Table 4 qualified-verdict footnote. */
+export function checkResultsLeadInNoFootnote(ctx: EvaluationContext) {
+  const narrative = nodePlainText(
+    tableFieldDoc(ctx.content, "narrative") ?? undefined
+  ).trim();
+  if (!narrative) {
+    return verdict("not_met", "Requirements Verified lead-in is empty");
+  }
+  if (RESULTS_FOOTNOTE_IN_LEAD_IN_RE.test(narrative)) {
     return verdict(
       "not_met",
-      `${starred.length} row(s) carry an asterisked revision but no footnote explains what the part was equivalent to`
+      "Lead-in contains a table footnote (See Deviation / Not Applicable). Put that italic note immediately after Table 3 or Table 4 in the table field."
+    );
+  }
+  return verdict("met", "Lead-in has no table footnote");
+}
+
+/**
+ * An asterisked Pass/Fail needs an italic footnote after that table, in the
+ * same table field — not dumped into the 4.2 lead-in.
+ */
+export function checkResultsFootnotePlacement(ctx: EvaluationContext) {
+  const missing: string[] = [];
+  let starred = 0;
+
+  for (const [field, label] of [
+    ["hardwareTable", "Hardware"],
+    ["systemTable", "System"],
+  ] as const) {
+    const parsed = parseMechanicalResultsMatrix(ctx.content, field);
+    if (!parsed.ok) continue;
+    const needsFootnote = parsed.rows.some((row) => row.passFail.includes("*"));
+    if (!needsFootnote) continue;
+    starred += 1;
+    const after = proseAfterTable(ctx.content, field);
+    if (!looksLikeFootnote(after.text, after.italic)) {
+      missing.push(label);
+    }
+  }
+
+  if (starred === 0) {
+    return verdict(
+      "met",
+      "No qualified (asterisked) verdict, so no table footnote is required"
+    );
+  }
+  if (missing.length > 0) {
+    return verdict(
+      "not_met",
+      `Asterisked verdict(s) in the ${missing.join(" and ")} table have no italic footnote after that table`
     );
   }
   return verdict(
     "met",
-    `${starred.length} asterisked revision(s) with a footnote present`
+    `Qualified verdict footnote sits after the table in ${starred} field(s)`
   );
 }
 

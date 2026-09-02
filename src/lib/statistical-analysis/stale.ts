@@ -2,6 +2,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
+  isHistogramAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
@@ -9,6 +10,7 @@ import {
   xyScatterVersusLabel,
   type AnovaAnalysisSummary,
   type BoxplotAnalysisSummary,
+  type HistogramAnalysisSummary,
   type ScatterAnalysisSummary,
   type StatisticalAnalysisSummary,
   type WorksheetData,
@@ -39,6 +41,9 @@ export function withLocalStale(
     }
     if (isBoxplotAnalysis(analysis)) {
       return withBoxplotLocalStale(analysis, worksheet, persisted);
+    }
+    if (isHistogramAnalysis(analysis)) {
+      return withHistogramLocalStale(analysis, worksheet, persisted);
     }
     if (!isSixpackAnalysis(analysis)) {
       const exhaustive: never = analysis;
@@ -149,6 +154,22 @@ function withBoxplotLocalStale(
   return { ...analysis, stale: analysis.stale || currentKey !== savedKey };
 }
 
+function withHistogramLocalStale(
+  analysis: HistogramAnalysisSummary,
+  worksheet: WorksheetData,
+  persisted: WorksheetData
+): HistogramAnalysisSummary {
+  const current = findColumn(worksheet, analysis.config.columnId);
+  const saved = findColumn(persisted, analysis.config.columnId);
+  if (!current) return { ...analysis, stale: true };
+  if (!saved) return analysis;
+  const selection = normalizeRowSelection(analysis.config);
+  const changed =
+    analysisSourceKey(current, selection) !==
+    analysisSourceKey(saved, selection);
+  return { ...analysis, stale: analysis.stale || changed };
+}
+
 export function analysisListSubtitle(analysis: StatisticalAnalysisSummary): string {
   if (isScatterAnalysis(analysis)) {
     return scatterListSubtitle(analysis);
@@ -161,6 +182,9 @@ export function analysisListSubtitle(analysis: StatisticalAnalysisSummary): stri
   }
   if (isBoxplotAnalysis(analysis)) {
     return boxplotListSubtitle(analysis);
+  }
+  if (isHistogramAnalysis(analysis)) {
+    return histogramListSubtitle(analysis);
   }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
@@ -217,6 +241,18 @@ function boxplotListSubtitle(analysis: BoxplotAnalysisSummary): string {
     rows,
     `${analysis.results.groups.length} box${analysis.results.groups.length === 1 ? "" : "es"}`,
   ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function histogramListSubtitle(analysis: HistogramAnalysisSummary): string {
+  const specs = formatSpecSummary({
+    lsl: analysis.config.lsl,
+    usl: analysis.config.usl,
+    target: null,
+  });
+  const rows = formatRowSelection(normalizeRowSelection(analysis.config));
+  return [analysis.config.columnName, rows, specs, "Histogram"]
     .filter(Boolean)
     .join(" · ");
 }

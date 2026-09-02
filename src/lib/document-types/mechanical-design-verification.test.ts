@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getCriteria, getDocumentType, getWorkspaceSections } from ".";
 import type { EvaluationContext } from "./types";
 import {
+  checkResultsFootnotePlacement,
+  checkResultsLeadInNoFootnote,
   checkResultsTablesPresent,
   checkResultsVerdictValues,
   checkRevisionHistoryTable,
@@ -43,6 +45,24 @@ function tableDoc(rows: readonly (readonly string[])[]): JSONContent {
             ],
           })),
         })),
+      },
+    ],
+  };
+}
+
+function italicFootnoteDoc(
+  table: JSONContent,
+  footnote: string
+): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      ...(table.content ?? []),
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: footnote, marks: [{ type: "italic" }] },
+        ],
       },
     ],
   };
@@ -122,6 +142,12 @@ describe("mechanical design verification definition", () => {
     expect(getCriteria(TYPE, "failure_forms").map((c) => c.key)).toContain(
       "failures.scope_discipline"
     );
+    expect(getCriteria(TYPE, "requirements_verified").map((c) => c.key)).toEqual(
+      expect.arrayContaining([
+        "results.lead_in_no_footnote",
+        "results.footnote_placement",
+      ])
+    );
   });
 
   it("carries no software-report criteria", () => {
@@ -161,13 +187,27 @@ describe("mechanical design verification definition", () => {
     );
   });
 
+  it("tells chat when to mint #01 versus copy a form number", () => {
+    const guidance = getDocumentType(TYPE).chat.draftingGuidance ?? "";
+    expect(guidance).toContain("## Identifiers (required)");
+    expect(guidance).toContain("Failure #01");
+    expect(guidance).toContain("Do not invent `Deviation #01` in 2.2");
+    expect(guidance).toContain("never");
+    expect(guidance).toContain("Observation #01");
+    expect(guidance).toContain("Never empty-anchor propose_edit a footnote");
+    expect(guidance).toContain(
+      "_See Deviation #02, deemed Not Applicable to the current testing execution._"
+    );
+    expect(guidance).not.toContain(
+      "*See Deviation #02, deemed Not Applicable to the current testing execution*"
+    );
+  });
+
   it("tells Agent to put table footnotes after the table, not in the lead-in", () => {
     const guidance = getDocumentType(TYPE).chat.draftingGuidance ?? "";
-    expect(guidance).toContain("Do not put that footnote in");
-    expect(guidance).toContain("the 4.2 lead-in");
-    expect(guidance).toContain(
-      "after the GFM table in targetField `table`, not in the three"
-    );
+    expect(guidance).toContain("Do not put this note in the 4.2 lead-in");
+    expect(guidance).toContain("immediately beneath Table 1");
+    expect(guidance).toContain("three paragraphs only");
   });
 
   it("runs the reused equipment check against the mechanical content shape", () => {
@@ -313,6 +353,17 @@ describe("mechanical deterministic checks", () => {
     ).toBe("met");
     expect(
       checkUutPrototypeFootnote(
+        ctx({
+          narrative: narrativeDoc(""),
+          table: italicFootnoteDoc(
+            starred,
+            "The adapter was a prototype that was functionally equivalent to SUB-00450 Rev. 6"
+          ),
+        })
+      ).status
+    ).toBe("met");
+    expect(
+      checkUutPrototypeFootnote(
         ctx({ narrative: narrativeDoc(""), table: tableDoc(uutRows) })
       ).status
     ).toBe("met");
@@ -356,6 +407,68 @@ describe("mechanical deterministic checks", () => {
     expect(
       checkResultsVerdictValues(
         ctx({ narrative: narrativeDoc(""), hardwareTable: good, systemTable: good })
+      ).status
+    ).toBe("met");
+  });
+
+  it("rejects a See Deviation footnote dumped into the 4.2 lead-in", () => {
+    const filled = tableDoc([
+      [...MECHANICAL_RESULTS_HEADERS],
+      ["M3-HRS-BD-011", "Power shall not drop 20%.", "Refer to Deviation #2.", "N/A*"],
+    ]);
+    expect(
+      checkResultsLeadInNoFootnote(
+        ctx({
+          narrative: narrativeDoc(
+            "All requirements detailed in the test plan were verified. See the tables below."
+          ),
+          hardwareTable: filled,
+          systemTable: filled,
+        })
+      ).status
+    ).toBe("met");
+    const dumped = checkResultsLeadInNoFootnote(
+      ctx({
+        narrative: narrativeDoc(
+          "All requirements were verified.\n\nSee Deviation #02, deemed Not Applicable to the current testing execution"
+        ),
+        hardwareTable: filled,
+        systemTable: filled,
+      })
+    );
+    expect(dumped.status).toBe("not_met");
+    expect(dumped.reasoning).toContain("Lead-in contains a table footnote");
+  });
+
+  it("requires a qualified-verdict footnote after the table, not above it", () => {
+    const headers = [...MECHANICAL_RESULTS_HEADERS];
+    const starred = tableDoc([
+      headers,
+      ["M3-HRS-BD-011", "Power shall not drop 20%.", "Refer to Deviation #2.", "N/A*"],
+    ]);
+    const plain = tableDoc([
+      headers,
+      ["M3-SYS-FN-001", "Output power shall not vary.", "See data sheets.", "Pass"],
+    ]);
+    expect(
+      checkResultsFootnotePlacement(
+        ctx({
+          narrative: narrativeDoc("See the tables below."),
+          hardwareTable: starred,
+          systemTable: plain,
+        })
+      ).status
+    ).toBe("not_met");
+    expect(
+      checkResultsFootnotePlacement(
+        ctx({
+          narrative: narrativeDoc("See the tables below."),
+          hardwareTable: italicFootnoteDoc(
+            starred,
+            "See Deviation #02, deemed Not Applicable to the current testing execution."
+          ),
+          systemTable: plain,
+        })
       ).status
     ).toBe("met");
   });

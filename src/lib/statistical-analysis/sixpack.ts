@@ -154,7 +154,7 @@ function chooseBinCount(n: number): number {
   return Math.min(30, Math.max(5, Math.ceil(Math.sqrt(n))));
 }
 
-function buildHistogram(
+export function buildHistogram(
   values: number[],
   mean: number,
   overallStdev: number,

@@ -589,6 +589,7 @@ function analyticsActivityLabel(info: ChatToolPartInfo): ActivitySurfaceNode | n
     case "run_one_way_anova":
     case "plot_xy_scatter":
     case "plot_boxplot":
+    case "plot_histogram":
     case "plot_measurements": {
       const labels = analyticsPlotLabels(info.toolName, pending, info.output);
       return {
@@ -620,6 +621,8 @@ function analyticsPlotLabels(
         return { surface: "Plotting scatter…", tone: "muted" };
       case "plot_boxplot":
         return { surface: "Plotting boxplot…", tone: "muted" };
+      case "plot_histogram":
+        return { surface: "Plotting histogram…", tone: "muted" };
       case "plot_measurements":
         return { surface: "Plotting measurements…", tone: "muted" };
       default:
@@ -646,6 +649,14 @@ function analyticsPlotLabels(
             output.updated === true
               ? "Updated boxplot — open Results"
               : "Saved boxplot — open Results",
+          tone: "success",
+        };
+      case "plot_histogram":
+        return {
+          surface:
+            output.updated === true
+              ? "Updated histogram — open Results"
+              : "Saved histogram — open Results",
           tone: "success",
         };
       case "plot_measurements":

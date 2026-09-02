@@ -14,6 +14,7 @@ export function WorkspaceMenubar({
   readOnly,
   onLoadSample,
   onNormalSixpack,
+  onHistogram,
   onOneWayAnova,
   onBoxplot,
   onXyScatter,
@@ -23,6 +24,7 @@ export function WorkspaceMenubar({
   readOnly: boolean;
   onLoadSample: () => void;
   onNormalSixpack: () => void;
+  onHistogram: () => void;
   onOneWayAnova: () => void;
   onBoxplot: () => void;
   onXyScatter: () => void;
@@ -87,6 +89,12 @@ export function WorkspaceMenubar({
             onSelect={onNormalSixpack}
           >
             Normal Capability Sixpack…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-testid="stat-histogram"
+            onSelect={onHistogram}
+          >
+            Histogram…
           </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="stat-one-way-anova"

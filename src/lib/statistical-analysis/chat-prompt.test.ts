@@ -17,9 +17,9 @@ const emptyAnalytics: ReportAnalyticsView = {
 };
 
 describe("analytics chat prompt", () => {
-  it("bumps when sixpack/scatter/ANOVA/boxplot policy or tools change", () => {
+  it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v33-mean-line"
+      "analytics-chat-v34-histogram-mean-line"
     );
   });
 
@@ -56,6 +56,7 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("plot_measurements");
     expect(prompt).toContain("plot_xy_scatter");
     expect(prompt).toContain("plot_boxplot");
+    expect(prompt).toContain("plot_histogram");
     expect(prompt).toContain("nested categor");
     expect(prompt).not.toContain("box/violin/bar charts of groups");
     expect(prompt).toContain("Optional lsl / usl override");
