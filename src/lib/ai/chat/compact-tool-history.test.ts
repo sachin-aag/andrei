@@ -3,11 +3,13 @@ import type { UIMessage } from "ai";
 import { compactChatToolHistoryForModel } from "./compact-tool-history";
 
 describe("compactChatToolHistoryForModel", () => {
-  it("drops the findings array from a prior finish_document_review part", () => {
+  it("replaces bulky finish findings with a page-citation digest", () => {
     const findings = Array.from({ length: 80 }, (_, i) => ({
       id: `d${i + 1}`,
+      filename: "Protocol.pdf",
       pageNumber: i + 1,
-      summary: "row",
+      identifiers: i === 0 ? ["AC-100"] : [],
+      summary: `Finding on page ${i + 1} with extra detail that should truncate when very long ${"x".repeat(200)}`,
     }));
     const messages: UIMessage[] = [
       {
@@ -39,11 +41,28 @@ describe("compactChatToolHistoryForModel", () => {
         findings?: unknown[];
         findingsOmitted?: number;
         allIdentifiers?: string[];
+        citationDigest?: Array<{
+          filename: string;
+          pageNumber: number;
+          citation: string;
+          identifiers: string[];
+          summary: string;
+        }>;
       };
     };
     expect(part.output?.findings).toEqual([]);
     expect(part.output?.findingsOmitted).toBe(80);
     expect(part.output?.allIdentifiers).toEqual(["AC-100"]);
+    expect(part.output?.citationDigest).toHaveLength(60);
+    expect(part.output?.citationDigest?.[0]).toMatchObject({
+      filename: "Protocol.pdf",
+      pageNumber: 1,
+      citation: "[Protocol.pdf, p. 1]",
+      identifiers: ["AC-100"],
+    });
+    expect(part.output?.citationDigest?.[0]?.summary.length).toBeLessThanOrEqual(
+      160
+    );
   });
 
   it("strips transcripts from a prior read_document_page part", () => {

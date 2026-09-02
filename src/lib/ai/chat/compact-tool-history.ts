@@ -4,7 +4,8 @@ import type { UIMessage } from "ai";
  * Prior tool rows can be hundreds of KB (page transcripts, finish findings,
  * worksheet write payloads). Re-sending that on the next turn blows the model
  * request and the assistant appears to "hit an error" with no new Langfuse
- * generation. Keep ids / counts / citations; drop bulky text and value arrays.
+ * generation. Keep ids / counts / page-citation digests; drop bulky text and
+ * value arrays.
  */
 
 type ToolPartRecord = {
@@ -53,6 +54,70 @@ function emitOutput(
   return next;
 }
 
+/** Cap so a 273-page finish sample stays small across later turns. */
+const FINISH_CITATION_DIGEST_CAP = 60;
+const FINISH_CITATION_SUMMARY_CHARS = 160;
+
+/**
+ * Keep page-cited pointers for later draft turns. Full finding payloads are
+ * huge; wiping them entirely made Agent/Document drafts drop `[filename, p. N]`
+ * and thin out section prose once the finish tool scrolled out of the live turn.
+ */
+function citationDigestFromFindings(
+  findings: readonly unknown[]
+): Array<{
+  filename: string;
+  pageNumber: number;
+  identifiers: string[];
+  summary: string;
+  citation: string;
+}> {
+  const digest: Array<{
+    filename: string;
+    pageNumber: number;
+    identifiers: string[];
+    summary: string;
+    citation: string;
+  }> = [];
+  for (const finding of findings) {
+    if (digest.length >= FINISH_CITATION_DIGEST_CAP) break;
+    if (!finding || typeof finding !== "object" || Array.isArray(finding)) {
+      continue;
+    }
+    const row = finding as Record<string, unknown>;
+    const filename =
+      typeof row.filename === "string" ? row.filename.trim() : "";
+    const pageNumber =
+      typeof row.pageNumber === "number" && Number.isFinite(row.pageNumber)
+        ? Math.trunc(row.pageNumber)
+        : null;
+    if (!filename || pageNumber == null || pageNumber < 1) continue;
+    const identifiers = Array.isArray(row.identifiers)
+      ? row.identifiers.filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0
+        )
+      : [];
+    const summaryRaw =
+      typeof row.summary === "string"
+        ? row.summary.trim()
+        : typeof row.heading === "string"
+          ? row.heading.trim()
+          : "";
+    const summary =
+      summaryRaw.length > FINISH_CITATION_SUMMARY_CHARS
+        ? `${summaryRaw.slice(0, FINISH_CITATION_SUMMARY_CHARS - 1)}…`
+        : summaryRaw;
+    digest.push({
+      filename,
+      pageNumber,
+      identifiers,
+      summary,
+      citation: `[${filename}, p. ${pageNumber}]`,
+    });
+  }
+  return digest;
+}
+
 function compactFinishOutput(output: unknown): unknown {
   const parsed = parseToolOutput(output);
   if (!parsed || !parsed.parsed || typeof parsed.parsed !== "object") {
@@ -62,10 +127,14 @@ function compactFinishOutput(output: unknown): unknown {
   const record = parsed.parsed as Record<string, unknown>;
   const findings = record.findings;
   if (!Array.isArray(findings) || findings.length === 0) return output;
+  const citationDigest = citationDigestFromFindings(findings);
   const next = {
     ...record,
     findings: [],
     findingsOmitted: findings.length,
+    citationDigest,
+    citationDigestNote:
+      "Page-cited pointers only — copy [filename, p. N] from citationDigest when drafting. Full finding text was omitted to keep history small.",
   };
   return emitOutput(output, next, parsed.asString);
 }
