@@ -11,10 +11,12 @@ import { SECTION_LABELS } from "@/types/sections";
 import {
   BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
+  HISTOGRAM,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
   isBoxplotAnalysis,
+  isHistogramAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -472,6 +474,8 @@ function graphKindLabel(kind: AnalysisKind): string {
       return "XY scatter";
     case BOXPLOT:
       return "boxplot";
+    case HISTOGRAM:
+      return "histogram";
     case ONE_WAY_ANOVA:
       return "ANOVA";
     default: {
@@ -526,6 +530,12 @@ function analysisIdentityTokens(
       analysis.config.title,
       "boxplot",
       "box"
+    );
+  } else if (isHistogramAnalysis(analysis)) {
+    parts.push(
+      analysis.config.columnName,
+      analysis.config.title,
+      "histogram"
     );
   }
   return [...new Set(tokenizePlotName(parts.join(" ")))];

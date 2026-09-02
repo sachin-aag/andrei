@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
 import {
   boxplotBodySchema,
+  histogramBodySchema,
   measurementScatterInputSchema,
   patchAnalyticsBodySchema,
   xyScatterBodySchema,
@@ -216,6 +217,44 @@ describe("boxplotBodySchema", () => {
       boxplotBodySchema.safeParse({
         yColumnId: "c1",
         categoryColumnIds: ["c2", "c2"],
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe("histogramBodySchema", () => {
+  it("requires columnId on create and allows a partial update with analysisId", () => {
+    expect(histogramBodySchema.safeParse({}).success).toBe(false);
+    expect(
+      histogramBodySchema.parse({
+        columnId: "c1",
+        lsl: 90,
+        usl: 110,
+        showDistributionLines: false,
+      })
+    ).toMatchObject({
+      columnId: "c1",
+      lsl: 90,
+      usl: 110,
+      showDistributionLines: false,
+    });
+    expect(
+      histogramBodySchema.parse({
+        analysisId: "hist-1",
+        showLsl: false,
+      })
+    ).toMatchObject({
+      analysisId: "hist-1",
+      showLsl: false,
+    });
+  });
+
+  it("rejects inverted spec limits", () => {
+    expect(
+      histogramBodySchema.safeParse({
+        columnId: "c1",
+        lsl: 110,
+        usl: 90,
       }).success
     ).toBe(false);
   });

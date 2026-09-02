@@ -68,8 +68,8 @@ import {
   updateAnalysisForReport,
   updateReportAnalytics,
 } from "./store";
-import type { BoxplotAnalysisSummary, ReportAnalyticsView, XyScatterAnalysisSummary } from "./types";
-import { BOXPLOT, MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
+import type { BoxplotAnalysisSummary, HistogramAnalysisSummary, ReportAnalyticsView, XyScatterAnalysisSummary } from "./types";
+import { BOXPLOT, HISTOGRAM, MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
 import { createEmptyWorksheet, insertColumn, renameColumn, replaceColumnValues } from "./worksheet";
 
 function pageRead(transcript: string): DocumentPageRead {
@@ -119,6 +119,7 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_measurements");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_xy_scatter");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_boxplot");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_histogram");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("scan_attachments");
   });
 
@@ -149,6 +150,7 @@ describe("analytics chat tools", () => {
     expect(writable.plot_measurements).toBeDefined();
     expect(writable.plot_xy_scatter).toBeDefined();
     expect(writable.plot_boxplot).toBeDefined();
+    expect(writable.plot_histogram).toBeDefined();
     expect(writable.run_capability_sixpack?.description).toContain(
       "not when they asked for a scatter"
     );
@@ -171,6 +173,9 @@ describe("analytics chat tools", () => {
     expect(writable.plot_boxplot?.description).toContain("showMeanLine");
     expect(writable.plot_boxplot?.description).toContain("xAxisLabel");
     expect(writable.plot_boxplot?.description).toContain("analysisId");
+    expect(writable.plot_histogram?.description).toContain("columnId");
+    expect(writable.plot_histogram?.description).toContain("showDistributionLines");
+    expect(writable.plot_histogram?.description).toContain("analysisId");
     expect(writable.plot_measurements?.description).toContain(
       "cannot color by serial number"
     );
@@ -187,6 +192,7 @@ describe("analytics chat tools", () => {
     expect(locked.plot_measurements).toBeUndefined();
     expect(locked.plot_xy_scatter).toBeUndefined();
     expect(locked.plot_boxplot).toBeUndefined();
+    expect(locked.plot_histogram).toBeUndefined();
     expect(locked.scan_attachments).toBeDefined();
     expect(locked.search_documents).toBeDefined();
     const searchSchema = locked.search_documents?.inputSchema as unknown as ZodToolSchema;
@@ -1455,6 +1461,77 @@ describe("analytics chat tools", () => {
     expect(output).toMatchObject({
       status: "error",
       message: expect.stringContaining("not a boxplot"),
+    });
+  });
+
+  it("creates a histogram Results row via plot_histogram", async () => {
+    const created: HistogramAnalysisSummary = {
+      id: "hist-1",
+      workspaceId: "ws-1",
+      kind: HISTOGRAM,
+      title: "Histogram of Assay",
+      config: {
+        columnId: "c1",
+        columnName: "Assay",
+        title: "Histogram of Assay",
+        lsl: 90,
+        usl: 110,
+        showDistributionLines: true,
+        showLsl: true,
+        showUsl: false,
+      },
+      results: {
+        n: 10,
+        skipped: 0,
+        mean: 100,
+        overallStdev: 2,
+        withinStdev: 1.8,
+        histogram: { bins: [], overallCurve: [], withinCurve: [] },
+      },
+      sourceHash: "hash",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    vi.mocked(createAnalysisForReport).mockResolvedValue({
+      ok: true,
+      analytics: { ...analyticsView(), analyses: [created] },
+      analysis: created,
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_histogram?.execute;
+    if (!plot) throw new Error("plot_histogram has no execute");
+    const output = await plot(
+      {
+        columnId: "c1",
+        lsl: 90,
+        usl: 110,
+        showUsl: false,
+      },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(createAnalysisForReport).toHaveBeenCalledWith(
+      "report-1",
+      expect.objectContaining({
+        kind: HISTOGRAM,
+        columnId: "c1",
+        showUsl: false,
+      })
+    );
+    expect(output).toMatchObject({
+      status: "ok",
+      updated: false,
+      analysisId: "hist-1",
+      columnId: "c1",
+      showUsl: false,
     });
   });
 });

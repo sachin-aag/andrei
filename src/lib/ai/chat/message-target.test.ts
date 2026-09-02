@@ -79,6 +79,9 @@ describe("chatMessageTargetFromParts", () => {
     expect(
       chatMessageTargetFromParts([{ toolName: "plot_boxplot" }])
     ).toBe("analytics");
+    expect(
+      chatMessageTargetFromParts([{ toolName: "plot_histogram" }])
+    ).toBe("analytics");
   });
 
   it("does not treat shared tools as a vote", () => {

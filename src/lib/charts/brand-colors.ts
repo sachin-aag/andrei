@@ -21,15 +21,16 @@ const DEMO: ChartBrandColors = {
   axis: "#5b6b82",
   plotFill: "#ffffff",
   limit: "#dc2626",
+  // Legend / group fills: hue-separated, not a brand-blue ramp. Never spec-limit red.
   series: [
     "#001838",
-    "#3d6fb5",
-    "#5b8ad0",
-    "#0e7490",
-    "#a16207",
-    "#6d28d9",
-    "#c026d3",
-    "#3f6212",
+    "#d97706",
+    "#0d9488",
+    "#7c3aed",
+    "#4d7c0f",
+    "#db2777",
+    "#075985",
+    "#b45309",
   ],
 };
 
@@ -44,13 +45,13 @@ const MJ: ChartBrandColors = {
   limit: "#dc2626",
   series: [
     "#133782",
-    "#403ac8",
-    "#5b4fe0",
-    "#0f766e",
-    "#b45309",
-    "#9d174d",
-    "#0369a1",
+    "#d97706",
+    "#0d9488",
     "#4d7c0f",
+    "#db2777",
+    "#7c3aed",
+    "#075985",
+    "#b45309",
   ],
 };
 
@@ -65,13 +66,13 @@ const CONVERGENT: ChartBrandColors = {
   limit: "#dc2626",
   series: [
     "#0079c1",
-    "#009ddc",
-    "#3aabd9",
-    "#0f766e",
-    "#c2410c",
+    "#d97706",
+    "#15803d",
     "#7c3aed",
-    "#a21caf",
-    "#4d7c0f",
+    "#db2777",
+    "#a16207",
+    "#0f766e",
+    "#9a3412",
   ],
 };
 
