@@ -196,7 +196,9 @@ import {
 import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
-import { DocumentReviewSession } from "@/lib/ai/chat/document-review";
+import { DocumentReviewSession ,
+  documentReviewCoverageKey,
+} from "@/lib/ai/chat/document-review";
 import {
   compareDraftedInventory,
   type RecommendedResultsInventory,
@@ -1421,6 +1423,9 @@ export function buildChatTools(opts: {
           attachmentIds: selected,
         });
         const started = documentReview.start({ objective, pages });
+        const selectedDocs = ready.filter((doc) =>
+          selected.includes(doc.attachmentId)
+        );
         return {
           status: started.status,
           totalPages: started.totalPages,
@@ -1429,9 +1434,14 @@ export function buildChatTools(opts: {
           remainingBatches: started.remainingBatches,
           documentCount: started.documentCount,
           attachmentIds: selected,
-          documents: ready
-            .filter((doc) => selected.includes(doc.attachmentId))
-            .map(reviewDocumentIndexItem),
+          coverageKey: documentReviewCoverageKey(
+            selectedDocs.map((doc) => ({
+              attachmentId: doc.attachmentId,
+              pageCount: doc.pageCount ?? 0,
+              ingestRunId: doc.ingestRunId,
+            }))
+          ),
+          documents: selectedDocs.map(reviewDocumentIndexItem),
           nextAction: started.nextAction,
         };
       },

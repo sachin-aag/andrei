@@ -107,6 +107,10 @@ import {
   prepareDocumentReviewStep,
 } from "@/lib/ai/chat/document-review";
 import {
+  rehydrateDocumentReviewIfCoverageUnchanged,
+  retrievalPolicyAfterCoverageDelta,
+} from "@/lib/ai/chat/document-review-rehydrate";
+import {
   searchLoopDirective,
   withoutSearchTool,
 } from "@/lib/ai/chat/search-loop";
@@ -300,7 +304,7 @@ async function handleChatPost(
     (sum, doc) => sum + (doc.pageCount ?? 0),
     0
   );
-  const retrieval = classifyRetrievalPolicy({
+  const retrievalDecision = classifyRetrievalPolicy({
     userText,
     recentUserTexts: recentUserMessageTexts(messages),
     sectionScope,
@@ -310,6 +314,24 @@ async function handleChatPost(
     hasDocuments: documents.length > 0,
   });
   const documentReview = new DocumentReviewSession();
+  const coverageRehydrate = rehydrateDocumentReviewIfCoverageUnchanged({
+    session: documentReview,
+    messages,
+    readyDocuments: documents.map((doc) => ({
+      attachmentId: doc.attachmentId,
+      pageCount: doc.pageCount ?? 0,
+      ingestRunId: doc.ingestRunId,
+    })),
+  });
+  // Only escalate to a fresh comprehensive walk when attachment coverage grew.
+  const retrievalPolicy = retrievalPolicyAfterCoverageDelta({
+    policy: retrievalDecision.policy,
+    coverageUnchanged: coverageRehydrate.restored,
+  });
+  const retrieval = {
+    ...retrievalDecision,
+    policy: retrievalPolicy,
+  };
 
   const alreadyDrafted = detectAlreadyDraftedSection({
     userText,
