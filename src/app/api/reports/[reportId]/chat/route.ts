@@ -106,6 +106,10 @@ import {
   pickPlanModeChatTools,
   prepareDocumentReviewStep,
 } from "@/lib/ai/chat/document-review";
+import {
+  searchLoopDirective,
+  withoutSearchTool,
+} from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
@@ -518,9 +522,21 @@ async function handleChatPost(
           availableTools: Object.keys(tools),
         });
         if (!prepared) return undefined;
-        const activeTools = alreadyDraftedActive
+        let activeTools = alreadyDraftedActive
           ? withoutDraftFieldTools(prepared.activeTools)
           : prepared.activeTools;
+        // Hide search after a cited page / locate / two empty greps — same
+        // latch as Analytics. Skip while a document review is actively
+        // walking pages (prepareDocumentReviewStep already scopes tools).
+        const reviewPhase = documentReview.phase();
+        const reviewActive =
+          reviewPhase === "in_progress" || reviewPhase === "ready_to_finish";
+        if (
+          !reviewActive &&
+          searchLoopDirective(steps) === "read"
+        ) {
+          activeTools = withoutSearchTool(activeTools);
+        }
         return {
           activeTools,
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
