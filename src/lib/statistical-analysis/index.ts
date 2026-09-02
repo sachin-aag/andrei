@@ -13,8 +13,10 @@ export {
   BOXPLOT,
   ONE_WAY_ANOVA,
   XY_SCATTER,
+  HISTOGRAM,
   isAnovaAnalysis,
   isBoxplotAnalysis,
+  isHistogramAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -65,6 +67,7 @@ export { computeCapabilitySixpack } from "./sixpack";
 export { computeOneWayAnova, suggestFactorColumn } from "./anova";
 export { computeXyScatter, suggestXColumn } from "./xy-scatter";
 export { computeBoxplot, suggestCategoryColumn } from "./boxplot";
+export { computeHistogram } from "./histogram";
 export {
   formatCapabilityStat,
   formatLimit,

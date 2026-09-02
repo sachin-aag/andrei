@@ -17,10 +17,8 @@ const emptyAnalytics: ReportAnalyticsView = {
 };
 
 describe("analytics chat prompt", () => {
-  it("bumps when sixpack/scatter/ANOVA/boxplot policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v32-plot-no-page-citation"
-    );
+  it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v33-histogram");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -56,6 +54,7 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("plot_measurements");
     expect(prompt).toContain("plot_xy_scatter");
     expect(prompt).toContain("plot_boxplot");
+    expect(prompt).toContain("plot_histogram");
     expect(prompt).toContain("nested categor");
     expect(prompt).not.toContain("box/violin/bar charts of groups");
     expect(prompt).toContain("Optional lsl / usl override");

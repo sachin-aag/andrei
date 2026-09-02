@@ -8,8 +8,10 @@ import {
   ONE_WAY_ANOVA,
   XY_SCATTER,
   BOXPLOT,
+  HISTOGRAM,
   type AnovaAnalysisSummary,
   type BoxplotAnalysisSummary,
+  type HistogramAnalysisSummary,
   type ScatterAnalysisSummary,
   type SixpackAnalysisSummary,
   type XyScatterAnalysisSummary,
@@ -166,6 +168,37 @@ function boxplot(): BoxplotAnalysisSummary {
   };
 }
 
+function histogram(): HistogramAnalysisSummary {
+  return {
+    id: "an-hist",
+    workspaceId: "ws-1",
+    kind: HISTOGRAM,
+    title: "Histogram of Assay",
+    config: {
+      columnId: "c1",
+      columnName: "Assay",
+      title: "Histogram of Assay",
+      lsl: 90,
+      usl: 110,
+      showDistributionLines: true,
+      showLsl: true,
+      showUsl: true,
+    },
+    results: {
+      n: 50,
+      skipped: 0,
+      mean: 100,
+      overallStdev: 2,
+      withinStdev: 1.8,
+      histogram: { bins: [], overallCurve: [], withinCurve: [] },
+    },
+    sourceHash: "hist",
+    stale: false,
+    createdAt: "2026-08-26T00:00:00.000Z",
+    previewImage: null,
+  };
+}
+
 describe("analysis stale flags", () => {
   it("marks a sixpack stale when the analyzed column cells change locally", () => {
     const persisted = applySampleAssay(createEmptyWorksheet(), 0);
@@ -240,11 +273,19 @@ describe("analysis stale flags", () => {
     expect(staleLot?.stale).toBe(true);
   });
 
+  it("marks a histogram stale when the analyzed column cells change", () => {
+    const persisted = applySampleAssay(createEmptyWorksheet(), 0);
+    const edited = setCell(persisted, 0, 0, "99.00");
+    const [staleHist] = withLocalStale([histogram()], edited, persisted);
+    expect(staleHist?.stale).toBe(true);
+  });
+
   it("summarizes sixpack, scatter, ANOVA, and boxplot rows for the results list", () => {
     expect(analysisListSubtitle(sixpack())).toContain("Assay");
     expect(analysisListSubtitle(scatter())).toMatch(/M3-SYS-FN-037|10 point|ozf-in|limits/i);
     expect(analysisListSubtitle(anova())).toMatch(/Assay by Lot/i);
     expect(analysisListSubtitle(xyScatter())).toMatch(/Assay vs Lot/i);
     expect(analysisListSubtitle(boxplot())).toMatch(/Assay by Lot/i);
+    expect(analysisListSubtitle(histogram())).toMatch(/Assay.*Histogram/i);
   });
 });

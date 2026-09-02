@@ -10,12 +10,14 @@ import {
 import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
+  isHistogramAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
   type AnovaAnalysisSummary,
   type BoxplotAnalysisSummary,
+  type HistogramAnalysisSummary,
   type StatisticalAnalysisSummary,
   type XyScatterAnalysisSummary,
 } from "./types";
@@ -54,6 +56,9 @@ export function analysisDownloadFilename(
   if (isBoxplotAnalysis(analysis)) {
     return `${safeFilenameBase(analysis.title, "boxplot")}-boxplot.csv`;
   }
+  if (isHistogramAnalysis(analysis)) {
+    return `${safeFilenameBase(analysis.title, "histogram")}-histogram.csv`;
+  }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
     return exhaustive;
@@ -79,6 +84,9 @@ export function analysisToCsv(analysis: StatisticalAnalysisSummary): string {
   }
   if (isBoxplotAnalysis(analysis)) {
     return boxplotToCsv(analysis);
+  }
+  if (isHistogramAnalysis(analysis)) {
+    return histogramToCsv(analysis);
   }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
@@ -274,6 +282,41 @@ function boxplotToCsv(analysis: BoxplotAnalysisSummary): string {
       "Outliers",
     ]),
     ...groupRows,
+  ];
+  return `\uFEFF${lines.join("\n")}\n`;
+}
+
+function histogramToCsv(analysis: HistogramAnalysisSummary): string {
+  const { config, results } = analysis;
+  const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
+  const summary: Array<[string, string]> = [
+    ["Title", analysis.title],
+    ["Column", config.columnName],
+    ["Rows", rows],
+    ["Kind", "Histogram"],
+    ["N", String(results.n)],
+    ["Skipped", String(results.skipped)],
+    ["Mean", csvNumber(results.mean)],
+    ["Overall StDev", csvNumber(results.overallStdev)],
+    ["Within StDev", csvNumber(results.withinStdev)],
+    ["LSL", config.lsl == null ? "" : csvNumber(config.lsl)],
+    ["USL", config.usl == null ? "" : csvNumber(config.usl)],
+    ["Show distribution lines", config.showDistributionLines === false ? "No" : "Yes"],
+    ["Show LSL", config.showLsl === false ? "No" : "Yes"],
+    ["Show USL", config.showUsl === false ? "No" : "Yes"],
+    ["Created", analysis.createdAt],
+  ];
+  const binRows = results.histogram.bins.map((bin) =>
+    csvRow([csvNumber(bin.x0), csvNumber(bin.x1), String(bin.count)])
+  );
+  const lines = [
+    "Summary",
+    csvRow(["Field", "Value"]),
+    ...summary.map(([field, value]) => csvRow([field, value])),
+    "",
+    "Bins",
+    csvRow(["x0", "x1", "Count"]),
+    ...binRows,
   ];
   return `\uFEFF${lines.join("\n")}\n`;
 }

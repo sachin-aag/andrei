@@ -362,35 +362,48 @@ function ControlChart({
   );
 }
 
-function HistogramChart({
+export function CapabilityHistogramChart({
   bins,
   overallCurve,
   withinCurve,
   lsl,
   usl,
+  showDistributionLines = true,
+  showLsl = true,
+  showUsl = true,
+  testIdPrefix = "sixpack",
 }: {
   bins: HistogramBin[];
   overallCurve: CurvePoint[];
   withinCurve: CurvePoint[];
   lsl: number | null;
   usl: number | null;
+  showDistributionLines?: boolean;
+  showLsl?: boolean;
+  showUsl?: boolean;
+  testIdPrefix?: string;
 }) {
+  const drawLsl = showLsl && lsl != null;
+  const drawUsl = showUsl && usl != null;
+  const curvePoints = showDistributionLines
+    ? [...overallCurve, ...withinCurve]
+    : [];
   const counts = bins.map((bin) => bin.count);
-  const curveYs = [...overallCurve, ...withinCurve].map((point) => point.y);
+  const curveYs = curvePoints.map((point) => point.y);
   const xValues = [
     ...bins.map((bin) => bin.x0),
     ...bins.map((bin) => bin.x1),
-    ...overallCurve.map((point) => point.x),
-    lsl ?? Number.POSITIVE_INFINITY,
-    usl ?? Number.NEGATIVE_INFINITY,
+    ...curvePoints.map((point) => point.x),
+    drawLsl ? lsl : Number.POSITIVE_INFINITY,
+    drawUsl ? usl : Number.NEGATIVE_INFINITY,
   ].filter((value) => Number.isFinite(value));
   const [xMin, xMax] = domain(xValues, 0.02);
   const yMax = Math.max(1, ...counts, ...curveYs) * 1.12;
   const x = scale(xMin, xMax, PLOT.left, PLOT.right);
   const y = scale(0, yMax, PLOT.bottom, PLOT.top);
   const specLimits: SpecLimitInput[] = [
-    ...(lsl != null ? [{ kind: "lsl" as const, value: lsl, lineX: x(lsl) }] : []),
-    ...(usl != null ? [{ kind: "usl" as const, value: usl, lineX: x(usl) }] : []),
+    ...(drawLsl ? [{ kind: "lsl" as const, value: lsl, lineX: x(lsl) }] : []),
+    ...(drawUsl ? [{ kind: "usl" as const, value: usl, lineX: x(usl) }] : []),
   ];
   const specLabels = layoutSpecLimitLabels(specLimits, PLOT);
 
@@ -426,19 +439,23 @@ function HistogramChart({
           />
         );
       })}
-      <path
-        d={toPath(withinCurve)}
-        fill="none"
-        stroke="var(--brand-600)"
-        strokeWidth="1.3"
-      />
-      <path
-        d={toPath(overallCurve)}
-        fill="none"
-        stroke="var(--muted-foreground)"
-        strokeWidth="1.2"
-        strokeDasharray="4 3"
-      />
+      {showDistributionLines ? (
+        <>
+          <path
+            d={toPath(withinCurve)}
+            fill="none"
+            stroke="var(--brand-600)"
+            strokeWidth="1.3"
+          />
+          <path
+            d={toPath(overallCurve)}
+            fill="none"
+            stroke="var(--muted-foreground)"
+            strokeWidth="1.2"
+            strokeDasharray="4 3"
+          />
+        </>
+      ) : null}
       {specLimits.map((limit) => (
         <line
           key={limit.kind}
@@ -453,7 +470,7 @@ function HistogramChart({
       {specLabels.map((label) => (
         <LimitLabel
           key={label.kind}
-          testId={`sixpack-spec-label-${label.kind}`}
+          testId={`${testIdPrefix}-spec-label-${label.kind}`}
           name={label.kind.toUpperCase()}
           x={label.x}
           y={label.y}
@@ -770,7 +787,7 @@ export function SixpackView({
             />
           </Panel>
           <Panel title="Capability Histogram">
-            <HistogramChart
+            <CapabilityHistogramChart
               bins={results.histogram.bins}
               overallCurve={results.histogram.overallCurve}
               withinCurve={results.histogram.withinCurve}

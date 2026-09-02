@@ -93,6 +93,7 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).toContain("plot_measurements");
     expect(prepared?.activeTools).toContain("plot_xy_scatter");
     expect(prepared?.activeTools).toContain("plot_boxplot");
+    expect(prepared?.activeTools).toContain("plot_histogram");
     expect(prepared?.activeTools).not.toContain("search_documents");
     expect(
       prepareAnalyticsChatStep({

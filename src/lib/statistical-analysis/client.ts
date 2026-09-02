@@ -177,6 +177,27 @@ export async function createBoxplot(
   });
 }
 
+export async function createHistogram(
+  reportId: string,
+  input: {
+    columnId: string;
+    title?: string;
+    lsl?: number | null;
+    usl?: number | null;
+    showDistributionLines?: boolean;
+    showLsl?: boolean;
+    showUsl?: boolean;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "histogram",
+    ...input,
+  });
+}
+
 async function postAnalysis(
   reportId: string,
   input: unknown

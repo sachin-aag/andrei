@@ -30,7 +30,7 @@ import {
 } from "@/lib/extraction/metric-series";
 import { buildAnalyticsSearchDocumentsTool } from "./search-documents";
 import { runScanAttachments } from "./scan-attachments";
-import { boxplotBodySchema, capabilitySixpackInputSchema, measurementScatterToolInputSchema, oneWayAnovaBodySchema, xyScatterBodySchema } from "./schemas";
+import { boxplotBodySchema, capabilitySixpackInputSchema, histogramBodySchema, measurementScatterToolInputSchema, oneWayAnovaBodySchema, xyScatterBodySchema } from "./schemas";
 import { tryRecordAnalyticsChange } from "@/lib/analytics-revisions/record-change";
 import type { AuditActorSnapshot } from "@/lib/audit";
 import {
@@ -42,6 +42,7 @@ import {
 } from "./store";
 import {
   BOXPLOT,
+  HISTOGRAM,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
@@ -50,6 +51,7 @@ import {
   WARN_VALUES_FOR_SIXPACK,
   isAnovaAnalysis,
   isBoxplotAnalysis,
+  isHistogramAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
@@ -108,6 +110,7 @@ export const ANALYTICS_CHAT_WRITE_TOOL_NAMES = [
   "run_one_way_anova",
   "plot_xy_scatter",
   "plot_boxplot",
+  "plot_histogram",
   "plot_measurements",
 ] as const;
 
@@ -211,6 +214,18 @@ function analysisIndexItem(
       categoryColumnIds: item.config.categoryColumnIds,
       n: item.results.n,
       groupCount: item.results.groups.length,
+    };
+  }
+  if (isHistogramAnalysis(item)) {
+    return {
+      id: item.id,
+      title: item.title,
+      kind: item.kind,
+      stale: item.stale,
+      columnId: item.config.columnId,
+      lsl: item.config.lsl,
+      usl: item.config.usl,
+      n: item.results.n,
     };
   }
   if (!isSixpackAnalysis(item)) {
@@ -1142,7 +1157,7 @@ export function buildAnalyticsChatTools(opts: {
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into worksheet columns (replaces those columns). New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter or boxplot. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+        "Write values into worksheet columns (replaces those columns). New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), plot_histogram for a frequency histogram of one numeric column (same chart as the sixpack histogram; optional LSL/USL and overlay checkboxes; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
       inputSchema: writeColumnInputSchema,
       execute: async (input) => {
         let entries = writeColumnEntriesFromInput(input);
@@ -1411,7 +1426,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.plot_xy_scatter = tool({
       description:
-        "Plot or update a worksheet chart on the Results tab. Create: yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X — a serial-number / factor / label column cannot be X. Optional legendColumnId color-codes points by that grouping column (labels, lots, factors, and serials are OK for legend; it cannot be X or Y and must be on the same sheet). Optional mark is the chart type (scatter default, line, line_markers, area, column). Optional showSpecLimits true/false draws Y-column LSL/USL lines (default off on create). Optional xMin/xMax/yMin/yMax set the visible axis window (omit or null = auto). Optional xAxisLabel/yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current plot. Cannot edit sixpack, ANOVA, boxplot, or attachment measurement scatter. Use when they asked to plot A vs B, color by lot/batch/serial/group, change Y/X/legend, switch chart type, zoom axes, or show/hide spec lines. Output variable is Y. Optional rowStart/rowEnd or rows limits the rows. Reports overall Pearson r; does not fit a regression line. Tell them to open Results.",
+        "Plot or update a worksheet chart on the Results tab. Create: yColumnId is required and must be numeric. Omit xColumnId (or pass null) for Y vs observation index (1, 2, 3…). Pass a numeric xColumnId for Y vs X — a serial-number / factor / label column cannot be X. Optional legendColumnId color-codes points by that grouping column (labels, lots, factors, and serials are OK for legend; it cannot be X or Y and must be on the same sheet). Optional mark is the chart type (scatter default, line, line_markers, area, column). Optional showSpecLimits true/false draws Y-column LSL/USL lines (default off on create). Optional xMin/xMax/yMin/yMax set the visible axis window (omit or null = auto). Optional xAxisLabel/yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current plot. Cannot edit sixpack, ANOVA, boxplot, histogram, or attachment measurement scatter. Use when they asked to plot A vs B, color by lot/batch/serial/group, change Y/X/legend, switch chart type, zoom axes, or show/hide spec lines. Output variable is Y. Optional rowStart/rowEnd or rows limits the rows. Reports overall Pearson r; does not fit a regression line. Tell them to open Results.",
       inputSchema: xyScatterBodySchema,
       execute: async (input) => {
         const { analysisId, ...patch } = input;
@@ -1509,7 +1524,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.plot_boxplot = tool({
       description:
-        "Plot or update a Tukey boxplot of a numeric Y on the Results tab. Create: yColumnId is required and must be numeric. Optional categoryColumnIds groups boxes on a nested axis — innermost first (closest to the boxes), last is the outermost label. Omit or [] for one box of all Y. At most 4 category columns on the same sheet as Y; Y cannot be a category. Observed combinations only — do not invent missing factor cells. Empty category cells become \"(blank)\". At most 80 groups. Whiskers are last observations inside Q1−1.5 IQR / Q3+1.5 IQR; outliers are asterisks. Optional xAxisLabel/yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current boxplot. Cannot edit sixpack, ANOVA, or scatter with plot_boxplot. Optional rowStart/rowEnd or rows limits the rows. Tell them to open Results.",
+        "Plot or update a Tukey boxplot of a numeric Y on the Results tab. Create: yColumnId is required and must be numeric. Optional categoryColumnIds groups boxes on a nested axis — innermost first (closest to the boxes), last is the outermost label. Omit or [] for one box of all Y. At most 4 category columns on the same sheet as Y; Y cannot be a category. Observed combinations only — do not invent missing factor cells. Empty category cells become \"(blank)\". At most 80 groups. Whiskers are last observations inside Q1−1.5 IQR / Q3+1.5 IQR; outliers are asterisks. Optional xAxisLabel/yAxisLabel override axis titles. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current boxplot. Cannot edit sixpack, ANOVA, scatter, or histogram with plot_boxplot. Optional rowStart/rowEnd or rows limits the rows. Tell them to open Results.",
       inputSchema: boxplotBodySchema,
       execute: async (input) => {
         const { analysisId, ...patch } = input;
@@ -1527,7 +1542,7 @@ export function buildAnalyticsChatTools(opts: {
             return {
               status: "error" as const,
               message:
-                "That Results row is not a boxplot. plot_boxplot can only edit boxplots (kind=boxplot), not sixpack, ANOVA, or scatter.",
+                "That Results row is not a boxplot. plot_boxplot can only edit boxplots (kind=boxplot), not sixpack, ANOVA, scatter, or histogram.",
             };
           }
           const result = await updateAnalysisAndRecord(analysisId, patch);
@@ -1588,6 +1603,100 @@ export function buildAnalyticsChatTools(opts: {
           n: result.analysis.results.n,
           skipped: result.analysis.results.skipped,
           groupCount: result.analysis.results.groups.length,
+          analysisCount: result.analytics.analyses.length,
+          stale: result.analysis.stale,
+          openResultsTab: true,
+        };
+      },
+    });
+
+    statsTools.plot_histogram = tool({
+      description:
+        "Plot or update a frequency histogram of a numeric worksheet column on the Results tab (the same chart as the sixpack histogram — bars plus optional overall/within normal curves and LSL/USL lines). Create: columnId is required and must be numeric. LSL and USL are optional. Overlay flags showDistributionLines, showLsl, and showUsl default on; set false to hide that overlay. A spec line draws only when the value is set and its checkbox is on. Edit: pass analysisId from the Analyses list or a tagged @ plot and only the fields that change. Do not create a second Results row when they asked to change the current histogram. Cannot edit sixpack, ANOVA, scatter, or boxplot with plot_histogram. Optional rowStart/rowEnd or rows limits the rows. Tell them to open Results.",
+      inputSchema: histogramBodySchema,
+      execute: async (input) => {
+        const { analysisId, ...patch } = input;
+        if (analysisId) {
+          const analytics = await getOrCreateReportAnalytics(reportId);
+          const existing = analytics.analyses.find((item) => item.id === analysisId);
+          if (!existing) {
+            return {
+              status: "error" as const,
+              message:
+                "No Results plot with that id. Use an id from the Analyses list or a tagged @ plot.",
+            };
+          }
+          if (!isHistogramAnalysis(existing)) {
+            return {
+              status: "error" as const,
+              message:
+                "That Results row is not a histogram. plot_histogram can only edit histograms (kind=histogram), not sixpack, ANOVA, scatter, or boxplot.",
+            };
+          }
+          const result = await updateAnalysisAndRecord(analysisId, patch);
+          if (!result.ok) {
+            return {
+              status: "error" as const,
+              message: result.error,
+            };
+          }
+          if (!isHistogramAnalysis(result.analysis)) {
+            return {
+              status: "error" as const,
+              message: "Saved analysis was not a histogram.",
+            };
+          }
+          return {
+            status: "ok" as const,
+            updated: true,
+            analysisId: result.analysis.id,
+            title: result.analysis.title,
+            columnId: result.analysis.config.columnId,
+            columnName: result.analysis.config.columnName,
+            lsl: result.analysis.config.lsl,
+            usl: result.analysis.config.usl,
+            showDistributionLines:
+              result.analysis.config.showDistributionLines !== false,
+            showLsl: result.analysis.config.showLsl !== false,
+            showUsl: result.analysis.config.showUsl !== false,
+            n: result.analysis.results.n,
+            skipped: result.analysis.results.skipped,
+            analysisCount: result.analytics.analyses.length,
+            stale: result.analysis.stale,
+            openResultsTab: true,
+          };
+        }
+        const result = await createAnalysisAndRecord({
+          kind: HISTOGRAM,
+          ...patch,
+        });
+        if (!result.ok) {
+          return {
+            status: "error" as const,
+            message: result.error,
+          };
+        }
+        if (!isHistogramAnalysis(result.analysis)) {
+          return {
+            status: "error" as const,
+            message: "Saved analysis was not a histogram.",
+          };
+        }
+        return {
+          status: "ok" as const,
+          updated: false,
+          analysisId: result.analysis.id,
+          title: result.analysis.title,
+          columnId: result.analysis.config.columnId,
+          columnName: result.analysis.config.columnName,
+          lsl: result.analysis.config.lsl,
+          usl: result.analysis.config.usl,
+          showDistributionLines:
+            result.analysis.config.showDistributionLines !== false,
+          showLsl: result.analysis.config.showLsl !== false,
+          showUsl: result.analysis.config.showUsl !== false,
+          n: result.analysis.results.n,
+          skipped: result.analysis.results.skipped,
           analysisCount: result.analytics.analyses.length,
           stale: result.analysis.stale,
           openResultsTab: true,

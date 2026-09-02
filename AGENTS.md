@@ -146,7 +146,15 @@ column and chart spec for CSV download. Plot figures do not show `p. N`.
 Editing a cell drops that citation. Attachment extract-and-plot is Analytics chat
 only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
 There is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA
-for a scatter or boxplot.
+for a scatter, boxplot, or histogram.
+Plot → Histogram (`plot_histogram`) is the same frequency chart as the
+sixpack histogram (bars plus optional overall/within normal curves and
+LSL/USL lines). LSL/USL are optional. Overlay checkboxes
+`showDistributionLines`, `showLsl`, and `showUsl` default on; a spec line
+draws only when the value is set and the checkbox is on. Overlay flags
+are display-only (`sourceHash` is column + row selection). Agent Analytics
+chat can create a histogram or edit an existing one with `analysisId`.
+Ask mode cannot.
 Plot → Boxplot (`plot_boxplot`) is a Tukey box-and-whisker of numeric Y.
 Optional category columns (innermost first, closest to the boxes; last is
 the outermost nested axis label) group observed combinations only — not a

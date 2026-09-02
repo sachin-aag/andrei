@@ -89,6 +89,29 @@ const boxplot = {
   results: { n: 10, skipped: 0, groups: [] },
 } satisfies StatisticalAnalysisSummary;
 
+const histogram = {
+  ...sixpack,
+  id: "a6",
+  title: "Histogram of Assay",
+  kind: "histogram",
+  previewImage,
+  config: {
+    columnId: "c1",
+    columnName: "Assay",
+    title: "Histogram of Assay",
+    lsl: 90,
+    usl: 110,
+  },
+  results: {
+    n: 10,
+    skipped: 0,
+    mean: 100,
+    overallStdev: 2,
+    withinStdev: 1.8,
+    histogram: { bins: [], overallCurve: [], withinCurve: [] },
+  },
+} satisfies StatisticalAnalysisSummary;
+
 const legacySixpack = {
   ...sixpack,
   id: "a4",
@@ -100,13 +123,28 @@ describe("insertable-graphs", () => {
     expect(isInsertableGraphAnalysis(sixpack)).toBe(true);
     expect(isInsertableGraphAnalysis(scatter)).toBe(true);
     expect(isInsertableGraphAnalysis(boxplot)).toBe(true);
+    expect(isInsertableGraphAnalysis(histogram)).toBe(true);
     expect(isInsertableGraphAnalysis(anova)).toBe(false);
     expect(isInsertableGraphAnalysis(legacySixpack)).toBe(false);
     expect(
-      listInsertableGraphAnalyses([sixpack, scatter, boxplot, anova, legacySixpack])
-    ).toEqual([sixpack, scatter, boxplot]);
+      listInsertableGraphAnalyses([
+        sixpack,
+        scatter,
+        boxplot,
+        histogram,
+        anova,
+        legacySixpack,
+      ])
+    ).toEqual([sixpack, scatter, boxplot, histogram]);
     expect(
-      listGraphAnalyses([sixpack, scatter, boxplot, anova, legacySixpack])
-    ).toEqual([sixpack, scatter, boxplot, legacySixpack]);
+      listGraphAnalyses([
+        sixpack,
+        scatter,
+        boxplot,
+        histogram,
+        anova,
+        legacySixpack,
+      ])
+    ).toEqual([sixpack, scatter, boxplot, histogram, legacySixpack]);
   });
 });

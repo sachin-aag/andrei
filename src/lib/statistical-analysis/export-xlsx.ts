@@ -9,6 +9,7 @@ import {
 import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
+  isHistogramAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
@@ -336,6 +337,43 @@ function boxplotRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
   ];
 }
 
+function histogramRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
+  if (!isHistogramAnalysis(analysis)) return [];
+  const { config, results } = analysis;
+  const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
+  return [
+    [
+      ["Field", "Value"],
+      ["Title", analysis.title],
+      ["Column", config.columnName],
+      ["Rows", rows],
+      ["Kind", "Histogram"],
+      ["N", String(results.n)],
+      ["Skipped", String(results.skipped)],
+      ["Mean", formatStat(results.mean)],
+      ["Overall StDev", formatStat(results.overallStdev)],
+      ["Within StDev", formatStat(results.withinStdev)],
+      ["LSL", config.lsl == null ? "" : formatStat(config.lsl)],
+      ["USL", config.usl == null ? "" : formatStat(config.usl)],
+      [
+        "Show distribution lines",
+        config.showDistributionLines === false ? "No" : "Yes",
+      ],
+      ["Show LSL", config.showLsl === false ? "No" : "Yes"],
+      ["Show USL", config.showUsl === false ? "No" : "Yes"],
+      ["Created", analysis.createdAt],
+    ],
+    [
+      ["x0", "x1", "Count"],
+      ...results.histogram.bins.map((bin) => [
+        formatStat(bin.x0),
+        formatStat(bin.x1),
+        String(bin.count),
+      ]),
+    ],
+  ];
+}
+
 function analysisSections(
   analysis: StatisticalAnalysisSummary
 ): Array<string[][]> {
@@ -343,6 +381,7 @@ function analysisSections(
   if (isXyScatterAnalysis(analysis)) return xyScatterRows(analysis);
   if (isAnovaAnalysis(analysis)) return anovaRows(analysis);
   if (isBoxplotAnalysis(analysis)) return boxplotRows(analysis);
+  if (isHistogramAnalysis(analysis)) return histogramRows(analysis);
   if (isSixpackAnalysis(analysis)) return sixpackRows(analysis);
   const exhaustive: never = analysis;
   return exhaustive;
