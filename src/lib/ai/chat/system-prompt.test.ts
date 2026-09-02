@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v76-mode-first-intent");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v77-state-driven-retrieval");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
