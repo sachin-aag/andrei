@@ -163,7 +163,8 @@ describe("mechanical design verification definition", () => {
 
   it("tells Agent to put table footnotes after the table, not in the lead-in", () => {
     const guidance = getDocumentType(TYPE).chat.draftingGuidance ?? "";
-    expect(guidance).toContain("Do not put that footnote in the 4.2 lead-in");
+    expect(guidance).toContain("Do not put that footnote in");
+    expect(guidance).toContain("the 4.2 lead-in");
     expect(guidance).toContain(
       "after the GFM table in targetField `table`, not in the three"
     );

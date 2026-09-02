@@ -6,7 +6,6 @@ const RESULTS_FOOTNOTE_RE =
   /see deviation|not applicable to the current testing|deemed not applicable/i;
 const PROTOTYPE_FOOTNOTE_RE =
   /functionally equivalent|prototype that was|adapter was a prototype/i;
-const QUALIFIED_VERDICT_RE = /\*$/;
 const WRAPPED_ASTERISK_RE = /^\*([\s\S]+)\*$/;
 
 function isDoc(value: unknown): value is JSONContent {
@@ -229,14 +228,6 @@ export function placeUutTableFootnotes(args: {
     narrative: split.body,
     table: appendFootnotesToTableDoc(asDoc(args.table), split.footnotes, "prototype"),
   };
-}
-
-/** Shared haystack for eval: lead-in, table cells, and trailing footnote paragraphs. */
-export function mechanicalFootnoteHaystack(
-  narrative: unknown,
-  table: unknown
-): string {
-  return `${richJsonToPlainText(isDoc(narrative) ? narrative : null)} ${richJsonToPlainText(isDoc(table) ? table : null)}`;
 }
 
 /**
