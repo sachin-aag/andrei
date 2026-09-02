@@ -89,9 +89,10 @@ export function recentUserMessageTexts(
  * Comprehensive is the page-walk for open sets (unnamed members, distributed
  * source) and explicit every-row inventories. Focused is an explicit skim.
  *
- * Order: no docs → keep-going → bounded locator → skim → shape backup →
- * scoped inventory section → scope-all (non-inventory intent / narrow fact /
- * open-set + distributed) → adaptive.
+ * Order: no docs → keep-going → bounded locator → skim → latest-turn shape →
+ * scoped inventory section (latest inventory language or open-set produce) →
+ * scope-all (non-inventory intent / narrow fact / open-set + distributed) →
+ * adaptive.
  */
 export function classifyRetrievalPolicy(
   input: ClassifyRetrievalPolicyInput
@@ -127,14 +128,21 @@ export function classifyRetrievalPolicy(
     return { policy: "focused", reason: "explicit_quick_overview" };
   }
 
-  if (COMPREHENSIVE_SHAPE_RE.test(combined)) {
+  // Score inventory shape on the latest turn only. An earlier "draft the
+  // report" must not force another full page walk on a follow-up like
+  // "analyse the graphs".
+  if (COMPREHENSIVE_SHAPE_RE.test(latest)) {
     return { policy: "comprehensive", reason: "exhaustive_output_shape" };
   }
 
+  // @inventory is scope, not an automatic page-walk. Require inventory
+  // language or open-set produce on the latest turn (graph captions stay
+  // adaptive).
   if (
     typeof scope === "string" &&
     scope !== "all" &&
-    isInventorySection(scope, input.documentType)
+    isInventorySection(scope, input.documentType) &&
+    (hasInventoryLanguage(latest) || OPEN_SET_PRODUCE_RE.test(latest))
   ) {
     return { policy: "comprehensive", reason: "matrix_section_inventory" };
   }

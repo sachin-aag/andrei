@@ -63,6 +63,7 @@ import {
   alreadyDraftedGapHints,
   detectAlreadyDraftedSection,
   alreadyDraftedReadStep,
+  withoutDraftFieldTools,
 } from "@/lib/ai/chat/already-drafted";
 import {
   createChatSession,
@@ -308,6 +309,7 @@ async function handleChatPost(
 
   const alreadyDrafted = detectAlreadyDraftedSection({
     userText,
+    userIntentKind: userIntent.kind,
     sectionScope,
     documentType: report.documentType,
     sections: mergedSections,
@@ -516,8 +518,11 @@ async function handleChatPost(
           availableTools: Object.keys(tools),
         });
         if (!prepared) return undefined;
+        const activeTools = alreadyDraftedActive
+          ? withoutDraftFieldTools(prepared.activeTools)
+          : prepared.activeTools;
         return {
-          activeTools: prepared.activeTools,
+          activeTools,
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
         };
       },

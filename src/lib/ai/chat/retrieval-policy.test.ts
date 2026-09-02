@@ -195,14 +195,14 @@ describe("classifyRetrievalPolicy", () => {
     expect(decision.reason).toBe("matrix_section_inventory");
   });
 
-  it("escalates a scoped Results section without fill verbs", () => {
+  it("keeps a bare scoped Results ask adaptive without inventory language", () => {
     const decision = classifyRetrievalPolicy({
       userText: "do this section",
       sectionScope: "results_and_discussions",
       hasDocuments: true,
     });
-    expect(decision.policy).toBe("comprehensive");
-    expect(decision.reason).toBe("matrix_section_inventory");
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
   });
 
   it("keeps investigation draft-report adaptive even with a large attachment", () => {
@@ -289,6 +289,46 @@ describe("classifyRetrievalPolicy", () => {
     });
     expect(decision.policy).toBe("adaptive");
     expect(decision.reason).toBe("targeted_rewrite");
+  });
+
+  it("keeps graph analysis on an @inventory section adaptive", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "analyse the graphs in Requirements Verified",
+      sectionScope: "requirements_verified",
+      documentType: "mechanical_design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("does not let an earlier write-this-in-the-report turn force a page walk for graph analysis", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "analyse the graphs in Requirements Verified",
+      recentUserTexts: ["write this in the report"],
+      sectionScope: "requirements_verified",
+      documentType: "mechanical_design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("still escalates an explicit inventory fill on Requirements Verified", () => {
+    const decision = classifyRetrievalPolicy({
+      userText:
+        "fill the Requirements Verified table from the attachments, don't miss any",
+      sectionScope: "requirements_verified",
+      documentType: "mechanical_design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(decision.policy).toBe("comprehensive");
+    expect(
+      ["matrix_section_inventory", "exhaustive_output_shape", "open_set_distributed"]
+    ).toContain(decision.reason);
   });
 });
 
