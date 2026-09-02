@@ -122,7 +122,7 @@ export function HistogramView({
       <div
         ref={captureRef}
         data-testid="analysis-preview-figure"
-        className="min-h-[280px] rounded-md bg-[#f4f6f9] p-2"
+        className="min-h-[360px] rounded-md bg-[#f4f6f9] p-2"
       >
         <CapabilityHistogramChart
           bins={results.histogram.bins}
@@ -134,6 +134,7 @@ export function HistogramView({
           showLsl={overlays.showLsl}
           showUsl={overlays.showUsl}
           testIdPrefix="histogram"
+          size="full"
         />
       </div>
     </div>

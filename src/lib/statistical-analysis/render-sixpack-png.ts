@@ -1,3 +1,4 @@
+import { formatAxisTick, xTickAnchor } from "@/lib/charts/axis-ticks";
 import { chartBrandColors } from "@/lib/charts/brand-colors";
 import type { ChartBrandColors } from "@/lib/charts/brand-colors";
 import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
@@ -9,6 +10,7 @@ import {
   formatPValue,
   formatStat,
 } from "./format";
+import { histogramChartScale } from "./histogram-chart-scale";
 import {
   layoutControlLimitLabels,
   layoutHorizontalSpecLabels,
@@ -137,10 +139,18 @@ function drawAxis(
   yMax: number,
   xLabel: string,
   yLabel: string,
-  colors: ChartBrandColors
+  colors: ChartBrandColors,
+  ticks?: {
+    xTicks?: number[];
+    yTicks?: number[];
+    formatTick?: (value: number) => string;
+  }
 ): void {
   const y = scale(yMin, yMax, plot.bottom, plot.top);
   const x = scale(xMin, xMax, plot.left, plot.right);
+  const formatTick = ticks?.formatTick ?? formatLimit;
+  const yTicks = ticks?.yTicks ?? [yMin, (yMin + yMax) / 2, yMax];
+  const xTicks = ticks?.xTicks ?? [xMin, (xMin + xMax) / 2, xMax];
   ctx.strokeStyle = colors.grid;
   ctx.lineWidth = 1;
   ctx.strokeRect(plot.left, plot.top, plot.right - plot.left, plot.bottom - plot.top);
@@ -149,7 +159,7 @@ function drawAxis(
   ctx.font = font(9);
   ctx.textAlign = "end";
   ctx.textBaseline = "middle";
-  for (const tick of [yMin, (yMin + yMax) / 2, yMax]) {
+  for (const tick of yTicks) {
     ctx.setLineDash([2, 3]);
     ctx.strokeStyle = colors.grid;
     ctx.beginPath();
@@ -158,15 +168,15 @@ function drawAxis(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = colors.axis;
-    ctx.fillText(formatLimit(tick), plot.left - 4, y(tick));
+    ctx.fillText(formatTick(tick), plot.left - 4, y(tick));
   }
 
-  ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  const xTicks = [xMin, (xMin + xMax) / 2, xMax];
-  for (const tick of xTicks) {
-    ctx.fillText(formatLimit(tick), x(tick), plot.bottom + 4);
+  for (const [index, tick] of xTicks.entries()) {
+    ctx.textAlign = canvasTextAlign(xTickAnchor(index, xTicks.length));
+    ctx.fillText(formatTick(tick), x(tick), plot.bottom + 4);
   }
+  ctx.textAlign = "center";
   ctx.font = font(10);
   ctx.fillText(xLabel, (plot.left + plot.right) / 2, plot.bottom + 16);
 
@@ -327,20 +337,32 @@ function drawHistogram(
     top: oy + PLOT.top,
     bottom: oy + PLOT.bottom,
   };
-  const counts = bins.map((bin) => bin.count);
-  const curveYs = [...overallCurve, ...withinCurve].map((point) => point.y);
-  const xValues = [
-    ...bins.flatMap((bin) => [bin.x0, bin.x1]),
-    ...overallCurve.map((point) => point.x),
-    ...(lsl != null ? [lsl] : []),
-    ...(usl != null ? [usl] : []),
-  ];
-  const [xMin, xMax] = domain(xValues, 0.02);
-  const yMax = Math.max(1, ...counts, ...curveYs) * 1.12;
-  const x = scale(xMin, xMax, plot.left, plot.right);
-  const y = scale(0, yMax, plot.bottom, plot.top);
+  const scaleBox = histogramChartScale({
+    bins,
+    overallCurve,
+    withinCurve,
+    lsl,
+    usl,
+  });
+  const x = scale(scaleBox.xMin, scaleBox.xMax, plot.left, plot.right);
+  const y = scale(scaleBox.yMin, scaleBox.yMax, plot.bottom, plot.top);
 
-  drawAxis(ctx, plot, xMin, xMax, 0, yMax, "Measurement", "Frequency", colors);
+  drawAxis(
+    ctx,
+    plot,
+    scaleBox.xMin,
+    scaleBox.xMax,
+    scaleBox.yMin,
+    scaleBox.yMax,
+    "Measurement",
+    "Frequency",
+    colors,
+    {
+      xTicks: scaleBox.xTicks,
+      yTicks: scaleBox.yTicks,
+      formatTick: formatAxisTick,
+    }
+  );
 
   for (const bin of bins) {
     const w = Math.max(1, x(bin.x1) - x(bin.x0) - 1);
