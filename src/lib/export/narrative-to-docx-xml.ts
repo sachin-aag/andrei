@@ -102,7 +102,13 @@ export function narrativeToDocxXmlWithContext(
         parts.push(tableToXml(node, ctx, portraitMax));
       }
     } else {
-      closeLandscape();
+      // forceLandscapeTables: keep trailing paragraphs (table footnotes) in
+      // the same landscape section. Word's sectPr describes the section that
+      // just ended, so the footnote must sit *before* the landscape break.
+      // Default still returns to portrait after a wide table.
+      if (!(options?.forceLandscapeTables === true && landscapeOpen)) {
+        closeLandscape();
+      }
       if (node.type === "paragraph") {
         parts.push(paragraphToXml(node, false, null, null, false, ctx));
       } else if (node.type === "bulletList" || node.type === "orderedList") {

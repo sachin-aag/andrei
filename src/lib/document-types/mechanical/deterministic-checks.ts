@@ -1,5 +1,6 @@
 import type { CriterionStatus } from "@/db/schema";
 import type { EvaluationContext } from "@/lib/document-types/types";
+import { sectionHasPrototypeFootnote } from "@/lib/export/mechanical-table-footnotes";
 import {
   normalizeMechanicalVerdict,
   parseMechanicalResultsMatrix,
@@ -72,8 +73,9 @@ export function checkUutRowsIdentified(ctx: EvaluationContext) {
 
 /**
  * A prototype or functional equivalent carries an asterisk on its revision and
- * a footnote beneath the table. An asterisked revision with no footnote in the
- * narrative is the failure this catches.
+ * a footnote beneath the table. An asterisked revision with no footnote in a
+ * paragraph (lead-in or after the table) is the failure this catches. A star
+ * only inside a table cell does not count.
  */
 export function checkUutPrototypeFootnote(ctx: EvaluationContext) {
   const parsed = parseUutMatrix(ctx.content);
@@ -85,10 +87,11 @@ export function checkUutPrototypeFootnote(ctx: EvaluationContext) {
       "No revision is asterisked, so no equivalence footnote is required"
     );
   }
-  const narrative = JSON.stringify(
-    (ctx.content as { narrative?: unknown } | null)?.narrative ?? ""
-  );
-  if (!narrative.includes("*")) {
+  const content = ctx.content as {
+    narrative?: unknown;
+    table?: unknown;
+  } | null;
+  if (!sectionHasPrototypeFootnote(content?.narrative, content?.table)) {
     return verdict(
       "not_met",
       `${starred.length} row(s) carry an asterisked revision but no footnote explains what the part was equivalent to`

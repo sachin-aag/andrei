@@ -54,9 +54,11 @@ ${gfm(MECHANICAL_REVISION_HISTORY_HEADERS)}
     3. a statement that the requirement is not applicable, naming the deviation
        that establishes it — "Not Applicable / Refer to Deviation #2".
 - Pass/Fail carries Pass, Fail or N/A only. A qualified verdict carries a
-  trailing asterisk keyed to a footnote beneath that table, written between
-  asterisks: \`*See Deviation #02, deemed Not Applicable to the current testing
-  execution*\`.
+  trailing asterisk keyed to a footnote paragraph after the GFM table in
+  \`hardwareTable\` or \`systemTable\` (whichever table contains the starred
+  verdict), written between asterisks: \`*See Deviation #02, deemed Not
+  Applicable to the current testing execution*\`. Do not put that footnote in
+  the 4.2 lead-in (\`narrative\`).
 - A requirement satisfied by another report's testing is marked Pass with the
   satisfying report cited. It is NEVER omitted from the table.
 - Requirement IDs keep their full prefix: M3-SYS-FN-037, not SYS-FN-037.`;
@@ -126,7 +128,8 @@ const OMIT_IF = `## Omit-if switches (required)
   with their title.
 - 2.3 prototype footnote: include only where a part was a prototype or a
   functional equivalent. Mark its revision with an asterisk and add the footnote
-  beneath the table.
+  as a paragraph after the GFM table in targetField \`table\`, not in the three
+  lead-in paragraphs.
 - 3 Failure entries: one per failure. If no failure was encountered, say so
   plainly rather than padding the section.
 - 4.1 supplemental test sentence: include only where a supplemental test case
@@ -235,7 +238,8 @@ Appendix A of this report.
 
 ## 2.3 UNITS UNDER TEST (UUT's) — 3 paragraphs + Table 1
 
-targetFields \`narrative\` (three paragraphs and the footnote) and \`table\`.
+targetFields \`narrative\` (three paragraphs only) and \`table\` (the matrix plus
+any prototype footnote after the GFM table).
 
 **Paragraph 1 criteria:** how many systems were required, broken down by
 configuration, reconciled against the number of unique UUTs where the two
@@ -253,8 +257,8 @@ within each executed protocol, and the appendix the protocols are attached in.
 N/A; systems under test first, then component assemblies grouped by type;
 Revision carries the component revision, or N/A for a system whose configuration
 is defined by its part number; a prototype or functional equivalent carries an
-asterisk on its revision and a footnote beneath the table saying what it was
-equivalent to.
+asterisk on its revision and a footnote paragraph after the GFM table in
+\`table\` (not in the three lead-in paragraphs) saying what it was equivalent to.
 
 **Do not** list measurement instruments here — those are Table 2 — and do not
 omit the reconciliation between system count and UUT count. Do not list a unit
@@ -354,7 +358,7 @@ execution of the system protocol, to satisfy an observation documented in the
 
 ## 4.2 REQUIREMENTS VERIFIED — lead-in + Table 3 + Table 4
 
-targetFields \`narrative\` (lead-in), \`hardwareTable\`, \`systemTable\`.
+targetFields \`narrative\` (lead-in only), \`hardwareTable\`, \`systemTable\`.
 
 **Lead-in criteria:** that all requirements detailed in the test plan were
 verified during the executions, naming the test plan with number and revision
@@ -362,7 +366,9 @@ and each protocol with number and revision, and directing the reader to the
 tables that follow.
 
 **Do not** claim that all requirements in the requirements document were
-verified — the scope is the test plan.
+verified — the scope is the test plan. **Do not** put a table footnote in the
+lead-in. A qualified-verdict footnote is a paragraph after the GFM table in
+\`hardwareTable\` or \`systemTable\`.
 
 Table schemas and cell rules are given under "Fixed table schemas" above.
 Caption each table "Table n. <discipline> Requirement Results per Test Plan
