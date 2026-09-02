@@ -531,6 +531,7 @@ describe("analytics chat tools", () => {
       status: "written",
       rowsWritten: 0,
       blankedCount: 2,
+      incomplete: true,
     });
   });
 
@@ -862,9 +863,17 @@ describe("analytics chat tools", () => {
       "Do not substitute a sixpack or ANOVA for a scatter"
     );
     expect(tools.write_column?.description).toContain("Pass sheetId");
-    expect(tools.write_column?.description).toContain("do not retry the same dump");
+    expect(tools.write_column?.description).toContain(
+      "Do not retry the same invented dump"
+    );
+    expect(tools.write_column?.description).toContain(
+      "Search snippets are not a page read"
+    );
     expect(tools.manage_worksheet?.description).toContain(
       "lists every new sheetId in operations"
+    );
+    expect(tools.manage_worksheet?.description).toContain(
+      "at most once per turn"
     );
   });
 
@@ -998,6 +1007,7 @@ describe("analytics chat tools", () => {
     expect(result).toMatchObject({
       status: "written",
       blankedCount: 2,
+      incomplete: true,
     });
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
       columns: { name: string; values: string[] }[];
@@ -1050,6 +1060,7 @@ describe("analytics chat tools", () => {
     expect(result).toMatchObject({
       status: "written",
       blankedCount: 0,
+      incomplete: false,
     });
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
       columns: { name: string; values: string[] }[];
@@ -1102,6 +1113,7 @@ describe("analytics chat tools", () => {
     expect(result).toMatchObject({
       status: "written",
       blankedCount: 1,
+      incomplete: true,
     });
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
       columns: { name: string; values: string[] }[];

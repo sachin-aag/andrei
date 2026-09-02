@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v35-sheet-write-target"
+      "analytics-chat-v36-read-before-dump"
     );
   });
 
@@ -67,12 +67,18 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("one manage_worksheet call with operations");
     expect(prompt).toContain("Empty starter columns (C1–C8 with no values) are placeholders");
     expect(prompt).toContain("Do not call add_column before a dump");
+    expect(prompt).toContain("do not call manage_worksheet again to add_column");
     expect(prompt).toContain("claims the leftmost empty C#");
     expect(prompt).toContain("one write_column call with columns");
     expect(prompt).toContain("Do not call write_column once per column");
     expect(prompt).toContain("Pass sheetId");
     expect(prompt).toContain("last new tab is active");
-    expect(prompt).toContain("do not retry the same dump");
+    expect(prompt).toContain("Do not retry the same invented dump");
+    expect(prompt).toContain("do not stop after a partial extract");
+    expect(prompt).toContain("Search snippets are not enough to fill the worksheet");
+    expect(prompt).toContain("do not write_column until you have read or scanned");
+    expect(prompt).toContain("A document_outline is not a page read");
+    expect(prompt).toContain("Tip 1–10 per handpiece");
     expect(prompt).toContain("do not fill a series with set_cell");
     expect(prompt).toContain("Never say the worksheet was filled");
     expect(prompt).toContain("Pasting a table into chat is not writing it");
