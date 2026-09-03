@@ -18,6 +18,7 @@ import {
   type DocumentSearchMode,
   type DocumentSearchResult,
 } from "@/lib/attachments/retrieval";
+import { withSourceCitation } from "@/lib/suggestions/citations-at-end";
 import { isRequirementIndexText } from "./scan-attachments";
 import type { AnalyticsSearchGate } from "./search-loop";
 
@@ -28,7 +29,7 @@ export const ANALYTICS_SEARCH_COVERAGE_HINT =
   "At most two search_documents calls this turn. A hit with a page number is enough — call scan_attachments, read_document_page, or extract_numeric_series next. Hits with requirementIndex=true are headers/TOCs (many IDs, no data sheet) — skip those snippets and scan or read a non-index page. Never ask_user for a page number; if the data sheet is missing, say you did not find it. truncated=true does not mean grep again. Default is keyword (table / assay / filename). Hybrid is only for queries with no lexical tokens.";
 
 export const ANALYTICS_SEARCH_CITATION_RULE =
-  "Cite as [filename, p. N]. Search snippets are not enough to fill the worksheet.";
+  "Cite as [filename, p. N] when the hit has a page; [filename] only if the page is missing or ambiguous. Search snippets are not enough to fill the worksheet.";
 
 export const ANALYTICS_SEARCH_CLOSED_MESSAGE =
   "Search is closed for this turn. Read a cited page, scan_attachments, or extract — do not ask_user which page to read. truncated is not a reason to grep again.";
@@ -79,11 +80,12 @@ export function partitionAnalyticsSearchHits<
 }
 
 function toAnalyticsClientSearchResults(hits: readonly DocumentSearchResult[]) {
-  return toClientDocumentSearchResults([...hits]).map((hit) =>
-    isAnalyticsRequirementIndexHit(hit)
-      ? { ...hit, requirementIndex: true as const }
-      : hit
-  );
+  return toClientDocumentSearchResults([...hits]).map((hit) => {
+    const cited = withSourceCitation(hit);
+    return isAnalyticsRequirementIndexHit(hit)
+      ? { ...cited, requirementIndex: true as const }
+      : cited;
+  });
 }
 
 export function buildAnalyticsSearchDocumentsTool(opts: {
@@ -152,8 +154,8 @@ export function buildAnalyticsSearchDocumentsTool(opts: {
 
   const description =
     tagged > 0
-      ? `Locate a table or measurement series in ready attachments. Default mode is keyword. At most two calls this turn. Defaults to the ${tagged} document(s) the engineer tagged with @; pass scope="all" to search every attachment. As soon as a hit has a page number, stop searching and scan, read, or extract. Hits with requirementIndex=true are headers/TOCs — skip them; scan_attachments or read a non-index page. Never ask_user for a page number. truncated is not a reason to grep again. Prefer scan_attachments for a named file or requirement ID. Cite as [filename, p. N].`
-      : "Locate a table or measurement series in ready attachments. Default mode is keyword (assay, table title, filename, requirement ID). At most two calls this turn. As soon as a hit has a page number, stop searching and scan, read, or extract. Hits with requirementIndex=true are headers/TOCs — skip them; scan_attachments or read a non-index page. Never ask_user for a page number. truncated is not a reason to grep again. Prefer scan_attachments for a named file or requirement ID. Cite as [filename, p. N].";
+      ? `Locate a table or measurement series in ready attachments. Default mode is keyword. At most two calls this turn. Defaults to the ${tagged} document(s) the engineer tagged with @; pass scope="all" to search every attachment. As soon as a hit has a page number, stop searching and scan, read, or extract. Hits with requirementIndex=true are headers/TOCs — skip them; scan_attachments or read a non-index page. Never ask_user for a page number. truncated is not a reason to grep again. Prefer scan_attachments for a named file or requirement ID. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous.`
+      : "Locate a table or measurement series in ready attachments. Default mode is keyword (assay, table title, filename, requirement ID). At most two calls this turn. As soon as a hit has a page number, stop searching and scan, read, or extract. Hits with requirementIndex=true are headers/TOCs — skip them; scan_attachments or read a non-index page. Never ask_user for a page number. truncated is not a reason to grep again. Prefer scan_attachments for a named file or requirement ID. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous.";
 
   return tool({
     description,

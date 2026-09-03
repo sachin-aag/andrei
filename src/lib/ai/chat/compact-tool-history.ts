@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { sourceCitationBracket } from "@/lib/suggestions/citations-at-end";
 
 /**
  * Prior tool rows can be hundreds of KB (page transcripts, finish findings,
@@ -112,7 +113,7 @@ function citationDigestFromFindings(
       pageNumber,
       identifiers,
       summary,
-      citation: `[${filename}, p. ${pageNumber}]`,
+      citation: sourceCitationBracket(filename, pageNumber),
     });
   }
   return digest;
