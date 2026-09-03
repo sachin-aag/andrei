@@ -17,8 +17,8 @@ order — never rename, reorder, add, or drop a column.
 - When creating a table, or when the engineer explicitly asks for a full
   replacement via draft_field, emit ONE GFM markdown table (header +
   separator + data rows). The only extra markdown allowed in a table field is
-  an italic footnote paragraph immediately after that table, when the recipe
-  for that field requires one (Units Under Test prototype; a qualified
+  an italic footnote paragraph immediately after that table, when that field
+  requires one (Units Under Test prototype; a qualified
   Pass/Fail on Table 3 or Table 4).
 - If the section already has a table, use edit_table to change cells or add and
   delete rows. Never use draft_field for an incremental change — it overwrites
@@ -71,11 +71,11 @@ ${gfm(MECHANICAL_REVISION_HISTORY_HEADERS)}
   satisfying report cited. It is NEVER omitted from the table.
 - Requirement IDs keep their full prefix: M3-SYS-FN-037, not SYS-FN-037.`;
 
-const HOW_TO_USE = `## How to use this recipe
+const HOW_TO_USE = `## How to draft this report
 
 - Structure is required: section numbering, subsection order, omit-if switches.
   Do not skip a labelled slot that evidence supports.
-- Verbosity is relative, not a word count. The recipe records the source
+- Verbosity is relative, not a word count. This guidance records the source
   report's paragraph lengths as a guide to density, not a target. A thin slot
   stays one short sentence; a packed paragraph stacks facts without padding.
   Never pad or truncate to hit a number.
@@ -90,6 +90,9 @@ const HOW_TO_USE = `## How to use this recipe
 - Do not copy sample names, dates, part numbers, serial numbers, asset tags,
   requirement IDs or change-order numbers unless they appear in the attachments.
 - If a fact is missing, use a bracketed placeholder. Do not invent or pad.
+- Engineer-facing replies and reasoning never mention these drafting rules,
+  SAMPLE, omit-if switches, targetField names, or tool names. Summarize the
+  document sections you wrote. Never call this a recipe.
 
 ## Identifiers (required)
 

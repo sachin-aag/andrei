@@ -264,7 +264,7 @@ describe("alreadyDraftedBlock", () => {
     expect(block).toContain("targeted propose_edit");
     expect(block).toContain("hint field is an expected format");
     expect(block).toContain("Material gap only");
-    expect(block).toContain("Recipe conflict");
+    expect(block).toContain("Omit-if conflict");
   });
 
   it("lists AI Check gap hints when provided", () => {

@@ -1503,7 +1503,9 @@ export function buildChatTools(opts: {
         reasoning: z
           .string()
           .max(300)
-          .describe("One short sentence explaining the edit (shown to the engineer)."),
+          .describe(
+            "One short sentence explaining the edit (shown to the engineer). Use the section names they see. Never mention recipe, SAMPLE, omit-if, targetField names, or tool names."
+          ),
         ...(citationsAtEndOfSection
           ? {
               second: z
@@ -2611,7 +2613,9 @@ export function buildChatTools(opts: {
         reasoning: z
           .string()
           .max(300)
-          .describe("One short sentence explaining the table change (shown to the engineer)."),
+          .describe(
+            "One short sentence explaining the table change (shown to the engineer). Use the section names they see. Never mention recipe, SAMPLE, omit-if, targetField names, or tool names."
+          ),
       }),
       execute: async ({
         section,
@@ -2825,7 +2829,9 @@ export function buildChatTools(opts: {
         reasoning: z
           .string()
           .max(300)
-          .describe("One short sentence explaining the draft (shown to the engineer)."),
+          .describe(
+            "One short sentence explaining the draft (shown to the engineer). Use the section names they see. Never mention recipe, SAMPLE, omit-if, targetField names, or tool names."
+          ),
         replaceFilledField: z
           .boolean()
           .optional()

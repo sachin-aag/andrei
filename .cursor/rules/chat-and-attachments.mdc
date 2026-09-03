@@ -33,7 +33,7 @@ draft a section the context map marks **filled or partial**, call
 hints for that section; if there are no material gaps, report that it is
 already drafted and ask whether they want a specific change. If there are
 gaps, make a targeted edit. Do not pad length or invent gaps. If a gap
-conflicts with an omit-if recipe rule, ask once whether to include it. Do
+conflicts with an omit-if rule, ask once whether to include it. Do
 not quiz them for facts already in the section or that you would put in
 `hint`. The document index
 (filename/topics) is not evidence. Evidence preview is already in the
