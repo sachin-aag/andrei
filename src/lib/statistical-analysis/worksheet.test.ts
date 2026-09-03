@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applySampleAssay } from "./sample-data";
 import {
   analysisSourceKey,
+  appendColumnValues,
   addDataSheet,
   columnNumericValues,
   columnSourceKey,
@@ -182,6 +183,19 @@ describe("worksheet grid operations", () => {
     sheet = replaceColumnValues(sheet, 0, ["1", "2", "3"], "Assay");
     expect(sheet.columns[0]?.name).toBe("Assay");
     expect(sheet.columns[0]?.values).toEqual(["1", "2", "3"]);
+  });
+
+  it("appends values onto an existing column without wiping it", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = replaceColumnValues(sheet, 0, ["10", "11"], "Watts");
+    sheet = appendColumnValues(sheet, 0, ["12", "13"], "Watts", [
+      { attachmentId: "att_1", page: 8 },
+    ]);
+    expect(sheet.columns[0]?.values).toEqual(["10", "11", "12", "13"]);
+    expect(sheet.columns[0]?.name).toBe("Watts");
+    expect(sheet.columns[0]?.citations).toEqual([
+      { attachmentId: "att_1", page: 8 },
+    ]);
   });
 
   it("stamps and clears column citations independently of the source key", () => {

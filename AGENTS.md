@@ -186,10 +186,13 @@ extract of file B does not unlock a partial write of file A), after a
 refused incomplete dump until another page read, and after two consecutive
 empty dumps, and hiding `manage_worksheet` after the first structure call).
 One complete `write_column` per destination sheet — separate extracts per
-sheet are correct; always pass `sheetId`. Agent Analytics plans multi-table
-dumps and calls `extract_sheet` once per sheet in the same step (parallel
-workers create or reuse the tab and write; the grid stays on the
-engineer's current tab). Live matrix
+sheet are correct; always pass `sheetId`. `write_column` `mode append` adds
+rows onto an existing named column. `delete_row` accepts `rowEnd` for a
+range. Agent Analytics plans multi-table dumps and calls `extract_sheet`
+once per sheet in the same step (parallel workers create or reuse the tab
+and write; the grid stays on the engineer's current tab). Add or remove
+rows on an already-filled sheet with `extract_sheet` `mode edit` (worker
+appends or deletes; it does not replace the whole table unless asked). Live matrix
 headers come from the section (`read_section` / context map) — demo
 Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages; `ask_user` is hidden until a cited page is actually read/scanned.

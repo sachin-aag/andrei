@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v42-keep-focus"
+      "analytics-chat-v43-sheet-edits"
     );
   });
 
@@ -70,6 +70,9 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("claims the leftmost empty C#");
     expect(prompt).toContain("extract_sheet once per destination sheet");
     expect(prompt).toContain("jobs run in parallel");
+    expect(prompt).toContain("mode edit");
+    expect(prompt).toContain("mode append");
+    expect(prompt).toContain("rowEnd");
     expect(prompt).toContain("Do not call write_column once per column");
     expect(prompt).toContain("Always pass sheetId");
     expect(prompt).toContain("do not switch the focused tab");

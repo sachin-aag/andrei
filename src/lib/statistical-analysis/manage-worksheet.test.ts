@@ -159,6 +159,41 @@ describe("applyManageWorksheet", () => {
     expect(deleted.worksheet?.columns[0]?.values).toEqual(["10", "20"]);
   });
 
+  it("deletes an inclusive row range", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = setCell(sheet, 0, 0, "a");
+    sheet = setCell(sheet, 0, 1, "b");
+    sheet = setCell(sheet, 0, 2, "c");
+    sheet = setCell(sheet, 0, 3, "d");
+    const deleted = applyManageWorksheet(sheet, {
+      action: "delete_row",
+      row: 2,
+      rowEnd: 3,
+    });
+    expect(deleted.result).toMatchObject({
+      status: "ok",
+      row: 2,
+      rowEnd: 3,
+    });
+    expect(deleted.result.status === "ok" && deleted.result.message).toMatch(
+      /Deleted rows 2–3/
+    );
+    expect(deleted.worksheet?.columns[0]?.values).toEqual(["a", "d"]);
+  });
+
+  it("inserts several blank rows at a position", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = setCell(sheet, 0, 0, "a");
+    sheet = setCell(sheet, 0, 1, "b");
+    const added = applyManageWorksheet(sheet, {
+      action: "add_row",
+      row: 2,
+      count: 2,
+    });
+    expect(added.result).toMatchObject({ status: "ok", row: 2, count: 2 });
+    expect(added.worksheet?.columns[0]?.values).toEqual(["a", "", "", "b"]);
+  });
+
   it("sets a cell and reports the next empty row when append would trim", () => {
     let sheet = createEmptyWorksheet(1);
     sheet = setCell(sheet, 0, 0, "10");

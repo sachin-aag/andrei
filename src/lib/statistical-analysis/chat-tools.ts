@@ -70,6 +70,7 @@ import {
   findSheet,
   findSheetIdForColumn,
   findSheetIdForColumnName,
+  appendColumnValues,
   insertColumn,
   isSpecsTab,
   replaceColumnValues,
@@ -453,6 +454,12 @@ const writeColumnInputSchema = z
       .max(MAX_WRITE_SOURCE_PAGES)
       .optional()
       .describe("Page numbers just read for this table dump."),
+    mode: z
+      .enum(["replace", "append"])
+      .optional()
+      .describe(
+        "replace (default) overwrites those columns. append adds the new values onto the bottom of an existing named column — use this to add rows without wiping the sheet."
+      ),
   })
   .superRefine((value, ctx) => {
     if (value.columns && value.columns.length > 0) return;
@@ -529,11 +536,26 @@ function switchSheetForWrite(
 function resolveWriteColumnIndex(
   worksheet: WorksheetData,
   entry: WriteColumnEntry,
-  occupied: Set<number>
+  occupied: Set<number>,
+  mode: "replace" | "append"
 ):
-  | { index: number }
+  | { index: number; concat?: boolean }
   | { append: true }
   | { status: "not_found"; columnId?: string; name?: string } {
+  if (mode === "append") {
+    if (entry.name) {
+      const named = findColumnIndexByName(worksheet, entry.name);
+      if (named >= 0 && !occupied.has(named)) {
+        return { index: named, concat: true };
+      }
+    }
+    if (entry.columnId) {
+      const index = findColumnIndex(worksheet, entry.columnId);
+      if (index >= 0 && !occupied.has(index)) {
+        return { index, concat: true };
+      }
+    }
+  }
   // Prefer the header. add_column may reuse C1 or assign a new id (c9);
   // writing by a guessed c2 would overwrite the neighbor or skip empty
   // columns on the left.
@@ -560,7 +582,8 @@ function applyWriteColumnEntries(
   worksheet: WorksheetData,
   entries: readonly WriteColumnEntry[],
   citations?: ChartCitation[],
-  sheetIdOrName?: string
+  sheetIdOrName?: string,
+  mode: "replace" | "append" = "replace"
 ):
   | { ok: true; worksheet: WorksheetData; indices: number[] }
   | { ok: false; status: "not_found"; columnId?: string; name?: string; sheetId?: string } {
@@ -573,7 +596,7 @@ function applyWriteColumnEntries(
   const indices: number[] = [];
   for (const entry of entries) {
     next = switchSheetForWrite(next, entry, activated.locked);
-    const resolved = resolveWriteColumnIndex(next, entry, occupied);
+    const resolved = resolveWriteColumnIndex(next, entry, occupied, mode);
     if ("status" in resolved) return { ok: false, ...resolved };
     if ("append" in resolved) {
       next = insertColumn(next, next.columns.length);
@@ -581,13 +604,10 @@ function applyWriteColumnEntries(
     const index =
       "append" in resolved ? next.columns.length - 1 : resolved.index;
     const cells = entry.values.map((value) => String(value));
-    next = replaceColumnValues(
-      next,
-      index,
-      cells,
-      entry.name,
-      citations
-    );
+    const concat = "concat" in resolved && resolved.concat === true;
+    next = concat
+      ? appendColumnValues(next, index, cells, entry.name, citations)
+      : replaceColumnValues(next, index, cells, entry.name, citations);
     const column = next.columns[index];
     if (
       column &&
@@ -1233,7 +1253,7 @@ export function buildAnalyticsChatTools(opts: {
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into worksheet columns (replaces those columns). For attachment table dumps onto one or more sheets, call extract_sheet once per sheet (parallel) instead of dumping here. This tool is for typed values, corrections, or a dump a sheet worker already gathered. One complete dump per call, one sheet per call. Pull every page of that table first — do not call this after the first extract or scan of that file when morePages or truncated is true. Separate extracts per destination sheet are correct. Always pass sheetId (tab id or name from manage_worksheet) — agent writes do not switch the focused tab, so omitting sheetId dumps onto the engineer's current tab. New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the pages you read this turn. Search snippets are not a page read. Cells that are not tokens on those pages are left blank — never invent 0. status incomplete means nothing was saved: read remaining pages of that table and call this once with the full table for that sheet. Copy labels as they appear (including repeats such as Tip 1–10 per handpiece). Do not retry the same invented dump and do not split it into per-column writes to bypass the check. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), plot_histogram for a frequency histogram of one numeric column (same chart as the sixpack histogram; optional LSL/USL and overlay checkboxes; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+        "Write values into worksheet columns (replaces those columns by default; pass mode append to add rows onto an existing named column without wiping it). For attachment table dumps onto one or more sheets, call extract_sheet once per sheet (parallel) instead of dumping here. This tool is for typed values, corrections, or a dump a sheet worker already gathered. One complete dump per call, one sheet per call. Pull every page of that table first — do not call this after the first extract or scan of that file when morePages or truncated is true. Separate extracts per destination sheet are correct. Always pass sheetId (tab id or name from manage_worksheet) — agent writes do not switch the focused tab, so omitting sheetId dumps onto the engineer's current tab. New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the pages you read this turn. Search snippets are not a page read. Cells that are not tokens on those pages are left blank — never invent 0. status incomplete means nothing was saved: read remaining pages of that table and call this once with the full table for that sheet. Copy labels as they appear (including repeats such as Tip 1–10 per handpiece). Do not retry the same invented dump and do not split it into per-column writes to bypass the check. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), plot_histogram for a frequency histogram of one numeric column (same chart as the sixpack histogram; optional LSL/USL and overlay checkboxes; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
       inputSchema: writeColumnInputSchema,
       execute: async (input) => {
         let entries = writeColumnEntriesFromInput(input);
@@ -1285,7 +1305,8 @@ export function buildAnalyticsChatTools(opts: {
               base,
               entries,
               citations,
-              input.sheetId
+              input.sheetId,
+              input.mode ?? "replace"
             );
             if (!applied.ok) return { applied };
             const saved = await persistAndRecord(
@@ -1363,11 +1384,23 @@ export function buildAnalyticsChatTools(opts: {
             dataSheets(saved.worksheet)[0];
           return {
             status: "written" as const,
+            mode: input.mode ?? "replace",
             sheetId: sheet?.id ?? writtenSheetId,
             sheetName: sheet?.name ?? "Data",
             columnId: first.columnId,
             columnName: first.columnName,
             rowsWritten: first.rowsWritten,
+            rowsAdded:
+              (input.mode ?? "replace") === "append"
+                ? entries.reduce(
+                    (sum, entry) =>
+                      sum +
+                      entry.values.filter((value) =>
+                        String(value ?? "").trim()
+                      ).length,
+                    0
+                  )
+                : first.rowsWritten,
             valueCount: first.rowsWritten,
             numericCount: first.numericCells,
             numericCells: first.numericCells,
@@ -1389,7 +1422,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.manage_worksheet = tool({
       description:
-        "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or row — and they did not ask to extract a table. Attachment dumps: call extract_sheet once per sheet; each worker creates its own tab. Do not search attachments and do not extract numbers. Call this at most once per turn — pass operations to add several empty sheets or columns together. Filling a column with values is write_column, not this tool — write_column reuses empty C1–C8 columns from the left. add_column without at also claims the leftmost empty C# instead of appending on the right. set_cell edits one cell. A batch add_sheet result lists every new sheetId in operations. add_sheet reuses a tab with the same name (case-insensitive) instead of creating a duplicate. Agent writes keep the engineer's focused tab — always pass sheetId on later writes.",
+        "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or a typed single row/cell — and they did not ask to extract or edit a table from a file. delete_row accepts rowEnd for a range. add_row accepts count for several blank rows. Adding or removing many rows on a filled sheet from a file: extract_sheet mode edit. Attachment dumps: call extract_sheet once per sheet; each worker creates its own tab. Do not search attachments and do not extract numbers. Call this at most once per turn — pass operations to add several empty sheets or columns together. Filling a column with values is write_column, not this tool — write_column reuses empty C1–C8 columns from the left. add_column without at also claims the leftmost empty C# instead of appending on the right. set_cell edits one cell. A batch add_sheet result lists every new sheetId in operations. add_sheet reuses a tab with the same name (case-insensitive) instead of creating a duplicate. Agent writes keep the engineer's focused tab — always pass sheetId on later writes.",
       inputSchema: manageWorksheetInputSchema,
       execute: async (input) => {
         const operations = input.operations?.length
@@ -1447,7 +1480,7 @@ export function buildAnalyticsChatTools(opts: {
     if (opts.role !== "sheet_worker") {
       statsTools.extract_sheet = tool({
         description:
-          "Run one extraction job for one worksheet sheet. Call once per destination sheet in the same step so jobs run in parallel. The worker creates that sheet if needed, reads every page of that table, and writes one complete dump. Pass a distinct sheetName per table. Do not dump those tables yourself with write_column.",
+          "Run one job for one worksheet sheet (first extract or an edit). Call once per destination sheet in the same step so jobs run in parallel. For a first dump the worker creates that sheet if needed, reads every page of that table, and writes one complete dump. For add/remove rows on an existing filled sheet, pass mode edit and the existing sheetId — the worker reads the sheet, then appends or deletes without wiping the rest. Pass a distinct sheetName per table. Do not dump those tables yourself with write_column.",
         inputSchema: z.object({
           sheetName: z
             .string()
@@ -1461,7 +1494,13 @@ export function buildAnalyticsChatTools(opts: {
             .min(1)
             .max(400)
             .describe(
-              "What to pull onto this sheet (table title, requirement ID, or named series)."
+              "What to pull or change on this sheet (table title, remove rows 12–20, add the missing tips from page 8)."
+            ),
+          mode: z
+            .enum(["extract", "edit"])
+            .optional()
+            .describe(
+              "extract (default) is a first dump. edit adds or removes rows on an existing sheet without replacing the whole table."
             ),
           sheetId: z
             .string()
@@ -1511,6 +1550,7 @@ export function buildAnalyticsChatTools(opts: {
             tools: workerTools,
             sheetName: input.sheetName,
             objective: input.objective,
+            mode: input.mode ?? "extract",
             sheetId: input.sheetId,
             attachmentId: input.attachmentId,
             filenameContains: input.filenameContains,

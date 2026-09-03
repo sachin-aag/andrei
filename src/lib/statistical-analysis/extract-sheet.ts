@@ -27,11 +27,14 @@ export const EXTRACT_SHEET_CONCURRENCY = 4;
 
 const SHEET_EXTRACT_BUDGET_MS = 180_000;
 
+export type SheetExtractJobMode = "extract" | "edit";
+
 export type SheetExtractJobInput = {
   reportId: string;
   tools: ToolSet;
   sheetName: string;
   objective: string;
+  mode?: SheetExtractJobMode;
   sheetId?: string;
   attachmentId?: string;
   filenameContains?: string;
@@ -46,7 +49,7 @@ export type SheetExtractColumn = {
 };
 
 export type SheetExtractResult = {
-  status: "written" | "incomplete" | "error" | "stub";
+  status: "written" | "edited" | "incomplete" | "error" | "stub";
   sheetName: string;
   sheetId?: string;
   rowsWritten?: number;
@@ -105,6 +108,46 @@ function columnsFromWrite(record: Record<string, unknown>): SheetExtractColumn[]
   });
 }
 
+function manageEditFromRecord(
+  record: Record<string, unknown>,
+  sheetName: string
+): SheetExtractResult | null {
+  if (record.status !== "ok") return null;
+  const actions = [
+    typeof record.action === "string" ? record.action : null,
+    ...(Array.isArray(record.operations)
+      ? record.operations.flatMap((operation) => {
+          if (!isRecord(operation) || typeof operation.action !== "string") {
+            return [];
+          }
+          return [operation.action];
+        })
+      : []),
+  ].filter((action): action is string => Boolean(action));
+  const edited = actions.some(
+    (action) =>
+      action === "delete_row" || action === "add_row" || action === "set_cell"
+  );
+  if (!edited) return null;
+  const nextName =
+    typeof record.sheetName === "string" && record.sheetName.trim()
+      ? record.sheetName
+      : sheetName;
+  const sheetId =
+    typeof record.sheetId === "string" && record.sheetId.trim()
+      ? record.sheetId
+      : undefined;
+  return {
+    status: "edited",
+    sheetName: nextName,
+    sheetId,
+    message:
+      typeof record.message === "string" && record.message.trim()
+        ? record.message
+        : `Updated ${nextName}.`,
+  };
+}
+
 export function sheetExtractResultFromSteps(
   steps: readonly AnalyticsChatStep[],
   sheetName: string
@@ -112,9 +155,15 @@ export function sheetExtractResultFromSteps(
   let latest: SheetExtractResult | null = null;
   for (const step of steps) {
     for (const result of step.toolResults ?? []) {
-      if (callToolName(result) !== "write_column") continue;
+      const toolName = callToolName(result);
       const record = writeRecordFromOutput(toolPayload(result));
       if (!record) continue;
+      if (toolName === "manage_worksheet") {
+        const edited = manageEditFromRecord(record, sheetName);
+        if (edited) latest = edited;
+        continue;
+      }
+      if (toolName !== "write_column") continue;
       const columns = columnsFromWrite(record);
       const rowsWritten =
         typeof record.rowsWritten === "number"
@@ -135,7 +184,10 @@ export function sheetExtractResultFromSteps(
           sheetId,
           rowsWritten,
           columns,
-          message: `Wrote ${rowsWritten} rows to ${nextName}.`,
+          message:
+            record.mode === "append"
+              ? `Appended rows on ${nextName} (${rowsWritten} rows now).`
+              : `Wrote ${rowsWritten} rows to ${nextName}.`,
         };
         continue;
       }
@@ -157,7 +209,7 @@ export function sheetExtractResultFromSteps(
   return latest;
 }
 
-function buildWorkerPrompt(input: SheetExtractJobInput): string {
+export function buildSheetWorkerPrompt(input: SheetExtractJobInput): string {
   const locator = [
     input.attachmentId
       ? `attachmentId=${sanitizePromptMetadata(input.attachmentId, 80)}`
@@ -177,14 +229,38 @@ function buildWorkerPrompt(input: SheetExtractJobInput): string {
   ]
     .filter(Boolean)
     .join("\n");
+  const sheetName = sanitizePromptMetadata(input.sheetName, 80) || "Data";
+  const job =
+    sanitizePromptMetadata(input.objective, 400) ||
+    (input.mode === "edit"
+      ? "Edit the assigned sheet."
+      : "Extract the named table.");
+  if (input.mode === "edit") {
+    return [
+      "You edit ONE existing worksheet sheet for Andrei Analytics.",
+      `Assigned sheet name: ${sheetName}`,
+      `Job: ${job}`,
+      locator || null,
+      "Read this sheet with read_worksheet first (pass sheetId). Reuse this sheet — if you call add_sheet, use the assigned name so it reuses the existing tab. Do not create a second tab with the same name. Do not rename or delete other sheets.",
+      "If they asked to remove rows: one manage_worksheet with delete_row (row + optional rowEnd for an inclusive range) or operations for several ranges. Always pass sheetId.",
+      "If they asked to add blank rows: add_row with optional count (row inserts at that position).",
+      "If they asked to add measurements from a file: pull every remaining page of that series, then one write_column with mode append and sheetId. Do not use replace — that wipes existing rows.",
+      "If they asked to replace a column entirely, write_column mode replace is OK.",
+      "status incomplete means nothing was saved — read remaining pages and write the complete added rows once.",
+      "Do not plot. Do not ask the engineer questions. If a needed id is missing, finish with a short error in your last message.",
+      "Reply with one short sentence after a successful edit (what changed).",
+    ]
+      .filter((part): part is string => Boolean(part))
+      .join("\n");
+  }
   return [
     "You extract ONE table onto ONE worksheet sheet for Andrei Analytics.",
-    `Assigned sheet name: ${sanitizePromptMetadata(input.sheetName, 80) || "Data"}`,
-    `Job: ${sanitizePromptMetadata(input.objective, 400) || "Extract the named table."}`,
+    `Assigned sheet name: ${sheetName}`,
+    `Job: ${job}`,
     locator || null,
     "Create this sheet with manage_worksheet add_sheet if it does not already exist. Use the assigned name. If a sheet with this name already exists, reuse it — do not create a second tab with the same name. Do not rename or delete other sheets.",
     "Pull every page that contains THIS table or series. If extract_numeric_series returns morePages true, or scan_attachments returns truncated true, keep reading those pages.",
-    "Then one write_column to this sheet only. Always pass sheetId (the id from add_sheet, or the existing id). Agent writes do not switch the focused tab — omitting sheetId writes the engineer's current tab. Do not write other sheets. Do not invent cells.",
+    "Then one write_column to this sheet only (mode replace). Always pass sheetId (the id from add_sheet, or the existing id). Agent writes do not switch the focused tab — omitting sheetId writes the engineer's current tab. Do not write other sheets. Do not invent cells.",
     "status incomplete means nothing was saved — read remaining pages and write the complete table once.",
     "Do not plot. Do not ask the engineer questions. If a needed id is missing, finish with a short error in your last message.",
     "Reply with one short sentence after a successful write (sheet name, columns, rowsWritten).",
@@ -223,8 +299,9 @@ export async function runSheetExtractJob(
   return withSheetExtractSlot(async () => {
     const startedAtMs = Date.now();
     const searchGate = createAnalyticsSearchGate();
+    const jobMode: SheetExtractJobMode = input.mode === "edit" ? "edit" : "extract";
     const system = [
-      buildWorkerPrompt(input),
+      buildSheetWorkerPrompt({ ...input, mode: jobMode }),
       await documentIndexLine(input.reportId),
     ].join("\n\n");
     try {
@@ -232,13 +309,18 @@ export async function runSheetExtractJob(
       const result = await generateText({
         model: resolveChatExtractLanguageModel(),
         system,
-        prompt: `Extract "${sheetName}" now. ${input.objective}`,
+        prompt:
+          jobMode === "edit"
+            ? `Edit "${sheetName}" now. ${input.objective}`
+            : `Extract "${sheetName}" now. ${input.objective}`,
         tools: input.tools,
         experimental_repairToolCall: repairChatToolCall,
         stopWhen: async ({ steps }) => {
           if (input.abortSignal?.aborted) return true;
           if (Date.now() - startedAtMs >= SHEET_EXTRACT_BUDGET_MS) return true;
-          return analyticsSheetJobComplete(steps as AnalyticsChatStep[]);
+          return analyticsSheetJobComplete(steps as AnalyticsChatStep[], {
+            allowManageEdit: jobMode === "edit",
+          });
         },
         prepareStep: ({ steps }) => {
           const prepared = prepareAnalyticsChatStep({
@@ -246,6 +328,7 @@ export async function runSheetExtractJob(
             canEdit: true,
             searchGate,
             intent: "write",
+            sheetJob: jobMode,
           });
           if (!prepared) return undefined;
           return {
@@ -299,7 +382,9 @@ export async function runSheetExtractJob(
         stepCount: result.steps.length,
         message:
           text ||
-          "Sheet extract finished without a complete write_column.",
+          (jobMode === "edit"
+            ? "Sheet edit finished without a write or row change."
+            : "Sheet extract finished without a complete write_column."),
       };
     } catch (error) {
       const message =

@@ -140,9 +140,43 @@ function writeColumnWasIncomplete(output: unknown): boolean {
   );
 }
 
-/** A sheet worker is done once one complete write_column has landed. */
+const MANAGE_ROW_EDIT_ACTIONS = new Set([
+  "add_row",
+  "delete_row",
+  "set_cell",
+]);
+
+function manageOutputWasRowEdit(output: unknown): boolean {
+  const record = writeColumnRecord(output);
+  if (!record || record.status !== "ok") return false;
+  if (
+    typeof record.action === "string" &&
+    MANAGE_ROW_EDIT_ACTIONS.has(record.action)
+  ) {
+    return true;
+  }
+  if (!Array.isArray(record.operations)) return false;
+  return record.operations.some((operation) => {
+    if (!operation || typeof operation !== "object" || Array.isArray(operation)) {
+      return false;
+    }
+    const action = (operation as Record<string, unknown>).action;
+    return typeof action === "string" && MANAGE_ROW_EDIT_ACTIONS.has(action);
+  });
+}
+
+function stepHadManageRowEdit(step: AnalyticsChatStep): boolean {
+  let found = false;
+  eachNamedToolOutput(step, MANAGE_WORKSHEET_TOOL, (output) => {
+    if (manageOutputWasRowEdit(output)) found = true;
+  });
+  return found;
+}
+
+/** A sheet worker is done once one complete write or row edit has landed. */
 export function analyticsSheetJobComplete(
-  steps: readonly AnalyticsChatStep[]
+  steps: readonly AnalyticsChatStep[],
+  options?: { allowManageEdit?: boolean }
 ): boolean {
   for (const step of steps) {
     let complete = false;
@@ -159,6 +193,7 @@ export function analyticsSheetJobComplete(
       }
     });
     if (complete) return true;
+    if (options?.allowManageEdit && stepHadManageRowEdit(step)) return true;
   }
   return false;
 }
@@ -330,8 +365,15 @@ export function analyticsDumpReadinessDirective(
  * Batch with operations instead.
  */
 export function analyticsManageLoopDirective(
-  steps: readonly AnalyticsChatStep[]
+  steps: readonly AnalyticsChatStep[],
+  options?: { hideAfter?: "any" | "row_mutation" }
 ): "continue" | "finish" {
+  const hideAfter = options?.hideAfter ?? "any";
+  if (hideAfter === "row_mutation") {
+    return steps.some((step) => stepHadManageRowEdit(step))
+      ? "finish"
+      : "continue";
+  }
   return steps.some((step) => stepCalledTool(step, MANAGE_WORKSHEET_TOOL))
     ? "finish"
     : "continue";
@@ -391,6 +433,7 @@ export function prepareAnalyticsChatStep(input: {
   canEdit: boolean;
   searchGate?: AnalyticsSearchGate;
   intent?: ChatUserIntentKind;
+  sheetJob?: "extract" | "edit";
 }): AnalyticsPrepareStep | undefined {
   if (input.intent === "social") {
     return { activeTools: [] };
@@ -398,7 +441,9 @@ export function prepareAnalyticsChatStep(input: {
   const searchDirective = analyticsSearchLoopDirective(input.steps);
   const writeDirective = analyticsWriteLoopDirective(input.steps);
   const dumpReady = analyticsDumpReadinessDirective(input.steps);
-  const manageDirective = analyticsManageLoopDirective(input.steps);
+  const manageDirective = analyticsManageLoopDirective(input.steps, {
+    hideAfter: input.sheetJob === "edit" ? "row_mutation" : "any",
+  });
   const partialDump = analyticsPartialDumpDirective(input.steps);
   const gather = analyticsGatherDirective(input.steps);
   if (input.searchGate && searchDirective === "read") {

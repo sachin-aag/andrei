@@ -10,6 +10,7 @@ vi.mock("@/lib/ai/usage", () => ({
 }));
 import {
   EXTRACT_SHEET_CONCURRENCY,
+  buildSheetWorkerPrompt,
   sheetExtractResultFromSteps,
   withSheetExtractSlot,
 } from "./extract-sheet";
@@ -98,6 +99,81 @@ describe("analyticsSheetJobComplete", () => {
         }),
       ])
     ).toBe(false);
+  });
+
+  it("treats a successful row delete as complete on an edit job", () => {
+    const steps: AnalyticsChatStep[] = [
+      {
+        toolCalls: [{ toolName: "manage_worksheet" }],
+        toolResults: [
+          {
+            toolName: "manage_worksheet",
+            output: {
+              status: "ok",
+              action: "delete_row",
+              row: 12,
+              rowEnd: 20,
+              sheetName: "Power",
+            },
+          },
+        ],
+      },
+    ];
+    expect(analyticsSheetJobComplete(steps)).toBe(false);
+    expect(
+      analyticsSheetJobComplete(steps, { allowManageEdit: true })
+    ).toBe(true);
+  });
+});
+
+describe("sheetExtractResultFromSteps manage edits", () => {
+  it("reads a successful delete_row as edited", () => {
+    const result = sheetExtractResultFromSteps(
+      [
+        {
+          toolCalls: [{ toolName: "manage_worksheet" }],
+          toolResults: [
+            {
+              toolName: "manage_worksheet",
+              output: {
+                status: "ok",
+                action: "delete_row",
+                message: "Deleted rows 12–20 — check the worksheet",
+                sheetId: "data-2",
+                sheetName: "Power",
+                row: 12,
+                rowEnd: 20,
+              },
+            },
+          ],
+        },
+      ],
+      "Power"
+    );
+    expect(result).toMatchObject({
+      status: "edited",
+      sheetId: "data-2",
+      sheetName: "Power",
+      message: "Deleted rows 12–20 — check the worksheet",
+    });
+  });
+});
+
+describe("buildSheetWorkerPrompt", () => {
+  it("tells an edit job to append or delete without replacing the sheet", () => {
+    const prompt = buildSheetWorkerPrompt({
+      reportId: "report-1",
+      tools: {},
+      sheetName: "Power",
+      objective: "Remove rows 12–20 and add the missing tips from page 8",
+      mode: "edit",
+      sheetId: "data-2",
+    });
+    expect(prompt).toContain("You edit ONE existing worksheet sheet");
+    expect(prompt).toContain("mode append");
+    expect(prompt).toContain("rowEnd");
+    expect(prompt).toContain("Do not use replace");
+    expect(prompt).toContain("read_worksheet");
   });
 });
 

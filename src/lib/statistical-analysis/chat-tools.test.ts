@@ -1050,6 +1050,8 @@ describe("analytics chat tools", () => {
       "once per destination sheet"
     );
     expect(tools.extract_sheet?.description).toContain("parallel");
+    expect(tools.extract_sheet?.description).toContain("mode edit");
+    expect(tools.write_column?.description).toContain("mode append");
     expect(tools.write_column?.description).toContain(
       "call extract_sheet once per sheet"
     );
@@ -1168,6 +1170,50 @@ describe("analytics chat tools", () => {
       name: "DO%",
       values: ["96.7", "81.6"],
       citations: [{ attachmentId: "att_1", page: 31 }],
+    });
+  });
+
+  it("appends rows onto an existing named column", async () => {
+    const initial = analyticsView(
+      replaceColumnValues(createEmptyWorksheet(), 0, ["37.1", "37.2"], "Temp")
+    );
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        mode: "append",
+        name: "Temp",
+        values: [37.3, 37.4],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      mode: "append",
+      columnName: "Temp",
+      rowsWritten: 4,
+      rowsAdded: 2,
+    });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(saved.columns[0]).toMatchObject({
+      name: "Temp",
+      values: ["37.1", "37.2", "37.3", "37.4"],
     });
   });
 

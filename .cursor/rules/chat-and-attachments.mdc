@@ -142,9 +142,11 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   dumps, and Analytics `manage_worksheet` hide after the first structure
   call this turn). An incomplete Analytics `write_column` does not persist.
   One complete write per destination sheet; separate extracts per sheet
-  are correct. Agent Analytics calls `extract_sheet` once per sheet
+  are correct.   Agent Analytics calls `extract_sheet` once per sheet
   (parallel workers create or reuse the tab and write; persist keeps the
-  engineer's focused tab). Live table headers are listed on the
+  engineer's focused tab). Follow-up add/remove rows on a filled sheet use
+  `extract_sheet` `mode edit` (`write_column` `mode append`, or
+  `delete_row` with optional `rowEnd`). Live table headers are listed on the
   context map; `read_section` / `edit_table` / `draft_field` must copy
   those headers (demo vs Convergent matrices differ). Analytics
   `write_column` / `manage_worksheet` serialize per report and re-apply

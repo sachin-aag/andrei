@@ -982,6 +982,38 @@ function citationsForColumn(
   return unique.length > 0 ? unique : undefined;
 }
 
+export function appendColumnValues(
+  data: WorksheetData,
+  colIndex: number,
+  values: string[],
+  name?: string,
+  citations?: ChartCitation[] | null
+): WorksheetData {
+  const column = data.columns[colIndex];
+  if (!column) return data;
+  const existing = [...column.values];
+  const room = Math.max(0, MAX_WORKSHEET_ROWS - existing.length);
+  const added = values.slice(0, room).map(sanitizeCell);
+  const nextValues = trimTrailingEmpty([...existing, ...added]);
+  const incoming = citationsForColumn(citations);
+  const nextCitations = incoming
+    ? uniqueChartCitations([...(column.citations ?? []), ...incoming])
+    : column.citations;
+  return withWorkbook(
+    data,
+    data.columns.map((item, index) =>
+      index === colIndex
+        ? {
+            ...item,
+            name: name !== undefined ? sanitizeColumnName(name) : item.name,
+            values: nextValues,
+            citations: nextCitations,
+          }
+        : item
+    )
+  );
+}
+
 export function replaceColumnValues(
   data: WorksheetData,
   colIndex: number,

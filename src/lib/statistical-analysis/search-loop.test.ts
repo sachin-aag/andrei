@@ -390,6 +390,38 @@ describe("analyticsManageLoopDirective", () => {
     expect(prepared?.activeTools).toContain("write_column");
     expect(prepared?.activeTools).toContain("search_documents");
   });
+
+  it("keeps manage_worksheet on an edit job after add_sheet until a row mutation", () => {
+    expect(
+      analyticsManageLoopDirective([manageStep()], {
+        hideAfter: "row_mutation",
+      })
+    ).toBe("continue");
+    const afterStructure = prepareAnalyticsChatStep({
+      steps: [manageStep()],
+      canEdit: true,
+      sheetJob: "edit",
+    });
+    expect(afterStructure?.activeTools).toContain("manage_worksheet");
+    const deleteStep: AnalyticsChatStep = {
+      toolCalls: [{ toolName: "manage_worksheet" }],
+      toolResults: [
+        {
+          toolName: "manage_worksheet",
+          output: { status: "ok", action: "delete_row", row: 2, rowEnd: 4 },
+        },
+      ],
+    };
+    expect(
+      analyticsManageLoopDirective([deleteStep], { hideAfter: "row_mutation" })
+    ).toBe("finish");
+    const afterDelete = prepareAnalyticsChatStep({
+      steps: [deleteStep],
+      canEdit: true,
+      sheetJob: "edit",
+    });
+    expect(afterDelete?.activeTools).not.toContain("manage_worksheet");
+  });
 });
 
 describe("analyticsPartialDumpDirective", () => {
