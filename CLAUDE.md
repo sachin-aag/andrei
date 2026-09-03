@@ -58,7 +58,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 ### Key directories
 
-- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, `revisions` (product History snapshots + inline diff), and `export`/`complete-export` (DOCX).
+- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, inline `proofread`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, `revisions` (product History snapshots + inline diff), and `export`/`complete-export` (DOCX).
 - `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
 - `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings, Limits). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `ai-budget`, `attachment-page-budget`, `voice-budget`, `reports/[reportId]/{purge,source-docx}`.
 - `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Currently backed by `src/lib/insights/mock-data.ts`.
@@ -153,6 +153,7 @@ Required in `.env.local` (see `.env.example` for all options):
 | `ALLOW_TEST_STUB_DOCUMENT_INGEST=true` | Stubs Vertex extract/embed; fixture must still insert pages + chunks |
 | `ALLOW_TEST_STUB_CHAT=true` | Deterministic `buildStubChatModel` (cannot assert tool selection) |
 | `ALLOW_TEST_STUB_SPEECH=true` | Returns a canned composer dictation phrase instead of Cloud Speech-to-Text |
+| `ALLOW_TEST_STUB_PROOFREAD=true` | Returns canned grammar issues (`dont` → `don't`) instead of Gemini |
 
 Playwright sets these automatically in `webServer.env` — do not add them to production Vercel env.
 
@@ -164,7 +165,7 @@ Playwright sets these automatically in `webServer.env` — do not add them to pr
 
 **Turbopack route registration bug:** In `pnpm dev`, a newly-added API route can fail to register on its first on-demand compile and return Next's HTML 404 page for every method. Fix: restart the dev server (optionally `rm -rf .next` first). This is a dev-server state issue, not a code bug.
 
-**AI credentials are not interchangeable:** Core flows (login, report CRUD, editor, manager review, DOCX export) work without AI keys. "Run AI Check" / suggestions / chat / composer voice dictation need `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` or Vertex (`GOOGLE_VERTEX_PROJECT` + WIF). PDF/DOCX ingest + embeddings need **Vertex** (`GOOGLE_VERTEX_PROJECT`). Voice does **not** call Cloud Speech-to-Text.
+**AI credentials are not interchangeable:** Core flows (login, report CRUD, editor, manager review, DOCX export) work without AI keys. "Run AI Check" / suggestions / chat / composer voice dictation / inline proofread need `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` or Vertex (`GOOGLE_VERTEX_PROJECT` + WIF). PDF/DOCX ingest + embeddings need **Vertex** (`GOOGLE_VERTEX_PROJECT`). Voice does **not** call Cloud Speech-to-Text. Inline proofread uses Gemini 2.5 Flash-Lite (`us-central1` on Vertex).
 
 **Creating a workspace user locally:**
 ```bash
@@ -227,6 +228,21 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 **Bulk apply/dismiss:** `Apply all N` / `Dismiss all` in the report workspace header (`report-bulk-suggestion-actions.tsx`) are **document-wide**, not section-scoped — `acceptAllSuggestionsInReport` / `dismissAllSuggestionsInReport` in `src/lib/suggestions/bulk-suggestions.ts` walk every section in `suggestionCardSectionKeys` order. Each open suggestion is re-merged against the in-memory document in queue order. Each section PATCHes once, then comment statuses flip in parallel. A stale suggestion is skipped; a save failure aborts that section only and later sections still run. No confirm dialog — the toast reports applied/skipped counts. The gutter card keeps only its single Apply/Dismiss. The single-card Apply/Dismiss still uses the cinematic settle delays. Bulk apply uses hold mode `bulk` (keep insert text, hide deletes instantly — do not opacity-0 both runs) and pushes applied content into the editor *before* the section PATCH so the wording does not vanish during save. The hold stays until comments are updated, so TipTap cannot re-inject an already-applied preview.
 
 **Key invariant:** Anchor must be unique in the canonical field text. Whitespace is normalized for matching (multiple spaces/newlines → single space). Cross-paragraph deletes are allowed; cross-cell deletes are dropped. Chat `propose_edit` in Document chrome serializes same-turn calls and folds a later span into the existing card when the locatable ranges sit within `COALESCING_GAP` (20) characters on canonical field text — one frozen hunk including the bridge, no card-count budget. Lead-ins, tables, figures, citation `second`s, and table-cell scopes do not fold. Agent chrome still commits each edit.
+
+## Subsystem: Inline Proofread
+
+**Purpose:** Grammarly-style wavy underlines while typing in rich TipTap fields. Ephemeral editor decorations only — not `comments`, not suggestion marks, not History, not DOCX.
+
+**Entry point:** `POST /api/reports/[reportId]/proofread` → `proofreadUnits()` in `src/lib/ai/proofread/proofread.ts`. Client: `useInlineProofread()` + `proofread-highlights.ts` wired in `tiptap-section-field.tsx`.
+
+**Pipeline:**
+1. Collect paragraph/heading units (`collectProofreadUnits`). Skip tables, suggestion-marked spans, `< 3` words, placeholder-heavy text.
+2. Debounce 1.2s. Hash-cache per paragraph; POST only dirty units (max 6, 2000 chars).
+3. Model is Gemini 2.5 Flash-Lite (`PROOFREAD_GOOGLE_MODEL_ID`), Vertex `us-central1`, `generateText` + `Output.object`. Stub: `ALLOW_TEST_STUB_PROOFREAD` flags `\bdont\b` → `don't`.
+4. Server gates with `gateProofreadEdit` / `locateEdit`. Apply uses the live decoration `from`/`to` (`tr.replaceWith` / `tr.delete`).
+5. Fail-open: over the global AI cap or the `$50` `inline_proofread` sub-cap, or per-user 20/min 400/hour, returns `{ issues: [], skipped }` — never 429 chat/eval.
+
+**Key invariant:** Do not persist proofread issues. Do not use `ai_grammar` / `ai_tone` comment kinds. Bump `PROOFREAD_PROMPT_VERSION` when the proofread prompt changes.
 
 ## Subsystem: DOCX Export
 

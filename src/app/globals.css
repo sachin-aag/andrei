@@ -901,6 +901,74 @@ body:has([data-suggestion-preview-held]) {
   background-color: rgb(220 38 38 / 0.12);
 }
 
+.proofread-issue {
+  cursor: pointer;
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 0.18em;
+}
+
+.proofread-issue-grammar {
+  text-decoration-color: rgb(220 38 38);
+}
+
+.proofread-issue-tone {
+  text-decoration-color: rgb(217 119 6);
+}
+
+.proofread-popover {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.25rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.55rem;
+  vertical-align: 0.1em;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  background: var(--card);
+  box-shadow: 0 2px 8px rgb(24 24 27 / 0.12);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  user-select: none;
+}
+
+.proofread-popover-apply {
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.proofread-popover-apply:hover,
+.proofread-popover-apply:focus-visible {
+  outline: none;
+  text-decoration: underline;
+}
+
+.proofread-popover-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.proofread-popover-dismiss:hover,
+.proofread-popover-dismiss:focus-visible {
+  outline: none;
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
 /* redraft (future) — handled by section banner, not inline marks. No styles. */
 
 /* Long unspaced tokens (filenames, requirement IDs) wrap inside the editor. */

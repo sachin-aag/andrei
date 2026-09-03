@@ -5,7 +5,7 @@ This project uses three layers of quality checks:
 | Layer | Tool | Location | Count (approx.) |
 |-------|------|----------|-----------------|
 | **Unit / integration** | Vitest | `src/**/*.test.ts(x)` | ~76 files, ~345 tests |
-| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 11 spec files, ~43 cases × 3 browsers |
+| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 12 spec files, ~45 cases × 3 browsers |
 | **Manual** | Checklist | [docs/manual-test-cases.md](docs/manual-test-cases.md) | 6 release-candidate cases |
 
 `pnpm precommit` runs **lint + typecheck + Vitest only** (no E2E). CI runs Vitest and Playwright in separate jobs.
@@ -180,6 +180,16 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | opens the assistant at the default width on a new report and after reload | Width is not kept across reports or reloads |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
 | Agent chrome puts chat in the center and work product on the right | Column order `docs.x < chat.x < canvas.x`; Analytics stays on the right; Collapse sits left of Report; History on Report and Analytics (pane-scoped) |
+
+</details>
+
+<details>
+<summary><strong>inline-proofread.spec.ts</strong> — live grammar underlines</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| underlines `dont` and applies `don't` from the popover | Stub proofread (`ALLOW_TEST_STUB_PROOFREAD`); type in Define; wavy underline; popover Apply; text becomes `don't` and the mark is gone |
+| dismisses a grammar underline without changing the text | Same stub underline; × dismiss; `dont` stays; no popover |
 
 </details>
 

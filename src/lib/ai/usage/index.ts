@@ -6,7 +6,7 @@ import { getAiBudgetSettings } from "./settings";
 import { roundUsd } from "./estimate-cost";
 
 export { assertAiBudgetAvailable } from "./assert";
-export { recordAiUsage, type RecordAiUsageInput } from "./record";
+export { recordAiUsage, getFeatureSpendUsd, type RecordAiUsageInput } from "./record";
 export {
   getAiBudgetSettings,
   updateAiBudgetSettings,

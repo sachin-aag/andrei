@@ -13,8 +13,9 @@ const DEFAULT_PRICING: ModelPricing = {
 };
 
 const MODEL_PRICING_USD_PER_MILLION: Record<string, ModelPricing> = {
-  "gemini-3.1-flash-lite": { inputPerMillionUsd: 0.1, outputPerMillionUsd: 0.4 },
-  "gemini-3.5-flash-lite": { inputPerMillionUsd: 0.1, outputPerMillionUsd: 0.4 },
+  "gemini-2.5-flash-lite": { inputPerMillionUsd: 0.1, outputPerMillionUsd: 0.4 },
+  "gemini-3.1-flash-lite": { inputPerMillionUsd: 0.25, outputPerMillionUsd: 1.5 },
+  "gemini-3.5-flash-lite": { inputPerMillionUsd: 0.3, outputPerMillionUsd: 2.5 },
   "gemini-2.5-flash": { inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 },
   "gemini-3.7-flash": { inputPerMillionUsd: 0.2, outputPerMillionUsd: 0.8 },
   "gemini-3.1-pro-preview": { inputPerMillionUsd: 1.25, outputPerMillionUsd: 5.0 },
@@ -31,6 +32,9 @@ export function resolveModelPricing(modelId: string): ModelPricing {
   }
   if (normalized.includes("pro")) {
     return MODEL_PRICING_USD_PER_MILLION["gemini-3.1-pro-preview"] ?? DEFAULT_PRICING;
+  }
+  if (normalized.includes("2.5") && (normalized.includes("flash-lite") || normalized.includes("flash_lite"))) {
+    return MODEL_PRICING_USD_PER_MILLION["gemini-2.5-flash-lite"] ?? DEFAULT_PRICING;
   }
   if (normalized.includes("flash-lite") || normalized.includes("flash_lite")) {
     return MODEL_PRICING_USD_PER_MILLION["gemini-3.5-flash-lite"] ?? DEFAULT_PRICING;

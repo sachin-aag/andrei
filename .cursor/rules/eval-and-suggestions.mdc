@@ -8,9 +8,14 @@ globs:
   - src/lib/ai/suggest-prompts.ts
   - src/lib/ai/suggestion-gating.ts
   - src/lib/ai/evaluation-content-hash.ts
+  - src/lib/ai/proofread/**/*.ts
+  - src/lib/proofread/**/*.ts
+  - src/lib/tiptap/proofread-highlights.ts
+  - src/hooks/use-inline-proofread.ts
   - src/lib/suggestions/**/*.ts
   - src/app/api/reports/**/evaluate/**/*.ts
   - src/app/api/reports/**/suggestions/**/*.ts
+  - src/app/api/reports/**/proofread/**/*.ts
 alwaysApply: false
 ---
 
@@ -56,8 +61,19 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - Same-turn Document-chrome `propose_edit` cards fold when locatable
   ranges sit within `COALESCING_GAP` (20) characters. There is no max-cards
   budget. Do not fold lead-ins, tables, figures, citation splits, or cells.
-- Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
-  Bump `CHAT_PROMPT_VERSION` when chat edit-tool copy changes.
 - Whole-field is derived: planned operations cover every merge block
   (`operationsCoverWholeField`), plus `ai_redraft`. Coverage classifies
   edit vs rewrite; `propose_edit` does not refuse large spans.
+- Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
+  Bump `CHAT_PROMPT_VERSION` when chat edit-tool copy changes.
+
+## Inline proofread
+
+Live grammar/tone underlines are **ephemeral ProseMirror decorations**, not
+`comments` rows and not TipTap suggestion marks. Do not use reserved
+`ai_grammar` / `ai_tone` comment kinds or `.suggestion-insert-grammar` CSS.
+`isAiSuggestionKind()` stays `ai_fix` | `ai_redraft` only. Apply uses the
+live decoration `from`/`to`. Gate model spans with `locateEdit` /
+`gateProofreadEdit` before they reach the editor. Fail-open on budget or
+rate limit (`{ issues: [], skipped }`) — do not 429 chat/eval. Bump
+`PROOFREAD_PROMPT_VERSION` when the proofread prompt changes.
