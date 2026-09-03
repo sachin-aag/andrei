@@ -22,7 +22,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v82-cite-known-pages";
+export const CHAT_PROMPT_VERSION = "chat-v83-strict-attachment-tags";
 
 export type ChatMode = "plan" | "agent";
 

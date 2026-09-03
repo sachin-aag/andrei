@@ -204,8 +204,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   `medium` until we route it by task (3.7 Flash rejects `minimal`); page
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.
-- Tagged `@` documents rank first; backfill from the rest of the report.
-  Hard-filtering tagged IDs blinds the assistant.
+- Tagged `@` documents are the complete attachment scope for that turn.
+  Search, scan, outline, page reads, and extracts must not drift to untagged
+  files. If the client drops a structured mention payload, recover an exact,
+  unique `@filename` against that report's ready-document index.
 - Report body is not in `document_chunks`. Use `read_section`.
 
 ## Ingest

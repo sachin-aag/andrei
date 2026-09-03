@@ -208,6 +208,29 @@ describe("analytics chat tools", () => {
     );
   });
 
+  it("refuses to scan an attachment outside the tagged scope", async () => {
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: false,
+      documentType: "mechanical_design_verification",
+      pinnedAttachmentIds: ["att_tagged"],
+    });
+    const execute = tools.scan_attachments?.execute;
+    if (!execute) throw new Error("scan_attachments has no execute");
+    const result = await execute(
+      { attachmentIds: ["att_other"], query: "M3-SYS-FN-037" },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "attachment_out_of_scope",
+      attachmentId: "att_other",
+    });
+  });
+
   it("flags morePages only when the extract hit the page cap", () => {
     expect(
       extractSeriesHasMorePages({

@@ -127,6 +127,31 @@ describe("buildAnalyticsSearchDocumentsTool", () => {
     });
   });
 
+  it("keeps tagged searches inside the selected attachment scope", async () => {
+    searchReportDocuments.mockResolvedValue([]);
+    const tool = buildAnalyticsSearchDocumentsTool({
+      reportId: "report-1",
+      pinnedAttachmentIds: ["att_tagged"],
+    });
+    const execute = tool.execute;
+    if (!execute) throw new Error("search_documents has no execute");
+    await execute(
+      { query: "torque", limit: 8, mode: "keyword" },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(searchReportDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["att_tagged"],
+        backfill: false,
+      })
+    );
+    expect(tool.description).toContain("only in the 1 document(s)");
+  });
+
   it("refuses further greps when the search gate is closed", async () => {
     const tool = buildAnalyticsSearchDocumentsTool({
       reportId: "report-1",

@@ -6,6 +6,7 @@ import {
   mentionedAnalysisIds,
   mentionedSections,
   parseChatMentions,
+  recoverDocumentMentionIds,
   resolveChatMentions,
   sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
@@ -123,6 +124,44 @@ describe("parseChatMentions", () => {
   it("returns nothing for non-array input", () => {
     expect(parseChatMentions(undefined)).toEqual([]);
     expect(parseChatMentions({ type: "document", id: "att_1" })).toEqual([]);
+  });
+});
+
+describe("recoverDocumentMentionIds", () => {
+  it("recovers an exact visible @filename when the structured payload is lost", () => {
+    expect(
+      recoverDocumentMentionIds(
+        "Use @Mechanical Test Report Attachments only.pdf for FN-037",
+        [
+          readyDoc("att_mechanical", {
+            filename: "Mechanical Test Report Attachments only.pdf",
+          }),
+          readyDoc("att_other", { filename: "Other evidence.pdf" }),
+        ]
+      )
+    ).toEqual(["att_mechanical"]);
+  });
+
+  it("normalizes case and whitespace but does not guess between duplicate names", () => {
+    expect(
+      recoverDocumentMentionIds("Check @BATCH   COA.PDF", [
+        readyDoc("att_1", { filename: "Batch COA.pdf" }),
+      ])
+    ).toEqual(["att_1"]);
+    expect(
+      recoverDocumentMentionIds("Check @Batch COA.pdf", [
+        readyDoc("att_1", { filename: "Batch COA.pdf" }),
+        readyDoc("att_2", { filename: "Batch COA.pdf" }),
+      ])
+    ).toEqual([]);
+  });
+
+  it("does not treat an untagged filename as a mention", () => {
+    expect(
+      recoverDocumentMentionIds("Check Batch COA.pdf", [
+        readyDoc("att_1", { filename: "Batch COA.pdf" }),
+      ])
+    ).toEqual([]);
   });
 });
 
@@ -261,7 +300,8 @@ describe("buildMentionBlock", () => {
     expect(block).toContain('user_context="Certificate of analysis for the failed batch"');
     expect(block).toContain('topics="COA for batch 24A with OOS dissolution."');
     expect(block).toContain("UNTRUSTED");
-    expect(block).toContain('scope="all"');
+    expect(block).toContain("complete attachment scope");
+    expect(block).toContain("restricted to these files");
   });
 
   it("neutralizes instruction-like newlines in attachment metadata", () => {

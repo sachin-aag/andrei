@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v82-cite-known-pages");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v83-strict-attachment-tags");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {

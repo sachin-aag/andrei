@@ -289,7 +289,7 @@ describe("buildChatTools search_documents scoping", () => {
     expect(accepts(tools, "search_documents", {})).toBe(false);
   });
 
-  it("defaults to the tagged documents when some are tagged", () => {
+  it("restricts search to the tagged documents when some are tagged", () => {
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -299,21 +299,12 @@ describe("buildChatTools search_documents scoping", () => {
     const parsed = inputSchemaOf(tools, "search_documents").parse({
       query: "cleaning",
     }) as Record<string, unknown>;
-    expect(parsed.scope).toBe("tagged");
+    expect(parsed.scope).toBeUndefined();
     expect(tools.search_documents?.description).toContain("2 document(s)");
     expect(tools.search_documents?.description).toContain(
       "missing or ambiguous"
     );
-    expect(
-      accepts(tools, "search_documents", { query: "cleaning", scope: "all" })
-    ).toBe(true);
-    // An unknown enum value falls back to the default instead of failing the
-    // tool call and ending the engineer's turn.
-    const unknownScope = inputSchemaOf(tools, "search_documents").parse({
-      query: "cleaning",
-      scope: "everything",
-    }) as Record<string, unknown>;
-    expect(unknownScope.scope).toBe("tagged");
+    expect(tools.search_documents?.description).toContain("Grep only");
   });
 });
 
@@ -336,6 +327,20 @@ describe("buildChatTools document_outline", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
     const result = await executeDocumentOutline(tools, "missing");
     expect(result).toEqual({ status: "not_found" });
+  });
+
+  it("refuses to outline an attachment outside the tagged scope", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      pinnedAttachmentIds: ["att_tagged"],
+    });
+    const result = await executeDocumentOutline(tools, "att_other");
+    expect(result).toMatchObject({
+      status: "attachment_out_of_scope",
+      attachmentId: "att_other",
+    });
+    expect(readDocumentOutlineMock).not.toHaveBeenCalled();
   });
 
   it("sanitizes page context before returning it to the model", async () => {

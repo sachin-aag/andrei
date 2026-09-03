@@ -846,6 +846,18 @@ export function buildAnalyticsChatTools(opts: {
   const pinnedAttachmentIds = Array.from(
     new Set((opts.pinnedAttachmentIds ?? []).filter((id) => id.trim().length > 0))
   );
+  const pinnedAttachmentIdSet = new Set(pinnedAttachmentIds);
+  const attachmentOutOfScope = (attachmentId: string | undefined) =>
+    attachmentId &&
+    pinnedAttachmentIds.length > 0 &&
+    !pinnedAttachmentIdSet.has(attachmentId)
+      ? {
+          status: "attachment_out_of_scope" as const,
+          attachmentId,
+          message:
+            "That attachment is outside this turn's @-tagged document scope. Use one of the tagged attachment ids.",
+        }
+      : null;
   const documentTools = pickAnalyticsDocumentTools(
     buildChatTools({
       reportId,
@@ -853,6 +865,7 @@ export function buildAnalyticsChatTools(opts: {
       documentType,
       citationsAtEndOfSection: citationsAtEndOfSectionFor(documentType),
       includePlotMeasurements: false,
+      pinnedAttachmentIds,
     }) as Record<string, unknown>
   ) as ToolSet;
   documentTools.search_documents = buildAnalyticsSearchDocumentsTool({
@@ -940,10 +953,19 @@ export function buildAnalyticsChatTools(opts: {
           { message: "Provide filenameContains, attachmentIds, or a query." }
         ),
       execute: async ({ filenameContains, attachmentIds, query, queries }) => {
+        const outOfScopeId = attachmentIds?.find(
+          (id) => attachmentOutOfScope(id) !== null
+        );
+        const outOfScope = attachmentOutOfScope(outOfScopeId);
+        if (outOfScope) return outOfScope;
         const result = await runScanAttachments({
           reportId,
-          filenameContains,
-          attachmentIds,
+          filenameContains:
+            pinnedAttachmentIds.length > 0 ? undefined : filenameContains,
+          attachmentIds:
+            pinnedAttachmentIds.length > 0
+              ? pinnedAttachmentIds
+              : attachmentIds,
           query,
           queries,
         });
@@ -1092,6 +1114,8 @@ export function buildAnalyticsChatTools(opts: {
           .describe("Optional locator such as 'Table 2'. Must not name a second assay."),
       }),
       execute: async ({ attachmentId, pages, metric, hint }) => {
+        const outOfScope = attachmentOutOfScope(attachmentId);
+        if (outOfScope) return outOfScope;
         const request = [metric, hint].filter(Boolean).join(" ");
         const requestGate = gateMetricSeriesExtract({ request });
         if (!requestGate.ok) {
@@ -1301,6 +1325,10 @@ export function buildAnalyticsChatTools(opts: {
         "Write values into worksheet columns (replaces those columns by default; pass mode append to add rows onto an existing named column without wiping it). For attachment table dumps onto one or more sheets, call extract_sheet once per sheet (parallel) instead of dumping here. This tool is for typed values, corrections, or a dump a sheet worker already gathered. One complete dump per call, one sheet per call. Pull every page of that table first — do not call this after the first extract or scan of that file when morePages or truncated is true. Separate extracts per destination sheet are correct. Always pass the tab name as sheetId — agent writes do not switch the focused tab, so omitting sheetId dumps onto the engineer's current tab. New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the pages you read this turn. Search snippets are not a page read. Cells that are not tokens on those pages are left blank — never invent 0. status incomplete means nothing was saved: read remaining pages of that table and call this once with the full table for that sheet. Copy labels as they appear (including repeats such as Tip 1–10 per handpiece). Do not retry the same invented dump and do not split it into per-column writes to bypass the check. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), plot_histogram for a frequency histogram of one numeric column (same chart as the sixpack histogram; optional LSL/USL and overlay checkboxes; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
       inputSchema: writeColumnInputSchema,
       execute: async (input) => {
+        const outOfScope = attachmentOutOfScope(
+          input.sourceAttachmentId?.trim()
+        );
+        if (outOfScope) return outOfScope;
         let entries = writeColumnEntriesFromInput(input);
         let blanked: BlankedTableCell[] = [];
         const sourceText = await loadWriteSourceText(input);
@@ -1580,6 +1608,8 @@ export function buildAnalyticsChatTools(opts: {
             .describe("One named series, e.g. Conductivity. Omit for a whole table."),
         }),
         execute: async (input, { abortSignal }) => {
+          const outOfScope = attachmentOutOfScope(input.attachmentId?.trim());
+          if (outOfScope) return outOfScope;
           const workerTools = buildAnalyticsChatTools({
             reportId,
             canEdit: true,
