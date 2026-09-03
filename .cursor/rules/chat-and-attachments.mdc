@@ -143,10 +143,19 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   `alreadyDraftedReadStep`, `tableSchemaReadStep` on write turns whose
   in-scope section already has a table, Analytics search hide after a
   cited page or two empty greps, Analytics `write_column` hide after a
-  cited-page grep until a page is read/scanned/extracted, after a partial
-  dump until another page read, after two consecutive empty dumps, and
+  cited-page grep until a page is read/scanned/extracted, while any file
+  still has extract `morePages` or scan `truncated` (a finished extract of
+  file B does not unlock a partial write of file A), after two consecutive
+  empty dumps — not after a dump with blank cells, Analytics `ask_user`
+  hide on lookups / Skip / after any grep until a page is read, and
   Analytics `manage_worksheet` hide after the first structure call this
-  turn). Live table headers are listed on the
+  turn). An incomplete Analytics `write_column` does not persist.
+  One complete write per destination sheet; separate extracts per sheet
+  are correct.   Agent Analytics calls `extract_sheet` once per sheet
+  (parallel workers create or reuse the tab and write; persist keeps the
+  engineer's focused tab). Follow-up add/remove rows on a filled sheet use
+  `extract_sheet` `mode edit` (`write_column` `mode append`, or
+  `delete_row` with optional `rowEnd`). Live table headers are listed on the
   context map; `read_section` / `edit_table` / `draft_field` must copy
   those headers (demo vs Convergent matrices differ). Analytics
   `write_column` / `manage_worksheet` serialize per report and re-apply

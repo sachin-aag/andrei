@@ -14,6 +14,7 @@ import {
   deleteColumn,
   deleteDataSheet,
   deleteRow,
+  deleteRows,
   findColumnIndex,
   findColumnIndexByName,
   findPlaceholderColumnIndex,
@@ -82,6 +83,24 @@ const manageWorksheetOperationFields = {
     .describe(
       "1-based row number. For add_row, omit to append. Required for delete_row and set_cell."
     ),
+  rowEnd: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_WORKSHEET_ROWS)
+    .optional()
+    .describe(
+      "Inclusive 1-based end row for delete_row (delete rows 12–20 with row=12 and rowEnd=20)."
+    ),
+  count: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe(
+      "How many blank rows to insert for add_row. Defaults to 1. Inserts at row (or appends)."
+    ),
   at: z
     .number()
     .int()
@@ -140,6 +159,8 @@ export type ManageWorksheetResult =
       columnId?: string;
       columnName?: string;
       row?: number;
+      rowEnd?: number;
+      count?: number;
     }
   | { status: "error"; message: string }
   | { status: "not_found"; message: string };
@@ -276,7 +297,13 @@ function ok(
   worksheet: WorksheetData,
   action: ManageWorksheetAction,
   message: string,
-  extra?: { columnId?: string; columnName?: string; row?: number }
+  extra?: {
+    columnId?: string;
+    columnName?: string;
+    row?: number;
+    rowEnd?: number;
+    count?: number;
+  }
 ): { worksheet: WorksheetData; result: ManageWorksheetResult } {
   return {
     worksheet,
@@ -309,6 +336,15 @@ export function applyManageWorksheet(
   }
   switch (input.action) {
     case "add_sheet": {
+      const requested = input.name?.trim() ?? "";
+      const existing = requested ? findSheet(data, requested) : undefined;
+      if (existing) {
+        return ok(
+          switchWorksheetTab(data, existing.id),
+          "add_sheet",
+          `Using existing data sheet ${existing.name}`
+        );
+      }
       if (dataSheets(data).length >= MAX_DATA_SHEETS) {
         return fail({
           status: "error",
@@ -453,10 +489,21 @@ export function applyManageWorksheet(
           message: `This sheet already has ${MAX_WORKSHEET_ROWS} rows.`,
         });
       }
-      const insertAt = input.row != null ? input.row - 1 : filled;
-      const next = insertRow(activated.worksheet, insertAt);
-      const after = rowCount(next);
-      if (after <= filled) {
+      const count = Math.min(
+        input.count ?? 1,
+        MAX_WORKSHEET_ROWS - filled
+      );
+      let next = activated.worksheet;
+      let inserted = 0;
+      for (let i = 0; i < count; i++) {
+        const insertAt =
+          input.row != null ? input.row - 1 + i : rowCount(next);
+        const after = insertRow(next, insertAt);
+        if (rowCount(after) <= rowCount(next)) break;
+        next = after;
+        inserted += 1;
+      }
+      if (inserted === 0) {
         const ready = filled + 1;
         return ok(
           activated.worksheet,
@@ -464,13 +511,21 @@ export function applyManageWorksheet(
           filled === 0
             ? "The sheet already has empty rows ready to use (row 1)."
             : `Row ${ready} is already empty. Type into it on the worksheet.`,
-          { row: ready }
+          { row: ready, count: 0 }
         );
       }
-      const row = Math.min(insertAt, filled) + 1;
-      return ok(next, "add_row", `Inserted a row at row ${row} — check the worksheet`, {
-        row,
-      });
+      const row =
+        input.row != null
+          ? Math.min(input.row, filled + 1)
+          : filled + 1;
+      return ok(
+        next,
+        "add_row",
+        inserted === 1
+          ? `Inserted a row at row ${row} — check the worksheet`
+          : `Inserted ${inserted} rows at row ${row} — check the worksheet`,
+        { row, count: inserted }
+      );
     }
     case "delete_row": {
       if (input.row == null) {
@@ -488,12 +543,27 @@ export function applyManageWorksheet(
           message: `Row ${input.row} is already empty.`,
         });
       }
-      const next = deleteRow(activated.worksheet, input.row - 1);
+      const rawEnd = input.rowEnd ?? input.row;
+      const start = Math.min(input.row, rawEnd);
+      const end = Math.max(input.row, rawEnd);
+      if (start > filled) {
+        return fail({
+          status: "not_found",
+          message: `Row ${start} is already empty.`,
+        });
+      }
+      const clampedEnd = Math.min(end, filled);
+      const next =
+        start === clampedEnd
+          ? deleteRow(activated.worksheet, start - 1)
+          : deleteRows(activated.worksheet, start - 1, clampedEnd - 1);
       return ok(
         next,
         "delete_row",
-        `Deleted row ${input.row} — check the worksheet`,
-        { row: input.row }
+        start === clampedEnd
+          ? `Deleted row ${start} — check the worksheet`
+          : `Deleted rows ${start}–${clampedEnd} — check the worksheet`,
+        { row: start, rowEnd: clampedEnd }
       );
     }
     case "set_cell": {

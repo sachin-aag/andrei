@@ -284,6 +284,7 @@ function compactToolPart<T extends ToolPartRecord>(part: T): T {
       nextOutput = compactReadPageOutput(part.output);
       break;
     case "write_column":
+    case "extract_sheet":
       nextOutput = compactWriteColumnOutput(part.output);
       break;
     case "extract_numeric_series":

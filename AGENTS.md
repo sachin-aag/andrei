@@ -175,17 +175,29 @@ must not wipe each other). The grid ignores older snapshots and coalesces
 mid-turn reloads so extraction does not flash empty. New extract columns
 claim empty C1–C8 from the left (`write_column`
 and `add_column` without `at`) instead of appending on the right. Pass
-`sheetId` on `write_column` when the destination is not the active tab
-(the last `add_sheet` becomes active). Report and
+`sheetId` on `write_column` when the destination is not the engineer's
+focused tab (agent writes do not steal focus; `add_sheet` reuses a
+same-named tab). Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
 abort still apply). Do not tell the engineer they ran out of steps or to
 re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
 on write turns whose in-scope section already has a table, and Analytics
-hiding `write_column` after a cited-page grep until a page is read, after
-two consecutive empty dumps, hiding `ask_user` on lookups / Skip / after any
-grep until a page is read (never ask which page — search/scan and say found
-or not), and hiding `manage_worksheet` after the first structure call). A
-partial dump with blank cells must not hide `write_column`. Live matrix
+hiding `write_column` after a cited-page grep until a page is read, while
+any file still has extract `morePages` or scan `truncated` (a finished
+extract of file B does not unlock a partial write of file A), after two
+consecutive empty dumps — not after a dump with blank cells, hiding
+`ask_user` on lookups / Skip / after any grep until a page is read (never
+ask which page — search/scan and say found or not), and hiding
+`manage_worksheet` after the first structure call). One complete
+`write_column` per destination sheet — separate extracts per sheet are
+correct; always pass `sheetId`. `write_column` `mode append` adds rows onto
+an existing named column. `delete_row` accepts `rowEnd` for a range. Agent
+Analytics plans multi-table dumps and calls `extract_sheet` once per sheet
+in the same step (parallel workers create or reuse the tab and write; the
+grid stays on the engineer's current tab). Add or remove rows on an
+already-filled sheet with `extract_sheet` `mode edit` (worker appends or
+deletes; it does not replace the whole table unless asked). A partial dump
+with blank cells must not hide `write_column`. Live matrix
 headers come from the section (`read_section` / context map) — demo
 Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages.

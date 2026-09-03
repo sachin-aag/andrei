@@ -280,14 +280,20 @@ async function handleAnalyticsChatPost(
         if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
         return isAssistantTurnCancelRequested(sessionId);
       },
-      prepareStep: ({ steps }) =>
-        prepareAnalyticsChatStep({
+      prepareStep: ({ steps }) => {
+        const prepared = prepareAnalyticsChatStep({
           steps,
           canEdit: canWrite,
           searchGate,
           intent: userIntent.kind,
           intentReason: userIntent.reason,
-        }),
+        });
+        if (!prepared) return undefined;
+        return {
+          activeTools: prepared.activeTools,
+          ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+        };
+      },
       abortSignal: turnAbort.signal,
       timeout: { totalMs: Math.max(1, remainingChatAbortMs(turnStartedAtMs)) },
       providerOptions: buildGeminiThoughtSummaryProviderOptions({

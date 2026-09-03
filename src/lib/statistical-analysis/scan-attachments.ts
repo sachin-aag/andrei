@@ -286,7 +286,9 @@ export async function runScanAttachments(input: {
     hint:
       readPageCount === 0
         ? "No page transcripts were loaded. Use the spans to pick pages, then call scan_attachments again with a tighter query (or read_document_page)."
-        : "Use these transcripts to fill the worksheet. Call write_column next. Do not grep again unless a needed page is missing.",
+        : truncatedFiles || truncatedPages
+          ? "Scan is truncated. Read or scan the remaining pages before write_column. Do not write a partial table and do not grep again unless a needed page is missing."
+          : "Use these transcripts to fill the worksheet. If this is every page of the table, call write_column once with the full table. Do not grep again unless a needed page is missing.",
     trustBoundary: SCAN_TRUST_BOUNDARY,
   };
 }

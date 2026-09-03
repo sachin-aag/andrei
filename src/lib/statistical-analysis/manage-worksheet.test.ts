@@ -12,6 +12,31 @@ import {
 import { MAX_DATA_SHEETS, PRIMARY_DATA_SHEET_ID } from "./types";
 
 describe("applyManageWorksheet", () => {
+  it("reuses an existing sheet when add_sheet uses the same name", () => {
+    const first = applyManageWorksheet(createEmptyWorksheet(), {
+      action: "add_sheet",
+      name: "Assay",
+    });
+    expect(first.result).toMatchObject({
+      status: "ok",
+      sheetName: "Assay",
+    });
+    const second = applyManageWorksheet(first.worksheet!, {
+      action: "add_sheet",
+      name: "assay",
+    });
+    expect(second.result).toMatchObject({
+      status: "ok",
+      action: "add_sheet",
+      sheetId: first.result.status === "ok" ? first.result.sheetId : "",
+      sheetName: "Assay",
+    });
+    expect(second.result.status === "ok" && second.result.message).toMatch(
+      /existing/i
+    );
+    expect(second.worksheet?.sheets).toHaveLength(2);
+  });
+
   it("adds a named data sheet and switches to it", () => {
     const { worksheet, result } = applyManageWorksheet(createEmptyWorksheet(), {
       action: "add_sheet",
@@ -132,6 +157,41 @@ describe("applyManageWorksheet", () => {
       row: 2,
     });
     expect(deleted.worksheet?.columns[0]?.values).toEqual(["10", "20"]);
+  });
+
+  it("deletes an inclusive row range", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = setCell(sheet, 0, 0, "a");
+    sheet = setCell(sheet, 0, 1, "b");
+    sheet = setCell(sheet, 0, 2, "c");
+    sheet = setCell(sheet, 0, 3, "d");
+    const deleted = applyManageWorksheet(sheet, {
+      action: "delete_row",
+      row: 2,
+      rowEnd: 3,
+    });
+    expect(deleted.result).toMatchObject({
+      status: "ok",
+      row: 2,
+      rowEnd: 3,
+    });
+    expect(deleted.result.status === "ok" && deleted.result.message).toMatch(
+      /Deleted rows 2–3/
+    );
+    expect(deleted.worksheet?.columns[0]?.values).toEqual(["a", "d"]);
+  });
+
+  it("inserts several blank rows at a position", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = setCell(sheet, 0, 0, "a");
+    sheet = setCell(sheet, 0, 1, "b");
+    const added = applyManageWorksheet(sheet, {
+      action: "add_row",
+      row: 2,
+      count: 2,
+    });
+    expect(added.result).toMatchObject({ status: "ok", row: 2, count: 2 });
+    expect(added.worksheet?.columns[0]?.values).toEqual(["a", "", "", "b"]);
   });
 
   it("sets a cell and reports the next empty row when append would trim", () => {
