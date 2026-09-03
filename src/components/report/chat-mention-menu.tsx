@@ -1,5 +1,6 @@
 "use client";
 
+import type { RefObject } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -55,6 +56,8 @@ export function ChatMentionMenu({
   groupLabel,
   canGoBack,
   emptyLabel,
+  position,
+  menuRef,
   onSelectItem,
   onSelectGroup,
   onBack,
@@ -64,15 +67,23 @@ export function ChatMentionMenu({
   groupLabel: string | null;
   canGoBack: boolean;
   emptyLabel: string;
+  position: { top: number; left: number } | null;
+  menuRef?: RefObject<HTMLDivElement | null>;
   onSelectItem: (candidate: MentionCandidate) => void;
   onSelectGroup: (group: MentionMenuGroup) => void;
   onBack: () => void;
 }) {
   return (
     <div
+      ref={menuRef}
       id="chat-mention-menu"
       data-testid="chat-mention-menu"
-      className="absolute bottom-full left-0 z-50 mb-1 w-64 max-w-[min(100%,16rem)] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] py-0.5 shadow-md"
+      style={
+        position
+          ? { top: position.top, left: position.left }
+          : { top: 0, left: 0, visibility: "hidden" }
+      }
+      className="absolute z-50 w-64 max-w-[min(100%,16rem)] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] py-0.5 shadow-md"
     >
       {canGoBack ? (
         <button

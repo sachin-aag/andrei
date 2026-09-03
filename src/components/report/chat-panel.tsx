@@ -119,6 +119,7 @@ import {
   type SessionTabSnapshot,
 } from "@/lib/ai/chat/session-tab";
 import { ChatMentionMenu } from "@/components/report/chat-mention-menu";
+import { useMentionMenuPosition } from "@/hooks/use-mention-menu-position";
 import {
   MENTIONS_ATTACHMENTS_GROUP,
   buildChatMentionMenu,
@@ -710,6 +711,9 @@ export function ChatPanel({
   }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionAnchorRef = useRef<HTMLDivElement>(null);
+  const mentionBoundaryRef = useRef<HTMLDivElement>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
@@ -885,6 +889,15 @@ export function ChatPanel({
     : mentionPath[0] === MENTIONS_ATTACHMENTS_GROUP
       ? "No files ready"
       : "Nothing to tag";
+  const mentionMenuPosition = useMentionMenuPosition({
+    open: mentionMenuOpen,
+    atIndex: mentionRange?.start ?? 0,
+    textareaRef,
+    anchorRef: mentionAnchorRef,
+    boundaryRef: mentionBoundaryRef,
+    menuRef: mentionMenuRef,
+    deps: [mentionEntries.length, mentionPath, input],
+  });
 
   const persistComposerPrefs = useCallback(
     (next: {
@@ -1510,7 +1523,7 @@ export function ChatPanel({
   );
 
   return (
-    <div className="flex h-full flex-col" aria-busy={initializing}>
+    <div ref={mentionBoundaryRef} className="flex h-full flex-col" aria-busy={initializing}>
       {mountedSessions.map((session) => (
         <ChatSessionHost
           key={session.id}
@@ -1775,7 +1788,7 @@ export function ChatPanel({
               ))}
             </div>
           ) : null}
-          <div className="relative">
+          <div ref={mentionAnchorRef} className="relative">
             {mentionMenuOpen ? (
               <ChatMentionMenu
                 entries={mentionEntries}
@@ -1783,6 +1796,8 @@ export function ChatPanel({
                 groupLabel={mentionGroupLabel}
                 canGoBack={mentionPath.length > 0 && !mentionQuery}
                 emptyLabel={mentionEmptyLabel}
+                position={mentionMenuPosition}
+                menuRef={mentionMenuRef}
                 onSelectItem={selectMention}
                 onSelectGroup={drillMentionGroup}
                 onBack={backMentionMenu}
@@ -1805,6 +1820,11 @@ export function ChatPanel({
                 const value = e.target.value;
                 setInput(value);
                 updateMentionQuery(value, e.target.selectionStart ?? value.length);
+              }}
+              onSelect={(e) => {
+                if (voiceLock || !mentionMenuOpen) return;
+                const target = e.currentTarget;
+                updateMentionQuery(target.value, target.selectionStart ?? target.value.length);
               }}
               onPaste={(event) => {
                 if (voiceLock) {
