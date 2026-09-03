@@ -72,7 +72,9 @@ prompt → tools → `PLAN_MODE_CHAT_TOOL_NAMES` → retrieval-policy /
 already-drafted / stub → tests → docs. Removing a control means deleting
 that plumbing (`body.sectionScope`, `parseChat*`, switch-section tools,
 mismatch banners) — not hiding the dropdown. Scope is `@` mentions
-(`sectionScopeFromMentions`, analytics mention block). Bump
+(`sectionScopeFromMentions`, analytics mention block). Bare `@` opens
+Attachments first (nested folders of ready files), then Document sections
+or Data sheets. Do not recap that list at 8. Bump
 `CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION` when prompt copy
 changes. Empty-state Document chips are `chat.examplePrompts` on the
 document type (not DMAIC-hardcoded); Analytics chips stay in
