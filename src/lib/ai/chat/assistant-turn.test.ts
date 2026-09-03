@@ -6,8 +6,10 @@ import {
   assistantProgressSignature,
   chatWatchdogPhase,
   formatChatLlmError,
+  isChatClientDisconnectError,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
+  shouldShowChatClientError,
   shouldShowEmptyAssistantError,
   CHAT_ASSISTANT_ERROR_MESSAGE,
   CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
@@ -91,6 +93,56 @@ describe("shouldShowEmptyAssistantError", () => {
         streaming: false,
       })
     ).toBe(false);
+  });
+});
+
+describe("isChatClientDisconnectError", () => {
+  it("matches the SDK TypeError disconnect heuristic and Safari drops", () => {
+    expect(
+      isChatClientDisconnectError(new TypeError("Failed to fetch"))
+    ).toBe(true);
+    expect(
+      isChatClientDisconnectError(new TypeError("NetworkError when attempting to fetch resource."))
+    ).toBe(true);
+    expect(isChatClientDisconnectError(new TypeError("Load failed"))).toBe(
+      true
+    );
+    expect(isChatClientDisconnectError(new TypeError("cancelled"))).toBe(
+      true
+    );
+    expect(
+      isChatClientDisconnectError(new Error("The network connection was lost."))
+    ).toBe(true);
+  });
+
+  it("does not treat abort or a server 500 body as a disconnect", () => {
+    const abort = new Error("The operation was aborted.");
+    abort.name = "AbortError";
+    expect(isChatClientDisconnectError(abort)).toBe(false);
+    expect(
+      isChatClientDisconnectError(new Error(CHAT_ASSISTANT_ERROR_MESSAGE))
+    ).toBe(false);
+    expect(isChatClientDisconnectError("Failed to fetch")).toBe(false);
+  });
+});
+
+describe("shouldShowChatClientError", () => {
+  it("hides a leftover stream error while the turn is still busy", () => {
+    expect(
+      shouldShowChatClientError({
+        error: new TypeError("Failed to fetch"),
+        busy: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldShowChatClientError({
+        error: new TypeError("Failed to fetch"),
+        busy: false,
+      })
+    ).toBe(true);
+    expect(shouldShowChatClientError({ error: undefined, busy: false })).toBe(
+      false
+    );
   });
 });
 

@@ -93,6 +93,42 @@ export function shouldShowEmptyAssistantError(options: {
 }
 
 /**
+ * AI SDK sets `error` on a dropped SSE (`isDisconnect` is also `isError`).
+ * The server may still be generating — do not toast or show the red banner.
+ */
+export function isChatClientDisconnectError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return false;
+  const message = error.message.toLowerCase();
+  if (error instanceof TypeError) {
+    return (
+      message.includes("fetch") ||
+      message.includes("network") ||
+      message.includes("load failed") ||
+      message.includes("cancelled")
+    );
+  }
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("network error") ||
+    (message.includes("connection") && message.includes("lost"))
+  );
+}
+
+/**
+ * Hide the leftover `useChat` error while the turn is still in flight
+ * (live SSE or background poll after a disconnect).
+ */
+export function shouldShowChatClientError(options: {
+  error: unknown;
+  busy: boolean;
+}): boolean {
+  if (options.busy || options.error == null) return false;
+  return true;
+}
+
+/**
  * Fingerprint of what the user can see so the client watchdog can tell
  * "still thinking" from "tools / text just arrived".
  */
