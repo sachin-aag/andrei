@@ -82,4 +82,27 @@ describe("HistogramView axes", () => {
     expect(xTicks).not.toContain("-14.52");
     expect(yTicks).toContain("0");
   });
+
+  it("draws the analysis title inside the captured chart", () => {
+    const analysis = summaryFromValues(
+      [10, 12, 11, 13, 14, 12, 11, 9, 15, 70],
+      14,
+      null
+    );
+
+    render(
+      <HistogramView
+        analysis={analysis}
+        {...viewProps}
+      />
+    );
+
+    const figure = screen.getByTestId("analysis-preview-figure");
+    const title = screen.getByTestId("histogram-chart-title");
+    expect(title).toHaveTextContent("Histogram of Measurement");
+    expect(figure).toContainElement(title);
+    expect(
+      screen.queryByRole("heading", { name: /Histogram of Measurement/ })
+    ).toBeNull();
+  });
 });

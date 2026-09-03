@@ -72,6 +72,7 @@ describe("renderHistogramPng", () => {
       }
     );
     expect(result).toBeInstanceOf(Buffer);
+    expect(texts).toContain("Histogram of Measurement");
     expect(texts).toContain("Measurement");
     expect(texts).toContain("Frequency");
     expect(texts).toContain("-50");
