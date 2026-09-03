@@ -93,6 +93,23 @@ describe("isCitationShapedBracket", () => {
     ).toBe(true);
   });
 
+  it("recognizes CUID2 attachment ids the model copied from the document index", () => {
+    expect(isCitationShapedBracket("[me1q4zzhb1me0wwskpmqfw7i]")).toBe(true);
+    expect(isCitationShapedBracket("[nzvuqnlquzaqwqyv3n8h0k2u, p. 1]")).toBe(
+      true
+    );
+    expect(
+      isCitationShapedBracket("[me1q4zzhb1me0wwskpmqfw7i: <to be filled>]")
+    ).toBe(true);
+    expect(
+      isCitationShapedBracket("[me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]")
+    ).toBe(true);
+    expect(
+      isCitationShapedBracket("[swja2t3b3dif1ua8id1zkyz2,: <to be filled>]")
+    ).toBe(true);
+    expect(isSourceCitationBracket("[me1q4zzhb1me0wwskpmqfw7i]")).toBe(true);
+  });
+
   it("rejects ordinary placeholders and guidance", () => {
     expect(isCitationShapedBracket("[batch number]")).toBe(false);
     expect(isCitationShapedBracket("[SOP No.: <to be filled>]")).toBe(false);
@@ -143,6 +160,12 @@ describe("repairedCitationBracket", () => {
     expect(repairedCitationBracket("[Appendix B: <to be filled>]")).toBe(
       "[Appendix B]"
     );
+    expect(
+      repairedCitationBracket("[me1q4zzhb1me0wwskpmqfw7i: <to be filled>]")
+    ).toBe("[me1q4zzhb1me0wwskpmqfw7i]");
+    expect(
+      repairedCitationBracket("[me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]")
+    ).toBe("[me1q4zzhb1me0wwskpmqfw7i]");
   });
 
   it("returns null for real placeholders and bare citations", () => {

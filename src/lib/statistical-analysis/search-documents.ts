@@ -33,6 +33,32 @@ export const ANALYTICS_SEARCH_CITATION_RULE =
 export const ANALYTICS_SEARCH_CLOSED_MESSAGE =
   "Search is closed for this turn. Read a cited page, scan_attachments, or extract — do not ask_user which page to read. truncated is not a reason to grep again.";
 
+export function resolveAnalyticsSearchMode(
+  query: string,
+  requested: DocumentSearchMode = "keyword"
+): { mode: DocumentSearchMode; keywordFallback: boolean } {
+  switch (requested) {
+    case "hybrid":
+      return { mode: "hybrid", keywordFallback: false };
+    case "keyword":
+      if (buildKeywordTsQuery(query)) {
+        return { mode: "keyword", keywordFallback: false };
+      }
+      return { mode: "hybrid", keywordFallback: true };
+    default: {
+      const exhaustive: never = requested;
+      return exhaustive;
+    }
+  }
+}
+
+function hasSearchQuery(value: {
+  query?: string;
+  queries?: string[];
+}): boolean {
+  return collectSearchQueries(value).length > 0;
+}
+
 export function isAnalyticsRequirementIndexHit(
   hit: Pick<DocumentSearchResult, "quote" | "text">
 ): boolean {
@@ -58,32 +84,6 @@ function toAnalyticsClientSearchResults(hits: readonly DocumentSearchResult[]) {
       ? { ...hit, requirementIndex: true as const }
       : hit
   );
-}
-
-export function resolveAnalyticsSearchMode(
-  query: string,
-  requested: DocumentSearchMode = "keyword"
-): { mode: DocumentSearchMode; keywordFallback: boolean } {
-  switch (requested) {
-    case "hybrid":
-      return { mode: "hybrid", keywordFallback: false };
-    case "keyword":
-      if (buildKeywordTsQuery(query)) {
-        return { mode: "keyword", keywordFallback: false };
-      }
-      return { mode: "hybrid", keywordFallback: true };
-    default: {
-      const exhaustive: never = requested;
-      return exhaustive;
-    }
-  }
-}
-
-function hasSearchQuery(value: {
-  query?: string;
-  queries?: string[];
-}): boolean {
-  return collectSearchQueries(value).length > 0;
 }
 
 export function buildAnalyticsSearchDocumentsTool(opts: {

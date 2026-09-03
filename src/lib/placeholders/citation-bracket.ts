@@ -93,6 +93,24 @@ function isDocumentNumberCite(core: string): boolean {
 }
 
 /**
+ * Default `@paralleldrive/cuid2` `createId()` token (attachment primary keys).
+ * Chat tools list `id=` next to the filename; the model sometimes pastes that
+ * id in brackets. Same class as underscored report-number cites: a source
+ * cite, not a fill-in placeholder.
+ */
+const ATTACHMENT_ID_TOKEN = /^[a-z0-9]{24}$/;
+
+function isAttachmentIdCite(core: string): boolean {
+  const withoutPage = citeCoreWithoutPage(core);
+  if (!withoutPage) return false;
+  const parts = withoutPage
+    .split(/\s*,\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 && parts.every((part) => ATTACHMENT_ID_TOKEN.test(part));
+}
+
+/**
  * True when `[...]` is a document citation, not a Placeholders-panel token.
  *
  * Recognizes:
@@ -103,6 +121,7 @@ function isDocumentNumberCite(core: string): boolean {
  * - appendix / report-number cites (`[Appendix B]`,
  *   `[Appendix B DV Report 790-00134R(RevU)]`,
  *   `[790-00134R_Rev_U_Solea_Model_3_Software_…]`)
+ * - CUID2 attachment ids (`[me1q4zzhb1me0wwskpmqfw7i]`, optional page)
  * - mistaken `[cite: <to be filled>]` / `[cite,; <to be filled>]` wrappers
  */
 export function isCitationShapedBracket(match: string): boolean {
@@ -115,6 +134,7 @@ export function isCitationShapedBracket(match: string): boolean {
   if (isAttachmentLabelCite(core)) return true;
   if (isAppendixCite(core)) return true;
   if (isDocumentNumberCite(core)) return true;
+  if (isAttachmentIdCite(core)) return true;
   return hasSupportedAttachmentExtension(citeCoreWithoutPage(core));
 }
 

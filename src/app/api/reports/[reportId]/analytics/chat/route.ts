@@ -68,11 +68,11 @@ import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
-  classifyChatUserIntent,
   messageHasChatImage,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
 } from "@/lib/ai/chat/user-intent";
+import { resolveChatUserIntent } from "@/lib/ai/chat/resolve-user-intent";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   consumeAssistantStreamWithBudget,
@@ -151,12 +151,14 @@ async function handleAnalyticsChatPost(
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
-  const userIntent = classifyChatUserIntent({
+  const userIntent = await resolveChatUserIntent({
     userText,
     recentAssistantTexts: recentAssistantMessageTexts(messages),
     hasChatImages: messageHasChatImage(userMsg?.parts),
     surface: "analytics",
     mode,
+    reportId,
+    userId: user.id,
   });
   if (userMsg) {
     try {

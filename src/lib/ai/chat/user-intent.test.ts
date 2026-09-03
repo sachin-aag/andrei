@@ -3,6 +3,7 @@ import {
   classifyChatUserIntent,
   intentToolAvailabilityRule,
   messageHasChatImage,
+  needsLlmIntentClassification,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
 } from "./user-intent";
@@ -105,6 +106,28 @@ describe("classifyChatUserIntent", () => {
     expect(
       classifyChatUserIntent({ userText: "three more rows like that one" }).kind
     ).toBe("write");
+  });
+
+  it("leaves plan/outline phrasing in the Agent-mode hole for Flash-Lite", () => {
+    expect(
+      classifyChatUserIntent({
+        userText: "plan the first 3 sections",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "ambiguous_agent_mode" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "plan the first 3 sections",
+          mode: "agent",
+        })
+      )
+    ).toBe(true);
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({ userText: "draft Purpose" })
+      )
+    ).toBe(false);
   });
 
   it("does not let Agent mode turn questions or greetings into writes", () => {

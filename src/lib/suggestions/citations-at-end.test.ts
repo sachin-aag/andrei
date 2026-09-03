@@ -17,6 +17,7 @@ import {
   stripTrailingCitationBlockFromText,
   stripTrailingCitationsFromContent,
 } from "./citations-at-end";
+import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 
 describe("stripCitationsFromText", () => {
   it("pulls page and filename citations out of mid-sentence inserts", () => {
@@ -56,6 +57,38 @@ describe("stripCitationsFromText", () => {
 });
 
 describe("moveCitationsToEndOfText", () => {
+  it("parks attachment-id cites instead of leaving them inline", () => {
+    const markdown = [
+      "This test report applies to configurations defined as TOP-00017 and TOP-00051 [me1q4zzhb1me0wwskpmqfw7i].",
+      "Tested in accordance with the Perioguide Project Test Plan [swja2t3b3dif1ua8id1zkyz2, p. 1].",
+    ].join(" ");
+    expect(moveCitationsToEndOfText(markdown)).toBe(
+      [
+        "This test report applies to configurations defined as TOP-00017 and TOP-00051 [1]. Tested in accordance with the Perioguide Project Test Plan [2].",
+        "",
+        "Citations:",
+        "1. [me1q4zzhb1me0wwskpmqfw7i]",
+        "2. [swja2t3b3dif1ua8id1zkyz2, p. 1]",
+      ].join("\n")
+    );
+  });
+
+  it("repairs mistaken placeholder wrappers then parks attachment-id cites", () => {
+    const drafted =
+      "defined as TOP-00051 [me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]. " +
+      "Tested per the plan [swja2t3b3dif1ua8id1zkyz2,: <to be filled>].";
+    const normalized = normalizeSuggestionInsertText(drafted);
+    expect(moveCitationsToEndOfText(normalized)).toBe(
+      [
+        "defined as TOP-00051 [1]. Tested per the plan [2].",
+        "",
+        "Citations:",
+        "1. [me1q4zzhb1me0wwskpmqfw7i]",
+        "2. [swja2t3b3dif1ua8id1zkyz2]",
+      ].join("\n")
+    );
+  });
+
   it("moves inline citations after the prose and any table, leaving numbered markers", () => {
     const markdown = [
       "Power output met the acceptance limit [protocol.pdf, p. 2].",
