@@ -13,6 +13,7 @@ import {
   resolveChatTurnUrl,
 } from "@/lib/ai/chat/chat-turn-url";
 import { toast } from "sonner";
+import { captureClientException, captureEvent } from "@/lib/analytics/events";
 import { useChatWatchdog } from "@/hooks/use-chat-watchdog";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
@@ -100,6 +101,7 @@ export function ChatSessionHost({
   const clearErrorRef = useRef<() => void>(() => {});
   const agentRunStartedAtRef = useRef<number | null>(null);
   const [backgroundTurn, setBackgroundTurn] = useState(false);
+  const surface = api.includes("/analytics/") ? "analytics" : "report";
 
   const hydrateFromServer = useCallback(async () => {
     if (isChatTurnBusy(statusRef.current)) return;
@@ -172,6 +174,12 @@ export function ChatSessionHost({
         message.role === "assistant" &&
         !assistantPartsHaveVisibleContent(message.parts)
       ) {
+        captureEvent("ai_chat_failed", {
+          surface,
+          site: "empty_turn",
+          reportId,
+          sessionId,
+        });
         toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
         agentRunStartedAtRef.current = null;
         setBackgroundTurn(false);
@@ -194,6 +202,14 @@ export function ChatSessionHost({
     onError: (err) => {
       console.error("chat error", err);
       if (isChatClientDisconnectError(err)) return;
+      const failureProps = {
+        surface,
+        site: "client_error",
+        reportId,
+        sessionId,
+      };
+      captureClientException(err, failureProps);
+      captureEvent("ai_chat_failed", failureProps);
       toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
     },
   });

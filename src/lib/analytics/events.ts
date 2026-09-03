@@ -15,7 +15,8 @@ export type AnalyticsEvent =
   | "comment_resolved"
   | "comment_dismissed"
   | "sidebar_tab_changed"
-  | "expert_review_requested";
+  | "expert_review_requested"
+  | "ai_chat_failed";
 
 export function captureEvent(
   event: AnalyticsEvent,
@@ -23,4 +24,12 @@ export function captureEvent(
 ) {
   if (typeof window === "undefined") return;
   posthog.capture(event, props);
+}
+
+export function captureClientException(
+  error: unknown,
+  props?: Record<string, unknown>
+) {
+  if (typeof window === "undefined") return;
+  posthog.captureException(error, props);
 }

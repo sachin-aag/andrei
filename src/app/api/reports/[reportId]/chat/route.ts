@@ -122,6 +122,7 @@ import {
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
+import { captureChatAssistantFailure } from "@/lib/ai/chat/chat-failure-telemetry";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   consumeAssistantStreamWithBudget,
@@ -639,6 +640,14 @@ async function handleChatPost(
       sessionId,
       error: formatChatLlmError(err),
     });
+    captureChatAssistantFailure({
+      error: err,
+      userId: user.id,
+      reportId,
+      sessionId,
+      surface: "report",
+      site: "stream_start",
+    });
     return NextResponse.json(
       { error: CHAT_ASSISTANT_ERROR_MESSAGE },
       { status: 500 }
@@ -690,6 +699,14 @@ async function handleChatPost(
         reportId,
         sessionId,
         error: formatChatLlmError(error),
+      });
+      captureChatAssistantFailure({
+        error,
+        userId: user.id,
+        reportId,
+        sessionId,
+        surface: "report",
+        site: "stream_error",
       });
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },

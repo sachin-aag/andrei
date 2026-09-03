@@ -73,6 +73,7 @@ import {
   restrictToolsForIntent,
 } from "@/lib/ai/chat/user-intent";
 import { resolveChatUserIntent } from "@/lib/ai/chat/resolve-user-intent";
+import { captureChatAssistantFailure } from "@/lib/ai/chat/chat-failure-telemetry";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   consumeAssistantStreamWithBudget,
@@ -339,6 +340,14 @@ async function handleAnalyticsChatPost(
       sessionId,
       error: formatChatLlmError(err),
     });
+    captureChatAssistantFailure({
+      error: err,
+      userId: user.id,
+      reportId,
+      sessionId,
+      surface: "analytics",
+      site: "stream_start",
+    });
     return NextResponse.json(
       { error: CHAT_ASSISTANT_ERROR_MESSAGE },
       { status: 500 }
@@ -385,6 +394,14 @@ async function handleAnalyticsChatPost(
         reportId,
         sessionId,
         error: formatChatLlmError(error),
+      });
+      captureChatAssistantFailure({
+        error,
+        userId: user.id,
+        reportId,
+        sessionId,
+        surface: "analytics",
+        site: "stream_error",
       });
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },
