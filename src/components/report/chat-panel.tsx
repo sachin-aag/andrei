@@ -98,6 +98,7 @@ import {
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   chatWatchdogPhase,
+  shouldShowChatClientError,
   shouldShowEmptyAssistantError,
 } from "@/lib/ai/chat/assistant-turn";
 import {
@@ -1712,9 +1713,11 @@ export function ChatPanel({
             onCancel={stopTurn}
           />
         ) : null}
-        {error && (
-          <p className="text-xs text-red-500">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
-        )}
+        {shouldShowChatClientError({ error, busy }) ? (
+          <p className="text-xs text-red-500" data-testid="chat-client-error">
+            {CHAT_ASSISTANT_ERROR_MESSAGE}
+          </p>
+        ) : null}
       </div>
 
       {/* Composer */}
