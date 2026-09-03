@@ -284,6 +284,7 @@ async function handleAnalyticsChatPost(
           canEdit: canWrite,
           searchGate,
           intent: userIntent.kind,
+          intentReason: userIntent.reason,
         }),
       abortSignal: turnAbort.signal,
       timeout: { totalMs: Math.max(1, remainingChatAbortMs(turnStartedAtMs)) },

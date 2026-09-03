@@ -180,8 +180,10 @@ abort still apply). Do not tell the engineer they ran out of steps or to
 re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
 on write turns whose in-scope section already has a table, and Analytics
 hiding `write_column` after a cited-page grep until a page is read, after
-a partial dump until another page read, and after two consecutive empty
-dumps, and hiding `manage_worksheet` after the first structure call). Live matrix
+two consecutive empty dumps, hiding `ask_user` on lookups / Skip / after any
+grep until a page is read (never ask which page — search/scan and say found
+or not), and hiding `manage_worksheet` after the first structure call). A
+partial dump with blank cells must not hide `write_column`. Live matrix
 headers come from the section (`read_section` / context map) — demo
 Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy.

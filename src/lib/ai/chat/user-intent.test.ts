@@ -170,6 +170,38 @@ describe("classifyChatUserIntent", () => {
     ).toBe("write");
   });
 
+  it("treats skipped Analytics page questions and find-it as write", () => {
+    expect(
+      classifyChatUserIntent({
+        userText:
+          "Answers to your questions:\n1. Which page is M3-SYS-FN-037 on?\n   (skipped — use a placeholder)",
+        surface: "analytics",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "skip_page_and_search" });
+    expect(
+      classifyChatUserIntent({
+        userText: "I want you to find it",
+        surface: "analytics",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "locate_request" });
+    expect(
+      classifyChatUserIntent({
+        userText: "find it",
+        surface: "analytics",
+        mode: "agent",
+      }).kind
+    ).toBe("write");
+    expect(
+      classifyChatUserIntent({
+        userText: "where is M3-SYS-FN-037 in the PDF?",
+        surface: "analytics",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "read", reason: "question_or_lookup" });
+  });
+
   it("keeps the instruction that follows a yes", () => {
     // Langfuse: "yes put it in the data worksheet" scored read, so write_column
     // was stripped and the model printed a markdown table instead.
