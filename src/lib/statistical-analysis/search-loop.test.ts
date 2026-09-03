@@ -108,12 +108,14 @@ describe("prepareAnalyticsChatStep", () => {
   });
 
   it("does not hide search on the first empty grep", () => {
-    expect(
-      prepareAnalyticsChatStep({
-        steps: [step(["search_documents"], 0)],
-        canEdit: true,
-      })
-    ).toBeUndefined();
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 0)],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("search_documents");
+    expect(prepared?.activeTools).toContain("scan_attachments");
+    expect(prepared?.activeTools).not.toContain("ask_user");
+    expect(prepared?.activeTools).toContain("write_column");
   });
 
   it("hides search after the first grep that returns pages", () => {
