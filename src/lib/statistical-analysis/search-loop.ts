@@ -481,8 +481,7 @@ export function prepareAnalyticsChatStep(input: {
   const hideAsk =
     stillGathering ||
     (!dumpSource &&
-      (dumpReady === "read_first" ||
-        stepsHadSearch(input.steps) ||
+      (stepsHadSearch(input.steps) ||
         locateIntent ||
         input.intent === "read"));
   const hidden = new Set<string>();
