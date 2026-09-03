@@ -12,9 +12,13 @@ export function isWorkspaceChrome(value: unknown): value is WorkspaceChrome {
  * `canEdit` still gates write tools on the route; a locked report must
  * never commit even if a caller passes `commit`.
  */
-export function deriveChatEditPolicy(_args: {
+export function deriveChatEditPolicy(args: {
   workspaceChrome: WorkspaceChrome;
   canEdit: boolean;
 }): ChatEditPolicy {
+  // Chrome is layout-only. `canEdit` still belongs on the caller so write
+  // tools can stay gated; live report chat never commits either way.
+  void args.workspaceChrome;
+  void args.canEdit;
   return "propose";
 }
