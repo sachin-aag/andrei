@@ -76,6 +76,7 @@ describe("SixpackView limit labels", () => {
       "aria-label",
       "LSL 90.00"
     );
+    expect(screen.queryByTestId("sixpack-chart-title")).toBeNull();
   });
 
   it("labels intermediate histogram ticks, not only the axis ends", () => {

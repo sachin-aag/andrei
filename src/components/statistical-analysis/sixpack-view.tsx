@@ -15,6 +15,12 @@ import {
   formatAxisTick,
   xTickAnchor,
 } from "@/lib/charts/axis-ticks";
+import {
+  HISTOGRAM_CHART_HEIGHT,
+  HISTOGRAM_CHART_WIDTH,
+  HISTOGRAM_PLOT,
+  HISTOGRAM_TITLE_Y,
+} from "@/lib/statistical-analysis/histogram-chart-layout";
 import { histogramChartScale } from "@/lib/statistical-analysis/histogram-chart-scale";
 import {
   formatCapabilityStat,
@@ -103,9 +109,9 @@ type PlotBox = { left: number; right: number; top: number; bottom: number };
 
 const PLOT: PlotBox = { left: 36, right: 308, top: 12, bottom: 168 };
 const HISTOGRAM_FULL = {
-  width: 720,
-  height: 400,
-  plot: { left: 56, right: 688, top: 28, bottom: 348 } satisfies PlotBox,
+  width: HISTOGRAM_CHART_WIDTH,
+  height: HISTOGRAM_CHART_HEIGHT,
+  plot: HISTOGRAM_PLOT satisfies PlotBox,
 };
 
 function LimitLabel({
@@ -410,6 +416,7 @@ export function CapabilityHistogramChart({
   showDistributionLines = true,
   showLsl = true,
   showUsl = true,
+  title,
   testIdPrefix = "sixpack",
   size = "compact",
 }: {
@@ -421,6 +428,7 @@ export function CapabilityHistogramChart({
   showDistributionLines?: boolean;
   showLsl?: boolean;
   showUsl?: boolean;
+  title?: string;
   testIdPrefix?: string;
   size?: "compact" | "full";
 }) {
@@ -459,10 +467,24 @@ export function CapabilityHistogramChart({
 
   return (
     <ChartSvg
-      ariaLabel="Capability histogram"
+      ariaLabel={title || "Capability histogram"}
       width={layout.width}
       height={layout.height}
     >
+      {title ? (
+        <text
+          data-testid={`${testIdPrefix}-chart-title`}
+          x={(plot.left + plot.right) / 2}
+          y={HISTOGRAM_TITLE_Y}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize={full ? 14 : 11}
+          fontWeight="600"
+          fill="currentColor"
+        >
+          {title}
+        </text>
+      ) : null}
       <Axis
         xMin={scaleBox.xMin}
         xMax={scaleBox.xMax}
