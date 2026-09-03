@@ -72,7 +72,7 @@ export function ChatMentionMenu({
     <div
       id="chat-mention-menu"
       data-testid="chat-mention-menu"
-      className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-xl"
+      className="absolute bottom-full left-0 z-50 mb-1 w-64 max-w-[min(100%,16rem)] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] py-0.5 shadow-md"
     >
       {canGoBack ? (
         <button
@@ -83,21 +83,21 @@ export function ChatMentionMenu({
             event.preventDefault();
             onBack();
           }}
-          className="flex w-full items-center gap-1.5 border-b border-[var(--border)] px-2 py-1.5 text-left text-xs font-medium text-[var(--foreground)] hover:bg-[var(--secondary)]"
+          className="flex w-full items-center gap-1 border-b border-[var(--border)] px-1.5 py-1 text-left text-[11px] text-[var(--foreground)] hover:bg-[var(--secondary)]"
         >
-          <ChevronLeft className="size-3.5 shrink-0 text-[var(--muted-foreground)]" />
+          <ChevronLeft className="size-3 shrink-0 text-[var(--muted-foreground)]" />
           <span className="truncate">{groupLabel ?? "Tags"}</span>
         </button>
       ) : null}
       {entries.length === 0 ? (
-        <p className="px-3 py-2 text-xs text-[var(--muted-foreground)]">
+        <p className="px-2 py-1.5 text-[11px] text-[var(--muted-foreground)]">
           {emptyLabel}
         </p>
       ) : (
         <div
           role="listbox"
           aria-label={groupLabel ? `${groupLabel} tags` : "Tag a file, section, or sheet"}
-          className="max-h-72 overflow-y-auto p-1"
+          className="max-h-52 overflow-y-auto px-0.5"
         >
           {entries.map((entry, index) => {
             const selected = index === activeIndex;
@@ -116,26 +116,22 @@ export function ChatMentionMenu({
                     onSelectGroup(entry);
                   }}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--secondary)]",
+                    "flex w-full items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-[11px] leading-tight transition-colors hover:bg-[var(--secondary)]",
                     selected && "bg-[var(--secondary)]"
                   )}
                 >
                   <Icon
-                    className="size-3.5 shrink-0 text-[var(--primary)]"
+                    className="size-3 shrink-0 text-[var(--muted-foreground)]"
                     aria-hidden="true"
                   />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">
-                      {entry.label}
+                  <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+                  {entry.sublabel ? (
+                    <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">
+                      {entry.sublabel}
                     </span>
-                    {entry.sublabel ? (
-                      <span className="block truncate text-[11px] text-[var(--muted-foreground)]">
-                        {entry.sublabel}
-                      </span>
-                    ) : null}
-                  </span>
+                  ) : null}
                   <ChevronRight
-                    className="size-3.5 shrink-0 text-[var(--muted-foreground)]"
+                    className="size-3 shrink-0 text-[var(--muted-foreground)]"
                     aria-hidden="true"
                   />
                 </button>
@@ -155,31 +151,21 @@ export function ChatMentionMenu({
                   onSelectItem(entry.candidate);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--secondary)]",
+                  "flex w-full items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-[11px] leading-tight transition-colors hover:bg-[var(--secondary)]",
                   selected && "bg-[var(--secondary)]"
                 )}
               >
                 <Icon
-                  className="size-3.5 shrink-0 text-[var(--primary)]"
+                  className="size-3 shrink-0 text-[var(--muted-foreground)]"
                   aria-hidden="true"
                 />
-                <span className="min-w-0 flex-1">
-                  <span
-                    className={cn(
-                      "block truncate font-medium",
-                      entry.candidate.type === "document" && "font-mono tracking-tight"
-                    )}
-                  >
-                    {entry.candidate.label}
-                  </span>
-                  {entry.candidate.sublabel ? (
-                    <span className="block truncate text-[11px] text-[var(--muted-foreground)]">
-                      {entry.candidate.sublabel}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
-                  {entry.candidate.type}
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate",
+                    entry.candidate.type === "document" && "font-mono tracking-tight"
+                  )}
+                >
+                  {entry.candidate.label}
                 </span>
               </button>
             );
