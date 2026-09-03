@@ -96,6 +96,14 @@ const QUESTION_START_RE =
 const ASSISTANT_WRITE_OFFER_RE =
   /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot)|ready to draft|start drafting|i(?:'ll| will) draft)\b/i;
 
+/** Skip-all on an Analytics page-number form — search, do not placeholder. */
+const ASK_USER_ANSWERS_RE = /^Answers to your questions:/i;
+const SKIPPED_PLACEHOLDER_RE = /\(skipped — use a placeholder\)/i;
+
+/** Skip / "find it" after a page-number form — search, do not ask again. */
+const ANALYTICS_FIND_IT_RE =
+  /\b(?:find|look(?:\s+for)?|search(?:\s+for)?)\s+(?:it|that|this|the\s+page)\b/i;
+
 export type ClassifyChatUserIntentInput = {
   userText: string;
   recentAssistantTexts?: readonly string[];
@@ -127,6 +135,14 @@ export function classifyChatUserIntent(
       return { kind: "read", reason: "chat_image" };
     }
     return { kind: "social", reason: "greeting" };
+  }
+
+  if (
+    input.surface === "analytics" &&
+    ASK_USER_ANSWERS_RE.test(latest) &&
+    SKIPPED_PLACEHOLDER_RE.test(latest)
+  ) {
+    return { kind: "write", reason: "skip_page_and_search" };
   }
 
   const offeredWrite = (input.recentAssistantTexts ?? []).some((text) =>
@@ -170,6 +186,10 @@ function classifyTaskText(
 
   const polite = POLITE_REQUEST_PREFIX_RE.exec(text);
   const instruction = (polite ? text.slice(polite[0].length).trim() : text) || text;
+
+  if (surface === "analytics" && ANALYTICS_FIND_IT_RE.test(instruction)) {
+    return { kind: "write", reason: "locate_request" };
+  }
 
   if (
     QUESTION_START_RE.test(instruction) &&

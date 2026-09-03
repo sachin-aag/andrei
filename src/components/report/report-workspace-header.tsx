@@ -94,7 +94,7 @@ export function ReportWorkspaceHeader({
   const [navigatingBack, setNavigatingBack] = useState(false);
   const isViewMode = mode === "view";
   const showRunCriteria = !isViewMode && workProductView === "report";
-  const showBulkSuggestions = showRunCriteria && chrome === "document";
+  const showBulkSuggestions = showRunCriteria;
   const nextChrome = oppositeWorkspaceChrome(chrome);
   const switchLabel = `Switch to ${CHROME_SWITCH_NOUN[nextChrome]}`;
 

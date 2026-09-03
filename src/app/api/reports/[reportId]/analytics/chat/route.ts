@@ -286,6 +286,7 @@ async function handleAnalyticsChatPost(
           canEdit: canWrite,
           searchGate,
           intent: userIntent.kind,
+          intentReason: userIntent.reason,
         });
         if (!prepared) return undefined;
         return {

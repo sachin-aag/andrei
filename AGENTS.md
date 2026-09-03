@@ -75,8 +75,10 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
  `ANALYTICS_CHAT_PROMPT_VERSION`. Chat suggestions persist `suggestionBase`
  + `suggestionIntent` and merge at apply (`mergeField`); do not restore a
  frozen-diff hash or a `too_large` → `draft_field` funnel. Same-turn
- `propose_edit` cards in Document chrome fold when locatable spans sit
- within 20 characters (no per-field card budget).
+  `propose_edit` cards in Document and Agent chrome fold when locatable
+  spans sit within 20 characters (no per-field card budget). Both chromes
+  propose; nothing lands until Apply / Dismiss (Apply all / Dismiss all
+  show for one or more open suggestions).
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
   are silently missing in Plan.
@@ -182,20 +184,23 @@ re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
 on write turns whose in-scope section already has a table, and Analytics
 hiding `write_column` after a cited-page grep until a page is read, while
 any file still has extract `morePages` or scan `truncated` (a finished
-extract of file B does not unlock a partial write of file A), after a
-refused incomplete dump until another page read, and after two consecutive
-empty dumps, and hiding `manage_worksheet` after the first structure call).
-One complete `write_column` per destination sheet — separate extracts per
-sheet are correct; always pass `sheetId`. `write_column` `mode append` adds
-rows onto an existing named column. `delete_row` accepts `rowEnd` for a
-range. Agent Analytics plans multi-table dumps and calls `extract_sheet`
-once per sheet in the same step (parallel workers create or reuse the tab
-and write; the grid stays on the engineer's current tab). Add or remove
-rows on an already-filled sheet with `extract_sheet` `mode edit` (worker
-appends or deletes; it does not replace the whole table unless asked). Live matrix
+extract of file B does not unlock a partial write of file A), after two
+consecutive empty dumps — not after a dump with blank cells, hiding
+`ask_user` on lookups / Skip / after any grep until a page is read (never
+ask which page — search/scan and say found or not), and hiding
+`manage_worksheet` after the first structure call). One complete
+`write_column` per destination sheet — separate extracts per sheet are
+correct; always pass `sheetId`. `write_column` `mode append` adds rows onto
+an existing named column. `delete_row` accepts `rowEnd` for a range. Agent
+Analytics plans multi-table dumps and calls `extract_sheet` once per sheet
+in the same step (parallel workers create or reuse the tab and write; the
+grid stays on the engineer's current tab). Add or remove rows on an
+already-filled sheet with `extract_sheet` `mode edit` (worker appends or
+deletes; it does not replace the whole table unless asked). A partial dump
+with blank cells must not hide `write_column`. Live matrix
 headers come from the section (`read_section` / context map) — demo
 Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
-it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages; `ask_user` is hidden until a cited page is actually read/scanned.
+it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages.
 Document chat copies a saved Analytics plot with `insert_image` (`source=analytics`)
 and can propose attachment `plot_measurements` figures on every pack.
 

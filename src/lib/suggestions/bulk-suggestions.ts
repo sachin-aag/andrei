@@ -301,7 +301,7 @@ export async function dismissAllSuggestions(args: {
 }
 
 export function shouldShowSuggestionBulkActions(queueTotal: number): boolean {
-  return queueTotal > 1;
+  return queueTotal >= 1;
 }
 
 /**

@@ -105,6 +105,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   single value → array) and retries once. Malformed JSON is still not
   rewritten. Prefer widening a bound over tightening one — the clamp is a net,
   not a licence to add tight caps.
+- Analytics never asks which page to read. `ask_user` is hidden on a lookup,
+  after Skip / “find it”, and after any grep (including TOC-only) until a
+  page is read/scanned. Page-number questions are rejected if they still
+  fire. TOC-only greps do not close search. A Skip on that form is a locate
+  request (search/scan), not a placeholder. A dump with some blank cells
+  must not hide `write_column` — remaining requested columns fill this turn.
 - `insert_image` source=analytics copies a saved plot only when the named
   series matches (or they did not name one). If they asked for a plot that
   is not listed, return the available titles once this turn (`available_plots`)
@@ -117,13 +123,15 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   plots copy the saved Analytics preview at the same 600px display width
   as right-click Insert graph (`CHART_DISPLAY_WIDTH_PX`). Do not shrink by
   a 300px height cap — that turns a sixpack into a thin unreadable strip.
-- Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
-  + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
-  `ai_fix` comments). Document chrome **proposes**. Same-turn `propose_edit`
-  calls serialize; locatable spans within 20 characters on the same field
-  fold into one card (no per-field budget). Lead-in / table / figure /
-  citation-split / cell-scope edits stay separate. Do not trust a client
-  `editPolicy` on a locked report. Plan-mode allowlist does not gain edit tools.
+- Report chat `editPolicy` is derived on the **server**. Document **and**
+  Agent chrome **propose** (red/green `ai_fix` comments; nothing lands
+  until Apply / Dismiss, including Apply all / Dismiss all for one or more
+  open suggestions). Same-turn `propose_edit` calls serialize; locatable
+  spans within 20 characters on the same field fold into one card (no
+  per-field budget). Lead-in / table / figure / citation-split / cell-scope
+  edits stay separate. Do not trust a client `editPolicy`. Plan-mode
+  allowlist does not gain edit tools. The `commit` tool path remains for
+  tests; live report chat never derives it.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.
 - Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
@@ -137,10 +145,11 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   cited page or two empty greps, Analytics `write_column` hide after a
   cited-page grep until a page is read/scanned/extracted, while any file
   still has extract `morePages` or scan `truncated` (a finished extract of
-  file B does not unlock a partial write of file A), after a refused
-  incomplete dump until another page read, after two consecutive empty
-  dumps, and Analytics `manage_worksheet` hide after the first structure
-  call this turn). An incomplete Analytics `write_column` does not persist.
+  file B does not unlock a partial write of file A), after two consecutive
+  empty dumps — not after a dump with blank cells, Analytics `ask_user`
+  hide on lookups / Skip / after any grep until a page is read, and
+  Analytics `manage_worksheet` hide after the first structure call this
+  turn). An incomplete Analytics `write_column` does not persist.
   One complete write per destination sheet; separate extracts per sheet
   are correct.   Agent Analytics calls `extract_sheet` once per sheet
   (parallel workers create or reuse the tab and write; persist keeps the

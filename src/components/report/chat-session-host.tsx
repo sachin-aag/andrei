@@ -18,6 +18,7 @@ import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   assistantPartsHaveVisibleContent,
   assistantPartsHaveVisibleText,
+  isChatClientDisconnectError,
 } from "@/lib/ai/chat/assistant-turn";
 import {
   CHAT_TURN_POLL_MS,
@@ -96,6 +97,7 @@ export function ChatSessionHost({
   const onTurnCompletedRef = useRef(onTurnCompleted);
   const statusRef = useRef<ChatStatus>("ready");
   const setMessagesRef = useRef<(messages: UIMessage[]) => void>(() => {});
+  const clearErrorRef = useRef<() => void>(() => {});
   const agentRunStartedAtRef = useRef<number | null>(null);
   const [backgroundTurn, setBackgroundTurn] = useState(false);
 
@@ -116,13 +118,25 @@ export function ChatSessionHost({
         agentRunStartedAtRef.current = next.startedAt;
       }
       setBackgroundTurn(next.backgroundTurn);
+      if (next.backgroundTurn) {
+        clearErrorRef.current();
+        return;
+      }
+      const last = data.messages?.[data.messages.length - 1];
+      if (
+        last?.role === "assistant" &&
+        assistantPartsHaveVisibleContent(last.parts)
+      ) {
+        clearErrorRef.current();
+      }
     } catch {
       if (!isChatTurnBusy(statusRef.current)) setMessagesRef.current([]);
       setBackgroundTurn(false);
     }
   }, [api, sessionId]);
 
-  const { messages, sendMessage, setMessages, status, error, stop } = useChat({
+  const { messages, sendMessage, setMessages, status, error, stop, clearError } =
+    useChat({
     id: reportChatInstanceId(reportId, sessionId),
     transport: new DefaultChatTransport({
       api,
@@ -140,14 +154,18 @@ export function ChatSessionHost({
         return;
       }
       if (isDisconnect) {
-        // Tab close / navigation dropped the SSE. The server keeps going —
-        // poll until the assistant row is persisted.
+        // Tab close / navigation dropped the SSE. The SDK also sets `error`
+        // (isDisconnect ⊆ isError). Clear it so the panel does not show
+        // “hit an error” next to “still working in the background”.
+        clearErrorRef.current();
         setBackgroundTurn(true);
         return;
       }
       if (isError) {
-        agentRunStartedAtRef.current = null;
-        setBackgroundTurn(false);
+        // A non-network stream error may still leave the isolate running
+        // (Safari “Load failed”, mid-turn parse). Hydrate: if the server
+        // turn is in flight, recover as a background poll.
+        void hydrateFromServer();
         return;
       }
       if (
@@ -175,6 +193,7 @@ export function ChatSessionHost({
     },
     onError: (err) => {
       console.error("chat error", err);
+      if (isChatClientDisconnectError(err)) return;
       toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
     },
   });
@@ -197,6 +216,14 @@ export function ChatSessionHost({
   useEffect(() => {
     setMessagesRef.current = setMessages;
   }, [setMessages]);
+
+  useEffect(() => {
+    clearErrorRef.current = clearError;
+  }, [clearError]);
+
+  useEffect(() => {
+    if (backgroundTurn) clearError();
+  }, [backgroundTurn, clearError]);
 
   useEffect(() => {
     if (streamBusy && agentRunStartedAtRef.current == null) {
