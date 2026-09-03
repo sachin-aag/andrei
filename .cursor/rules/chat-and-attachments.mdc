@@ -37,7 +37,7 @@ criteria and any cached AI Check gap hints; if there are no material gaps,
 report that it is already drafted and ask whether they want a specific
 change. Explicit rewrite language is the escape hatch. If there are gaps,
 make a targeted edit. Do not pad length or invent gaps. If a gap conflicts
-with an omit-if recipe rule, ask once whether to include it. Do not quiz
+with an omit-if rule, ask once whether to include it. Do not quiz
 them for facts already in the section or that you would put in `hint`.
 `prepareStep` hides `draft_field` while that gate is active. The document
 index (filename/topics) is not evidence. Evidence preview is already in the

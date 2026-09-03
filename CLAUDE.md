@@ -311,7 +311,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Logic in `src/lib/ai/chat/`:**
 - `user-intent.ts` — latest-turn classifier (`social` / `read` / `write`). Greetings strip tools; empty sections are not a draft request. Same classifier on Analytics chat. A leading affirmation is stripped and the remainder classified, so "yes put it in the data worksheet" is a write (and is a write outright when the prior assistant turn offered to write). Analytics also treats a worksheet/sheet/column destination as a write. `intentToolAvailabilityRule` puts the stripped tool names in the prompt so a read turn cannot call a tool that is not loaded. `resolve-user-intent.ts` runs Flash-Lite only for `ambiguous_agent_mode` (plan/outline vs write); stub/timeout falls back to rules. Do not fold retrieval policy into that call.
-- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`; commit copy when `editPolicy` is `commit`; user-intent rules above the recipe
+- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`; commit copy when `editPolicy` is `commit`; user-intent rules above the drafting guidance. Agent wrap-up and "Changes this turn" stay in document language (no targetField keys, never call it a recipe).
 - `edit-policy.ts` / `commit-edit.ts` — Agent chrome writes `report_sections` in a `FOR UPDATE` transaction; Document chrome still inserts suggestion comments
 - `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
 - `context-map.ts` — serializes report state + ready docs (sanitized `summary=`) + insertable Analytics plots

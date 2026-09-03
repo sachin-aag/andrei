@@ -201,6 +201,15 @@ test.describe("report analytics", () => {
     await page.getByTestId("histogram-ok").click();
 
     await expect(page.getByTestId("histogram")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("histogram-chart-title")).toHaveText(
+      /histogram of assay/i
+    );
+    await expect(
+      page.getByTestId("analysis-preview-figure").getByTestId("histogram-chart-title")
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /histogram of assay/i })
+    ).toHaveCount(0);
     await expect(page.getByTestId("histogram-spec-label-lsl")).toBeVisible();
     await expect(page.getByTestId("histogram-spec-label-usl")).toHaveCount(0);
   });

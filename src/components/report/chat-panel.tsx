@@ -76,6 +76,7 @@ import {
   chatEditableSections,
   sectionLabel as chatSectionLabel,
 } from "@/lib/ai/chat/fields";
+import { engineerFacingChangeLines } from "@/lib/ai/chat/change-summary";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
   DEFAULT_CHAT_COMPOSER_PREFS,
@@ -519,7 +520,7 @@ function TurnChangeSummary({
   parts: UIMessage["parts"];
   metadata: unknown;
 }) {
-  const items = appliedEditsFromParts(parts);
+  const items = engineerFacingChangeLines(appliedEditsFromParts(parts));
   if (items.length === 0) return null;
   const revisionNo =
     metadata &&
@@ -541,9 +542,8 @@ function TurnChangeSummary({
       </p>
       <ul className="mt-1 space-y-0.5 text-xs text-[var(--muted-foreground)]">
         {items.map((item, i) => (
-          <li key={`${item.section}-${item.targetField}-${i}`}>
-            {sectionLabel(item.section)}
-            {item.targetField ? ` · ${item.targetField}` : ""}
+          <li key={`${item.section}-${i}`}>
+            {item.label}
             {item.reasoning ? ` — ${item.reasoning}` : ""}
           </li>
         ))}

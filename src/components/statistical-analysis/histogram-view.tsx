@@ -57,17 +57,11 @@ export function HistogramView({
       className="flex h-full flex-col gap-3 overflow-auto p-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold">
-            Histogram of {config.columnName}
-          </h2>
-          <p className="text-xs text-[var(--muted-foreground)]">
-            {title}
-            {rowLabel ? ` · ${rowLabel}` : ""} · n = {results.n}
-            {results.skipped > 0 ? ` · skipped ${results.skipped}` : ""} · mean{" "}
-            {formatStat(results.mean)} · StDev {formatStat(results.overallStdev)}
-          </p>
-        </div>
+        <p className="text-xs text-[var(--muted-foreground)]">
+          {rowLabel ? `${rowLabel} · ` : ""}n = {results.n}
+          {results.skipped > 0 ? ` · skipped ${results.skipped}` : ""} · mean{" "}
+          {formatStat(results.mean)} · StDev {formatStat(results.overallStdev)}
+        </p>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 sm:min-w-[18rem]">
           <div className="flex flex-wrap items-center gap-2">
             {stale ? (
@@ -133,6 +127,7 @@ export function HistogramView({
           showDistributionLines={overlays.showDistributionLines}
           showLsl={overlays.showLsl}
           showUsl={overlays.showUsl}
+          title={title}
           testIdPrefix="histogram"
           size="full"
         />

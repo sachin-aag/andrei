@@ -2,6 +2,12 @@ import { formatAxisTick, xTickAnchor } from "@/lib/charts/axis-ticks";
 import { chartBrandColors, type ChartBrandColors } from "@/lib/charts/brand-colors";
 import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
 import { resolveCustomerId } from "@/lib/customers/resolve";
+import {
+  HISTOGRAM_CHART_HEIGHT,
+  HISTOGRAM_CHART_WIDTH,
+  HISTOGRAM_PLOT,
+  HISTOGRAM_TITLE_Y,
+} from "./histogram-chart-layout";
 import { histogramChartScale } from "./histogram-chart-scale";
 import { layoutSpecLimitLabels } from "./spec-limit-labels";
 import { histogramOverlays } from "./types";
@@ -42,9 +48,9 @@ type CanvasModule = {
 };
 
 const PAGE_FILL = "#f4f6f9";
-export const HISTOGRAM_PNG_WIDTH = 720;
-export const HISTOGRAM_PNG_HEIGHT = 400;
-const PLOT = { left: 52, right: 688, top: 48, bottom: 348 };
+export const HISTOGRAM_PNG_WIDTH = HISTOGRAM_CHART_WIDTH;
+export const HISTOGRAM_PNG_HEIGHT = HISTOGRAM_CHART_HEIGHT;
+const PLOT = HISTOGRAM_PLOT;
 
 function defaultLoadCanvas(): CanvasModule | null {
   return loadChartCanvas() as CanvasModule | null;
@@ -222,9 +228,13 @@ export function renderHistogramPng(
   ctx.fillRect(0, 0, HISTOGRAM_PNG_WIDTH, HISTOGRAM_PNG_HEIGHT);
   ctx.fillStyle = colors.brand800;
   ctx.font = font(14, "bold");
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.fillText(analysis.title, 16, 12);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(
+    analysis.title,
+    (PLOT.left + PLOT.right) / 2,
+    HISTOGRAM_TITLE_Y
+  );
 
   const overlays = histogramOverlays(analysis.config);
   drawHistogramPanel(

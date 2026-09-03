@@ -30,6 +30,7 @@ import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { deriveChatEditPolicy, isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
 import type { TurnEditItem } from "@/lib/ai/chat/commit-edit";
+import { engineerFacingHistorySummary } from "@/lib/ai/chat/change-summary";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 import { snapshotDocumentRevision } from "@/lib/document-revisions/snapshot";
 import {
@@ -757,10 +758,7 @@ async function handleChatPost(
             const revision = await snapshotDocumentRevision({
               reportId,
               documentType: report.documentType,
-              summary: changeItems
-                .map((item) => item.reasoning.trim() || item.targetField)
-                .filter(Boolean)
-                .join("; "),
+              summary: engineerFacingHistorySummary(changeItems),
               createdBy: user.id,
               chatSessionId: sessionId,
               chatMessageId: inserted.id,
