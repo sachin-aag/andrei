@@ -69,9 +69,12 @@ const sectionContent = {
 };
 
 describe("shouldShowSuggestionBulkActions", () => {
-  it("hides the bulk row for a single suggestion", () => {
-    expect(shouldShowSuggestionBulkActions(1)).toBe(false);
+  it("hides the bulk row when nothing is open", () => {
     expect(shouldShowSuggestionBulkActions(0)).toBe(false);
+  });
+
+  it("shows the bulk row for a single suggestion", () => {
+    expect(shouldShowSuggestionBulkActions(1)).toBe(true);
   });
 
   it("shows the bulk row when a queue exists", () => {

@@ -880,7 +880,8 @@ export function buildChatTools(opts: {
   actor?: AuditActorSnapshot;
   /**
    * Server-derived. `commit` writes `report_sections` and never inserts
-   * suggestion comments. Default `propose` is document-chrome behavior.
+   * suggestion comments. Default `propose` is the live path for both
+   * Document and Agent chrome (red/green review, then accept/dismiss).
    */
   editPolicy?: ChatEditPolicy;
   /** Mutable per-turn log; successful commits push here for the change summary. */

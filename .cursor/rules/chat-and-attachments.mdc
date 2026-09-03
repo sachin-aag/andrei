@@ -123,13 +123,15 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   plots copy the saved Analytics preview at the same 600px display width
   as right-click Insert graph (`CHART_DISPLAY_WIDTH_PX`). Do not shrink by
   a 300px height cap — that turns a sixpack into a thin unreadable strip.
-- Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
-  + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
-  `ai_fix` comments). Document chrome **proposes**. Same-turn `propose_edit`
-  calls serialize; locatable spans within 20 characters on the same field
-  fold into one card (no per-field budget). Lead-in / table / figure /
-  citation-split / cell-scope edits stay separate. Do not trust a client
-  `editPolicy` on a locked report. Plan-mode allowlist does not gain edit tools.
+- Report chat `editPolicy` is derived on the **server**. Document **and**
+  Agent chrome **propose** (red/green `ai_fix` comments; nothing lands
+  until Apply / Dismiss, including Apply all / Dismiss all for one or more
+  open suggestions). Same-turn `propose_edit` calls serialize; locatable
+  spans within 20 characters on the same field fold into one card (no
+  per-field budget). Lead-in / table / figure / citation-split / cell-scope
+  edits stay separate. Do not trust a client `editPolicy`. Plan-mode
+  allowlist does not gain edit tools. The `commit` tool path remains for
+  tests; live report chat never derives it.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.
 - Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
