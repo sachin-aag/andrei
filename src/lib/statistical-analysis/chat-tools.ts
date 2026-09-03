@@ -86,10 +86,6 @@ import {
   type ManageWorksheetOperation,
 } from "./manage-worksheet";
 import { normalizeRowSelection } from "./row-selection";
-import {
-  verifyTableWrite,
-  type BlankedTableCell,
-} from "./table-row-verify";
 import type { ScanAttachmentsResult } from "./scan-attachments";
 import type { AnalyticsSearchGate } from "./search-loop";
 import {
@@ -279,48 +275,48 @@ function optionalSpecString(value: number | null | undefined): string {
 const MAX_WRITE_COLUMNS = 40;
 const MAX_WRITE_SOURCE_PAGES = 12;
 
-export const WRITE_COLUMN_NEED_SOURCE_MESSAGE =
-  "Table dumps must pass sourceAttachmentId and sourcePages from the page you just read, or read/scan that page in this turn first.";
-
-export const WRITE_COLUMN_INCOMPLETE_MESSAGE =
-  "Nothing was written. The worksheet was not changed. Read remaining pages that contain this table, then call write_column once with the full table (every series, every row). Do not retry this same partial dump and do not stop.";
-
-function rememberPageText(bucket: string[], text: string | null | undefined) {
-  const trimmed = text?.trim();
-  if (trimmed) bucket.push(trimmed);
-}
-
 function rememberCitation(
   bucket: ChartCitation[],
-  citation: { attachmentId?: string; page?: number }
+  citation: {
+    attachmentId?: string;
+    page?: number | null;
+    filename?: string;
+  }
 ) {
   const attachmentId = citation.attachmentId?.trim() ?? "";
   const page = citation.page;
-  if (!attachmentId || page == null || !Number.isInteger(page) || page < 1) {
+  if (
+    !attachmentId ||
+    (page != null && (!Number.isInteger(page) || page < 1))
+  ) {
     return;
   }
-  bucket.push({ attachmentId, page });
+  bucket.push({
+    attachmentId,
+    page: page ?? null,
+    ...(citation.filename?.trim()
+      ? { filename: citation.filename.trim() }
+      : {}),
+  });
 }
 
 function rememberScanResult(
-  textBucket: string[],
   citationBucket: ChartCitation[],
   result: ScanAttachmentsResult
 ) {
   if (result.status !== "ok") return;
   for (const file of result.files) {
     for (const page of file.pages) {
-      rememberPageText(textBucket, page.transcript);
       rememberCitation(citationBucket, {
         attachmentId: file.attachmentId,
         page: page.pageNumber,
+        filename: file.filename,
       });
     }
   }
 }
 
 function rememberReadPageResult(
-  textBucket: string[],
   citationBucket: ChartCitation[],
   result: unknown
 ) {
@@ -330,22 +326,24 @@ function rememberReadPageResult(
     page?: {
       attachmentId?: string;
       pageNumber?: number;
-      transcript?: string;
-      visualInterpretation?: string;
+      filename?: string;
     };
   };
   if (record.status !== "found" || !record.page) return;
-  rememberPageText(textBucket, record.page.transcript);
-  rememberPageText(textBucket, record.page.visualInterpretation);
   rememberCitation(citationBucket, {
     attachmentId: record.page.attachmentId,
     page: record.page.pageNumber,
+    filename: record.page.filename,
   });
 }
 
 function rememberExtractResult(citationBucket: ChartCitation[], result: unknown) {
   if (!result || typeof result !== "object") return;
-  const record = result as { attachmentId?: string; pages?: unknown };
+  const record = result as {
+    attachmentId?: string;
+    filename?: string;
+    pages?: unknown;
+  };
   if (typeof record.attachmentId !== "string") return;
   const pages = Array.isArray(record.pages) ? record.pages : [];
   for (const page of pages) {
@@ -353,15 +351,17 @@ function rememberExtractResult(citationBucket: ChartCitation[], result: unknown)
       rememberCitation(citationBucket, {
         attachmentId: record.attachmentId,
         page,
+        filename: record.filename,
       });
     }
   }
 }
 
-function citationsForWrite(
+async function citationsForWrite(
+  reportId: string,
   input: WriteColumnInput,
   remembered: readonly ChartCitation[]
-): ChartCitation[] {
+): Promise<ChartCitation[]> {
   const attachmentId = input.sourceAttachmentId?.trim();
   const pages = (input.sourcePages ?? []).filter(
     (page) => Number.isInteger(page) && page >= 1
@@ -370,6 +370,25 @@ function citationsForWrite(
     return uniqueChartCitations(
       pages.map((page) => ({ attachmentId, page }))
     );
+  }
+  if (attachmentId) {
+    const rememberedForAttachment = remembered.filter(
+      (citation) => citation.attachmentId === attachmentId
+    );
+    if (rememberedForAttachment.length > 0) {
+      return uniqueChartCitations(rememberedForAttachment);
+    }
+    const documents = await listReadyDocumentsForReport(reportId);
+    const filename = documents.find(
+      (document) => document.attachmentId === attachmentId
+    )?.filename;
+    return uniqueChartCitations([
+      {
+        attachmentId,
+        page: null,
+        ...(filename ? { filename } : {}),
+      },
+    ]);
   }
   return uniqueChartCitations(remembered);
 }
@@ -487,13 +506,13 @@ const writeColumnInputSchema = z
       .min(1)
       .optional()
       .describe(
-        "Attachment id of the page this table was read from. Required for a multi-column dump unless that page was already read or scanned in this turn."
+        "Attachment id this data came from. Pass it even when the exact page is unavailable so document-level provenance is retained."
       ),
     sourcePages: z
       .array(z.number().int().min(1))
       .max(MAX_WRITE_SOURCE_PAGES)
       .optional()
-      .describe("Page numbers just read for this table dump."),
+      .describe("Page numbers just read for this table dump, when known."),
     mode: z
       .enum(["replace", "append"])
       .optional()
@@ -879,34 +898,12 @@ export function buildAnalyticsChatTools(opts: {
     );
   }
 
-  const sourceTexts: string[] = [];
   const sourceCitations: ChartCitation[] = [];
   if (documentTools.read_document_page) {
     documentTools.read_document_page = withRememberedExecute(
       documentTools.read_document_page,
-      (result) => rememberReadPageResult(sourceTexts, sourceCitations, result)
+      (result) => rememberReadPageResult(sourceCitations, result)
     );
-  }
-
-  async function loadWriteSourceText(input: WriteColumnInput): Promise<string> {
-    const parts = [...sourceTexts];
-    const attachmentId = input.sourceAttachmentId?.trim();
-    const pages = (input.sourcePages ?? []).filter(
-      (page) => Number.isInteger(page) && page >= 1
-    );
-    if (attachmentId && pages.length > 0) {
-      const reads = await Promise.all(
-        pages.slice(0, MAX_WRITE_SOURCE_PAGES).map((pageNumber) =>
-          readDocumentPage({ reportId, attachmentId, pageNumber })
-        )
-      );
-      for (const page of reads) {
-        if (!page) continue;
-        rememberPageText(parts, page.transcript);
-        rememberPageText(parts, page.visualInterpretation);
-      }
-    }
-    return parts.join("\n");
   }
 
   const statsTools: ToolSet = {
@@ -969,7 +966,7 @@ export function buildAnalyticsChatTools(opts: {
           query,
           queries,
         });
-        rememberScanResult(sourceTexts, sourceCitations, result);
+        rememberScanResult(sourceCitations, result);
         return result;
       },
     }),
@@ -1164,9 +1161,6 @@ export function buildAnalyticsChatTools(opts: {
             },
           ];
         });
-        for (const page of bodies) {
-          rememberPageText(sourceTexts, page.text);
-        }
         const morePages = extractSeriesHasMorePages({
           resolvedPages: pageNumbers,
           requestedSpecificPages: Array.isArray(pages) && pages.length > 0,
@@ -1322,54 +1316,19 @@ export function buildAnalyticsChatTools(opts: {
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into worksheet columns (replaces those columns by default; pass mode append to add rows onto an existing named column without wiping it). For attachment table dumps onto one or more sheets, call extract_sheet once per sheet (parallel) instead of dumping here. This tool is for typed values, corrections, or a dump a sheet worker already gathered. One complete dump per call, one sheet per call. Pull every page of that table first — do not call this after the first extract or scan of that file when morePages or truncated is true. Separate extracts per destination sheet are correct. Always pass the tab name as sheetId — agent writes do not switch the focused tab, so omitting sheetId dumps onto the engineer's current tab. New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the pages you read this turn. Search snippets are not a page read. Cells that are not tokens on those pages are left blank — never invent 0. status incomplete means nothing was saved: read remaining pages of that table and call this once with the full table for that sheet. Copy labels as they appear (including repeats such as Tip 1–10 per handpiece). Do not retry the same invented dump and do not split it into per-column writes to bypass the check. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), plot_histogram for a frequency histogram of one numeric column (same chart as the sixpack histogram; optional LSL/USL and overlay checkboxes; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+        "Write values into worksheet columns (replaces those columns by default; pass mode append to add rows onto an existing named column without wiping it). For attachment table dumps onto one or more sheets, call extract_sheet once per sheet (parallel) instead of dumping here. This tool trusts and atomically persists the complete batch you provide; it does not compare every cell against source-page tokens. One complete dump per call, one sheet per call. Pull every page of that table first — do not call this after the first extract or scan of a file when morePages or truncated is true. Always pass the tab name as sheetId. New named series fill the leftmost empty C1–C8 columns. Pass columns for a full table dump in one save, including row labels. Pass sourceAttachmentId for provenance and sourcePages when known; when pages are unavailable, the document name is retained without a page. A single name+values write is for one series. Pass lsl/usl/target when known. After writing, call only the analysis requested: run_capability_sixpack, run_one_way_anova, plot_xy_scatter, plot_boxplot, plot_histogram, or plot_measurements. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array.",
       inputSchema: writeColumnInputSchema,
       execute: async (input) => {
         const outOfScope = attachmentOutOfScope(
           input.sourceAttachmentId?.trim()
         );
         if (outOfScope) return outOfScope;
-        let entries = writeColumnEntriesFromInput(input);
-        let blanked: BlankedTableCell[] = [];
-        const sourceText = await loadWriteSourceText(input);
-        if (entries.length >= 2 && !sourceText.trim()) {
-          return {
-            status: "need_source" as const,
-            message: WRITE_COLUMN_NEED_SOURCE_MESSAGE,
-          };
-        }
-        if (sourceText.trim()) {
-          const verified = verifyTableWrite({
-            sourceText,
-            columns: entries.map((entry) => entry.values),
-          });
-          blanked = verified.blanked;
-          entries = entries.map((entry, index) => ({
-            ...entry,
-            values: verified.columns[index] ?? [],
-          }));
-        }
-        if (blanked.length > 0) {
-          return {
-            status: "incomplete" as const,
-            incomplete: true,
-            rowsWritten: 0,
-            blankedCount: blanked.length,
-            blankedCells: blanked.map((cell) => ({
-              row: cell.row,
-              columnIndex: cell.column,
-              columnName: entries[cell.column]?.name ?? null,
-            })),
-            keptColumns: entries.map((entry) => ({
-              name: entry.name ?? null,
-              valueCount: entry.values.filter((value) =>
-                String(value ?? "").trim()
-              ).length,
-            })),
-            message: WRITE_COLUMN_INCOMPLETE_MESSAGE,
-          };
-        }
-        const citations = citationsForWrite(input, sourceCitations);
+        const entries = writeColumnEntriesFromInput(input);
+        const citations = await citationsForWrite(
+          reportId,
+          input,
+          sourceCitations
+        );
         return withWorksheetMutationLock(reportId, async () => {
           const analytics = await getOrCreateReportAnalytics(reportId);
           const keepActiveId = analytics.worksheet.activeSheetId;

@@ -136,8 +136,9 @@ export type WorksheetColumn = {
   name: string;
   values: string[];
   /**
-   * Attachment pages this column was written from (extract / table dump).
-   * Omitted for typed or pasted values. Cleared when a human edits a cell.
+   * Attachment provenance for an extract / table dump. Page is null when only
+   * the source document is known. Omitted for typed or pasted values and
+   * cleared when a human edits a cell.
    */
   citations?: ChartCitation[];
 };

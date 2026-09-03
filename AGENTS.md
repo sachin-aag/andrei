@@ -147,8 +147,9 @@ off by default (not in `sourceHash`): on a scatter it connects mean Y at
 each X (gray individuals when there is no legend; one line per legend
 series); on a boxplot it connects each box’s mean (the median line inside
 the box stays). Columns written from a
-file (`write_column` after extract/scan/read) keep page citations on the
-column and chart spec for CSV download. Plot figures do not show `p. N`.
+file (`write_column` after extract/scan/read) keep page citations when known,
+or the document name when the page is unavailable, on the column and chart
+spec for CSV download. Plot figures do not show `p. N`.
 Editing a cell drops that citation. Attachment extract-and-plot is Analytics chat
 only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
 There is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA
@@ -196,8 +197,9 @@ Analytics plans multi-table dumps and calls `extract_sheet` once per sheet
 in the same step (parallel workers create or reuse the tab and write; the
 grid stays on the engineer's current tab). Add or remove rows on an
 already-filled sheet with `extract_sheet` `mode edit` (worker appends or
-deletes; it does not replace the whole table unless asked). A partial dump
-with blank cells must not hide `write_column`. Live matrix
+deletes; it does not replace the whole table unless asked). `write_column`
+trusts and atomically persists the extractor's complete batch without
+per-cell source-token verification. Live matrix
 headers come from the section (`read_section` / context map) — demo
 Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages.

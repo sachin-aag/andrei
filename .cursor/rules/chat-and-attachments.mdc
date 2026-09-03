@@ -148,12 +148,14 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   cited-page grep until a page is read/scanned/extracted, while any file
   still has extract `morePages` or scan `truncated` (a finished extract of
   file B does not unlock a partial write of file A), after two consecutive
-  empty dumps — not after a dump with blank cells, Analytics `ask_user`
+  empty dumps, Analytics `ask_user`
   hide on lookups / Skip / after any grep until a page is read, and
   Analytics `manage_worksheet` hide after the first structure call this
-  turn). An incomplete Analytics `write_column` does not persist.
+  turn). Analytics `write_column` trusts and atomically persists the complete
+  extractor batch without per-cell source-token verification. Keep page
+  provenance when known, or the document name when no page is available.
   One complete write per destination sheet; separate extracts per sheet
-  are correct.   Agent Analytics calls `extract_sheet` once per sheet
+  are correct. Agent Analytics calls `extract_sheet` once per sheet
   (parallel workers create or reuse the tab and write; persist keeps the
   engineer's focused tab). Follow-up add/remove rows on a filled sheet use
   `extract_sheet` `mode edit` (`write_column` `mode append`, or
