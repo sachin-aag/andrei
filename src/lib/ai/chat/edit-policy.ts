@@ -6,11 +6,15 @@ export function isWorkspaceChrome(value: unknown): value is WorkspaceChrome {
   return value === "document" || value === "agent";
 }
 
-/** Server-derived. Never trust a client `editPolicy` on a locked report. */
-export function deriveChatEditPolicy(args: {
+/**
+ * Server-derived. Report chat always proposes — Agent and Document chrome
+ * share the same accept/dismiss review. Never trust a client `editPolicy`.
+ * `canEdit` still gates write tools on the route; a locked report must
+ * never commit even if a caller passes `commit`.
+ */
+export function deriveChatEditPolicy(_args: {
   workspaceChrome: WorkspaceChrome;
   canEdit: boolean;
 }): ChatEditPolicy {
-  if (!args.canEdit) return "propose";
-  return args.workspaceChrome === "agent" ? "commit" : "propose";
+  return "propose";
 }

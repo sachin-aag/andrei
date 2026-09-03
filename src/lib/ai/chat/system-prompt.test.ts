@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v80-intent-gate-and-no-recipe");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v81-agent-proposes");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {

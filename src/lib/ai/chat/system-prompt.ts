@@ -22,7 +22,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v80-intent-gate-and-no-recipe";
+export const CHAT_PROMPT_VERSION = "chat-v81-agent-proposes";
 
 export type ChatMode = "plan" | "agent";
 

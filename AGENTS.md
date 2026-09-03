@@ -75,8 +75,10 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
  `ANALYTICS_CHAT_PROMPT_VERSION`. Chat suggestions persist `suggestionBase`
  + `suggestionIntent` and merge at apply (`mergeField`); do not restore a
  frozen-diff hash or a `too_large` → `draft_field` funnel. Same-turn
- `propose_edit` cards in Document chrome fold when locatable spans sit
- within 20 characters (no per-field card budget).
+  `propose_edit` cards in Document and Agent chrome fold when locatable
+  spans sit within 20 characters (no per-field card budget). Both chromes
+  propose; nothing lands until Apply / Dismiss (Apply all / Dismiss all
+  show for one or more open suggestions).
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
   are silently missing in Plan.

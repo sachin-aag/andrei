@@ -1038,8 +1038,8 @@ export function ChatPanel({
 
   const onFinishTurn = useCallback(() => {
     setAgentCommitInFlight(false);
-    // Pull newly-proposed ai_fix comments (document chrome) or committed
-    // section content (agent chrome) into report state.
+    // Pull newly-proposed ai_fix comments (Document and Agent chrome)
+    // into report state so red/green marks appear without a reload.
     void refresh();
     void loadSessions();
     if (lastSendTargetRef.current === "analytics") {
