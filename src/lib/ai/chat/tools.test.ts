@@ -301,6 +301,9 @@ describe("buildChatTools search_documents scoping", () => {
     }) as Record<string, unknown>;
     expect(parsed.scope).toBe("tagged");
     expect(tools.search_documents?.description).toContain("2 document(s)");
+    expect(tools.search_documents?.description).toContain(
+      "missing or ambiguous"
+    );
     expect(
       accepts(tools, "search_documents", { query: "cleaning", scope: "all" })
     ).toBe(true);

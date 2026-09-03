@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/core";
 import type { DocumentType, SectionType } from "@/db/schema";
 import { displaySectionLabel } from "@/types/sections";
 import {
@@ -161,12 +162,56 @@ export function sectionHasTable(
   );
 }
 
+function isBlankTableCellText(text: string): boolean {
+  return text === "(empty)" || text.trim() === "";
+}
+
+function nodeHasVisibleContent(node: JSONContent): boolean {
+  if (node.type === "text" && (node.text ?? "").trim()) return true;
+  if (node.type === "image" || node.type === "imageInline") return true;
+  for (const child of node.content ?? []) {
+    if (nodeHasVisibleContent(child)) return true;
+  }
+  return false;
+}
+
+function docHasNonTableContent(doc: JSONContent): boolean {
+  for (const node of doc.content ?? []) {
+    if (node.type === "table") continue;
+    if (nodeHasVisibleContent(node)) return true;
+  }
+  return false;
+}
+
+/**
+ * Header-only seeded tables (blank data cells, no surrounding prose/images)
+ * are empty shells — not partial drafts. `sectionHasTable` still sees them
+ * so `tableSchemaReadStep` copies live headers before `edit_table`.
+ */
+export function isEmptyTableScaffoldDoc(doc: JSONContent): boolean {
+  const tables = summarizeTablesInDoc(doc);
+  if (tables.length === 0) return false;
+  if (countImagesInDoc(doc) > 0) return false;
+  if (docHasNonTableContent(doc)) return false;
+  for (const table of tables) {
+    for (const cell of table.cells) {
+      if (cell.row === 0) continue;
+      if (!isBlankTableCellText(cell.text)) return false;
+    }
+  }
+  return true;
+}
+
 export function fieldFillState(
   content: Record<string, unknown> | undefined,
   section: SectionType,
   targetField: string
 ): FieldFillState {
   const record = content ?? {};
+  if (isRichTargetField(section, targetField)) {
+    const doc = getRichFieldValue(record, targetField);
+    if (isEmptyTableScaffoldDoc(doc)) return "empty";
+  }
   const text = sectionFieldPlainText(record, section, targetField);
   const charCount = text.replace(/\s+/g, " ").trim().length;
   const imageCount = fieldImageCount(record, section, targetField);

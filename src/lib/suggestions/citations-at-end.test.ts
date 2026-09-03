@@ -10,6 +10,7 @@ import {
   normalizeTrailingCitationBlockInDoc,
   normalizeTrailingCitationBlockInText,
   prepareEditForCitationMode,
+  sourceCitationBracket,
   splitEditForCitationsAtEnd,
   stripCitationsFromTableOperation,
   stripCitationsFromText,
@@ -370,6 +371,28 @@ describe("documentCitationRule", () => {
     expect(documentCitationRule(true)).toContain("end of the section field");
     expect(documentCitationRule(true)).toContain("Citations:");
     expect(documentCitationRule(true)).toContain("split edit");
+    expect(documentCitationRule(false)).toContain("missing or ambiguous");
+    expect(documentCitationRule(true)).toContain("missing or ambiguous");
+  });
+});
+
+describe("sourceCitationBracket", () => {
+  it("includes p. N when the page is a known integer", () => {
+    expect(sourceCitationBracket("Mechanical Test Report.pdf", 119)).toBe(
+      "[Mechanical Test Report.pdf, p. 119]"
+    );
+  });
+
+  it("omits the page when it is missing or invalid", () => {
+    expect(sourceCitationBracket("Mechanical Test Report.pdf")).toBe(
+      "[Mechanical Test Report.pdf]"
+    );
+    expect(sourceCitationBracket("Mechanical Test Report.pdf", null)).toBe(
+      "[Mechanical Test Report.pdf]"
+    );
+    expect(sourceCitationBracket("Mechanical Test Report.pdf", 0)).toBe(
+      "[Mechanical Test Report.pdf]"
+    );
   });
 });
 

@@ -94,7 +94,9 @@ import {
   documentCitationRule,
   moveCitationsToEndOfText,
   prepareEditForCitationMode,
+  sourceCitationBracket,
   stripCitationsFromTableOperation,
+  withSourceCitation,
 } from "@/lib/suggestions/citations-at-end";
 import {
   applyTableOperation,
@@ -748,7 +750,7 @@ function buildSearchDocumentsTool(opts: {
       arms.some((arm) => arm.length >= input.limit);
     const nextExcludePages = mergeExcludePages(input.excludePages, merged);
     return {
-      results: toClientDocumentSearchResults(merged),
+      results: toClientDocumentSearchResults(merged).map(withSourceCitation),
       queriesRun: queryList,
       mode: input.mode ?? "hybrid",
       returnedCount: merged.length,
@@ -768,7 +770,7 @@ function buildSearchDocumentsTool(opts: {
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 8 strings per call. mode=keyword is lexical grep. truncated=true means keep grepping. Cite as [filename, p. N]. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
+        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 8 strings per call. mode=keyword is lexical grep. truncated=true means keep grepping. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
       inputSchema: z.preprocess(
         coerceSearchDocumentsInput,
         z
@@ -783,7 +785,7 @@ function buildSearchDocumentsTool(opts: {
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-        `Grep ready attachments in rounds. Prefer complementary queries for tables (at most 8 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Defaults to the ${tagged} document(s) the engineer tagged with @ (pinned=true; shortfall backfilled with pinned=false). Pass scope="all" to search every attachment. Cite as [filename, p. N]. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
+        `Grep ready attachments in rounds. Prefer complementary queries for tables (at most 8 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Defaults to the ${tagged} document(s) the engineer tagged with @ (pinned=true; shortfall backfilled with pinned=false). Pass scope="all" to search every attachment. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
     inputSchema: z.preprocess(
       coerceSearchDocumentsInput,
       z
@@ -1359,7 +1361,7 @@ export function buildChatTools(opts: {
         return {
           status: "found" as const,
           page,
-          citation: `[${page.filename}, p. ${page.pageNumber}]`,
+          citation: sourceCitationBracket(page.filename, page.pageNumber),
           trustBoundary: DOCUMENT_TRUST_BOUNDARY,
         };
       },
@@ -1474,7 +1476,7 @@ export function buildChatTools(opts: {
       description:
         `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table. Do not rewrite an existing table as a bulleted list; that is edit_table (edit_cells / insert_column).${
           citationsAtEndOfSection
-            ? " Put document citations as [filename, p. N] immediately after the claim in insertText. The server converts them to numbered markers and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
+            ? " Put document citations as [filename, p. N] immediately after the claim in insertText when the page is known; [filename] only if the page is missing or ambiguous. The server converts them to numbered markers and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
             : ""
         }${scopeHint}`,
       inputSchema: z.object({

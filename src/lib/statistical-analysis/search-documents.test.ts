@@ -224,7 +224,10 @@ describe("buildAnalyticsSearchDocumentsTool", () => {
       returnedCount: 1,
       requirementIndexHits: 0,
     });
-    expect(result.results[0]).toMatchObject({ pageNumber: 88 });
+    expect(result.results[0]).toMatchObject({
+      pageNumber: 88,
+      citation: "[mech.pdf, p. 88]",
+    });
     expect(result.results[0]).not.toHaveProperty("requirementIndex");
   });
 
@@ -275,9 +278,13 @@ describe("buildAnalyticsSearchDocumentsTool", () => {
     expect(searchReportDocuments).toHaveBeenCalledTimes(1);
     expect(result.results.map((hit) => hit.pageNumber)).toEqual([88, 12]);
     expect(result.results[0]).not.toHaveProperty("requirementIndex");
+    expect(result.results[0]).toMatchObject({
+      citation: "[mech.pdf, p. 88]",
+    });
     expect(result.results[1]).toMatchObject({
       pageNumber: 12,
       requirementIndex: true,
+      citation: "[mech.pdf, p. 12]",
     });
     expect(result).toMatchObject({ requirementIndexHits: 1, returnedCount: 2 });
   });

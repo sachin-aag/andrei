@@ -160,7 +160,9 @@ export function classifyRetrievalPolicy(
   }
 
   if (scope === "all" && input.documentType) {
-    const intent = detectSectionIntentFromText(combined, input.documentType);
+    // Score section intent on the latest turn only. An earlier equipment/UUT
+    // draft must not keep "Draft the remaining sections" on the adaptive path.
+    const intent = detectSectionIntentFromText(latest, input.documentType);
     if (intent && !inventory.has(intent)) {
       return { policy: "adaptive", reason: "agentic_default" };
     }
