@@ -178,7 +178,7 @@ describe("findPlaceholders", () => {
             {
               type: "text",
               text:
-                "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]. See also [batch-coa.pdf, p. 3], [protocol.docx], [Attachment_XIV, Attachment_VIII], [Attachment_VIII: <to be filled>], [Appendix B DV Report 790-00134R(RevU): <to be filled>], [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1], and [790-00134R_Rev_U_Solea_Model_3_Software_: <to be filled>].",
+                "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]. See also [batch-coa.pdf, p. 3], [protocol.docx], [Attachment_XIV, Attachment_VIII], [Attachment_VIII: <to be filled>], [Appendix B DV Report 790-00134R(RevU): <to be filled>], [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1], [790-00134R_Rev_U_Solea_Model_3_Software_: <to be filled>], [me1q4zzhb1me0wwskpmqfw7i: <to be filled>], and [swja2t3b3dif1ua8id1zkyz2,: <to be filled>].",
             },
           ],
         },
