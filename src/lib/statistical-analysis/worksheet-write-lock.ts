@@ -5,6 +5,8 @@ const tails = new Map<string, Promise<void>>();
  * Parallel `write_column` / `manage_worksheet` tool calls otherwise each read
  * the same snapshot and the last persist wipes the others — the grid then
  * flashes fill / empty / fill as those snapshots reload.
+ * Sheet extract workers also go through this lock, so two add_sheet calls
+ * serialize: the second sees the first persist and reuses a same-named tab.
  */
 export async function withWorksheetMutationLock<T>(
   reportId: string,

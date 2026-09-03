@@ -309,6 +309,15 @@ export function applyManageWorksheet(
   }
   switch (input.action) {
     case "add_sheet": {
+      const requested = input.name?.trim() ?? "";
+      const existing = requested ? findSheet(data, requested) : undefined;
+      if (existing) {
+        return ok(
+          switchWorksheetTab(data, existing.id),
+          "add_sheet",
+          `Using existing data sheet ${existing.name}`
+        );
+      }
       if (dataSheets(data).length >= MAX_DATA_SHEETS) {
         return fail({
           status: "error",

@@ -38,6 +38,7 @@ import {
   mergeDirtyWorksheet,
   normalizeWorksheet,
   renameDataSheet,
+  restoreActiveSheet,
   specRowForColumn,
   switchWorksheetTab,
   upsertSpecRow,
@@ -258,17 +259,18 @@ export function StatisticalWorkspace({
   const ingestRemote = useCallback(
     (next: ReportAnalyticsView) => {
       if (isStaleAnalyticsVersion(next.version, versionRef.current)) return;
-      const merged = mergeDirtyWorksheet(
-        worksheetRef.current,
-        persistedRef.current,
-        next.worksheet
+      const local = worksheetRef.current;
+      const incoming = restoreActiveSheet(next.worksheet, local.activeSheetId);
+      const merged = restoreActiveSheet(
+        mergeDirtyWorksheet(local, persistedRef.current, incoming),
+        local.activeSheetId
       );
-      if (worksheetsEqual(merged, next.worksheet)) {
-        applyAnalytics(next);
+      if (worksheetsEqual(merged, incoming)) {
+        applyAnalytics({ ...next, worksheet: incoming });
         return;
       }
       setWorksheet(merged);
-      setPersistedWorksheet(next.worksheet);
+      setPersistedWorksheet(incoming);
       versionRef.current = next.version;
       setVersion(next.version);
       setAnalyses(next.analyses);

@@ -27,6 +27,7 @@ import {
   renameColumn,
   renameDataSheet,
   replaceColumnValues,
+  restoreActiveSheet,
   rowCount,
   setCell,
   specRowForColumn,
@@ -250,6 +251,32 @@ describe("worksheet grid operations", () => {
     expect(sheet.sheets).toHaveLength(2);
     expect(sheet.sheets[1]?.name).toBe("Assay");
     expect(sheet.activeSheetId).toBe("data-2");
+  });
+
+  it("reuses a same-named data sheet instead of creating a duplicate", () => {
+    const first = addDataSheet(createEmptyWorksheet(), "Assay");
+    const second = addDataSheet(first, "assay");
+    expect(second.sheets).toHaveLength(2);
+    expect(second.activeSheetId).toBe("data-2");
+    expect(findSheet(second, "Assay")?.id).toBe("data-2");
+  });
+
+  it("restores the previous tab after an agent write", () => {
+    const original = createEmptyWorksheet();
+    const added = addDataSheet(original, "Assay");
+    const restored = restoreActiveSheet(added, original.activeSheetId);
+    expect(restored.activeSheetId).toBe(PRIMARY_DATA_SHEET_ID);
+    expect(restored.sheets).toHaveLength(2);
+    expect(findSheet(restored, "Assay")?.id).toBe("data-2");
+  });
+
+  it("keeps the local tab when a remote write switches activeSheetId", () => {
+    const persisted = createEmptyWorksheet();
+    const local = persisted;
+    const remote = addDataSheet(persisted, "Assay");
+    const merged = mergeDirtyWorksheet(local, persisted, remote);
+    expect(merged.activeSheetId).toBe(PRIMARY_DATA_SHEET_ID);
+    expect(merged.sheets).toHaveLength(2);
   });
 
   it("renames a data sheet", () => {

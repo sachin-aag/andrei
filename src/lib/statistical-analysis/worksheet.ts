@@ -237,12 +237,32 @@ export function findSheet(
   return workbook.sheets.find((sheet) => sheet.name.toLowerCase() === lower);
 }
 
+/**
+ * Keep the engineer's current tab after an agent write. If that sheet was
+ * deleted, leave the workbook on whatever tab the mutation selected.
+ */
+export function restoreActiveSheet(
+  next: WorksheetData,
+  previousActiveId: string | undefined
+): WorksheetData {
+  const key = previousActiveId?.trim() ?? "";
+  if (!key) return next;
+  const workbook = normalizeWorksheet(next);
+  if (workbook.activeSheetId === key) return workbook;
+  if (!findSheet(workbook, key)) return workbook;
+  return switchWorksheetTab(workbook, key);
+}
+
 export function addDataSheet(data: WorksheetData, name?: string): WorksheetData {
   const workbook = normalizeWorksheet(data);
+  const requested = name?.trim().slice(0, 40) ?? "";
+  if (requested) {
+    const existing = findSheet(workbook, requested);
+    if (existing) return switchWorksheetTab(workbook, existing.id);
+  }
   if (workbook.sheets.length >= MAX_DATA_SHEETS) return workbook;
   const id = nextSheetId(workbook);
   const columns = emptyColumnsForWorkbook(workbook);
-  const requested = name?.trim().slice(0, 40) ?? "";
   const sheet: WorksheetSheet = {
     id,
     name: requested || nextSheetName(workbook),
@@ -569,10 +589,11 @@ export function mergeDirtyWorksheet(
       ? localWb.specs
       : remoteWb.specs;
 
-  const preferredActiveId =
-    localWb.activeSheetId !== persistedWb.activeSheetId
-      ? localWb.activeSheetId
-      : remoteWb.activeSheetId;
+  const preferredActiveId = sheets.some(
+    (sheet) => sheet.id === localWb.activeSheetId
+  )
+    ? localWb.activeSheetId
+    : remoteWb.activeSheetId;
   const active =
     sheets.find((sheet) => sheet.id === preferredActiveId) ??
     sheets.find((sheet) => sheet.id === remoteWb.activeSheetId) ??

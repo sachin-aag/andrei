@@ -12,6 +12,31 @@ import {
 import { MAX_DATA_SHEETS, PRIMARY_DATA_SHEET_ID } from "./types";
 
 describe("applyManageWorksheet", () => {
+  it("reuses an existing sheet when add_sheet uses the same name", () => {
+    const first = applyManageWorksheet(createEmptyWorksheet(), {
+      action: "add_sheet",
+      name: "Assay",
+    });
+    expect(first.result).toMatchObject({
+      status: "ok",
+      sheetName: "Assay",
+    });
+    const second = applyManageWorksheet(first.worksheet!, {
+      action: "add_sheet",
+      name: "assay",
+    });
+    expect(second.result).toMatchObject({
+      status: "ok",
+      action: "add_sheet",
+      sheetId: first.result.status === "ok" ? first.result.sheetId : "",
+      sheetName: "Assay",
+    });
+    expect(second.result.status === "ok" && second.result.message).toMatch(
+      /existing/i
+    );
+    expect(second.worksheet?.sheets).toHaveLength(2);
+  });
+
   it("adds a named data sheet and switches to it", () => {
     const { worksheet, result } = applyManageWorksheet(createEmptyWorksheet(), {
       action: "add_sheet",

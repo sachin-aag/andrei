@@ -566,6 +566,80 @@ describe("analytics chat tools", () => {
         ?.columns.find((column) => column.name === "Force")
         ?.values.slice(0, 2)
     ).toEqual(["12.4", "11.8"]);
+    expect(current.worksheet.activeSheetId).toBe("data-1");
+  });
+
+  it("reuses a same-named sheet and does not steal the focused tab", async () => {
+    let current = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockImplementation(async () => current);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => {
+      current = analyticsView(worksheet);
+      return { ok: true, analytics: current };
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const manage = tools.manage_worksheet?.execute;
+    const write = tools.write_column?.execute;
+    if (!manage || !write) throw new Error("manage_worksheet or write_column missing");
+    const [first, second] = await Promise.all([
+      manage(
+        { action: "add_sheet", name: "Assay" },
+        {
+          toolCallId: "add-a",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      ),
+      manage(
+        { action: "add_sheet", name: "assay" },
+        {
+          toolCallId: "add-b",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      ),
+    ]);
+    expect(first).toMatchObject({ status: "ok", sheetName: "Assay" });
+    expect(second).toMatchObject({
+      status: "ok",
+      sheetId: first.status === "ok" ? first.sheetId : "",
+      sheetName: "Assay",
+    });
+    expect(
+      current.worksheet.sheets.filter(
+        (sheet) => sheet.name.toLowerCase() === "assay"
+      )
+    ).toHaveLength(1);
+    expect(current.worksheet.activeSheetId).toBe("data-1");
+    vi.mocked(readDocumentPage).mockResolvedValue(pageRead("101.4 102.1"));
+    const written = await write(
+      {
+        sheetId: "Assay",
+        sourceAttachmentId: "att_1",
+        sourcePages: [1],
+        columns: [{ name: "Assay %", values: [101.4, 102.1] }],
+      },
+      {
+        toolCallId: "write-assay",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(written).toMatchObject({
+      status: "written",
+      sheetName: "Assay",
+      rowsWritten: 2,
+    });
+    expect(current.worksheet.activeSheetId).toBe("data-1");
+    expect(
+      current.worksheet.sheets
+        .find((sheet) => sheet.name === "Assay")
+        ?.columns.find((column) => column.name === "Assay %")
+        ?.values.slice(0, 2)
+    ).toEqual(["101.4", "102.1"]);
   });
 
   it("does not bypass source verification on a single-column retry", async () => {
@@ -962,6 +1036,12 @@ describe("analytics chat tools", () => {
     );
     expect(tools.manage_worksheet?.description).toContain(
       "lists every new sheetId in operations"
+    );
+    expect(tools.manage_worksheet?.description).toContain(
+      "reuses a tab with the same name"
+    );
+    expect(tools.write_column?.description).toContain(
+      "do not switch the focused tab"
     );
     expect(tools.manage_worksheet?.description).toContain(
       "at most once per turn"

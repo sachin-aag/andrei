@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v41-sheet-workers"
+      "analytics-chat-v42-keep-focus"
     );
   });
 
@@ -72,15 +72,16 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("jobs run in parallel");
     expect(prompt).toContain("Do not call write_column once per column");
     expect(prompt).toContain("Always pass sheetId");
-    expect(prompt).toContain("last new tab is active");
-    expect(prompt).toContain("do not dump every table onto the last add_sheet tab");
+    expect(prompt).toContain("do not switch the focused tab");
+    expect(prompt).toContain("reuses a tab with the same name");
+    expect(prompt).toContain("do not dump every table onto the engineer's current tab");
     expect(prompt).toContain("Do not retry the same invented dump");
     expect(prompt).toContain("do not stop after a partial extract");
     expect(prompt).toContain("Each worker creates that sheet");
     expect(prompt).toContain("status incomplete means nothing was saved");
     expect(prompt).toContain("morePages true");
     expect(prompt).toContain("Search snippets are not enough to fill the worksheet");
-    expect(prompt).toContain("do not write_column until you have read every page");
+    expect(prompt).toContain("do not write_column until every page of that table is in");
     expect(prompt).toContain("A document_outline is not a page read");
     expect(prompt).toContain("Tip 1–10 per handpiece");
     expect(prompt).toContain("do not fill a series with set_cell");
