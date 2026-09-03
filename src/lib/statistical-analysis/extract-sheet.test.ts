@@ -174,6 +174,7 @@ describe("buildSheetWorkerPrompt", () => {
     expect(prompt).toContain("rowEnd");
     expect(prompt).toContain("Do not use replace");
     expect(prompt).toContain("read_worksheet");
+    expect(prompt).toContain("assigned sheet name as sheetId");
   });
 });
 

@@ -1012,7 +1012,9 @@ describe("analytics chat tools", () => {
     expect(tools.write_column?.description).toContain(
       "Do not substitute a sixpack or ANOVA for a scatter"
     );
-    expect(tools.write_column?.description).toContain("Always pass sheetId");
+    expect(tools.write_column?.description).toContain(
+      "Always pass the tab name as sheetId"
+    );
     expect(tools.write_column?.description).toContain(
       "Do not retry the same invented dump"
     );

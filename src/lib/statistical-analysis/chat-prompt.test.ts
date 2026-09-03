@@ -73,9 +73,13 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("mode edit");
     expect(prompt).toContain("mode append");
     expect(prompt).toContain("rowEnd");
+    expect(prompt).toContain("tab name the engineer sees");
     expect(prompt).toContain("Do not call write_column once per column");
-    expect(prompt).toContain("Always pass sheetId");
+    expect(prompt).toContain("Always pass the tab name as sheetId");
     expect(prompt).toContain("do not switch the focused tab");
+    expect(prompt).toContain("- Sheet Data");
+    expect(prompt).not.toContain("- Sheet Data [data-1]");
+    expect(prompt).toContain("never data-1");
     expect(prompt).toContain("reuses a tab with the same name");
     expect(prompt).toContain("do not dump every table onto the engineer's current tab");
     expect(prompt).toContain("Do not retry the same invented dump");

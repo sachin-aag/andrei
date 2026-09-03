@@ -43,14 +43,14 @@ An empty worksheet is not a request to fill it.`;
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or a typed single row/cell, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
 Examples: "create a new data sheet", "new column", "insert a row", "delete column C2", "rename Data to Assay", "delete the Data 2 sheet", "change C1 to Moisture", "set C1 row 2 to 101.4".
-- add_sheet / rename_sheet / delete_sheet (sheetId is the tab id or name; Specs is not a data sheet)
+- add_sheet / rename_sheet / delete_sheet (sheetId is the tab name the engineer sees; do not use internal ids like data-1 in replies. Specs is not a data sheet)
 - add_column / rename_column / delete_column (columnId is c1 or the header). Empty starter columns (C1–C8 with no values) are placeholders — write_column fills them from the left. Do not call add_column before a dump. add_column without an insert position claims the leftmost empty C# (keeps that id) instead of appending on the right; only a true insert assigns a new id — then use that columnId (or header) on write_column, not a guessed c2.
 - add_row / delete_row / set_cell (row is 1-based). delete_row accepts optional rowEnd for an inclusive range. add_row accepts optional count to insert several blank rows.
 - Setting up several columns or a new empty sheet (no attachment dump) is one manage_worksheet call with operations: [{action, name, ...}, ...]. Do not call manage_worksheet once per column.
 You cannot delete the last data sheet. Attachment table dumps: call extract_sheet once per destination sheet in the same step so the jobs run in parallel. Each worker creates that sheet (or reuses a tab with the same name), reads every page of that table, and writes one complete dump. Do not extract_numeric_series / write_column those tables yourself. Typed values and corrections still use write_column.
-Add or remove many rows on an already-filled sheet (from a file, or "remove the TIP4 rows", or "add the missing rows from page 8"): call extract_sheet with mode edit once per affected sheet in the same step (parallel). Pass sheetId and sheetName. The worker reads that sheet, then appends (write_column mode append) or deletes rows — it must not replace the whole column unless they asked to replace it.
+Add or remove many rows on an already-filled sheet (from a file, or "remove the TIP4 rows", or "add the missing rows from page 8"): call extract_sheet with mode edit once per affected sheet in the same step (parallel). Pass the tab name as sheetName and sheetId. The worker reads that sheet, then appends (write_column mode append) or deletes rows — it must not replace the whole column unless they asked to replace it.
 A log-sheet dump is one extract_sheet (or one write_column) per destination sheet with columns: [{ name, values }, ...] — include Batch / row labels in that same write. Do not call write_column once per column and do not fill a series with set_cell.
-Always pass sheetId on write_column when you dump yourself. Agent writes do not switch the focused tab — omitting sheetId dumps onto the engineer's current tab, not the last add_sheet. add_sheet reuses a tab with the same name (case-insensitive) instead of creating a duplicate.
+Always pass the tab name as sheetId on write_column when you dump yourself. Agent writes do not switch the focused tab — omitting sheetId dumps onto the engineer's current tab, not the last add_sheet. add_sheet reuses a tab with the same name (case-insensitive) instead of creating a duplicate. In replies, name sheets by that tab name — never data-1.
 When you write_column yourself, pass sourceAttachmentId and sourcePages from the pages you read this turn so CSV download keeps the source page; plot figures do not show page numbers.
 After extract_sheet or write_column, report the sheet, column names, and rowsWritten from the tool result. Never say the worksheet was filled unless that result has status written or edited (or extract_sheet status written or edited) and incomplete is not true. Pasting a table into chat is not writing it. status incomplete means nothing was saved — the worksheet did not change. Copy labels as they appear on the page, including repeats (Tip 1–10 per handpiece, not Tip 1–30). Do not retry the same invented dump, do not split it into per-column writes, and do not stop after a partial extract.
 If the engineer interrupts to ask whether you are stuck, say what you were doing and what remains. Do not start a fresh plan and do not claim work you have not seen in a tool result.`;
@@ -160,7 +160,7 @@ function documentIndex(documents: ReadyDocumentIndexItem[]): string {
 function worksheetIndex(analytics: ReportAnalyticsView): string {
   const sheets = dataSheets(analytics.worksheet);
   const sheetLines = sheets.flatMap((sheet) => {
-    const header = `- Sheet ${sheet.name} [${sheet.id}]`;
+    const header = `- Sheet ${sheet.name}`;
     const columns = sheet.columns.map((column) => {
       const trimmed = trimTrailingEmpty(column.values);
       const numeric = columnNumericValues(column);
