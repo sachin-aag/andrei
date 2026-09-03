@@ -5,9 +5,7 @@ import {
   sectionLabel,
 } from "@/lib/ai/chat/fields";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
-
-const DRAFT_REQUEST_RE =
-  /\b(?:draft|write(?:\s+(?:up|out|the))?|prepare|populate|fill(?:\s+(?:in|out|the))?|complete|do this section)\b/i;
+import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
 
 const EXPLICIT_REWRITE_RE =
   /\b(?:re-?write|replace(?:\s+(?:the|this|it))?|start over|from scratch|full(?:y)?\s+replace)\b/i;
@@ -96,28 +94,28 @@ const GAP_REVIEW_RULES = `Gap rules:
 - Omit-if conflict: if filling a gap would violate an omit-if rule, ask once whether to include it (yes/no) — do not quiz them for facts already in the section or evidence.`;
 
 /**
- * True when the engineer asked to produce a section (draft / fill / write),
- * not when they asked to replace it from scratch.
+ * True when the engineer explicitly asked to replace a section from scratch.
+ * That is the escape hatch from the already-drafted read-first gate.
  */
-export function isSectionDraftRequest(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  if (EXPLICIT_REWRITE_RE.test(trimmed)) return false;
-  return DRAFT_REQUEST_RE.test(trimmed);
+export function isExplicitSectionRewrite(text: string): boolean {
+  return EXPLICIT_REWRITE_RE.test(text.trim());
 }
 
 /**
- * When "draft this section" lands on a field that already has content, the
- * assistant should read and review it — not search attachments or quiz the
- * engineer for facts it already has.
+ * When a write lands on a field that already has content, the assistant should
+ * read and review it — not search attachments or quiz the engineer for facts
+ * it already has. Gated on write intent + fill state (not draft/fill verbs),
+ * so "remove VCS from Purpose" still forces read_section first.
  */
 export function detectAlreadyDraftedSection(input: {
   userText: string;
+  userIntentKind: ChatUserIntentKind;
   sectionScope?: ChatSectionScope;
   documentType?: DocumentType;
   sections: Partial<Record<SectionType, Record<string, unknown>>>;
 }): AlreadyDraftedSection | null {
-  if (!isSectionDraftRequest(input.userText)) return null;
+  if (input.userIntentKind !== "write") return null;
+  if (isExplicitSectionRewrite(input.userText)) return null;
 
   const documentType = input.documentType ?? "investigation_report";
   const fromIntent = detectSectionIntentFromText(input.userText, documentType);
@@ -128,6 +126,13 @@ export function detectAlreadyDraftedSection(input: {
   const fillState = sectionFillState(input.sections[section], section);
   if (fillState === "empty") return null;
   return { section, fillState };
+}
+
+/** Drop draft_field while the already-drafted gate is active. */
+export function withoutDraftFieldTools(
+  activeTools: readonly string[]
+): string[] {
+  return activeTools.filter((name) => name !== "draft_field");
 }
 
 export function alreadyDraftedBlock(

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildKeywordTsQuery } from "@/lib/attachments/retrieval";
 import {
+  ANALYTICS_SEARCH_CLOSED_MESSAGE,
   ANALYTICS_SEARCH_COVERAGE_HINT,
-  resolveAnalyticsSearchMode,
   buildAnalyticsSearchDocumentsTool,
+  partitionAnalyticsSearchHits,
+  resolveAnalyticsSearchMode,
 } from "./search-documents";
 
 vi.mock("@/db", () => ({ db: {} }));
@@ -143,8 +145,140 @@ describe("buildAnalyticsSearchDocumentsTool", () => {
     expect(searchReportDocuments).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       status: "search_closed",
+      message: ANALYTICS_SEARCH_CLOSED_MESSAGE,
       returnedCount: 0,
       results: [],
     });
+    expect(ANALYTICS_SEARCH_CLOSED_MESSAGE).toContain("do not ask_user");
+  });
+
+  it("ranks a data-sheet snippet ahead of a requirement-ID laundry list", () => {
+    const indexQuote =
+      "M3-SYS-FN-037 M3-SYS-FN-039 M3-SYS-FN-041 M3-SYS-FN-044 M3-SYS-FN-046";
+    const { content, index } = partitionAnalyticsSearchHits([
+      { quote: indexQuote, text: indexQuote },
+      {
+        quote: "M3-SYS-FN-037 mist volume 5.2 mL/min at the nozzle",
+        text: "M3-SYS-FN-037 mist volume 5.2 mL/min at the nozzle",
+      },
+    ]);
+    expect(content).toHaveLength(1);
+    expect(index).toHaveLength(1);
+    expect(content[0]?.quote).toContain("mist volume");
+  });
+
+  it("retries excluding TOC pages when the first grep is only ID lists", async () => {
+    const indexQuote =
+      "M3-SYS-FN-037 M3-SYS-FN-039 M3-SYS-FN-041 M3-SYS-FN-044 M3-SYS-FN-046";
+    searchReportDocuments
+      .mockResolvedValueOnce([
+        {
+          citationId: "toc-12",
+          attachmentId: "att_1",
+          filename: "mech.pdf",
+          pageNumber: 12,
+          quote: indexQuote,
+          text: indexQuote,
+          chunkId: "ch-12",
+          sourceKind: "pdf",
+          ingestRunId: "run",
+          description: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          citationId: "data-88",
+          attachmentId: "att_1",
+          filename: "mech.pdf",
+          pageNumber: 88,
+          quote: "M3-SYS-FN-037 mist volume 5.2 mL/min",
+          text: "M3-SYS-FN-037 mist volume 5.2 mL/min",
+          chunkId: "ch-88",
+          sourceKind: "pdf",
+          ingestRunId: "run",
+          description: null,
+        },
+      ]);
+    const tool = buildAnalyticsSearchDocumentsTool({ reportId: "report-1" });
+    const execute = tool.execute;
+    if (!execute) throw new Error("search_documents has no execute");
+    const result = (await execute(
+      { query: "M3-SYS-FN-037", limit: 8, mode: "keyword" },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    )) as {
+      returnedCount: number;
+      requirementIndexHits: number;
+      results: Array<{ pageNumber: number; requirementIndex?: boolean }>;
+    };
+    expect(searchReportDocuments).toHaveBeenCalledTimes(2);
+    expect(searchReportDocuments.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        excludePages: [{ attachmentId: "att_1", pageNumber: 12 }],
+      })
+    );
+    expect(result).toMatchObject({
+      returnedCount: 1,
+      requirementIndexHits: 0,
+    });
+    expect(result.results[0]).toMatchObject({ pageNumber: 88 });
+    expect(result.results[0]).not.toHaveProperty("requirementIndex");
+  });
+
+  it("tags leftover TOC hits when a mixed grep has both kinds", async () => {
+    const indexQuote =
+      "M3-SYS-FN-037 M3-SYS-FN-039 M3-SYS-FN-041 M3-SYS-FN-044 M3-SYS-FN-046";
+    searchReportDocuments.mockResolvedValue([
+      {
+        citationId: "toc-12",
+        attachmentId: "att_1",
+        filename: "mech.pdf",
+        pageNumber: 12,
+        quote: indexQuote,
+        text: indexQuote,
+        chunkId: "ch-12",
+        sourceKind: "pdf",
+        ingestRunId: "run",
+        description: null,
+      },
+      {
+        citationId: "data-88",
+        attachmentId: "att_1",
+        filename: "mech.pdf",
+        pageNumber: 88,
+        quote: "M3-SYS-FN-037 mist volume 5.2 mL/min",
+        text: "M3-SYS-FN-037 mist volume 5.2 mL/min",
+        chunkId: "ch-88",
+        sourceKind: "pdf",
+        ingestRunId: "run",
+        description: null,
+      },
+    ]);
+    const tool = buildAnalyticsSearchDocumentsTool({ reportId: "report-1" });
+    const execute = tool.execute;
+    if (!execute) throw new Error("search_documents has no execute");
+    const result = (await execute(
+      { query: "M3-SYS-FN-037", limit: 8, mode: "keyword" },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    )) as {
+      returnedCount: number;
+      requirementIndexHits: number;
+      results: Array<{ pageNumber: number; requirementIndex?: boolean }>;
+    };
+    expect(searchReportDocuments).toHaveBeenCalledTimes(1);
+    expect(result.results.map((hit) => hit.pageNumber)).toEqual([88, 12]);
+    expect(result.results[0]).not.toHaveProperty("requirementIndex");
+    expect(result.results[1]).toMatchObject({
+      pageNumber: 12,
+      requirementIndex: true,
+    });
+    expect(result).toMatchObject({ requirementIndexHits: 1, returnedCount: 2 });
   });
 });

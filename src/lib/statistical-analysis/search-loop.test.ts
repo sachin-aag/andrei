@@ -126,6 +126,7 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).toContain("read_document_page");
     expect(prepared?.activeTools).toContain("scan_attachments");
     expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).not.toContain("ask_user");
     expect(prepared?.activeTools).toContain("manage_worksheet");
   });
 
@@ -201,6 +202,17 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).toContain("search_documents");
     expect(prepared?.activeTools).not.toContain("write_column");
     expect(prepared?.activeTools).not.toContain("plot_xy_scatter");
+  });
+
+  it("hides ask_user on a read turn after a cited grep", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 2)],
+      canEdit: true,
+      intent: "read",
+    });
+    expect(prepared?.activeTools).not.toContain("ask_user");
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).toContain("read_document_page");
   });
 });
 
@@ -314,6 +326,7 @@ describe("analyticsDumpReadinessDirective", () => {
       canEdit: true,
     });
     expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).not.toContain("ask_user");
     expect(prepared?.activeTools).toContain("read_document_page");
     expect(prepared?.activeTools).toContain("scan_attachments");
   });
@@ -330,6 +343,7 @@ describe("analyticsDumpReadinessDirective", () => {
       canEdit: true,
     });
     expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).not.toContain("ask_user");
     expect(prepared?.activeTools).toContain("read_document_page");
   });
 
@@ -345,7 +359,7 @@ describe("analyticsDumpReadinessDirective", () => {
         steps: [step(["search_documents"], 3), step(["read_document_page"])],
         canEdit: true,
       })?.activeTools
-    ).toContain("write_column");
+    ).toEqual(expect.arrayContaining(["write_column", "ask_user"]));
     expect(
       prepareAnalyticsChatStep({
         steps: [step(["search_documents"], 3), step(["scan_attachments"])],

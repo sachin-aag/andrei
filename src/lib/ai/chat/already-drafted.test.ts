@@ -4,7 +4,8 @@ import {
   alreadyDraftedGapHints,
   alreadyDraftedReadStep,
   detectAlreadyDraftedSection,
-  isSectionDraftRequest,
+  isExplicitSectionRewrite,
+  withoutDraftFieldTools,
 } from "./already-drafted";
 import { fieldFillState, sectionFillState } from "./fields";
 
@@ -17,27 +18,31 @@ function testersDoc(text: string) {
   };
 }
 
+function purposeDoc(text: string) {
+  return {
+    narrative: {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+    },
+  };
+}
+
 const FILLED_TESTERS =
   "All testing was performed by Convergent Dental Test Engineers Dylan Burke and Wesley Harrington between 15 June 2023 and 19 July 2023.";
 
-describe("isSectionDraftRequest", () => {
-  it("matches draft / fill / write phrasing", () => {
-    expect(isSectionDraftRequest("draft testers section")).toBe(true);
-    expect(isSectionDraftRequest("Please fill in Testers/Dates")).toBe(true);
-    expect(isSectionDraftRequest("write up the testers")).toBe(true);
-  });
-
-  it("skips explicit rewrite / replace requests", () => {
-    expect(isSectionDraftRequest("rewrite testers from the attachments")).toBe(
-      false
+describe("isExplicitSectionRewrite", () => {
+  it("matches rewrite / replace / start-over phrasing", () => {
+    expect(isExplicitSectionRewrite("rewrite testers from the attachments")).toBe(
+      true
     );
-    expect(isSectionDraftRequest("replace the testers section")).toBe(false);
-    expect(isSectionDraftRequest("start over on testers")).toBe(false);
+    expect(isExplicitSectionRewrite("replace the testers section")).toBe(true);
+    expect(isExplicitSectionRewrite("start over on testers")).toBe(true);
   });
 
-  it("ignores questions that are not produce requests", () => {
-    expect(isSectionDraftRequest("who are the testers?")).toBe(false);
-    expect(isSectionDraftRequest("")).toBe(false);
+  it("does not treat ordinary draft or edit phrasing as a full rewrite", () => {
+    expect(isExplicitSectionRewrite("draft testers section")).toBe(false);
+    expect(isExplicitSectionRewrite("remove VCS from Purpose")).toBe(false);
+    expect(isExplicitSectionRewrite("")).toBe(false);
   });
 });
 
@@ -45,6 +50,7 @@ describe("detectAlreadyDraftedSection", () => {
   it("detects a filled testers section on a draft request", () => {
     const found = detectAlreadyDraftedSection({
       userText: "draft testers section",
+      userIntentKind: "write",
       documentType: "mechanical_design_verification",
       sections: { testers_dates: testersDoc(FILLED_TESTERS) },
     });
@@ -54,6 +60,7 @@ describe("detectAlreadyDraftedSection", () => {
   it("uses the tagged section when the message says draft this section", () => {
     const found = detectAlreadyDraftedSection({
       userText: "draft this section",
+      userIntentKind: "write",
       sectionScope: "testers_dates",
       documentType: "mechanical_design_verification",
       sections: { testers_dates: testersDoc(FILLED_TESTERS) },
@@ -65,6 +72,7 @@ describe("detectAlreadyDraftedSection", () => {
   it("detects a filled Define on an investigation draft request", () => {
     const found = detectAlreadyDraftedSection({
       userText: "draft the define section",
+      userIntentKind: "write",
       documentType: "investigation_report",
       sections: {
         define: {
@@ -87,6 +95,7 @@ describe("detectAlreadyDraftedSection", () => {
     expect(
       detectAlreadyDraftedSection({
         userText: "draft testers section",
+      userIntentKind: "write",
         documentType: "mechanical_design_verification",
         sections: { testers_dates: testersDoc("") },
       })
@@ -97,6 +106,7 @@ describe("detectAlreadyDraftedSection", () => {
     expect(
       detectAlreadyDraftedSection({
         userText: "rewrite testers from the protocol",
+      userIntentKind: "write",
         documentType: "mechanical_design_verification",
         sections: { testers_dates: testersDoc(FILLED_TESTERS) },
       })
@@ -106,10 +116,55 @@ describe("detectAlreadyDraftedSection", () => {
   it("marks a short stub as partial", () => {
     const found = detectAlreadyDraftedSection({
       userText: "draft testers section",
+      userIntentKind: "write",
       documentType: "mechanical_design_verification",
       sections: { testers_dates: testersDoc("Dylan Burke.") },
     });
     expect(found).toEqual({ section: "testers_dates", fillState: "partial" });
+  });
+
+  it("gates a filled Purpose on a remove-detail write without draft verbs", () => {
+    const found = detectAlreadyDraftedSection({
+      userText: "remove VCS from Purpose",
+      userIntentKind: "write",
+      documentType: "mechanical_design_verification",
+      sections: {
+        purpose: purposeDoc(
+          "This verification confirms the Solea handpiece meets design inputs under protocol EXE-100. Version control follows SOP-SW-001."
+        ),
+      },
+    });
+    expect(found).toEqual({ section: "purpose", fillState: "filled" });
+  });
+
+  it("does not gate a read intent on a filled section", () => {
+    expect(
+      detectAlreadyDraftedSection({
+        userText: "what does Purpose say?",
+        userIntentKind: "read",
+        documentType: "mechanical_design_verification",
+        sections: {
+          purpose: purposeDoc(
+            "This verification confirms the Solea handpiece meets design inputs under protocol EXE-100."
+          ),
+        },
+      })
+    ).toBeNull();
+  });
+
+  it("does not gate an explicit rewrite of a filled section", () => {
+    expect(
+      detectAlreadyDraftedSection({
+        userText: "rewrite Purpose from scratch",
+        userIntentKind: "write",
+        documentType: "mechanical_design_verification",
+        sections: {
+          purpose: purposeDoc(
+            "This verification confirms the Solea handpiece meets design inputs under protocol EXE-100."
+          ),
+        },
+      })
+    ).toBeNull();
   });
 });
 
@@ -287,6 +342,14 @@ describe("alreadyDraftedBlock", () => {
       { kind: "all_met" }
     );
     expect(block).toContain("all criteria met for this section");
+  });
+});
+
+describe("withoutDraftFieldTools", () => {
+  it("removes draft_field and leaves other tools", () => {
+    expect(
+      withoutDraftFieldTools(["read_section", "draft_field", "propose_edit"])
+    ).toEqual(["read_section", "propose_edit"]);
   });
 });
 
