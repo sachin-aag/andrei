@@ -402,7 +402,8 @@ describe("analyticsManageLoopDirective", () => {
       canEdit: true,
       sheetJob: "edit",
     });
-    expect(afterStructure?.activeTools).toContain("manage_worksheet");
+    // Nothing hidden yet — prepareStep leaves the full toolset (including manage).
+    expect(afterStructure).toBeUndefined();
     const deleteStep: AnalyticsChatStep = {
       toolCalls: [{ toolName: "manage_worksheet" }],
       toolResults: [
