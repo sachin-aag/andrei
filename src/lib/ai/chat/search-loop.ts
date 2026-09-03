@@ -100,7 +100,14 @@ function searchHitCount(output: unknown): number {
     return 0;
   }
   const record = payload as Record<string, unknown>;
+  const indexHits =
+    typeof record.requirementIndexHits === "number"
+      ? record.requirementIndexHits
+      : 0;
   if (typeof record.returnedCount === "number" && record.returnedCount > 0) {
+    // TOC / running-header laundry lists are not a data sheet. Keep search
+    // open so the model can grep again (or scan) instead of asking for a page.
+    if (indexHits >= record.returnedCount) return 0;
     return record.returnedCount;
   }
   if (Array.isArray(record.seenPages) && record.seenPages.length > 0) {

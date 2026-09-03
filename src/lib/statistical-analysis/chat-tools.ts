@@ -88,6 +88,10 @@ import {
 } from "./table-row-verify";
 import type { ScanAttachmentsResult } from "./scan-attachments";
 import type { AnalyticsSearchGate } from "./search-loop";
+import {
+  ANALYTICS_PAGE_NUMBER_ASK_MESSAGE,
+  rejectPageNumberAskUserQuestions,
+} from "./page-number-ask";
 
 export const ANALYTICS_DOCUMENT_TOOL_NAMES = [
   "search_documents",
@@ -357,6 +361,42 @@ function withRememberedExecute<T>(
       const result = await execute(...args);
       remember(result);
       return result;
+    },
+  } as T;
+}
+
+function withRejectedPageNumberAskUser<T>(toolValue: T): T {
+  if (!toolValue || typeof toolValue !== "object") return toolValue;
+  const record = toolValue as {
+    execute?: (input: { questions?: unknown }, ...rest: never[]) => Promise<unknown>;
+    description?: string;
+  };
+  const execute = record.execute;
+  if (typeof execute !== "function") return toolValue;
+  return {
+    ...record,
+    description:
+      `${record.description ?? ""} Never ask which page to read — search or scan, then say whether you found the data sheet.`.trim(),
+    execute: async (input: { questions?: unknown }, ...rest: never[]) => {
+      const questions = Array.isArray(input?.questions) ? input.questions : [];
+      const typed = questions.filter(
+        (item): item is { question: string } =>
+          Boolean(item) &&
+          typeof item === "object" &&
+          typeof (item as { question?: unknown }).question === "string"
+      );
+      const { kept, rejected } = rejectPageNumberAskUserQuestions(typed);
+      if (rejected.length > 0 && kept.length === 0) {
+        return {
+          status: "rejected_page_number" as const,
+          message: ANALYTICS_PAGE_NUMBER_ASK_MESSAGE,
+          rejectedCount: rejected.length,
+        };
+      }
+      return execute(
+        kept.length === typed.length ? input : { ...input, questions: kept },
+        ...rest
+      );
     },
   } as T;
 }
@@ -772,6 +812,11 @@ export function buildAnalyticsChatTools(opts: {
     searchGate,
     pinnedAttachmentIds,
   });
+  if (documentTools.ask_user) {
+    documentTools.ask_user = withRejectedPageNumberAskUser(
+      documentTools.ask_user
+    );
+  }
 
   const sourceTexts: string[] = [];
   const sourceCitations: ChartCitation[] = [];
@@ -807,7 +852,7 @@ export function buildAnalyticsChatTools(opts: {
   const statsTools: ToolSet = {
     scan_attachments: tool({
       description:
-        "Outline matching ready files and read the pages whose labels match the query, in one call. Use when the engineer named a document family (Seed-2 BMRs) or a whole table / log sheet. Pass filenameContains from the live index names. Do not spend the turn grepping.",
+        "Outline matching ready files and read the pages whose labels match the query, in one call. Use when the engineer named a document family (Seed-2 BMRs), a requirement ID (M3-SYS-FN-037), or a whole table / log sheet. Pass filenameContains from the live index names. Do not spend the turn grepping. Do not ask_user which page to read.",
       inputSchema: z
         .object({
           filenameContains: z

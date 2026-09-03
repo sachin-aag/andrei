@@ -50,6 +50,30 @@ describe("searchLoopDirective", () => {
     );
   });
 
+  it("does not treat a TOC-only ID laundry list as a cited page", () => {
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [{ toolName: "search_documents" }],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 3,
+                requirementIndexHits: 3,
+                results: [
+                  { pageNumber: 12 },
+                  { pageNumber: 84 },
+                  { pageNumber: 217 },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+  });
+
   it("does not treat read_section or read_worksheet as locate progress", () => {
     expect(
       searchLoopDirective([

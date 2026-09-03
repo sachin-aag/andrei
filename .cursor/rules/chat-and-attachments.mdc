@@ -105,6 +105,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   single value → array) and retries once. Malformed JSON is still not
   rewritten. Prefer widening a bound over tightening one — the clamp is a net,
   not a licence to add tight caps.
+- Analytics never asks which page to read. `ask_user` is hidden on a lookup,
+  after Skip / “find it”, and after any grep (including TOC-only) until a
+  page is read/scanned. Page-number questions are rejected if they still
+  fire. TOC-only greps do not close search. A Skip on that form is a locate
+  request (search/scan), not a placeholder. A dump with some blank cells
+  must not hide `write_column` — remaining requested columns fill this turn.
 - `insert_image` source=analytics copies a saved plot only when the named
   series matches (or they did not name one). If they asked for a plot that
   is not listed, return the available titles once this turn (`available_plots`)

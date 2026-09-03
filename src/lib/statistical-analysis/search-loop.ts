@@ -226,8 +226,9 @@ export function analyticsManageLoopDirective(
 }
 
 /**
- * A dump with blanked cells is not done. Hide write_column until the model
- * reads another page so it cannot retry the same invented rows.
+ * A dump with blanked cells is incomplete. Do not hide write_column for that
+ * — remaining requested columns must still fill this turn. Two consecutive
+ * empty writes still hide via analyticsWriteLoopDirective.
  */
 export function analyticsPartialDumpDirective(
   steps: readonly AnalyticsChatStep[]
@@ -244,11 +245,28 @@ export function analyticsPartialDumpDirective(
   return pendingIncomplete ? "read_more" : "continue";
 }
 
+function stepsHadSearch(steps: readonly AnalyticsChatStep[]): boolean {
+  return steps.some((step) =>
+    collectToolCalls(step).some((call) => callToolName(call) === SEARCH_TOOL)
+  );
+}
+
+function stepsHadDumpSource(steps: readonly AnalyticsChatStep[]): boolean {
+  return steps.some((step) => stepReadDumpSource(step));
+}
+
+function readTools(hidden: ReadonlySet<string>): string[] {
+  const tools = [...READ_AFTER_SEARCH_TOOLS, SEARCH_TOOL];
+  return hidden.size > 0 ? withoutTools(tools, hidden) : tools;
+}
+
 export function prepareAnalyticsChatStep(input: {
   steps: readonly AnalyticsChatStep[];
   canEdit: boolean;
   searchGate?: AnalyticsSearchGate;
   intent?: ChatUserIntentKind;
+  /** `skip_page_and_search` / `locate_request` must not open another page form. */
+  intentReason?: string;
 }): { activeTools: string[] } | undefined {
   if (input.intent === "social") {
     return { activeTools: [] };
@@ -257,20 +275,29 @@ export function prepareAnalyticsChatStep(input: {
   const writeDirective = analyticsWriteLoopDirective(input.steps);
   const dumpReady = analyticsDumpReadinessDirective(input.steps);
   const manageDirective = analyticsManageLoopDirective(input.steps);
-  const partialDump = analyticsPartialDumpDirective(input.steps);
   if (input.searchGate && searchDirective === "read") {
     input.searchGate.closed = true;
   }
   const hideWrite =
-    writeDirective === "finish" ||
-    dumpReady === "read_first" ||
-    partialDump === "read_more";
+    writeDirective === "finish" || dumpReady === "read_first";
   const hideManage = manageDirective === "finish";
-  const hideAsk = dumpReady === "read_first";
+  const dumpSource = stepsHadDumpSource(input.steps);
+  const locateIntent =
+    input.intentReason === "skip_page_and_search" ||
+    input.intentReason === "locate_request";
+  // Never ask which page to read. Hide ask_user until a page is actually
+  // read/scanned: after any grep (including TOC-only), on a lookup, or when
+  // they skipped / said find it. Assay / missing-spec asks stay available
+  // after a dump source, and on a fresh write turn that has not searched yet.
+  const hideAsk =
+    !dumpSource &&
+    (dumpReady === "read_first" ||
+      stepsHadSearch(input.steps) ||
+      locateIntent ||
+      input.intent === "read");
   const hidden = new Set<string>();
   if (hideWrite) hidden.add(WRITE_COLUMN_TOOL);
   if (hideManage) hidden.add(MANAGE_WORKSHEET_TOOL);
-  // Cited grep is not a missing page — Quick was asking for the page number.
   if (hideAsk) hidden.add(ASK_USER_TOOL);
 
   const writableTools = (searchOpen: boolean): string[] => {
@@ -284,10 +311,10 @@ export function prepareAnalyticsChatStep(input: {
 
   if (searchDirective !== "read") {
     if (input.intent === "read") {
-      return { activeTools: [...READ_AFTER_SEARCH_TOOLS, SEARCH_TOOL] };
+      return { activeTools: readTools(hidden) };
     }
     if (!input.canEdit) {
-      return undefined;
+      return hidden.size > 0 ? { activeTools: readTools(hidden) } : undefined;
     }
     if (hidden.size > 0) {
       return { activeTools: writableTools(true) };
