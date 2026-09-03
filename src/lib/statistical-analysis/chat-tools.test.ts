@@ -53,9 +53,11 @@ import {
 } from "@/lib/attachments/retrieval";
 import {
   ANALYTICS_CHAT_TOOL_NAMES,
+  WRITE_COLUMN_INCOMPLETE_MESSAGE,
   WRITE_COLUMN_NEED_SOURCE_MESSAGE,
   buildAnalyticsChatTools,
   extractNumericTokens,
+  extractSeriesHasMorePages,
   pickAnalyticsDocumentTools,
 } from "./chat-tools";
 import { P1_PUW_COMBINED_TRANSCRIPT, P1_PUW_FILENAME } from "@/lib/extraction/__fixtures__/p1-puw-qualification-phase-ii";
@@ -203,6 +205,44 @@ describe("analytics chat tools", () => {
     expect(locked.search_documents?.description).not.toContain(
       "truncated=true means keep grepping"
     );
+  });
+
+  it("flags morePages only when the extract hit the page cap", () => {
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [1, 2, 3],
+        requestedSpecificPages: false,
+        pageCount: 20,
+      })
+    ).toBe(false);
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [1, 2, 3, 4, 5, 6],
+        requestedSpecificPages: false,
+        pageCount: 20,
+      })
+    ).toBe(true);
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [1, 2, 3, 4, 5, 6],
+        requestedSpecificPages: false,
+        pageCount: 6,
+      })
+    ).toBe(false);
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [7, 8, 9, 10, 11, 12],
+        requestedSpecificPages: true,
+        pageCount: 20,
+      })
+    ).toBe(true);
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [1, 2, 3, 4, 5, 6],
+        requestedSpecificPages: false,
+        pageCount: null,
+      })
+    ).toBe(true);
   });
 
   it("extracts finite numeric tokens and stops at the worksheet cap", () => {
@@ -528,11 +568,13 @@ describe("analytics chat tools", () => {
       }
     );
     expect(result).toMatchObject({
-      status: "written",
+      status: "incomplete",
       rowsWritten: 0,
       blankedCount: 2,
       incomplete: true,
+      message: WRITE_COLUMN_INCOMPLETE_MESSAGE,
     });
+    expect(updateReportAnalytics).not.toHaveBeenCalled();
   });
 
   it("reports destination and non-numeric cells after write_column", async () => {
@@ -869,6 +911,15 @@ describe("analytics chat tools", () => {
     expect(tools.write_column?.description).toContain(
       "Search snippets are not a page read"
     );
+    expect(tools.write_column?.description).toContain(
+      "status incomplete means nothing was saved"
+    );
+    expect(tools.write_column?.description).toContain(
+      "do not call this after the first extract"
+    );
+    expect(tools.extract_numeric_series?.description).toContain(
+      "If morePages is true"
+    );
     expect(tools.manage_worksheet?.description).toContain(
       "lists every new sheetId in operations"
     );
@@ -1005,19 +1056,12 @@ describe("analytics chat tools", () => {
       }
     );
     expect(result).toMatchObject({
-      status: "written",
+      status: "incomplete",
       blankedCount: 2,
       incomplete: true,
+      message: WRITE_COLUMN_INCOMPLETE_MESSAGE,
     });
-    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
-      columns: { name: string; values: string[] }[];
-    };
-    const o2 = saved.columns.find((column) => column.name === "O2 flow (LPM)");
-    expect(o2?.values).toEqual([]);
-    expect(saved.columns.find((column) => column.name === "DO (%)")?.values).toEqual([
-      "50.2",
-      "58.3",
-    ]);
+    expect(updateReportAnalytics).not.toHaveBeenCalled();
   });
 
   it("keeps Tip N and split handpiece SNs on a torque table dump", async () => {
@@ -1111,19 +1155,12 @@ describe("analytics chat tools", () => {
       }
     );
     expect(result).toMatchObject({
-      status: "written",
+      status: "incomplete",
       blankedCount: 1,
       incomplete: true,
+      message: WRITE_COLUMN_INCOMPLETE_MESSAGE,
     });
-    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
-      columns: { name: string; values: string[] }[];
-    };
-    expect(
-      saved.columns.find((column) => column.name === "O2 flow (LPM)")?.values
-    ).toEqual([]);
-    expect(
-      saved.columns.find((column) => column.name === "Air flow (LPM)")?.values
-    ).toEqual(["38.02"]);
+    expect(updateReportAnalytics).not.toHaveBeenCalled();
   });
 
   it("stamps remembered extract pages onto a single-series write", async () => {
@@ -1166,6 +1203,7 @@ describe("analytics chat tools", () => {
         status: "ok",
         attachmentId: "att_1",
         pages: [31],
+        morePages: false,
       });
       await write(
         { name: "Assay", values: [10.1, 10.2, 10.3] },
@@ -1183,6 +1221,55 @@ describe("analytics chat tools", () => {
         values: ["10.1", "10.2", "10.3"],
         citations: [{ attachmentId: "att_1", page: 31 }],
       });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("reports morePages when extract hits the 6-page cap on a longer file", async () => {
+    vi.stubEnv("ALLOW_TEST_STUB_CHAT", "true");
+    try {
+      vi.mocked(listReadyDocumentsForReport).mockResolvedValue([
+        {
+          attachmentId: "att_1",
+          filename: "bmr.pdf",
+          description: null,
+          pageCount: 20,
+          ingestRunId: "run_1",
+          documentSummary: null,
+        },
+      ]);
+      vi.mocked(readDocumentPage).mockImplementation(async ({ pageNumber }) => ({
+        ...pageRead(`${pageNumber}.1 ${pageNumber}.2`),
+        pageNumber,
+      }));
+      const tools = buildAnalyticsChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        documentType: "investigation_report",
+      });
+      const extract = tools.extract_numeric_series?.execute;
+      if (!extract) throw new Error("extract_numeric_series missing");
+      const result = await extract(
+        {
+          attachmentId: "att_1",
+          pages: [1, 2, 3, 4, 5, 6],
+          metric: "Power",
+        },
+        {
+          toolCallId: "extract",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      );
+      expect(result).toMatchObject({
+        status: "ok",
+        morePages: true,
+        pages: [1, 2, 3, 4, 5, 6],
+      });
+      expect(String((result as { message?: string }).message)).toMatch(
+        /More pages remain/i
+      );
     } finally {
       vi.unstubAllEnvs();
     }

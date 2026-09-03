@@ -179,9 +179,10 @@ Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
 abort still apply). Do not tell the engineer they ran out of steps or to
 re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
 on write turns whose in-scope section already has a table, and Analytics
-hiding `write_column` after a cited-page grep until a page is read, after
-a partial dump until another page read, and after two consecutive empty
-dumps, and hiding `manage_worksheet` after the first structure call). Live matrix
+hiding `write_column` after a cited-page grep until a page is read, while
+extract `morePages` or scan `truncated` is true, after a refused incomplete
+dump until another page read, and after two consecutive empty dumps, and
+hiding `manage_worksheet` after the first structure call). Live matrix
 headers come from the section (`read_section` / context map) — demo
 Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages; `ask_user` is hidden until a cited page is actually read/scanned.

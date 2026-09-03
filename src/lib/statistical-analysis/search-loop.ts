@@ -130,11 +130,53 @@ function writeColumnWasEmpty(output: unknown): boolean {
 
 function writeColumnWasIncomplete(output: unknown): boolean {
   const record = writeColumnRecord(output);
+  if (!record) return false;
+  if (record.status === "incomplete") return true;
   return (
-    record?.status === "written" &&
+    record.status === "written" &&
     typeof record.blankedCount === "number" &&
     record.blankedCount > 0
   );
+}
+
+function dumpSourceHasMorePages(output: unknown, toolName: string): boolean {
+  const record = writeColumnRecord(output);
+  if (!record) return false;
+  if (toolName === "extract_numeric_series") {
+    return record.morePages === true;
+  }
+  if (toolName === "scan_attachments") {
+    return record.truncated === true;
+  }
+  return false;
+}
+
+function eachNamedToolOutput(
+  step: AnalyticsChatStep,
+  toolName: string,
+  visit: (output: unknown) => void
+) {
+  for (const result of step.toolResults ?? []) {
+    if (callToolName(result) !== toolName) continue;
+    visit(toolPayload(result));
+  }
+  for (const part of step.content ?? []) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    if (contentToolName(part) !== toolName) continue;
+    const record = part as Record<string, unknown>;
+    visit(unwrapToolPayload(record.output ?? record.result));
+  }
+}
+
+function stepDumpSourceHasMorePages(step: AnalyticsChatStep): boolean {
+  for (const toolName of DUMP_SOURCE_TOOLS) {
+    let more = false;
+    eachNamedToolOutput(step, toolName, (output) => {
+      if (dumpSourceHasMorePages(output, toolName)) more = true;
+    });
+    if (more) return true;
+  }
+  return false;
 }
 
 function eachWriteColumnOutput(
@@ -244,12 +286,46 @@ export function analyticsPartialDumpDirective(
   return pendingIncomplete ? "read_more" : "continue";
 }
 
+/**
+ * Keep pulling pages while extract morePages or scan truncated is true.
+ * Hide write_column so a first-page dump cannot land.
+ */
+export function analyticsGatherDirective(
+  steps: readonly AnalyticsChatStep[]
+): "continue" | "gather" {
+  let pendingMore = false;
+  for (const step of steps) {
+    if (stepDumpSourceHasMorePages(step)) {
+      pendingMore = true;
+      continue;
+    }
+    if (pendingMore && stepReadDumpSource(step)) {
+      pendingMore = false;
+    }
+  }
+  return pendingMore ? "gather" : "continue";
+}
+
+const PLOT_TOOLS = [
+  "run_capability_sixpack",
+  "run_one_way_anova",
+  "plot_xy_scatter",
+  "plot_boxplot",
+  "plot_histogram",
+  "plot_measurements",
+] as const;
+
+export type AnalyticsPrepareStep = {
+  activeTools: string[];
+  toolChoice?: "required";
+};
+
 export function prepareAnalyticsChatStep(input: {
   steps: readonly AnalyticsChatStep[];
   canEdit: boolean;
   searchGate?: AnalyticsSearchGate;
   intent?: ChatUserIntentKind;
-}): { activeTools: string[] } | undefined {
+}): AnalyticsPrepareStep | undefined {
   if (input.intent === "social") {
     return { activeTools: [] };
   }
@@ -258,20 +334,38 @@ export function prepareAnalyticsChatStep(input: {
   const dumpReady = analyticsDumpReadinessDirective(input.steps);
   const manageDirective = analyticsManageLoopDirective(input.steps);
   const partialDump = analyticsPartialDumpDirective(input.steps);
+  const gather = analyticsGatherDirective(input.steps);
   if (input.searchGate && searchDirective === "read") {
     input.searchGate.closed = true;
   }
-  const hideWrite =
-    writeDirective === "finish" ||
+  const stillGathering =
     dumpReady === "read_first" ||
-    partialDump === "read_more";
+    partialDump === "read_more" ||
+    gather === "gather";
+  const hideWrite =
+    writeDirective === "finish" || stillGathering;
   const hideManage = manageDirective === "finish";
-  const hideAsk = dumpReady === "read_first";
+  const hideAsk = stillGathering;
+  const hidePlots = stillGathering;
   const hidden = new Set<string>();
   if (hideWrite) hidden.add(WRITE_COLUMN_TOOL);
   if (hideManage) hidden.add(MANAGE_WORKSHEET_TOOL);
   // Cited grep is not a missing page — Quick was asking for the page number.
+  // A truncated extract is also not a moment to ask — keep reading pages.
   if (hideAsk) hidden.add(ASK_USER_TOOL);
+  if (hidePlots) {
+    for (const name of PLOT_TOOLS) hidden.add(name);
+  }
+
+  const forceContinue =
+    input.intent !== "read" &&
+    writeDirective !== "finish" &&
+    stillGathering;
+
+  const withChoice = (activeTools: string[]): AnalyticsPrepareStep =>
+    forceContinue
+      ? { activeTools, toolChoice: "required" }
+      : { activeTools };
 
   const writableTools = (searchOpen: boolean): string[] => {
     const tools = [
@@ -290,7 +384,7 @@ export function prepareAnalyticsChatStep(input: {
       return undefined;
     }
     if (hidden.size > 0) {
-      return { activeTools: writableTools(true) };
+      return withChoice(writableTools(true));
     }
     return undefined;
   }
@@ -298,10 +392,9 @@ export function prepareAnalyticsChatStep(input: {
   if (input.canEdit && input.intent !== "read") {
     activeTools.push(...WRITE_AFTER_SEARCH_TOOLS);
   }
-  if (hidden.size === 0) {
-    return { activeTools };
-  }
-  return { activeTools: withoutTools(activeTools, hidden) };
+  const next =
+    hidden.size === 0 ? activeTools : withoutTools(activeTools, hidden);
+  return withChoice(next);
 }
 
 // Re-export for callers that strip search from a custom tool list.
