@@ -42,6 +42,7 @@ export function chatMessageTargetLabel(target: ChatMessageTarget): string {
 const ANALYTICS_ONLY_TOOLS = new Set([
   "write_column",
   "manage_worksheet",
+  "extract_sheet",
   "read_worksheet",
   "run_capability_sixpack",
   "run_one_way_anova",

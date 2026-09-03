@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v40-write-per-sheet"
+      "analytics-chat-v41-sheet-workers"
     );
   });
 
@@ -67,17 +67,16 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("one manage_worksheet call with operations");
     expect(prompt).toContain("Empty starter columns (C1–C8 with no values) are placeholders");
     expect(prompt).toContain("Do not call add_column before a dump");
-    expect(prompt).toContain("do not call manage_worksheet again to add_column");
     expect(prompt).toContain("claims the leftmost empty C#");
-    expect(prompt).toContain("one write_column per destination sheet");
-    expect(prompt).toContain("Separate extracts for separate sheets are correct");
+    expect(prompt).toContain("extract_sheet once per destination sheet");
+    expect(prompt).toContain("jobs run in parallel");
     expect(prompt).toContain("Do not call write_column once per column");
     expect(prompt).toContain("Always pass sheetId");
     expect(prompt).toContain("last new tab is active");
     expect(prompt).toContain("do not dump every table onto the last add_sheet tab");
     expect(prompt).toContain("Do not retry the same invented dump");
     expect(prompt).toContain("do not stop after a partial extract");
-    expect(prompt).toContain("Pull every page that contains that table or series first");
+    expect(prompt).toContain("Each worker creates that sheet");
     expect(prompt).toContain("status incomplete means nothing was saved");
     expect(prompt).toContain("morePages true");
     expect(prompt).toContain("Search snippets are not enough to fill the worksheet");

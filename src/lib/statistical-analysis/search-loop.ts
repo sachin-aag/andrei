@@ -31,6 +31,7 @@ const READ_AFTER_SEARCH_TOOLS = [
 const WRITE_AFTER_SEARCH_TOOLS = [
   "write_column",
   "manage_worksheet",
+  "extract_sheet",
   "run_capability_sixpack",
   "run_one_way_anova",
   "plot_xy_scatter",
@@ -137,6 +138,29 @@ function writeColumnWasIncomplete(output: unknown): boolean {
     typeof record.blankedCount === "number" &&
     record.blankedCount > 0
   );
+}
+
+/** A sheet worker is done once one complete write_column has landed. */
+export function analyticsSheetJobComplete(
+  steps: readonly AnalyticsChatStep[]
+): boolean {
+  for (const step of steps) {
+    let complete = false;
+    eachWriteColumnOutput(step, (output) => {
+      const record = writeColumnRecord(output);
+      if (
+        record?.status === "written" &&
+        record.incomplete !== true &&
+        !(
+          typeof record.blankedCount === "number" && record.blankedCount > 0
+        )
+      ) {
+        complete = true;
+      }
+    });
+    if (complete) return true;
+  }
+  return false;
 }
 
 function coverageId(value: unknown): string {

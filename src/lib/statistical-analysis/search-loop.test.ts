@@ -618,6 +618,15 @@ describe("analyticsGatherDirective", () => {
     expect(prepared?.toolChoice).toBeUndefined();
   });
 
+  it("keeps extract_sheet available while a file is still gathering", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 3), extractMorePagesStep("att-a")],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("extract_sheet");
+    expect(prepared?.activeTools).not.toContain("write_column");
+  });
+
   it("hides write_column again while gathering the next sheet's file", () => {
     expect(
       analyticsGatherDirective([

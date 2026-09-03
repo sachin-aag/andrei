@@ -21,6 +21,8 @@ import {
   readDocumentPage,
 } from "@/lib/attachments/retrieval";
 import { withWorksheetMutationLock } from "./worksheet-write-lock";
+import { runSheetExtractJob } from "./extract-sheet";
+import { createAnalyticsSearchGate } from "./search-loop";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
@@ -106,6 +108,7 @@ export const ANALYTICS_CHAT_READ_TOOL_NAMES = [
 export const ANALYTICS_CHAT_WRITE_TOOL_NAMES = [
   "write_column",
   "manage_worksheet",
+  "extract_sheet",
   "run_capability_sixpack",
   "run_one_way_anova",
   "plot_xy_scatter",
@@ -720,6 +723,8 @@ export function buildAnalyticsChatTools(opts: {
   pinnedAttachmentIds?: readonly string[];
   focusedSheetId?: string;
   actor?: AuditActorSnapshot;
+  /** Orchestrator plans and dispatches extract_sheet. Workers dump one sheet. */
+  role?: "orchestrator" | "sheet_worker";
 }): ToolSet {
   const { reportId, canEdit, documentType, searchGate, focusedSheetId, actor } =
     opts;
@@ -1223,7 +1228,7 @@ export function buildAnalyticsChatTools(opts: {
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into worksheet columns (replaces those columns). One complete dump per call, one sheet per call — multiple sheets means multiple write_column calls with sheetId. Pull every page of that table first — do not call this after the first extract or scan of that file when morePages or truncated is true. Separate extracts per destination sheet are correct. Always pass sheetId (tab id or name from manage_worksheet) — after adding several sheets, the last add_sheet is active, so omitting sheetId dumps every table onto that last tab and leaves the others empty. New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the pages you read this turn. Search snippets are not a page read. Cells that are not tokens on those pages are left blank — never invent 0. status incomplete means nothing was saved: read remaining pages of that table and call this once with the full table for that sheet. Copy labels as they appear (including repeats such as Tip 1–10 per handpiece). Do not retry the same invented dump and do not split it into per-column writes to bypass the check. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), plot_histogram for a frequency histogram of one numeric column (same chart as the sixpack histogram; optional LSL/USL and overlay checkboxes; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+        "Write values into worksheet columns (replaces those columns). For attachment table dumps onto one or more sheets, call extract_sheet once per sheet (parallel) instead of dumping here. This tool is for typed values, corrections, or a dump a sheet worker already gathered. One complete dump per call, one sheet per call. Pull every page of that table first — do not call this after the first extract or scan of that file when morePages or truncated is true. Separate extracts per destination sheet are correct. Always pass sheetId (tab id or name from manage_worksheet) — after adding several sheets, the last add_sheet is active, so omitting sheetId dumps every table onto that last tab and leaves the others empty. New named series fill the leftmost empty C1–C8 columns — do not add_column first. Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the pages you read this turn. Search snippets are not a page read. Cells that are not tokens on those pages are left blank — never invent 0. status incomplete means nothing was saved: read remaining pages of that table and call this once with the full table for that sheet. Copy labels as they appear (including repeats such as Tip 1–10 per handpiece). Do not retry the same invented dump and do not split it into per-column writes to bypass the check. A single name+values write is for one series. Pass sourceAttachmentId and sourcePages (or extract/read that page in this turn) so CSV download keeps the source page. Plot figures do not show page numbers. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for a worksheet scatter (Y required on create; pass analysisId to edit an existing plot), plot_boxplot for a Tukey boxplot (Y required; optional nested categoryColumnIds innermost-first; pass analysisId to edit), plot_histogram for a frequency histogram of one numeric column (same chart as the sixpack histogram; optional LSL/USL and overlay checkboxes; pass analysisId to edit), or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
       inputSchema: writeColumnInputSchema,
       execute: async (input) => {
         let entries = writeColumnEntriesFromInput(input);
@@ -1373,7 +1378,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.manage_worksheet = tool({
       description:
-        "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or row. Do not search attachments and do not extract numbers. Call this at most once per turn — pass operations to add every destination sheet together. After add_sheet, extract and write_column once per sheet with that sheetId (empty C1–C8 are claimed from the left); do not call this tool again to add_column before a dump. Filling a column with values is write_column, not this tool — write_column reuses empty C1–C8 columns from the left. add_column without at also claims the leftmost empty C# instead of appending on the right. set_cell edits one cell. A batch add_sheet result lists every new sheetId in operations — pass that id on the matching write_column. The last add_sheet becomes active.",
+        "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or row — and they did not ask to extract a table. Attachment dumps: call extract_sheet once per sheet; each worker creates its own tab. Do not search attachments and do not extract numbers. Call this at most once per turn — pass operations to add several empty sheets or columns together. Filling a column with values is write_column, not this tool — write_column reuses empty C1–C8 columns from the left. add_column without at also claims the leftmost empty C# instead of appending on the right. set_cell edits one cell. A batch add_sheet result lists every new sheetId in operations. The last add_sheet becomes active.",
       inputSchema: manageWorksheetInputSchema,
       execute: async (input) => {
         const operations = input.operations?.length
@@ -1423,6 +1428,84 @@ export function buildAnalyticsChatTools(opts: {
         });
       },
     });
+
+    if (opts.role !== "sheet_worker") {
+      statsTools.extract_sheet = tool({
+        description:
+          "Run one extraction job for one worksheet sheet. Call once per destination sheet in the same step so jobs run in parallel. The worker creates that sheet if needed, reads every page of that table, and writes one complete dump. Pass a distinct sheetName per table. Do not dump those tables yourself with write_column.",
+        inputSchema: z.object({
+          sheetName: z
+            .string()
+            .trim()
+            .min(1)
+            .max(80)
+            .describe("Destination tab name, e.g. M3-SYS-FN-044 or Separation Force."),
+          objective: z
+            .string()
+            .trim()
+            .min(1)
+            .max(400)
+            .describe(
+              "What to pull onto this sheet (table title, requirement ID, or named series)."
+            ),
+          sheetId: z
+            .string()
+            .trim()
+            .min(1)
+            .optional()
+            .describe("Existing tab id when the sheet is already there."),
+          attachmentId: z
+            .string()
+            .trim()
+            .min(1)
+            .optional()
+            .describe("Attachment id from the document index when known."),
+          filenameContains: z
+            .string()
+            .trim()
+            .min(1)
+            .max(80)
+            .optional()
+            .describe("Live filename substring when the engineer named a file family."),
+          pages: z
+            .array(z.number().int().min(1))
+            .max(MAX_EXTRACT_PAGES)
+            .optional()
+            .describe("Hint pages. The worker may read more if morePages is true."),
+          metric: z
+            .string()
+            .trim()
+            .min(1)
+            .max(80)
+            .optional()
+            .describe("One named series, e.g. Conductivity. Omit for a whole table."),
+        }),
+        execute: async (input, { abortSignal }) => {
+          const workerTools = buildAnalyticsChatTools({
+            reportId,
+            canEdit: true,
+            documentType,
+            searchGate: createAnalyticsSearchGate(),
+            pinnedAttachmentIds: opts.pinnedAttachmentIds,
+            focusedSheetId: input.sheetId?.trim() || focusedSheetId,
+            actor,
+            role: "sheet_worker",
+          });
+          return runSheetExtractJob({
+            reportId,
+            tools: workerTools,
+            sheetName: input.sheetName,
+            objective: input.objective,
+            sheetId: input.sheetId,
+            attachmentId: input.attachmentId,
+            filenameContains: input.filenameContains,
+            pages: input.pages,
+            metric: input.metric,
+            abortSignal,
+          });
+        },
+      });
+    }
 
     statsTools.run_capability_sixpack = tool({
       description:
@@ -1837,5 +1920,20 @@ export function buildAnalyticsChatTools(opts: {
     });
   }
 
-  return { ...documentTools, ...statsTools };
+  const tools = { ...documentTools, ...statsTools } as ToolSet;
+  if (opts.role === "sheet_worker") {
+    delete tools.ask_user;
+    delete tools.extract_sheet;
+    for (const name of [
+      "run_capability_sixpack",
+      "run_one_way_anova",
+      "plot_xy_scatter",
+      "plot_boxplot",
+      "plot_histogram",
+      "plot_measurements",
+    ] as const) {
+      delete tools[name];
+    }
+  }
+  return tools;
 }

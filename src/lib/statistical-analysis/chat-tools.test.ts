@@ -116,6 +116,7 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("search_documents");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("write_column");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("manage_worksheet");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("extract_sheet");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_capability_sixpack");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_one_way_anova");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_measurements");
@@ -965,6 +966,66 @@ describe("analytics chat tools", () => {
     expect(tools.manage_worksheet?.description).toContain(
       "at most once per turn"
     );
+    expect(tools.extract_sheet?.description).toContain(
+      "once per destination sheet"
+    );
+    expect(tools.extract_sheet?.description).toContain("parallel");
+    expect(tools.write_column?.description).toContain(
+      "call extract_sheet once per sheet"
+    );
+  });
+
+  it("stubs extract_sheet without writing the worksheet", async () => {
+    vi.stubEnv("ALLOW_TEST_STUB_CHAT", "true");
+    try {
+      const tools = buildAnalyticsChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        documentType: "investigation_report",
+      });
+      const execute = tools.extract_sheet?.execute;
+      if (!execute) throw new Error("extract_sheet missing");
+      const result = await execute(
+        {
+          sheetName: "M3-SYS-FN-044",
+          objective: "Perioguide Power table",
+        },
+        {
+          toolCallId: "extract-sheet",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      );
+      expect(result).toMatchObject({
+        status: "stub",
+        sheetName: "M3-SYS-FN-044",
+      });
+      expect(updateReportAnalytics).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("omits extract_sheet and plots from a sheet worker toolset", () => {
+    const worker = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+      role: "sheet_worker",
+    });
+    expect(worker.extract_sheet).toBeUndefined();
+    expect(worker.ask_user).toBeUndefined();
+    expect(worker.plot_xy_scatter).toBeUndefined();
+    expect(worker.write_column).toBeDefined();
+    expect(worker.manage_worksheet).toBeDefined();
+    expect(worker.extract_numeric_series).toBeDefined();
+    const orchestrator = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    expect(orchestrator.extract_sheet).toBeDefined();
+    expect(orchestrator.plot_xy_scatter).toBeDefined();
   });
 
   it("writes several columns in one persist", async () => {

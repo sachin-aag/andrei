@@ -322,6 +322,7 @@ describe("intentToolAvailabilityRule", () => {
     const rule = intentToolAvailabilityRule("read", "analytics");
     expect(rule).toContain("write_column");
     expect(rule).toContain("manage_worksheet");
+    expect(rule).toContain("extract_sheet");
     expect(rule).toContain("plot_xy_scatter");
     expect(rule).not.toContain("propose_edit");
   });
