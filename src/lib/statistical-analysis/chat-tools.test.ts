@@ -458,7 +458,9 @@ describe("analytics chat tools", () => {
       current = analyticsView(worksheet);
       return { ok: true, analytics: current };
     });
-    vi.mocked(readDocumentPage).mockResolvedValue(pageRead("3.081 2.999"));
+    vi.mocked(readDocumentPage).mockResolvedValue(
+      pageRead("3.081 2.999\n12.4 11.8")
+    );
     const tools = buildAnalyticsChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -532,6 +534,37 @@ describe("analytics chat tools", () => {
         (column) => trimTrailingEmpty(column.values).length === 0
       )
     ).toBe(true);
+    const writtenForce = await write(
+      {
+        sheetId: "data-3",
+        sourceAttachmentId: "att_1",
+        sourcePages: [238],
+        columns: [{ name: "Force", values: [12.4, 11.8] }],
+      },
+      {
+        toolCallId: "test-write-force",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(writtenForce).toMatchObject({
+      status: "written",
+      sheetId: "data-3",
+      sheetName: "Separation Force",
+      rowsWritten: 2,
+    });
+    expect(
+      current.worksheet.sheets
+        .find((sheet) => sheet.id === "data-2")
+        ?.columns.find((column) => column.name === "Watts")
+        ?.values.slice(0, 2)
+    ).toEqual(["3.081", "2.999"]);
+    expect(
+      current.worksheet.sheets
+        .find((sheet) => sheet.id === "data-3")
+        ?.columns.find((column) => column.name === "Force")
+        ?.values.slice(0, 2)
+    ).toEqual(["12.4", "11.8"]);
   });
 
   it("does not bypass source verification on a single-column retry", async () => {
@@ -913,6 +946,12 @@ describe("analytics chat tools", () => {
     );
     expect(tools.write_column?.description).toContain(
       "status incomplete means nothing was saved"
+    );
+    expect(tools.write_column?.description).toContain(
+      "one sheet per call"
+    );
+    expect(tools.write_column?.description).toContain(
+      "Separate extracts per destination sheet are correct"
     );
     expect(tools.write_column?.description).toContain(
       "do not call this after the first extract"

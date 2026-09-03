@@ -139,16 +139,62 @@ function writeColumnWasIncomplete(output: unknown): boolean {
   );
 }
 
-function dumpSourceHasMorePages(output: unknown, toolName: string): boolean {
+function coverageId(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "_";
+}
+
+function scanCoverageIds(record: Record<string, unknown>): string[] {
+  const files = Array.isArray(record.files) ? record.files : [];
+  const ids = files.flatMap((file) => {
+    if (!file || typeof file !== "object") return [];
+    return [coverageId((file as { attachmentId?: unknown }).attachmentId)];
+  });
+  return ids.length > 0 ? ids : ["_"];
+}
+
+/**
+ * Track unfinished dumps per file. A finished extract/scan of file B must
+ * not unlock a half-filled write of file A. Page reads finish a truncated
+ * scan for that file; they do not cancel an extract that still has morePages.
+ */
+function applyDumpCoverage(
+  pending: Set<string>,
+  toolName: string,
+  output: unknown
+) {
   const record = writeColumnRecord(output);
-  if (!record) return false;
+  if (!record) return;
+
   if (toolName === "extract_numeric_series") {
-    return record.morePages === true;
+    const id = coverageId(record.attachmentId);
+    if (record.morePages === true) pending.add(`extract:${id}`);
+    else {
+      pending.delete(`extract:${id}`);
+      pending.delete(`scan:${id}`);
+    }
+    return;
   }
+
   if (toolName === "scan_attachments") {
-    return record.truncated === true;
+    const truncated = record.truncated === true;
+    for (const id of scanCoverageIds(record)) {
+      if (truncated) pending.add(`scan:${id}`);
+      else {
+        pending.delete(`scan:${id}`);
+        pending.delete(`extract:${id}`);
+      }
+    }
+    return;
   }
-  return false;
+
+  if (toolName === "read_document_page") {
+    const page =
+      record.page && typeof record.page === "object"
+        ? (record.page as Record<string, unknown>)
+        : record;
+    const id = coverageId(page.attachmentId);
+    pending.delete(`scan:${id}`);
+  }
 }
 
 function eachNamedToolOutput(
@@ -168,15 +214,15 @@ function eachNamedToolOutput(
   }
 }
 
-function stepDumpSourceHasMorePages(step: AnalyticsChatStep): boolean {
+function stepApplyDumpCoverage(
+  step: AnalyticsChatStep,
+  pending: Set<string>
+) {
   for (const toolName of DUMP_SOURCE_TOOLS) {
-    let more = false;
     eachNamedToolOutput(step, toolName, (output) => {
-      if (dumpSourceHasMorePages(output, toolName)) more = true;
+      applyDumpCoverage(pending, toolName, output);
     });
-    if (more) return true;
   }
-  return false;
 }
 
 function eachWriteColumnOutput(
@@ -287,23 +333,19 @@ export function analyticsPartialDumpDirective(
 }
 
 /**
- * Keep pulling pages while extract morePages or scan truncated is true.
- * Hide write_column so a first-page dump cannot land.
+ * Keep pulling pages while any file still has extract morePages or scan
+ * truncated. Hide write_column so a first-page dump cannot land. Separate
+ * extracts per destination sheet are fine — finish that file, write that
+ * sheet, then gather the next file.
  */
 export function analyticsGatherDirective(
   steps: readonly AnalyticsChatStep[]
 ): "continue" | "gather" {
-  let pendingMore = false;
+  const pending = new Set<string>();
   for (const step of steps) {
-    if (stepDumpSourceHasMorePages(step)) {
-      pendingMore = true;
-      continue;
-    }
-    if (pendingMore && stepReadDumpSource(step)) {
-      pendingMore = false;
-    }
+    stepApplyDumpCoverage(step, pending);
   }
-  return pendingMore ? "gather" : "continue";
+  return pending.size > 0 ? "gather" : "continue";
 }
 
 const PLOT_TOOLS = [
