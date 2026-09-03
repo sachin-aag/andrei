@@ -70,7 +70,7 @@ import {
 } from "./store";
 import type { BoxplotAnalysisSummary, HistogramAnalysisSummary, ReportAnalyticsView, XyScatterAnalysisSummary } from "./types";
 import { BOXPLOT, HISTOGRAM, MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
-import { createEmptyWorksheet, insertColumn, renameColumn, replaceColumnValues } from "./worksheet";
+import { createEmptyWorksheet, dataSheets, insertColumn, renameColumn, replaceColumnValues, trimTrailingEmpty } from "./worksheet";
 
 function pageRead(transcript: string): DocumentPageRead {
   return {
@@ -396,6 +396,12 @@ describe("analytics chat tools", () => {
       status: "ok",
       operationCount: 2,
     });
+    expect(result).toMatchObject({
+      operations: [
+        expect.objectContaining({ action: "add_column", sheetName: "Data" }),
+        expect.objectContaining({ action: "add_column", sheetName: "Data" }),
+      ],
+    });
     expect(updateReportAnalytics).toHaveBeenCalledTimes(1);
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1];
     expect(saved?.columns).toHaveLength(8);
@@ -403,6 +409,130 @@ describe("analytics chat tools", () => {
       "Time (hrs)",
       "Temp (°C)",
     ]);
+  });
+
+  it("writes onto a named sheet instead of the last add_sheet tab", async () => {
+    let current = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockImplementation(async () => current);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => {
+      current = analyticsView(worksheet);
+      return { ok: true, analytics: current };
+    });
+    vi.mocked(readDocumentPage).mockResolvedValue(pageRead("3.081 2.999"));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const manage = tools.manage_worksheet?.execute;
+    const write = tools.write_column?.execute;
+    if (!manage || !write) throw new Error("manage_worksheet or write_column missing");
+    const added = await manage(
+      {
+        operations: [
+          { action: "add_sheet", name: "M3-SYS-FN-044" },
+          { action: "add_sheet", name: "Separation Force" },
+        ],
+      },
+      {
+        toolCallId: "test-manage",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(added).toMatchObject({
+      status: "ok",
+      operationCount: 2,
+      sheetId: "data-3",
+      sheetName: "Separation Force",
+      operations: [
+        expect.objectContaining({
+          action: "add_sheet",
+          sheetId: "data-2",
+          sheetName: "M3-SYS-FN-044",
+        }),
+        expect.objectContaining({
+          action: "add_sheet",
+          sheetId: "data-3",
+          sheetName: "Separation Force",
+        }),
+      ],
+    });
+    const written = await write(
+      {
+        sheetId: "data-2",
+        sourceAttachmentId: "att_1",
+        sourcePages: [237],
+        columns: [{ name: "Watts", values: [3.081, 2.999] }],
+      },
+      {
+        toolCallId: "test-write",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(written).toMatchObject({
+      status: "written",
+      sheetId: "data-2",
+      sheetName: "M3-SYS-FN-044",
+      rowsWritten: 2,
+    });
+    const fn044 = current.worksheet.sheets.find((sheet) => sheet.id === "data-2");
+    const separation = current.worksheet.sheets.find(
+      (sheet) => sheet.id === "data-3"
+    );
+    expect(
+      fn044?.columns.find((column) => column.name === "Watts")?.values.slice(0, 2)
+    ).toEqual(["3.081", "2.999"]);
+    expect(
+      dataSheets(current.worksheet).find((sheet) => sheet.id === "data-3")
+    ).toBeDefined();
+    expect(
+      separation?.columns.every(
+        (column) => trimTrailingEmpty(column.values).length === 0
+      )
+    ).toBe(true);
+  });
+
+  it("does not bypass source verification on a single-column retry", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    vi.mocked(readDocumentPage).mockResolvedValue(
+      pageRead("SEN-0724-10004 15.2 SEN-0724-10001 16.7")
+    );
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        sourceAttachmentId: "att_1",
+        sourcePages: [239],
+        name: "Adapter / Component",
+        values: [
+          "Handpiece Adapter #1 (No S/N)",
+          "Handpiece Adapter #2 (No S/N)",
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      rowsWritten: 0,
+      blankedCount: 2,
+      incomplete: true,
+    });
   });
 
   it("reports destination and non-numeric cells after write_column", async () => {
@@ -703,6 +833,13 @@ describe("analytics chat tools", () => {
     );
     expect(
       schema.safeParse({
+        sheetId: "data-2",
+        name: "Temp",
+        values: [37.1],
+      }).success
+    ).toBe(true);
+    expect(
+      schema.safeParse({
         columns: [
           { name: "Temp", values: [37.1] },
           { name: "pH", values: [6.8] },
@@ -724,6 +861,19 @@ describe("analytics chat tools", () => {
     );
     expect(tools.write_column?.description).toContain(
       "Do not substitute a sixpack or ANOVA for a scatter"
+    );
+    expect(tools.write_column?.description).toContain("Pass sheetId");
+    expect(tools.write_column?.description).toContain(
+      "Do not retry the same invented dump"
+    );
+    expect(tools.write_column?.description).toContain(
+      "Search snippets are not a page read"
+    );
+    expect(tools.manage_worksheet?.description).toContain(
+      "lists every new sheetId in operations"
+    );
+    expect(tools.manage_worksheet?.description).toContain(
+      "at most once per turn"
     );
   });
 
@@ -857,6 +1007,7 @@ describe("analytics chat tools", () => {
     expect(result).toMatchObject({
       status: "written",
       blankedCount: 2,
+      incomplete: true,
     });
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
       columns: { name: string; values: string[] }[];
@@ -909,6 +1060,7 @@ describe("analytics chat tools", () => {
     expect(result).toMatchObject({
       status: "written",
       blankedCount: 0,
+      incomplete: false,
     });
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
       columns: { name: string; values: string[] }[];
@@ -961,6 +1113,7 @@ describe("analytics chat tools", () => {
     expect(result).toMatchObject({
       status: "written",
       blankedCount: 1,
+      incomplete: true,
     });
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
       columns: { name: string; values: string[] }[];

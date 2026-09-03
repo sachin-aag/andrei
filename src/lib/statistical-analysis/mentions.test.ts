@@ -183,6 +183,7 @@ describe("buildAnalyticsMentionBlock", () => {
       droppedCount: 0,
     });
     expect(block).toContain("Data sheets");
+    expect(block).toContain("Pass sheetId on write_column");
     expect(block).toContain('"Assay" [data-1]');
     expect(block).toContain("Saved plots");
     expect(block).toContain("plot_xy_scatter with that analysisId");

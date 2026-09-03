@@ -280,7 +280,7 @@ export function buildAnalyticsMentionBlock(
 
   if (sheets.length > 0) {
     lines.push(
-      "Data sheets — read_worksheet, write_column, and manage_worksheet should target these first. Pass sheetId on manage_worksheet when the sheet is not already active:"
+      "Data sheets — read_worksheet, write_column, and manage_worksheet should target these first. Pass sheetId on write_column and manage_worksheet when the sheet is not already active:"
     );
     for (const sheet of sheets) {
       lines.push(

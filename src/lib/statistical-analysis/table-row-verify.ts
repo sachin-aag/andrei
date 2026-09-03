@@ -44,9 +44,13 @@ export function cellMatchesToken(cell: string, token: string): boolean {
   return false;
 }
 
-/** Strip spaces and hyphens so "Tip 1" matches "Tip 1" and "P33-0924- 10017" matches "P33-0924-10017". */
+/**
+ * Strip spaces, hyphens, and decorative punctuation so "Tip 1" matches
+ * "Tip 1", split SNs match, and labels like "Handpiece Adapter #1 (No S/N)"
+ * match the same words on the page.
+ */
 export function compactCellText(value: string): string {
-  return value.replace(/[\s-]+/g, "");
+  return value.replace(/[\s\-#()[\]{}]+/g, "");
 }
 
 function spanOverlapsUsed(
