@@ -14,13 +14,13 @@ export const DEFAULT_ATTACHMENT_LOCATE_TOOLS: ReadonlySet<string> = new Set([
   "extract_numeric_series",
 ]);
 
-type ToolCallLike = {
+export type ToolCallLike = {
   toolName?: string;
   type?: string;
   tool?: string;
 };
 
-type ToolResultLike = {
+export type ToolResultLike = {
   toolName?: string;
   type?: string;
   tool?: string;
@@ -43,7 +43,7 @@ export type SearchLoopOptions = {
   emptyLimit?: number;
 };
 
-function callToolName(call: ToolCallLike | undefined): string {
+export function callToolName(call: ToolCallLike | undefined): string {
   if (!call) return "";
   if (typeof call.toolName === "string" && call.toolName) return call.toolName;
   if (typeof call.tool === "string" && call.tool) return call.tool;
@@ -53,7 +53,7 @@ function callToolName(call: ToolCallLike | undefined): string {
   return "";
 }
 
-function contentToolName(part: unknown): string {
+export function contentToolName(part: unknown): string {
   if (!part || typeof part !== "object" || Array.isArray(part)) return "";
   const record = part as Record<string, unknown>;
   const type = typeof record.type === "string" ? record.type : "";
@@ -64,7 +64,7 @@ function contentToolName(part: unknown): string {
   return "";
 }
 
-function collectToolCalls(step: SearchLoopStep): ToolCallLike[] {
+export function collectToolCalls(step: SearchLoopStep): ToolCallLike[] {
   const calls: ToolCallLike[] = [
     ...(step.toolCalls ?? []),
     ...(step.staticToolCalls ?? []),
@@ -76,7 +76,7 @@ function collectToolCalls(step: SearchLoopStep): ToolCallLike[] {
   return calls;
 }
 
-function unwrapToolPayload(output: unknown): unknown {
+export function unwrapToolPayload(output: unknown): unknown {
   if (!output || typeof output !== "object" || Array.isArray(output)) {
     return output;
   }
@@ -90,7 +90,7 @@ function unwrapToolPayload(output: unknown): unknown {
   return output;
 }
 
-function toolPayload(result: ToolResultLike): unknown {
+export function toolPayload(result: ToolResultLike): unknown {
   return unwrapToolPayload(result.output ?? result.result);
 }
 
@@ -112,7 +112,7 @@ function searchHitCount(output: unknown): number {
   return 0;
 }
 
-function stepSearchHitCount(
+export function stepSearchHitCount(
   step: SearchLoopStep,
   searchTool: string
 ): number {

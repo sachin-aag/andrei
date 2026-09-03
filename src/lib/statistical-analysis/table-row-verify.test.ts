@@ -161,4 +161,35 @@ describe("table-row-verify", () => {
     expect(verified.columns[0]).toEqual(torque.map(String));
     expect(verified.blanked).toEqual([]);
   });
+
+  it("keeps Adapter #1 (No S/N) labels that match the page", () => {
+    const sourceText =
+      "Handpiece Adapter #1 (No S/N) SEN-0724-10004 15.2 " +
+      "Handpiece Adapter #1 (No S/N) SEN-0724-10004 15.2 " +
+      "Handpiece Adapter #2 (No S/N) SEN-0724-10001 16.7";
+    const verified = verifyTableWrite({
+      sourceText,
+      columns: [
+        [
+          "Handpiece Adapter #1 (No S/N)",
+          "Handpiece Adapter #1 (No S/N)",
+          "Handpiece Adapter #2 (No S/N)",
+        ],
+        ["SEN-0724-10004", "SEN-0724-10004", "SEN-0724-10001"],
+        [15.2, 15.2, 16.7],
+      ],
+    });
+    expect(verified.columns[0]).toEqual([
+      "Handpiece Adapter #1 (No S/N)",
+      "Handpiece Adapter #1 (No S/N)",
+      "Handpiece Adapter #2 (No S/N)",
+    ]);
+    expect(verified.columns[1]).toEqual([
+      "SEN-0724-10004",
+      "SEN-0724-10004",
+      "SEN-0724-10001",
+    ]);
+    expect(verified.columns[2]).toEqual(["15.2", "15.2", "16.7"]);
+    expect(verified.blanked).toEqual([]);
+  });
 });
