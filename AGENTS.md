@@ -184,7 +184,7 @@ a partial dump until another page read, and after two consecutive empty
 dumps, and hiding `manage_worksheet` after the first structure call). Live matrix
 headers come from the section (`read_section` / context map) — demo
 Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
-it does not reuse Document chat's grep-loop copy.
+it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages; `ask_user` is hidden until a cited page is actually read/scanned.
 Document chat copies a saved Analytics plot with `insert_image` (`source=analytics`)
 and can propose attachment `plot_measurements` figures on every pack.
 

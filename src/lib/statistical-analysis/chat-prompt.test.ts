@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v37-intent-and-dump"
+      "analytics-chat-v38-read-hits-not-ask"
     );
   });
 
@@ -83,6 +83,9 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("Never say the worksheet was filled");
     expect(prompt).toContain("Pasting a table into chat is not writing it");
     expect(prompt).toContain("Never ask_user which page to read");
+    expect(prompt).toContain("Hits that only list many requirement IDs");
+    expect(prompt).toContain("Do not dump the table on the next page");
+    expect(prompt).toContain("requirement ID");
     expect(prompt).toContain("A page can hold more than one table");
     expect(prompt).toContain("do not substitute a different table");
     expect(prompt).toContain("sourceAttachmentId and sourcePages");

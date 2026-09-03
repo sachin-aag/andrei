@@ -71,6 +71,7 @@ export function analyticsSearchLoopDirective(
 
 const WRITE_COLUMN_TOOL = "write_column";
 const MANAGE_WORKSHEET_TOOL = "manage_worksheet";
+const ASK_USER_TOOL = "ask_user";
 
 /** Page text the model can copy from — outline is not enough to dump. */
 const DUMP_SOURCE_TOOLS = new Set([
@@ -265,9 +266,12 @@ export function prepareAnalyticsChatStep(input: {
     dumpReady === "read_first" ||
     partialDump === "read_more";
   const hideManage = manageDirective === "finish";
+  const hideAsk = dumpReady === "read_first";
   const hidden = new Set<string>();
   if (hideWrite) hidden.add(WRITE_COLUMN_TOOL);
   if (hideManage) hidden.add(MANAGE_WORKSHEET_TOOL);
+  // Cited grep is not a missing page — Quick was asking for the page number.
+  if (hideAsk) hidden.add(ASK_USER_TOOL);
 
   const writableTools = (searchOpen: boolean): string[] => {
     const tools = [
