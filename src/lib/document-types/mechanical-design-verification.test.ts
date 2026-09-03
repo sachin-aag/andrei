@@ -203,6 +203,12 @@ describe("mechanical design verification definition", () => {
     );
   });
 
+  it("tells Agent wrap-ups not to mention drafting rules as a recipe", () => {
+    const guidance = getDocumentType(TYPE).chat.draftingGuidance ?? "";
+    expect(guidance).toContain("How to draft this report");
+    expect(guidance).toContain("Never call this a recipe");
+  });
+
   it("tells Agent to put table footnotes after the table, not in the lead-in", () => {
     const guidance = getDocumentType(TYPE).chat.draftingGuidance ?? "";
     expect(guidance).toContain("Do not put this note in the 4.2 lead-in");

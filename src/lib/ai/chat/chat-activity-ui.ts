@@ -397,7 +397,6 @@ function buildSectionReadsNode(tools: ChatToolPartInfo[]): ActivitySurfaceNode {
 function buildEditNode(info: ChatToolPartInfo): ActivitySurfaceNode {
   const pending = isToolPending(info);
   const section = sectionLabel(info.input?.section);
-  const field = stringField(info.input?.targetField);
   const status = info.output?.status;
 
   if (pending) {
@@ -414,7 +413,7 @@ function buildEditNode(info: ChatToolPartInfo): ActivitySurfaceNode {
   if (status === "applied") {
     return {
       kind: "edit",
-      label: field ? `Applied to ${section} · ${field}` : `Applied to ${section}`,
+      label: `Applied to ${section}`,
       pending: false,
       tone: "success",
       expandable: false,
@@ -436,7 +435,7 @@ function buildEditNode(info: ChatToolPartInfo): ActivitySurfaceNode {
   if (status === "drafted") {
     return {
       kind: "edit",
-      label: `Drafted ${section}${field ? ` · ${field}` : ""} — review in the document`,
+      label: `Drafted ${section} — review in the document`,
       pending: false,
       tone: "success",
       expandable: false,
@@ -447,7 +446,7 @@ function buildEditNode(info: ChatToolPartInfo): ActivitySurfaceNode {
   if (status === "not_a_rewrite") {
     return {
       kind: "edit",
-      label: `Switching to a targeted edit on ${section}${field ? ` · ${field}` : ""}`,
+      label: `Switching to a targeted edit on ${section}`,
       pending: false,
       tone: "muted",
       expandable: false,

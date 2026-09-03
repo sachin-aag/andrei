@@ -91,9 +91,9 @@ function formatGapHintsBlock(hints: AlreadyDraftedGapHints): string {
 }
 
 const GAP_REVIEW_RULES = `Gap rules:
-- Material gap only: a criterion clearly not met, or a required fact the section recipe says must appear when true. Ignore "could be more detailed" without a failing criterion.
-- No padding: do not expand length; respect the section recipe and any length the engineer asked for. Current text length is a soft ceiling unless they want more.
-- Recipe conflict: if filling a gap would violate an omit-if rule in the recipe, ask once whether to include it (yes/no) — do not quiz them for facts already in the section or evidence.`;
+- Material gap only: a criterion clearly not met, or a required fact the section structure says must appear when true. Ignore "could be more detailed" without a failing criterion.
+- No padding: do not expand length; respect the section structure and any length the engineer asked for. Current text length is a soft ceiling unless they want more.
+- Omit-if conflict: if filling a gap would violate an omit-if rule, ask once whether to include it (yes/no) — do not quiz them for facts already in the section or evidence.`;
 
 /**
  * True when the engineer asked to produce a section (draft / fill / write),

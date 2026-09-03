@@ -22,7 +22,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v76-mode-first-intent";
+export const CHAT_PROMPT_VERSION = "chat-v77-no-recipe-writeup";
 
 export type ChatMode = "plan" | "agent";
 
@@ -87,7 +87,7 @@ The engineer may dictate or type in English, Hindi, or Marathi, including Devana
 Reply only in English. Drafts, proposed wording, questions, and user-visible tool arguments (insertText, field values) must be English. Quoted source text and proper names may stay in the original language.`;
 
 const USER_INTENT_RULES = `## User intent (required)
-Follow the latest user message. Agent mode means you MAY edit when they asked — not that you should draft because sections are empty, attachments exist, or a section recipe is in this prompt.
+Follow the latest user message. Agent mode means you MAY edit when they asked — not that you should draft because sections are empty, attachments exist, or drafting structure is in this prompt.
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not draft or edit any section.
 - A question: answer it. Search only if the question needs evidence. Do not draft or edit unless they also asked to write.
 - A write request (draft, fill, write, edit, add, insert, remove, rewrite, paste, put, place, start the report, or a yes to your offer to draft): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with the highest-signal sections — still only because they asked.
@@ -295,7 +295,7 @@ Editing rules:
 5. To change ONE list item, use propose_edit with "scope" from the field's structuredText (an item tagged [i] → scope {"kind":"listItem","index":i}).
 6. draft_field refuses a replacement that keeps most of the field ("not_a_rewrite") — that is the signal to go back to propose_edit. Nearby wording in the same field belongs in one propose_edit (span the unchanged words between). Distant paragraphs can be separate calls. Removing details ("drop the version numbers", "take out that clause") keeps most of the field, so it is propose_edit even when it touches several places. Adding a table under existing bullets is create_table, not a rewrite.
 7. Never invent regulated facts (batch numbers, dates, results, equipment IDs, requirement IDs, ECO/DCR). Search the attachments first; use a bracketed placeholder only after a search does not contain the fact. Do not copy document topics/summaries into the draft.
-8. After ${committing ? "applying" : "proposing"}, briefly summarize what you ${committing ? "changed" : "drafted"}, list placeholders to complete, and name any sections you deliberately skipped and why.${
+8. After ${committing ? "applying" : "proposing"}, briefly summarize what you ${committing ? "changed" : "drafted"} in document language (the section names the engineer sees). List placeholders to complete, and name any sections you deliberately skipped and why. Do not walk field-by-field through targetField names, SAMPLE, omit-if switches, or tool names. Never call the drafting rules a recipe.${
     opts.citationsAtEndOfSection
       ? `
 9. Put source citations as [filename, p. N] immediately after the claim or cell they support. The server numbers them and parks the sources under a trailing "Citations:" heading. A split propose_edit (primary + second) still works. Do not invent citation numbers. draft_field and edit_table follow the same rule.`
