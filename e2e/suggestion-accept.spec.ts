@@ -179,7 +179,7 @@ test.describe("suggestion accept keeps text visible", () => {
     await expect(editor.locator(".suggestion-insert")).toBeVisible();
   });
 
-  test("Agent chrome proposes red/green marks and Apply all for one suggestion", async ({
+  test("Agent chrome proposes insert preview and Apply all for one suggestion", async ({
     page,
   }) => {
     await openReportEditor(page, reportId!);
@@ -188,7 +188,8 @@ test.describe("suggestion accept keeps text visible", () => {
     await expect(
       editor.locator(".suggestion-insert").filter({ hasText: INSERT.trim() })
     ).toBeVisible({ timeout: 30_000 });
-    await expect(editor.locator(".suggestion-delete")).toBeVisible();
+    // Insert-only seeds anchor after the match — no delete span.
+    await expect(editor.locator(".suggestion-delete")).toHaveCount(0);
     await expect(
       editor.getByRole("button", { name: "Accept suggestion" })
     ).toBeVisible();
