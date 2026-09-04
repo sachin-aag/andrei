@@ -23,7 +23,11 @@ export function captureEvent(
   props?: Record<string, unknown>
 ) {
   if (typeof window === "undefined") return;
-  posthog.capture(event, props);
+  try {
+    posthog.capture(event, props);
+  } catch {
+    // Analytics must never break the product.
+  }
 }
 
 export function captureClientException(
@@ -31,5 +35,9 @@ export function captureClientException(
   props?: Record<string, unknown>
 ) {
   if (typeof window === "undefined") return;
-  posthog.captureException(error, props);
+  try {
+    posthog.captureException(error, props);
+  } catch {
+    // Analytics must never break the product.
+  }
 }

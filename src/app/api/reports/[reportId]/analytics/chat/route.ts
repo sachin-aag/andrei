@@ -353,7 +353,7 @@ async function handleAnalyticsChatPost(
       sessionId,
       error: formatChatLlmError(err),
     });
-    captureChatAssistantFailure({
+    await captureChatAssistantFailure({
       error: err,
       userId: user.id,
       reportId,
@@ -376,6 +376,14 @@ async function handleAnalyticsChatPost(
         console.error("analytics-chat: consumeStream exceeded budget", {
           reportId,
           sessionId,
+        });
+        await captureChatAssistantFailure({
+          error: new Error("consumeStream exceeded budget"),
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "analytics",
+          site: "consume_timeout",
         });
       } else if (!isTestStubChat()) {
         const usage = await result.totalUsage;
@@ -408,14 +416,20 @@ async function handleAnalyticsChatPost(
         sessionId,
         error: formatChatLlmError(error),
       });
-      captureChatAssistantFailure({
-        error,
-        userId: user.id,
-        reportId,
-        sessionId,
-        surface: "analytics",
-        site: "stream_error",
-      });
+      const reportFailure = () =>
+        captureChatAssistantFailure({
+          error,
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "analytics",
+          site: "stream_error",
+        });
+      try {
+        after(reportFailure);
+      } catch {
+        void reportFailure();
+      }
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
@@ -447,6 +461,18 @@ async function handleAnalyticsChatPost(
           sessionId,
           finishReason: finishReason ?? "unknown",
           emptyFailure: persisted.emptyFailure,
+        });
+        await captureChatAssistantFailure({
+          error: new Error("empty or failed assistant turn"),
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "analytics",
+          site: "empty_turn",
+          extra: {
+            finishReason: finishReason ?? "unknown",
+            emptyFailure: persisted.emptyFailure,
+          },
         });
       }
       try {

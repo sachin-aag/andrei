@@ -12,15 +12,24 @@ export function isPostHogServerEnabled(): boolean {
   return Boolean(posthogKey());
 }
 
+/** Test helper — the module singleton otherwise leaks across cases. */
+export function resetPostHogServerForTests(): void {
+  posthogServer = undefined;
+}
+
 /** Shared server-side PostHog client, or null when no key is configured. */
 export function getPostHogServer(): PostHog | null {
   if (!isPostHogServerEnabled()) return null;
   if (posthogServer === undefined) {
-    posthogServer = new PostHog(posthogKey()!, {
-      host: POSTHOG_EU_API_HOST,
-      flushAt: 1,
-      flushInterval: 0,
-    });
+    try {
+      posthogServer = new PostHog(posthogKey()!, {
+        host: POSTHOG_EU_API_HOST,
+        flushAt: 1,
+        flushInterval: 0,
+      });
+    } catch {
+      posthogServer = null;
+    }
   }
   return posthogServer;
 }

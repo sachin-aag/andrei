@@ -13,9 +13,9 @@ afterEach(() => {
 });
 
 describe("captureChatAssistantFailure", () => {
-  it("no-ops when PostHog is not configured", () => {
+  it("no-ops when PostHog is not configured", async () => {
     getPostHogServer.mockReturnValue(null);
-    expect(() =>
+    await expect(
       captureChatAssistantFailure({
         error: new Error("boom"),
         userId: "user-1",
@@ -24,10 +24,10 @@ describe("captureChatAssistantFailure", () => {
         surface: "report",
         site: "stream_error",
       })
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
   });
 
-  it("captures a countable event and an exception for the workspace user", () => {
+  it("captures a countable event and an exception for the workspace user", async () => {
     const captureImmediate = vi.fn().mockResolvedValue(undefined);
     const captureExceptionImmediate = vi.fn().mockResolvedValue(undefined);
     getPostHogServer.mockReturnValue({
@@ -36,7 +36,7 @@ describe("captureChatAssistantFailure", () => {
     });
     const error = new Error("gateway timeout");
 
-    captureChatAssistantFailure({
+    await captureChatAssistantFailure({
       error,
       userId: "user-1",
       reportId: "report-1",
@@ -61,5 +61,68 @@ describe("captureChatAssistantFailure", () => {
       "user-1",
       expect.objectContaining({ surface: "analytics", site: "stream_start" })
     );
+  });
+
+  it("forwards extra properties such as finishReason", async () => {
+    const captureImmediate = vi.fn().mockResolvedValue(undefined);
+    const captureExceptionImmediate = vi.fn().mockResolvedValue(undefined);
+    getPostHogServer.mockReturnValue({
+      captureImmediate,
+      captureExceptionImmediate,
+    });
+
+    await captureChatAssistantFailure({
+      error: new Error("empty"),
+      userId: "user-1",
+      reportId: "report-1",
+      sessionId: "session-1",
+      surface: "report",
+      site: "empty_turn",
+      extra: { finishReason: "error" },
+    });
+
+    expect(captureImmediate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: expect.objectContaining({
+          site: "empty_turn",
+          finishReason: "error",
+        }),
+      })
+    );
+  });
+
+  it("swallows PostHog client failures so capture cannot mask the original error", async () => {
+    getPostHogServer.mockImplementation(() => {
+      throw new Error("posthog down");
+    });
+    await expect(
+      captureChatAssistantFailure({
+        error: new Error("boom"),
+        userId: "user-1",
+        reportId: "report-1",
+        sessionId: "session-1",
+        surface: "report",
+        site: "consume_timeout",
+      })
+    ).resolves.toBeUndefined();
+  });
+
+  it("swallows rejected capture promises", async () => {
+    getPostHogServer.mockReturnValue({
+      captureImmediate: vi.fn().mockRejectedValue(new Error("network")),
+      captureExceptionImmediate: vi
+        .fn()
+        .mockRejectedValue(new Error("network")),
+    });
+    await expect(
+      captureChatAssistantFailure({
+        error: new Error("boom"),
+        userId: "user-1",
+        reportId: "report-1",
+        sessionId: "session-1",
+        surface: "report",
+        site: "stream_error",
+      })
+    ).resolves.toBeUndefined();
   });
 });
