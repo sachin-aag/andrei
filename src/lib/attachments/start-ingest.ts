@@ -26,6 +26,7 @@ import {
   AttachmentPageBudgetExceededError,
 } from "@/lib/attachments/page-budget";
 import { runDocumentIngest } from "@/lib/attachments/run-document-ingest";
+import { syncAssetProcessing } from "@/lib/attachments/sync-asset-processing";
 import { isTestStubDocumentIngest } from "@/lib/test/ai-bypass";
 import { documentIngestWorkflow } from "@/workflows/document-ingest";
 
@@ -228,6 +229,7 @@ export async function ensureFailedIfStillInFlight(
     .select({
       processingStatus: reportAttachments.processingStatus,
       processingError: reportAttachments.processingError,
+      assetId: reportAttachments.assetId,
     })
     .from(reportAttachments)
     .where(eq(reportAttachments.id, attachmentId))
@@ -235,14 +237,21 @@ export async function ensureFailedIfStillInFlight(
 
   if (!row || !shouldBackfillIngestFailure(row)) return;
 
+  const failPatch = {
+    processingStatus: "failed" as const,
+    processingProgress: 0,
+    processingPage: null,
+    processingError: sanitizeIngestError(error),
+  };
+
+  if (row.assetId) {
+    await syncAssetProcessing(row.assetId, failPatch);
+    return;
+  }
+
   await db
     .update(reportAttachments)
-    .set({
-      processingStatus: "failed",
-      processingProgress: 0,
-      processingPage: null,
-      processingError: sanitizeIngestError(error),
-    })
+    .set(failPatch)
     .where(eq(reportAttachments.id, attachmentId));
 }
 
@@ -262,6 +271,7 @@ async function markAttachmentReadyForTests(
   await db.insert(attachmentIngestRuns).values({
     id: runId,
     attachmentId,
+    assetId: attachment.assetId,
     reportId: attachment.reportId,
     status: "ready",
     parserVersion: "test-stub",
@@ -282,6 +292,7 @@ async function markAttachmentReadyForTests(
     id: pageId,
     ingestRunId: runId,
     attachmentId,
+    assetId: attachment.assetId,
     reportId: attachment.reportId,
     pageNumber: 1,
     printedPageLabel: "1",
@@ -308,6 +319,7 @@ async function markAttachmentReadyForTests(
     await db.insert(documentChunks).values({
       ingestRunId: runId,
       attachmentId,
+      assetId: attachment.assetId,
       reportId: attachment.reportId,
       pageId: chunks[0].pageId,
       pageNumber: chunks[0].pageNumber,
@@ -319,15 +331,22 @@ async function markAttachmentReadyForTests(
     });
   }
 
+  const readyPatch = {
+    processingStatus: "ready" as const,
+    processingProgress: 100,
+    processingPage: null,
+    processingError: null,
+    activeIngestRunId: runId,
+    gcsGeneration: generation,
+  };
+
+  if (attachment.assetId) {
+    await syncAssetProcessing(attachment.assetId, readyPatch);
+    return;
+  }
+
   await db
     .update(reportAttachments)
-    .set({
-      processingStatus: "ready",
-      processingProgress: 100,
-      processingPage: null,
-      processingError: null,
-      activeIngestRunId: runId,
-      gcsGeneration: generation,
-    })
+    .set(readyPatch)
     .where(eq(reportAttachments.id, attachmentId));
 }
