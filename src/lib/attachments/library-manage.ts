@@ -148,10 +148,12 @@ export async function moveLibraryItems(
       folderId,
     });
     if (placementError) {
+      const status: 400 | 404 =
+        placementError.status === 404 ? 404 : 400;
       return {
         ok: false,
         error: placementError.error,
-        status: placementError.status,
+        status,
       };
     }
   }
