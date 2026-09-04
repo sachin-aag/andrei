@@ -16,8 +16,11 @@ import {
   type OutlineSpan,
 } from "@/lib/attachments/page-outline";
 import {
+  buildMatchCenteredSnippet,
   classifyRetrievalQuery,
   collapseToBestChunkPerPage,
+  lexicalMatchScore,
+  lexicalQueryTokens,
   searchPageKey,
   type RetrievalQueryKind,
 } from "@/lib/attachments/retrieval-query";
@@ -25,8 +28,11 @@ import { rewriteChunkDocumentHeader } from "@/lib/attachments/chunk-pages";
 
 export { buildOutlineFromStoredPages };
 export {
+  buildMatchCenteredSnippet,
   classifyRetrievalQuery,
   collapseToBestChunkPerPage,
+  lexicalMatchScore,
+  lexicalQueryTokens,
   searchPageKey,
 };
 export type { RetrievalQueryKind } from "@/lib/attachments/retrieval-query";
@@ -295,15 +301,14 @@ export function reciprocalRankFusion<T extends { chunkId: string }>(
 
 function toSearchResult(
   row: CandidateRow,
-  opts: { snippetChars?: number } = {}
+  opts: { snippetChars?: number; query?: string } = {}
 ): DocumentSearchResult {
-  const quote = rewriteChunkDocumentHeader(
-    truncateSnippet(
-      row.contextualText || row.rawText,
-      opts.snippetChars ?? DEFAULT_SNIPPET_CHARS
-    ),
-    row.filename
-  );
+  const source = row.contextualText || row.rawText;
+  const maxChars = opts.snippetChars ?? DEFAULT_SNIPPET_CHARS;
+  const excerpt = opts.query?.trim()
+    ? buildMatchCenteredSnippet(source, opts.query, maxChars)
+    : truncateSnippet(source, maxChars);
+  const quote = rewriteChunkDocumentHeader(excerpt, row.filename);
   return {
     attachmentId: row.attachmentId,
     filename: row.filename,
@@ -396,7 +401,11 @@ function identifiersIlikeSql(identifiers: readonly string[]) {
   );
 }
 
-function mergeUniqueChunks(rows: CandidateRow[]): CandidateRow[] {
+function chunkText(row: CandidateRow): string {
+  return row.contextualText || row.rawText;
+}
+
+function mergeUniqueChunks(rows: CandidateRow[], query?: string): CandidateRow[] {
   const seen = new Set<string>();
   const merged: CandidateRow[] = [];
   for (const row of rows) {
@@ -404,7 +413,10 @@ function mergeUniqueChunks(rows: CandidateRow[]): CandidateRow[] {
     seen.add(row.chunkId);
     merged.push(row);
   }
-  return collapseToBestChunkPerPage(merged);
+  return collapseToBestChunkPerPage(merged, {
+    query,
+    textFrom: chunkText,
+  });
 }
 
 /** One hybrid vector+keyword pass, optionally narrowed to / away from attachments. */
@@ -527,7 +539,10 @@ async function exactIdentifierChunkSearch({
     .limit(candidateLimit);
 
   if (overlapRows.length > 0) {
-    return collapseToBestChunkPerPage(overlapRows);
+    return collapseToBestChunkPerPage(overlapRows, {
+      query: identifiers.join(" "),
+      textFrom: chunkText,
+    });
   }
 
   const likeCondition = identifiersIlikeSql(identifiers);
@@ -544,7 +559,89 @@ async function exactIdentifierChunkSearch({
     .orderBy(documentChunks.pageNumber, documentChunks.ordinal)
     .limit(candidateLimit);
 
-  return collapseToBestChunkPerPage(likeRows);
+  return collapseToBestChunkPerPage(likeRows, {
+    query: identifiers.join(" "),
+    textFrom: chunkText,
+  });
+}
+
+function lexicalIlikeOnChunkColumn(
+  column: typeof documentChunks.contextualText | typeof documentChunks.rawText,
+  pattern: string
+) {
+  return sql`(${column} ILIKE ${pattern} ESCAPE '\\')`;
+}
+
+async function lexicalChunkSearch({
+  reportId,
+  trimmed,
+  limit,
+  includeAttachmentIds = [],
+  excludeAttachmentIds = [],
+}: {
+  reportId: string;
+  trimmed: string;
+  limit: number;
+  includeAttachmentIds?: string[];
+  excludeAttachmentIds?: string[];
+}): Promise<CandidateRow[]> {
+  const tokens = lexicalQueryTokens(trimmed);
+  if (tokens.length === 0) return [];
+
+  const candidateLimit = Math.max(limit * 5, DEFAULT_CANDIDATE_LIMIT);
+  const activeScope = and(
+    eq(documentChunks.reportId, reportId),
+    eq(reportAttachments.reportId, reportId),
+    isNull(reportAttachments.deletedAt),
+    isNotNull(reportAttachments.activeIngestRunId),
+    eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
+    ...(includeAttachmentIds.length > 0
+      ? [inArray(documentChunks.attachmentId, includeAttachmentIds)]
+      : []),
+    ...(excludeAttachmentIds.length > 0
+      ? [notInArray(documentChunks.attachmentId, excludeAttachmentIds)]
+      : [])
+  );
+
+  const matchConditions = [];
+  if (trimmed.length >= 3) {
+    const phrasePattern = `%${escapeIlike(trimmed)}%`;
+    matchConditions.push(
+      or(
+        lexicalIlikeOnChunkColumn(documentChunks.contextualText, phrasePattern),
+        lexicalIlikeOnChunkColumn(documentChunks.rawText, phrasePattern)
+      )
+    );
+  }
+  if (tokens.length > 0) {
+    const tokenAnd = and(
+      ...tokens.map((token) => {
+        const pattern = `%${escapeIlike(token)}%`;
+        return or(
+          lexicalIlikeOnChunkColumn(documentChunks.contextualText, pattern),
+          lexicalIlikeOnChunkColumn(documentChunks.rawText, pattern)
+        );
+      })
+    );
+    if (tokenAnd) matchConditions.push(tokenAnd);
+  }
+  if (matchConditions.length === 0) return [];
+
+  const rows = await db
+    .select(candidateSelect())
+    .from(documentChunks)
+    .innerJoin(
+      reportAttachments,
+      eq(documentChunks.attachmentId, reportAttachments.id)
+    )
+    .where(and(activeScope, or(...matchConditions)))
+    .orderBy(documentChunks.pageNumber, documentChunks.ordinal)
+    .limit(candidateLimit);
+
+  return collapseToBestChunkPerPage(rows, {
+    query: trimmed,
+    textFrom: chunkText,
+  });
 }
 
 /**
@@ -660,16 +757,31 @@ export async function searchReportDocumentsDetailed({
   );
 
   const take = (rows: CandidateRow[], pinned?: boolean): DocumentSearchResult[] =>
-    collapseToBestChunkPerPage(rows)
+    collapseToBestChunkPerPage(rows, { query: trimmed, textFrom: chunkText })
       .filter(
         (row) =>
           !excludeKeys.has(searchPageKey(row.attachmentId, row.pageNumber))
       )
       .slice(0, limit)
       .map((row) => ({
-        ...toSearchResult(row, { snippetChars }),
+        ...toSearchResult(row, { snippetChars, query: trimmed }),
         ...(pinned === undefined ? {} : { pinned }),
       }));
+
+  const lexicalRowsFillLimit = (rows: CandidateRow[]): boolean => {
+    if (rows.length === 0) return false;
+    const collapsed = collapseToBestChunkPerPage(rows, {
+      query: trimmed,
+      textFrom: chunkText,
+    }).filter(
+      (row) =>
+        !excludeKeys.has(searchPageKey(row.attachmentId, row.pageNumber))
+    );
+    if (collapsed.length < limit) return false;
+    return collapsed
+      .slice(0, limit)
+      .every((row) => lexicalMatchScore(chunkText(row), trimmed) > 0);
+  };
 
   const timedSql = async <T,>(fn: () => Promise<T>): Promise<T> => {
     const started = Date.now();
@@ -723,9 +835,26 @@ export async function searchReportDocumentsDetailed({
     }
   };
 
+  const lexicalSearch = (scope: {
+    includeAttachmentIds?: string[];
+    excludeAttachmentIds?: string[];
+  }) =>
+    classified.kind === "identifier" || needsKeyword
+      ? Promise.resolve([] as CandidateRow[])
+      : timedSql(() =>
+          lexicalChunkSearch({
+            reportId,
+            trimmed,
+            limit: fusionLimit,
+            ...scope,
+          })
+        );
+
   if (pinnedIds.length === 0) {
-    const exactRows =
-      classified.identifiers.length > 0 ? await exactSearch({}) : [];
+    const [exactRows, lexicalRows] = await Promise.all([
+      classified.identifiers.length > 0 ? exactSearch({}) : Promise.resolve([]),
+      lexicalSearch({}),
+    ]);
     const exactTaken = take(exactRows);
     if (classified.identifiers.length > 0 && exactTaken.length >= limit) {
       skippedEmbedding = true;
@@ -735,18 +864,30 @@ export async function searchReportDocumentsDetailed({
       };
     }
 
+    if (lexicalRowsFillLimit(lexicalRows)) {
+      skippedEmbedding = true;
+      return {
+        results: take(mergeUniqueChunks([...exactRows, ...lexicalRows], trimmed)),
+        timing: emptyTiming(true),
+      };
+    }
+
     const vector = await embedIfNeeded();
     const fusedRows = await fusedSearch(vector, {});
     return {
-      results: take(mergeUniqueChunks([...exactRows, ...fusedRows])),
+      results: take(
+        mergeUniqueChunks([...exactRows, ...lexicalRows, ...fusedRows], trimmed)
+      ),
       timing: emptyTiming(skippedEmbedding),
     };
   }
 
-  const exactPinnedRows =
+  const [exactPinnedRows, lexicalPinnedRows] = await Promise.all([
     classified.identifiers.length > 0
-      ? await exactSearch({ includeAttachmentIds: pinnedIds })
-      : [];
+      ? exactSearch({ includeAttachmentIds: pinnedIds })
+      : Promise.resolve([]),
+    lexicalSearch({ includeAttachmentIds: pinnedIds }),
+  ]);
   const pinnedExact = take(exactPinnedRows, true);
   if (classified.identifiers.length > 0 && pinnedExact.length >= limit) {
     skippedEmbedding = true;
@@ -761,7 +902,10 @@ export async function searchReportDocumentsDetailed({
     includeAttachmentIds: pinnedIds,
   });
   const pinnedMerged = take(
-    mergeUniqueChunks([...exactPinnedRows, ...pinnedFused]),
+    mergeUniqueChunks(
+      [...exactPinnedRows, ...lexicalPinnedRows, ...pinnedFused],
+      trimmed
+    ),
     true
   );
   if (!backfill || pinnedMerged.length >= limit) {
@@ -771,10 +915,12 @@ export async function searchReportDocumentsDetailed({
     };
   }
 
-  const exactBackfillRows =
+  const [exactBackfillRows, lexicalBackfillRows] = await Promise.all([
     classified.identifiers.length > 0
-      ? await exactSearch({ excludeAttachmentIds: pinnedIds })
-      : [];
+      ? exactSearch({ excludeAttachmentIds: pinnedIds })
+      : Promise.resolve([]),
+    lexicalSearch({ excludeAttachmentIds: pinnedIds }),
+  ]);
   if (
     classified.identifiers.length > 0 &&
     pinnedMerged.length + take(exactBackfillRows, false).length >= limit
@@ -796,7 +942,13 @@ export async function searchReportDocumentsDetailed({
   return {
     results: [
       ...pinnedMerged,
-      ...take(mergeUniqueChunks([...exactBackfillRows, ...backfillFused]), false),
+      ...take(
+        mergeUniqueChunks(
+          [...exactBackfillRows, ...lexicalBackfillRows, ...backfillFused],
+          trimmed
+        ),
+        false
+      ),
     ].slice(0, limit),
     timing: emptyTiming(skippedEmbedding),
   };

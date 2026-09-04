@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMatchCenteredSnippet,
   classifyRetrievalQuery,
   collapseToBestChunkPerPage,
+  lexicalMatchScore,
+  lexicalQueryTokens,
 } from "./retrieval-query";
 
 describe("classifyRetrievalQuery", () => {
@@ -32,13 +35,88 @@ describe("classifyRetrievalQuery", () => {
   });
 });
 
+describe("lexicalQueryTokens", () => {
+  it("drops punctuation-only tokens", () => {
+    expect(lexicalQueryTokens("logic analyzer ???")).toEqual([
+      "logic",
+      "analyzer",
+    ]);
+  });
+});
+
+describe("lexicalMatchScore", () => {
+  it("prefers phrase matches over single-token overlap", () => {
+    const phrase = lexicalMatchScore(
+      "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+      "logic analyzer"
+    );
+    const single = lexicalMatchScore(
+      "logic board calibration",
+      "logic analyzer"
+    );
+    expect(phrase).toBeGreaterThan(single);
+  });
+});
+
+describe("buildMatchCenteredSnippet", () => {
+  it("centers the excerpt on the query phrase instead of the page header", () => {
+    const pageText =
+      "TOP-00051 Equipment Description Model 3 Design Verification Protocol ".repeat(
+        8
+      ) + "Table 3 Required Testing Equipment Logic Analyzer Saleae Oscilloscope";
+
+    const snippet = buildMatchCenteredSnippet(pageText, "logic analyzer", 120);
+
+    expect(snippet).toContain("Logic Analyzer");
+    expect(snippet).toContain("Saleae");
+    expect(snippet.startsWith("TOP-00051")).toBe(false);
+  });
+
+  it("falls back to head truncation when nothing matches", () => {
+    const text = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
+    expect(buildMatchCenteredSnippet(text, "missing term", 20)).toBe(
+      "alpha beta gamma del..."
+    );
+  });
+});
+
 describe("collapseToBestChunkPerPage", () => {
-  it("keeps the first chunk per attachment page", () => {
+  it("keeps the first chunk per attachment page when no query is provided", () => {
     const collapsed = collapseToBestChunkPerPage([
-      { attachmentId: "a", pageNumber: 1, chunkId: "c1" },
-      { attachmentId: "a", pageNumber: 1, chunkId: "c2" },
-      { attachmentId: "a", pageNumber: 2, chunkId: "c3" },
+      { attachmentId: "a", pageNumber: 1, chunkId: "c1", text: "header" },
+      { attachmentId: "a", pageNumber: 1, chunkId: "c2", text: "Logic Analyzer" },
+      { attachmentId: "a", pageNumber: 2, chunkId: "c3", text: "other" },
     ]);
     expect(collapsed.map((row) => row.chunkId)).toEqual(["c1", "c3"]);
+  });
+
+  it("keeps the chunk whose text best matches the query", () => {
+    const collapsed = collapseToBestChunkPerPage(
+      [
+        {
+          attachmentId: "a",
+          pageNumber: 121,
+          chunkId: "c1",
+          text: "TOP-00051 UUT header boilerplate",
+        },
+        {
+          attachmentId: "a",
+          pageNumber: 121,
+          chunkId: "c2",
+          text: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+        },
+        {
+          attachmentId: "a",
+          pageNumber: 122,
+          chunkId: "c3",
+          text: "next page",
+        },
+      ],
+      {
+        query: "logic analyzer",
+        textFrom: (row) => row.text,
+      }
+    );
+    expect(collapsed.map((row) => row.chunkId)).toEqual(["c2", "c3"]);
   });
 });

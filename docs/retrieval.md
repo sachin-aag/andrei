@@ -45,6 +45,7 @@ ready files are left alone.
 | 1 | Persist deterministic page metadata | **done** |
 | 2 | Persist outline spans; outline reads prefer stored spans | **done** |
 | 3 | Exact-identifier retrieval, page collapse, skip embed when exact fills `limit` | **done** |
+| 3.5 | Match-centered excerpts, best chunk per page, lexical fast path | **done** |
 | 4 | File / span routing (filename + outline identifiers before chunk search) | not started |
 | 5 | Embed batching / auto retrieval mode (separate from chat `mode`) | not started |
 | 6 | Reranker experiment (only after the harness shows ranking is the bottleneck) | not started |
@@ -70,9 +71,15 @@ into every chunk. Chunks inherit page columns via `pageId`.
    - **semantic** — no extra SQL. Vector + FTS + RRF. Call counts for
      unrestricted semantic search stay at two (vector + keyword).
 4. Results collapse to the best chunk per `(attachmentId, pageNumber)`
-   (first wins) so grep rounds move page-to-page.
-5. `@` tags still pin then backfill. They are not a hard filter.
-6. `readDocumentOutline` returns stored spans when the active ingest run
+   (highest lexical overlap with the query, not chunk ordinal 0). Search
+   excerpts are centered on the query match instead of always taking the
+   first 900 characters of the winning chunk.
+5. Semantic/locator queries also run a lexical `ILIKE` pass (phrase + token
+   AND) before hybrid search. When those hits alone fill `limit` with
+   positive lexical scores, skip `embedRetrievalQuery` (same fast-path shape
+   as identifier queries).
+6. `@` tags still pin then backfill. They are not a hard filter.
+7. `readDocumentOutline` returns stored spans when the active ingest run
    has them; otherwise it builds spans from page transcripts.
 
 Entry points: `src/lib/attachments/retrieval.ts`,
@@ -122,7 +129,7 @@ Schema for a case:
 
 Vitest validates the JSON (`scripts/eval/retrieval-cases.test.ts`).
 
-### Known gap this schema now catches: excerpt truncation
+### Known gap this schema now catches: excerpt truncation (fixed in phase 3.5)
 
 Recall@k asks "did we find the right page?" It does not ask "did the model
 see the part of the page that answers the question?" Both production and
@@ -211,6 +218,28 @@ none (legacy ready files).
 Identifier queries run exact-first. Page collapse is on for every mode.
 Keyword-only Analytics grep still skips embeddings; an identifier query
 that already fills `limit` skips embeddings in hybrid too.
+
+## Phase 3.5 — excerpt quality + lexical fast path
+
+**Done.** Three changes close the Logic Analyzer regression without
+raising caps or re-ingesting ready files:
+
+1. **`buildMatchCenteredSnippet()`** — search excerpts center on the query
+   phrase (or longest matching token) instead of always truncating from
+   character 0. `toSearchResult()` uses this for every `search_documents`
+   hit.
+2. **`collapseToBestChunkPerPage(query)`** — when multiple chunks from the
+   same page compete, keep the one with the highest `lexicalMatchScore()`
+   against the query, not the first row returned by RRF/SQL ordering.
+3. **`lexicalChunkSearch()`** — for semantic/locator queries, run an
+   `ILIKE` pass (phrase OR token-AND on `contextual_text` / `raw_text`)
+   before hybrid search and merge those rows ahead of vector/keyword hits.
+   When the lexical pass alone fills `limit` with positive scores, skip the
+   query embedding (same fast-path shape as identifier queries).
+
+Eval: `excerptHitAtK` on `mech-logic-analyzer` in
+`scripts/eval/retrieval-cases.local.example.json` should turn green once the
+local corpus is ingested. `recallAtK` was already 1.0 for that case.
 
 ## Phase 4 — file / span routing (not started)
 
