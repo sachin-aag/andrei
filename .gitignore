@@ -118,6 +118,10 @@ docs/convergent-onboarding-temporary-passwords.md
 # Ralph loop local scratch (do not commit)
 .cursor/ralph/scratchpad.md
 
+# Investor deck / screenshots (local-only marketing assets)
+/investor-deck/
+/investor-screenshots/
+
 # Large media artifacts (keep out of git)
 *.mp4
 *.mov
