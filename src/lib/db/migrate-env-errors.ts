@@ -30,9 +30,15 @@ export function postgresPasswordAuthFailedMessage(input: {
   vercelEnv: string;
   deployScope: string | undefined;
   gitBranch?: string;
+  autoHealAttempted?: boolean;
 }): string {
   const scope = input.deployScope?.trim() || "unset";
   const gitBranch = input.gitBranch?.trim() || "(unknown branch)";
+  const redeployHint = input.autoHealAttempted
+    ? "If auto-heal deleted the Neon preview branch above, click Redeploy on this Vercel deployment (no new commit). Otherwise delete Neon preview/" +
+      gitBranch +
+      " (and any leftover preview/… for this ref), then redeploy."
+    : `Delete the Neon branch preview/${gitBranch} (and any leftover preview/… for this ref), then redeploy so Neon injects a fresh password.`;
   return (
     "Postgres rejected DATABASE_URL (28P01 password authentication failed).\n" +
     `vercel (${input.vercelEnv})  →  ${input.host}\n` +
@@ -41,7 +47,7 @@ export function postgresPasswordAuthFailedMessage(input: {
     "This is a stale Neon preview-branch password, not an application compile error.\n" +
     'Keep "Create a branch for each preview deployment" ON.\n' +
     "Do not hand-edit Neon-logo DATABASE_URL rows.\n" +
-    `Delete the Neon branch preview/${gitBranch} (and any leftover preview/… for this ref), then redeploy so Neon injects a fresh password.\n` +
+    `${redeployHint}\n` +
     "See docs/neon-vercel-setup.md."
   );
 }
