@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  analyticsDumpReadinessDirective,
+  analyticsGatherDirective,
+  analyticsManageLoopDirective,
+  analyticsPartialDumpDirective,
   analyticsSearchLoopDirective,
+  analyticsWriteLoopDirective,
   createAnalyticsSearchGate,
   prepareAnalyticsChatStep,
   type AnalyticsChatStep,
@@ -93,6 +98,7 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).toContain("plot_measurements");
     expect(prepared?.activeTools).toContain("plot_xy_scatter");
     expect(prepared?.activeTools).toContain("plot_boxplot");
+    expect(prepared?.activeTools).toContain("plot_histogram");
     expect(prepared?.activeTools).not.toContain("search_documents");
     expect(
       prepareAnalyticsChatStep({
@@ -103,12 +109,14 @@ describe("prepareAnalyticsChatStep", () => {
   });
 
   it("does not hide search on the first empty grep", () => {
-    expect(
-      prepareAnalyticsChatStep({
-        steps: [step(["search_documents"], 0)],
-        canEdit: true,
-      })
-    ).toBeUndefined();
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 0)],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("search_documents");
+    expect(prepared?.activeTools).toContain("scan_attachments");
+    expect(prepared?.activeTools).not.toContain("ask_user");
+    expect(prepared?.activeTools).toContain("write_column");
   });
 
   it("hides search after the first grep that returns pages", () => {
@@ -118,6 +126,13 @@ describe("prepareAnalyticsChatStep", () => {
     });
     expect(prepared?.activeTools).not.toContain("search_documents");
     expect(prepared?.activeTools).toContain("extract_numeric_series");
+    expect(prepared?.activeTools).toContain("read_document_page");
+    expect(prepared?.activeTools).toContain("scan_attachments");
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).not.toContain("ask_user");
+    expect(prepared?.activeTools).not.toContain("plot_xy_scatter");
+    expect(prepared?.activeTools).toContain("manage_worksheet");
+    expect(prepared?.toolChoice).toBe("required");
   });
 
   it("keeps write tools after many post-search steps — there is no step budget", () => {
@@ -183,14 +198,524 @@ describe("prepareAnalyticsChatStep", () => {
     ).toEqual({ activeTools: [] });
   });
 
-  it("hides write tools on a read question before search closes", () => {
+  it("hides write tools and ask_user on a read question before search closes", () => {
     const prepared = prepareAnalyticsChatStep({
       steps: [],
       canEdit: true,
       intent: "read",
     });
     expect(prepared?.activeTools).toContain("search_documents");
+    expect(prepared?.activeTools).toContain("scan_attachments");
     expect(prepared?.activeTools).not.toContain("write_column");
     expect(prepared?.activeTools).not.toContain("plot_xy_scatter");
+    expect(prepared?.activeTools).not.toContain("ask_user");
+  });
+
+  it("hides ask_user on a read turn after a cited grep", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 2)],
+      canEdit: true,
+      intent: "read",
+    });
+    expect(prepared?.activeTools).not.toContain("ask_user");
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).toContain("read_document_page");
+  });
+
+  it("does not close search when every hit is a requirement-ID laundry list", () => {
+    const tocOnly: AnalyticsChatStep = {
+      toolCalls: [{ toolName: "search_documents" }],
+      toolResults: [
+        {
+          toolName: "search_documents",
+          output: {
+            returnedCount: 3,
+            requirementIndexHits: 3,
+            results: [{ pageNumber: 12 }, { pageNumber: 84 }, { pageNumber: 217 }],
+          },
+        },
+      ],
+    };
+    expect(analyticsSearchLoopDirective([tocOnly])).toBe("continue");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [tocOnly],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("search_documents");
+    expect(prepared?.activeTools).toContain("scan_attachments");
+    expect(prepared?.activeTools).not.toContain("ask_user");
+    expect(prepared?.activeTools).toContain("write_column");
+  });
+
+  it("hides ask_user when they skipped a page question or said find it", () => {
+    for (const intentReason of ["skip_page_and_search", "locate_request"]) {
+      const prepared = prepareAnalyticsChatStep({
+        steps: [],
+        canEdit: true,
+        intent: "write",
+        intentReason,
+      });
+      expect(prepared?.activeTools).toContain("search_documents");
+      expect(prepared?.activeTools).toContain("scan_attachments");
+      expect(prepared?.activeTools).not.toContain("ask_user");
+      expect(prepared?.activeTools).toContain("write_column");
+    }
+  });
+});
+
+function emptyWriteStep(): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "write_column" }],
+    toolResults: [
+      {
+        toolName: "write_column",
+        output: { status: "written", rowsWritten: 0, blankedCount: 20 },
+      },
+    ],
+  };
+}
+
+function filledWriteStep(): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "write_column" }],
+    toolResults: [
+      {
+        toolName: "write_column",
+        output: { status: "written", rowsWritten: 29, blankedCount: 1 },
+      },
+    ],
+  };
+}
+
+describe("analyticsWriteLoopDirective", () => {
+  it("lets a successful dump then one blanked dump continue", () => {
+    expect(
+      analyticsWriteLoopDirective([filledWriteStep(), emptyWriteStep()])
+    ).toBe("continue");
+  });
+
+  it("stops after two consecutive empty write_column results", () => {
+    expect(
+      analyticsWriteLoopDirective([
+        filledWriteStep(),
+        emptyWriteStep(),
+        emptyWriteStep(),
+      ])
+    ).toBe("finish");
+  });
+
+  it("hides write_column after two empty dumps once search is closed", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        step(["scan_attachments"]),
+        emptyWriteStep(),
+        emptyWriteStep(),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).toContain("manage_worksheet");
+    expect(prepared?.activeTools).toContain("read_worksheet");
+  });
+
+  it("hides write_column after two empty dumps even if search is still open", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [emptyWriteStep(), emptyWriteStep()],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).toContain("search_documents");
+    expect(prepared?.activeTools).toContain("manage_worksheet");
+  });
+});
+
+function manageStep(): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "manage_worksheet" }],
+    toolResults: [
+      {
+        toolName: "manage_worksheet",
+        output: {
+          status: "ok",
+          action: "add_sheet",
+          sheetId: "data-6",
+          sheetName: "Torque Data",
+        },
+      },
+    ],
+  };
+}
+
+function partialWriteStep(): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "write_column" }],
+    toolResults: [
+      {
+        toolName: "write_column",
+        output: {
+          status: "incomplete",
+          rowsWritten: 0,
+          blankedCount: 53,
+          incomplete: true,
+        },
+      },
+    ],
+  };
+}
+
+describe("analyticsDumpReadinessDirective", () => {
+  it("hides write_column after a cited-page grep until a page is read", () => {
+    expect(
+      analyticsDumpReadinessDirective([step(["search_documents"], 3)])
+    ).toBe("read_first");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 3), manageStep()],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).not.toContain("ask_user");
+    expect(prepared?.activeTools).toContain("read_document_page");
+    expect(prepared?.activeTools).toContain("scan_attachments");
+  });
+
+  it("does not treat document_outline as enough to dump", () => {
+    expect(
+      analyticsDumpReadinessDirective([
+        step(["search_documents"], 3),
+        step(["document_outline"]),
+      ])
+    ).toBe("read_first");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 3), step(["document_outline"])],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).not.toContain("ask_user");
+    expect(prepared?.activeTools).toContain("read_document_page");
+  });
+
+  it("unlocks write_column after a page read, scan, or extract", () => {
+    expect(
+      analyticsDumpReadinessDirective([
+        step(["search_documents"], 3),
+        step(["read_document_page"]),
+      ])
+    ).toBe("continue");
+    expect(
+      prepareAnalyticsChatStep({
+        steps: [step(["search_documents"], 3), step(["read_document_page"])],
+        canEdit: true,
+      })?.activeTools
+    ).toEqual(expect.arrayContaining(["write_column", "ask_user"]));
+    expect(
+      prepareAnalyticsChatStep({
+        steps: [],
+        canEdit: true,
+        intent: "write",
+      })
+    ).toBeUndefined();
+    expect(
+      prepareAnalyticsChatStep({
+        steps: [step(["search_documents"], 3), step(["scan_attachments"])],
+        canEdit: true,
+      })?.activeTools
+    ).toContain("write_column");
+    expect(
+      prepareAnalyticsChatStep({
+        steps: [step(["search_documents"], 3), step(["extract_numeric_series"])],
+        canEdit: true,
+      })?.activeTools
+    ).toContain("write_column");
+  });
+});
+
+describe("analyticsManageLoopDirective", () => {
+  it("hides manage_worksheet after the first structure call this turn", () => {
+    expect(analyticsManageLoopDirective([])).toBe("continue");
+    expect(analyticsManageLoopDirective([manageStep()])).toBe("finish");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [manageStep()],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("manage_worksheet");
+    expect(prepared?.activeTools).toContain("write_column");
+    expect(prepared?.activeTools).toContain("search_documents");
+  });
+
+  it("keeps manage_worksheet on an edit job after add_sheet until a row mutation", () => {
+    expect(
+      analyticsManageLoopDirective([manageStep()], {
+        hideAfter: "row_mutation",
+      })
+    ).toBe("continue");
+    const afterStructure = prepareAnalyticsChatStep({
+      steps: [manageStep()],
+      canEdit: true,
+      sheetJob: "edit",
+    });
+    // Nothing hidden yet — prepareStep leaves the full toolset (including manage).
+    expect(afterStructure).toBeUndefined();
+    const deleteStep: AnalyticsChatStep = {
+      toolCalls: [{ toolName: "manage_worksheet" }],
+      toolResults: [
+        {
+          toolName: "manage_worksheet",
+          output: { status: "ok", action: "delete_row", row: 2, rowEnd: 4 },
+        },
+      ],
+    };
+    expect(
+      analyticsManageLoopDirective([deleteStep], { hideAfter: "row_mutation" })
+    ).toBe("finish");
+    const afterDelete = prepareAnalyticsChatStep({
+      steps: [deleteStep],
+      canEdit: true,
+      sheetJob: "edit",
+    });
+    expect(afterDelete?.activeTools).not.toContain("manage_worksheet");
+  });
+});
+
+describe("analyticsPartialDumpDirective", () => {
+  it("keeps write_column after a partial extract so remaining columns can fill", () => {
+    expect(analyticsPartialDumpDirective([partialWriteStep()])).toBe(
+      "read_more"
+    );
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        step(["search_documents"], 3),
+        step(["read_document_page"]),
+        partialWriteStep(),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("write_column");
+    expect(prepared?.activeTools).toContain("read_document_page");
+  });
+
+  it("still treats a later page read as clearing the incomplete latch", () => {
+    expect(
+      analyticsPartialDumpDirective([
+        partialWriteStep(),
+        step(["read_document_page"]),
+      ])
+    ).toBe("continue");
+  });
+});
+
+function extractMorePagesStep(attachmentId?: string): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "extract_numeric_series" }],
+    toolResults: [
+      {
+        toolName: "extract_numeric_series",
+        output: {
+          status: "ok",
+          attachmentId,
+          pages: [1, 2, 3, 4, 5, 6],
+          morePages: true,
+          valueCount: 12,
+        },
+      },
+    ],
+  };
+}
+
+function extractDoneStep(attachmentId?: string): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "extract_numeric_series" }],
+    toolResults: [
+      {
+        toolName: "extract_numeric_series",
+        output: {
+          status: "ok",
+          attachmentId,
+          pages: [7, 8, 9],
+          morePages: false,
+          valueCount: 6,
+        },
+      },
+    ],
+  };
+}
+
+function truncatedScanStep(attachmentId?: string): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "scan_attachments" }],
+    toolResults: [
+      {
+        toolName: "scan_attachments",
+        output: {
+          status: "ok",
+          truncated: true,
+          readPageCount: 12,
+          files: attachmentId ? [{ attachmentId }] : [],
+        },
+      },
+    ],
+  };
+}
+
+function completeWriteStep(): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "write_column" }],
+    toolResults: [
+      {
+        toolName: "write_column",
+        output: {
+          status: "written",
+          rowsWritten: 29,
+          incomplete: false,
+          sheetId: "data-2",
+        },
+      },
+    ],
+  };
+}
+
+function pageReadOf(attachmentId: string): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "read_document_page" }],
+    toolResults: [
+      {
+        toolName: "read_document_page",
+        output: { page: { attachmentId } },
+      },
+    ],
+  };
+}
+
+describe("analyticsGatherDirective", () => {
+  it("hides write_column while extract morePages is true", () => {
+    expect(analyticsGatherDirective([extractMorePagesStep()])).toBe("gather");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 3), extractMorePagesStep()],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.activeTools).not.toContain("plot_xy_scatter");
+    expect(prepared?.activeTools).toContain("extract_numeric_series");
+    expect(prepared?.toolChoice).toBe("required");
+  });
+
+  it("unlocks write_column after a later extract with morePages false", () => {
+    expect(
+      analyticsGatherDirective([extractMorePagesStep(), extractDoneStep()])
+    ).toBe("continue");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        step(["search_documents"], 3),
+        extractMorePagesStep(),
+        extractDoneStep(),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("write_column");
+    expect(prepared?.toolChoice).toBeUndefined();
+  });
+
+  it("hides write_column while scan is truncated", () => {
+    expect(analyticsGatherDirective([truncatedScanStep()])).toBe("gather");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [truncatedScanStep()],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.toolChoice).toBe("required");
+  });
+
+  it("keeps gathering file A when a later extract of file B is done", () => {
+    expect(
+      analyticsGatherDirective([
+        extractMorePagesStep("att-a"),
+        extractDoneStep("att-b"),
+      ])
+    ).toBe("gather");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        step(["search_documents"], 3),
+        extractMorePagesStep("att-a"),
+        extractDoneStep("att-b"),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.toolChoice).toBe("required");
+  });
+
+  it("does not let a bare page read clear a named extract that still has pages", () => {
+    expect(
+      analyticsGatherDirective([
+        extractMorePagesStep("att-a"),
+        step(["read_document_page"]),
+      ])
+    ).toBe("gather");
+    expect(
+      analyticsGatherDirective([
+        extractMorePagesStep("att-a"),
+        pageReadOf("att-a"),
+      ])
+    ).toBe("gather");
+  });
+
+  it("unlocks write after a page read finishes a truncated scan of that file", () => {
+    expect(
+      analyticsGatherDirective([
+        truncatedScanStep("att-a"),
+        pageReadOf("att-a"),
+      ])
+    ).toBe("continue");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        step(["search_documents"], 3),
+        truncatedScanStep("att-a"),
+        pageReadOf("att-a"),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("write_column");
+  });
+
+  it("keeps write_column available after a complete write so the next sheet can land", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        step(["search_documents"], 3),
+        extractDoneStep("att-a"),
+        completeWriteStep(),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("write_column");
+    expect(prepared?.toolChoice).toBeUndefined();
+  });
+
+  it("keeps extract_sheet available while a file is still gathering", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 3), extractMorePagesStep("att-a")],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("extract_sheet");
+    expect(prepared?.activeTools).not.toContain("write_column");
+  });
+
+  it("hides write_column again while gathering the next sheet's file", () => {
+    expect(
+      analyticsGatherDirective([
+        extractDoneStep("att-a"),
+        completeWriteStep(),
+        extractMorePagesStep("att-b"),
+      ])
+    ).toBe("gather");
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        step(["search_documents"], 3),
+        extractDoneStep("att-a"),
+        completeWriteStep(),
+        extractMorePagesStep("att-b"),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).not.toContain("write_column");
+    expect(prepared?.toolChoice).toBe("required");
   });
 });

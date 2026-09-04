@@ -140,6 +140,7 @@ export async function createXyScatter(
     legendColumnId?: string | null;
     mark?: ChartMark;
     showSpecLimits?: boolean;
+    showMeanLine?: boolean;
     xMin?: number | null;
     xMax?: number | null;
     yMin?: number | null;
@@ -169,10 +170,32 @@ export async function createBoxplot(
     rows?: number[];
     xAxisLabel?: string | null;
     yAxisLabel?: string | null;
+    showMeanLine?: boolean;
   }
 ): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   return postAnalysis(reportId, {
     kind: "boxplot",
+    ...input,
+  });
+}
+
+export async function createHistogram(
+  reportId: string,
+  input: {
+    columnId: string;
+    title?: string;
+    lsl?: number | null;
+    usl?: number | null;
+    showDistributionLines?: boolean;
+    showLsl?: boolean;
+    showUsl?: boolean;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "histogram",
     ...input,
   });
 }

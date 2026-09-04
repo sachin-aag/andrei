@@ -37,6 +37,7 @@ export type BoxplotPatch = {
   rows?: number[] | null;
   xAxisLabel?: string | null;
   yAxisLabel?: string | null;
+  showMeanLine?: boolean;
 };
 
 function mergeOptionalLabel(
@@ -138,7 +139,19 @@ export function tukeyBoxStats(
   const outliers = sorted.filter(
     (value) => value < whiskerLow || value > whiskerHigh
   );
-  return { n, min, q1, median, q3, max, whiskerLow, whiskerHigh, outliers };
+  const mean = sorted.reduce((sum, value) => sum + value, 0) / n;
+  return {
+    n,
+    min,
+    q1,
+    median,
+    mean,
+    q3,
+    max,
+    whiskerLow,
+    whiskerHigh,
+    outliers,
+  };
 }
 
 export function nestedCategorySpans(
@@ -241,6 +254,7 @@ export function mergeBoxplotPatch(
     title: patch.title,
     xAxisLabel: mergeOptionalLabel(patch.xAxisLabel, existing.xAxisLabel),
     yAxisLabel: mergeOptionalLabel(patch.yAxisLabel, existing.yAxisLabel),
+    showMeanLine: patch.showMeanLine ?? existing.showMeanLine === true,
     ...(useRowPatch
       ? {
           rowStart: patch.rowStart,

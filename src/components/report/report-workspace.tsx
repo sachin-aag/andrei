@@ -280,7 +280,7 @@ export function ReportWorkspace({
   const [expertReviewOpen, setExpertReviewOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
-  const [previewCollapsed, setPreviewCollapsed] = useState(true);
+  const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const chrome = useSyncExternalStore(
     subscribeWorkspaceChromePrefs,
     () => readWorkspaceChrome(currentUserId, report.id),

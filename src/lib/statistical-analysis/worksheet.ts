@@ -237,12 +237,32 @@ export function findSheet(
   return workbook.sheets.find((sheet) => sheet.name.toLowerCase() === lower);
 }
 
+/**
+ * Keep the engineer's current tab after an agent write. If that sheet was
+ * deleted, leave the workbook on whatever tab the mutation selected.
+ */
+export function restoreActiveSheet(
+  next: WorksheetData,
+  previousActiveId: string | undefined
+): WorksheetData {
+  const key = previousActiveId?.trim() ?? "";
+  if (!key) return next;
+  const workbook = normalizeWorksheet(next);
+  if (workbook.activeSheetId === key) return workbook;
+  if (!findSheet(workbook, key)) return workbook;
+  return switchWorksheetTab(workbook, key);
+}
+
 export function addDataSheet(data: WorksheetData, name?: string): WorksheetData {
   const workbook = normalizeWorksheet(data);
+  const requested = name?.trim().slice(0, 40) ?? "";
+  if (requested) {
+    const existing = findSheet(workbook, requested);
+    if (existing) return switchWorksheetTab(workbook, existing.id);
+  }
   if (workbook.sheets.length >= MAX_DATA_SHEETS) return workbook;
   const id = nextSheetId(workbook);
   const columns = emptyColumnsForWorkbook(workbook);
-  const requested = name?.trim().slice(0, 40) ?? "";
   const sheet: WorksheetSheet = {
     id,
     name: requested || nextSheetName(workbook),
@@ -506,6 +526,18 @@ function mergeColumnValues(
 }
 
 /**
+ * True when `incomingVersion` is from an older snapshot than the grid already
+ * applied. Equal versions still apply (plot create does not bump worksheet
+ * version). A stale GET of an empty sheet must not wipe a newer fill.
+ */
+export function isStaleAnalyticsVersion(
+  incomingVersion: number,
+  appliedVersion: number
+): boolean {
+  return incomingVersion < appliedVersion;
+}
+
+/**
  * Keep in-progress local cell edits when a newer server worksheet arrives
  * (assistant write or 409). Remote wins for cells the user did not change.
  */
@@ -557,10 +589,11 @@ export function mergeDirtyWorksheet(
       ? localWb.specs
       : remoteWb.specs;
 
-  const preferredActiveId =
-    localWb.activeSheetId !== persistedWb.activeSheetId
-      ? localWb.activeSheetId
-      : remoteWb.activeSheetId;
+  const preferredActiveId = sheets.some(
+    (sheet) => sheet.id === localWb.activeSheetId
+  )
+    ? localWb.activeSheetId
+    : remoteWb.activeSheetId;
   const active =
     sheets.find((sheet) => sheet.id === preferredActiveId) ??
     sheets.find((sheet) => sheet.id === remoteWb.activeSheetId) ??
@@ -947,6 +980,38 @@ function citationsForColumn(
   if (!citations || citations.length === 0) return undefined;
   const unique = uniqueChartCitations(citations);
   return unique.length > 0 ? unique : undefined;
+}
+
+export function appendColumnValues(
+  data: WorksheetData,
+  colIndex: number,
+  values: string[],
+  name?: string,
+  citations?: ChartCitation[] | null
+): WorksheetData {
+  const column = data.columns[colIndex];
+  if (!column) return data;
+  const existing = [...column.values];
+  const room = Math.max(0, MAX_WORKSHEET_ROWS - existing.length);
+  const added = values.slice(0, room).map(sanitizeCell);
+  const nextValues = trimTrailingEmpty([...existing, ...added]);
+  const incoming = citationsForColumn(citations);
+  const nextCitations = incoming
+    ? uniqueChartCitations([...(column.citations ?? []), ...incoming])
+    : column.citations;
+  return withWorkbook(
+    data,
+    data.columns.map((item, index) =>
+      index === colIndex
+        ? {
+            ...item,
+            name: name !== undefined ? sanitizeColumnName(name) : item.name,
+            values: nextValues,
+            citations: nextCitations,
+          }
+        : item
+    )
+  );
 }
 
 export function replaceColumnValues(

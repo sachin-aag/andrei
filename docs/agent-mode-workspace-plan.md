@@ -319,7 +319,7 @@ When chrome is `agent`, work product is `report`, composer is Agent:
 
    ```
    Changes this turn
-   • Define · narrative — added the detection date from the batch record
+   • Define — added the detection date from the batch record
    ```
 
    Deterministic from tool results + `reasoning`. Persist on

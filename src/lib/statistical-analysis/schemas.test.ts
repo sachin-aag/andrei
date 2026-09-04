@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
 import {
   boxplotBodySchema,
+  histogramBodySchema,
   measurementScatterInputSchema,
   patchAnalyticsBodySchema,
   xyScatterBodySchema,
@@ -121,6 +122,13 @@ describe("xyScatterInputSchema", () => {
         showSpecLimits: true,
       }).showSpecLimits
     ).toBe(true);
+    expect(
+      xyScatterInputSchema.parse({
+        kind: XY_SCATTER,
+        yColumnId: "c2",
+        showMeanLine: true,
+      }).showMeanLine
+    ).toBe(true);
   });
 
   it("accepts axis window and labels, and rejects min ≥ max", () => {
@@ -160,6 +168,12 @@ describe("xyScatterInputSchema", () => {
       mark: "line",
       showSpecLimits: true,
     });
+    expect(
+      xyScatterBodySchema.parse({
+        analysisId: "plot-1",
+        showMeanLine: true,
+      }).showMeanLine
+    ).toBe(true);
   });
 });
 
@@ -184,6 +198,12 @@ describe("boxplotBodySchema", () => {
       analysisId: "box-1",
       categoryColumnIds: ["c2"],
     });
+    expect(
+      boxplotBodySchema.parse({
+        analysisId: "box-1",
+        showMeanLine: true,
+      }).showMeanLine
+    ).toBe(true);
   });
 
   it("rejects Y as a category and duplicate category columns", () => {
@@ -197,6 +217,44 @@ describe("boxplotBodySchema", () => {
       boxplotBodySchema.safeParse({
         yColumnId: "c1",
         categoryColumnIds: ["c2", "c2"],
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe("histogramBodySchema", () => {
+  it("requires columnId on create and allows a partial update with analysisId", () => {
+    expect(histogramBodySchema.safeParse({}).success).toBe(false);
+    expect(
+      histogramBodySchema.parse({
+        columnId: "c1",
+        lsl: 90,
+        usl: 110,
+        showDistributionLines: false,
+      })
+    ).toMatchObject({
+      columnId: "c1",
+      lsl: 90,
+      usl: 110,
+      showDistributionLines: false,
+    });
+    expect(
+      histogramBodySchema.parse({
+        analysisId: "hist-1",
+        showLsl: false,
+      })
+    ).toMatchObject({
+      analysisId: "hist-1",
+      showLsl: false,
+    });
+  });
+
+  it("rejects inverted spec limits", () => {
+    expect(
+      histogramBodySchema.safeParse({
+        columnId: "c1",
+        lsl: 110,
+        usl: 90,
       }).success
     ).toBe(false);
   });
@@ -216,10 +274,22 @@ describe("patchAnalyticsBodySchema", () => {
 
   it("keeps optional column citations from an attachment write", () => {
     const worksheet = createEmptyWorksheet();
-    worksheet.columns[0]!.citations = [{ attachmentId: "att_1", page: 31 }];
+    worksheet.columns[0]!.citations = [
+      { attachmentId: "att_1", page: 31 },
+      {
+        attachmentId: "att_2",
+        page: null,
+        filename: "Mechanical report.pdf",
+      },
+    ];
     const parsed = patchAnalyticsBodySchema.parse({ worksheet });
     expect(parsed.worksheet?.columns[0]?.citations).toEqual([
       { attachmentId: "att_1", page: 31 },
+      {
+        attachmentId: "att_2",
+        page: null,
+        filename: "Mechanical report.pdf",
+      },
     ]);
   });
 });

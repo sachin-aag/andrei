@@ -9,10 +9,13 @@ import {
   checkEquipmentCalibrationDates,
   checkEquipmentTablePresent,
 } from "@/lib/document-types/convergent/deterministic-checks";
+import { placeRequirementsVerifiedFootnotes, placeUutTableFootnotes } from "@/lib/export/mechanical-table-footnotes";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
+  checkResultsFootnotePlacement,
   checkResultsIdsUnique,
+  checkResultsLeadInNoFootnote,
   checkResultsTablesPresent,
   checkResultsVerdictValues,
   checkRevisionHistoryTable,
@@ -210,7 +213,7 @@ const PROTOCOL_DEVIATIONS_CRITERIA: CriterionDefinition[] = [
   llm(
     "protocol_deviations.scope_discipline",
     "Individual deviations and failures are left out of this paragraph",
-    "Does the paragraph avoid listing the individual deviations or their content, and avoid recording any result that failed its requirement? A deviation is a change to the test method; a failed result belongs to the Failure/Out of Specification Forms section."
+    "Does the paragraph avoid listing the individual deviations or minting Deviation #01, avoid recapping their content, and avoid recording any result that failed its requirement? A deviation is a change to the test method; a failed result belongs to the Failure/Out of Specification Forms section. Cite an existing form number only from the results tables, using the form's own id."
   ),
 ];
 
@@ -246,8 +249,8 @@ const UUT_CRITERIA: CriterionDefinition[] = [
   ),
   det(
     "uut.prototype_footnote",
-    "An asterisked revision is explained by a footnote beneath the table",
-    "A prototype or functional equivalent carries an asterisk and a footnote.",
+    "An asterisked revision is explained by a footnote beneath Table 1",
+    "A prototype or functional equivalent carries an asterisk and an italic footnote in the table field, immediately after the table — not in the lead-in narrative.",
     checkUutPrototypeFootnote
   ),
   llm(
@@ -306,7 +309,7 @@ const FAILURE_CRITERIA: CriterionDefinition[] = [
   llm(
     "failures.entry_numbering",
     "Each failure is a numbered entry keyed to its form and its requirement",
-    "Is there one numbered entry per failure (3.1, 3.2 …) whose failure number is sequential and zero-padded (#01, #02 …) and matches the subsection number, with the requirement ID on its own line beneath it?"
+    "Is there one numbered entry per failure (3.1, 3.2 …) whose failure number is sequential and zero-padded (#01, #02 …) and matches the subsection number, with the requirement ID on its own line beneath it? Number the entry even when there is only one failure. If there were zero failures, the section says so in prose and does not mint #01."
   ),
   llm(
     "failures.observation",
@@ -356,7 +359,13 @@ const RESULTS_CRITERIA: CriterionDefinition[] = [
   llm(
     "results.lead_in",
     "The lead-in names the test plan and each protocol and points to the tables",
-    "Does the lead-in state that all requirements detailed in the test plan were verified during the executions, naming the test plan with its number and revision and each protocol with its number and revision, and direct the reader to the tables that follow? It must not claim that all requirements in the requirements document were verified — the scope is the test plan."
+    "Does the lead-in state that all requirements detailed in the test plan were verified during the executions, naming the test plan with its number and revision and each protocol with its number and revision, and direct the reader to the tables that follow? It must not claim that all requirements in the requirements document were verified — the scope is the test plan. It must not contain a table footnote, a stray \"i\", or a \"See Deviation\" note — those belong beneath Table 3 or Table 4."
+  ),
+  det(
+    "results.lead_in_no_footnote",
+    "The 4.2 lead-in does not contain a table footnote",
+    "Lead-in is the test-plan sentence only. A See Deviation / qualified-verdict footnote belongs after Table 3 or Table 4.",
+    checkResultsLeadInNoFootnote
   ),
   det(
     "results.tables_present",
@@ -389,7 +398,13 @@ const RESULTS_CRITERIA: CriterionDefinition[] = [
   llm(
     "results.qualified_verdicts",
     "A qualified verdict carries an asterisk and a footnote beneath its table",
-    "Where a verdict needs qualifying, is it marked with an asterisk and explained in a footnote beneath the table, wrapped in asterisks?"
+    "Where a verdict needs qualifying, is it marked with an asterisk and explained in an italic footnote immediately after that table, in the hardwareTable or systemTable field — not in the 4.2 lead-in, and not as wrapping asterisks dropped in as a table lead-in?"
+  ),
+  det(
+    "results.footnote_placement",
+    "A qualified-verdict footnote sits after its table, not in the lead-in",
+    "When a Pass/Fail cell is asterisked, an italic footnote follows that table in the same table field.",
+    checkResultsFootnotePlacement
   ),
   llm(
     "results.test_plan_scope",
@@ -404,7 +419,7 @@ const OBSERVATIONS_CRITERIA: CriterionDefinition[] = [
   llm(
     "observations.one_per_paragraph",
     "One observation per paragraph, in the order they arose",
-    "Is each observation given its own paragraph, in the order the observations arose?"
+    "Is each observation given its own paragraph, in the order the observations arose? Observations are unnumbered — do not mint Observation #01."
   ),
   llm(
     "observations.timing",
@@ -581,19 +596,19 @@ const PER_SECTION_PROMPTS: Record<MechanicalDvSectionKey, string> = {
   executed_protocol:
     "SECTION ROLE - 2.1 EXECUTED PROTOCOL: One sentence. Judge full-or-partial, each protocol cited by number and revision, and \"respectively\" where two were executed. Nothing else belongs here - not even why an execution was partial.",
   protocol_deviations:
-    "SECTION ROLE - 2.2 PROTOCOL DEVIATIONS: One paragraph. Judge the count spelled out and in numerals, why the method had to change, and where the approved forms are attached. Individual deviation content is not listed here, and a failed result is not a deviation.",
+    "SECTION ROLE - 2.2 PROTOCOL DEVIATIONS: One paragraph. Judge the count spelled out and in numerals, why the method had to change, and where the approved forms are attached. Individual deviation content is not listed here, Deviation #01 is not minted, and a failed result is not a deviation.",
   units_under_test:
-    "SECTION ROLE - 2.3 UNITS UNDER TEST: Three paragraphs plus Table 1. Judge the system-count-to-UUT reconciliation, the assembly list by count/part number/revision, the pointer to the UUT Datasheet section in each protocol, and the table itself - systems first, then assemblies, every row keyed by serial number or N/A, prototypes asterisked and footnoted. Measurement instruments belong to Table 2.",
+    "SECTION ROLE - 2.3 UNITS UNDER TEST: Three paragraphs plus Table 1. Judge the system-count-to-UUT reconciliation, the assembly list by count/part number/revision, the pointer to the UUT Datasheet section in each protocol, and the table itself - systems first, then assemblies, every row keyed by serial number or N/A, prototypes asterisked with the italic equivalence footnote immediately after the table in the table field (not in the narrative). Measurement instruments belong to Table 2.",
   equipment_and_calibration:
     "SECTION ROLE - 2.4 TEST EQUIPMENT: One lead-in sentence plus Table 2. Judge the lead-in, instrument identity, asset tag and serial number, and a calibration due date on every calibrated instrument (N/A only where none is required). One table covers both executions; the units under test are not listed here.",
   failure_forms:
-    "SECTION ROLE - 3. FAILURE/OUT OF SPECIFICATION FORMS: A lead-in paragraph plus one numbered entry per failure. Judge the count and appendix in the lead-in, then per entry: zero-padded number matching the subsection, requirement ID on its own line, observed shortfall, technical cause with any related change record, and a disposition naming the documents to be corrected. Method deviations belong to 2.2.",
+    "SECTION ROLE - 3. FAILURE/OUT OF SPECIFICATION FORMS: A lead-in paragraph plus one numbered entry per failure. Judge the count and appendix in the lead-in, then per entry: zero-padded number matching the subsection (mint #01 even when there is only one failure; mint nothing when there are zero), requirement ID on its own line, observed shortfall, technical cause with any related change record, and a disposition naming the documents to be corrected. Method deviations belong to 2.2.",
   data_collection_forms:
     "SECTION ROLE - 4.1 DATA COLLECTION FORMS: One paragraph. Judge the appendix, the attribution of each datasheet set to its protocol by number and revision, and any supplemental test case with what prompted it. Supplemental test results belong to 4.3.",
   requirements_verified:
-    "SECTION ROLE - 4.2 REQUIREMENTS VERIFIED: A lead-in plus one results table per discipline, hardware first. Judge the lead-in against the test plan (not the requirements document), then the tables: verbatim requirement text, Notes/Results as datasheet pointer or cross-reference or not-applicable statement, Pass/Fail limited to Pass/Fail/N/A, asterisked verdicts footnoted beneath their table. A requirement satisfied by another report is included and cited, never omitted.",
+    "SECTION ROLE - 4.2 REQUIREMENTS VERIFIED: A lead-in plus one results table per discipline, hardware first. Judge the lead-in against the test plan (not the requirements document) and confirm it has no table footnote. Then the tables: verbatim requirement text, Notes/Results as datasheet pointer or cross-reference or not-applicable statement, Pass/Fail limited to Pass/Fail/N/A, asterisked verdicts explained by an italic footnote immediately after that table in the same table field. A requirement satisfied by another report is included and cited, never omitted.",
   observations:
-    "SECTION ROLE - 4.3 OBSERVATIONS: One paragraph per observation, in the order they arose. Judge timing, the authorising design review or change record or deviation behind any scope change, engineering justification for a requirement found not applicable, explicit functional-equivalence statements where revisions changed mid-test, and supplemental tests with acceptance criteria and result. Failures belong to section 3.",
+    "SECTION ROLE - 4.3 OBSERVATIONS: One paragraph per observation, in the order they arose, unnumbered (never Observation #01). Judge timing, the authorising design review or change record or deviation behind any scope change, engineering justification for a requirement found not applicable, explicit functional-equivalence statements where revisions changed mid-test, and supplemental tests with acceptance criteria and result. Failures belong to section 3.",
   problems_resolution:
     "SECTION ROLE - 5. PROBLEM OR FAILURE RESOLUTION: A single paragraph covering every failure. Judge the count and forms, the restated cause and disposition, the requirement wording where the failure turns on it, the explicit product-limitation-versus-test-case-error call, and the closing statement on whether action was required. This section restates and resolves - it introduces no new facts. If there were no failures, one short sentence is correct and complete.",
   conclusion:
@@ -719,7 +734,7 @@ export const mechanicalDesignVerificationDefinition: DocumentTypeDefinition = {
   chat: {
     persona: `You are the drafting assistant for Convergent Dental mechanical and hardware design verification reports used in regulated medical device environments. You help design quality and R&D staff document Solea system and hardware verification under design controls (ISO 13485 / 21 CFR 820.30), written against Verification Test Report Template 731-00008.
 
-Follow the report recipe: numbered sections and decimal subsections, a single pair of protocol executions (no per-revision execution blocks, no regression rounds), method deviations at 2.2 kept separate from failures at section 3, counts written spelled out and in numerals, and the fixed table schemas. Structure and relative verbosity, never word counts. Do not invent test results, serial numbers, asset tags, calibration dates, requirement text, part numbers or change-order numbers the engineer has not provided.
+Follow the report recipe: numbered sections and decimal subsections, a single pair of protocol executions (no per-revision execution blocks, no regression rounds), method deviations at 2.2 kept separate from failures at section 3, counts written spelled out and in numerals, and the fixed table schemas. Mint Failure #01 when there is at least one failure; copy deviation numbers from the approved forms; never dump a table footnote into the 4.2 lead-in. Structure and relative verbosity, never word counts. Do not invent test results, serial numbers, asset tags, calibration dates, requirement text, part numbers or change-order numbers the engineer has not provided.
 
 The report is graded against fixed quality criteria (a traffic-light check). Your job is to help the engineer produce a first draft that satisfies as many criteria as possible, then refine it.
 
@@ -824,6 +839,15 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         const content = byKey[key] as Record<string, unknown> | undefined;
         return content?.[name] ?? null;
       };
+      const placedResults = placeRequirementsVerifiedFootnotes({
+        narrative: field("requirements_verified", "narrative"),
+        hardwareTable: field("requirements_verified", "hardwareTable"),
+        systemTable: field("requirements_verified", "systemTable"),
+      });
+      const placedUut = placeUutTableFootnotes({
+        narrative: field("units_under_test", "narrative"),
+        table: field("units_under_test", "table"),
+      });
       const meta =
         report.metadata && typeof report.metadata === "object"
           ? (report.metadata as Partial<
@@ -845,18 +869,15 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         testersXml: field("testers_dates", "testers"),
         executedProtocolXml: narrative("executed_protocol"),
         protocolDeviationsXml: narrative("protocol_deviations"),
-        uutNarrativeXml: field("units_under_test", "narrative"),
-        uutTableXml: field("units_under_test", "table"),
+        uutNarrativeXml: placedUut.narrative,
+        uutTableXml: placedUut.table,
         equipmentNarrativeXml: field("equipment_and_calibration", "narrative"),
         equipmentTableXml: field("equipment_and_calibration", "table"),
         failuresXml: narrative("failure_forms"),
         dataCollectionXml: narrative("data_collection_forms"),
-        requirementsLeadInXml: field("requirements_verified", "narrative"),
-        hardwareResultsTableXml: field(
-          "requirements_verified",
-          "hardwareTable"
-        ),
-        systemResultsTableXml: field("requirements_verified", "systemTable"),
+        requirementsLeadInXml: placedResults.leadIn,
+        hardwareResultsTableXml: placedResults.hardwareTable,
+        systemResultsTableXml: placedResults.systemTable,
         observationsXml: narrative("observations"),
         problemsXml: narrative("problems_resolution"),
         conclusionXml: narrative("conclusion"),

@@ -50,6 +50,35 @@ export type DocumentReviewPhase =
   | "ready_to_finish"
   | "complete";
 
+/** Stable coverage identity for a finished review (attachment + ingest + pages). */
+export type DocumentReviewCoverageKey = string;
+
+export type DocumentReviewCoverageSource = {
+  attachmentId: string;
+  pageCount: number;
+  ingestRunId?: string | null;
+};
+
+export function documentReviewCoverageKey(
+  sources: readonly DocumentReviewCoverageSource[]
+): DocumentReviewCoverageKey {
+  return sources
+    .map((source) => {
+      const ingest = source.ingestRunId?.trim() || "unknown";
+      return `${source.attachmentId}:${source.pageCount}:${ingest}`;
+    })
+    .sort()
+    .join("|");
+}
+
+export function coverageKeysMatch(
+  left: DocumentReviewCoverageKey | null | undefined,
+  right: DocumentReviewCoverageKey | null | undefined
+): boolean {
+  if (!left || !right) return false;
+  return left === right;
+}
+
 export type ReviewPageSource = {
   attachmentId: string;
   filename: string;
@@ -115,9 +144,30 @@ const llmFindingSchema = z.object({
   truncated: z.boolean().default(false),
 });
 
+
+function coverageSourcesFromReviewPages(
+  pages: readonly ReviewPageSource[]
+): DocumentReviewCoverageSource[] {
+  const byAttachment = new Map<string, DocumentReviewCoverageSource>();
+  for (const page of pages) {
+    const existing = byAttachment.get(page.attachmentId);
+    if (existing) {
+      existing.pageCount += 1;
+      continue;
+    }
+    byAttachment.set(page.attachmentId, {
+      attachmentId: page.attachmentId,
+      pageCount: 1,
+      ingestRunId: null,
+    });
+  }
+  return [...byAttachment.values()];
+}
+
 export class DocumentReviewSession {
   private phaseState: DocumentReviewPhase = "idle";
   private objective = "";
+  private coverageKey: DocumentReviewCoverageKey | null = null;
   private queue: DocumentReviewBatch[] = [];
   private findings: DocumentReviewFinding[] = [];
   private seenKeys = new Set<string>();
@@ -139,6 +189,32 @@ export class DocumentReviewSession {
   isFinished(): boolean {
     return this.phaseState === "complete";
   }
+
+  finishedCoverageKey(): DocumentReviewCoverageKey | null {
+    return this.phaseState === "complete" ? this.coverageKey : null;
+  }
+
+  /**
+   * Rehydrate a prior finished review for this request so draft gates and
+   * prepareStep treat coverage as complete when attachments have not changed.
+   */
+  restoreFromFinishedReview(input: {
+    coverageKey: DocumentReviewCoverageKey;
+    recommendedInventory?: RecommendedResultsInventory | null;
+  }): void {
+    this.phaseState = "complete";
+    this.coverageKey = input.coverageKey;
+    this.queue = [];
+    this.findings = [];
+    this.seenKeys = new Set();
+    this.failedPages = [];
+    this.reviewedPageKeys = new Set();
+    this.totalPages = 0;
+    this.objective = "";
+    this.lastRecommended =
+      input.recommendedInventory ?? this.lastRecommended;
+  }
+
 
   recommendedInventory(): RecommendedResultsInventory | null {
     return this.lastRecommended;
@@ -199,6 +275,9 @@ export class DocumentReviewSession {
     this.failedPages = [];
     this.reviewedPageKeys = new Set();
     this.totalPages = pages.length;
+    this.coverageKey = documentReviewCoverageKey(
+      coverageSourcesFromReviewPages(pages)
+    );
     this.findingSeq = 0;
     this.lastRecommended = null;
     this.phaseState = this.queue.length === 0 ? "ready_to_finish" : "in_progress";
@@ -308,6 +387,7 @@ export class DocumentReviewSession {
     status: "complete" | "incomplete";
     reviewedPages: number;
     totalPages: number;
+    coverageKey: DocumentReviewCoverageKey | null;
     coverageComplete: boolean;
     findings: DocumentReviewFinding[];
     findingsOmitted: number;
@@ -325,6 +405,7 @@ export class DocumentReviewSession {
         status: "incomplete",
         reviewedPages: this.reviewedPageKeys.size,
         totalPages: this.totalPages,
+        coverageKey: this.coverageKey,
         coverageComplete: false,
         findings: [],
         findingsOmitted: 0,
@@ -353,6 +434,7 @@ export class DocumentReviewSession {
       status: "complete",
       reviewedPages: this.reviewedPageKeys.size,
       totalPages: this.totalPages,
+      coverageKey: this.coverageKey,
       coverageComplete,
       findings: capped.findings,
       findingsOmitted: capped.omitted,

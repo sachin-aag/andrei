@@ -64,6 +64,24 @@ describe("parseChartSpec", () => {
     ).toBeUndefined();
   });
 
+  it("does not inject showMeanLine when the stored spec omitted it", () => {
+    const raw = spec();
+    const { showMeanLine: _omitted, ...layoutWithoutMeanLine } = raw.layout;
+    expect(_omitted).toBeUndefined();
+    expect(
+      parseChartSpec({ ...raw, layout: layoutWithoutMeanLine })?.layout
+        .showMeanLine
+    ).toBeUndefined();
+  });
+
+  it("preserves showMeanLine when set", () => {
+    expect(
+      parseChartSpec(
+        spec({ layout: { ...DEFAULT_CHART_LAYOUT, showMeanLine: true } })
+      )?.layout.showMeanLine
+    ).toBe(true);
+  });
+
   it("rejects a missing query", () => {
     expect(parseChartSpec({ ...spec(), query: "" })).toBeNull();
   });
@@ -260,26 +278,36 @@ describe("splitSpec", () => {
 });
 
 describe("formatChartProvenance", () => {
-  it("summarizes count, limits, query, and pages", () => {
+  it("summarizes count, limits, and query without page citations", () => {
     expect(formatChartProvenance(spec())).toBe(
-      "4 points, limits 1–6 ozf-in, M3-SYS-FN-037, p. 13"
+      "4 points, limits 1–6 ozf-in, M3-SYS-FN-037"
     );
   });
 });
 
 describe("uniqueChartCitations", () => {
-  it("deduplicates attachment/page pairs and drops invalid pages", () => {
+  it("deduplicates page and document-level citations and drops invalid pages", () => {
     expect(
       uniqueChartCitations([
         { attachmentId: "att_1", page: 31 },
         { attachmentId: " att_1 ", page: 31 },
         { attachmentId: "att_1", page: 32 },
+        {
+          attachmentId: "att_2",
+          page: null,
+          filename: " Mechanical report.pdf ",
+        },
         { attachmentId: "", page: 1 },
         { attachmentId: "att_2", page: 0 },
       ])
     ).toEqual([
       { attachmentId: "att_1", page: 31 },
       { attachmentId: "att_1", page: 32 },
+      {
+        attachmentId: "att_2",
+        page: null,
+        filename: "Mechanical report.pdf",
+      },
     ]);
   });
 });
@@ -287,6 +315,15 @@ describe("uniqueChartCitations", () => {
 describe("formatChartCitationPages", () => {
   it("returns null when there are no citations", () => {
     expect(formatChartCitationPages([])).toBeNull();
+    expect(
+      formatChartCitationPages([
+        {
+          attachmentId: "att_1",
+          page: null,
+          filename: "Mechanical report.pdf",
+        },
+      ])
+    ).toBeNull();
   });
 
   it("formats a page range", () => {

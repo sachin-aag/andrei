@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { deriveChatEditPolicy, isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
 
 describe("deriveChatEditPolicy", () => {
-  it("commits only in agent chrome when the report is writable", () => {
+  it("always proposes, including agent chrome when the report is writable", () => {
     expect(
       deriveChatEditPolicy({ workspaceChrome: "agent", canEdit: true })
-    ).toBe("commit");
+    ).toBe("propose");
     expect(
       deriveChatEditPolicy({ workspaceChrome: "document", canEdit: true })
     ).toBe("propose");

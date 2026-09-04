@@ -52,6 +52,7 @@ export type XyScatterDialogValues = {
   legendColumnId: string | null;
   mark: ChartMark;
   showSpecLimits: boolean;
+  showMeanLine: boolean;
   title: string;
   rowStart: number | null;
   rowEnd: number | null;
@@ -115,6 +116,7 @@ export function XyScatterDialog({
   defaultLegendColumnId,
   defaultMark = "scatter",
   defaultShowSpecLimits = false,
+  defaultShowMeanLine = false,
   defaultRowStart = null,
   defaultRowEnd = null,
   defaultTitle = "",
@@ -137,6 +139,7 @@ export function XyScatterDialog({
   defaultLegendColumnId?: string | null;
   defaultMark?: ChartMark;
   defaultShowSpecLimits?: boolean;
+  defaultShowMeanLine?: boolean;
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
   defaultTitle?: string;
@@ -163,6 +166,7 @@ export function XyScatterDialog({
   );
   const [mark, setMark] = useState<ChartMark>(() => parseChartMark(defaultMark));
   const [showSpecLimits, setShowSpecLimits] = useState(defaultShowSpecLimits);
+  const [showMeanLine, setShowMeanLine] = useState(defaultShowMeanLine);
   const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(
     defaultRowStart != null ? String(defaultRowStart) : ""
@@ -275,6 +279,25 @@ export function XyScatterDialog({
                 label="LSL and USL"
                 testId="xy-spec-limits-info"
                 text="Draws the Y column’s spec limits as dashed horizontal lines."
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-0.5">
+              <Checkbox
+                id="xy-show-mean-line"
+                data-testid="xy-show-mean-line"
+                checked={showMeanLine}
+                onCheckedChange={(next) => setShowMeanLine(next === true)}
+              />
+              <Label
+                htmlFor="xy-show-mean-line"
+                className={`${fieldLabelClass} cursor-pointer font-normal`}
+              >
+                Show mean line
+              </Label>
+              <FieldInfoIcon
+                label="Mean line"
+                testId="xy-mean-line-info"
+                text="Connects the mean Y at each X. Use this when several values share an X (samples, lots, replicates). Individual points stay on the chart."
               />
             </div>
           </div>
@@ -570,6 +593,7 @@ export function XyScatterDialog({
                 legendColumnId,
                 mark,
                 showSpecLimits,
+                showMeanLine,
                 title: title.trim(),
                 rowStart: parseOptionalRow(rowStart),
                 rowEnd: parseOptionalRow(rowEnd),

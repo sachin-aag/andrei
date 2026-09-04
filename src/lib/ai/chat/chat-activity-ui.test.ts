@@ -179,6 +179,31 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0].node.children).toHaveLength(2);
   });
 
+  it("names drafted sections without targetField keys", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart(
+        "draft_field",
+        "output-available",
+        { section: "purpose", targetField: "narrative" },
+        { status: "drafted", section: "purpose", targetField: "narrative" }
+      ),
+      toolPart(
+        "edit_table",
+        "output-available",
+        { section: "requirements_verified", targetField: "hardwareTable" },
+        { status: "applied", section: "requirements_verified", targetField: "hardwareTable" }
+      ),
+    ] as never);
+
+    const labels = blocks.flatMap((block) =>
+      block.kind === "activity" ? [block.node.label] : []
+    );
+    expect(labels).toEqual([
+      "Drafted Purpose — review in the document",
+      "Applied to Requirements Verified",
+    ]);
+  });
+
   it("keeps document review as its own block", () => {
     const blocks = buildChatActivityBlocks([
       toolPart("start_document_review", "output-available", undefined, {

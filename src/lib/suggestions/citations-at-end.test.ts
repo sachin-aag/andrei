@@ -10,6 +10,7 @@ import {
   normalizeTrailingCitationBlockInDoc,
   normalizeTrailingCitationBlockInText,
   prepareEditForCitationMode,
+  sourceCitationBracket,
   splitEditForCitationsAtEnd,
   stripCitationsFromTableOperation,
   stripCitationsFromText,
@@ -17,6 +18,7 @@ import {
   stripTrailingCitationBlockFromText,
   stripTrailingCitationsFromContent,
 } from "./citations-at-end";
+import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 
 describe("stripCitationsFromText", () => {
   it("pulls page and filename citations out of mid-sentence inserts", () => {
@@ -56,6 +58,38 @@ describe("stripCitationsFromText", () => {
 });
 
 describe("moveCitationsToEndOfText", () => {
+  it("parks attachment-id cites instead of leaving them inline", () => {
+    const markdown = [
+      "This test report applies to configurations defined as TOP-00017 and TOP-00051 [me1q4zzhb1me0wwskpmqfw7i].",
+      "Tested in accordance with the Perioguide Project Test Plan [swja2t3b3dif1ua8id1zkyz2, p. 1].",
+    ].join(" ");
+    expect(moveCitationsToEndOfText(markdown)).toBe(
+      [
+        "This test report applies to configurations defined as TOP-00017 and TOP-00051 [1]. Tested in accordance with the Perioguide Project Test Plan [2].",
+        "",
+        "Citations:",
+        "1. [me1q4zzhb1me0wwskpmqfw7i]",
+        "2. [swja2t3b3dif1ua8id1zkyz2, p. 1]",
+      ].join("\n")
+    );
+  });
+
+  it("repairs mistaken placeholder wrappers then parks attachment-id cites", () => {
+    const drafted =
+      "defined as TOP-00051 [me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]. " +
+      "Tested per the plan [swja2t3b3dif1ua8id1zkyz2,: <to be filled>].";
+    const normalized = normalizeSuggestionInsertText(drafted);
+    expect(moveCitationsToEndOfText(normalized)).toBe(
+      [
+        "defined as TOP-00051 [1]. Tested per the plan [2].",
+        "",
+        "Citations:",
+        "1. [me1q4zzhb1me0wwskpmqfw7i]",
+        "2. [swja2t3b3dif1ua8id1zkyz2]",
+      ].join("\n")
+    );
+  });
+
   it("moves inline citations after the prose and any table, leaving numbered markers", () => {
     const markdown = [
       "Power output met the acceptance limit [protocol.pdf, p. 2].",
@@ -337,6 +371,28 @@ describe("documentCitationRule", () => {
     expect(documentCitationRule(true)).toContain("end of the section field");
     expect(documentCitationRule(true)).toContain("Citations:");
     expect(documentCitationRule(true)).toContain("split edit");
+    expect(documentCitationRule(false)).toContain("missing or ambiguous");
+    expect(documentCitationRule(true)).toContain("missing or ambiguous");
+  });
+});
+
+describe("sourceCitationBracket", () => {
+  it("includes p. N when the page is a known integer", () => {
+    expect(sourceCitationBracket("Mechanical Test Report.pdf", 119)).toBe(
+      "[Mechanical Test Report.pdf, p. 119]"
+    );
+  });
+
+  it("omits the page when it is missing or invalid", () => {
+    expect(sourceCitationBracket("Mechanical Test Report.pdf")).toBe(
+      "[Mechanical Test Report.pdf]"
+    );
+    expect(sourceCitationBracket("Mechanical Test Report.pdf", null)).toBe(
+      "[Mechanical Test Report.pdf]"
+    );
+    expect(sourceCitationBracket("Mechanical Test Report.pdf", 0)).toBe(
+      "[Mechanical Test Report.pdf]"
+    );
   });
 });
 

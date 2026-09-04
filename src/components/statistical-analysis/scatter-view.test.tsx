@@ -178,7 +178,66 @@ describe("ScatterView spec limits", () => {
     expect(screen.getByTestId("scatter-spec-line-usl")).toBeTruthy();
   });
 
-  it("shows attachment page citations on a worksheet plot subtitle", () => {
+  it("hides the mean line until showMeanLine is on", () => {
+    const spec = {
+      ...TORQUE_MOCK_SPEC,
+      layout: { ...TORQUE_MOCK_SPEC.layout, showMeanLine: false },
+    };
+    const analysis: XyScatterAnalysisSummary = {
+      id: "an-xy-mean",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: spec.title,
+      config: {
+        xColumnId: null,
+        xColumnName: "Observation",
+        yColumnId: "c1",
+        yColumnName: "Assay",
+        title: spec.title,
+        showMeanLine: false,
+      },
+      results: {
+        specs: [spec],
+        n: spec.points.length,
+        skipped: 0,
+        pearsonR: null,
+      },
+      sourceHash: "xy-mean",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    const { rerender } = render(
+      <ScatterView analysis={analysis} {...viewProps} />
+    );
+    expect(screen.queryByTestId("scatter-mean-line")).toBeNull();
+    expect(screen.queryByTestId("scatter-mean-marker")).toBeNull();
+
+    rerender(
+      <ScatterView
+        analysis={{
+          ...analysis,
+          config: { ...analysis.config, showMeanLine: true },
+          results: {
+            ...analysis.results,
+            specs: [
+              {
+                ...spec,
+                layout: { ...spec.layout, showMeanLine: true },
+              },
+            ],
+          },
+        }}
+        {...viewProps}
+      />
+    );
+    expect(screen.getByTestId("scatter-mean-line")).toBeTruthy();
+    expect(screen.getAllByTestId("scatter-mean-marker")).toHaveLength(
+      spec.points.length
+    );
+  });
+
+  it("omits attachment page citations from a worksheet plot subtitle", () => {
     const spec = {
       ...TORQUE_MOCK_SPEC,
       query: "Assay vs Observation",
@@ -212,6 +271,23 @@ describe("ScatterView spec limits", () => {
       previewImage: null,
     };
     render(<ScatterView analysis={analysis} {...viewProps} />);
-    expect(screen.getByText(/p\. 31/)).toBeTruthy();
+    expect(screen.getByTestId("analysis-preview-figure").textContent).not.toMatch(
+      /p\.\s*31/
+    );
+    expect(
+      screen.getByText(/Assay vs Observation · \d+ points/)
+    ).toBeTruthy();
+  });
+
+  it("omits attachment page citations from a measurement scatter subtitle", () => {
+    const analysis = scatterSummary({ lower: 1, upper: 6 });
+    analysis.results.specs[0] = {
+      ...analysis.results.specs[0]!,
+      citations: [{ attachmentId: "att_1", page: 13 }],
+    };
+    render(<ScatterView analysis={analysis} {...viewProps} />);
+    const figure = screen.getByTestId("analysis-preview-figure");
+    expect(figure.textContent).not.toMatch(/p\.\s*13/);
+    expect(figure.textContent).not.toContain("no citations");
   });
 });

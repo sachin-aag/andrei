@@ -12,6 +12,17 @@ import type {
 } from "@/lib/statistical-analysis/types";
 import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import {
+  formatAxisTick,
+  xTickAnchor,
+} from "@/lib/charts/axis-ticks";
+import {
+  HISTOGRAM_CHART_HEIGHT,
+  HISTOGRAM_CHART_WIDTH,
+  HISTOGRAM_PLOT,
+  HISTOGRAM_TITLE_Y,
+} from "@/lib/statistical-analysis/histogram-chart-layout";
+import { histogramChartScale } from "@/lib/statistical-analysis/histogram-chart-scale";
+import {
   formatCapabilityStat,
   formatLimit,
   formatPpm,
@@ -72,13 +83,17 @@ function Panel({
 function ChartSvg({
   children,
   ariaLabel,
+  width = 320,
+  height = 200,
 }: {
   children: ReactNode;
   ariaLabel: string;
+  width?: number;
+  height?: number;
 }) {
   return (
     <svg
-      viewBox="0 0 320 200"
+      viewBox={`0 0 ${width} ${height}`}
       width="100%"
       height="100%"
       role="img"
@@ -90,7 +105,14 @@ function ChartSvg({
   );
 }
 
-const PLOT = { left: 36, right: 308, top: 12, bottom: 168 };
+type PlotBox = { left: number; right: number; top: number; bottom: number };
+
+const PLOT: PlotBox = { left: 36, right: 308, top: 12, bottom: 168 };
+const HISTOGRAM_FULL = {
+  width: HISTOGRAM_CHART_WIDTH,
+  height: HISTOGRAM_CHART_HEIGHT,
+  plot: HISTOGRAM_PLOT satisfies PlotBox,
+};
 
 function LimitLabel({
   testId,
@@ -99,6 +121,7 @@ function LimitLabel({
   y,
   textAnchor,
   text,
+  plot = PLOT,
 }: {
   testId: string;
   name: string;
@@ -106,8 +129,9 @@ function LimitLabel({
   y: number;
   textAnchor: "start" | "middle" | "end";
   text: string;
+  plot?: PlotBox;
 }) {
-  const insidePlot = y > PLOT.top && y < PLOT.bottom;
+  const insidePlot = y > plot.top && y < plot.bottom;
   return (
     <text
       data-testid={testId}
@@ -135,6 +159,14 @@ function Axis({
   yMax,
   xLabel,
   yLabel,
+  plot = PLOT,
+  viewHeight = 200,
+  xTicks,
+  yTicks,
+  tickFontSize = 8,
+  labelFontSize = 9,
+  formatTick = formatLimit,
+  tickTestIdPrefix,
 }: {
   xMin: number;
   xMax: number;
@@ -142,73 +174,86 @@ function Axis({
   yMax: number;
   xLabel: string;
   yLabel: string;
+  plot?: PlotBox;
+  viewHeight?: number;
+  xTicks?: number[];
+  yTicks?: number[];
+  tickFontSize?: number;
+  labelFontSize?: number;
+  formatTick?: (value: number) => string;
+  tickTestIdPrefix?: string;
 }) {
-  const y = scale(yMin, yMax, PLOT.bottom, PLOT.top);
-  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
+  const x = scale(xMin, xMax, plot.left, plot.right);
+  const y = scale(yMin, yMax, plot.bottom, plot.top);
+  const xs = xTicks ?? [xMin, (xMin + xMax) / 2, xMax];
+  const ys = yTicks ?? [yMin, (yMin + yMax) / 2, yMax];
+  const yLabelX = plot.left <= 40 ? 12 : 16;
+  const yLabelY = (plot.top + plot.bottom) / 2;
   return (
     <g>
       <rect
-        x={PLOT.left}
-        y={PLOT.top}
-        width={PLOT.right - PLOT.left}
-        height={PLOT.bottom - PLOT.top}
+        x={plot.left}
+        y={plot.top}
+        width={plot.right - plot.left}
+        height={plot.bottom - plot.top}
         fill="transparent"
         stroke="var(--border)"
       />
-      {yTicks.map((tick) => (
-        <g key={tick}>
+      {ys.map((tick) => (
+        <g key={`y-${tick}`}>
           <line
-            x1={PLOT.left}
-            x2={PLOT.right}
+            x1={plot.left}
+            x2={plot.right}
             y1={y(tick)}
             y2={y(tick)}
             stroke="var(--border)"
             strokeDasharray="2 3"
           />
           <text
-            x={PLOT.left - 4}
+            data-testid={
+              tickTestIdPrefix ? `${tickTestIdPrefix}-y-tick` : undefined
+            }
+            x={plot.left - 4}
             y={y(tick) + 3}
             textAnchor="end"
-            fontSize="8"
+            fontSize={tickFontSize}
             fill="var(--muted-foreground)"
           >
-            {formatLimit(tick)}
+            {formatTick(tick)}
           </text>
         </g>
       ))}
+      {xs.map((tick, index) => (
+        <text
+          key={`x-${tick}`}
+          data-testid={
+            tickTestIdPrefix ? `${tickTestIdPrefix}-x-tick` : undefined
+          }
+          x={x(tick)}
+          y={plot.bottom + (tickFontSize >= 10 ? 14 : 12)}
+          textAnchor={xTickAnchor(index, xs.length)}
+          fontSize={tickFontSize}
+          fill="var(--muted-foreground)"
+        >
+          {formatTick(tick)}
+        </text>
+      ))}
       <text
-        x={(PLOT.left + PLOT.right) / 2}
-        y={192}
+        x={(plot.left + plot.right) / 2}
+        y={viewHeight - 8}
         textAnchor="middle"
-        fontSize="9"
+        fontSize={labelFontSize}
         fill="var(--muted-foreground)"
       >
         {xLabel}
       </text>
       <text
-        x={PLOT.left}
-        y={PLOT.bottom + 12}
-        fontSize="8"
-        fill="var(--muted-foreground)"
-      >
-        {formatLimit(xMin)}
-      </text>
-      <text
-        x={PLOT.right}
-        y={PLOT.bottom + 12}
-        textAnchor="end"
-        fontSize="8"
-        fill="var(--muted-foreground)"
-      >
-        {formatLimit(xMax)}
-      </text>
-      <text
-        x={12}
-        y={(PLOT.top + PLOT.bottom) / 2}
+        x={yLabelX}
+        y={yLabelY}
         textAnchor="middle"
-        fontSize="9"
+        fontSize={labelFontSize}
         fill="var(--muted-foreground)"
-        transform={`rotate(-90 12 ${(PLOT.top + PLOT.bottom) / 2})`}
+        transform={`rotate(-90 ${yLabelX} ${yLabelY})`}
       >
         {yLabel}
       </text>
@@ -362,37 +407,56 @@ function ControlChart({
   );
 }
 
-function HistogramChart({
+export function CapabilityHistogramChart({
   bins,
   overallCurve,
   withinCurve,
   lsl,
   usl,
+  showDistributionLines = true,
+  showLsl = true,
+  showUsl = true,
+  title,
+  testIdPrefix = "sixpack",
+  size = "compact",
 }: {
   bins: HistogramBin[];
   overallCurve: CurvePoint[];
   withinCurve: CurvePoint[];
   lsl: number | null;
   usl: number | null;
+  showDistributionLines?: boolean;
+  showLsl?: boolean;
+  showUsl?: boolean;
+  title?: string;
+  testIdPrefix?: string;
+  size?: "compact" | "full";
 }) {
-  const counts = bins.map((bin) => bin.count);
-  const curveYs = [...overallCurve, ...withinCurve].map((point) => point.y);
-  const xValues = [
-    ...bins.map((bin) => bin.x0),
-    ...bins.map((bin) => bin.x1),
-    ...overallCurve.map((point) => point.x),
-    lsl ?? Number.POSITIVE_INFINITY,
-    usl ?? Number.NEGATIVE_INFINITY,
-  ].filter((value) => Number.isFinite(value));
-  const [xMin, xMax] = domain(xValues, 0.02);
-  const yMax = Math.max(1, ...counts, ...curveYs) * 1.12;
-  const x = scale(xMin, xMax, PLOT.left, PLOT.right);
-  const y = scale(0, yMax, PLOT.bottom, PLOT.top);
+  const drawLsl = showLsl && lsl != null;
+  const drawUsl = showUsl && usl != null;
+  const layout =
+    size === "full"
+      ? HISTOGRAM_FULL
+      : { width: 320, height: 200, plot: PLOT };
+  const plot = layout.plot;
+  const scaleBox = histogramChartScale({
+    bins,
+    overallCurve,
+    withinCurve,
+    lsl,
+    usl,
+    showDistributionLines,
+    showLsl,
+    showUsl,
+  });
+  const x = scale(scaleBox.xMin, scaleBox.xMax, plot.left, plot.right);
+  const y = scale(scaleBox.yMin, scaleBox.yMax, plot.bottom, plot.top);
   const specLimits: SpecLimitInput[] = [
-    ...(lsl != null ? [{ kind: "lsl" as const, value: lsl, lineX: x(lsl) }] : []),
-    ...(usl != null ? [{ kind: "usl" as const, value: usl, lineX: x(usl) }] : []),
+    ...(drawLsl ? [{ kind: "lsl" as const, value: lsl, lineX: x(lsl) }] : []),
+    ...(drawUsl ? [{ kind: "usl" as const, value: usl, lineX: x(usl) }] : []),
   ];
-  const specLabels = layoutSpecLimitLabels(specLimits, PLOT);
+  const specLabels = layoutSpecLimitLabels(specLimits, plot);
+  const full = size === "full";
 
   const toPath = (points: CurvePoint[]) =>
     points
@@ -402,14 +466,40 @@ function HistogramChart({
       .join(" ");
 
   return (
-    <ChartSvg ariaLabel="Capability histogram">
+    <ChartSvg
+      ariaLabel={title || "Capability histogram"}
+      width={layout.width}
+      height={layout.height}
+    >
+      {title ? (
+        <text
+          data-testid={`${testIdPrefix}-chart-title`}
+          x={(plot.left + plot.right) / 2}
+          y={HISTOGRAM_TITLE_Y}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize={full ? 14 : 11}
+          fontWeight="600"
+          fill="currentColor"
+        >
+          {title}
+        </text>
+      ) : null}
       <Axis
-        xMin={xMin}
-        xMax={xMax}
-        yMin={0}
-        yMax={yMax}
+        xMin={scaleBox.xMin}
+        xMax={scaleBox.xMax}
+        yMin={scaleBox.yMin}
+        yMax={scaleBox.yMax}
         xLabel="Measurement"
         yLabel="Frequency"
+        plot={plot}
+        viewHeight={layout.height}
+        xTicks={scaleBox.xTicks}
+        yTicks={scaleBox.yTicks}
+        tickFontSize={full ? 10 : 8}
+        labelFontSize={full ? 11 : 9}
+        formatTick={formatAxisTick}
+        tickTestIdPrefix={testIdPrefix}
       />
       {bins.map((bin) => {
         const width = Math.max(0.5, x(bin.x1) - x(bin.x0) - 1);
@@ -426,26 +516,30 @@ function HistogramChart({
           />
         );
       })}
-      <path
-        d={toPath(withinCurve)}
-        fill="none"
-        stroke="var(--brand-600)"
-        strokeWidth="1.3"
-      />
-      <path
-        d={toPath(overallCurve)}
-        fill="none"
-        stroke="var(--muted-foreground)"
-        strokeWidth="1.2"
-        strokeDasharray="4 3"
-      />
+      {showDistributionLines ? (
+        <>
+          <path
+            d={toPath(withinCurve)}
+            fill="none"
+            stroke="var(--brand-600)"
+            strokeWidth="1.3"
+          />
+          <path
+            d={toPath(overallCurve)}
+            fill="none"
+            stroke="var(--muted-foreground)"
+            strokeWidth="1.2"
+            strokeDasharray="4 3"
+          />
+        </>
+      ) : null}
       {specLimits.map((limit) => (
         <line
           key={limit.kind}
           x1={limit.lineX}
           x2={limit.lineX}
-          y1={PLOT.top}
-          y2={PLOT.bottom}
+          y1={plot.top}
+          y2={plot.bottom}
           stroke="var(--destructive)"
           strokeDasharray="3 2"
         />
@@ -453,12 +547,13 @@ function HistogramChart({
       {specLabels.map((label) => (
         <LimitLabel
           key={label.kind}
-          testId={`sixpack-spec-label-${label.kind}`}
+          testId={`${testIdPrefix}-spec-label-${label.kind}`}
           name={label.kind.toUpperCase()}
           x={label.x}
           y={label.y}
           textAnchor={label.textAnchor}
           text={label.text}
+          plot={plot}
         />
       ))}
     </ChartSvg>
@@ -770,7 +865,7 @@ export function SixpackView({
             />
           </Panel>
           <Panel title="Capability Histogram">
-            <HistogramChart
+            <CapabilityHistogramChart
               bins={results.histogram.bins}
               overallCurve={results.histogram.overallCurve}
               withinCurve={results.histogram.withinCurve}

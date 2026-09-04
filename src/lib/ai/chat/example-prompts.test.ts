@@ -119,4 +119,8 @@ describe("ANALYTICS_EXAMPLE_PROMPTS", () => {
   it("offers a boxplot chip in Agent mode", () => {
     expect(ANALYTICS_EXAMPLE_PROMPTS.agent.join("\n")).toMatch(/Boxplot Assay by Lot/i);
   });
+
+  it("offers a histogram chip in Agent mode", () => {
+    expect(ANALYTICS_EXAMPLE_PROMPTS.agent.join("\n")).toMatch(/Histogram of Assay/i);
+  });
 });

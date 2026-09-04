@@ -346,6 +346,34 @@ export function AnalyticsChatToolChip({
         </ToolLine>
       );
     }
+    case "plot_histogram": {
+      if (pending) {
+        return (
+          <ToolLine icon={<BarChart3 className="size-3.5" />}>
+            Plotting histogram…
+          </ToolLine>
+        );
+      }
+      if (info.output?.status === "ok") {
+        return (
+          <ToolLine
+            icon={<BarChart3 className="size-3.5 text-emerald-500" />}
+            tone="success"
+          >
+            {info.output.updated === true
+              ? "Updated histogram — open the Results tab"
+              : "Saved histogram — open the Results tab"}
+          </ToolLine>
+        );
+      }
+      return (
+        <ToolLine icon={<BarChart3 className="size-3.5" />} tone="warn">
+          {typeof info.output?.message === "string"
+            ? info.output.message
+            : "Could not plot the histogram."}
+        </ToolLine>
+      );
+    }
     case "plot_measurements": {
       if (pending) {
         return (

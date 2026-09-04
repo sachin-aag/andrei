@@ -21,23 +21,40 @@ Follow the **latest user message**. Agent mode may edit when they asked to
 write; empty sections and ready attachments are not a request to draft.
 Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Document `draft_field` / Analytics `write_column`). Classifier:
-`classifyChatUserIntent` in `src/lib/ai/chat/user-intent.ts`. Retrieval
-maps those turns to focused (`reason: no_task`) and skips kickoff
-evidence. A yes after the assistant offered to draft is a write request.
+`classifyChatUserIntent` in `src/lib/ai/chat/user-intent.ts` (rules) plus
+`resolveChatUserIntent` in `src/lib/ai/chat/resolve-user-intent.ts`
+(Flash-Lite only when rules would emit `ambiguous_agent_mode`). Stub chat,
+timeout, and parse failures keep the rules decision. Retrieval maps those
+turns to focused (`reason: no_task`) and skips kickoff evidence. A yes
+after the assistant offered to draft is a write request.
 
 Search attachments **before** `ask_user`, `draft_field`, or a `[placeholder]`
 for report facts (batch, date, result, equipment ID, requirement ID, design
-output, verification objective, ECO/DCR). Exception: if the engineer asked to
-draft a section the context map marks **filled or partial**, call
-`read_section` first. Review against criteria and any cached AI Check gap
-hints for that section; if there are no material gaps, report that it is
-already drafted and ask whether they want a specific change. If there are
-gaps, make a targeted edit. Do not pad length or invent gaps. If a gap
-conflicts with an omit-if recipe rule, ask once whether to include it. Do
-not quiz them for facts already in the section or that you would put in
-`hint`. The document index
-(filename/topics) is not evidence. Evidence preview is already in the
+output, verification objective, ECO/DCR). Exception: when intent is **write**
+and the target section is **filled or partial**, call `read_section` first
+(gate on fill state + write intent — not draft/fill verbs). Review against
+criteria and any cached AI Check gap hints; if there are no material gaps,
+report that it is already drafted and ask whether they want a specific
+change. Explicit rewrite language is the escape hatch. If there are gaps,
+make a targeted edit. Do not pad length or invent gaps. If a gap conflicts
+with an omit-if rule, ask once whether to include it. Do not quiz
+them for facts already in the section or that you would put in `hint`.
+`prepareStep` hides `draft_field` while that gate is active. The document
+index (filename/topics) is not evidence. Evidence preview is already in the
 system prompt when kickoff retrieval hits.
+
+After a cited search hit, a locate/read (`read_document_page` /
+`document_outline` / Analytics scan-extract), or two empty greps, hide
+`search_documents` for the rest of the turn (`searchLoopDirective` shared
+with Analytics). Do not hide search while a document review is
+`in_progress` / `ready_to_finish`. Prior-turn tool JSON is compacted before
+`convertToModelMessages` (page transcripts, finish findings, write
+payloads). Finished document-review coverage is rehydrated across turns
+when the ready-attachment coverage key is unchanged; comprehensive
+retrieval does not force another walk on a zero coverage delta unless the
+latest message is explicit pushback (`you missed`, `look again`,
+`re-check`, a test-family code). Pushback skips rehydrate so a finished
+session does not hide `start_document_review`.
 
 ## Spectrum
 
@@ -55,7 +72,9 @@ prompt → tools → `PLAN_MODE_CHAT_TOOL_NAMES` → retrieval-policy /
 already-drafted / stub → tests → docs. Removing a control means deleting
 that plumbing (`body.sectionScope`, `parseChat*`, switch-section tools,
 mismatch banners) — not hiding the dropdown. Scope is `@` mentions
-(`sectionScopeFromMentions`, analytics mention block). Bump
+(`sectionScopeFromMentions`, analytics mention block). Bare `@` opens
+Attachments first (nested folders of ready files), then Document sections
+or Data sheets. Do not recap that list at 8. Bump
 `CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION` when prompt copy
 changes. Empty-state Document chips are `chat.examplePrompts` on the
 document type (not DMAIC-hardcoded); Analytics chips stay in
@@ -88,6 +107,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   single value → array) and retries once. Malformed JSON is still not
   rewritten. Prefer widening a bound over tightening one — the clamp is a net,
   not a licence to add tight caps.
+- Analytics never asks which page to read. `ask_user` is hidden on a lookup,
+  after Skip / “find it”, and after any grep (including TOC-only) until a
+  page is read/scanned. Page-number questions are rejected if they still
+  fire. TOC-only greps do not close search. A Skip on that form is a locate
+  request (search/scan), not a placeholder. A dump with some blank cells
+  must not hide `write_column` — remaining requested columns fill this turn.
 - `insert_image` source=analytics copies a saved plot only when the named
   series matches (or they did not name one). If they asked for a plot that
   is not listed, return the available titles once this turn (`available_plots`)
@@ -100,13 +125,15 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   plots copy the saved Analytics preview at the same 600px display width
   as right-click Insert graph (`CHART_DISPLAY_WIDTH_PX`). Do not shrink by
   a 300px height cap — that turns a sixpack into a thin unreadable strip.
-- Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
-  + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
-  `ai_fix` comments). Document chrome **proposes**. Same-turn `propose_edit`
-  calls serialize; locatable spans within 20 characters on the same field
-  fold into one card (no per-field budget). Lead-in / table / figure /
-  citation-split / cell-scope edits stay separate. Do not trust a client
-  `editPolicy` on a locked report. Plan-mode allowlist does not gain edit tools.
+- Report chat `editPolicy` is derived on the **server**. Document **and**
+  Agent chrome **propose** (red/green `ai_fix` comments; nothing lands
+  until Apply / Dismiss, including Apply all / Dismiss all for one or more
+  open suggestions). Same-turn `propose_edit` calls serialize; locatable
+  spans within 20 characters on the same field fold into one card (no
+  per-field budget). Lead-in / table / figure / citation-split / cell-scope
+  edits stay separate. Do not trust a client `editPolicy`. Plan-mode
+  allowlist does not gain edit tools. The `commit` tool path remains for
+  tests; live report chat never derives it.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.
 - Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
@@ -117,9 +144,29 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (`tableEditLoopDirective`, `prepareDocumentReviewStep`,
   `alreadyDraftedReadStep`, `tableSchemaReadStep` on write turns whose
   in-scope section already has a table, Analytics search hide after a
-  cited page or two empty greps). Live table headers are listed on the
+  cited page or two empty greps, Analytics `write_column` hide after a
+  cited-page grep until a page is read/scanned/extracted, while any file
+  still has extract `morePages` or scan `truncated` (a finished extract of
+  file B does not unlock a partial write of file A), after two consecutive
+  empty dumps, Analytics `ask_user`
+  hide on lookups / Skip / after any grep until a page is read, and
+  Analytics `manage_worksheet` hide after the first structure call this
+  turn). Analytics `write_column` trusts and atomically persists the complete
+  extractor batch without per-cell source-token verification. Keep page
+  provenance when known, or the document name when no page is available.
+  One complete write per destination sheet; separate extracts per sheet
+  are correct. Agent Analytics calls `extract_sheet` once per sheet
+  (parallel workers create or reuse the tab and write; persist keeps the
+  engineer's focused tab). Follow-up add/remove rows on a filled sheet use
+  `extract_sheet` `mode edit` (`write_column` `mode append`, or
+  `delete_row` with optional `rowEnd`). Live table headers are listed on the
   context map; `read_section` / `edit_table` / `draft_field` must copy
-  those headers (demo vs Convergent matrices differ).
+  those headers (demo vs Convergent matrices differ). Analytics
+  `write_column` / `manage_worksheet` serialize per report and re-apply
+  onto the latest sheet on 409 so a parallel dump cannot empty columns
+  the grid just showed. `write_column` accepts `sheetId` (tab id or name);
+  omit it only when the destination is already active. A batch
+  `manage_worksheet` result lists every new sheet in `operations`.
 
 ## Retrieval
 
@@ -141,9 +188,17 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (registry `inventorySections`) when evidence is distributed (≥12 ready
   pages or ≥6 outline siblings), unless a bounded locator, targeted
   sentence/paragraph rewrite, or non-inventory section intent applies.
-  Open-set produce intent is scored on the latest user turn only.
-  **Focused** is an explicit skim. Adaptive turns
-  skip auto-evidence so the model must grep.
+  Open-set produce intent, exhaustive-shape language, and all-scope
+  section intent are scored on the latest user turn only (an earlier
+  equipment/UUT draft must not keep “draft the remaining sections” on
+  the adaptive path). Inventory-section scope needs latest-turn inventory
+  language or open-set produce before comprehensive. Header-only seeded
+  tables (blank data cells, no surrounding prose) are empty, not partial
+  — `sectionHasTable` still sees them. Search hits include `citation`
+  (`[filename, p. N]` when the page is known; `[filename]` only if
+  missing or ambiguous). Do not reject or rewrite a draft that omitted a
+  known page. **Focused** is an explicit skim.
+  Adaptive turns skip auto-evidence so the model must grep.
   Adaptive/focused turns do not expose `start_document_review`. Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
@@ -158,8 +213,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   `medium` until we route it by task (3.7 Flash rejects `minimal`); page
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.
-- Tagged `@` documents rank first; backfill from the rest of the report.
-  Hard-filtering tagged IDs blinds the assistant.
+- Tagged `@` documents are the complete attachment scope for that turn.
+  Search, scan, outline, page reads, and extracts must not drift to untagged
+  files. If the client drops a structured mention payload, recover an exact,
+  unique `@filename` against that report's ready-document index.
 - Report body is not in `document_chunks`. Use `read_section`.
 
 ## Ingest

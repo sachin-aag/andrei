@@ -76,6 +76,27 @@ describe("SixpackView limit labels", () => {
       "aria-label",
       "LSL 90.00"
     );
+    expect(screen.queryByTestId("sixpack-chart-title")).toBeNull();
+  });
+
+  it("labels intermediate histogram ticks, not only the axis ends", () => {
+    const analysis = summaryFromValues([...SAMPLE_ASSAY_VALUES], assayConfig);
+
+    render(
+      <SixpackView
+        analysis={analysis}
+        {...viewProps}
+      />
+    );
+
+    const xTicks = screen.getAllByTestId("sixpack-x-tick").map((node) =>
+      node.textContent
+    );
+    const yTicks = screen.getAllByTestId("sixpack-y-tick").map((node) =>
+      node.textContent
+    );
+    expect(xTicks.length).toBeGreaterThan(2);
+    expect(yTicks.length).toBeGreaterThan(2);
   });
 
   it("labels a one-sided spec without inventing the missing limit", () => {

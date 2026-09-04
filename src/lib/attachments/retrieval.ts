@@ -552,7 +552,8 @@ async function exactIdentifierChunkSearch({
  *
  * `attachmentIds` (documents the engineer tagged with @) does NOT hard-filter:
  * tagged documents are searched first, and if they yield fewer than `limit`
- * hits the remainder is backfilled from the rest of the report. Hard-filtering
+ * hits the remainder is backfilled from the rest of the report unless
+ * `backfill` is false (explicit @ tags define the complete scope). Hard-filtering
  * would blind the assistant whenever the answer lives in an untagged file.
  * Results carry `pinned` so the model can tell the two apart.
  *
@@ -566,6 +567,7 @@ export async function searchReportDocuments({
   limit = DEFAULT_DOCUMENT_SEARCH_LIMIT,
   snippetChars = DEFAULT_SNIPPET_CHARS,
   attachmentIds,
+  backfill = true,
   mode = "hybrid",
   excludePages,
 }: {
@@ -574,6 +576,7 @@ export async function searchReportDocuments({
   limit?: number;
   snippetChars?: number;
   attachmentIds?: readonly string[];
+  backfill?: boolean;
   mode?: DocumentSearchMode;
   excludePages?: readonly { attachmentId: string; pageNumber: number }[];
 }): Promise<DocumentSearchResult[]> {
@@ -583,6 +586,7 @@ export async function searchReportDocuments({
     limit,
     snippetChars,
     attachmentIds,
+    backfill,
     mode,
     excludePages,
   });
@@ -595,6 +599,7 @@ export async function searchReportDocumentsDetailed({
   limit = DEFAULT_DOCUMENT_SEARCH_LIMIT,
   snippetChars = DEFAULT_SNIPPET_CHARS,
   attachmentIds,
+  backfill = true,
   mode = "hybrid",
   excludePages,
 }: {
@@ -603,6 +608,7 @@ export async function searchReportDocumentsDetailed({
   limit?: number;
   snippetChars?: number;
   attachmentIds?: readonly string[];
+  backfill?: boolean;
   mode?: DocumentSearchMode;
   excludePages?: readonly { attachmentId: string; pageNumber: number }[];
 }): Promise<{ results: DocumentSearchResult[]; timing: RetrievalTiming }> {
@@ -758,7 +764,7 @@ export async function searchReportDocumentsDetailed({
     mergeUniqueChunks([...exactPinnedRows, ...pinnedFused]),
     true
   );
-  if (pinnedMerged.length >= limit) {
+  if (!backfill || pinnedMerged.length >= limit) {
     return {
       results: pinnedMerged,
       timing: emptyTiming(skippedEmbedding),

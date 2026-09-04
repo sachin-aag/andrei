@@ -12,7 +12,6 @@ import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture"
 import { formatStat } from "@/lib/statistical-analysis/format";
 import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import {
-  formatChartCitationPages,
   formatChartProvenance,
   layoutPoints,
   resolveXRange,
@@ -29,6 +28,15 @@ import {
   markGeometry,
   parseChartMark,
 } from "@/lib/charts/chart-marks";
+import {
+  chartShowsMeanLine,
+  MEAN_LINE_INDIVIDUAL_FILL,
+  MEAN_LINE_MARKER_RADIUS,
+  meanLineGroups,
+  SCATTER_MEAN_LINE_JITTER_PX,
+  scatterJitterPxByIndex,
+  type MeanLineGroup,
+} from "@/lib/charts/mean-line";
 import {
   layoutHorizontalSpecLabels,
   type HorizontalSpecKind,
@@ -57,6 +65,61 @@ function uniqueSeries(points: ChartPoint[]): string[] {
 function formatTick(value: number): string {
   if (Number.isInteger(value)) return String(value);
   return String(Number(value.toPrecision(6)));
+}
+
+function MeanLineOverlay({
+  groups,
+  xToPx,
+  yToPx,
+  colorFor,
+}: {
+  groups: MeanLineGroup[];
+  xToPx: (x: number) => number;
+  yToPx: (y: number) => number;
+  colorFor: (series: string | null) => string;
+}) {
+  return (
+    <>
+      {groups.map((group) => {
+        const color = colorFor(group.series);
+        const d = group.points
+          .map((point) => `${xToPx(point.x)},${yToPx(point.y)}`)
+          .join(" ");
+        const seriesKey = group.series ?? "all";
+        return (
+          <g key={`mean-${seriesKey}`} data-testid={`scatter-mean-series-${seriesKey}`}>
+            {group.points.length >= 2 ? (
+              <polyline
+                data-testid="scatter-mean-line"
+                points={d}
+                fill="none"
+                stroke={color}
+                strokeWidth="2"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            ) : null}
+            {group.points.map((point, index) => (
+              <circle
+                key={`${point.x}-${index}`}
+                data-testid="scatter-mean-marker"
+                cx={xToPx(point.x)}
+                cy={yToPx(point.y)}
+                r={MEAN_LINE_MARKER_RADIUS}
+                fill={color}
+                stroke="#fff"
+                strokeWidth="1.25"
+              >
+                <title>
+                  Mean (n={point.n}): {point.y}
+                </title>
+              </circle>
+            ))}
+          </g>
+        );
+      })}
+    </>
+  );
 }
 
 function ScatterChart({ spec }: { spec: ChartSpec }) {
@@ -97,6 +160,15 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
     seriesBy: spec.layout.seriesBy,
   });
   const mark = parseChartMark(spec.layout.mark);
+  const showMeanLine = chartShowsMeanLine(spec.layout);
+  const jitterPx =
+    showMeanLine && geometry.type === "points"
+      ? scatterJitterPxByIndex(geometry.points, SCATTER_MEAN_LINE_JITTER_PX)
+      : null;
+  const pointFill = (series: string | null) =>
+    showMeanLine && spec.layout.seriesBy !== "unit"
+      ? MEAN_LINE_INDIVIDUAL_FILL
+      : colorFor(series);
   const barWidth =
     geometry.type === "columns"
       ? columnBarWidthPx(
@@ -252,10 +324,10 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
         ? geometry.points.map((point, index) => (
             <circle
               key={`${point.label}-${index}`}
-              cx={xToPx(point.x)}
+              cx={xToPx(point.x) + (jitterPx?.[index] ?? 0)}
               cy={yToPx(point.y)}
               r="5"
-              fill={colorFor(point.series)}
+              fill={pointFill(point.series)}
               stroke={colors.plotFill}
               strokeWidth="1"
             >
@@ -339,6 +411,14 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
             );
           })
         : null}
+      {showMeanLine ? (
+        <MeanLineOverlay
+          groups={meanLineGroups(points, spec.layout.seriesBy)}
+          xToPx={xToPx}
+          yToPx={yToPx}
+          colorFor={colorFor}
+        />
+      ) : null}
       {showLegend
         ? seriesNames.map((name, index) =>
             name ? (
@@ -401,7 +481,6 @@ export function ScatterView({
     onUploaded: onPreviewUploaded,
   });
   const provenance = spec ? formatChartProvenance(spec) : "";
-  const citationPages = spec ? formatChartCitationPages(spec.citations) : null;
   const subtitle = xy
     ? [
         xyScatterVersusLabel(analysis.config),
@@ -412,7 +491,6 @@ export function ScatterView({
         analysis.results.pearsonR == null
           ? null
           : `r = ${formatStat(analysis.results.pearsonR, 3)}`,
-        citationPages,
       ]
         .filter(Boolean)
         .join(" · ")

@@ -9,12 +9,14 @@ import {
   ONE_WAY_ANOVA,
   XY_SCATTER,
   BOXPLOT,
+  HISTOGRAM,
   MAX_BOXPLOT_CATEGORIES,
 } from "./types";
 
 const worksheetColumnCitationSchema = z.object({
   attachmentId: z.string().trim().min(1).max(128),
-  page: z.number().int().min(1).max(10_000),
+  page: z.number().int().min(1).max(10_000).nullable(),
+  filename: z.string().trim().min(1).max(255).optional(),
 });
 
 export const worksheetColumnSchema = z.object({
@@ -279,6 +281,7 @@ const xyScatterUiFields = {
   ...xyScatterColumnFields,
   mark: z.enum(CHART_MARKS).optional(),
   showSpecLimits: z.boolean().optional(),
+  showMeanLine: z.boolean().optional(),
   xMin: z.number().finite().nullable().optional(),
   xMax: z.number().finite().nullable().optional(),
   yMin: z.number().finite().nullable().optional(),
@@ -344,6 +347,7 @@ export const xyScatterBodySchema = z
     ...xyScatterAxisFields,
     mark: z.enum(CHART_MARKS).optional(),
     showSpecLimits: z.boolean().optional(),
+    showMeanLine: z.boolean().optional(),
     xMin: z.number().finite().nullable().optional(),
     xMax: z.number().finite().nullable().optional(),
     yMin: z.number().finite().nullable().optional(),
@@ -423,6 +427,7 @@ export const boxplotBodySchema = z
     title: z.string().trim().max(120).optional(),
     xAxisLabel: z.string().trim().max(60).nullable().optional(),
     yAxisLabel: z.string().trim().max(80).nullable().optional(),
+    showMeanLine: z.boolean().optional(),
     ...boxplotRowFields,
   })
   .superRefine(refineBoxplotChatBody);
@@ -435,6 +440,7 @@ export const boxplotInputSchema = z
     title: z.string().trim().max(120).optional(),
     xAxisLabel: z.string().trim().max(60).nullable().optional(),
     yAxisLabel: z.string().trim().max(80).nullable().optional(),
+    showMeanLine: z.boolean().optional(),
     ...boxplotRowFields,
   })
   .superRefine(refineBoxplotColumns);
@@ -447,9 +453,87 @@ export const boxplotUpdateSchema = z
     title: z.string().trim().max(120).optional(),
     xAxisLabel: z.string().trim().max(60).nullable().optional(),
     yAxisLabel: z.string().trim().max(80).nullable().optional(),
+    showMeanLine: z.boolean().optional(),
     ...boxplotRowFields,
   })
   .superRefine(refineBoxplotColumns);
+
+function refineOptionalHistogramSpecs(
+  value: { lsl?: number | null; usl?: number | null },
+  ctx: z.RefinementCtx
+): void {
+  if (value.lsl != null && value.usl != null && !(value.lsl < value.usl)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Lower spec must be less than upper spec.",
+      path: ["lsl"],
+    });
+  }
+}
+
+const histogramRowFields = anovaRowFields;
+
+const histogramOverlayFields = {
+  showDistributionLines: z.boolean().optional(),
+  showLsl: z.boolean().optional(),
+  showUsl: z.boolean().optional(),
+} as const;
+
+const histogramSpecFields = {
+  lsl: z.number().finite().nullable().optional(),
+  usl: z.number().finite().nullable().optional(),
+  ...histogramOverlayFields,
+} as const;
+
+function refineHistogramChatBody(
+  value: {
+    analysisId?: string;
+    columnId?: string;
+    lsl?: number | null;
+    usl?: number | null;
+  },
+  ctx: z.RefinementCtx
+): void {
+  if (!value.analysisId && !value.columnId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "columnId is required when creating a new histogram.",
+      path: ["columnId"],
+    });
+  }
+  refineOptionalHistogramSpecs(value, ctx);
+}
+
+/** Chat tool body — create (columnId required) or update (analysisId + changed fields). */
+export const histogramBodySchema = z
+  .object({
+    analysisId: z.string().trim().min(1).max(128).optional(),
+    columnId: z.string().trim().min(1).optional(),
+    title: z.string().trim().max(120).optional(),
+    ...histogramSpecFields,
+    ...histogramRowFields,
+  })
+  .superRefine(refineHistogramChatBody);
+
+export const histogramInputSchema = z
+  .object({
+    kind: z.literal(HISTOGRAM),
+    columnId: z.string().trim().min(1),
+    title: z.string().trim().max(120).optional(),
+    ...histogramSpecFields,
+    ...histogramRowFields,
+  })
+  .superRefine(refineOptionalHistogramSpecs);
+
+/** Edit/update from the Histogram dialog or chat (omitted fields keep the saved config). */
+export const histogramUpdateSchema = z
+  .object({
+    columnId: z.string().trim().min(1).optional(),
+    title: z.string().trim().max(120).optional(),
+    ...histogramSpecFields,
+    ...histogramRowFields,
+  })
+  .superRefine(refineOptionalHistogramSpecs);
 
 /** Edit/update from the Plot measurements dialog or chat (omitted fields keep the saved config). */
 export const xyScatterUpdateSchema = z
@@ -458,6 +542,7 @@ export const xyScatterUpdateSchema = z
     ...xyScatterAxisFields,
     mark: z.enum(CHART_MARKS).optional(),
     showSpecLimits: z.boolean().optional(),
+    showMeanLine: z.boolean().optional(),
     xMin: z.number().finite().nullable().optional(),
     xMax: z.number().finite().nullable().optional(),
     yMin: z.number().finite().nullable().optional(),

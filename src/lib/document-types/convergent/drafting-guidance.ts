@@ -21,7 +21,7 @@ export const CONVERGENT_RECIPE_DRAFTING_GUIDANCE = `${dvFixedTableFormatGuidance
   labels: CONVERGENT_DV_SECTION_LABELS,
 })}
 
-## How to use this recipe
+## How to draft this report
 
 - Structure is required: heading labels, paragraph order, omit-if, and
   full-vs-partial switches. Do not skip a labelled slot that evidence supports.
@@ -33,12 +33,15 @@ export const CONVERGENT_RECIPE_DRAFTING_GUIDANCE = `${dvFixedTableFormatGuidance
   UUTs, equipment rows, deviations, results rows, and regression rounds from
   evidence. Do not invent extras to look like the SAMPLE.
 - Software version numbers (scheme \`mm.nn.ff.bb\`, e.g. 4.7.1.1011) belong
-  in the drafted text wherever the recipe names a version — Purpose, Scope
+  in the drafted text wherever a version is required — Purpose, Scope
   table, deviations, problem resolution, conclusion. Use evidenced versions.
   Do not omit them.
 - Do not copy sample names, dates, versions, requirement IDs, JIRA tickets,
   asset tags, or addresses unless they appear in the attachments.
 - If a fact is missing, use a bracketed placeholder. Do not invent or pad.
+- Engineer-facing replies and reasoning never mention these drafting rules,
+  SAMPLE, omit-if switches, targetField names, or tool names. Summarize the
+  document sections you wrote. Never call this a recipe.
 
 ## Verbosity (relative)
 
@@ -224,7 +227,7 @@ Per execution block:
 
 ## Methods of Measurement — one block per execution; do **not** put the equipment table here
 
-targetField \`narrative\`. In the Word recipe Test Equipment is a subsection of
+targetField \`narrative\`. In the Word template Test Equipment is a subsection of
 Methods; in this editor it is its own section. Leave the table out of Methods.
 
 **Section criteria:** one block per test-plan revision; same labelled

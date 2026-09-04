@@ -114,6 +114,8 @@ describe("Convergent customer pack", () => {
     expect(def.chat.draftingGuidance).toContain(
       "SAMPLE inventory is not a quota"
     );
+    expect(def.chat.draftingGuidance).toContain("How to draft this report");
+    expect(def.chat.draftingGuidance).toContain("Never call this a recipe");
     expect(def.chat.draftingGuidance).not.toMatch(/~\d+ words/);
     expect(def.chat.draftingGuidance).toContain(
       "There are no separate start/end date fields"

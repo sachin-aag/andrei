@@ -9,6 +9,7 @@ import { saveAnalysisPreview } from "@/lib/statistical-analysis/client";
 import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
+  isHistogramAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -19,7 +20,7 @@ import {
 function chartSpecForAnalysis(
   analysis: StatisticalAnalysisSummary
 ) {
-  if (isSixpackAnalysis(analysis) || isAnovaAnalysis(analysis) || isBoxplotAnalysis(analysis)) {
+  if (isSixpackAnalysis(analysis) || isAnovaAnalysis(analysis) || isBoxplotAnalysis(analysis) || isHistogramAnalysis(analysis)) {
     return null;
   }
   if (isScatterAnalysis(analysis) || isXyScatterAnalysis(analysis)) {

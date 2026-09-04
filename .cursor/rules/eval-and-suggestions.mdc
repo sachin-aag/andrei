@@ -53,9 +53,10 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - `draft_field` refuses a filled field unless `replaceFilledField: true`.
   After a redraft, filled `[Label: value]` placeholders must be preserved
   unless the caller opted into replacing them.
-- Same-turn Document-chrome `propose_edit` cards fold when locatable
-  ranges sit within `COALESCING_GAP` (20) characters. There is no max-cards
-  budget. Do not fold lead-ins, tables, figures, citation splits, or cells.
+- Same-turn `propose_edit` cards (Document and Agent chrome) fold when
+  locatable ranges sit within `COALESCING_GAP` (20) characters. There is
+  no max-cards budget. Do not fold lead-ins, tables, figures, citation
+  splits, or cells.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
   Bump `CHAT_PROMPT_VERSION` when chat edit-tool copy changes.
 - Whole-field is derived: planned operations cover every merge block

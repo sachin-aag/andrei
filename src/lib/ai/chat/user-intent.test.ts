@@ -3,6 +3,7 @@ import {
   classifyChatUserIntent,
   intentToolAvailabilityRule,
   messageHasChatImage,
+  needsLlmIntentClassification,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
 } from "./user-intent";
@@ -107,6 +108,28 @@ describe("classifyChatUserIntent", () => {
     ).toBe("write");
   });
 
+  it("leaves plan/outline phrasing in the Agent-mode hole for Flash-Lite", () => {
+    expect(
+      classifyChatUserIntent({
+        userText: "plan the first 3 sections",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "ambiguous_agent_mode" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "plan the first 3 sections",
+          mode: "agent",
+        })
+      )
+    ).toBe(true);
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({ userText: "draft Purpose" })
+      )
+    ).toBe(false);
+  });
+
   it("does not let Agent mode turn questions or greetings into writes", () => {
     expect(
       classifyChatUserIntent({
@@ -168,6 +191,38 @@ describe("classifyChatUserIntent", () => {
         surface: "analytics",
       }).kind
     ).toBe("write");
+  });
+
+  it("treats skipped Analytics page questions and find-it as write", () => {
+    expect(
+      classifyChatUserIntent({
+        userText:
+          "Answers to your questions:\n1. Which page is M3-SYS-FN-037 on?\n   (skipped — use a placeholder)",
+        surface: "analytics",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "skip_page_and_search" });
+    expect(
+      classifyChatUserIntent({
+        userText: "I want you to find it",
+        surface: "analytics",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "locate_request" });
+    expect(
+      classifyChatUserIntent({
+        userText: "find it",
+        surface: "analytics",
+        mode: "agent",
+      }).kind
+    ).toBe("write");
+    expect(
+      classifyChatUserIntent({
+        userText: "where is M3-SYS-FN-037 in the PDF?",
+        surface: "analytics",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "read", reason: "question_or_lookup" });
   });
 
   it("keeps the instruction that follows a yes", () => {
@@ -299,6 +354,7 @@ describe("intentToolAvailabilityRule", () => {
     const rule = intentToolAvailabilityRule("read", "analytics");
     expect(rule).toContain("write_column");
     expect(rule).toContain("manage_worksheet");
+    expect(rule).toContain("extract_sheet");
     expect(rule).toContain("plot_xy_scatter");
     expect(rule).not.toContain("propose_edit");
   });

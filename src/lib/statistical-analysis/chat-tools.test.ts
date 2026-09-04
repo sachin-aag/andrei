@@ -53,9 +53,9 @@ import {
 } from "@/lib/attachments/retrieval";
 import {
   ANALYTICS_CHAT_TOOL_NAMES,
-  WRITE_COLUMN_NEED_SOURCE_MESSAGE,
   buildAnalyticsChatTools,
   extractNumericTokens,
+  extractSeriesHasMorePages,
   pickAnalyticsDocumentTools,
 } from "./chat-tools";
 import { P1_PUW_COMBINED_TRANSCRIPT, P1_PUW_FILENAME } from "@/lib/extraction/__fixtures__/p1-puw-qualification-phase-ii";
@@ -68,9 +68,9 @@ import {
   updateAnalysisForReport,
   updateReportAnalytics,
 } from "./store";
-import type { BoxplotAnalysisSummary, ReportAnalyticsView, XyScatterAnalysisSummary } from "./types";
-import { BOXPLOT, MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
-import { createEmptyWorksheet, insertColumn, renameColumn, replaceColumnValues } from "./worksheet";
+import type { BoxplotAnalysisSummary, HistogramAnalysisSummary, ReportAnalyticsView, XyScatterAnalysisSummary } from "./types";
+import { BOXPLOT, HISTOGRAM, MEASUREMENT_SCATTER, XY_SCATTER } from "./types";
+import { createEmptyWorksheet, dataSheets, insertColumn, renameColumn, replaceColumnValues, trimTrailingEmpty } from "./worksheet";
 
 function pageRead(transcript: string): DocumentPageRead {
   return {
@@ -114,11 +114,13 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("search_documents");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("write_column");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("manage_worksheet");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("extract_sheet");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_capability_sixpack");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_one_way_anova");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_measurements");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_xy_scatter");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_boxplot");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_histogram");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("scan_attachments");
   });
 
@@ -149,6 +151,7 @@ describe("analytics chat tools", () => {
     expect(writable.plot_measurements).toBeDefined();
     expect(writable.plot_xy_scatter).toBeDefined();
     expect(writable.plot_boxplot).toBeDefined();
+    expect(writable.plot_histogram).toBeDefined();
     expect(writable.run_capability_sixpack?.description).toContain(
       "not when they asked for a scatter"
     );
@@ -164,11 +167,16 @@ describe("analytics chat tools", () => {
     );
     expect(writable.plot_xy_scatter?.description).toContain("analysisId");
     expect(writable.plot_xy_scatter?.description).toContain("showSpecLimits");
+    expect(writable.plot_xy_scatter?.description).toContain("showMeanLine");
     expect(writable.plot_xy_scatter?.description).toContain("xMin/xMax/yMin/yMax");
     expect(writable.plot_boxplot?.description).toContain("categoryColumnIds");
     expect(writable.plot_boxplot?.description).toContain("innermost first");
+    expect(writable.plot_boxplot?.description).toContain("showMeanLine");
     expect(writable.plot_boxplot?.description).toContain("xAxisLabel");
     expect(writable.plot_boxplot?.description).toContain("analysisId");
+    expect(writable.plot_histogram?.description).toContain("columnId");
+    expect(writable.plot_histogram?.description).toContain("showDistributionLines");
+    expect(writable.plot_histogram?.description).toContain("analysisId");
     expect(writable.plot_measurements?.description).toContain(
       "cannot color by serial number"
     );
@@ -185,6 +193,7 @@ describe("analytics chat tools", () => {
     expect(locked.plot_measurements).toBeUndefined();
     expect(locked.plot_xy_scatter).toBeUndefined();
     expect(locked.plot_boxplot).toBeUndefined();
+    expect(locked.plot_histogram).toBeUndefined();
     expect(locked.scan_attachments).toBeDefined();
     expect(locked.search_documents).toBeDefined();
     const searchSchema = locked.search_documents?.inputSchema as unknown as ZodToolSchema;
@@ -195,6 +204,67 @@ describe("analytics chat tools", () => {
     expect(locked.search_documents?.description).not.toContain(
       "truncated=true means keep grepping"
     );
+  });
+
+  it("refuses to scan an attachment outside the tagged scope", async () => {
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: false,
+      documentType: "mechanical_design_verification",
+      pinnedAttachmentIds: ["att_tagged"],
+    });
+    const execute = tools.scan_attachments?.execute;
+    if (!execute) throw new Error("scan_attachments has no execute");
+    const result = await execute(
+      { attachmentIds: ["att_other"], query: "M3-SYS-FN-037" },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "attachment_out_of_scope",
+      attachmentId: "att_other",
+    });
+  });
+
+  it("flags morePages only when the extract hit the page cap", () => {
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [1, 2, 3],
+        requestedSpecificPages: false,
+        pageCount: 20,
+      })
+    ).toBe(false);
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [1, 2, 3, 4, 5, 6],
+        requestedSpecificPages: false,
+        pageCount: 20,
+      })
+    ).toBe(true);
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [1, 2, 3, 4, 5, 6],
+        requestedSpecificPages: false,
+        pageCount: 6,
+      })
+    ).toBe(false);
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [7, 8, 9, 10, 11, 12],
+        requestedSpecificPages: true,
+        pageCount: 20,
+      })
+    ).toBe(true);
+    expect(
+      extractSeriesHasMorePages({
+        resolvedPages: [1, 2, 3, 4, 5, 6],
+        requestedSpecificPages: false,
+        pageCount: null,
+      })
+    ).toBe(true);
   });
 
   it("extracts finite numeric tokens and stops at the worksheet cap", () => {
@@ -388,12 +458,256 @@ describe("analytics chat tools", () => {
       status: "ok",
       operationCount: 2,
     });
+    expect(result).toMatchObject({
+      operations: [
+        expect.objectContaining({ action: "add_column", sheetName: "Data" }),
+        expect.objectContaining({ action: "add_column", sheetName: "Data" }),
+      ],
+    });
     expect(updateReportAnalytics).toHaveBeenCalledTimes(1);
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1];
     expect(saved?.columns).toHaveLength(8);
     expect(saved?.columns.slice(0, 2).map((column) => column.name)).toEqual([
       "Time (hrs)",
       "Temp (°C)",
+    ]);
+  });
+
+  it("writes onto a named sheet instead of the last add_sheet tab", async () => {
+    let current = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockImplementation(async () => current);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => {
+      current = analyticsView(worksheet);
+      return { ok: true, analytics: current };
+    });
+    vi.mocked(readDocumentPage).mockResolvedValue(
+      pageRead("3.081 2.999\n12.4 11.8")
+    );
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const manage = tools.manage_worksheet?.execute;
+    const write = tools.write_column?.execute;
+    if (!manage || !write) throw new Error("manage_worksheet or write_column missing");
+    const added = await manage(
+      {
+        operations: [
+          { action: "add_sheet", name: "M3-SYS-FN-044" },
+          { action: "add_sheet", name: "Separation Force" },
+        ],
+      },
+      {
+        toolCallId: "test-manage",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(added).toMatchObject({
+      status: "ok",
+      operationCount: 2,
+      sheetId: "data-3",
+      sheetName: "Separation Force",
+      operations: [
+        expect.objectContaining({
+          action: "add_sheet",
+          sheetId: "data-2",
+          sheetName: "M3-SYS-FN-044",
+        }),
+        expect.objectContaining({
+          action: "add_sheet",
+          sheetId: "data-3",
+          sheetName: "Separation Force",
+        }),
+      ],
+    });
+    const written = await write(
+      {
+        sheetId: "data-2",
+        sourceAttachmentId: "att_1",
+        sourcePages: [237],
+        columns: [{ name: "Watts", values: [3.081, 2.999] }],
+      },
+      {
+        toolCallId: "test-write",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(written).toMatchObject({
+      status: "written",
+      sheetId: "data-2",
+      sheetName: "M3-SYS-FN-044",
+      rowsWritten: 2,
+    });
+    const fn044 = current.worksheet.sheets.find((sheet) => sheet.id === "data-2");
+    const separation = current.worksheet.sheets.find(
+      (sheet) => sheet.id === "data-3"
+    );
+    expect(
+      fn044?.columns.find((column) => column.name === "Watts")?.values.slice(0, 2)
+    ).toEqual(["3.081", "2.999"]);
+    expect(
+      dataSheets(current.worksheet).find((sheet) => sheet.id === "data-3")
+    ).toBeDefined();
+    expect(
+      separation?.columns.every(
+        (column) => trimTrailingEmpty(column.values).length === 0
+      )
+    ).toBe(true);
+    const writtenForce = await write(
+      {
+        sheetId: "data-3",
+        sourceAttachmentId: "att_1",
+        sourcePages: [238],
+        columns: [{ name: "Force", values: [12.4, 11.8] }],
+      },
+      {
+        toolCallId: "test-write-force",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(writtenForce).toMatchObject({
+      status: "written",
+      sheetId: "data-3",
+      sheetName: "Separation Force",
+      rowsWritten: 2,
+    });
+    expect(
+      current.worksheet.sheets
+        .find((sheet) => sheet.id === "data-2")
+        ?.columns.find((column) => column.name === "Watts")
+        ?.values.slice(0, 2)
+    ).toEqual(["3.081", "2.999"]);
+    expect(
+      current.worksheet.sheets
+        .find((sheet) => sheet.id === "data-3")
+        ?.columns.find((column) => column.name === "Force")
+        ?.values.slice(0, 2)
+    ).toEqual(["12.4", "11.8"]);
+    expect(current.worksheet.activeSheetId).toBe("data-1");
+  });
+
+  it("reuses a same-named sheet and does not steal the focused tab", async () => {
+    let current = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockImplementation(async () => current);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => {
+      current = analyticsView(worksheet);
+      return { ok: true, analytics: current };
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const manage = tools.manage_worksheet?.execute;
+    const write = tools.write_column?.execute;
+    if (!manage || !write) throw new Error("manage_worksheet or write_column missing");
+    const [first, second] = await Promise.all([
+      manage(
+        { action: "add_sheet", name: "Assay" },
+        {
+          toolCallId: "add-a",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      ),
+      manage(
+        { action: "add_sheet", name: "assay" },
+        {
+          toolCallId: "add-b",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      ),
+    ]);
+    expect(first).toMatchObject({ status: "ok", sheetName: "Assay" });
+    expect(second).toMatchObject({
+      status: "ok",
+      sheetId: first.status === "ok" ? first.sheetId : "",
+      sheetName: "Assay",
+    });
+    expect(
+      current.worksheet.sheets.filter(
+        (sheet) => sheet.name.toLowerCase() === "assay"
+      )
+    ).toHaveLength(1);
+    expect(current.worksheet.activeSheetId).toBe("data-1");
+    vi.mocked(readDocumentPage).mockResolvedValue(pageRead("101.4 102.1"));
+    const written = await write(
+      {
+        sheetId: "Assay",
+        sourceAttachmentId: "att_1",
+        sourcePages: [1],
+        columns: [{ name: "Assay %", values: [101.4, 102.1] }],
+      },
+      {
+        toolCallId: "write-assay",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(written).toMatchObject({
+      status: "written",
+      sheetName: "Assay",
+      rowsWritten: 2,
+    });
+    expect(current.worksheet.activeSheetId).toBe("data-1");
+    expect(
+      current.worksheet.sheets
+        .find((sheet) => sheet.name === "Assay")
+        ?.columns.find((column) => column.name === "Assay %")
+        ?.values.slice(0, 2)
+    ).toEqual(["101.4", "102.1"]);
+  });
+
+  it("trusts a complete single-column extractor batch without token verification", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    vi.mocked(readDocumentPage).mockResolvedValue(
+      pageRead("SEN-0724-10004 15.2 SEN-0724-10001 16.7")
+    );
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        sourceAttachmentId: "att_1",
+        sourcePages: [239],
+        name: "Adapter / Component",
+        values: [
+          "Handpiece Adapter #1 (No S/N)",
+          "Handpiece Adapter #2 (No S/N)",
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      rowsWritten: 2,
+      blankedCount: 0,
+      incomplete: false,
+    });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(saved.columns[0]?.values).toEqual([
+      "Handpiece Adapter #1 (No S/N)",
+      "Handpiece Adapter #2 (No S/N)",
     ]);
   });
 
@@ -582,14 +896,22 @@ describe("analytics chat tools", () => {
     });
   });
 
-  it("retries write_column once after a version conflict", async () => {
+  it("retries write_column by re-applying onto the latest worksheet", async () => {
     const initial = analyticsView();
+    const withTorque = analyticsView(
+      replaceColumnValues(
+        createEmptyWorksheet(),
+        0,
+        ["3", "2.5"],
+        "Torque (ozf-in)"
+      )
+    );
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
     vi.mocked(updateReportAnalytics)
       .mockResolvedValueOnce({
         ok: false,
         reason: "conflict",
-        analytics: { ...initial, version: 2 },
+        analytics: { ...withTorque, version: 2 },
       })
       .mockImplementation(async (_id, worksheet) => ({
         ok: true,
@@ -618,6 +940,60 @@ describe("analytics chat tools", () => {
       expect.anything(),
       { expectedVersion: 2 }
     );
+    const retried = vi.mocked(updateReportAnalytics).mock.calls[1]?.[1];
+    expect(retried?.columns[0]).toMatchObject({
+      name: "Torque (ozf-in)",
+      values: ["3", "2.5"],
+    });
+    expect(retried?.columns[1]).toMatchObject({
+      name: "Time",
+      values: ["0", "24"],
+    });
+  });
+
+  it("keeps the first column when two write_column calls run in parallel", async () => {
+    let current = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockImplementation(async () => current);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => {
+      current = {
+        ...current,
+        worksheet,
+        version: current.version + 1,
+      };
+      await Promise.resolve();
+      return { ok: true, analytics: current };
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-parallel",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const extra = {
+      messages: [] as never[],
+      abortSignal: new AbortController().signal,
+    };
+    const [first, second] = await Promise.all([
+      execute(
+        { name: "Torque", values: ["3", "2.5"] },
+        { toolCallId: "w1", ...extra }
+      ),
+      execute(
+        { name: "Assay %", values: ["101.2", "99.8"] },
+        { toolCallId: "w2", ...extra }
+      ),
+    ]);
+    expect(first).toMatchObject({ status: "written", columnName: "Torque" });
+    expect(second).toMatchObject({ status: "written", columnName: "Assay %" });
+    expect(current.worksheet.columns[0]).toMatchObject({
+      name: "Torque",
+      values: ["3", "2.5"],
+    });
+    expect(current.worksheet.columns[1]).toMatchObject({
+      name: "Assay %",
+      values: ["101.2", "99.8"],
+    });
   });
 
   it("requires values or columns on write_column", () => {
@@ -633,6 +1009,13 @@ describe("analytics chat tools", () => {
     );
     expect(
       schema.safeParse({
+        sheetId: "data-2",
+        name: "Temp",
+        values: [37.1],
+      }).success
+    ).toBe(true);
+    expect(
+      schema.safeParse({
         columns: [
           { name: "Temp", values: [37.1] },
           { name: "pH", values: [6.8] },
@@ -642,16 +1025,102 @@ describe("analytics chat tools", () => {
     expect(tools.write_column?.description).toContain(
       "leftmost empty C1–C8 columns"
     );
+    expect(tools.write_column?.description).toContain("atomically persists");
     expect(tools.write_column?.description).toContain(
-      "do not call this tool once per column"
-    );
-    expect(tools.write_column?.description).toContain("never invent 0");
-    expect(tools.write_column?.description).toContain(
-      "worksheet plots cite the file"
+      "does not compare every cell against source-page tokens"
     );
     expect(tools.write_column?.description).toContain(
       "Do not substitute a sixpack or ANOVA for a scatter"
     );
+    expect(tools.write_column?.description).toContain(
+      "Always pass the tab name as sheetId"
+    );
+    expect(tools.write_column?.description).toContain(
+      "sourcePages when known"
+    );
+    expect(tools.write_column?.description).toContain(
+      "document name is retained without a page"
+    );
+    expect(tools.write_column?.description).toContain(
+      "one sheet per call"
+    );
+    expect(tools.write_column?.description).toContain(
+      "do not call this after the first extract or scan"
+    );
+    expect(tools.extract_numeric_series?.description).toContain(
+      "If morePages is true"
+    );
+    expect(tools.manage_worksheet?.description).toContain(
+      "lists every new sheetId in operations"
+    );
+    expect(tools.manage_worksheet?.description).toContain(
+      "reuses a tab with the same name"
+    );
+    expect(tools.manage_worksheet?.description).toContain(
+      "at most once per turn"
+    );
+    expect(tools.extract_sheet?.description).toContain(
+      "once per destination sheet"
+    );
+    expect(tools.extract_sheet?.description).toContain("parallel");
+    expect(tools.extract_sheet?.description).toContain("mode edit");
+    expect(tools.write_column?.description).toContain("mode append");
+    expect(tools.write_column?.description).toContain(
+      "call extract_sheet once per sheet"
+    );
+  });
+
+  it("stubs extract_sheet without writing the worksheet", async () => {
+    vi.stubEnv("ALLOW_TEST_STUB_CHAT", "true");
+    try {
+      const tools = buildAnalyticsChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        documentType: "investigation_report",
+      });
+      const execute = tools.extract_sheet?.execute;
+      if (!execute) throw new Error("extract_sheet missing");
+      const result = await execute(
+        {
+          sheetName: "M3-SYS-FN-044",
+          objective: "Perioguide Power table",
+        },
+        {
+          toolCallId: "extract-sheet",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      );
+      expect(result).toMatchObject({
+        status: "stub",
+        sheetName: "M3-SYS-FN-044",
+      });
+      expect(updateReportAnalytics).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("omits extract_sheet and plots from a sheet worker toolset", () => {
+    const worker = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+      role: "sheet_worker",
+    });
+    expect(worker.extract_sheet).toBeUndefined();
+    expect(worker.ask_user).toBeUndefined();
+    expect(worker.plot_xy_scatter).toBeUndefined();
+    expect(worker.write_column).toBeDefined();
+    expect(worker.manage_worksheet).toBeDefined();
+    expect(worker.extract_numeric_series).toBeDefined();
+    const orchestrator = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    expect(orchestrator.extract_sheet).toBeDefined();
+    expect(orchestrator.plot_xy_scatter).toBeDefined();
   });
 
   it("writes several columns in one persist", async () => {
@@ -717,7 +1186,57 @@ describe("analytics chat tools", () => {
     });
   });
 
-  it("refuses a table dump with no source page text", async () => {
+  it("appends rows onto an existing named column", async () => {
+    const initial = analyticsView(
+      replaceColumnValues(createEmptyWorksheet(), 0, ["37.1", "37.2"], "Temp")
+    );
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        mode: "append",
+        name: "Temp",
+        values: [37.3, 37.4],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      mode: "append",
+      columnName: "Temp",
+      rowsWritten: 4,
+      rowsAdded: 2,
+    });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(saved.columns[0]).toMatchObject({
+      name: "Temp",
+      values: ["37.1", "37.2", "37.3", "37.4"],
+    });
+  });
+
+  it("atomically writes a complete table batch without source page text", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
     const tools = buildAnalyticsChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -739,13 +1258,14 @@ describe("analytics chat tools", () => {
       }
     );
     expect(result).toMatchObject({
-      status: "need_source",
-      message: WRITE_COLUMN_NEED_SOURCE_MESSAGE,
+      status: "written",
+      columnCount: 2,
+      incomplete: false,
     });
-    expect(updateReportAnalytics).not.toHaveBeenCalled();
+    expect(updateReportAnalytics).toHaveBeenCalledTimes(1);
   });
 
-  it("blanks invented O2 zeros that are not between Air and DO on the source page", async () => {
+  it("does not reject a complete batch for source-token mismatches", async () => {
     const initial = analyticsView();
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
     vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
@@ -783,17 +1303,15 @@ describe("analytics chat tools", () => {
     );
     expect(result).toMatchObject({
       status: "written",
-      blankedCount: 2,
+      blankedCount: 0,
+      incomplete: false,
     });
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
       columns: { name: string; values: string[] }[];
     };
-    const o2 = saved.columns.find((column) => column.name === "O2 flow (LPM)");
-    expect(o2?.values).toEqual([]);
-    expect(saved.columns.find((column) => column.name === "DO (%)")?.values).toEqual([
-      "50.2",
-      "58.3",
-    ]);
+    expect(
+      saved.columns.find((column) => column.name === "O2 flow (LPM)")?.values
+    ).toEqual(["0", "0"]);
   });
 
   it("keeps Tip N and split handpiece SNs on a torque table dump", async () => {
@@ -836,6 +1354,7 @@ describe("analytics chat tools", () => {
     expect(result).toMatchObject({
       status: "written",
       blankedCount: 0,
+      incomplete: false,
     });
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
       columns: { name: string; values: string[] }[];
@@ -851,7 +1370,7 @@ describe("analytics chat tools", () => {
     ).toEqual(["3", "2.5"]);
   });
 
-  it("blanks invented 0.02 when the source token is 02", async () => {
+  it("preserves extractor decimal values without exact token matching", async () => {
     const initial = analyticsView();
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
     vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
@@ -887,17 +1406,15 @@ describe("analytics chat tools", () => {
     );
     expect(result).toMatchObject({
       status: "written",
-      blankedCount: 1,
+      blankedCount: 0,
+      incomplete: false,
     });
     const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
       columns: { name: string; values: string[] }[];
     };
     expect(
       saved.columns.find((column) => column.name === "O2 flow (LPM)")?.values
-    ).toEqual([]);
-    expect(
-      saved.columns.find((column) => column.name === "Air flow (LPM)")?.values
-    ).toEqual(["38.02"]);
+    ).toEqual(["0.02"]);
   });
 
   it("stamps remembered extract pages onto a single-series write", async () => {
@@ -940,6 +1457,7 @@ describe("analytics chat tools", () => {
         status: "ok",
         attachmentId: "att_1",
         pages: [31],
+        morePages: false,
       });
       await write(
         { name: "Assay", values: [10.1, 10.2, 10.3] },
@@ -957,6 +1475,102 @@ describe("analytics chat tools", () => {
         values: ["10.1", "10.2", "10.3"],
         citations: [{ attachmentId: "att_1", page: 31 }],
       });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps the document name as provenance when no page is available", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    vi.mocked(listReadyDocumentsForReport).mockResolvedValue([
+      {
+        attachmentId: "att_1",
+        filename: "Mechanical Test Report.pdf",
+        description: null,
+        pageCount: 273,
+        ingestRunId: "run_1",
+        documentSummary: null,
+      },
+    ]);
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "mechanical_design_verification",
+    });
+    const write = tools.write_column?.execute;
+    if (!write) throw new Error("write_column has no execute");
+    await write(
+      {
+        sourceAttachmentId: "att_1",
+        columns: [{ name: "Power (Watts)", values: [3.081, 2.999] }],
+      },
+      {
+        toolCallId: "write",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { citations?: unknown }[];
+    };
+    expect(saved.columns[0]?.citations).toEqual([
+      {
+        attachmentId: "att_1",
+        page: null,
+        filename: "Mechanical Test Report.pdf",
+      },
+    ]);
+  });
+
+  it("reports morePages when extract hits the 6-page cap on a longer file", async () => {
+    vi.stubEnv("ALLOW_TEST_STUB_CHAT", "true");
+    try {
+      vi.mocked(listReadyDocumentsForReport).mockResolvedValue([
+        {
+          attachmentId: "att_1",
+          filename: "bmr.pdf",
+          description: null,
+          pageCount: 20,
+          ingestRunId: "run_1",
+          documentSummary: null,
+        },
+      ]);
+      vi.mocked(readDocumentPage).mockImplementation(async ({ pageNumber }) => ({
+        ...pageRead(`${pageNumber}.1 ${pageNumber}.2`),
+        pageNumber,
+      }));
+      const tools = buildAnalyticsChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        documentType: "investigation_report",
+      });
+      const extract = tools.extract_numeric_series?.execute;
+      if (!extract) throw new Error("extract_numeric_series missing");
+      const result = await extract(
+        {
+          attachmentId: "att_1",
+          pages: [1, 2, 3, 4, 5, 6],
+          metric: "Power",
+        },
+        {
+          toolCallId: "extract",
+          messages: [],
+          abortSignal: new AbortController().signal,
+        }
+      );
+      expect(result).toMatchObject({
+        status: "ok",
+        morePages: true,
+        pages: [1, 2, 3, 4, 5, 6],
+      });
+      expect(String((result as { message?: string }).message)).toMatch(
+        /More pages remain/i
+      );
     } finally {
       vi.unstubAllEnvs();
     }
@@ -1023,6 +1637,7 @@ describe("analytics chat tools", () => {
         yColumnName: "Moisture",
         mark: "line",
         showSpecLimits: true,
+        showMeanLine: true,
       },
     };
     vi.mocked(updateAnalysisForReport).mockResolvedValue({
@@ -1043,6 +1658,7 @@ describe("analytics chat tools", () => {
         yColumnId: "c2",
         mark: "line",
         showSpecLimits: true,
+        showMeanLine: true,
       },
       {
         toolCallId: "plot",
@@ -1058,6 +1674,7 @@ describe("analytics chat tools", () => {
         yColumnId: "c2",
         mark: "line",
         showSpecLimits: true,
+        showMeanLine: true,
       })
     );
     expect(output).toMatchObject({
@@ -1066,6 +1683,7 @@ describe("analytics chat tools", () => {
       yColumnId: "c2",
       mark: "line",
       showSpecLimits: true,
+      showMeanLine: true,
       analysisCount: 1,
     });
   });
@@ -1205,6 +1823,7 @@ describe("analytics chat tools", () => {
             min: 1,
             q1: 1,
             median: 2,
+            mean: 2,
             q3: 3,
             max: 3,
             whiskerLow: 1,
@@ -1279,6 +1898,7 @@ describe("analytics chat tools", () => {
             min: 1,
             q1: 1,
             median: 2,
+            mean: 2,
             q3: 3,
             max: 3,
             whiskerLow: 1,
@@ -1382,6 +2002,77 @@ describe("analytics chat tools", () => {
     expect(output).toMatchObject({
       status: "error",
       message: expect.stringContaining("not a boxplot"),
+    });
+  });
+
+  it("creates a histogram Results row via plot_histogram", async () => {
+    const created: HistogramAnalysisSummary = {
+      id: "hist-1",
+      workspaceId: "ws-1",
+      kind: HISTOGRAM,
+      title: "Histogram of Assay",
+      config: {
+        columnId: "c1",
+        columnName: "Assay",
+        title: "Histogram of Assay",
+        lsl: 90,
+        usl: 110,
+        showDistributionLines: true,
+        showLsl: true,
+        showUsl: false,
+      },
+      results: {
+        n: 10,
+        skipped: 0,
+        mean: 100,
+        overallStdev: 2,
+        withinStdev: 1.8,
+        histogram: { bins: [], overallCurve: [], withinCurve: [] },
+      },
+      sourceHash: "hash",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
+    };
+    vi.mocked(createAnalysisForReport).mockResolvedValue({
+      ok: true,
+      analytics: { ...analyticsView(), analyses: [created] },
+      analysis: created,
+    });
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const plot = tools.plot_histogram?.execute;
+    if (!plot) throw new Error("plot_histogram has no execute");
+    const output = await plot(
+      {
+        columnId: "c1",
+        lsl: 90,
+        usl: 110,
+        showUsl: false,
+      },
+      {
+        toolCallId: "plot",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(createAnalysisForReport).toHaveBeenCalledWith(
+      "report-1",
+      expect.objectContaining({
+        kind: HISTOGRAM,
+        columnId: "c1",
+        showUsl: false,
+      })
+    );
+    expect(output).toMatchObject({
+      status: "ok",
+      updated: false,
+      analysisId: "hist-1",
+      columnId: "c1",
+      showUsl: false,
     });
   });
 });

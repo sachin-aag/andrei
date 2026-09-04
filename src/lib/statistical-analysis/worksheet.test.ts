@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applySampleAssay } from "./sample-data";
 import {
   analysisSourceKey,
+  appendColumnValues,
   addDataSheet,
   columnNumericValues,
   columnSourceKey,
@@ -19,6 +20,7 @@ import {
   insertColumn,
   insertRow,
   isSpecsTab,
+  isStaleAnalyticsVersion,
   mergeDirtyWorksheet,
   normalizeWorksheet,
   parseTsv,
@@ -26,6 +28,7 @@ import {
   renameColumn,
   renameDataSheet,
   replaceColumnValues,
+  restoreActiveSheet,
   rowCount,
   setCell,
   specRowForColumn,
@@ -182,6 +185,19 @@ describe("worksheet grid operations", () => {
     expect(sheet.columns[0]?.values).toEqual(["1", "2", "3"]);
   });
 
+  it("appends values onto an existing column without wiping it", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = replaceColumnValues(sheet, 0, ["10", "11"], "Watts");
+    sheet = appendColumnValues(sheet, 0, ["12", "13"], "Watts", [
+      { attachmentId: "att_1", page: 8 },
+    ]);
+    expect(sheet.columns[0]?.values).toEqual(["10", "11", "12", "13"]);
+    expect(sheet.columns[0]?.name).toBe("Watts");
+    expect(sheet.columns[0]?.citations).toEqual([
+      { attachmentId: "att_1", page: 8 },
+    ]);
+  });
+
   it("stamps and clears column citations independently of the source key", () => {
     let sheet = createEmptyWorksheet(1);
     sheet = replaceColumnValues(
@@ -249,6 +265,32 @@ describe("worksheet grid operations", () => {
     expect(sheet.sheets).toHaveLength(2);
     expect(sheet.sheets[1]?.name).toBe("Assay");
     expect(sheet.activeSheetId).toBe("data-2");
+  });
+
+  it("reuses a same-named data sheet instead of creating a duplicate", () => {
+    const first = addDataSheet(createEmptyWorksheet(), "Assay");
+    const second = addDataSheet(first, "assay");
+    expect(second.sheets).toHaveLength(2);
+    expect(second.activeSheetId).toBe("data-2");
+    expect(findSheet(second, "Assay")?.id).toBe("data-2");
+  });
+
+  it("restores the previous tab after an agent write", () => {
+    const original = createEmptyWorksheet();
+    const added = addDataSheet(original, "Assay");
+    const restored = restoreActiveSheet(added, original.activeSheetId);
+    expect(restored.activeSheetId).toBe(PRIMARY_DATA_SHEET_ID);
+    expect(restored.sheets).toHaveLength(2);
+    expect(findSheet(restored, "Assay")?.id).toBe("data-2");
+  });
+
+  it("keeps the local tab when a remote write switches activeSheetId", () => {
+    const persisted = createEmptyWorksheet();
+    const local = persisted;
+    const remote = addDataSheet(persisted, "Assay");
+    const merged = mergeDirtyWorksheet(local, persisted, remote);
+    expect(merged.activeSheetId).toBe(PRIMARY_DATA_SHEET_ID);
+    expect(merged.sheets).toHaveLength(2);
   });
 
   it("renames a data sheet", () => {
@@ -332,6 +374,12 @@ describe("worksheet grid operations", () => {
   it("refuses to delete the last data sheet", () => {
     const sheet = deleteDataSheet(createEmptyWorksheet(), PRIMARY_DATA_SHEET_ID);
     expect(sheet.sheets).toHaveLength(1);
+  });
+
+  it("treats only a strictly older analytics version as stale", () => {
+    expect(isStaleAnalyticsVersion(1, 2)).toBe(true);
+    expect(isStaleAnalyticsVersion(2, 2)).toBe(false);
+    expect(isStaleAnalyticsVersion(3, 2)).toBe(false);
   });
 
   it("keeps local cell edits when merging a newer remote worksheet", () => {

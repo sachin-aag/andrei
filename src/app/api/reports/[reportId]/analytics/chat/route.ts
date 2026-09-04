@@ -64,15 +64,16 @@ import {
   primaryTaggedSheetId,
   resolveAnalyticsChatMentions,
 } from "@/lib/statistical-analysis/mentions";
+import { recoverDocumentMentionIds } from "@/lib/ai/chat/mentions";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
-  classifyChatUserIntent,
   messageHasChatImage,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
 } from "@/lib/ai/chat/user-intent";
+import { resolveChatUserIntent } from "@/lib/ai/chat/resolve-user-intent";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   consumeAssistantStreamWithBudget,
@@ -151,12 +152,14 @@ async function handleAnalyticsChatPost(
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
-  const userIntent = classifyChatUserIntent({
+  const userIntent = await resolveChatUserIntent({
     userText,
     recentAssistantTexts: recentAssistantMessageTexts(messages),
     hasChatImages: messageHasChatImage(userMsg?.parts),
     surface: "analytics",
     mode,
+    reportId,
+    userId: user.id,
   });
   if (userMsg) {
     try {
@@ -185,8 +188,19 @@ async function handleAnalyticsChatPost(
   ]);
 
   const requestedMentions = parseAnalyticsChatMentions(body.mentions);
+  const requestedDocumentIds = new Set(
+    requestedMentions
+      .filter((mention) => mention.type === "document")
+      .map((mention) => mention.id)
+  );
+  const recoveredDocumentIds = recoverDocumentMentionIds(userText, documents).filter(
+    (id) => !requestedDocumentIds.has(id)
+  );
   const mentions = resolveAnalyticsChatMentions(
-    requestedMentions,
+    [
+      ...requestedMentions,
+      ...recoveredDocumentIds.map((id) => ({ type: "document" as const, id })),
+    ],
     documents,
     analytics
   );
@@ -278,13 +292,20 @@ async function handleAnalyticsChatPost(
         if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
         return isAssistantTurnCancelRequested(sessionId);
       },
-      prepareStep: ({ steps }) =>
-        prepareAnalyticsChatStep({
+      prepareStep: ({ steps }) => {
+        const prepared = prepareAnalyticsChatStep({
           steps,
           canEdit: canWrite,
           searchGate,
           intent: userIntent.kind,
-        }),
+          intentReason: userIntent.reason,
+        });
+        if (!prepared) return undefined;
+        return {
+          activeTools: prepared.activeTools,
+          ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+        };
+      },
       abortSignal: turnAbort.signal,
       timeout: { totalMs: Math.max(1, remainingChatAbortMs(turnStartedAtMs)) },
       providerOptions: buildGeminiThoughtSummaryProviderOptions({
@@ -310,6 +331,7 @@ async function handleAnalyticsChatPost(
           chatThinkingLevel: paceConfig.thinkingLevel,
           chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
           taggedDocuments: mentions.documents.length,
+          recoveredDocumentTags: recoveredDocumentIds.length,
           taggedSheets: mentions.sheets.length,
           taggedAnalyses: mentions.analyses.length,
           userIntent: userIntent.kind,

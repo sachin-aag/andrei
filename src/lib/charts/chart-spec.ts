@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { axisTickValues, niceNumber } from "./axis-ticks";
 import {
   CHART_MARKS,
   parseChartMark,
@@ -26,10 +27,13 @@ export type ChartLimits = {
 
 export type ChartCitation = {
   attachmentId: string;
-  page: number;
+  /** Null when the source document is known but no reliable page is available. */
+  page: number | null;
+  /** Persisted for document-level attribution when page is null. */
+  filename?: string;
 };
 
-/** Deduplicate `(attachmentId, page)` pairs; drop empty or non-positive pages. */
+/** Deduplicate source references; keep document-level citations with no page. */
 export function uniqueChartCitations(
   citations: readonly ChartCitation[]
 ): ChartCitation[] {
@@ -37,23 +41,32 @@ export function uniqueChartCitations(
   const out: ChartCitation[] = [];
   for (const citation of citations) {
     const attachmentId = citation.attachmentId.trim();
-    const page = Math.trunc(citation.page);
-    if (!attachmentId || !Number.isInteger(page) || page < 1) continue;
-    const key = `${attachmentId}:${page}`;
+    if (!attachmentId) continue;
+    const page =
+      citation.page == null ? null : Math.trunc(citation.page);
+    if (page != null && (!Number.isInteger(page) || page < 1)) continue;
+    const filename = citation.filename?.trim();
+    const key = `${attachmentId}:${page ?? "document"}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ attachmentId, page });
+    out.push({
+      attachmentId,
+      page,
+      ...(filename ? { filename } : {}),
+    });
   }
   return out;
 }
 
-/** Compact page label for a spec subtitle, e.g. `p. 31` or `p. 13–15`. */
+/** Compact page label for downloads, e.g. `p. 31` or `p. 13–15`. Not shown on plot figures. */
 export function formatChartCitationPages(
   citations: readonly ChartCitation[]
 ): string | null {
   const pages = [
     ...new Set(
-      uniqueChartCitations(citations).map((citation) => citation.page)
+      uniqueChartCitations(citations).flatMap((citation) =>
+        citation.page == null ? [] : [citation.page]
+      )
     ),
   ].toSorted((a, b) => a - b);
   if (pages.length === 0) return null;
@@ -90,6 +103,11 @@ export type ChartLayout = {
    * charts, older specs) still shows limits when they exist.
    */
   showSpecLimits?: boolean;
+  /**
+   * Connect mean Y at each X (and draw mean markers). Default off.
+   * Not part of sourceHash.
+   */
+  showMeanLine?: boolean;
 };
 
 export type ChartSpec = {
@@ -162,7 +180,8 @@ const chartLimitsSchema = z.object({
 
 const chartCitationSchema = z.object({
   attachmentId: z.string().min(1),
-  page: z.number().int().positive(),
+  page: z.number().int().positive().nullable(),
+  filename: z.string().trim().min(1).max(255).optional(),
 });
 
 const chartAxisRangeSchema = z
@@ -180,6 +199,7 @@ const chartLayoutSchema = z.object({
   xRange: chartAxisRangeSchema.optional(),
   mark: z.enum(CHART_MARKS).optional().default("scatter"),
   showSpecLimits: z.boolean().optional(),
+  showMeanLine: z.boolean().optional(),
 });
 
 export const chartSpecSchema = z.object({
@@ -257,28 +277,6 @@ export function layoutPoints(spec: ChartSpec): ChartPoint[] {
   return exhaustive;
 }
 
-function niceNumber(range: number, round: boolean): number {
-  if (!Number.isFinite(range) || range <= 0) return 1;
-  const exponent = Math.floor(Math.log10(range));
-  const fraction = range / 10 ** exponent;
-  let nice: number;
-  if (round) {
-    if (fraction < 1.5) nice = 1;
-    else if (fraction < 3) nice = 2;
-    else if (fraction < 7) nice = 5;
-    else nice = 10;
-  } else if (fraction <= 1) {
-    nice = 1;
-  } else if (fraction <= 2) {
-    nice = 2;
-  } else if (fraction <= 5) {
-    nice = 5;
-  } else {
-    nice = 10;
-  }
-  return nice * 10 ** exponent;
-}
-
 function yValues(spec: ChartSpec): number[] {
   const values = spec.points.map((point) => point.y);
   if (parseChartMark(spec.layout.mark) === "column" && spec.layout.seriesBy === "unit") {
@@ -318,28 +316,9 @@ export function resolveYRange(spec: ChartSpec): { min: number; max: number } {
   return applyAxisRangeOverride(autoYRange(spec), spec.layout.yRange);
 }
 
-function niceTicks(min: number, max: number): number[] {
-  const span = max - min;
-  const step = niceNumber(span / 6, true);
-  const ticks: number[] = [];
-  const start = Math.ceil(min / step) * step;
-  for (let value = start; value <= max + step / 2; value += step) {
-    const rounded = Number(value.toPrecision(12));
-    if (rounded >= min - step / 100 && rounded <= max + step / 100) {
-      ticks.push(rounded);
-    }
-    if (ticks.length > 24) break;
-  }
-  if (!ticks.includes(min)) ticks.unshift(min);
-  if (!ticks.includes(max)) ticks.push(max);
-  return [...new Set(ticks.map((tick) => Number(tick.toPrecision(12))))].toSorted(
-    (a, b) => a - b
-  );
-}
-
 export function yTickValues(spec: ChartSpec): number[] {
   const { min, max } = resolveYRange(spec);
-  return niceTicks(min, max);
+  return axisTickValues(min, max);
 }
 
 function autoXRange(spec: ChartSpec): { min: number; max: number } {
@@ -376,7 +355,7 @@ export function resolveXRange(spec: ChartSpec): { min: number; max: number } {
 export function xTickValues(spec: ChartSpec): number[] {
   if (spec.layout.xAxis === "value") {
     const { min, max } = resolveXRange(spec);
-    return niceTicks(min, max);
+    return axisTickValues(min, max);
   }
   const points = layoutPoints(spec);
   const xs = points.map((point) => point.x);
@@ -440,6 +419,7 @@ export function mergeChartLayout(
     xRange: base.xRange ?? null,
     mark: patch.mark ?? base.mark ?? "scatter",
     showSpecLimits: base.showSpecLimits,
+    showMeanLine: base.showMeanLine,
   };
 }
 
@@ -454,7 +434,6 @@ export function formatChartProvenance(spec: ChartSpec): string {
         : upper != null
           ? `limit ≤ ${upper}${spec.uom ? ` ${spec.uom}` : ""}`
           : "no limits";
-  const pageBit = formatChartCitationPages(spec.citations) ?? "no citations";
-  return `${n} point${n === 1 ? "" : "s"}, ${limitBit}, ${spec.query}, ${pageBit}`;
+  return `${n} point${n === 1 ? "" : "s"}, ${limitBit}, ${spec.query}`;
 }
 

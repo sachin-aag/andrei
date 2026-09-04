@@ -30,6 +30,7 @@ import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { deriveChatEditPolicy, isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
 import type { TurnEditItem } from "@/lib/ai/chat/commit-edit";
+import { engineerFacingHistorySummary } from "@/lib/ai/chat/change-summary";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 import { snapshotDocumentRevision } from "@/lib/document-revisions/snapshot";
 import {
@@ -54,15 +55,19 @@ import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
-  classifyChatUserIntent,
   messageHasChatImage,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
 } from "@/lib/ai/chat/user-intent";
 import {
+  documentIntentFocus,
+  resolveChatUserIntent,
+} from "@/lib/ai/chat/resolve-user-intent";
+import {
   alreadyDraftedGapHints,
   detectAlreadyDraftedSection,
   alreadyDraftedReadStep,
+  withoutDraftFieldTools,
 } from "@/lib/ai/chat/already-drafted";
 import {
   createChatSession,
@@ -98,6 +103,7 @@ import { getReportAnalytics } from "@/lib/statistical-analysis/store";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import {
   classifyRetrievalPolicy,
+  isRetrievalPushback,
   recentUserMessageTexts,
 } from "@/lib/ai/chat/retrieval-policy";
 import {
@@ -105,6 +111,14 @@ import {
   pickPlanModeChatTools,
   prepareDocumentReviewStep,
 } from "@/lib/ai/chat/document-review";
+import {
+  rehydrateDocumentReviewIfCoverageUnchanged,
+  retrievalPolicyAfterCoverageDelta,
+} from "@/lib/ai/chat/document-review-rehydrate";
+import {
+  searchLoopDirective,
+  withoutSearchTool,
+} from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
@@ -124,6 +138,7 @@ import {
   mentionedAttachmentIds,
   mentionedSections,
   parseChatMentions,
+  recoverDocumentMentionIds,
   resolveChatMentions,
   sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
@@ -232,12 +247,6 @@ async function handleChatPost(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
-  const userIntent = classifyChatUserIntent({
-    userText,
-    recentAssistantTexts: recentAssistantMessageTexts(messages),
-    hasChatImages: messageHasChatImage(userMsg?.parts),
-    mode,
-  });
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -280,10 +289,22 @@ async function handleChatPost(
       unknown
     >;
   }
+  const requestedDocumentIds = new Set(
+    requestedMentions
+      .filter((mention) => mention.type === "document")
+      .map((mention) => mention.id)
+  );
+  const recoveredDocumentIds = recoverDocumentMentionIds(userText, documents).filter(
+    (id) => !requestedDocumentIds.has(id)
+  );
+  const mentionsForResolution = [
+    ...requestedMentions,
+    ...recoveredDocumentIds.map((id) => ({ type: "document" as const, id })),
+  ];
   // Resolved against this report's ready documents only, so a tagged
   // attachment id from another report cannot pull in its evidence.
   const mentions = resolveChatMentions(
-    requestedMentions,
+    mentionsForResolution,
     documents,
     analytics?.analyses ?? []
   );
@@ -295,7 +316,25 @@ async function handleChatPost(
     (sum, doc) => sum + (doc.pageCount ?? 0),
     0
   );
-  const retrieval = classifyRetrievalPolicy({
+  const intentFocus = documentIntentFocus({
+    userText,
+    sectionScope,
+    documentType: report.documentType,
+    sections: mergedSections,
+  });
+  const userIntent = await resolveChatUserIntent({
+    userText,
+    recentAssistantTexts: recentAssistantMessageTexts(messages),
+    hasChatImages: messageHasChatImage(userMsg?.parts),
+    mode,
+    surface: "document",
+    workspaceChrome,
+    sectionLabel: intentFocus.sectionLabel,
+    fillState: intentFocus.fillState,
+    reportId,
+    userId: user.id,
+  });
+  const retrievalDecision = classifyRetrievalPolicy({
     userText,
     recentUserTexts: recentUserMessageTexts(messages),
     sectionScope,
@@ -305,9 +344,31 @@ async function handleChatPost(
     hasDocuments: documents.length > 0,
   });
   const documentReview = new DocumentReviewSession();
+  const pushback = isRetrievalPushback(userText);
+  const coverageRehydrate = rehydrateDocumentReviewIfCoverageUnchanged({
+    session: documentReview,
+    messages,
+    readyDocuments: documents.map((doc) => ({
+      attachmentId: doc.attachmentId,
+      pageCount: doc.pageCount ?? 0,
+      ingestRunId: doc.ingestRunId,
+    })),
+    skipRestore: pushback,
+  });
+  // Coverage growth or explicit pushback can start a fresh comprehensive walk.
+  const retrievalPolicy = retrievalPolicyAfterCoverageDelta({
+    policy: retrievalDecision.policy,
+    coverageUnchanged: coverageRehydrate.restored,
+    keepComprehensive: pushback,
+  });
+  const retrieval = {
+    ...retrievalDecision,
+    policy: retrievalPolicy,
+  };
 
   const alreadyDrafted = detectAlreadyDraftedSection({
     userText,
+    userIntentKind: userIntent.kind,
     sectionScope,
     documentType: report.documentType,
     sections: mergedSections,
@@ -516,8 +577,23 @@ async function handleChatPost(
           availableTools: Object.keys(tools),
         });
         if (!prepared) return undefined;
+        let activeTools = alreadyDraftedActive
+          ? withoutDraftFieldTools(prepared.activeTools)
+          : prepared.activeTools;
+        // Hide search after a cited page / locate / two empty greps — same
+        // latch as Analytics. Skip while a document review is actively
+        // walking pages (prepareDocumentReviewStep already scopes tools).
+        const reviewPhase = documentReview.phase();
+        const reviewActive =
+          reviewPhase === "in_progress" || reviewPhase === "ready_to_finish";
+        if (
+          !reviewActive &&
+          searchLoopDirective(steps) === "read"
+        ) {
+          activeTools = withoutSearchTool(activeTools);
+        }
         return {
-          activeTools: prepared.activeTools,
+          activeTools,
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
         };
       },
@@ -549,6 +625,7 @@ async function handleChatPost(
           sectionScope,
           canEdit,
           taggedDocuments: mentions.documents.length,
+          recoveredDocumentTags: recoveredDocumentIds.length,
           taggedSections: mentions.sections.length,
           taggedAnalyses: mentions.analyses.length,
           chatPromptVersion: CHAT_PROMPT_VERSION,
@@ -695,10 +772,7 @@ async function handleChatPost(
             const revision = await snapshotDocumentRevision({
               reportId,
               documentType: report.documentType,
-              summary: changeItems
-                .map((item) => item.reasoning.trim() || item.targetField)
-                .filter(Boolean)
-                .join("; "),
+              summary: engineerFacingHistorySummary(changeItems),
               createdBy: user.id,
               chatSessionId: sessionId,
               chatMessageId: inserted.id,

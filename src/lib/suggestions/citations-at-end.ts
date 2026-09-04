@@ -25,11 +25,39 @@ export function isCitationsHeading(line: string): boolean {
   return /^#{0,6}\s*citations\s*:?\s*$/i.test(line.trim());
 }
 
+/**
+ * Ready-to-paste source bracket for a tool hit. Include `p. N` when the page
+ * is a known integer; omit it when the page is missing. Ambiguous pages are a
+ * model judgment — this helper does not detect ambiguity, and callers must
+ * not reject or rewrite a draft that omitted a known page.
+ */
+export function sourceCitationBracket(
+  filename: string,
+  pageNumber?: number | null
+): string {
+  const name = filename.trim();
+  if (!name) return "";
+  if (
+    typeof pageNumber === "number" &&
+    Number.isInteger(pageNumber) &&
+    pageNumber >= 1
+  ) {
+    return `[${name}, p. ${pageNumber}]`;
+  }
+  return `[${name}]`;
+}
+
+export function withSourceCitation<
+  T extends { filename: string; pageNumber?: number | null },
+>(hit: T): T & { citation: string } {
+  return { ...hit, citation: sourceCitationBracket(hit.filename, hit.pageNumber) };
+}
+
 export function documentCitationRule(citationsAtEndOfSection: boolean): string {
   if (citationsAtEndOfSection) {
-    return 'Cite evidence as [filename, p. N] when the page is known, or [filename] when it is not. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.';
+    return 'Cite evidence as [filename, p. N] when a tool result has a page for that fact. Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.';
   }
-  return "Cite evidence in prose as [filename, p. N] when the page is known, or [filename] when it is not. Never use <to be filled> in a citation.";
+  return "Cite evidence in prose as [filename, p. N] when a tool result has a page for that fact. Use [filename] only when the page is missing or ambiguous. Never use <to be filled> in a citation.";
 }
 
 function uniquePreserveOrder(items: readonly string[]): string[] {
