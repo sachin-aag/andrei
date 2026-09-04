@@ -30,3 +30,21 @@ export function attachmentDownloadHref(
 ): string {
   return `/api/reports/${reportId}/attachments/${attachmentId}/content?download=1`;
 }
+
+export function libraryPreviewSrc(input: {
+  assetId: string;
+  mimeType: string;
+  page: number;
+}): string {
+  const { assetId, mimeType, page } = input;
+  const base = `/api/attachment-library/${assetId}`;
+  if (kindFromMime(mimeType) === "docx") {
+    return `${base}/preview`;
+  }
+  const pageNumber = Number.isInteger(page) && page > 0 ? page : 1;
+  return `${base}/content?proxy=1&page=${pageNumber}`;
+}
+
+export function libraryDownloadHref(assetId: string): string {
+  return `/api/attachment-library/${assetId}/content?download=1`;
+}
