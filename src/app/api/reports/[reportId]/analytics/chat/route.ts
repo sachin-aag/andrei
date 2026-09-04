@@ -74,6 +74,7 @@ import {
   restrictToolsForIntent,
 } from "@/lib/ai/chat/user-intent";
 import { resolveChatUserIntent } from "@/lib/ai/chat/resolve-user-intent";
+import { captureChatAssistantFailure } from "@/lib/ai/chat/chat-failure-telemetry";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   consumeAssistantStreamWithBudget,
@@ -352,6 +353,14 @@ async function handleAnalyticsChatPost(
       sessionId,
       error: formatChatLlmError(err),
     });
+    await captureChatAssistantFailure({
+      error: err,
+      userId: user.id,
+      reportId,
+      sessionId,
+      surface: "analytics",
+      site: "stream_start",
+    });
     return NextResponse.json(
       { error: CHAT_ASSISTANT_ERROR_MESSAGE },
       { status: 500 }
@@ -367,6 +376,14 @@ async function handleAnalyticsChatPost(
         console.error("analytics-chat: consumeStream exceeded budget", {
           reportId,
           sessionId,
+        });
+        await captureChatAssistantFailure({
+          error: new Error("consumeStream exceeded budget"),
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "analytics",
+          site: "consume_timeout",
         });
       } else if (!isTestStubChat()) {
         const usage = await result.totalUsage;
@@ -399,6 +416,20 @@ async function handleAnalyticsChatPost(
         sessionId,
         error: formatChatLlmError(error),
       });
+      const reportFailure = () =>
+        captureChatAssistantFailure({
+          error,
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "analytics",
+          site: "stream_error",
+        });
+      try {
+        after(reportFailure);
+      } catch {
+        void reportFailure();
+      }
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
@@ -430,6 +461,18 @@ async function handleAnalyticsChatPost(
           sessionId,
           finishReason: finishReason ?? "unknown",
           emptyFailure: persisted.emptyFailure,
+        });
+        await captureChatAssistantFailure({
+          error: new Error("empty or failed assistant turn"),
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "analytics",
+          site: "empty_turn",
+          extra: {
+            finishReason: finishReason ?? "unknown",
+            emptyFailure: persisted.emptyFailure,
+          },
         });
       }
       try {
