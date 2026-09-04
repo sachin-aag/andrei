@@ -18,6 +18,7 @@ cover only non-obvious, durable setup/run caveats for this environment.
 | `.cursor/rules/database.mdc` | Drizzle schema + migrations |
 | `.cursor/rules/testing.mdc` | Vitest + Playwright |
 | `.cursor/rules/proxy-and-auth.mdc` | `proxy.ts`, auth, test login |
+| `.agents/skills/vercel-error-autodiagnose` | Production Vercel error → Cursor draft fix PR |
 
 ## What this app is
 
@@ -247,6 +248,20 @@ CRUD, editor, review, and DOCX export work without AI keys.
 Production attachment bytes: GCS (`GCS_BUCKET` + WIF). Local uploads:
 `ATTACHMENT_STORAGE_BACKEND=local` **and** `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`.
 Release gates: `docs/pdf-evidence-deployment-checklist.md`.
+
+## Production error autodiagnose
+
+Failed **production** Vercel deploys **and runtime logs** (for example
+`chat: assistant stream error` / `AI_InvalidToolInputError`) can launch a
+Cursor cloud agent that classifies the error, reads PostHog / Langfuse /
+Neon, **fixes the code**, and opens a **draft** PR. Deploy webhooks miss
+caught stream errors — use a production log drain or a scheduled PostHog /
+Langfuse poll. This is a Cursor Automation (or the GitHub Action that
+POSTs to the Cloud Agents API) — not an in-app SDK. Preview, Neon
+`28P01`, canceled deploys, and upstream 429s are skipped. Setup:
+`docs/vercel-error-autodiagnose.md`. Skill:
+`.agents/skills/vercel-error-autodiagnose/SKILL.md`. GitHub secret
+`CURSOR_API_KEY` is required for the Action; without it the job no-ops.
 
 ## Chat + attachments (always-on summary)
 

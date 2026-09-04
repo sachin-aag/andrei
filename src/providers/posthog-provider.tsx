@@ -25,6 +25,7 @@ export function PostHogProvider({
       ui_host: POSTHOG_UI_HOST,
       person_profiles: "identified_only",
     });
+    posthog.startExceptionAutocapture();
   }, []);
 
   useEffect(() => {

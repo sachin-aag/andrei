@@ -40,6 +40,7 @@ pnpm sample-eval-report   # bulk AI evaluation of sample DOCXs → HTML report (
 pnpm model-sweep          # run the AI eval across multiple models (scripts/eval/)
 pnpm compare-evals        # diff two eval runs (scripts/eval/)
 pnpm soak:pdf-ingest      # local PDF extract soak (Vertex; no DB/GCS writes)
+pnpm autodiagnose:launch  # classify a Vercel error + launch Cursor (needs CURSOR_API_KEY)
 ```
 
 `pnpm db:ensure-workspace-users` uses the Neon HTTP driver — skip it against
@@ -71,6 +72,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/lib/document-revisions/` — Document product History snapshots (`snapshot.ts`) and inline compare (`inline-diff.ts`). One row per Agent-chrome report turn, or one coalesced row per human editing burst (30s idle). Compare diffs prose, every table by index, and added/removed figures. Worksheet writes are `analyticsRevisions`, not document versions.
 - `src/lib/analytics-revisions/` — Analytics product History (worksheet + plots snapshot, idle-coalesced). Compare is a cell/plot list, not TipTap.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
+- `src/lib/autodiagnose/` — Vercel production-error classifier + Cursor agent prompt (skip vs investigate; see `docs/vercel-error-autodiagnose.md`).
 - `src/lib/document-types/` — Registry for `investigation_report`, `design_verification`, `mechanical_design_verification`, `quality_risk_assessment`, and `generic_document` (sections, criteria, prompts, chat persona, empty-state chips, merge).
 - `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
 - `src/lib/storage/` — Attachment blob storage (GCS vs local).
@@ -374,3 +376,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - Tailwind CSS v4 configured in `src/app/globals.css`.
 - Toast notifications via `sonner`.
 - Observability: Langfuse JS/TS SDK v5 (`@langfuse/otel` + `@langfuse/tracing`) with v4 observations-first ingestion (`x-langfuse-ingestion-version: 4` in `src/instrumentation.ts`). Reads go through Observations API v2 (`src/lib/observability/langfuse-observations.ts`), not the deprecated traces list/get endpoints.
+  Unhandled server errors also go to PostHog (`onRequestError`). Production
+  Vercel failures and runtime logs (including `chat: assistant stream error`)
+  can launch a Cursor autodiagnose agent
+  (`docs/vercel-error-autodiagnose.md`).

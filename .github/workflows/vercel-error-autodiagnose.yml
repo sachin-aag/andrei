@@ -1,0 +1,66 @@
+# Launch a Cursor cloud agent to diagnose + fix a Vercel production error.
+# Default path is Cursor Automations (dashboard webhook). This workflow is the
+# repo-native backup: GitHub deployment_status failure → Cloud Agents API → draft PR.
+name: Autodiagnose Vercel error
+
+on:
+  deployment_status:
+  repository_dispatch:
+    types: [vercel-error]
+  workflow_dispatch:
+    inputs:
+      error_text:
+        description: Error / log excerpt to diagnose
+        required: true
+        type: string
+      environment:
+        description: Vercel environment
+        required: false
+        default: production
+        type: string
+      project_name:
+        description: Vercel project name (andrei-v2, andrei-demo, andrei-convergent)
+        required: false
+        type: string
+      sha:
+        description: Git SHA of the failing deploy (defaults to GITHUB_SHA)
+        required: false
+        type: string
+
+concurrency:
+  group: vercel-error-autodiagnose-${{ github.event.deployment.sha || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+  deployments: read
+
+jobs:
+  classify-and-launch:
+    name: Classify and launch Cursor
+    if: >-
+      github.event_name != 'deployment_status' ||
+      github.event.deployment_status.state == 'failure' ||
+      github.event.deployment_status.state == 'error'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Classify error and launch Cursor agent
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          INPUT_ERROR_TEXT: ${{ inputs.error_text }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+          INPUT_PROJECT_NAME: ${{ inputs.project_name }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: pnpm exec tsx scripts/autodiagnose/launch-cursor-agent.ts

@@ -36,7 +36,8 @@
     "soak:pdf-ingest": "tsx --env-file=.env --env-file=.env.local scripts/soak-document-ingest.ts",
     "soak:ocr-compare": "tsx --env-file=.env --env-file=.env.local scripts/soak-ocr-compare.ts",
     "model-sweep": "tsx scripts/eval/run-model-sweep.ts",
-    "compare-evals": "tsx scripts/eval/compare-eval-runs.ts"
+    "compare-evals": "tsx scripts/eval/compare-eval-runs.ts",
+    "autodiagnose:launch": "tsx scripts/autodiagnose/launch-cursor-agent.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",
@@ -108,6 +109,7 @@
     "pg": "8.8.0",
     "pizzip": "^3.2.0",
     "posthog-js": "^1.379.0",
+    "posthog-node": "^5.51.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
