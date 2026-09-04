@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/db";
-import { reportAttachments } from "@/db/schema";
 import {
   canonicalAttachmentMime,
   resolveAttachmentKind,
@@ -10,6 +7,7 @@ import {
 import { validateFolderPlacement } from "@/lib/attachments/folders";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { reserveAttachmentUpload } from "@/lib/attachments/reserve-upload";
+import { syncAssetProcessing } from "@/lib/attachments/sync-asset-processing";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
@@ -105,14 +103,11 @@ export async function POST(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Could not create upload URL";
-    await db
-      .update(reportAttachments)
-      .set({
-        processingStatus: "failed",
-        processingProgress: 0,
-        processingError: message,
-      })
-      .where(eq(reportAttachments.id, reserved.attachmentId));
+    await syncAssetProcessing(reserved.assetId, {
+      processingStatus: "failed",
+      processingProgress: 0,
+      processingError: message,
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

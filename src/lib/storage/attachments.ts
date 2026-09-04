@@ -95,6 +95,15 @@ export function permanentObjectKey(
   return `reports/${reportId}/attachments/${attachmentId}/source.pdf`;
 }
 
+/** Canonical library asset bytes — shared across report links. */
+export function assetPermanentObjectKey(assetId: string): string {
+  return `attachments/assets/${assetId}/source`;
+}
+
+export function assetStagingObjectKey(assetId: string): string {
+  return `staging/attachments/assets/${assetId}/source`;
+}
+
 export function tempBatchObjectKey(
   attachmentId: string,
   runId: string,

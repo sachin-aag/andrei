@@ -332,7 +332,7 @@ async function embedRetrievalQuery(query: string): Promise<number[]> {
 
 function candidateSelect() {
   return {
-    attachmentId: documentChunks.attachmentId,
+    attachmentId: reportAttachments.id,
     filename: reportAttachments.filename,
     description: reportAttachments.description,
     pageNumber: documentChunks.pageNumber,
@@ -343,6 +343,10 @@ function candidateSelect() {
     ingestRunId: documentChunks.ingestRunId,
     sourceSha256: reportAttachments.sha256,
   };
+}
+
+function reportAttachmentChunkJoin() {
+  return sql`${documentChunks.assetId} = ${reportAttachments.assetId}`;
 }
 
 /** Dedupe + drop blanks so an all-empty input behaves like "no filter". */
@@ -378,28 +382,25 @@ async function fusedChunkSearch({
   const candidateLimit = Math.max(limit * 5, DEFAULT_CANDIDATE_LIMIT);
 
   const activeScope = and(
-    eq(documentChunks.reportId, reportId),
     eq(reportAttachments.reportId, reportId),
     isNull(reportAttachments.deletedAt),
+    isNotNull(reportAttachments.assetId),
     isNotNull(reportAttachments.activeIngestRunId),
     eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
-    // Empty arrays would generate invalid SQL, so only apply a live filter.
+    reportAttachmentChunkJoin(),
     ...(includeAttachmentIds.length > 0
-      ? [inArray(documentChunks.attachmentId, includeAttachmentIds)]
+      ? [inArray(reportAttachments.id, includeAttachmentIds)]
       : []),
     ...(excludeAttachmentIds.length > 0
-      ? [notInArray(documentChunks.attachmentId, excludeAttachmentIds)]
+      ? [notInArray(reportAttachments.id, excludeAttachmentIds)]
       : [])
   );
 
   const vectorRows = queryVector
     ? await db
         .select(candidateSelect())
-        .from(documentChunks)
-        .innerJoin(
-          reportAttachments,
-          eq(documentChunks.attachmentId, reportAttachments.id)
-        )
+        .from(reportAttachments)
+        .innerJoin(documentChunks, reportAttachmentChunkJoin())
         .where(and(activeScope, isNotNull(documentChunks.embedding)))
         .orderBy(sql`${documentChunks.embedding} <=> ${queryVector}::vector`)
         .limit(candidateLimit)
@@ -409,11 +410,8 @@ async function fusedChunkSearch({
   const keywordRows = keywordQuery
     ? await db
         .select(candidateSelect())
-        .from(documentChunks)
-        .innerJoin(
-          reportAttachments,
-          eq(documentChunks.attachmentId, reportAttachments.id)
-        )
+        .from(reportAttachments)
+        .innerJoin(documentChunks, reportAttachmentChunkJoin())
         .where(
           and(
             activeScope,
@@ -580,16 +578,12 @@ export async function verifyCitation(
 
   const [row] = await db
     .select(candidateSelect())
-    .from(documentChunks)
-    .innerJoin(
-      reportAttachments,
-      eq(documentChunks.attachmentId, reportAttachments.id)
-    )
+    .from(reportAttachments)
+    .innerJoin(documentChunks, reportAttachmentChunkJoin())
     .where(
       and(
-        eq(documentChunks.reportId, reportId),
+        eq(reportAttachments.id, parsed.attachmentId),
         eq(documentChunks.id, parsed.chunkId),
-        eq(documentChunks.attachmentId, parsed.attachmentId),
         eq(documentChunks.pageNumber, parsed.pageNumber),
         eq(reportAttachments.reportId, reportId),
         isNull(reportAttachments.deletedAt),
@@ -616,7 +610,7 @@ export async function readDocumentPage({
 
   const [row] = await db
     .select({
-      attachmentId: documentPages.attachmentId,
+      attachmentId: reportAttachments.id,
       filename: reportAttachments.filename,
       description: reportAttachments.description,
       pageNumber: documentPages.pageNumber,
@@ -626,15 +620,14 @@ export async function readDocumentPage({
       pageContext: documentPages.pageContext,
       ingestRunId: documentPages.ingestRunId,
     })
-    .from(documentPages)
+    .from(reportAttachments)
     .innerJoin(
-      reportAttachments,
-      eq(documentPages.attachmentId, reportAttachments.id)
+      documentPages,
+      sql`${documentPages.assetId} = ${reportAttachments.assetId}`
     )
     .where(
       and(
-        eq(documentPages.reportId, reportId),
-        eq(documentPages.attachmentId, attachmentId),
+        eq(reportAttachments.id, attachmentId),
         eq(documentPages.pageNumber, pageNumber),
         eq(reportAttachments.reportId, reportId),
         isNull(reportAttachments.deletedAt),
@@ -697,13 +690,7 @@ export async function readDocumentOutline({
       transcript: documentPages.transcript,
     })
     .from(documentPages)
-    .where(
-      and(
-        eq(documentPages.reportId, reportId),
-        eq(documentPages.attachmentId, trimmedId),
-        eq(documentPages.ingestRunId, header.ingestRunId)
-      )
-    )
+    .where(eq(documentPages.ingestRunId, header.ingestRunId))
     .orderBy(documentPages.pageNumber)
     .limit(OUTLINE_PAGE_CAP);
 
@@ -741,28 +728,28 @@ export async function listDocumentPagesForReview({
 
   const pages = await db
     .select({
-      attachmentId: documentPages.attachmentId,
+      attachmentId: reportAttachments.id,
       filename: reportAttachments.filename,
       pageNumber: documentPages.pageNumber,
       transcript: documentPages.transcript,
       pageContext: documentPages.pageContext,
       printedPageLabel: documentPages.printedPageLabel,
     })
-    .from(documentPages)
+    .from(reportAttachments)
     .innerJoin(
-      reportAttachments,
-      eq(documentPages.attachmentId, reportAttachments.id)
+      documentPages,
+      sql`${documentPages.assetId} = ${reportAttachments.assetId}`
     )
     .where(
       and(
-        eq(documentPages.reportId, reportId),
-        inArray(documentPages.attachmentId, ids),
+        eq(reportAttachments.reportId, reportId),
+        inArray(reportAttachments.id, ids),
         isNull(reportAttachments.deletedAt),
         isNotNull(reportAttachments.activeIngestRunId),
         eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
       )
     )
-    .orderBy(documentPages.attachmentId, documentPages.pageNumber)
+    .orderBy(reportAttachments.id, documentPages.pageNumber)
     .limit(OUTLINE_PAGE_CAP);
 
   return pages.map((page) => ({

@@ -28,6 +28,7 @@ function file(
     id,
     reportId: "rep_1",
     folderId,
+    assetId: null,
     filename,
     description: null,
     mimeType: "application/pdf",

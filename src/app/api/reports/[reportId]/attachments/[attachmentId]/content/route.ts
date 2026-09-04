@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
-import { db } from "@/db";
-import { reportAttachments } from "@/db/schema";
 import {
   contentRangeHeader,
   parseByteRangeHeader,
   rangeContentLength,
 } from "@/lib/attachments/http-byte-range";
+import { loadResolvedReportAttachment } from "@/lib/attachments/sync-asset-processing";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
@@ -54,19 +52,12 @@ export async function GET(
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const [attachment] = await db
-    .select()
-    .from(reportAttachments)
-    .where(
-      and(
-        eq(reportAttachments.id, attachmentId),
-        eq(reportAttachments.reportId, reportId),
-        isNull(reportAttachments.deletedAt)
-      )
-    );
-  if (!attachment || !attachment.gcsGeneration) {
+  const loaded = await loadResolvedReportAttachment(reportId, attachmentId);
+  const gcsGeneration = loaded?.resolved.gcsGeneration;
+  if (!loaded || !gcsGeneration) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const { resolved: attachment } = loaded;
   if (!attachment.permanentObjectKey) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -80,7 +71,7 @@ export async function GET(
 
   // pdf.js opens a document with one streamed GET, so re-opening the same
   // attachment is a conditional request. Answer it before touching storage.
-  const etag = `"${attachment.gcsGeneration}"`;
+  const etag = `"${gcsGeneration}"`;
   if (!download && requestMatchesEtag(req.headers.get("If-None-Match"), etag)) {
     return new NextResponse(null, {
       status: 304,
@@ -102,7 +93,7 @@ export async function GET(
     try {
       const signedUrl = await getAttachmentStorage().getSignedReadUrl({
         objectKey: attachment.permanentObjectKey,
-        generation: attachment.gcsGeneration,
+        generation: gcsGeneration,
         expiresInSeconds: 5 * 60,
         // Preview must stay inline; only the download button forces a save.
         ...(download ? { downloadFilename: attachment.filename } : {}),

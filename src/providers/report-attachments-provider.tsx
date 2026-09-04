@@ -79,6 +79,12 @@ type ReportAttachmentsContextValue = {
   closeDocument: () => void;
   documentOpenEpoch: number;
   uploadFiles: (files: FileList, folderId?: FolderId) => Promise<void>;
+  linkFromLibrary: (selection: {
+    assetIds: string[];
+    libraryFolderIds: string[];
+    targetFolderId?: FolderId;
+  }) => Promise<void>;
+  isWorkspaceAdmin: boolean;
   removeAttachment: (id: string) => Promise<void>;
   retryAttachment: (id: string) => Promise<void>;
   moveAttachment: (id: string, folderId: FolderId) => Promise<void>;
@@ -108,12 +114,14 @@ export function ReportAttachmentsProvider({
   initialAttachments,
   initialFolders,
   canMutateAttachments,
+  isWorkspaceAdmin,
   children,
 }: {
   reportId: string;
   initialAttachments: ReportAttachmentRecord[];
   initialFolders: ReportAttachmentFolderRecord[];
   canMutateAttachments: boolean;
+  isWorkspaceAdmin: boolean;
   children: ReactNode;
 }) {
   const [attachments, setAttachments] =
@@ -220,6 +228,7 @@ export function ReportAttachmentsProvider({
         id: attachmentId,
         reportId,
         folderId,
+        assetId: null,
         filename: file.name,
         description: null,
         mimeType: attachmentUploadMime(file),
@@ -642,6 +651,64 @@ export function ReportAttachmentsProvider({
     [canMutateAttachments, folders, reportId]
   );
 
+  const linkFromLibrary = useCallback(
+    async (selection: {
+      assetIds: string[];
+      libraryFolderIds: string[];
+      targetFolderId?: FolderId;
+    }) => {
+      if (!canMutateAttachments) {
+        toast.error("You cannot add attachments to this report.");
+        return;
+      }
+      const response = await fetch(`/api/reports/${reportId}/attachments/link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetIds: selection.assetIds,
+          libraryFolderIds: selection.libraryFolderIds,
+          targetFolderId: selection.targetFolderId ?? null,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        attachments?: ReportAttachmentRecord[];
+        folders?: ReportAttachmentFolderRecord[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not add from library");
+      }
+      if (Array.isArray(data.folders)) {
+        setFolders((prev) => {
+          const existing = new Set(prev.map((folder) => folder.id));
+          const merged = [...prev];
+          for (const folder of data.folders!) {
+            if (!existing.has(folder.id)) {
+              merged.push({
+                id: folder.id,
+                reportId,
+                parentId: folder.parentId,
+                name: folder.name,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          }
+          return merged;
+        });
+      }
+      if (Array.isArray(data.attachments)) {
+        for (const attachment of data.attachments) {
+          upsertAttachment(attachment);
+        }
+      }
+      const count = data.attachments?.length ?? 0;
+      toast.success(
+        count === 1 ? "Added 1 document from library" : `Added ${count} documents from library`
+      );
+    },
+    [canMutateAttachments, reportId, upsertAttachment]
+  );
+
   const activeAttachmentRecord = activeAttachment
     ? attachments.find((item) => item.id === activeAttachment.id) ?? null
     : null;
@@ -660,6 +727,8 @@ export function ReportAttachmentsProvider({
       closeDocument,
       documentOpenEpoch,
       uploadFiles,
+      linkFromLibrary,
+      isWorkspaceAdmin,
       removeAttachment,
       retryAttachment,
       moveAttachment,
@@ -682,6 +751,8 @@ export function ReportAttachmentsProvider({
       closeDocument,
       documentOpenEpoch,
       uploadFiles,
+      linkFromLibrary,
+      isWorkspaceAdmin,
       removeAttachment,
       retryAttachment,
       moveAttachment,

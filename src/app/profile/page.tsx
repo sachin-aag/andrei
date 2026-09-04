@@ -8,6 +8,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ChangeOwnPasswordForm } from "@/components/auth/change-own-password-form";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { AgentDoneNotificationSettings } from "@/components/profile/agent-done-notification-settings";
+import { DocumentLibrarySection } from "@/components/profile/document-library-section";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,11 @@ export default async function ProfilePage() {
               <ChangeOwnPasswordForm />
             </div>
           </section>
+
+          <DocumentLibrarySection
+            currentUser={user}
+            workspaceUsers={workspaceUsers}
+          />
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
             <h2 className="text-base font-semibold">Assistant notifications</h2>
