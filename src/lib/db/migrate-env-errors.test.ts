@@ -71,6 +71,17 @@ describe("postgresPasswordAuthFailedMessage", () => {
     expect(message).not.toMatch(/shared pooled URL/i);
   });
 
+  it("mentions redeploy after auto-heal", () => {
+    const message = postgresPasswordAuthFailedMessage({
+      host: "example.neon.tech",
+      vercelEnv: "preview",
+      deployScope: "mj",
+      gitBranch: "cursor/example",
+      autoHealAttempted: true,
+    });
+    expect(message).toMatch(/Redeploy on this Vercel deployment/);
+  });
+
   it("labels an unset deploy scope", () => {
     const message = postgresPasswordAuthFailedMessage({
       host: "example.neon.tech",

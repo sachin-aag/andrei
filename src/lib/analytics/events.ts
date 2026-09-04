@@ -15,12 +15,29 @@ export type AnalyticsEvent =
   | "comment_resolved"
   | "comment_dismissed"
   | "sidebar_tab_changed"
-  | "expert_review_requested";
+  | "expert_review_requested"
+  | "ai_chat_failed";
 
 export function captureEvent(
   event: AnalyticsEvent,
   props?: Record<string, unknown>
 ) {
   if (typeof window === "undefined") return;
-  posthog.capture(event, props);
+  try {
+    posthog.capture(event, props);
+  } catch {
+    // Analytics must never break the product.
+  }
+}
+
+export function captureClientException(
+  error: unknown,
+  props?: Record<string, unknown>
+) {
+  if (typeof window === "undefined") return;
+  try {
+    posthog.captureException(error, props);
+  } catch {
+    // Analytics must never break the product.
+  }
 }

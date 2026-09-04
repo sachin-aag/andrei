@@ -215,6 +215,9 @@ importers:
       posthog-js:
         specifier: ^1.379.0
         version: 1.379.0
+      posthog-node:
+        specifier: ^5.51.6
+        version: 5.51.6(rxjs@7.8.2)
       react:
         specifier: ^19.2.0
         version: 19.2.6
@@ -2073,8 +2076,14 @@ packages:
   '@posthog/core@1.30.3':
     resolution: {integrity: sha512-mGIN4Du1a8fKxV5WfnEtogq3VOQLa4PfWMUg5uMIMDD+fp5bhTA4QG4oYAea4vBTZ1ZOanQbjXcX4b5k2X93Qw==}
 
+  '@posthog/core@1.50.2':
+    resolution: {integrity: sha512-El7y/ipZ45OFBRTN/+ixat9Nw21bW+pKKnX0G+rG4rWxBtDA47Ub/ZUnHvZNhAufNInQr4AYCUeWQsuJsTcoKg==}
+
   '@posthog/types@1.379.0':
     resolution: {integrity: sha512-QJLzyV22iZKy5eEXKn9IB1swSVo2JigIawebBha+BmsePsY3XA0HAcq2B+D8Km5BHnbE+SGm5aHxFG3DlVE1yg==}
+
+  '@posthog/types@1.408.0':
+    resolution: {integrity: sha512-xMY8QrRKsTYu4A4Of7XF/xEt0HcnZOWwnICm3do7tGKA0lTlnnr4YW0AHQN1Uv2P3BDqf5GQoqh91MKE+dgdcA==}
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -6803,6 +6812,15 @@ packages:
   posthog-js@1.379.0:
     resolution: {integrity: sha512-cSESmnPvIaY/pyhV5a6pF00q8tqmXlJBQWX9T7dbBh9TXhVM5oQVi7g77vWGD9G8wq4iNF5ZOxqeAK9dpOSOYg==}
 
+  posthog-node@5.51.6:
+    resolution: {integrity: sha512-r+Ge3p0OnOcOWeTnvKZmAtDwECeIoyNTyxBxuZc8wM6RHCQ9j2Xrhogrf39HSq1Y2gIOpWLqIDRmWDcu7xmqcA==}
+    engines: {node: ^20.20.0 || >=22.22.0}
+    peerDependencies:
+      rxjs: ^7.0.0
+    peerDependenciesMeta:
+      rxjs:
+        optional: true
+
   preact-render-to-string@6.5.11:
     resolution: {integrity: sha512-ubnauqoGczeGISiOh6RjX0/cdaF8v/oDXIjO85XALCQjwQP+SB4RDXXtvZ6yTYSjG+PC1QRP2AhPgCEsM2EvUw==}
     peerDependencies:
@@ -9526,7 +9544,13 @@ snapshots:
     dependencies:
       '@posthog/types': 1.379.0
 
+  '@posthog/core@1.50.2':
+    dependencies:
+      '@posthog/types': 1.408.0
+
   '@posthog/types@1.379.0': {}
+
+  '@posthog/types@1.408.0': {}
 
   '@protobufjs/aspromise@1.1.2': {}
 
@@ -14826,6 +14850,12 @@ snapshots:
       preact: 10.29.2
       query-selector-shadow-dom: 1.0.1
       web-vitals: 5.3.0
+
+  posthog-node@5.51.6(rxjs@7.8.2):
+    dependencies:
+      '@posthog/core': 1.50.2
+    optionalDependencies:
+      rxjs: 7.8.2
 
   preact-render-to-string@6.5.11(preact@10.24.3):
     dependencies:

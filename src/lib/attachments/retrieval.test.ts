@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildKeywordTsQuery,
+  buildMatchCenteredSnippet,
   buildOutlineFromStoredPages,
   normalizeAttachmentIdFilter,
   reciprocalRankFusion,
@@ -136,6 +137,7 @@ describe("searchReportDocuments with tagged attachments", () => {
 
   it("does not label results when no attachments are tagged", async () => {
     limitMock
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([chunkRow("c1", "att_1")])
       .mockResolvedValueOnce([]);
 
@@ -147,12 +149,13 @@ describe("searchReportDocuments with tagged attachments", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]!.pinned).toBeUndefined();
-    // vector + keyword only: no backfill pass for an unrestricted search.
-    expect(limitMock).toHaveBeenCalledTimes(2);
+    // lexical + vector + keyword; no backfill pass for an unrestricted search.
+    expect(limitMock).toHaveBeenCalledTimes(3);
   });
 
   it("marks tagged hits and skips backfill when they fill the limit", async () => {
     limitMock
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         chunkRow("c1", "att_1", 1),
         chunkRow("c2", "att_1", 2),
@@ -167,12 +170,14 @@ describe("searchReportDocuments with tagged attachments", () => {
     });
 
     expect(results.map((r) => r.pinned)).toEqual([true, true]);
-    expect(limitMock).toHaveBeenCalledTimes(2);
+    expect(limitMock).toHaveBeenCalledTimes(3);
   });
 
   it("backfills from the rest of the report when tagged hits fall short", async () => {
     limitMock
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([chunkRow("c1", "att_1")])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([chunkRow("c9", "att_other")])
       .mockResolvedValueOnce([]);
@@ -186,13 +191,14 @@ describe("searchReportDocuments with tagged attachments", () => {
 
     expect(results.map((r) => r.chunkId)).toEqual(["c1", "c9"]);
     expect(results.map((r) => r.pinned)).toEqual([true, false]);
-    // Tagged pass + backfill pass, but the query is embedded only once.
-    expect(limitMock).toHaveBeenCalledTimes(4);
+    // Tagged lexical + fused + backfill lexical + fused; query embedded once.
+    expect(limitMock).toHaveBeenCalledTimes(6);
     expect(embedMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not backfill when explicit tags define the attachment scope", async () => {
     limitMock
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([chunkRow("c1", "att_1")])
       .mockResolvedValueOnce([]);
 
@@ -206,7 +212,7 @@ describe("searchReportDocuments with tagged attachments", () => {
 
     expect(results.map((r) => r.chunkId)).toEqual(["c1"]);
     expect(results.map((r) => r.pinned)).toEqual([true]);
-    expect(limitMock).toHaveBeenCalledTimes(2);
+    expect(limitMock).toHaveBeenCalledTimes(3);
   });
 
   it("skips retrieval entirely for a blank query", async () => {
@@ -266,24 +272,63 @@ describe("searchReportDocuments with tagged attachments", () => {
     expect(results.map((r) => r.pageNumber)).toEqual([32]);
   });
 
-  it("collapses to one chunk per page", async () => {
+  it("collapses to the best-matching chunk per page when the query is lexical", async () => {
     limitMock
       .mockResolvedValueOnce([
-        chunkRow("c1", "att_1", 1),
-        chunkRow("c2", "att_1", 1),
-        chunkRow("c3", "att_1", 2),
+        {
+          ...chunkRow("c2", "att_1", 121),
+          contextualText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+          rawText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          ...chunkRow("c1", "att_1", 121),
+          contextualText: "TOP-00051 UUT header boilerplate",
+          rawText: "TOP-00051 UUT header boilerplate",
+        },
+        {
+          ...chunkRow("c2", "att_1", 121),
+          contextualText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+          rawText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+        },
+        chunkRow("c3", "att_1", 122),
       ])
       .mockResolvedValueOnce([]);
 
     const results = await searchReportDocuments({
       reportId: "report-1",
-      query: "dissolution failure",
+      query: "logic analyzer",
       limit: 5,
     });
 
-    expect(results.map((r) => r.chunkId)).toEqual(["c1", "c3"]);
-    expect(limitMock).toHaveBeenCalledTimes(2);
+    expect(results.map((r) => r.chunkId)).toEqual(["c2", "c3"]);
+    expect(results[0]!.text).toContain("Logic Analyzer");
+    expect(results[0]!.text).toContain("Saleae");
     expect(embedMock).toHaveBeenCalledTimes(1);
+    expect(limitMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("skips the query embedding when lexical hits alone fill the limit", async () => {
+    limitMock.mockResolvedValueOnce([
+      {
+        ...chunkRow("c2", "att_1", 121),
+        contextualText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+        rawText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+      },
+    ]);
+
+    const { results, timing } = await searchReportDocumentsDetailed({
+      reportId: "report-1",
+      query: "logic analyzer",
+      limit: 1,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.text).toContain("Logic Analyzer");
+    expect(timing.skippedEmbedding).toBe(true);
+    expect(embedMock).not.toHaveBeenCalled();
+    expect(limitMock).toHaveBeenCalledTimes(1);
   });
 
   it("skips the query embedding when exact identifier hits fill the limit", async () => {
@@ -300,6 +345,17 @@ describe("searchReportDocuments with tagged attachments", () => {
     expect(timing.queryKind).toBe("identifier");
     expect(embedMock).not.toHaveBeenCalled();
     expect(limitMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("buildMatchCenteredSnippet export", () => {
+  it("is re-exported from retrieval for callers that build tool excerpts", () => {
+    const snippet = buildMatchCenteredSnippet(
+      "aaa ".repeat(40) + "Logic Analyzer Saleae",
+      "logic analyzer",
+      80
+    );
+    expect(snippet).toContain("Logic Analyzer");
   });
 });
 

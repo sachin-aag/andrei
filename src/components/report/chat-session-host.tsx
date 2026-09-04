@@ -9,17 +9,21 @@ import {
   type UIMessage,
 } from "ai";
 import {
+  chatFailureSurfaceFromSend,
   readJsonBody,
   resolveChatTurnUrl,
 } from "@/lib/ai/chat/chat-turn-url";
 import { toast } from "sonner";
+import { captureClientException, captureEvent } from "@/lib/analytics/events";
 import { useChatWatchdog } from "@/hooks/use-chat-watchdog";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   assistantPartsHaveVisibleContent,
   assistantPartsHaveVisibleText,
+  formatChatLlmError,
   isChatClientDisconnectError,
 } from "@/lib/ai/chat/assistant-turn";
+import type { WorkProductView } from "@/components/report/workspace-chrome";
 import {
   CHAT_TURN_POLL_MS,
   backgroundTurnFromSessionView,
@@ -100,6 +104,7 @@ export function ChatSessionHost({
   const clearErrorRef = useRef<() => void>(() => {});
   const agentRunStartedAtRef = useRef<number | null>(null);
   const [backgroundTurn, setBackgroundTurn] = useState(false);
+  const surfaceRef = useRef<WorkProductView>("report");
 
   const hydrateFromServer = useCallback(async () => {
     if (isChatTurnBusy(statusRef.current)) return;
@@ -134,6 +139,21 @@ export function ChatSessionHost({
       setBackgroundTurn(false);
     }
   }, [api, sessionId]);
+
+  const reportClientChatFailure = useCallback(
+    (site: "empty_turn" | "client_error", error: unknown) => {
+      const failureProps = {
+        surface: surfaceRef.current,
+        site,
+        reportId,
+        sessionId,
+        error: formatChatLlmError(error),
+      };
+      captureClientException(error, failureProps);
+      captureEvent("ai_chat_failed", failureProps);
+    },
+    [reportId, sessionId]
+  );
 
   const { messages, sendMessage, setMessages, status, error, stop, clearError } =
     useChat({
@@ -172,6 +192,7 @@ export function ChatSessionHost({
         message.role === "assistant" &&
         !assistantPartsHaveVisibleContent(message.parts)
       ) {
+        reportClientChatFailure("empty_turn", new Error("empty assistant turn"));
         toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
         agentRunStartedAtRef.current = null;
         setBackgroundTurn(false);
@@ -194,9 +215,21 @@ export function ChatSessionHost({
     onError: (err) => {
       console.error("chat error", err);
       if (isChatClientDisconnectError(err)) return;
+      reportClientChatFailure("client_error", err);
       toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
     },
   });
+
+  const sendSessionMessage = useCallback<ChatSessionSend>(
+    (message, options) => {
+      surfaceRef.current = chatFailureSurfaceFromSend({
+        body: options?.body,
+        metadata: message.metadata,
+      });
+      return (sendMessage as ChatSessionSend)(message, options);
+    },
+    [sendMessage]
+  );
 
   const streamBusy = isChatTurnBusy(status);
   const busy = isChatSessionBusy({ status, backgroundTurn });
@@ -318,7 +351,7 @@ export function ChatSessionHost({
   useEffect(() => {
     onRuntime(sessionId, {
       messages: messages as UIMessage[],
-      sendMessage: sendMessage as ChatSessionSend,
+      sendMessage: sendSessionMessage,
       status,
       error,
       stop,
@@ -336,7 +369,7 @@ export function ChatSessionHost({
     error,
     messages,
     onRuntime,
-    sendMessage,
+    sendSessionMessage,
     sessionId,
     silentMs,
     status,
