@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { LibraryAssetLabel } from "@/components/profile/library-asset-label";
 import type {
   AttachmentLibraryAssetRecord,
   AttachmentLibraryFolderRecord,
@@ -130,12 +131,11 @@ function LibraryTreeNode({
               checked={checked}
               onCheckedChange={(value) => onToggleAsset(asset.id, value === true)}
             />
-            <span className="truncate">{asset.filename}</span>
-            {asset.processingStatus !== "ready" ? (
-              <span className="ml-auto text-xs text-[var(--muted-foreground)]">
-                {asset.processingStatus}
-              </span>
-            ) : null}
+            <LibraryAssetLabel
+              filename={asset.filename}
+              uploadedAt={asset.uploadedAt}
+              processingStatus={asset.processingStatus}
+            />
           </label>
         );
       })}
@@ -229,8 +229,8 @@ export function AddFromLibraryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-hidden sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="shrink-0 space-y-1 px-6 pt-6">
           <DialogTitle>Add from library</DialogTitle>
           <DialogDescription>
             Reuse documents you have uploaded or that were shared with you.
@@ -238,7 +238,7 @@ export function AddFromLibraryDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap gap-1">
+        <div className="shrink-0 flex flex-wrap gap-1 px-6 pt-3">
           {scopeTabs.map((tab) => (
             <button
               key={tab.value}
@@ -256,7 +256,7 @@ export function AddFromLibraryDialog({
           ))}
         </div>
 
-        <div className="min-h-[240px] overflow-y-auto rounded-md border border-[var(--border)] p-2">
+        <div className="min-h-0 flex-1 overflow-y-auto border-y border-[var(--border)] px-2 py-2">
           {loading ? (
             <div className="flex h-40 items-center justify-center text-[var(--muted-foreground)]">
               <Loader2 className="size-5 animate-spin" aria-hidden="true" />
@@ -293,7 +293,7 @@ export function AddFromLibraryDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 px-6 py-4">
           <Button
             type="button"
             variant="outline"
