@@ -34,4 +34,45 @@ describe("retrieval-cases.json", () => {
     expect(filenames.has("appendix-b-790-00134r-revu.pdf")).toBe(true);
     expect(filenames.has("SOP-DP-QA-010-R04 SOP.pdf")).toBe(true);
   });
+
+  it("has real content assertions, not just page-hit assertions", () => {
+    // recallAtK can score 1.0 while every excerpt shows the wrong part of a
+    // matched page; excerptHitAtK only means something once cases declare
+    // mustContain. Guard against the schema going in but no case ever using
+    // it (silently reverting to page-hit-only coverage).
+    const withMustContain = cases.filter((entry) =>
+      entry.gold.some((hit) => (hit.mustContain?.length ?? 0) > 0)
+    );
+    expect(withMustContain.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("every mustContain entry is a non-empty, trimmed string", () => {
+    for (const entry of cases) {
+      for (const hit of entry.gold) {
+        for (const term of hit.mustContain ?? []) {
+          expect(term.trim().length).toBeGreaterThan(0);
+          expect(term).toBe(term.trim());
+        }
+      }
+    }
+  });
+
+  it("cases without mustContain document why in notes", () => {
+    // Not a hard requirement everywhere, but every SOP/appendix-b case that
+    // skips mustContain should say why (scan-only, paraphrase, OCR
+    // fragility) so a future contributor doesn't assume it was an oversight.
+    const sopAndAppendixB = cases.filter((entry) =>
+      entry.gold.some(
+        (hit) =>
+          hit.filename === "SOP-DP-QA-010-R04 SOP.pdf" ||
+          hit.filename === "appendix-b-790-00134r-revu.pdf"
+      )
+    );
+    const undocumentedGaps = sopAndAppendixB.filter(
+      (entry) =>
+        !entry.gold.some((hit) => (hit.mustContain?.length ?? 0) > 0) &&
+        !entry.notes
+    );
+    expect(undocumentedGaps.map((entry) => entry.id)).toEqual([]);
+  });
 });

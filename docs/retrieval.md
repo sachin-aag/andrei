@@ -25,10 +25,14 @@ No LLM `docKind` taxonomy in v1. Exact IDs reuse `requirementIds()` in
 `searchReportDocuments()`. Analytics stays keyword-first at the tool layer.
 Do not bump `CHAT_PROMPT_VERSION` unless prompt copy changes.
 
-Gold labels are **filename + page**. Public cases live in
-`scripts/eval/retrieval-cases.json` (in-repo sample PDFs). A later 1.5 GB
-slice uses gitignored `scripts/eval/retrieval-cases.local.json`. Do not use
-the chat agent to generate labels.
+Gold labels are **filename + page**, optionally with **excerpt content**
+(`mustContain`) and **cross-document negatives** (`mustNotContainAnywhere`)
+— see Phase 0. Public cases live in `scripts/eval/retrieval-cases.json`
+(in-repo sample PDFs). A later 1.5 GB slice uses gitignored
+`scripts/eval/retrieval-cases.local.json`; `retrieval-cases.local.example.json`
+is the git-tracked template for that file (real customer PDF, cannot be
+committed — copy and rename once ingested locally). Do not use the chat
+agent to generate labels.
 
 Parser version is `v4` so a **reprocess** writes the new columns. Clean
 ready files are left alone.
@@ -80,23 +84,99 @@ Entry points: `src/lib/attachments/retrieval.ts`,
 
 ## Phase 0 — eval harness
 
-**Done.** `scripts/eval/retrieval-eval.ts` +
-`scripts/eval/retrieval-cases.json`. Metrics: Recall@5, Recall@10, MRR,
+**Done**, extended for the excerpt-truncation regression below.
+`scripts/eval/retrieval-eval.ts` + `scripts/eval/retrieval-cases.json`.
+Metrics: Recall@5, Recall@10, MRR, ExcerptHit@5, NoFalsePositive@5,
 embed/sql/total ms, `skippedEmbedding`. Runs write JSON under
 `scripts/eval/retrieval-runs/` (gitignored).
 
 Public gold is grounded in:
 
-- `docs/sample_files/appendix-b-790-00134r-revu.pdf` — 62-page scan;
-  tests treat **SW-LWB-4 on page 31**.
+- `docs/sample_files/appendix-b-790-00134r-revu.pdf` — 62-page scan, no
+  text layer past page 1 (verified with `unpdf`), no human transcription;
+  tests treat **SW-LWB-4 on page 31** but do not assert `mustContain` —
+  the exact OCR wording is unverified and must not be guessed.
 - `docs/sample_files/SOP-DP-QA-010-R04 SOP.pdf` — pages from
-  `docs/sop-010-r04-transcription.md`.
+  `docs/sop-010-r04-transcription.md`. That doc's *literal quoted* form
+  names / column labels / questions back `mustContain` on several cases;
+  its *paraphrased* summaries (TOC flow, numeric RPN tables with
+  dash-glyph-sensitive ranges, the A02 decision-tree diagram) do not — see
+  each case's `notes` for why.
 - `docs/sample_files/DEV-QC-25-010 Copy (1).pdf` — filename locators
   only (almost no native text; do not invent page numbers).
 
-Schema for a case: `{ id, query, kind, gold: [{ filename, page }], notes? }`.
-`kind` is `identifier` | `locator` | `semantic`. Vitest validates the JSON
-(`scripts/eval/retrieval-cases.test.ts`).
+Schema for a case:
+
+```jsonc
+{
+  "id": "...",
+  "query": "...",
+  "kind": "identifier" | "locator" | "semantic",
+  "gold": [
+    { "filename": "...", "page": 1, "mustContain": ["..."] } // mustContain optional
+  ],
+  "mustNotContainAnywhere": ["..."], // optional; gold may be [] only when this is set
+  "notes": "..."
+}
+```
+
+Vitest validates the JSON (`scripts/eval/retrieval-cases.test.ts`).
+
+### Known gap this schema now catches: excerpt truncation
+
+Recall@k asks "did we find the right page?" It does not ask "did the model
+see the part of the page that answers the question?" Both production and
+this branch returned page 121 of a real Convergent DV attachment for
+"logic analyzer" / "Saleae" / `"logic analyzer"` (Recall@5 = 1.0 across
+multiple Langfuse traces) while every returned excerpt was the chunk-0
+UUT/header boilerplate — Table 3's Logic Analyzer row never appeared in
+any snippet the model saw. The model correctly reported "not found" from
+what it was shown; a screenshot (bypassing chunk search entirely) answered
+it instantly. Investigated 2026-09-04; see `mech-logic-analyzer` in
+`scripts/eval/retrieval-cases.local.example.json` for the full trace
+citations.
+
+Two new gold-hit-level / case-level fields close this blind spot:
+
+- **`mustContain`** (per gold hit) — substrings the *excerpt text* must
+  contain, not just the filename+page. `excerptHitAtK` scores this; it is
+  `null` (not 0) for hits that don't declare it, so unverifiable scanned
+  pages don't drag the aggregate down. A case can score Recall@5 = 1.0 and
+  ExcerptHit@5 = 0 simultaneously — that combination *is* the bug.
+- **`mustNotContainAnywhere`** (per case) — terms that must not appear in
+  *any* returned excerpt in the top-k window. For queries whose correct
+  answer is "not found" (e.g. `SW-LWB-4` against a report that doesn't
+  have it — see `mech-sw-lwb-4-cross-document-negative`), a hallucinated
+  match on the wrong document is worse than a correct negative.
+  `noFalsePositiveAtK` scores this; also `null` when unset. `gold` may be
+  `[]` only when this field is set and non-empty.
+
+Only add `mustContain` / `mustNotContainAnywhere` from a *verified* source:
+a `read_document_page` tool output (verbatim, not LLM-summarized), a
+`document-review-extract` finding cross-confirmed across more than one
+batch call, a human transcription doc, or a literal PDF text layer read
+with `unpdf`. Do not paraphrase a summary into a `mustContain` string and
+call it verified — that turns the metric into testing your own guess.
+
+### Local corpus example (real customer PDF, cannot be committed)
+
+`scripts/eval/retrieval-cases.local.example.json` is git-tracked and
+inert by default — the harness only loads `retrieval-cases.local.json`
+(gitignored), so the example does nothing until a contributor copies it.
+It mines six real cases against a 273-page Convergent Solea Model 3
+Design Verification attachment (`Mechanical Test Report Attachments
+only.pdf`) from production Langfuse traces: the Logic Analyzer excerpt
+bug, its "not on the executed-equipment-log pages" companion, the
+SW-LWB-4 cross-document negative, a UUT table that spans three pages, a
+deviation form buried among near-identical templates, and a cover/purpose
+page. Every gold value cites the Langfuse trace it came from.
+
+To use it: ingest that attachment into a local dev report under the same
+filename, `cp scripts/eval/retrieval-cases.local.example.json
+scripts/eval/retrieval-cases.local.json`, then
+`pnpm retrieval-eval -- --report-id <id>`. `retrieval-cases.local.example.test.ts`
+keeps the template itself honest against schema changes even without that
+PDF present (dry-run parse only — it does not hit the DB).
 
 ## Phase 1 — page metadata
 

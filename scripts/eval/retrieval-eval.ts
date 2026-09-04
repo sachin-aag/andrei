@@ -15,7 +15,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  excerptHitAtK,
   meanReciprocalRank,
+  noFalsePositiveAtK,
   parseRetrievalCases,
   recallAtK,
   type RetrievalEvalCase,
@@ -93,6 +95,10 @@ async function main(): Promise<void> {
     recallAt5: number;
     recallAt10: number;
     mrr: number;
+    /** null = this case declares no mustContain; not a failure. */
+    excerptHitAt5: number | null;
+    /** null = this case declares no mustNotContainAnywhere; not a failure. */
+    noFalsePositiveAt5: number | null;
     skippedEmbedding: boolean;
     embedMs: number;
     sqlMs: number;
@@ -109,6 +115,7 @@ async function main(): Promise<void> {
     const ranked = results.map((hit) => ({
       filename: hit.filename,
       pageNumber: hit.pageNumber,
+      text: hit.text,
     }));
     rows.push({
       id: entry.id,
@@ -117,27 +124,64 @@ async function main(): Promise<void> {
       recallAt5: recallAtK(ranked, entry.gold, 5),
       recallAt10: recallAtK(ranked, entry.gold, 10),
       mrr: meanReciprocalRank(ranked, entry.gold),
+      excerptHitAt5: excerptHitAtK(ranked, entry.gold, 5),
+      noFalsePositiveAt5: noFalsePositiveAtK(
+        ranked,
+        entry.mustNotContainAnywhere,
+        5
+      ),
       skippedEmbedding: timing.skippedEmbedding,
       embedMs: timing.embedMs,
       sqlMs: timing.sqlMs,
       totalMs: timing.totalMs,
-      top: ranked.slice(0, 5),
+      top: ranked.slice(0, 5).map(({ filename, pageNumber }) => ({
+        filename,
+        pageNumber,
+      })),
     });
+    const last = rows.at(-1)!;
+    const excerptLabel =
+      last.excerptHitAt5 == null ? "n/a" : last.excerptHitAt5.toFixed(2);
+    const falsePositiveLabel =
+      last.noFalsePositiveAt5 == null
+        ? "n/a"
+        : last.noFalsePositiveAt5.toFixed(2);
     console.log(
-      `${entry.id}  R@5=${rows.at(-1)!.recallAt5.toFixed(2)}  R@10=${rows
-        .at(-1)!
-        .recallAt10.toFixed(2)}  MRR=${rows.at(-1)!.mrr.toFixed(2)}  embed=${
+      `${entry.id}  R@5=${last.recallAt5.toFixed(2)}  R@10=${last.recallAt10.toFixed(
+        2
+      )}  MRR=${last.mrr.toFixed(2)}  ExcerptHit@5=${excerptLabel}  NoFalsePos@5=${falsePositiveLabel}  embed=${
         timing.skippedEmbedding ? "skip" : `${timing.embedMs}ms`
       }  sql=${timing.sqlMs}ms`
     );
   }
 
   const n = rows.length || 1;
+  const excerptCheckable = rows.filter((row) => row.excerptHitAt5 != null);
+  const falsePositiveCheckable = rows.filter(
+    (row) => row.noFalsePositiveAt5 != null
+  );
   const summary = {
     cases: rows.length,
     recallAt5: rows.reduce((sum, row) => sum + row.recallAt5, 0) / n,
     recallAt10: rows.reduce((sum, row) => sum + row.recallAt10, 0) / n,
     mrr: rows.reduce((sum, row) => sum + row.mrr, 0) / n,
+    // Excludes cases with no mustContain assertion (e.g. unverified scans) —
+    // averaging them in as 0 would understate real excerpt quality.
+    excerptHitAt5:
+      excerptCheckable.length === 0
+        ? null
+        : excerptCheckable.reduce((sum, row) => sum + row.excerptHitAt5!, 0) /
+          excerptCheckable.length,
+    excerptCheckableCases: excerptCheckable.length,
+    // Excludes cases with no mustNotContainAnywhere terms declared.
+    noFalsePositiveAt5:
+      falsePositiveCheckable.length === 0
+        ? null
+        : falsePositiveCheckable.reduce(
+            (sum, row) => sum + row.noFalsePositiveAt5!,
+            0
+          ) / falsePositiveCheckable.length,
+    falsePositiveCheckableCases: falsePositiveCheckable.length,
     embedMs: rows.reduce((sum, row) => sum + row.embedMs, 0) / n,
     sqlMs: rows.reduce((sum, row) => sum + row.sqlMs, 0) / n,
     totalMs: rows.reduce((sum, row) => sum + row.totalMs, 0) / n,

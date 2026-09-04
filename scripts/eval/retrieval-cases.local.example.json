@@ -1,0 +1,84 @@
+[
+  {
+    "id": "mech-logic-analyzer",
+    "query": "logic analyzer",
+    "kind": "semantic",
+    "gold": [
+      {
+        "filename": "Mechanical Test Report Attachments only.pdf",
+        "page": 121,
+        "mustContain": ["Logic Analyzer", "Saleae"]
+      }
+    ],
+    "notes": "The reported production bug. Page 121 holds Table 3: Required Testing Equipment (Logic Analyzer / Saleae / N/A calibration, Oscilloscope / Rigol MSO1104, Power Meter / Ophir, ...) directly below Table 2 (Solea Carts and Handpieces). Confirmed verbatim via document-review-extract generation db767d00259ad44a in Langfuse trace f0e32518a171b6a569a82670111993b3 (production, ingest run ofq2alwj2xi8wnnbhr0hwxxa) — same content reproduced on the retrieval-branch ingest of this file (trace de412387fe5b209486ccfd4d5e3db24d, ingest run n22dzcqb42fc6okc9wacpnkv). Both systems returned page 121 as a search hit (recallAt5 = 1) but every returned excerpt was chunk-ordinal-0 UUT/header boilerplate, never reaching the Table 3 row (excerptHitAt5 = 0). This is the canonical excerpt-truncation regression case."
+  },
+  {
+    "id": "mech-logic-analyzer-not-in-executed-log",
+    "query": "logic analyzer",
+    "kind": "semantic",
+    "gold": [
+      {
+        "filename": "Mechanical Test Report Attachments only.pdf",
+        "page": 79
+      },
+      {
+        "filename": "Mechanical Test Report Attachments only.pdf",
+        "page": 112
+      }
+    ],
+    "mustNotContainAnywhere": ["Logic Analyzer", "Saleae"],
+    "notes": "Companion to mech-logic-analyzer, not a contradiction: pages 79 and 112 are the EXECUTED Equipment Data Table (14 real instruments used: Torque Wrench, Timer, Digital Calipers, Power Meter, Juno Adapter, Torque Screwdriver, AlignUSB, Multimeter, Force Gauge, Manometer, Statim 5000 Autoclave, Ultrasonic Cleaner). Verbatim transcript confirmed via read_document_page tool output (100% literal, not LLM-summarized) in Langfuse trace dd7f50c1ea5b0ef2c8d12dff36b08228 and trace 1383904b02ac22b370e6b4c33253de80. The protocol's REQUIRED equipment template (page 121) and the EXECUTED equipment log (pages 79/112) are different tables — a logic analyzer being required does not mean it was actually used on the executed run being asked about. Gold pages here assert the page-level location is right; mustNotContainAnywhere guards against a future fix over-matching and pulling the wrong table's row onto these pages."
+  },
+  {
+    "id": "mech-sw-lwb-4-cross-document-negative",
+    "query": "SW-LWB-4",
+    "kind": "identifier",
+    "gold": [],
+    "mustNotContainAnywhere": ["SW-LWB-4"],
+    "notes": "SW-LWB-4 is a software requirement ID that exists only in appendix-b-790-00134r-revu.pdf (see appendix-b-sw-lwb-4 in retrieval-cases.json), an unrelated document. This mechanical/hardware DV report has no such requirement. Confirmed via Langfuse trace 560e16410e45625f97a4f99f5d539d89: 7 queries (SW-LWB, LWB, LWB-4, 'Software requirements', SW-LWB) returned 8 page hits, none containing the literal ID, and the model correctly answered 'does not contain a requirement with the ID SW-LWB-4'. Guards against a future identifier-routing change accidentally matching this ID against an unrelated document just because both reports mention 'software' or 'LWB'-shaped tokens."
+  },
+  {
+    "id": "mech-uut-reconciliation",
+    "query": "Units Under Test Perioguide Hardware Acquisition Module Serial Number",
+    "kind": "semantic",
+    "gold": [
+      {
+        "filename": "Mechanical Test Report Attachments only.pdf",
+        "page": 108,
+        "mustContain": ["Acquisition Module Serial Number"]
+      },
+      {
+        "filename": "Mechanical Test Report Attachments only.pdf",
+        "page": 106,
+        "mustContain": ["13.4 UUT AND EQUIPMENT TABLES", "Units Under Test"]
+      }
+    ],
+    "notes": "Section 13.4 UUT tables span multiple pages (106: Solea Systems UUT 1-6; 107: UUT 19-24; 108: Perioguide Hardware UUT 7-12). Confirmed verbatim via read_document_page in Langfuse trace 24e4f49933a173a904952a27b53b8f04 (report qdztod42qzrvv7ply7aw87nm, 'draft the UUT section'). Multi-gold case: exercises whether a single query surfaces more than one page of a table that spans several pages, not just the first one found."
+  },
+  {
+    "id": "mech-protocol-deviation-06",
+    "query": "Deviation Number 06 Test Instructions Step 4 Step 5 Alicat flow meter",
+    "kind": "semantic",
+    "gold": [
+      {
+        "filename": "Mechanical Test Report Attachments only.pdf",
+        "page": 269,
+        "mustContain": ["Deviation Number: 06", "M3-SYS-FN-043"]
+      }
+    ],
+    "notes": "Deviation Forms (pages 260-273) are dense, near-identical templates (Deviation Number, Date, Plan Requirement, Description) repeated per deviation and per protocol (825-00024 vs 825-00025) — a strong test of whether search can distinguish deviation 06 from deviations 01/03/05 on nearby pages. Confirmed verbatim via read_document_page in Langfuse trace 87c86e743800bdc240bf8bfecfcee96e ('draft the protocol deviation')."
+  },
+  {
+    "id": "mech-purpose-cover-page",
+    "query": "Solea Model 3 System Design Verification Protocol PURPOSE dictates tests",
+    "kind": "semantic",
+    "gold": [
+      {
+        "filename": "Mechanical Test Report Attachments only.pdf",
+        "page": 2,
+        "mustContain": ["PURPOSE:", "DHF Index"]
+      }
+    ],
+    "notes": "Cover/purpose page, DCO-02031, DHF Index # 820-00003. Confirmed verbatim via read_document_page in Langfuse trace 2d87a65ee96bead6787405791805f312 ('draft purpose section')."
+  }
+]
