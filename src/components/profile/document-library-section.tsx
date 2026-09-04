@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ManagerSelector } from "@/components/report/manager-selector";
 import { LibraryAssetLabel } from "@/components/profile/library-asset-label";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type {
   AttachmentLibraryAssetRecord,
   AttachmentLibraryFolderRecord,
@@ -48,81 +49,151 @@ function buildFolderChildren(
   return { foldersByParent, assetsByFolder };
 }
 
+function isFolderUnderAny(
+  folderId: string,
+  ancestorIds: Set<string>,
+  folders: AttachmentLibraryFolderRecord[]
+): boolean {
+  const parentById = new Map(folders.map((folder) => [folder.id, folder.parentId]));
+  let cursor: string | null = folderId;
+  while (cursor !== null) {
+    if (ancestorIds.has(cursor)) return true;
+    cursor = parentById.get(cursor) ?? null;
+  }
+  return false;
+}
+
+function folderLabel(
+  folder: AttachmentLibraryFolderRecord,
+  folders: AttachmentLibraryFolderRecord[]
+): string {
+  const parts = [folder.name];
+  let parentId = folder.parentId;
+  while (parentId) {
+    const parent = folders.find((item) => item.id === parentId);
+    if (!parent) break;
+    parts.unshift(parent.name);
+    parentId = parent.parentId;
+  }
+  return parts.join(" / ");
+}
+
 function LibraryProfileTree({
   folderId,
   depth,
   foldersByParent,
   assetsByFolder,
-  selectedAssetId,
-  onSelectAsset,
+  focusedAssetId,
+  checkedAssetIds,
+  checkedFolderIds,
+  onFocusAsset,
+  onToggleAssetCheck,
+  onToggleFolderCheck,
   onDeleteFolder,
 }: {
   folderId: string | null;
   depth: number;
   foldersByParent: Map<string | null, AttachmentLibraryFolderRecord[]>;
   assetsByFolder: Map<string | null, AttachmentLibraryAssetRecord[]>;
-  selectedAssetId: string | null;
-  onSelectAsset: (assetId: string) => void;
+  focusedAssetId: string | null;
+  checkedAssetIds: Set<string>;
+  checkedFolderIds: Set<string>;
+  onFocusAsset: (assetId: string) => void;
+  onToggleAssetCheck: (assetId: string, checked: boolean) => void;
+  onToggleFolderCheck: (folderId: string, checked: boolean) => void;
   onDeleteFolder: (folderId: string) => void;
 }) {
   const childFolders = foldersByParent.get(folderId) ?? [];
   const childAssets = assetsByFolder.get(folderId) ?? [];
+  const indent = depth * 12 + 8;
 
   return (
     <div className="space-y-0.5">
-      {childFolders.map((folder) => (
-        <div key={folder.id}>
-          <div
-            className="group flex items-center gap-1 rounded-md px-2 py-1 hover:bg-[var(--secondary)]/50"
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          >
-            <Folder
-              className="size-4 shrink-0 text-[var(--muted-foreground)]"
-              aria-hidden="true"
+      {childFolders.map((folder) => {
+        const checked = checkedFolderIds.has(folder.id);
+        return (
+          <div key={folder.id}>
+            <div
+              className={cn(
+                "group flex items-center gap-2 rounded-md py-1 pr-2 hover:bg-[var(--secondary)]/50",
+                checked && "bg-[var(--secondary)]/40"
+              )}
+              style={{ paddingLeft: `${indent}px` }}
+            >
+              <Checkbox
+                checked={checked}
+                onCheckedChange={(value) =>
+                  onToggleFolderCheck(folder.id, value === true)
+                }
+                aria-label={`Select folder ${folder.name}`}
+              />
+              <Folder
+                className="size-4 shrink-0 text-[var(--muted-foreground)]"
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1 truncate text-sm">{folder.name}</span>
+              <button
+                type="button"
+                aria-label={`Delete folder ${folder.name}`}
+                title="Delete folder"
+                onClick={() => onDeleteFolder(folder.id)}
+                className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
+              >
+                <Trash2 className="size-3.5" aria-hidden="true" />
+              </button>
+            </div>
+            <LibraryProfileTree
+              folderId={folder.id}
+              depth={depth + 1}
+              foldersByParent={foldersByParent}
+              assetsByFolder={assetsByFolder}
+              focusedAssetId={focusedAssetId}
+              checkedAssetIds={checkedAssetIds}
+              checkedFolderIds={checkedFolderIds}
+              onFocusAsset={onFocusAsset}
+              onToggleAssetCheck={onToggleAssetCheck}
+              onToggleFolderCheck={onToggleFolderCheck}
+              onDeleteFolder={onDeleteFolder}
             />
-            <span className="min-w-0 flex-1 truncate text-sm">{folder.name}</span>
+          </div>
+        );
+      })}
+      {childAssets.map((asset) => {
+        const checked = checkedAssetIds.has(asset.id);
+        const focused = focusedAssetId === asset.id;
+        return (
+          <div
+            key={asset.id}
+            className={cn(
+              "flex items-start gap-2 rounded-md py-1.5 pr-2 transition-colors",
+              focused
+                ? "bg-[var(--secondary)] text-[var(--foreground)]"
+                : checked
+                  ? "bg-[var(--secondary)]/40"
+                  : "hover:bg-[var(--secondary)]/50"
+            )}
+            style={{ paddingLeft: `${indent}px` }}
+          >
+            <Checkbox
+              checked={checked}
+              onCheckedChange={(value) =>
+                onToggleAssetCheck(asset.id, value === true)
+              }
+              aria-label={`Select ${asset.filename}`}
+              className="mt-0.5"
+            />
             <button
               type="button"
-              aria-label={`Delete folder ${folder.name}`}
-              title="Delete folder"
-              onClick={() => onDeleteFolder(folder.id)}
-              className="rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
+              onClick={() => onFocusAsset(asset.id)}
+              className="min-w-0 flex-1 text-left"
             >
-              <Trash2 className="size-3.5" aria-hidden="true" />
+              <LibraryAssetLabel
+                filename={asset.filename}
+                uploadedAt={asset.uploadedAt}
+                processingStatus={asset.processingStatus}
+              />
             </button>
           </div>
-          <LibraryProfileTree
-            folderId={folder.id}
-            depth={depth + 1}
-            foldersByParent={foldersByParent}
-            assetsByFolder={assetsByFolder}
-            selectedAssetId={selectedAssetId}
-            onSelectAsset={onSelectAsset}
-            onDeleteFolder={onDeleteFolder}
-          />
-        </div>
-      ))}
-      {childAssets.map((asset) => {
-        const selected = selectedAssetId === asset.id;
-        return (
-          <button
-            key={asset.id}
-            type="button"
-            onClick={() => onSelectAsset(asset.id)}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-              selected
-                ? "bg-[var(--secondary)] text-[var(--foreground)]"
-                : "hover:bg-[var(--secondary)]/50"
-            )}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          >
-            <LibraryAssetLabel
-              filename={asset.filename}
-              uploadedAt={asset.uploadedAt}
-              processingStatus={asset.processingStatus}
-            />
-          </button>
         );
       })}
     </div>
@@ -132,11 +203,18 @@ function LibraryProfileTree({
 export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
   const [library, setLibrary] = useState<LibraryResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [focusedAssetId, setFocusedAssetId] = useState<string | null>(null);
+  const [checkedAssetIds, setCheckedAssetIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [checkedFolderIds, setCheckedFolderIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [granteeIds, setGranteeIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [bulkMoveTarget, setBulkMoveTarget] = useState("");
   const [moving, setMoving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -175,17 +253,19 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     setGranteeIds(data.grants?.map((grant) => grant.granteeUserId) ?? []);
   }, []);
 
-  const selectAsset = (assetId: string) => {
-    setSelectedAssetId(assetId);
+  const focusAsset = (assetId: string) => {
+    setFocusedAssetId(assetId);
     void loadGrants(assetId);
   };
 
+  const selectionCount = checkedAssetIds.size + checkedFolderIds.size;
+
   const saveGrants = async () => {
-    if (!selectedAssetId) return;
+    if (!focusedAssetId) return;
     setSaving(true);
     try {
       const response = await fetch(
-        `/api/attachment-library/${selectedAssetId}/access`,
+        `/api/attachment-library/${focusedAssetId}/access`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -240,15 +320,20 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
       toast.error(data.error ?? "Could not delete folder");
       return;
     }
+    setCheckedFolderIds((prev) => {
+      const next = new Set(prev);
+      next.delete(folderId);
+      return next;
+    });
     await loadLibrary();
   };
 
-  const moveSelectedAsset = async (libraryFolderId: string | null) => {
-    if (!selectedAssetId) return;
+  const moveFocusedAsset = async (libraryFolderId: string | null) => {
+    if (!focusedAssetId) return;
     setMoving(true);
     try {
       const response = await fetch(
-        `/api/attachment-library/${selectedAssetId}`,
+        `/api/attachment-library/${focusedAssetId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -266,8 +351,42 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     }
   };
 
-  const deleteSelectedAsset = async () => {
-    if (!selectedAssetId) return;
+  const bulkMoveSelection = async () => {
+    if (selectionCount === 0) return;
+    setMoving(true);
+    try {
+      const response = await fetch("/api/attachment-library/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetIds: [...checkedAssetIds],
+          folderIds: [...checkedFolderIds],
+          targetFolderId: bulkMoveTarget === "" ? null : bulkMoveTarget,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        movedAssets?: number;
+        movedFolders?: number;
+      };
+      if (!response.ok) {
+        toast.error(data.error ?? "Could not move selection");
+        return;
+      }
+      const moved =
+        (data.movedAssets ?? 0) + (data.movedFolders ?? 0);
+      toast.success(`Moved ${moved} item${moved === 1 ? "" : "s"}`);
+      setCheckedAssetIds(new Set());
+      setCheckedFolderIds(new Set());
+      setBulkMoveTarget("");
+      await loadLibrary();
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  const deleteFocusedAsset = async () => {
+    if (!focusedAssetId) return;
     if (
       !window.confirm(
         "Remove this file from your library? It will stay on reports that already use it, but you cannot add it to new reports."
@@ -278,7 +397,7 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     setDeleting(true);
     try {
       const response = await fetch(
-        `/api/attachment-library/${selectedAssetId}`,
+        `/api/attachment-library/${focusedAssetId}`,
         { method: "DELETE" }
       );
       const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -286,8 +405,13 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
         toast.error(data.error ?? "Could not remove file");
         return;
       }
-      setSelectedAssetId(null);
+      setFocusedAssetId(null);
       setGranteeIds([]);
+      setCheckedAssetIds((prev) => {
+        const next = new Set(prev);
+        next.delete(focusedAssetId);
+        return next;
+      });
       await loadLibrary();
       toast.success("Removed from library");
     } finally {
@@ -302,27 +426,20 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     return buildFolderChildren(library.folders, library.assets);
   }, [library]);
 
-  const selectedAsset = library?.assets.find((asset) => asset.id === selectedAssetId);
+  const focusedAsset = library?.assets.find((asset) => asset.id === focusedAssetId);
   const shareCandidates = workspaceUsers.filter(
     (user) => user.id !== currentUser.id
   );
-
   const folderOptions = library?.folders ?? [];
 
-  function folderLabel(folder: AttachmentLibraryFolderRecord): string {
-    const parts = [folder.name];
-    let parentId = folder.parentId;
-    while (parentId) {
-      const parent = folderOptions.find((item) => item.id === parentId);
-      if (!parent) break;
-      parts.unshift(parent.name);
-      parentId = parent.parentId;
-    }
-    return parts.join(" / ");
-  }
+  const moveTargetOptions = folderOptions.filter(
+    (folder) =>
+      !checkedFolderIds.has(folder.id) &&
+      !isFolderUnderAny(folder.id, checkedFolderIds, folderOptions)
+  );
 
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
+    <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
       <h2 className="text-base font-semibold">Document library</h2>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
         Organize files into folders, share them with colleagues, or remove them
@@ -340,9 +457,9 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
           file in a report to add it here.
         </p>
       ) : (
-        <div className="mt-5 grid gap-6 lg:grid-cols-[1.1fr_1fr]">
-          <div className="flex min-h-0 flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
+        <div className="mt-5 flex min-w-0 flex-col gap-6 lg:flex-row lg:items-start">
+          <div className="min-w-0 flex-1 lg:min-h-0">
+            <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-xs font-medium text-[var(--muted-foreground)]">
                 Your files
               </p>
@@ -350,7 +467,7 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1 px-2 text-xs"
+                className="h-7 shrink-0 gap-1 px-2 text-xs"
                 onClick={() => setCreatingFolder(true)}
               >
                 <FolderPlus className="size-3.5" aria-hidden="true" />
@@ -373,58 +490,127 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                     setNewFolderName("");
                   }
                 }}
-                className="rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                className="mb-2 w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
               />
             ) : null}
 
-            <div className="max-h-[min(420px,50vh)] min-h-[200px] overflow-y-auto rounded-md border border-[var(--border)] p-2">
+            {selectionCount > 0 ? (
+              <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-2 py-2">
+                <span className="text-xs font-medium text-[var(--foreground)]">
+                  {selectionCount} selected
+                </span>
+                <select
+                  aria-label="Move selected items to folder"
+                  value={bulkMoveTarget}
+                  onChange={(event) => setBulkMoveTarget(event.target.value)}
+                  className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs"
+                >
+                  <option value="">Top level</option>
+                  {moveTargetOptions.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folderLabel(folder, folderOptions)}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 shrink-0 text-xs"
+                  disabled={moving}
+                  onClick={() => void bulkMoveSelection()}
+                >
+                  {moving ? "Moving…" : "Move"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 text-xs"
+                  onClick={() => {
+                    setCheckedAssetIds(new Set());
+                    setCheckedFolderIds(new Set());
+                  }}
+                >
+                  Clear
+                </Button>
+              </div>
+            ) : null}
+
+            <div className="max-h-[min(420px,50vh)] overflow-y-auto overscroll-contain rounded-md border border-[var(--border)] bg-[var(--background)] px-1 py-2">
               <LibraryProfileTree
                 folderId={null}
                 depth={0}
                 foldersByParent={tree.foldersByParent}
                 assetsByFolder={tree.assetsByFolder}
-                selectedAssetId={selectedAssetId}
-                onSelectAsset={selectAsset}
+                focusedAssetId={focusedAssetId}
+                checkedAssetIds={checkedAssetIds}
+                checkedFolderIds={checkedFolderIds}
+                onFocusAsset={focusAsset}
+                onToggleAssetCheck={(id, checked) => {
+                  setCheckedAssetIds((prev) => {
+                    const next = new Set(prev);
+                    if (checked) next.add(id);
+                    else next.delete(id);
+                    return next;
+                  });
+                }}
+                onToggleFolderCheck={(id, checked) => {
+                  setCheckedFolderIds((prev) => {
+                    const next = new Set(prev);
+                    if (checked) next.add(id);
+                    else next.delete(id);
+                    return next;
+                  });
+                }}
                 onDeleteFolder={(folderId) => void deleteFolder(folderId)}
               />
             </div>
           </div>
 
-          <div className="min-h-0">
-            {selectedAsset ? (
+          <div className="min-w-0 w-full shrink-0 lg:w-72 lg:border-l lg:border-[var(--border)] lg:pl-6">
+            {focusedAsset ? (
               <div className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-medium">{selectedAsset.filename}</h3>
+                <div className="min-w-0">
+                  <h3 className="truncate text-sm font-medium">
+                    {focusedAsset.filename}
+                  </h3>
                   <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-                    Uploaded {formatLibraryUploadedAt(selectedAsset.uploadedAt)}
+                    Uploaded {formatLibraryUploadedAt(focusedAsset.uploadedAt)}
                   </p>
                 </div>
 
-                <div className="space-y-2">
-                  <label
-                    htmlFor="library-folder-move"
-                    className="text-sm font-medium"
-                  >
-                    Folder
-                  </label>
-                  <select
-                    id="library-folder-move"
-                    disabled={moving}
-                    value={selectedAsset.libraryFolderId ?? ""}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      void moveSelectedAsset(value === "" ? null : value);
-                    }}
-                    className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
-                  >
-                    <option value="">Top level</option>
-                    {folderOptions.map((folder) => (
-                      <option key={folder.id} value={folder.id}>
-                        {folder.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {selectionCount <= 1 ? (
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="library-folder-move"
+                      className="text-sm font-medium"
+                    >
+                      Folder
+                    </label>
+                    <select
+                      id="library-folder-move"
+                      disabled={moving}
+                      value={focusedAsset.libraryFolderId ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        void moveFocusedAsset(value === "" ? null : value);
+                      }}
+                      className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
+                    >
+                      <option value="">Top level</option>
+                      {folderOptions.map((folder) => (
+                        <option key={folder.id} value={folder.id}>
+                          {folderLabel(folder, folderOptions)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Use the move bar above the file list to relocate{" "}
+                    {selectionCount} selected items.
+                  </p>
+                )}
 
                 <div>
                   <h3 className="text-sm font-medium">Shared with</h3>
@@ -453,7 +639,7 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                     type="button"
                     variant="outline"
                     disabled={deleting}
-                    onClick={() => void deleteSelectedAsset()}
+                    onClick={() => void deleteFocusedAsset()}
                     className="text-[var(--destructive)] hover:text-[var(--destructive)]"
                   >
                     {deleting ? "Removing…" : "Remove from library"}
@@ -462,8 +648,8 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
               </div>
             ) : (
               <p className="text-sm text-[var(--muted-foreground)]">
-                Select a document to organize, share, or remove it from your
-                library.
+                Select a document to manage sharing, or check several files and
+                folders to move them together.
               </p>
             )}
           </div>
