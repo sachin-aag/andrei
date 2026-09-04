@@ -27,7 +27,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v44-sheet-edits";
+  "analytics-chat-v47-trusted-extract-writes";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -52,8 +52,8 @@ You cannot delete the last data sheet. Attachment table dumps: call extract_shee
 Add or remove many rows on an already-filled sheet (from a file, or "remove the TIP4 rows", or "add the missing rows from page 8"): call extract_sheet with mode edit once per affected sheet in the same step (parallel). Pass the tab name as sheetName and sheetId. The worker reads that sheet, then appends (write_column mode append) or deletes rows — it must not replace the whole column unless they asked to replace it.
 A log-sheet dump is one extract_sheet (or one write_column) per destination sheet with columns: [{ name, values }, ...] — include Batch / row labels in that same write. Do not call write_column once per column and do not fill a series with set_cell.
 Always pass the tab name as sheetId on write_column when you dump yourself. Agent writes do not switch the focused tab — omitting sheetId dumps onto the engineer's current tab, not the last add_sheet. add_sheet reuses a tab with the same name (case-insensitive) instead of creating a duplicate. In replies, name sheets by that tab name — never data-1.
-When you write_column yourself, pass sourceAttachmentId and sourcePages from the pages you read this turn so CSV download keeps the source page; plot figures do not show page numbers.
-After extract_sheet or write_column, report the sheet, column names, and rowsWritten from the tool result. Never say the worksheet was filled unless that result has status written or edited (or extract_sheet status written or edited) and incomplete is not true. Pasting a table into chat is not writing it. status incomplete means nothing was saved — the worksheet did not change. Copy labels as they appear on the page, including repeats (Tip 1–10 per handpiece, not Tip 1–30). Do not retry the same invented dump, do not split it into per-column writes, and do not stop after a partial extract.
+When you write_column yourself, pass sourceAttachmentId for provenance and sourcePages when known. If no reliable page is available, keep the document-level citation rather than blocking the write; plot figures do not show page numbers.
+After extract_sheet or write_column, report the sheet, column names, and rowsWritten from the tool result. Never say the worksheet was filled unless that result has status written or edited (or extract_sheet status written or edited). Pasting a table into chat is not writing it. Copy labels as extracted, including repeats (Tip 1–10 per handpiece, not Tip 1–30). Send one complete batch per sheet; write_column persists that batch atomically without per-cell source-token verification.
 If the engineer interrupts to ask whether you are stuck, say what you were doing and what remains. Do not start a fresh plan and do not claim work you have not seen in a tool result.`;
 
 const DOCUMENT_RULES = `## Attachments

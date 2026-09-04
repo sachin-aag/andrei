@@ -53,8 +53,6 @@ import {
 } from "@/lib/attachments/retrieval";
 import {
   ANALYTICS_CHAT_TOOL_NAMES,
-  WRITE_COLUMN_INCOMPLETE_MESSAGE,
-  WRITE_COLUMN_NEED_SOURCE_MESSAGE,
   buildAnalyticsChatTools,
   extractNumericTokens,
   extractSeriesHasMorePages,
@@ -206,6 +204,29 @@ describe("analytics chat tools", () => {
     expect(locked.search_documents?.description).not.toContain(
       "truncated=true means keep grepping"
     );
+  });
+
+  it("refuses to scan an attachment outside the tagged scope", async () => {
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: false,
+      documentType: "mechanical_design_verification",
+      pinnedAttachmentIds: ["att_tagged"],
+    });
+    const execute = tools.scan_attachments?.execute;
+    if (!execute) throw new Error("scan_attachments has no execute");
+    const result = await execute(
+      { attachmentIds: ["att_other"], query: "M3-SYS-FN-037" },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "attachment_out_of_scope",
+      attachmentId: "att_other",
+    });
   });
 
   it("flags morePages only when the extract hit the page cap", () => {
@@ -642,7 +663,7 @@ describe("analytics chat tools", () => {
     ).toEqual(["101.4", "102.1"]);
   });
 
-  it("does not bypass source verification on a single-column retry", async () => {
+  it("trusts a complete single-column extractor batch without token verification", async () => {
     const initial = analyticsView();
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
     vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
@@ -676,13 +697,18 @@ describe("analytics chat tools", () => {
       }
     );
     expect(result).toMatchObject({
-      status: "incomplete",
-      rowsWritten: 0,
-      blankedCount: 2,
-      incomplete: true,
-      message: WRITE_COLUMN_INCOMPLETE_MESSAGE,
+      status: "written",
+      rowsWritten: 2,
+      blankedCount: 0,
+      incomplete: false,
     });
-    expect(updateReportAnalytics).not.toHaveBeenCalled();
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(saved.columns[0]?.values).toEqual([
+      "Handpiece Adapter #1 (No S/N)",
+      "Handpiece Adapter #2 (No S/N)",
+    ]);
   });
 
   it("reports destination and non-numeric cells after write_column", async () => {
@@ -999,15 +1025,9 @@ describe("analytics chat tools", () => {
     expect(tools.write_column?.description).toContain(
       "leftmost empty C1–C8 columns"
     );
+    expect(tools.write_column?.description).toContain("atomically persists");
     expect(tools.write_column?.description).toContain(
-      "do not call this tool once per column"
-    );
-    expect(tools.write_column?.description).toContain("never invent 0");
-    expect(tools.write_column?.description).toContain(
-      "CSV download keeps the source page"
-    );
-    expect(tools.write_column?.description).toContain(
-      "Plot figures do not show page numbers"
+      "does not compare every cell against source-page tokens"
     );
     expect(tools.write_column?.description).toContain(
       "Do not substitute a sixpack or ANOVA for a scatter"
@@ -1016,22 +1036,16 @@ describe("analytics chat tools", () => {
       "Always pass the tab name as sheetId"
     );
     expect(tools.write_column?.description).toContain(
-      "Do not retry the same invented dump"
+      "sourcePages when known"
     );
     expect(tools.write_column?.description).toContain(
-      "Search snippets are not a page read"
-    );
-    expect(tools.write_column?.description).toContain(
-      "status incomplete means nothing was saved"
+      "document name is retained without a page"
     );
     expect(tools.write_column?.description).toContain(
       "one sheet per call"
     );
     expect(tools.write_column?.description).toContain(
-      "Separate extracts per destination sheet are correct"
-    );
-    expect(tools.write_column?.description).toContain(
-      "do not call this after the first extract"
+      "do not call this after the first extract or scan"
     );
     expect(tools.extract_numeric_series?.description).toContain(
       "If morePages is true"
@@ -1041,9 +1055,6 @@ describe("analytics chat tools", () => {
     );
     expect(tools.manage_worksheet?.description).toContain(
       "reuses a tab with the same name"
-    );
-    expect(tools.write_column?.description).toContain(
-      "do not switch the focused tab"
     );
     expect(tools.manage_worksheet?.description).toContain(
       "at most once per turn"
@@ -1219,7 +1230,13 @@ describe("analytics chat tools", () => {
     });
   });
 
-  it("refuses a table dump with no source page text", async () => {
+  it("atomically writes a complete table batch without source page text", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
     const tools = buildAnalyticsChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -1241,13 +1258,14 @@ describe("analytics chat tools", () => {
       }
     );
     expect(result).toMatchObject({
-      status: "need_source",
-      message: WRITE_COLUMN_NEED_SOURCE_MESSAGE,
+      status: "written",
+      columnCount: 2,
+      incomplete: false,
     });
-    expect(updateReportAnalytics).not.toHaveBeenCalled();
+    expect(updateReportAnalytics).toHaveBeenCalledTimes(1);
   });
 
-  it("blanks invented O2 zeros that are not between Air and DO on the source page", async () => {
+  it("does not reject a complete batch for source-token mismatches", async () => {
     const initial = analyticsView();
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
     vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
@@ -1284,12 +1302,16 @@ describe("analytics chat tools", () => {
       }
     );
     expect(result).toMatchObject({
-      status: "incomplete",
-      blankedCount: 2,
-      incomplete: true,
-      message: WRITE_COLUMN_INCOMPLETE_MESSAGE,
+      status: "written",
+      blankedCount: 0,
+      incomplete: false,
     });
-    expect(updateReportAnalytics).not.toHaveBeenCalled();
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(
+      saved.columns.find((column) => column.name === "O2 flow (LPM)")?.values
+    ).toEqual(["0", "0"]);
   });
 
   it("keeps Tip N and split handpiece SNs on a torque table dump", async () => {
@@ -1348,7 +1370,7 @@ describe("analytics chat tools", () => {
     ).toEqual(["3", "2.5"]);
   });
 
-  it("blanks invented 0.02 when the source token is 02", async () => {
+  it("preserves extractor decimal values without exact token matching", async () => {
     const initial = analyticsView();
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
     vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
@@ -1383,12 +1405,16 @@ describe("analytics chat tools", () => {
       }
     );
     expect(result).toMatchObject({
-      status: "incomplete",
-      blankedCount: 1,
-      incomplete: true,
-      message: WRITE_COLUMN_INCOMPLETE_MESSAGE,
+      status: "written",
+      blankedCount: 0,
+      incomplete: false,
     });
-    expect(updateReportAnalytics).not.toHaveBeenCalled();
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(
+      saved.columns.find((column) => column.name === "O2 flow (LPM)")?.values
+    ).toEqual(["0.02"]);
   });
 
   it("stamps remembered extract pages onto a single-series write", async () => {
@@ -1452,6 +1478,53 @@ describe("analytics chat tools", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("keeps the document name as provenance when no page is available", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    vi.mocked(listReadyDocumentsForReport).mockResolvedValue([
+      {
+        attachmentId: "att_1",
+        filename: "Mechanical Test Report.pdf",
+        description: null,
+        pageCount: 273,
+        ingestRunId: "run_1",
+        documentSummary: null,
+      },
+    ]);
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "mechanical_design_verification",
+    });
+    const write = tools.write_column?.execute;
+    if (!write) throw new Error("write_column has no execute");
+    await write(
+      {
+        sourceAttachmentId: "att_1",
+        columns: [{ name: "Power (Watts)", values: [3.081, 2.999] }],
+      },
+      {
+        toolCallId: "write",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { citations?: unknown }[];
+    };
+    expect(saved.columns[0]?.citations).toEqual([
+      {
+        attachmentId: "att_1",
+        page: null,
+        filename: "Mechanical Test Report.pdf",
+      },
+    ]);
   });
 
   it("reports morePages when extract hits the 6-page cap on a longer file", async () => {

@@ -246,7 +246,7 @@ export function buildSheetWorkerPrompt(input: SheetExtractJobInput): string {
       "If they asked to add blank rows: add_row with optional count (row inserts at that position).",
       "If they asked to add measurements from a file: pull every remaining page of that series, then one write_column with mode append and sheetId. Do not use replace — that wipes existing rows.",
       "If they asked to replace a column entirely, write_column mode replace is OK.",
-      "status incomplete means nothing was saved — read remaining pages and write the complete added rows once.",
+      "Write the complete added rows once; write_column persists the provided batch atomically without per-cell source-token verification.",
       "Do not plot. Do not ask the engineer questions. If a needed id is missing, finish with a short error in your last message.",
       "Reply with one short sentence after a successful edit (what changed).",
     ]
@@ -261,7 +261,7 @@ export function buildSheetWorkerPrompt(input: SheetExtractJobInput): string {
     "Create this sheet with manage_worksheet add_sheet if it does not already exist. Use the assigned name. If a sheet with this name already exists, reuse it — do not create a second tab with the same name. Do not rename or delete other sheets.",
     "Pull every page that contains THIS table or series. If extract_numeric_series returns morePages true, or scan_attachments returns truncated true, keep reading those pages.",
       "Then one write_column to this sheet only (mode replace). Always pass the assigned sheet name as sheetId. Agent writes do not switch the focused tab — omitting sheetId writes the engineer's current tab. Do not write other sheets. Do not invent cells. In your reply, use that tab name — not an internal id.",
-    "status incomplete means nothing was saved — read remaining pages and write the complete table once.",
+    "Write the complete table once; write_column persists the provided batch atomically without per-cell source-token verification.",
     "Do not plot. Do not ask the engineer questions. If a needed id is missing, finish with a short error in your last message.",
     "Reply with one short sentence after a successful write (sheet name, columns, rowsWritten).",
   ]

@@ -187,6 +187,24 @@ describe("searchReportDocuments with tagged attachments", () => {
     expect(embedMock).toHaveBeenCalledTimes(1);
   });
 
+  it("does not backfill when explicit tags define the attachment scope", async () => {
+    limitMock
+      .mockResolvedValueOnce([chunkRow("c1", "att_1")])
+      .mockResolvedValueOnce([]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "dissolution failure",
+      limit: 3,
+      attachmentIds: ["att_1"],
+      backfill: false,
+    });
+
+    expect(results.map((r) => r.chunkId)).toEqual(["c1"]);
+    expect(results.map((r) => r.pinned)).toEqual([true]);
+    expect(limitMock).toHaveBeenCalledTimes(2);
+  });
+
   it("skips retrieval entirely for a blank query", async () => {
     const results = await searchReportDocuments({
       reportId: "report-1",

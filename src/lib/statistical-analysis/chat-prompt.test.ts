@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v44-sheet-edits"
+      "analytics-chat-v47-trusted-extract-writes"
     );
   });
 
@@ -82,10 +82,7 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("never data-1");
     expect(prompt).toContain("reuses a tab with the same name");
     expect(prompt).toContain("do not dump every table onto the engineer's current tab");
-    expect(prompt).toContain("Do not retry the same invented dump");
-    expect(prompt).toContain("do not stop after a partial extract");
     expect(prompt).toContain("Each worker creates that sheet");
-    expect(prompt).toContain("status incomplete means nothing was saved");
     expect(prompt).toContain("morePages true");
     expect(prompt).toContain("Search snippets are not enough to fill the worksheet");
     expect(prompt).toContain("do not write_column until every page of that table is in");
@@ -99,10 +96,14 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("Do not dump the table on the next page");
     expect(prompt).toContain("requirement ID");
     expect(prompt).toContain("If they skipped a page-number question");
-    expect(prompt).toContain("a dump with some blank cells is not a reason to stop");
+    expect(prompt).toContain("Send one complete batch per sheet");
+    expect(prompt).toContain("persists that batch atomically");
     expect(prompt).toContain("A page can hold more than one table");
     expect(prompt).toContain("do not substitute a different table");
-    expect(prompt).toContain("sourceAttachmentId and sourcePages");
+    expect(prompt).toContain("sourceAttachmentId for provenance");
+    expect(prompt).toContain("sourcePages when known");
+    expect(prompt).toContain("document-level citation");
+    expect(prompt).toContain("without per-cell source-token verification");
     expect(prompt).toContain("plot figures do not show page numbers");
     expect(prompt).toContain("Do not write 0 or any other number");
     expect(prompt).toContain("Do not copy decimal format from a neighboring column");

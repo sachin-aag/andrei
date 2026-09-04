@@ -139,6 +139,7 @@ import {
   mentionedAttachmentIds,
   mentionedSections,
   parseChatMentions,
+  recoverDocumentMentionIds,
   resolveChatMentions,
   sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
@@ -289,10 +290,22 @@ async function handleChatPost(
       unknown
     >;
   }
+  const requestedDocumentIds = new Set(
+    requestedMentions
+      .filter((mention) => mention.type === "document")
+      .map((mention) => mention.id)
+  );
+  const recoveredDocumentIds = recoverDocumentMentionIds(userText, documents).filter(
+    (id) => !requestedDocumentIds.has(id)
+  );
+  const mentionsForResolution = [
+    ...requestedMentions,
+    ...recoveredDocumentIds.map((id) => ({ type: "document" as const, id })),
+  ];
   // Resolved against this report's ready documents only, so a tagged
   // attachment id from another report cannot pull in its evidence.
   const mentions = resolveChatMentions(
-    requestedMentions,
+    mentionsForResolution,
     documents,
     analytics?.analyses ?? []
   );
@@ -613,6 +626,7 @@ async function handleChatPost(
           sectionScope,
           canEdit,
           taggedDocuments: mentions.documents.length,
+          recoveredDocumentTags: recoveredDocumentIds.length,
           taggedSections: mentions.sections.length,
           taggedAnalyses: mentions.analyses.length,
           chatPromptVersion: CHAT_PROMPT_VERSION,

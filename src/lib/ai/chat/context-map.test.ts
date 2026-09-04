@@ -181,6 +181,8 @@ describe("buildReportContextMap", () => {
     expect(demo).toContain(
       `table 0 headers: ${DV_TRACEABILITY_HEADERS.join(" | ")} (1 data row)`
     );
+    expect(demo).toContain("Traceability [traceability] — empty");
+    expect(demo).toContain("table: empty");
     expect(demo).not.toContain(CONVERGENT_RESULTS_HEADERS.join(" | "));
   });
 

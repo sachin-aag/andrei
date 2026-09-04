@@ -286,18 +286,28 @@ describe("formatChartProvenance", () => {
 });
 
 describe("uniqueChartCitations", () => {
-  it("deduplicates attachment/page pairs and drops invalid pages", () => {
+  it("deduplicates page and document-level citations and drops invalid pages", () => {
     expect(
       uniqueChartCitations([
         { attachmentId: "att_1", page: 31 },
         { attachmentId: " att_1 ", page: 31 },
         { attachmentId: "att_1", page: 32 },
+        {
+          attachmentId: "att_2",
+          page: null,
+          filename: " Mechanical report.pdf ",
+        },
         { attachmentId: "", page: 1 },
         { attachmentId: "att_2", page: 0 },
       ])
     ).toEqual([
       { attachmentId: "att_1", page: 31 },
       { attachmentId: "att_1", page: 32 },
+      {
+        attachmentId: "att_2",
+        page: null,
+        filename: "Mechanical report.pdf",
+      },
     ]);
   });
 });
@@ -305,6 +315,15 @@ describe("uniqueChartCitations", () => {
 describe("formatChartCitationPages", () => {
   it("returns null when there are no citations", () => {
     expect(formatChartCitationPages([])).toBeNull();
+    expect(
+      formatChartCitationPages([
+        {
+          attachmentId: "att_1",
+          page: null,
+          filename: "Mechanical report.pdf",
+        },
+      ])
+    ).toBeNull();
   });
 
   it("formats a page range", () => {

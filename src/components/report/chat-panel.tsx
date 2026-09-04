@@ -118,6 +118,16 @@ import {
   sessionTabSnapshotsEqual,
   type SessionTabSnapshot,
 } from "@/lib/ai/chat/session-tab";
+import { ChatMentionMenu } from "@/components/report/chat-mention-menu";
+import { useMentionMenuPosition } from "@/hooks/use-mention-menu-position";
+import {
+  MENTIONS_ATTACHMENTS_GROUP,
+  buildChatMentionMenu,
+  mentionMenuAtPath,
+  mentionMenuGroupLabel,
+  mentionMenuLeaves,
+  type MentionMenuGroup,
+} from "@/lib/ai/chat/mention-menu";
 import {
   applyMentionToInput,
   filterMentionCandidates,
@@ -330,62 +340,6 @@ function MentionChips({
   );
 }
 
-function MentionMenu({
-  matches,
-  activeIndex,
-  onSelect,
-}: {
-  matches: MentionCandidate[];
-  activeIndex: number;
-  onSelect: (candidate: MentionCandidate) => void;
-}) {
-  return (
-    <div
-      id="chat-mention-menu"
-      role="listbox"
-      aria-label="Tag a document or section"
-      className="absolute bottom-full left-0 z-50 mb-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-xl"
-    >
-      {matches.map((candidate, index) => {
-        const Icon = mentionIcon(candidate.type);
-        return (
-          <button
-            key={mentionKey(candidate.type, candidate.id)}
-            id={`chat-mention-option-${index}`}
-            type="button"
-            role="option"
-            aria-selected={index === activeIndex}
-            // Keep focus in the textarea so the caret position stays valid.
-            onMouseDown={(event) => {
-              event.preventDefault();
-              onSelect(candidate);
-            }}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--secondary)]",
-              index === activeIndex && "bg-[var(--secondary)]"
-            )}
-          >
-            <Icon
-              className="size-3.5 shrink-0 text-[var(--primary)]"
-              aria-hidden="true"
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium">{candidate.label}</span>
-              {candidate.sublabel ? (
-                <span className="block truncate text-[11px] text-[var(--muted-foreground)]">
-                  {candidate.sublabel}
-                </span>
-              ) : null}
-            </span>
-            <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
-              {candidate.type}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 const MessageTurn = memo(function MessageTurn({
   message,
@@ -643,7 +597,7 @@ export function ChatPanel({
     accessUser != null
       ? aiSuggestionLockReason(accessUser, report)
       : "You can't propose edits on this report right now.";
-  const { attachments } = useReportAttachments();
+  const { attachments, folders } = useReportAttachments();
   const filenameByAttachmentId = useMemo(() => {
     const map = new Map<string, string>();
     for (const attachment of attachments) {
@@ -657,6 +611,8 @@ export function ChatPanel({
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
   const [mentionRange, setMentionRange] = useState<MentionQuery | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionPath, setMentionPath] = useState<string[]>([]);
+  const [mentionMenuToken, setMentionMenuToken] = useState(-1);
   const [analyticsSnapshot, setAnalyticsSnapshot] =
     useState<ReportAnalyticsView | null>(null);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
@@ -755,6 +711,9 @@ export function ChatPanel({
   }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionAnchorRef = useRef<HTMLDivElement>(null);
+  const mentionBoundaryRef = useRef<HTMLDivElement>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
@@ -840,67 +799,62 @@ export function ChatPanel({
     void refresh();
   }, [persistedEditCount, refresh]);
 
-  // Only ready documents are taggable — an attachment still being ingested has
-  // no chunks, so scoping search to it would return nothing.
-  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
-    const documents = attachments
-      .filter((attachment) => attachment.processingStatus === "ready")
-      .map((attachment) => {
-        const description = attachment.description?.trim();
-        const pages =
-          typeof attachment.pageCount === "number" && attachment.pageCount > 0
-            ? `${attachment.pageCount} page${attachment.pageCount === 1 ? "" : "s"}`
-            : undefined;
-        return {
-          type: "document" as const,
-          id: attachment.id,
-          label: attachment.filename,
-          sublabel: description || pages,
-        };
-      });
-    if (targetingAnalytics) {
-      const sheets =
-        mentionSheets.length > 0
-          ? analyticsSheetMentionCandidates(mentionSheets)
-          : analyticsSnapshot
-            ? analyticsSheetMentionCandidates(
-                dataSheets(analyticsSnapshot.worksheet).map((sheet) => ({
-                  sheetId: sheet.id,
-                  name: sheet.name,
-                  columnCount: sheet.columns.length,
-                }))
-              )
-            : [];
-      const analyses = (analyticsSnapshot?.analyses ?? []).map((item) => ({
-        type: "analysis" as const,
-        id: item.id,
-        label: item.title,
-        sublabel: analysisListSubtitle(item),
-      }));
-      return [...sheets, ...analyses, ...documents];
-    }
-    const sections = chatEditableSections(report.documentType).map((section) => ({
-      type: "section" as const,
-      id: section,
-      label: sectionLabel(section),
-    }));
-    const analyses = statsEnabled
-      ? listGraphAnalyses(analyticsSnapshot?.analyses ?? []).map((item) => ({
-          type: "analysis" as const,
-          id: item.id,
-          label: item.title,
-          sublabel: analysisListSubtitle(item),
-        }))
-      : [];
-    return [...documents, ...sections, ...analyses];
-  }, [
-    analyticsSnapshot,
-    attachments,
-    mentionSheets,
-    report.documentType,
-    statsEnabled,
-    targetingAnalytics,
-  ]);
+  const mentionMenu = useMemo(
+    () =>
+      buildChatMentionMenu({
+        targetingAnalytics,
+        attachments,
+        folders,
+        sections: targetingAnalytics
+          ? []
+          : chatEditableSections(report.documentType).map((section) => ({
+              type: "section" as const,
+              id: section,
+              label: sectionLabel(section),
+            })),
+        sheets: targetingAnalytics
+          ? mentionSheets.length > 0
+            ? analyticsSheetMentionCandidates(mentionSheets)
+            : analyticsSnapshot
+              ? analyticsSheetMentionCandidates(
+                  dataSheets(analyticsSnapshot.worksheet).map((sheet) => ({
+                    sheetId: sheet.id,
+                    name: sheet.name,
+                    columnCount: sheet.columns.length,
+                  }))
+                )
+              : []
+          : [],
+        analyses: targetingAnalytics
+          ? (analyticsSnapshot?.analyses ?? []).map((item) => ({
+              type: "analysis" as const,
+              id: item.id,
+              label: item.title,
+              sublabel: analysisListSubtitle(item),
+            }))
+          : statsEnabled
+            ? listGraphAnalyses(analyticsSnapshot?.analyses ?? []).map((item) => ({
+                type: "analysis" as const,
+                id: item.id,
+                label: item.title,
+                sublabel: analysisListSubtitle(item),
+              }))
+            : [],
+      }),
+    [
+      analyticsSnapshot,
+      attachments,
+      folders,
+      mentionSheets,
+      report.documentType,
+      statsEnabled,
+      targetingAnalytics,
+    ]
+  );
+  const mentionCandidates = useMemo(
+    () => mentionMenuLeaves(mentionMenu),
+    [mentionMenu]
+  );
   const labeledMentions = syncMentionCandidateLabels(
     mentions,
     mentionCandidates
@@ -909,14 +863,41 @@ export function ChatPanel({
     setMentions(labeledMentions);
   }
 
-  const mentionMatches = mentionRange
-    ? filterMentionCandidates(mentionCandidates, mentionRange.query)
+  const mentionTokenStart = mentionRange?.start ?? -1;
+  if (mentionTokenStart !== mentionMenuToken) {
+    setMentionMenuToken(mentionTokenStart);
+    setMentionPath([]);
+    setMentionIndex(0);
+  }
+
+  const mentionQuery = mentionRange?.query.trim() ?? "";
+  const mentionEntries = mentionRange
+    ? mentionQuery
+      ? filterMentionCandidates(mentionCandidates, mentionRange.query).map(
+          (candidate) => ({ kind: "item" as const, candidate })
+        )
+      : mentionMenuAtPath(mentionMenu, mentionPath)
     : [];
-  const mentionMenuOpen = mentionMatches.length > 0;
+  const mentionMenuOpen = mentionRange != null;
   const activeMentionIndex = Math.min(
     mentionIndex,
-    Math.max(mentionMatches.length - 1, 0)
+    Math.max(mentionEntries.length - 1, 0)
   );
+  const mentionGroupLabel = mentionMenuGroupLabel(mentionMenu, mentionPath);
+  const mentionEmptyLabel = mentionQuery
+    ? "No matching tags"
+    : mentionPath[0] === MENTIONS_ATTACHMENTS_GROUP
+      ? "No files ready"
+      : "Nothing to tag";
+  const mentionMenuPosition = useMentionMenuPosition({
+    open: mentionMenuOpen,
+    atIndex: mentionRange?.start ?? 0,
+    textareaRef,
+    anchorRef: mentionAnchorRef,
+    boundaryRef: mentionBoundaryRef,
+    menuRef: mentionMenuRef,
+    deps: [mentionEntries.length, mentionPath, input],
+  });
 
   const persistComposerPrefs = useCallback(
     (next: {
@@ -986,8 +967,10 @@ export function ChatPanel({
   }, [input]);
 
   const updateMentionQuery = useCallback((value: string, caret: number) => {
-    setMentionRange(findMentionQuery(value, caret));
+    const next = findMentionQuery(value, caret);
+    setMentionRange(next);
     setMentionIndex(0);
+    if (next?.query.trim()) setMentionPath([]);
   }, []);
 
   const selectMention = useCallback(
@@ -1009,10 +992,21 @@ export function ChatPanel({
           : [...prev, candidate]
       );
       setMentionRange(null);
+      setMentionPath([]);
       setMentionIndex(0);
     },
     [applyMentionFocus, mentionRange]
   );
+
+  const drillMentionGroup = useCallback((group: MentionMenuGroup) => {
+    setMentionPath(group.path);
+    setMentionIndex(0);
+  }, []);
+
+  const backMentionMenu = useCallback(() => {
+    setMentionPath((path) => path.slice(0, -1));
+    setMentionIndex(0);
+  }, []);
 
   const removeMention = useCallback((candidate: MentionCandidate) => {
     setMentions((prev) =>
@@ -1529,7 +1523,7 @@ export function ChatPanel({
   );
 
   return (
-    <div className="flex h-full flex-col" aria-busy={initializing}>
+    <div ref={mentionBoundaryRef} className="flex h-full flex-col" aria-busy={initializing}>
       {mountedSessions.map((session) => (
         <ChatSessionHost
           key={session.id}
@@ -1794,12 +1788,19 @@ export function ChatPanel({
               ))}
             </div>
           ) : null}
-          <div className="relative">
+          <div ref={mentionAnchorRef} className="relative">
             {mentionMenuOpen ? (
-              <MentionMenu
-                matches={mentionMatches}
+              <ChatMentionMenu
+                entries={mentionEntries}
                 activeIndex={activeMentionIndex}
-                onSelect={selectMention}
+                groupLabel={mentionGroupLabel}
+                canGoBack={mentionPath.length > 0 && !mentionQuery}
+                emptyLabel={mentionEmptyLabel}
+                position={mentionMenuPosition}
+                menuRef={mentionMenuRef}
+                onSelectItem={selectMention}
+                onSelectGroup={drillMentionGroup}
+                onBack={backMentionMenu}
               />
             ) : null}
             <textarea
@@ -1810,7 +1811,7 @@ export function ChatPanel({
               aria-expanded={mentionMenuOpen}
               aria-controls={mentionMenuOpen ? "chat-mention-menu" : undefined}
               aria-activedescendant={
-                mentionMenuOpen
+                mentionMenuOpen && mentionEntries.length > 0
                   ? `chat-mention-option-${activeMentionIndex}`
                   : undefined
               }
@@ -1819,6 +1820,11 @@ export function ChatPanel({
                 const value = e.target.value;
                 setInput(value);
                 updateMentionQuery(value, e.target.selectionStart ?? value.length);
+              }}
+              onSelect={(e) => {
+                if (voiceLock || !mentionMenuOpen) return;
+                const target = e.currentTarget;
+                updateMentionQuery(target.value, target.selectionStart ?? target.value.length);
               }}
               onPaste={(event) => {
                 if (voiceLock) {
@@ -1842,28 +1848,53 @@ export function ChatPanel({
                   return;
                 }
                 if (mentionMenuOpen) {
+                  const entryCount = mentionEntries.length;
+                  const activeEntry = mentionEntries[activeMentionIndex];
                   if (e.key === "ArrowDown") {
                     e.preventDefault();
-                    setMentionIndex((index) => (index + 1) % mentionMatches.length);
+                    if (entryCount === 0) return;
+                    setMentionIndex((index) => (index + 1) % entryCount);
                     return;
                   }
                   if (e.key === "ArrowUp") {
                     e.preventDefault();
+                    if (entryCount === 0) return;
                     setMentionIndex(
-                      (index) =>
-                        (index - 1 + mentionMatches.length) % mentionMatches.length
+                      (index) => (index - 1 + entryCount) % entryCount
                     );
+                    return;
+                  }
+                  if (e.key === "ArrowRight" && activeEntry?.kind === "group") {
+                    e.preventDefault();
+                    drillMentionGroup(activeEntry);
+                    return;
+                  }
+                  if (
+                    e.key === "ArrowLeft" &&
+                    mentionPath.length > 0 &&
+                    !mentionQuery
+                  ) {
+                    e.preventDefault();
+                    backMentionMenu();
                     return;
                   }
                   if (e.key === "Enter" || e.key === "Tab") {
                     e.preventDefault();
-                    const candidate = mentionMatches[activeMentionIndex];
-                    if (candidate) selectMention(candidate);
+                    if (activeEntry?.kind === "group") {
+                      drillMentionGroup(activeEntry);
+                    } else if (activeEntry?.kind === "item") {
+                      selectMention(activeEntry.candidate);
+                    }
                     return;
                   }
                   if (e.key === "Escape") {
                     e.preventDefault();
-                    setMentionRange(null);
+                    if (mentionPath.length > 0 && !mentionQuery) {
+                      backMentionMenu();
+                    } else {
+                      setMentionRange(null);
+                      setMentionPath([]);
+                    }
                     return;
                   }
                 }

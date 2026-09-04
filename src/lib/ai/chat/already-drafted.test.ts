@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
+import { MECHANICAL_RESULTS_HEADERS } from "@/lib/document-types/mechanical/sections";
 import {
   alreadyDraftedBlock,
   alreadyDraftedGapHints,
@@ -162,6 +164,22 @@ describe("detectAlreadyDraftedSection", () => {
           purpose: purposeDoc(
             "This verification confirms the Solea handpiece meets design inputs under protocol EXE-100."
           ),
+        },
+      })
+    ).toBeNull();
+  });
+
+  it("does not treat header-only seeded results tables as already drafted", () => {
+    expect(
+      detectAlreadyDraftedSection({
+        userText: "draft the Requirements Verified section",
+        userIntentKind: "write",
+        documentType: "mechanical_design_verification",
+        sections: {
+          requirements_verified: {
+            hardwareTable: seededTableDoc(MECHANICAL_RESULTS_HEADERS),
+            systemTable: seededTableDoc(MECHANICAL_RESULTS_HEADERS),
+          },
         },
       })
     ).toBeNull();

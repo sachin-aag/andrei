@@ -349,7 +349,10 @@ function scatterToCsv(
   );
   const citationRows = analysis.results.specs.flatMap((item) =>
     item.citations.map((citation) =>
-      csvRow([citation.attachmentId, String(citation.page)])
+      csvRow([
+        citation.filename ?? citation.attachmentId,
+        citation.page == null ? "" : String(citation.page),
+      ])
     )
   );
   const lines = [
@@ -399,7 +402,10 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
   );
   const citationRows = analysis.results.specs.flatMap((item) =>
     item.citations.map((citation) =>
-      csvRow([citation.attachmentId, String(citation.page)])
+      csvRow([
+        citation.filename ?? citation.attachmentId,
+        citation.page == null ? "" : String(citation.page),
+      ])
     )
   );
   const lines = [

@@ -127,6 +127,31 @@ describe("buildAnalyticsSearchDocumentsTool", () => {
     });
   });
 
+  it("keeps tagged searches inside the selected attachment scope", async () => {
+    searchReportDocuments.mockResolvedValue([]);
+    const tool = buildAnalyticsSearchDocumentsTool({
+      reportId: "report-1",
+      pinnedAttachmentIds: ["att_tagged"],
+    });
+    const execute = tool.execute;
+    if (!execute) throw new Error("search_documents has no execute");
+    await execute(
+      { query: "torque", limit: 8, mode: "keyword" },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(searchReportDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["att_tagged"],
+        backfill: false,
+      })
+    );
+    expect(tool.description).toContain("only in the 1 document(s)");
+  });
+
   it("refuses further greps when the search gate is closed", async () => {
     const tool = buildAnalyticsSearchDocumentsTool({
       reportId: "report-1",
@@ -224,7 +249,10 @@ describe("buildAnalyticsSearchDocumentsTool", () => {
       returnedCount: 1,
       requirementIndexHits: 0,
     });
-    expect(result.results[0]).toMatchObject({ pageNumber: 88 });
+    expect(result.results[0]).toMatchObject({
+      pageNumber: 88,
+      citation: "[mech.pdf, p. 88]",
+    });
     expect(result.results[0]).not.toHaveProperty("requirementIndex");
   });
 
@@ -275,9 +303,13 @@ describe("buildAnalyticsSearchDocumentsTool", () => {
     expect(searchReportDocuments).toHaveBeenCalledTimes(1);
     expect(result.results.map((hit) => hit.pageNumber)).toEqual([88, 12]);
     expect(result.results[0]).not.toHaveProperty("requirementIndex");
+    expect(result.results[0]).toMatchObject({
+      citation: "[mech.pdf, p. 88]",
+    });
     expect(result.results[1]).toMatchObject({
       pageNumber: 12,
       requirementIndex: true,
+      citation: "[mech.pdf, p. 12]",
     });
     expect(result).toMatchObject({ requirementIndexHits: 1, returnedCount: 2 });
   });

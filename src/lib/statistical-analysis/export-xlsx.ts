@@ -35,17 +35,29 @@ const EXCEL_DEFAULT_COL_WIDTH_PX = 64;
 const BANNER_FONT: Partial<ExcelJS.Font> = { bold: true, size: 14 };
 const BANNER_ROW_HEIGHT = 22;
 
-/** `Source : Attachment on pg (98)` or `Source : Attachment on pg (98-101)`. */
+/** Page range when known; otherwise retain the source document name. */
 export function formatWorksheetSourceLine(
   citations: readonly ChartCitation[]
 ): string | null {
   const unique = uniqueChartCitations(citations);
   if (unique.length === 0) return null;
-  const pages = unique.map((citation) => citation.page);
-  const min = Math.min(...pages);
-  const max = Math.max(...pages);
-  const range = min === max ? String(min) : `${min}-${max}`;
-  return `Source : Attachment on pg (${range})`;
+  const pages = unique.flatMap((citation) =>
+    citation.page == null ? [] : [citation.page]
+  );
+  if (pages.length > 0) {
+    const min = Math.min(...pages);
+    const max = Math.max(...pages);
+    const range = min === max ? String(min) : `${min}-${max}`;
+    return `Source : Attachment on pg (${range})`;
+  }
+  const filenames = [
+    ...new Set(
+      unique.flatMap((citation) =>
+        citation.filename?.trim() ? [citation.filename.trim()] : []
+      )
+    ),
+  ];
+  return `Source : ${filenames.join(", ") || "Attachment"}`;
 }
 
 function bannerLastColIndex(columnCount: number): number {
@@ -380,8 +392,8 @@ function scatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
       ["Attachment", "Page"],
       ...analysis.results.specs.flatMap((item) =>
         item.citations.map((citation) => [
-          citation.attachmentId,
-          String(citation.page),
+          citation.filename ?? citation.attachmentId,
+          citation.page == null ? "" : String(citation.page),
         ])
       ),
     ],
@@ -425,8 +437,8 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
       ["Attachment", "Page"],
       ...analysis.results.specs.flatMap((item) =>
         item.citations.map((citation) => [
-          citation.attachmentId,
-          String(citation.page),
+          citation.filename ?? citation.attachmentId,
+          citation.page == null ? "" : String(citation.page),
         ])
       ),
     ],

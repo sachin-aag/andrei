@@ -15,7 +15,8 @@ import {
 
 const worksheetColumnCitationSchema = z.object({
   attachmentId: z.string().trim().min(1).max(128),
-  page: z.number().int().min(1).max(10_000),
+  page: z.number().int().min(1).max(10_000).nullable(),
+  filename: z.string().trim().min(1).max(255).optional(),
 });
 
 export const worksheetColumnSchema = z.object({

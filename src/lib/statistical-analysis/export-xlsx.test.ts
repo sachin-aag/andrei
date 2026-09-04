@@ -116,6 +116,18 @@ describe("formatWorksheetSourceLine", () => {
       ])
     ).toBe("Source : Attachment on pg (98-101)");
   });
+
+  it("uses the document name when no page is available", () => {
+    expect(
+      formatWorksheetSourceLine([
+        {
+          attachmentId: "att_1",
+          page: null,
+          filename: "Mechanical Test Report.pdf",
+        },
+      ])
+    ).toBe("Source : Mechanical Test Report.pdf");
+  });
 });
 
 describe("analyticsExportHref", () => {

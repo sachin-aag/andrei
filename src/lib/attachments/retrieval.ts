@@ -440,11 +440,9 @@ async function fusedChunkSearch({
 /**
  * Hybrid search over a report's ready attachments.
  *
- * `attachmentIds` (documents the engineer tagged with @) does NOT hard-filter:
- * tagged documents are searched first, and if they yield fewer than `limit`
- * hits the remainder is backfilled from the rest of the report. Hard-filtering
- * would blind the assistant whenever the answer lives in an untagged file.
- * Results carry `pinned` so the model can tell the two apart.
+ * `attachmentIds` searches the selected documents first. Callers can disable
+ * `backfill` when those ids came from explicit @ tags and therefore define the
+ * complete attachment scope for a turn.
  */
 export async function searchReportDocuments({
   reportId,
@@ -452,6 +450,7 @@ export async function searchReportDocuments({
   limit = DEFAULT_DOCUMENT_SEARCH_LIMIT,
   snippetChars = DEFAULT_SNIPPET_CHARS,
   attachmentIds,
+  backfill = true,
   mode = "hybrid",
   excludePages,
 }: {
@@ -460,6 +459,7 @@ export async function searchReportDocuments({
   limit?: number;
   snippetChars?: number;
   attachmentIds?: readonly string[];
+  backfill?: boolean;
   mode?: DocumentSearchMode;
   excludePages?: readonly { attachmentId: string; pageNumber: number }[];
 }): Promise<DocumentSearchResult[]> {
@@ -523,7 +523,7 @@ export async function searchReportDocuments({
     includeAttachmentIds: pinnedIds,
   });
   const results = take(pinnedRows, true);
-  if (results.length >= limit) return results;
+  if (!backfill || results.length >= limit) return results;
 
   const backfillRows = await fusedChunkSearch({
     reportId,

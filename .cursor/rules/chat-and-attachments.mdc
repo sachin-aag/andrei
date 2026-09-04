@@ -72,7 +72,9 @@ prompt → tools → `PLAN_MODE_CHAT_TOOL_NAMES` → retrieval-policy /
 already-drafted / stub → tests → docs. Removing a control means deleting
 that plumbing (`body.sectionScope`, `parseChat*`, switch-section tools,
 mismatch banners) — not hiding the dropdown. Scope is `@` mentions
-(`sectionScopeFromMentions`, analytics mention block). Bump
+(`sectionScopeFromMentions`, analytics mention block). Bare `@` opens
+Attachments first (nested folders of ready files), then Document sections
+or Data sheets. Do not recap that list at 8. Bump
 `CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION` when prompt copy
 changes. Empty-state Document chips are `chat.examplePrompts` on the
 document type (not DMAIC-hardcoded); Analytics chips stay in
@@ -146,12 +148,14 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   cited-page grep until a page is read/scanned/extracted, while any file
   still has extract `morePages` or scan `truncated` (a finished extract of
   file B does not unlock a partial write of file A), after two consecutive
-  empty dumps — not after a dump with blank cells, Analytics `ask_user`
+  empty dumps, Analytics `ask_user`
   hide on lookups / Skip / after any grep until a page is read, and
   Analytics `manage_worksheet` hide after the first structure call this
-  turn). An incomplete Analytics `write_column` does not persist.
+  turn). Analytics `write_column` trusts and atomically persists the complete
+  extractor batch without per-cell source-token verification. Keep page
+  provenance when known, or the document name when no page is available.
   One complete write per destination sheet; separate extracts per sheet
-  are correct.   Agent Analytics calls `extract_sheet` once per sheet
+  are correct. Agent Analytics calls `extract_sheet` once per sheet
   (parallel workers create or reuse the tab and write; persist keeps the
   engineer's focused tab). Follow-up add/remove rows on a filled sheet use
   `extract_sheet` `mode edit` (`write_column` `mode append`, or
@@ -177,10 +181,16 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (registry `inventorySections`) when evidence is distributed (≥12 ready
   pages or ≥6 outline siblings), unless a bounded locator, targeted
   sentence/paragraph rewrite, or non-inventory section intent applies.
-  Open-set produce intent and exhaustive-shape language are scored on the
-  latest user turn only (earlier draft asks must not force another page
-  walk). Inventory-section scope needs latest-turn inventory language or
-  open-set produce before comprehensive. **Focused** is an explicit skim.
+  Open-set produce intent, exhaustive-shape language, and all-scope
+  section intent are scored on the latest user turn only (an earlier
+  equipment/UUT draft must not keep “draft the remaining sections” on
+  the adaptive path). Inventory-section scope needs latest-turn inventory
+  language or open-set produce before comprehensive. Header-only seeded
+  tables (blank data cells, no surrounding prose) are empty, not partial
+  — `sectionHasTable` still sees them. Search hits include `citation`
+  (`[filename, p. N]` when the page is known; `[filename]` only if
+  missing or ambiguous). Do not reject or rewrite a draft that omitted a
+  known page. **Focused** is an explicit skim.
   Adaptive turns skip auto-evidence so the model must grep.
   Adaptive/focused turns do not expose `start_document_review`. Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
@@ -196,8 +206,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   `medium` until we route it by task (3.7 Flash rejects `minimal`); page
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.
-- Tagged `@` documents rank first; backfill from the rest of the report.
-  Hard-filtering tagged IDs blinds the assistant.
+- Tagged `@` documents are the complete attachment scope for that turn.
+  Search, scan, outline, page reads, and extracts must not drift to untagged
+  files. If the client drops a structured mention payload, recover an exact,
+  unique `@filename` against that report's ready-document index.
 - Report body is not in `document_chunks`. Use `read_section`.
 
 ## Ingest

@@ -274,10 +274,22 @@ describe("patchAnalyticsBodySchema", () => {
 
   it("keeps optional column citations from an attachment write", () => {
     const worksheet = createEmptyWorksheet();
-    worksheet.columns[0]!.citations = [{ attachmentId: "att_1", page: 31 }];
+    worksheet.columns[0]!.citations = [
+      { attachmentId: "att_1", page: 31 },
+      {
+        attachmentId: "att_2",
+        page: null,
+        filename: "Mechanical report.pdf",
+      },
+    ];
     const parsed = patchAnalyticsBodySchema.parse({ worksheet });
     expect(parsed.worksheet?.columns[0]?.citations).toEqual([
       { attachmentId: "att_1", page: 31 },
+      {
+        attachmentId: "att_2",
+        page: null,
+        filename: "Mechanical report.pdf",
+      },
     ]);
   });
 });

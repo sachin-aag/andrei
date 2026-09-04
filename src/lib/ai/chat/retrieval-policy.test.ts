@@ -354,6 +354,21 @@ describe("classifyRetrievalPolicy", () => {
       ["matrix_section_inventory", "exhaustive_output_shape", "open_set_distributed"]
     ).toContain(decision.reason);
   });
+
+  it("escalates draft remaining sections after an equipment turn on a large mechanical catalog", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "Draft the remaining sections",
+      recentUserTexts: [
+        "which equipment was used for testing? lets draft the relevant section for this",
+      ],
+      sectionScope: "all",
+      documentType: "mechanical_design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(decision.policy).toBe("comprehensive");
+    expect(decision.reason).toBe("open_set_distributed");
+  });
 });
 
 describe("document-type inventory registry", () => {

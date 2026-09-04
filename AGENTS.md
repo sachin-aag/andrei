@@ -147,8 +147,9 @@ off by default (not in `sourceHash`): on a scatter it connects mean Y at
 each X (gray individuals when there is no legend; one line per legend
 series); on a boxplot it connects each box’s mean (the median line inside
 the box stays). Columns written from a
-file (`write_column` after extract/scan/read) keep page citations on the
-column and chart spec for CSV download. Plot figures do not show `p. N`.
+file (`write_column` after extract/scan/read) keep page citations when known,
+or the document name when the page is unavailable, on the column and chart
+spec for CSV download. Plot figures do not show `p. N`.
 Editing a cell drops that citation. Attachment extract-and-plot is Analytics chat
 only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
 There is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA
@@ -196,8 +197,9 @@ Analytics plans multi-table dumps and calls `extract_sheet` once per sheet
 in the same step (parallel workers create or reuse the tab and write; the
 grid stays on the engineer's current tab). Add or remove rows on an
 already-filled sheet with `extract_sheet` `mode edit` (worker appends or
-deletes; it does not replace the whole table unless asked). A partial dump
-with blank cells must not hide `write_column`. Live matrix
+deletes; it does not replace the whole table unless asked). `write_column`
+trusts and atomically persists the extractor's complete batch without
+per-cell source-token verification. Live matrix
 headers come from the section (`read_section` / context map) — demo
 Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
 it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages.
@@ -254,10 +256,13 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
   `search_documents` (multi-round grep), `document_outline`, `read_document_page`.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   The report body is **not** chunk-indexed; use `read_section`.
-- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. A sentence/paragraph rewrite is adaptive even on a large catalog, and an earlier “draft the report” turn must not force another full page walk. Comprehensive shape and inventory-section escalation score the latest user turn only. Shared `searchLoopDirective` hides `search_documents` after a cited hit, locate/read, or two empty greps (not during an active document review). Finished review coverage is rehydrated when the attachment coverage key is unchanged so a zero delta does not force another walk, except explicit pushback (“you missed SST”, “look again”, “re-check”) which skips rehydrate so a second pass can start. `finish_document_review` returns a capped findings sample; follow-up turns keep a slim `citationDigest` of `[filename, p. N]` plus a short summary (not the full findings array) so a 273-page review cannot 500 the next message. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
+- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. A sentence/paragraph rewrite is adaptive even on a large catalog, and an earlier “draft the report” turn must not force another full page walk. Comprehensive shape, inventory-section escalation, and all-scope section intent score the latest user turn only (an earlier equipment/UUT draft must not keep “draft the remaining sections” on the adaptive path). Header-only seeded tables (blank data cells) are empty, not partial. Search hits include a ready `citation` bracket (`[filename, p. N]` when the page is known; `[filename]` only if missing or ambiguous). Do not reject or rewrite a draft that omitted a known page. Shared `searchLoopDirective` hides `search_documents` after a cited hit, locate/read, or two empty greps (not during an active document review). Finished review coverage is rehydrated when the attachment coverage key is unchanged so a zero delta does not force another walk, except explicit pushback (“you missed SST”, “look again”, “re-check”) which skips rehydrate so a second pass can start. `finish_document_review` returns a capped findings sample; follow-up turns keep a slim `citationDigest` of `[filename, p. N]` plus a short summary (not the full findings array) so a 273-page review cannot 500 the next message. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
 - Follow the latest user message. Agent mode may edit when they asked to write; empty sections and ready attachments are not a request to draft. A greeting (“hi”) must not search or write — `classifyChatUserIntent` strips tools (Document and Analytics). Ambiguous Agent-mode text (“plan the first 3 sections”) is classified by a gated Flash-Lite call (`resolveChatUserIntent`); greetings and explicit draft/write verbs stay on rules. Retrieval maps those turns to focused (`no_task`) and skips kickoff evidence. A confirmation that carries its own instruction (“yes put it in the data worksheet”) is a **write**: the affirmation prefix is stripped and the remainder classified, and an Analytics worksheet/sheet/column destination counts as a write even when the verb is not in `WRITE_RE`. When intent strips the write tools, the prompt says so (`intentToolAvailabilityRule`) so the model cannot call a tool that is no longer loaded and fall back to pasting a markdown table.
 - Composer scope is `@` tags (`sectionScopeFromMentions` / analytics mentions),
-  not dropdowns. Document and Analytics share `ChatPanel`; a composer or tool
+  not dropdowns. Bare `@` opens a hierarchy: Attachments first (folder tree of
+  ready files), then Document sections or Data sheets depending on Report vs
+  Analytics. Typing filters every leaf with no 8-item cap. Document and
+  Analytics share `ChatPanel`; a composer or tool
   change must land on both surfaces and both chromes (Hard rules spectrum).
   Empty-state Document chips are `chat.examplePrompts` on the document type
   (not DMAIC-hardcoded). Analytics chips stay worksheet/plot copy.

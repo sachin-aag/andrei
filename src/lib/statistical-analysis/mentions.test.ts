@@ -165,6 +165,26 @@ describe("resolveAnalyticsChatMentions", () => {
 });
 
 describe("buildAnalyticsMentionBlock", () => {
+  it("makes tagged documents the complete attachment scope", () => {
+    const block = buildAnalyticsMentionBlock({
+      documents: [
+        {
+          attachmentId: "att_1",
+          filename: "Mechanical report.pdf",
+          description: null,
+          pageCount: 10,
+          documentSummary: null,
+        },
+      ],
+      sheets: [],
+      analyses: [],
+      droppedCount: 0,
+    });
+    expect(block).toContain("complete attachment scope");
+    expect(block).toContain("restricted to these files");
+    expect(block).not.toContain('scope="all"');
+  });
+
   it("includes sheet and analysis guidance", () => {
     const block = buildAnalyticsMentionBlock({
       documents: [],

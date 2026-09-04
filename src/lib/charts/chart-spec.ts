@@ -27,10 +27,13 @@ export type ChartLimits = {
 
 export type ChartCitation = {
   attachmentId: string;
-  page: number;
+  /** Null when the source document is known but no reliable page is available. */
+  page: number | null;
+  /** Persisted for document-level attribution when page is null. */
+  filename?: string;
 };
 
-/** Deduplicate `(attachmentId, page)` pairs; drop empty or non-positive pages. */
+/** Deduplicate source references; keep document-level citations with no page. */
 export function uniqueChartCitations(
   citations: readonly ChartCitation[]
 ): ChartCitation[] {
@@ -38,12 +41,19 @@ export function uniqueChartCitations(
   const out: ChartCitation[] = [];
   for (const citation of citations) {
     const attachmentId = citation.attachmentId.trim();
-    const page = Math.trunc(citation.page);
-    if (!attachmentId || !Number.isInteger(page) || page < 1) continue;
-    const key = `${attachmentId}:${page}`;
+    if (!attachmentId) continue;
+    const page =
+      citation.page == null ? null : Math.trunc(citation.page);
+    if (page != null && (!Number.isInteger(page) || page < 1)) continue;
+    const filename = citation.filename?.trim();
+    const key = `${attachmentId}:${page ?? "document"}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ attachmentId, page });
+    out.push({
+      attachmentId,
+      page,
+      ...(filename ? { filename } : {}),
+    });
   }
   return out;
 }
@@ -54,7 +64,9 @@ export function formatChartCitationPages(
 ): string | null {
   const pages = [
     ...new Set(
-      uniqueChartCitations(citations).map((citation) => citation.page)
+      uniqueChartCitations(citations).flatMap((citation) =>
+        citation.page == null ? [] : [citation.page]
+      )
     ),
   ].toSorted((a, b) => a - b);
   if (pages.length === 0) return null;
@@ -168,7 +180,8 @@ const chartLimitsSchema = z.object({
 
 const chartCitationSchema = z.object({
   attachmentId: z.string().min(1),
-  page: z.number().int().positive(),
+  page: z.number().int().positive().nullable(),
+  filename: z.string().trim().min(1).max(255).optional(),
 });
 
 const chartAxisRangeSchema = z
