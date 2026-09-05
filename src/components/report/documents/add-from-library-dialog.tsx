@@ -15,6 +15,14 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { LibraryAssetLabel } from "@/components/profile/library-asset-label";
+import {
+  buildVaultLinkPayload,
+  buildVaultTree,
+  countVaultLinkSelection,
+  isVaultAssetChecked,
+  toggleVaultAssetSelection,
+  toggleVaultFolderSelection,
+} from "@/lib/attachments/add-from-vault-selection";
 import type {
   AttachmentLibraryAssetRecord,
   AttachmentLibraryFolderRecord,
@@ -34,38 +42,22 @@ type Props = {
   onLink: (selection: {
     assetIds: string[];
     libraryFolderIds: string[];
+    excludedAssetIds: string[];
   }) => Promise<void>;
   isAdmin?: boolean;
 };
-
-function buildFolderChildren(
-  folders: AttachmentLibraryFolderRecord[],
-  assets: AttachmentLibraryAssetRecord[]
-) {
-  const foldersByParent = new Map<string | null, AttachmentLibraryFolderRecord[]>();
-  for (const folder of folders) {
-    const key = folder.parentId ?? null;
-    const list = foldersByParent.get(key) ?? [];
-    list.push(folder);
-    foldersByParent.set(key, list);
-  }
-  const assetsByFolder = new Map<string | null, AttachmentLibraryAssetRecord[]>();
-  for (const asset of assets) {
-    const key = asset.libraryFolderId ?? null;
-    const list = assetsByFolder.get(key) ?? [];
-    list.push(asset);
-    assetsByFolder.set(key, list);
-  }
-  return { foldersByParent, assetsByFolder };
-}
 
 function LibraryTreeNode({
   folderId,
   depth,
   foldersByParent,
   assetsByFolder,
+  parentById,
+  folders,
+  assets,
   selectedAssetIds,
   selectedFolderIds,
+  excludedAssetIds,
   onToggleAsset,
   onToggleFolder,
 }: {
@@ -73,9 +65,13 @@ function LibraryTreeNode({
   depth: number;
   foldersByParent: Map<string | null, AttachmentLibraryFolderRecord[]>;
   assetsByFolder: Map<string | null, AttachmentLibraryAssetRecord[]>;
+  parentById: Map<string, string | null>;
+  folders: AttachmentLibraryFolderRecord[];
+  assets: AttachmentLibraryAssetRecord[];
   selectedAssetIds: Set<string>;
   selectedFolderIds: Set<string>;
-  onToggleAsset: (id: string, checked: boolean) => void;
+  excludedAssetIds: Set<string>;
+  onToggleAsset: (asset: AttachmentLibraryAssetRecord, checked: boolean) => void;
   onToggleFolder: (id: string, checked: boolean) => void;
 }) {
   const childFolders = foldersByParent.get(folderId) ?? [];
@@ -108,8 +104,12 @@ function LibraryTreeNode({
               depth={depth + 1}
               foldersByParent={foldersByParent}
               assetsByFolder={assetsByFolder}
+              parentById={parentById}
+              folders={folders}
+              assets={assets}
               selectedAssetIds={selectedAssetIds}
               selectedFolderIds={selectedFolderIds}
+              excludedAssetIds={excludedAssetIds}
               onToggleAsset={onToggleAsset}
               onToggleFolder={onToggleFolder}
             />
@@ -117,7 +117,13 @@ function LibraryTreeNode({
         );
       })}
       {childAssets.map((asset) => {
-        const checked = selectedAssetIds.has(asset.id);
+        const checked = isVaultAssetChecked(
+          asset,
+          selectedFolderIds,
+          selectedAssetIds,
+          excludedAssetIds,
+          parentById
+        );
         return (
           <label
             key={asset.id}
@@ -129,7 +135,7 @@ function LibraryTreeNode({
           >
             <Checkbox
               checked={checked}
-              onCheckedChange={(value) => onToggleAsset(asset.id, value === true)}
+              onCheckedChange={(value) => onToggleAsset(asset, value === true)}
             />
             <LibraryAssetLabel
               filename={asset.filename}
@@ -159,6 +165,9 @@ export function AddFromLibraryDialog({
   const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [excludedAssetIds, setExcludedAssetIds] = useState<Set<string>>(
+    () => new Set()
+  );
 
   const loadLibrary = useCallback(async (nextScope: LibraryScope) => {
     setLoading(true);
@@ -183,29 +192,40 @@ export function AddFromLibraryDialog({
     if (!open) return;
     setSelectedAssetIds(new Set());
     setSelectedFolderIds(new Set());
+    setExcludedAssetIds(new Set());
     void loadLibrary(scope);
   }, [open, scope, loadLibrary]);
 
   const tree = useMemo(() => {
     if (!library) {
-      return {
-        foldersByParent: new Map(),
-        assetsByFolder: new Map(),
-      };
+      return buildVaultTree([], []);
     }
-    return buildFolderChildren(library.folders, library.assets);
+    return buildVaultTree(library.folders, library.assets);
   }, [library]);
 
-  const selectionCount = selectedAssetIds.size + selectedFolderIds.size;
+  const selectionCount = useMemo(() => {
+    if (!library) return 0;
+    return countVaultLinkSelection(
+      library.folders,
+      library.assets,
+      selectedFolderIds,
+      selectedAssetIds,
+      excludedAssetIds
+    );
+  }, [library, selectedFolderIds, selectedAssetIds, excludedAssetIds]);
 
   const handleLink = async () => {
-    if (selectionCount === 0) return;
+    if (!library || selectionCount === 0) return;
+    const payload = buildVaultLinkPayload(
+      library.folders,
+      library.assets,
+      selectedFolderIds,
+      selectedAssetIds,
+      excludedAssetIds
+    );
     setLinking(true);
     try {
-      await onLink({
-        assetIds: [...selectedAssetIds],
-        libraryFolderIds: [...selectedFolderIds],
-      });
+      await onLink(payload);
       onOpenChange(false);
     } catch (error) {
       toast.error(
@@ -234,7 +254,8 @@ export function AddFromLibraryDialog({
           <DialogTitle>Add from vault</DialogTitle>
           <DialogDescription>
             Reuse documents you have uploaded or that were shared with you.
-            Processing runs once per file.
+            Selecting a folder includes its subfolders; uncheck individual files
+            to leave them out. Processing runs once per file.
           </DialogDescription>
         </DialogHeader>
 
@@ -271,23 +292,42 @@ export function AddFromLibraryDialog({
               depth={0}
               foldersByParent={tree.foldersByParent}
               assetsByFolder={tree.assetsByFolder}
+              parentById={tree.parentById}
+              folders={library?.folders ?? []}
+              assets={library?.assets ?? []}
               selectedAssetIds={selectedAssetIds}
               selectedFolderIds={selectedFolderIds}
-              onToggleAsset={(id, checked) => {
-                setSelectedAssetIds((prev) => {
-                  const next = new Set(prev);
-                  if (checked) next.add(id);
-                  else next.delete(id);
-                  return next;
-                });
+              excludedAssetIds={excludedAssetIds}
+              onToggleAsset={(asset, checked) => {
+                const nextSelectedAssets = new Set(selectedAssetIds);
+                const nextExcludedAssets = new Set(excludedAssetIds);
+                toggleVaultAssetSelection(
+                  asset,
+                  checked,
+                  selectedFolderIds,
+                  nextSelectedAssets,
+                  nextExcludedAssets,
+                  tree.parentById
+                );
+                setSelectedAssetIds(nextSelectedAssets);
+                setExcludedAssetIds(nextExcludedAssets);
               }}
               onToggleFolder={(id, checked) => {
-                setSelectedFolderIds((prev) => {
-                  const next = new Set(prev);
-                  if (checked) next.add(id);
-                  else next.delete(id);
-                  return next;
-                });
+                const nextSelectedFolders = new Set(selectedFolderIds);
+                const nextSelectedAssets = new Set(selectedAssetIds);
+                const nextExcludedAssets = new Set(excludedAssetIds);
+                toggleVaultFolderSelection(
+                  id,
+                  checked,
+                  library?.folders ?? [],
+                  library?.assets ?? [],
+                  nextSelectedFolders,
+                  nextSelectedAssets,
+                  nextExcludedAssets
+                );
+                setSelectedFolderIds(nextSelectedFolders);
+                setSelectedAssetIds(nextSelectedAssets);
+                setExcludedAssetIds(nextExcludedAssets);
               }}
             />
           )}

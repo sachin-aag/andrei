@@ -11,6 +11,7 @@ const bodySchema = z.object({
   targetFolderId: z.string().min(1).nullable().optional(),
   assetIds: z.array(z.string().min(1)).optional(),
   libraryFolderIds: z.array(z.string().min(1)).optional(),
+  excludedAssetIds: z.array(z.string().min(1)).optional(),
 });
 
 export async function POST(
@@ -51,6 +52,7 @@ export async function POST(
     targetFolderId,
     assetIds: parsed.data.assetIds,
     libraryFolderIds: parsed.data.libraryFolderIds,
+    excludedAssetIds: parsed.data.excludedAssetIds,
   });
 
   if (!result.ok) {

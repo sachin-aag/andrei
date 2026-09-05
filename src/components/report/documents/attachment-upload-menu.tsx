@@ -18,6 +18,7 @@ type Props = {
   onLinkFromLibrary: (selection: {
     assetIds: string[];
     libraryFolderIds: string[];
+    excludedAssetIds?: string[];
   }) => Promise<void>;
 };
 

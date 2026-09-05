@@ -25,6 +25,7 @@ export type LinkLibraryInput = {
   targetFolderId: string | null;
   assetIds?: string[];
   libraryFolderIds?: string[];
+  excludedAssetIds?: string[];
 };
 
 export type LinkLibraryResult =
@@ -78,6 +79,7 @@ export async function linkLibraryItemsToReport(
 ): Promise<LinkLibraryResult> {
   const assetIds = [...new Set(input.assetIds ?? [])];
   const libraryFolderIds = [...new Set(input.libraryFolderIds ?? [])];
+  const excludedAssetIds = new Set(input.excludedAssetIds ?? []);
   if (assetIds.length === 0 && libraryFolderIds.length === 0) {
     return { ok: false, error: "No vault items selected", status: 400 };
   }
@@ -85,9 +87,9 @@ export async function linkLibraryItemsToReport(
   const limits = getAttachmentLimits();
 
   const folderTree = await loadLibraryFolderTree(libraryFolderIds);
-  const folderAssets = await loadAssetsForLibraryFolders(
-    folderTree.map((folder) => folder.id)
-  );
+  const folderAssets = (
+    await loadAssetsForLibraryFolders(folderTree.map((folder) => folder.id))
+  ).filter((asset) => !excludedAssetIds.has(asset.id));
   const directAssetIds = assetIds.filter(
     (id) => !folderAssets.some((asset) => asset.id === id)
   );
