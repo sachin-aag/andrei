@@ -6,9 +6,9 @@
  *   pnpm retrieval-eval -- --live
  *   pnpm retrieval-eval -- --report-id <id>
  *
- * `--from-gcs` downloads the test corpus from the retrieval-eval GCS prefix
- * (and seeds the bucket from the in-repo builders if objects are missing),
- * then ingests, searches, and LLM-judges. That is the CI path.
+ * `--from-gcs` downloads the test corpus from the retrieval-eval GCS prefix,
+ * then ingests, searches, and LLM-judges. That is the CI path. CI never
+ * uploads or seeds the bucket — add objects with `pnpm retrieval-eval:upload`.
  * `--live` generates the same PDFs locally (no bucket) for a laptop run.
  * `--report-id` searches an already-ingested report (no ingest).
  */

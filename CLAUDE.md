@@ -39,8 +39,8 @@ pnpm seed-demo-reports    # seed demo reports for the demo engineer (loads .env 
 pnpm sample-eval-report   # bulk AI evaluation of sample DOCXs → HTML report (needs gateway key)
 pnpm model-sweep          # run the AI eval across multiple models (scripts/eval/)
 pnpm compare-evals        # diff two eval runs (scripts/eval/)
-pnpm retrieval-eval       # attachment retrieval gold cases (default --dry-run; --from-gcs CI ingest+judge; --live local PDFs; --report-id skip ingest)
-pnpm retrieval-eval:upload # write the synthetic eval PDFs to RETRIEVAL_EVAL_GCS_BUCKET
+pnpm retrieval-eval       # attachment retrieval gold cases (default --dry-run; --from-gcs CI download+ingest+judge; --live local PDFs; --report-id skip ingest)
+pnpm retrieval-eval:upload # laptop ADC only: write synthetic eval PDFs to RETRIEVAL_EVAL_GCS_BUCKET (CI never uploads)
 pnpm soak:pdf-ingest      # local PDF extract soak (Vertex; no DB/GCS writes)
 ```
 
