@@ -11,6 +11,12 @@
  * uploads or seeds the bucket — add objects with `pnpm retrieval-eval:upload`.
  * `--live` generates the same PDFs locally (no bucket) for a laptop run.
  * `--report-id` searches an already-ingested report (no ingest).
+ *
+ * `--dry-run` and `--report-id` merge gitignored
+ * `retrieval-cases.local.json` when that file exists (copy
+ * `retrieval-cases.local.example.json`). `--from-gcs` and `--live` never
+ * merge the overlay — those cases target the synthetic corpus, not a
+ * private attachment.
  */
 
 import { config } from "dotenv";
@@ -30,6 +36,7 @@ config({ path: ".env.local", override: true });
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_CASES = path.join(here, "retrieval-cases.json");
+const LOCAL_CASES = path.join(here, "retrieval-cases.local.json");
 const RUNS_DIR = path.join(here, "retrieval-runs");
 
 export type RetrievalEvalCliArgs = {
@@ -75,8 +82,41 @@ export function parseRetrievalEvalArgs(argv: string[]): RetrievalEvalCliArgs {
   return { reportId, dryRun, fromGcs, live, outPath, limit };
 }
 
-function loadCases(): RetrievalEvalCase[] {
-  return parseRetrievalCases(JSON.parse(fs.readFileSync(PUBLIC_CASES, "utf8")));
+/** Overlay is a laptop path. CI `--from-gcs` / `--live` stay on the public set. */
+export function shouldLoadLocalOverlay(args: RetrievalEvalCliArgs): boolean {
+  return !args.fromGcs && !args.live;
+}
+
+/** Local overlay wins on id collision and may add cases. Missing overlay is a no-op. */
+export function mergeRetrievalEvalCases(
+  publicCases: RetrievalEvalCase[],
+  overlayCases: RetrievalEvalCase[] | null
+): RetrievalEvalCase[] {
+  if (overlayCases == null || overlayCases.length === 0) return publicCases;
+  const byId = new Map(publicCases.map((entry) => [entry.id, entry]));
+  for (const entry of overlayCases) {
+    byId.set(entry.id, entry);
+  }
+  return [...byId.values()];
+}
+
+export function loadRetrievalEvalCases(
+  args: RetrievalEvalCliArgs
+): RetrievalEvalCase[] {
+  const publicCases = parseRetrievalCases(
+    JSON.parse(fs.readFileSync(PUBLIC_CASES, "utf8"))
+  );
+  if (!shouldLoadLocalOverlay(args)) return publicCases;
+  if (!fs.existsSync(LOCAL_CASES)) return publicCases;
+  const overlayCases = parseRetrievalCases(
+    JSON.parse(fs.readFileSync(LOCAL_CASES, "utf8"))
+  );
+  if (overlayCases.length === 0) return publicCases;
+  const merged = mergeRetrievalEvalCases(publicCases, overlayCases);
+  console.log(
+    `merged retrieval-cases.local.json (${overlayCases.length} overlay case(s), ${merged.length} total)`
+  );
+  return merged;
 }
 
 function enableLocalAttachmentStorage(): void {
@@ -193,7 +233,7 @@ async function resolveReportId(args: RetrievalEvalCliArgs): Promise<string> {
 
 export async function runRetrievalEval(argv: string[]): Promise<void> {
   const args = parseRetrievalEvalArgs(argv);
-  const cases = loadCases();
+  const cases = loadRetrievalEvalCases(args);
   if (args.dryRun) {
     console.log(`retrieval-eval dry-run: ${cases.length} cases valid`);
     for (const entry of cases) {
