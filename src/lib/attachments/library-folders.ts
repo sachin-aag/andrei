@@ -90,3 +90,77 @@ export async function validateLibraryFolderPlacement({
 
   return null;
 }
+
+export async function ensureLibraryFolderPath({
+  ownerId,
+  parentId,
+  segments,
+}: {
+  ownerId: string;
+  parentId: string | null;
+  segments: string[];
+}): Promise<
+  | { ok: true; folderId: string | null }
+  | { ok: false; error: string; status: number }
+> {
+  const names: string[] = [];
+  for (const raw of segments) {
+    const name = normalizeFolderName(raw);
+    if (!name) {
+      return { ok: false, error: "Invalid folder name in path", status: 400 };
+    }
+    names.push(name);
+  }
+
+  if (parentId !== null) {
+    const parent = await loadLibraryFolder(ownerId, parentId);
+    if (!parent) {
+      return { ok: false, error: "Folder not found", status: 404 };
+    }
+  }
+
+  if (names.length === 0) {
+    return { ok: true, folderId: parentId };
+  }
+
+  const existing = await db
+    .select()
+    .from(attachmentLibraryFolders)
+    .where(eq(attachmentLibraryFolders.ownerId, ownerId));
+
+  let currentParent = parentId;
+  for (const name of names) {
+    const match = existing.find(
+      (folder) => folder.parentId === currentParent && folder.name === name
+    );
+    if (match) {
+      currentParent = match.id;
+      continue;
+    }
+
+    const placementError = await validateLibraryFolderPlacement({
+      ownerId,
+      parentId: currentParent,
+      folderId: null,
+    });
+    if (placementError) {
+      return {
+        ok: false,
+        error: placementError.error,
+        status: placementError.status,
+      };
+    }
+
+    const [created] = await db
+      .insert(attachmentLibraryFolders)
+      .values({ ownerId, parentId: currentParent, name })
+      .returning();
+    if (!created) {
+      return { ok: false, error: "Could not create folder", status: 500 };
+    }
+    existing.push(created);
+    currentParent = created.id;
+  }
+
+  return { ok: true, folderId: currentParent };
+}

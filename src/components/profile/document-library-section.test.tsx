@@ -165,4 +165,16 @@ describe("DocumentLibrarySection explorer", () => {
       expect(screen.queryByTestId("library-preview-pane")).not.toBeInTheDocument();
     });
   });
+
+  it("lets people upload files or a folder from the profile library", async () => {
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
+    expect(screen.getByTestId("library-upload-files")).toBeInTheDocument();
+    expect(screen.getByTestId("library-upload-folder")).toBeInTheDocument();
+    expect(screen.getByTestId("library-upload-files-input")).toHaveAttribute(
+      "accept",
+      expect.stringContaining(".pdf")
+    );
+    expect(screen.getByTestId("library-upload-folder-input")).toBeInTheDocument();
+  });
 });

@@ -1211,6 +1211,24 @@ export const voiceBudgetSettings = pgTable("voice_budget_settings", {
     .defaultNow(),
 });
 
+/** Workspace-wide stored-attachment cap (not a monthly cycle). Default 100 GiB. */
+export const attachmentStorageBudgetSettings = pgTable(
+  "attachment_storage_budget_settings",
+  {
+    id: text("id").primaryKey().default("default"),
+    byteLimit: bigint("byte_limit", { mode: "number" })
+      .notNull()
+      .default(107_374_182_400),
+    enforceHardLimit: boolean("enforce_hard_limit").notNull().default(true),
+    warningThresholdPercent: integer("warning_threshold_percent")
+      .notNull()
+      .default(80),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }
+);
+
 export const voiceUsageEvents = pgTable(
   "voice_usage_events",
   {

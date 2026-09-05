@@ -60,7 +60,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 - `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, `revisions` (product History snapshots + inline diff), and `export`/`complete-export` (DOCX).
 - `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
-- `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings, Limits). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `ai-budget`, `attachment-page-budget`, `voice-budget`, `reports/[reportId]/{purge,source-docx}`.
+- `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings, Limits). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `ai-budget`, `attachment-page-budget`, `attachment-storage-budget`, `voice-budget`, `reports/[reportId]/{purge,source-docx}`.
 - `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Currently backed by `src/lib/insights/mock-data.ts`.
 - `src/app/api/site-access/` — Site-wide password gate (see Site Access subsystem).
 - `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
@@ -332,7 +332,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 ## Subsystem: Attachments (ingest + evidence)
 
-**Purpose:** PDF/DOCX evidence for chat (and future citation), not a replacement for the report body.
+**Purpose:** PDF/DOCX evidence for chat (and future citation), not a replacement for the report body. Canonical bytes live in `attachment_assets` (Profile document library + report links). Uploads are capped by a workspace-wide stored-bytes budget (default 100 GiB) on Admin → Limits; linking an existing library file into a report does not count twice. Profile can upload files or folders (`POST /api/attachment-library/upload-url` → finalize). Library-only files are marked `ready` for preview; the first report link starts ingest when the asset has no ingest run.
 
 **Entry point:** `runDocumentIngest()` in `src/lib/attachments/run-document-ingest.ts`. Extract + embed is **Vertex-only** (`GOOGLE_VERTEX_PROJECT`). Stub: `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
 

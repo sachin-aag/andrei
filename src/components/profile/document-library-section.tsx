@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -8,8 +8,10 @@ import {
   Folder,
   FolderInput,
   FolderPlus,
+  FolderUp,
   Loader2,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AttachmentPreviewPanel } from "@/components/report/attachment-preview-panel";
@@ -38,6 +40,13 @@ import type {
   AttachmentLibraryFolderRecord,
 } from "@/lib/attachments/library-dto";
 import { formatLibraryUploadedAt } from "@/lib/attachments/library-display";
+import {
+  libraryUploadFilesFromDataTransfer,
+  libraryUploadFilesFromList,
+  type LibraryUploadFile,
+} from "@/lib/attachments/library-drop-files";
+import { uploadFileToLibrary } from "@/lib/attachments/upload-library";
+import { ATTACHMENT_ACCEPT_ATTR } from "@/lib/attachments/file-types";
 import {
   libraryDownloadHref,
   libraryPreviewSrc,
@@ -148,6 +157,7 @@ function LibraryProfileTree({
   onToggleFolderCheck,
   onToggleFolderCollapsed,
   onDeleteFolder,
+  onDropOnFolder,
 }: {
   folderId: string | null;
   depth: number;
@@ -163,6 +173,7 @@ function LibraryProfileTree({
   onToggleFolderCheck: (folderId: string, checked: boolean) => void;
   onToggleFolderCollapsed: (folderId: string) => void;
   onDeleteFolder: (folderId: string) => void;
+  onDropOnFolder: (folderId: string | null, dataTransfer: DataTransfer) => void;
 }) {
   const childFolders = foldersByParent.get(folderId) ?? [];
   const childAssets = assetsByFolder.get(folderId) ?? [];
@@ -181,6 +192,16 @@ function LibraryProfileTree({
                 checked && "bg-[var(--secondary)]/40"
               )}
               style={{ paddingLeft: `${indent}px` }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                event.dataTransfer.dropEffect = "copy";
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDropOnFolder(folder.id, event.dataTransfer);
+              }}
             >
               <button
                 type="button"
@@ -238,6 +259,7 @@ function LibraryProfileTree({
                 onToggleFolderCheck={onToggleFolderCheck}
                 onToggleFolderCollapsed={onToggleFolderCollapsed}
                 onDeleteFolder={onDeleteFolder}
+                onDropOnFolder={onDropOnFolder}
               />
             )}
           </div>
@@ -486,6 +508,13 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
   const [moveDestination, setMoveDestination] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [uploading, setUploading] = useState<{
+    current: number;
+    total: number;
+    filename: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const loadLibrary = useCallback(async () => {
     setLoading(true);
@@ -675,6 +704,78 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     }
   };
 
+  const uploadLibraryBatch = async (
+    files: LibraryUploadFile[],
+    targetFolderId: string | null
+  ) => {
+    if (files.length === 0) return;
+    let failed = 0;
+    for (let index = 0; index < files.length; index += 1) {
+      const item = files[index]!;
+      setUploading({
+        current: index + 1,
+        total: files.length,
+        filename: item.file.name,
+      });
+      try {
+        await uploadFileToLibrary({
+          file: item.file,
+          libraryFolderId: targetFolderId,
+          relativePath: item.relativePath,
+        });
+      } catch (error) {
+        failed += 1;
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : `Could not upload ${item.file.name}`
+        );
+      }
+    }
+    setUploading(null);
+    await loadLibrary();
+    const uploaded = files.length - failed;
+    if (uploaded > 0) {
+      toast.success(
+        uploaded === 1
+          ? "Uploaded 1 file to your library"
+          : `Uploaded ${uploaded} files to your library`
+      );
+    }
+  };
+
+  const handleSelectedFiles = (
+    fileList: FileList | null,
+    targetFolderId: string | null
+  ) => {
+    if (!fileList || fileList.length === 0) return;
+    const { accepted, skipped } = libraryUploadFilesFromList(fileList);
+    if (skipped > 0) {
+      toast.error(
+        skipped === 1
+          ? "Skipped 1 file that is not a PDF or Word document"
+          : `Skipped ${skipped} files that are not PDF or Word documents`
+      );
+    }
+    void uploadLibraryBatch(accepted, targetFolderId);
+  };
+
+  const handleDropOnFolder = async (
+    folderId: string | null,
+    dataTransfer: DataTransfer
+  ) => {
+    const { accepted, skipped } =
+      await libraryUploadFilesFromDataTransfer(dataTransfer);
+    if (skipped > 0) {
+      toast.error(
+        skipped === 1
+          ? "Skipped 1 file that is not a PDF or Word document"
+          : `Skipped ${skipped} files that are not PDF or Word documents`
+      );
+    }
+    await uploadLibraryBatch(accepted, folderId);
+  };
+
   const deleteInspectedAsset = async () => {
     if (!inspectedAssetId) return;
     if (
@@ -772,9 +873,9 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
       <h2 className="text-base font-semibold">Document library</h2>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        Click a file to see details. Open a preview when you want to read it.
-        Check items to move them into a folder. Files already on reports stay
-        there if you remove them from the library.
+        Upload files or folders here, or drop them onto a folder. Click a file
+        to see details. Open a preview when you want to read it. Files already
+        on reports stay there if you remove them from the library.
       </p>
 
       {loading ? (
@@ -782,11 +883,6 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           Loading library…
         </div>
-      ) : isEmpty ? (
-        <p className="mt-6 text-sm text-[var(--muted-foreground)]">
-          You have not uploaded any library documents yet. Upload a PDF or Word
-          file in a report to add it here.
-        </p>
       ) : (
         <div
           className={cn(
@@ -807,13 +903,37 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
               <p className="text-xs font-medium text-[var(--muted-foreground)]">
                 Files
               </p>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center justify-end gap-1">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={moveItemCount === 0}
+                  disabled={uploading != null}
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="library-upload-files"
+                >
+                  <Upload className="size-3.5" aria-hidden="true" />
+                  Upload files
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1 px-2 text-xs"
+                  disabled={uploading != null}
+                  onClick={() => folderInputRef.current?.click()}
+                  data-testid="library-upload-folder"
+                >
+                  <FolderUp className="size-3.5" aria-hidden="true" />
+                  Upload folder
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1 px-2 text-xs"
+                  disabled={moveItemCount === 0 || uploading != null}
                   title={
                     moveItemCount === 0
                       ? "Select a file or folder first"
@@ -834,6 +954,7 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
+                  disabled={uploading != null}
                   onClick={() => setCreatingFolder(true)}
                 >
                   <FolderPlus className="size-3.5" aria-hidden="true" />
@@ -842,7 +963,46 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                void handleDropOnFolder(null, event.dataTransfer);
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ATTACHMENT_ACCEPT_ATTR}
+                multiple
+                className="hidden"
+                data-testid="library-upload-files-input"
+                onChange={(event) => {
+                  handleSelectedFiles(event.target.files, null);
+                  event.target.value = "";
+                }}
+              />
+              <input
+                ref={(node) => {
+                  folderInputRef.current = node;
+                  if (node) {
+                    node.setAttribute("webkitdirectory", "");
+                    node.setAttribute("directory", "");
+                  }
+                }}
+                type="file"
+                multiple
+                className="hidden"
+                data-testid="library-upload-folder-input"
+                onChange={(event) => {
+                  handleSelectedFiles(event.target.files, null);
+                  event.target.value = "";
+                }}
+              />
               {creatingFolder ? (
                 <input
                   autoFocus
@@ -862,7 +1022,12 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                 />
               ) : null}
 
-              {checkedCount > 0 ? (
+              {uploading ? (
+                <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
+                  Uploading {uploading.current} of {uploading.total} ·{" "}
+                  {uploading.filename}
+                </p>
+              ) : checkedCount > 0 ? (
                 <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
                   {checkedCount} selected. Choose a destination with{" "}
                   <span className="font-medium text-[var(--foreground)]">
@@ -876,6 +1041,11 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                     Move to folder…
                   </span>{" "}
                   picks where it goes.
+                </p>
+              ) : isEmpty ? (
+                <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
+                  Drop PDF or Word files and folders here, or use Upload files /
+                  Upload folder.
                 </p>
               ) : null}
 
@@ -915,6 +1085,9 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                   });
                 }}
                 onDeleteFolder={(folderId) => void deleteFolder(folderId)}
+                onDropOnFolder={(folderId, dataTransfer) =>
+                  void handleDropOnFolder(folderId, dataTransfer)
+                }
               />
             </div>
           </div>
@@ -964,9 +1137,9 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                 />
               ) : (
                 <p className="p-6 text-sm text-[var(--muted-foreground)]">
-                  Click a file to see its details. Double-click, or use Open
-                  preview, to read it. Check files or folders, then Move to
-                  folder, to organize them.
+                  {isEmpty
+                    ? "Upload PDF or Word files, or drop a folder, to start your library."
+                    : "Click a file to see its details. Double-click, or use Open preview, to read it. Check files or folders, then Move to folder, to organize them."}
                 </p>
               )}
             </div>

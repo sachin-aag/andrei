@@ -11,6 +11,8 @@ import {
 import { toAttachmentDto } from "@/lib/attachments/dto";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { loadAccessibleAsset } from "@/lib/attachments/library-access";
+import { reportProcessingForLinkedAsset } from "@/lib/attachments/library-link-ingest";
+import { startDocumentIngest } from "@/lib/attachments/start-ingest";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import {
   permanentObjectKey,
@@ -180,12 +182,15 @@ export async function linkLibraryItemsToReport(
     }
 
     const createdAttachments: ReturnType<typeof toAttachmentDto>[] = [];
+    const ingestStarts: { attachmentId: string; generation: string }[] = [];
     for (const asset of newAssets) {
       const attachmentId = createId();
       const reportFolderId = asset.libraryFolderId
         ? (reportFolderIdByLibraryFolderId.get(asset.libraryFolderId) ??
           input.targetFolderId)
         : input.targetFolderId;
+      const { processingStatus, shouldStartIngest } =
+        reportProcessingForLinkedAsset(asset);
 
       const [row] = await tx
         .insert(reportAttachments)
@@ -202,8 +207,8 @@ export async function linkLibraryItemsToReport(
           stagingObjectKey: stagingObjectKey(attachmentId),
           permanentObjectKey: permanentObjectKey(input.reportId, attachmentId),
           pageCount: asset.pageCount,
-          processingStatus: asset.processingStatus,
-          processingProgress: asset.processingProgress,
+          processingStatus,
+          processingProgress: shouldStartIngest ? 0 : asset.processingProgress,
           processingPage: asset.processingPage,
           processingError: asset.processingError,
           activeIngestRunId: asset.activeIngestRunId,
@@ -212,12 +217,33 @@ export async function linkLibraryItemsToReport(
         .returning();
 
       createdAttachments.push(toAttachmentDto(row, asset));
+      if (shouldStartIngest && asset.gcsGeneration) {
+        ingestStarts.push({
+          attachmentId,
+          generation: asset.gcsGeneration,
+        });
+      }
     }
 
     return {
       ok: true as const,
       attachments: createdAttachments,
       folders: createdFolders,
+      ingestStarts,
+    };
+  }).then(async (result) => {
+    if (!result.ok) return result;
+    for (const start of result.ingestStarts) {
+      try {
+        await startDocumentIngest(start.attachmentId, start.generation);
+      } catch {
+        // Page-budget / ingest failures are recorded on the attachment row.
+      }
+    }
+    return {
+      ok: true as const,
+      attachments: result.attachments,
+      folders: result.folders,
     };
   });
 }

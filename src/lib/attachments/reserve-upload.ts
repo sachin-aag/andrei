@@ -8,6 +8,10 @@ import {
 } from "@/db/schema";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import {
+  assertAttachmentStorageBudgetAvailable,
+  AttachmentStorageBudgetExceededError,
+} from "@/lib/attachments/storage-budget";
+import {
   assetPermanentObjectKey,
   assetStagingObjectKey,
   permanentObjectKey,
@@ -31,7 +35,7 @@ export type ReserveAttachmentResult =
       stagingObjectKey: string;
       permanentObjectKey: string;
     }
-  | { ok: false; error: string; status: 400 };
+  | { ok: false; error: string; status: 400 | 429 };
 
 /**
  * Atomically enforce per-report attachment count/byte quotas under a report
@@ -122,6 +126,19 @@ export async function reserveAttachmentUpload(
       };
     }
 
+    try {
+      await assertAttachmentStorageBudgetAvailable(input.sizeBytes, tx);
+    } catch (error) {
+      if (error instanceof AttachmentStorageBudgetExceededError) {
+        return {
+          ok: false as const,
+          error: error.message,
+          status: 429 as const,
+        };
+      }
+      throw error;
+    }
+
     await tx.insert(attachmentAssets).values({
       id: assetId,
       ownerId: input.uploadedById,
@@ -154,6 +171,77 @@ export async function reserveAttachmentUpload(
     return {
       ok: true as const,
       attachmentId,
+      assetId,
+      stagingObjectKey: stagingKey,
+      permanentObjectKey: permanentKey,
+    };
+  });
+}
+
+export type ReserveLibraryUploadInput = {
+  ownerId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  libraryFolderId: string | null;
+};
+
+export type ReserveLibraryUploadResult =
+  | {
+      ok: true;
+      assetId: string;
+      stagingObjectKey: string;
+      permanentObjectKey: string;
+    }
+  | { ok: false; error: string; status: 400 | 429 };
+
+/** Reserve a library-only asset (no report row). Enforces the workspace byte cap. */
+export async function reserveLibraryUpload(
+  input: ReserveLibraryUploadInput
+): Promise<ReserveLibraryUploadResult> {
+  const limits = getAttachmentLimits();
+  if (input.sizeBytes > limits.maxAttachmentBytes) {
+    return {
+      ok: false,
+      error: `File exceeds ${limits.maxAttachmentBytes} byte limit`,
+      status: 400,
+    };
+  }
+
+  const assetId = createId();
+  const stagingKey = assetStagingObjectKey(assetId);
+  const permanentKey = assetPermanentObjectKey(assetId);
+
+  return db.transaction(async (tx) => {
+    try {
+      await assertAttachmentStorageBudgetAvailable(input.sizeBytes, tx);
+    } catch (error) {
+      if (error instanceof AttachmentStorageBudgetExceededError) {
+        return {
+          ok: false as const,
+          error: error.message,
+          status: 429 as const,
+        };
+      }
+      throw error;
+    }
+
+    await tx.insert(attachmentAssets).values({
+      id: assetId,
+      ownerId: input.ownerId,
+      libraryFolderId: input.libraryFolderId,
+      filename: input.filename,
+      mimeType: input.mimeType,
+      sizeBytes: input.sizeBytes,
+      sha256: "",
+      stagingObjectKey: stagingKey,
+      permanentObjectKey: permanentKey,
+      processingStatus: "uploading",
+      processingProgress: 0,
+    });
+
+    return {
+      ok: true as const,
       assetId,
       stagingObjectKey: stagingKey,
       permanentObjectKey: permanentKey,
