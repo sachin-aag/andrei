@@ -214,6 +214,14 @@ without raising caps or re-ingesting ready files:
    before hybrid search and merge those rows ahead of vector/keyword hits.
    When the lexical pass alone fills `limit` with positive scores, skip the
    query embedding (same fast-path shape as identifier queries).
+4. **Quote over visual-interpretation** — Gemini layout summaries match
+   query wording (“instruments on the executed table”) without naming the
+   rows. Collapse keeps a `quote`/`transcript` chunk when one exists on
+   that page. Snippets come from `raw_text`, not the contextual header.
+5. **Locator ranking + tail snippets** — `dv-protocol-equipment.pdf page 2`
+   boosts that file+page to the top. Filename/page-only queries excerpt the
+   page tail so a 900-character window reaches the table below running
+   headers.
 
 Eval: `equipment-required-instrument` in `retrieval-cases.json` is the
 synthetic version of that bug. The judge (and a 900-character prefix

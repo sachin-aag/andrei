@@ -21,6 +21,7 @@ import {
   collapseToBestChunkPerPage,
   lexicalMatchScore,
   lexicalQueryTokens,
+  rankHitsForQuery,
   searchPageKey,
   type RetrievalQueryKind,
 } from "@/lib/attachments/retrieval-query";
@@ -33,6 +34,7 @@ export {
   collapseToBestChunkPerPage,
   lexicalMatchScore,
   lexicalQueryTokens,
+  rankHitsForQuery,
   searchPageKey,
 };
 export type { RetrievalQueryKind } from "@/lib/attachments/retrieval-query";
@@ -303,7 +305,7 @@ function toSearchResult(
   row: CandidateRow,
   opts: { snippetChars?: number; query?: string } = {}
 ): DocumentSearchResult {
-  const source = row.contextualText || row.rawText;
+  const source = row.rawText.trim() || row.contextualText;
   const maxChars = opts.snippetChars ?? DEFAULT_SNIPPET_CHARS;
   const excerpt = opts.query?.trim()
     ? buildMatchCenteredSnippet(source, opts.query, maxChars)
@@ -757,11 +759,13 @@ export async function searchReportDocumentsDetailed({
   );
 
   const take = (rows: CandidateRow[], pinned?: boolean): DocumentSearchResult[] =>
-    collapseToBestChunkPerPage(rows, { query: trimmed, textFrom: chunkText })
-      .filter(
+    rankHitsForQuery(
+      collapseToBestChunkPerPage(rows, { query: trimmed, textFrom: chunkText }).filter(
         (row) =>
           !excludeKeys.has(searchPageKey(row.attachmentId, row.pageNumber))
-      )
+      ),
+      trimmed
+    )
       .slice(0, limit)
       .map((row) => ({
         ...toSearchResult(row, { snippetChars, query: trimmed }),

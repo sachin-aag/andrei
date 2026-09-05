@@ -3,8 +3,11 @@ import {
   buildMatchCenteredSnippet,
   classifyRetrievalQuery,
   collapseToBestChunkPerPage,
+  contentQueryForSnippet,
   lexicalMatchScore,
   lexicalQueryTokens,
+  rankHitsForQuery,
+  requestedPageNumbers,
 } from "./retrieval-query";
 
 describe("classifyRetrievalQuery", () => {
@@ -78,6 +81,20 @@ describe("buildMatchCenteredSnippet", () => {
       "alpha beta gamma del..."
     );
   });
+
+  it("uses the page tail for a file+page locator so running headers do not fill the window", () => {
+    const pageText =
+      "UUT HEADER repeating boilerplate for search excerpt truncation ".repeat(
+        30
+      ) + "Required Testing Equipment Narda SRM-3006";
+    const snippet = buildMatchCenteredSnippet(
+      pageText,
+      "dv-protocol-equipment.pdf page 2",
+      120
+    );
+    expect(snippet).toContain("Required Testing Equipment");
+    expect(snippet).toContain("Narda SRM-3006");
+  });
 });
 
 describe("collapseToBestChunkPerPage", () => {
@@ -118,5 +135,52 @@ describe("collapseToBestChunkPerPage", () => {
       }
     );
     expect(collapsed.map((row) => row.chunkId)).toEqual(["c2", "c3"]);
+  });
+
+  it("keeps a quote chunk over a visual-interpretation summary on the same page", () => {
+    const collapsed = collapseToBestChunkPerPage(
+      [
+        {
+          attachmentId: "a",
+          pageNumber: 3,
+          chunkId: "visual",
+          sourceKind: "visual_interpretation",
+          text: "this page lists which instruments appear on the executed equipment data table",
+        },
+        {
+          attachmentId: "a",
+          pageNumber: 3,
+          chunkId: "quote",
+          sourceKind: "quote",
+          text: "EXECUTED Equipment Data Table Torque Wrench Sturtevant Digital Calipers",
+        },
+      ],
+      {
+        query: "which instruments appear on the executed equipment data table",
+        textFrom: (row) => row.text,
+      }
+    );
+    expect(collapsed.map((row) => row.chunkId)).toEqual(["quote"]);
+  });
+});
+
+describe("locator ranking", () => {
+  it("parses page numbers and strips locator tokens from snippet queries", () => {
+    expect(requestedPageNumbers("dv-protocol-equipment.pdf page 2")).toEqual([
+      2,
+    ]);
+    expect(contentQueryForSnippet("dv-protocol-equipment.pdf page 2")).toBe("");
+  });
+
+  it("ranks the requested file page ahead of earlier pages of the same file", () => {
+    const ranked = rankHitsForQuery(
+      [
+        { filename: "dv-protocol-equipment.pdf", pageNumber: 1, id: "p1" },
+        { filename: "dv-protocol-equipment.pdf", pageNumber: 2, id: "p2" },
+        { filename: "software-requirements.pdf", pageNumber: 2, id: "other" },
+      ],
+      "dv-protocol-equipment.pdf page 2"
+    );
+    expect(ranked.map((row) => row.id)).toEqual(["p2", "p1", "other"]);
   });
 });
