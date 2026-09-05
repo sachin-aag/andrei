@@ -1,20 +1,38 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Folder, FolderPlus, Loader2, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Folder,
+  FolderInput,
+  FolderPlus,
+  Loader2,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AttachmentPreviewPanel } from "@/components/report/attachment-preview-panel";
 import { ManagerSelector } from "@/components/report/manager-selector";
-import { WorkProductTabs } from "@/components/report/work-product-tabs";
-import {
-  attachmentIdFromTab,
-  attachmentTabId,
-  type CanvasTabId,
-} from "@/components/report/work-product-canvas";
 import { LibraryAssetLabel } from "@/components/profile/library-asset-label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   AttachmentLibraryAssetRecord,
   AttachmentLibraryFolderRecord,
@@ -27,6 +45,8 @@ import {
 import { cn } from "@/lib/utils";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
+const LIBRARY_ROOT = "__library_root__";
+
 type Props = {
   currentUser: Pick<WorkspaceUser, "id" | "role">;
   workspaceUsers: WorkspaceUser[];
@@ -36,8 +56,6 @@ type LibraryResponse = {
   folders: AttachmentLibraryFolderRecord[];
   assets: AttachmentLibraryAssetRecord[];
 };
-
-type RightPanelTab = "preview" | "details";
 
 function buildFolderChildren(
   folders: AttachmentLibraryFolderRecord[],
@@ -92,29 +110,58 @@ function folderLabel(
   return parts.join(" / ");
 }
 
+function locationLabel(
+  folderId: string | null,
+  folders: AttachmentLibraryFolderRecord[]
+): string {
+  if (!folderId) return "Library root";
+  const folder = folders.find((item) => item.id === folderId);
+  return folder ? folderLabel(folder, folders) : "Library root";
+}
+
+function describeMoveSelection(
+  assets: AttachmentLibraryAssetRecord[],
+  folders: AttachmentLibraryFolderRecord[]
+): string {
+  const names = [
+    ...folders.map((folder) => folder.name),
+    ...assets.map((asset) => asset.filename),
+  ];
+  if (names.length === 0) return "the selected items";
+  if (names.length === 1) return names[0]!;
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names[0]} and ${names.length - 1} more`;
+}
+
 function LibraryProfileTree({
   folderId,
   depth,
   foldersByParent,
   assetsByFolder,
-  activeAssetId,
+  inspectedAssetId,
   checkedAssetIds,
   checkedFolderIds,
+  collapsedFolderIds,
+  onInspectAsset,
   onOpenAsset,
   onToggleAssetCheck,
   onToggleFolderCheck,
+  onToggleFolderCollapsed,
   onDeleteFolder,
 }: {
   folderId: string | null;
   depth: number;
   foldersByParent: Map<string | null, AttachmentLibraryFolderRecord[]>;
   assetsByFolder: Map<string | null, AttachmentLibraryAssetRecord[]>;
-  activeAssetId: string | null;
+  inspectedAssetId: string | null;
   checkedAssetIds: Set<string>;
   checkedFolderIds: Set<string>;
+  collapsedFolderIds: Set<string>;
+  onInspectAsset: (assetId: string) => void;
   onOpenAsset: (assetId: string) => void;
   onToggleAssetCheck: (assetId: string, checked: boolean) => void;
   onToggleFolderCheck: (folderId: string, checked: boolean) => void;
+  onToggleFolderCollapsed: (folderId: string) => void;
   onDeleteFolder: (folderId: string) => void;
 }) {
   const childFolders = foldersByParent.get(folderId) ?? [];
@@ -125,15 +172,28 @@ function LibraryProfileTree({
     <div className="space-y-0.5">
       {childFolders.map((folder) => {
         const checked = checkedFolderIds.has(folder.id);
+        const collapsed = collapsedFolderIds.has(folder.id);
         return (
           <div key={folder.id}>
             <div
               className={cn(
-                "group flex items-center gap-2 rounded-md py-1 pr-2 hover:bg-[var(--secondary)]/50",
+                "group flex items-center gap-1 rounded-md py-1 pr-2 hover:bg-[var(--secondary)]/50",
                 checked && "bg-[var(--secondary)]/40"
               )}
               style={{ paddingLeft: `${indent}px` }}
             >
+              <button
+                type="button"
+                aria-label={collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
+                onClick={() => onToggleFolderCollapsed(folder.id)}
+                className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
+              >
+                {collapsed ? (
+                  <ChevronRight className="size-3.5" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="size-3.5" aria-hidden="true" />
+                )}
+              </button>
               <Checkbox
                 checked={checked}
                 onCheckedChange={(value) =>
@@ -156,37 +216,42 @@ function LibraryProfileTree({
                 <Trash2 className="size-3.5" aria-hidden="true" />
               </button>
             </div>
-            <LibraryProfileTree
-              folderId={folder.id}
-              depth={depth + 1}
-              foldersByParent={foldersByParent}
-              assetsByFolder={assetsByFolder}
-              activeAssetId={activeAssetId}
-              checkedAssetIds={checkedAssetIds}
-              checkedFolderIds={checkedFolderIds}
-              onOpenAsset={onOpenAsset}
-              onToggleAssetCheck={onToggleAssetCheck}
-              onToggleFolderCheck={onToggleFolderCheck}
-              onDeleteFolder={onDeleteFolder}
-            />
+            {collapsed ? null : (
+              <LibraryProfileTree
+                folderId={folder.id}
+                depth={depth + 1}
+                foldersByParent={foldersByParent}
+                assetsByFolder={assetsByFolder}
+                inspectedAssetId={inspectedAssetId}
+                checkedAssetIds={checkedAssetIds}
+                checkedFolderIds={checkedFolderIds}
+                collapsedFolderIds={collapsedFolderIds}
+                onInspectAsset={onInspectAsset}
+                onOpenAsset={onOpenAsset}
+                onToggleAssetCheck={onToggleAssetCheck}
+                onToggleFolderCheck={onToggleFolderCheck}
+                onToggleFolderCollapsed={onToggleFolderCollapsed}
+                onDeleteFolder={onDeleteFolder}
+              />
+            )}
           </div>
         );
       })}
       {childAssets.map((asset) => {
         const checked = checkedAssetIds.has(asset.id);
-        const active = activeAssetId === asset.id;
+        const inspected = inspectedAssetId === asset.id;
         return (
           <div
             key={asset.id}
             className={cn(
               "flex items-start gap-2 rounded-md py-1.5 pr-2 transition-colors",
-              active
+              inspected
                 ? "bg-[var(--secondary)] text-[var(--foreground)]"
                 : checked
                   ? "bg-[var(--secondary)]/40"
                   : "hover:bg-[var(--secondary)]/50"
             )}
-            style={{ paddingLeft: `${indent}px` }}
+            style={{ paddingLeft: `${indent + 20}px` }}
           >
             <Checkbox
               checked={checked}
@@ -199,8 +264,10 @@ function LibraryProfileTree({
             />
             <button
               type="button"
-              onClick={() => onOpenAsset(asset.id)}
+              onClick={() => onInspectAsset(asset.id)}
+              onDoubleClick={() => onOpenAsset(asset.id)}
               className="min-w-0 flex-1 text-left"
+              data-testid={`library-file-${asset.id}`}
             >
               <LibraryAssetLabel
                 filename={asset.filename}
@@ -215,35 +282,110 @@ function LibraryProfileTree({
   );
 }
 
+function MoveToFolderDialog({
+  open,
+  onOpenChange,
+  itemLabel,
+  itemCount,
+  destination,
+  onDestinationChange,
+  destinationOptions,
+  moving,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  itemLabel: string;
+  itemCount: number;
+  destination: string | null;
+  onDestinationChange: (value: string) => void;
+  destinationOptions: { id: string; label: string }[];
+  moving: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="library-move-dialog">
+        <DialogHeader>
+          <DialogTitle>Move to folder</DialogTitle>
+          <DialogDescription>
+            Choose where to put {itemLabel}. Files already attached to reports
+            stay on those reports.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="library-move-destination">Destination</Label>
+          <Select
+            value={destination ?? undefined}
+            onValueChange={onDestinationChange}
+          >
+            <SelectTrigger
+              id="library-move-destination"
+              aria-label="Destination folder"
+            >
+              <SelectValue placeholder="Choose a folder" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={LIBRARY_ROOT}>Library root</SelectItem>
+              {destinationOptions.map((folder) => (
+                <SelectItem key={folder.id} value={folder.id}>
+                  {folder.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={moving || destination == null}
+            onClick={onConfirm}
+            data-testid="library-move-confirm"
+          >
+            {moving
+              ? "Moving…"
+              : `Move ${itemCount} item${itemCount === 1 ? "" : "s"}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function LibraryAssetDetails({
   asset,
-  selectionCount,
   folderOptions,
   shareCandidates,
   granteeIds,
-  moving,
   saving,
   deleting,
+  onOpenPreview,
   onGranteeIdsChange,
-  onMoveAsset,
   onSaveGrants,
   onDeleteAsset,
+  onMoveThisFile,
 }: {
   asset: AttachmentLibraryAssetRecord;
-  selectionCount: number;
   folderOptions: AttachmentLibraryFolderRecord[];
   shareCandidates: WorkspaceUser[];
   granteeIds: string[];
-  moving: boolean;
   saving: boolean;
   deleting: boolean;
+  onOpenPreview: () => void;
   onGranteeIdsChange: (ids: string[]) => void;
-  onMoveAsset: (libraryFolderId: string | null) => void;
   onSaveGrants: () => void;
   onDeleteAsset: () => void;
+  onMoveThisFile: () => void;
 }) {
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-5 p-4" data-testid="library-details-pane">
       <div className="min-w-0">
         <h3 className="truncate text-sm font-medium">{asset.filename}</h3>
         <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
@@ -251,35 +393,34 @@ function LibraryAssetDetails({
         </p>
       </div>
 
-      {selectionCount <= 1 ? (
-        <div className="space-y-2">
-          <label htmlFor="library-folder-move" className="text-sm font-medium">
-            Folder
-          </label>
-          <select
-            id="library-folder-move"
-            disabled={moving}
-            value={asset.libraryFolderId ?? ""}
-            onChange={(event) => {
-              const value = event.target.value;
-              onMoveAsset(value === "" ? null : value);
-            }}
-            className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
-          >
-            <option value="">Top level</option>
-            {folderOptions.map((folder) => (
-              <option key={folder.id} value={folder.id}>
-                {folderLabel(folder, folderOptions)}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : (
-        <p className="text-xs text-[var(--muted-foreground)]">
-          Use the move bar in the file list to relocate {selectionCount} selected
-          items.
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        onClick={onOpenPreview}
+        data-testid="library-open-preview"
+      >
+        <FileText className="size-3.5" aria-hidden="true" />
+        Open preview
+      </Button>
+
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Location</p>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          {locationLabel(asset.libraryFolderId, folderOptions)}
         </p>
-      )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={onMoveThisFile}
+        >
+          <FolderInput className="size-3.5" aria-hidden="true" />
+          Move this file to a folder…
+        </Button>
+      </div>
 
       <div>
         <h3 className="text-sm font-medium">Shared with</h3>
@@ -296,14 +437,13 @@ function LibraryAssetDetails({
         emptyMessage="No other workspace users are available."
       />
       <div className="flex flex-wrap gap-2">
-        <button
+        <Button
           type="button"
-          onClick={onSaveGrants}
           disabled={saving}
-          className="inline-flex items-center rounded-md bg-[var(--primary)] px-3 py-2 text-sm font-medium text-[var(--primary-foreground)] disabled:opacity-50"
+          onClick={onSaveGrants}
         >
           {saving ? "Saving…" : "Save sharing"}
-        </button>
+        </Button>
         <Button
           type="button"
           variant="outline"
@@ -321,20 +461,23 @@ function LibraryAssetDetails({
 export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
   const [library, setLibrary] = useState<LibraryResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [openAssetIds, setOpenAssetIds] = useState<string[]>([]);
-  const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
-  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("preview");
+  const [inspectedAssetId, setInspectedAssetId] = useState<string | null>(null);
+  const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
   const [checkedAssetIds, setCheckedAssetIds] = useState<Set<string>>(
     () => new Set()
   );
   const [checkedFolderIds, setCheckedFolderIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [granteeIds, setGranteeIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
-  const [bulkMoveTarget, setBulkMoveTarget] = useState("");
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [moveDestination, setMoveDestination] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -373,41 +516,38 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     setGranteeIds(data.grants?.map((grant) => grant.granteeUserId) ?? []);
   }, []);
 
-  const openAsset = useCallback(
+  const inspectAsset = useCallback(
     (assetId: string) => {
-      setOpenAssetIds((prev) =>
-        prev.includes(assetId) ? prev : [...prev, assetId]
-      );
-      setActiveAssetId(assetId);
-      setRightPanelTab("preview");
+      setInspectedAssetId(assetId);
+      setPreviewAssetId(null);
       void loadGrants(assetId);
     },
     [loadGrants]
   );
 
-  const closeAssetTab = useCallback((tabId: CanvasTabId) => {
-    const assetId = attachmentIdFromTab(tabId);
-    if (!assetId) return;
-    setOpenAssetIds((prev) => {
-      const next = prev.filter((id) => id !== assetId);
-      setActiveAssetId((active) => {
-        if (active !== assetId) return active;
-        const index = prev.indexOf(assetId);
-        if (index <= 0) return next[0] ?? null;
-        return next[index - 1] ?? next[0] ?? null;
-      });
-      return next;
-    });
+  const openPreview = useCallback(
+    (assetId: string) => {
+      setInspectedAssetId(assetId);
+      setPreviewAssetId(assetId);
+      void loadGrants(assetId);
+    },
+    [loadGrants]
+  );
+
+  const closePreview = useCallback(() => {
+    setPreviewAssetId(null);
   }, []);
 
-  const selectionCount = checkedAssetIds.size + checkedFolderIds.size;
+  const checkedCount = checkedAssetIds.size + checkedFolderIds.size;
+  const moveItemCount =
+    checkedCount > 0 ? checkedCount : inspectedAssetId ? 1 : 0;
 
   const saveGrants = async () => {
-    if (!activeAssetId) return;
+    if (!inspectedAssetId) return;
     setSaving(true);
     try {
       const response = await fetch(
-        `/api/attachment-library/${activeAssetId}/access`,
+        `/api/attachment-library/${inspectedAssetId}/access`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -470,40 +610,35 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     await loadLibrary();
   };
 
-  const moveActiveAsset = async (libraryFolderId: string | null) => {
-    if (!activeAssetId) return;
-    setMoving(true);
-    try {
-      const response = await fetch(
-        `/api/attachment-library/${activeAssetId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ libraryFolderId }),
-        }
-      );
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        toast.error(data.error ?? "Could not move file");
-        return;
-      }
-      await loadLibrary();
-    } finally {
-      setMoving(false);
+  const openMoveDialog = (scope: "checked" | "inspected") => {
+    if (scope === "inspected" && inspectedAssetId) {
+      setCheckedAssetIds(new Set([inspectedAssetId]));
+      setCheckedFolderIds(new Set());
     }
+    setMoveDestination(null);
+    setMoveDialogOpen(true);
   };
 
-  const bulkMoveSelection = async () => {
-    if (selectionCount === 0) return;
+  const confirmMove = async () => {
+    if (moveDestination == null) return;
+    const assetIds =
+      checkedAssetIds.size > 0
+        ? [...checkedAssetIds]
+        : inspectedAssetId
+          ? [inspectedAssetId]
+          : [];
+    const folderIds = [...checkedFolderIds];
+    if (assetIds.length === 0 && folderIds.length === 0) return;
+
     setMoving(true);
     try {
       const response = await fetch("/api/attachment-library/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          assetIds: [...checkedAssetIds],
-          folderIds: [...checkedFolderIds],
-          targetFolderId: bulkMoveTarget === "" ? null : bulkMoveTarget,
+          assetIds,
+          folderIds,
+          targetFolderId: moveDestination === LIBRARY_ROOT ? null : moveDestination,
         }),
       });
       const data = (await response.json().catch(() => ({}))) as {
@@ -515,20 +650,27 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
         toast.error(data.error ?? "Could not move selection");
         return;
       }
-      const moved =
-        (data.movedAssets ?? 0) + (data.movedFolders ?? 0);
-      toast.success(`Moved ${moved} item${moved === 1 ? "" : "s"}`);
+      const moved = (data.movedAssets ?? 0) + (data.movedFolders ?? 0);
+      const destinationName =
+        moveDestination === LIBRARY_ROOT
+          ? "library root"
+          : library?.folders.find((folder) => folder.id === moveDestination)
+              ?.name ?? "the selected folder";
+      toast.success(
+        `Moved ${moved} item${moved === 1 ? "" : "s"} to ${destinationName}`
+      );
       setCheckedAssetIds(new Set());
       setCheckedFolderIds(new Set());
-      setBulkMoveTarget("");
+      setMoveDialogOpen(false);
+      setMoveDestination(null);
       await loadLibrary();
     } finally {
       setMoving(false);
     }
   };
 
-  const deleteActiveAsset = async () => {
-    if (!activeAssetId) return;
+  const deleteInspectedAsset = async () => {
+    if (!inspectedAssetId) return;
     if (
       !window.confirm(
         "Remove this file from your library? It will stay on reports that already use it, but you cannot add it to new reports."
@@ -539,7 +681,7 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     setDeleting(true);
     try {
       const response = await fetch(
-        `/api/attachment-library/${activeAssetId}`,
+        `/api/attachment-library/${inspectedAssetId}`,
         { method: "DELETE" }
       );
       const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -547,9 +689,9 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
         toast.error(data.error ?? "Could not remove file");
         return;
       }
-      const closedId = activeAssetId;
-      setOpenAssetIds((prev) => prev.filter((id) => id !== closedId));
-      setActiveAssetId((active) => (active === closedId ? null : active));
+      const closedId = inspectedAssetId;
+      setInspectedAssetId(null);
+      setPreviewAssetId((preview) => (preview === closedId ? null : preview));
       setGranteeIds([]);
       setCheckedAssetIds((prev) => {
         const next = new Set(prev);
@@ -578,7 +720,10 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     return map;
   }, [library?.assets]);
 
-  const activeAsset = activeAssetId ? assetById.get(activeAssetId) : undefined;
+  const inspectedAsset = inspectedAssetId
+    ? assetById.get(inspectedAssetId)
+    : undefined;
+  const previewAsset = previewAssetId ? assetById.get(previewAssetId) : undefined;
   const shareCandidates = workspaceUsers.filter(
     (user) => user.id !== currentUser.id
   );
@@ -590,28 +735,30 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
       !isFolderUnderAny(folder.id, checkedFolderIds, folderOptions)
   );
 
-  const openTabs = useMemo(() => {
-    return openAssetIds
-      .map((id) => assetById.get(id))
-      .filter((asset): asset is AttachmentLibraryAssetRecord => asset != null)
-      .map((asset) => ({
-        id: attachmentTabId(asset.id),
-        label: asset.filename,
-        testId: `library-asset-tab-${asset.id}`,
-        closable: true,
-        closeAriaLabel: `Close ${asset.filename}`,
-      }));
-  }, [openAssetIds, assetById]);
+  const movingAssets =
+    checkedAssetIds.size > 0
+      ? [...checkedAssetIds]
+          .map((id) => assetById.get(id))
+          .filter((asset): asset is AttachmentLibraryAssetRecord => asset != null)
+      : inspectedAsset
+        ? [inspectedAsset]
+        : [];
+  const movingFolders = folderOptions.filter((folder) =>
+    checkedFolderIds.has(folder.id)
+  );
+
+  const isEmpty =
+    !library || (library.assets.length === 0 && library.folders.length === 0);
+  const previewOpen = previewAsset != null;
 
   useEffect(() => {
     if (!library) return;
     const liveIds = new Set(library.assets.map((asset) => asset.id));
-    setOpenAssetIds((prev) => {
-      const next = prev.filter((id) => liveIds.has(id));
-      return next.length === prev.length ? prev : next;
-    });
-    setActiveAssetId((active) =>
+    setInspectedAssetId((active) =>
       active && liveIds.has(active) ? active : null
+    );
+    setPreviewAssetId((preview) =>
+      preview && liveIds.has(preview) ? preview : null
     );
   }, [library]);
 
@@ -619,8 +766,9 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
       <h2 className="text-base font-semibold">Document library</h2>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        Browse your files, open previews, organize folders, and manage sharing.
-        Files already on reports stay there if you remove them from the library.
+        Click a file to see details. Open a preview when you want to read it.
+        Check items to move them into a folder. Files already on reports stay
+        there if you remove them from the library.
       </p>
 
       {loading ? (
@@ -628,28 +776,62 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           Loading library…
         </div>
-      ) : !library || library.assets.length === 0 ? (
+      ) : isEmpty ? (
         <p className="mt-6 text-sm text-[var(--muted-foreground)]">
           You have not uploaded any library documents yet. Upload a PDF or Word
           file in a report to add it here.
         </p>
       ) : (
-        <div className="mt-5 flex min-h-[min(560px,70vh)] min-w-0 flex-col gap-0 overflow-hidden rounded-md border border-[var(--border)] lg:flex-row">
-          <div className="flex min-h-0 min-w-0 flex-col border-b border-[var(--border)] lg:w-72 lg:shrink-0 lg:border-b-0 lg:border-r">
+        <div
+          className={cn(
+            "mt-5 flex min-w-0 flex-col overflow-hidden rounded-md border border-[var(--border)] lg:flex-row",
+            previewOpen
+              ? "h-[min(70vh,720px)]"
+              : "lg:min-h-[280px]"
+          )}
+          data-testid="library-explorer"
+        >
+          <div
+            className={cn(
+              "flex min-h-0 min-w-0 flex-col border-b border-[var(--border)] lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r",
+              previewOpen ? "h-full" : "max-h-[min(420px,50vh)] lg:max-h-none"
+            )}
+          >
             <div className="flex items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
               <p className="text-xs font-medium text-[var(--muted-foreground)]">
-                Your files
+                Files
               </p>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 shrink-0 gap-1 px-2 text-xs"
-                onClick={() => setCreatingFolder(true)}
-              >
-                <FolderPlus className="size-3.5" aria-hidden="true" />
-                New folder
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1 px-2 text-xs"
+                  disabled={moveItemCount === 0}
+                  title={
+                    moveItemCount === 0
+                      ? "Select files or folders first"
+                      : "Choose a destination folder for the selection"
+                  }
+                  onClick={() => openMoveDialog("checked")}
+                  data-testid="library-move-to-folder"
+                >
+                  <FolderInput className="size-3.5" aria-hidden="true" />
+                  {checkedCount > 0
+                    ? `Move ${checkedCount} to folder…`
+                    : "Move to folder…"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1 px-2 text-xs"
+                  onClick={() => setCreatingFolder(true)}
+                >
+                  <FolderPlus className="size-3.5" aria-hidden="true" />
+                  New folder
+                </Button>
+              </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
@@ -672,46 +854,13 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                 />
               ) : null}
 
-              {selectionCount > 0 ? (
-                <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-2 py-2">
-                  <span className="text-xs font-medium text-[var(--foreground)]">
-                    {selectionCount} selected
+              {checkedCount > 0 ? (
+                <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
+                  {checkedCount} selected. Choose a destination with{" "}
+                  <span className="font-medium text-[var(--foreground)]">
+                    Move {checkedCount} to folder…
                   </span>
-                  <select
-                    aria-label="Move selected items to folder"
-                    value={bulkMoveTarget}
-                    onChange={(event) => setBulkMoveTarget(event.target.value)}
-                    className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs"
-                  >
-                    <option value="">Top level</option>
-                    {moveTargetOptions.map((folder) => (
-                      <option key={folder.id} value={folder.id}>
-                        {folderLabel(folder, folderOptions)}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 shrink-0 text-xs"
-                    disabled={moving}
-                    onClick={() => void bulkMoveSelection()}
-                  >
-                    {moving ? "Moving…" : "Move"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 shrink-0 text-xs"
-                    onClick={() => {
-                      setCheckedAssetIds(new Set());
-                      setCheckedFolderIds(new Set());
-                    }}
-                  >
-                    Clear
-                  </Button>
-                </div>
+                </p>
               ) : null}
 
               <LibraryProfileTree
@@ -719,10 +868,12 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                 depth={0}
                 foldersByParent={tree.foldersByParent}
                 assetsByFolder={tree.assetsByFolder}
-                activeAssetId={activeAssetId}
+                inspectedAssetId={inspectedAssetId}
                 checkedAssetIds={checkedAssetIds}
                 checkedFolderIds={checkedFolderIds}
-                onOpenAsset={openAsset}
+                collapsedFolderIds={collapsedFolderIds}
+                onInspectAsset={inspectAsset}
+                onOpenAsset={openPreview}
                 onToggleAssetCheck={(id, checked) => {
                   setCheckedAssetIds((prev) => {
                     const next = new Set(prev);
@@ -739,100 +890,88 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                     return next;
                   });
                 }}
+                onToggleFolderCollapsed={(id) => {
+                  setCollapsedFolderIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                }}
                 onDeleteFolder={(folderId) => void deleteFolder(folderId)}
               />
             </div>
           </div>
 
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--background)]">
-            {openTabs.length > 0 && activeAsset ? (
-              <>
-                <div className="shrink-0 border-b border-[var(--border)] bg-[var(--card)] px-2 pt-1">
-                  <WorkProductTabs
-                    tabs={openTabs}
-                    value={attachmentTabId(activeAsset.id)}
-                    onChange={(tabId) => {
-                      const assetId = attachmentIdFromTab(tabId);
-                      if (!assetId) return;
-                      setActiveAssetId(assetId);
-                      void loadGrants(assetId);
-                    }}
-                    onClose={closeAssetTab}
-                  />
-                </div>
-                <Tabs
-                  value={rightPanelTab}
-                  onValueChange={(value) =>
-                    setRightPanelTab(value as RightPanelTab)
-                  }
-                  className="flex min-h-0 flex-1 flex-col"
-                >
-                  <div className="shrink-0 border-b border-[var(--border)] bg-[var(--card)] px-3 py-2">
-                    <TabsList className="h-8 w-auto">
-                      <TabsTrigger value="preview" className="text-xs">
-                        Preview
-                      </TabsTrigger>
-                      <TabsTrigger value="details" className="text-xs">
-                        Details
-                      </TabsTrigger>
-                    </TabsList>
-                  </div>
-                  <TabsContent
-                    value="preview"
-                    className="mt-0 min-h-0 flex-1 data-[state=active]:flex data-[state=active]:flex-col"
-                  >
-                    <AttachmentPreviewPanel
-                      testId="library-asset-preview"
-                      showClose={false}
-                      attachment={{
-                        id: activeAsset.id,
-                        filename: activeAsset.filename,
-                        description: activeAsset.description,
-                        mimeType: activeAsset.mimeType,
-                        sizeBytes: activeAsset.sizeBytes,
-                        pageCount: activeAsset.pageCount,
-                        processingStatus: activeAsset.processingStatus,
-                        processingPage: activeAsset.processingPage,
-                        processingError: activeAsset.processingError,
-                      }}
-                      previewUrl={libraryPreviewSrc({
-                        assetId: activeAsset.id,
-                        mimeType: activeAsset.mimeType,
-                        page: 1,
-                      })}
-                      downloadUrl={libraryDownloadHref(activeAsset.id)}
-                    />
-                  </TabsContent>
-                  <TabsContent
-                    value="details"
-                    className="mt-0 min-h-0 flex-1 overflow-y-auto"
-                  >
-                    <LibraryAssetDetails
-                      asset={activeAsset}
-                      selectionCount={selectionCount}
-                      folderOptions={folderOptions}
-                      shareCandidates={shareCandidates}
-                      granteeIds={granteeIds}
-                      moving={moving}
-                      saving={saving}
-                      deleting={deleting}
-                      onGranteeIdsChange={setGranteeIds}
-                      onMoveAsset={(folderId) => void moveActiveAsset(folderId)}
-                      onSaveGrants={() => void saveGrants()}
-                      onDeleteAsset={() => void deleteActiveAsset()}
-                    />
-                  </TabsContent>
-                </Tabs>
-              </>
-            ) : (
-              <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-[var(--muted-foreground)]">
-                Select a file from the list to open it here, or check several
-                files and folders to move them together.
-              </div>
-            )}
-          </div>
+          {previewAsset ? (
+            <div
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--background)]"
+              data-testid="library-preview-pane"
+            >
+              <AttachmentPreviewPanel
+                testId="library-asset-preview"
+                attachment={{
+                  id: previewAsset.id,
+                  filename: previewAsset.filename,
+                  description: previewAsset.description,
+                  mimeType: previewAsset.mimeType,
+                  sizeBytes: previewAsset.sizeBytes,
+                  pageCount: previewAsset.pageCount,
+                  processingStatus: previewAsset.processingStatus,
+                  processingPage: previewAsset.processingPage,
+                  processingError: previewAsset.processingError,
+                }}
+                previewUrl={libraryPreviewSrc({
+                  assetId: previewAsset.id,
+                  mimeType: previewAsset.mimeType,
+                  page: 1,
+                })}
+                downloadUrl={libraryDownloadHref(previewAsset.id)}
+                onClose={closePreview}
+              />
+            </div>
+          ) : (
+            <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--background)]">
+              {inspectedAsset ? (
+                <LibraryAssetDetails
+                  asset={inspectedAsset}
+                  folderOptions={folderOptions}
+                  shareCandidates={shareCandidates}
+                  granteeIds={granteeIds}
+                  saving={saving}
+                  deleting={deleting}
+                  onOpenPreview={() => openPreview(inspectedAsset.id)}
+                  onGranteeIdsChange={setGranteeIds}
+                  onSaveGrants={() => void saveGrants()}
+                  onDeleteAsset={() => void deleteInspectedAsset()}
+                  onMoveThisFile={() => openMoveDialog("inspected")}
+                />
+              ) : (
+                <p className="p-6 text-sm text-[var(--muted-foreground)]">
+                  Click a file to see its details. Double-click, or use Open
+                  preview, to read it. Check files or folders, then Move to
+                  folder, to organize them.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
+
+      <MoveToFolderDialog
+        open={moveDialogOpen}
+        onOpenChange={setMoveDialogOpen}
+        itemLabel={describeMoveSelection(movingAssets, movingFolders)}
+        itemCount={Math.max(moveItemCount, 1)}
+        destination={moveDestination}
+        onDestinationChange={setMoveDestination}
+        destinationOptions={moveTargetOptions.map((folder) => ({
+          id: folder.id,
+          label: folderLabel(folder, folderOptions),
+        }))}
+        moving={moving}
+        onConfirm={() => void confirmMove()}
+      />
     </section>
   );
 }
