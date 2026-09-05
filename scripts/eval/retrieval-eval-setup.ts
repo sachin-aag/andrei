@@ -49,6 +49,8 @@ async function ingestOneFile(input: {
   const metadata = await storage.getObjectMetadata(permanentKey);
   const sha256 = createHash("sha256").update(input.bytes).digest("hex");
 
+  // Eval ingest does not create a library `attachment_assets` row, so
+  // `assetId` stays null. Search must still join chunks on `attachmentId`.
   await db.insert(reportAttachments).values({
     id: attachmentId,
     reportId: input.reportId,

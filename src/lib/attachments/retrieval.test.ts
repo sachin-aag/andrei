@@ -5,6 +5,7 @@ import {
   buildOutlineFromStoredPages,
   normalizeAttachmentIdFilter,
   reciprocalRankFusion,
+  reportAttachmentChunkJoin,
   searchReportDocuments,
   searchReportDocumentsDetailed,
   searchReportDocumentsMany,
@@ -60,6 +61,24 @@ function chunkRow(chunkId: string, attachmentId: string, pageNumber = 1) {
     sourceSha256: "sha",
   };
 }
+
+describe("reportAttachmentChunkJoin", () => {
+  it("matches library links by assetId and eval/legacy rows by attachmentId", () => {
+    const names: string[] = [];
+    const seen = new Set<unknown>();
+    const walk = (value: unknown) => {
+      if (value == null || typeof value !== "object" || seen.has(value)) return;
+      seen.add(value);
+      if ("name" in value && typeof value.name === "string") {
+        names.push(value.name);
+      }
+      for (const child of Object.values(value)) walk(child);
+    };
+    walk(reportAttachmentChunkJoin());
+    expect(names).toContain("asset_id");
+    expect(names).toContain("attachment_id");
+  });
+});
 
 describe("reciprocalRankFusion", () => {
   it("merges vector and keyword rankings by reciprocal rank", () => {

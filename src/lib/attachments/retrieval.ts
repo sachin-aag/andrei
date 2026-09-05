@@ -412,8 +412,34 @@ function candidateSelect() {
   };
 }
 
-function reportAttachmentChunkJoin() {
-  return sql`${documentChunks.assetId} = ${reportAttachments.assetId}`;
+/**
+ * Library links share pages/chunks by `assetId`. Eval ingest and legacy
+ * report rows have null `assetId` — those still join on `attachmentId`.
+ * `NULL = NULL` is unknown in SQL, so an asset-only join returns nothing.
+ */
+function reportAttachmentEvidenceJoin(
+  evidence: typeof documentChunks | typeof documentPages
+) {
+  const join = or(
+    and(
+      isNotNull(reportAttachments.assetId),
+      isNotNull(evidence.assetId),
+      eq(evidence.assetId, reportAttachments.assetId)
+    ),
+    eq(evidence.attachmentId, reportAttachments.id)
+  );
+  if (!join) {
+    throw new Error("report attachment evidence join is empty");
+  }
+  return join;
+}
+
+export function reportAttachmentChunkJoin() {
+  return reportAttachmentEvidenceJoin(documentChunks);
+}
+
+function reportAttachmentPageJoin() {
+  return reportAttachmentEvidenceJoin(documentPages);
 }
 
 /** Dedupe + drop blanks so an all-empty input behaves like "no filter". */
@@ -514,7 +540,6 @@ async function loadRouteableIndex(reportId: string): Promise<{
       and(
         eq(reportAttachments.reportId, reportId),
         isNull(reportAttachments.deletedAt),
-        isNotNull(reportAttachments.assetId),
         isNotNull(reportAttachments.activeIngestRunId)
       )
     )
@@ -537,7 +562,6 @@ async function loadRouteableIndex(reportId: string): Promise<{
       and(
         eq(reportAttachments.reportId, reportId),
         isNull(reportAttachments.deletedAt),
-        isNotNull(reportAttachments.assetId),
         isNotNull(reportAttachments.activeIngestRunId),
         eq(documentOutlineSpans.ingestRunId, reportAttachments.activeIngestRunId)
       )
@@ -601,7 +625,6 @@ async function fusedChunkSearch({
   const activeScope = and(
     eq(reportAttachments.reportId, reportId),
     isNull(reportAttachments.deletedAt),
-    isNotNull(reportAttachments.assetId),
     isNotNull(reportAttachments.activeIngestRunId),
     eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
     ...chunkScopeSql({
@@ -670,7 +693,6 @@ async function exactIdentifierChunkSearch({
   const activeScope = and(
     eq(reportAttachments.reportId, reportId),
     isNull(reportAttachments.deletedAt),
-    isNotNull(reportAttachments.assetId),
     isNotNull(reportAttachments.activeIngestRunId),
     eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
     ...chunkScopeSql({
@@ -742,7 +764,6 @@ async function lexicalChunkSearch({
   const activeScope = and(
     eq(reportAttachments.reportId, reportId),
     isNull(reportAttachments.deletedAt),
-    isNotNull(reportAttachments.assetId),
     isNotNull(reportAttachments.activeIngestRunId),
     eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
     ...chunkScopeSql({
@@ -1318,10 +1339,7 @@ export async function readDocumentPage({
       ingestRunId: documentPages.ingestRunId,
     })
     .from(reportAttachments)
-    .innerJoin(
-      documentPages,
-      sql`${documentPages.assetId} = ${reportAttachments.assetId}`
-    )
+    .innerJoin(documentPages, reportAttachmentPageJoin())
     .where(
       and(
         eq(reportAttachments.id, attachmentId),
@@ -1454,10 +1472,7 @@ export async function listDocumentPagesForReview({
       printedPageLabel: documentPages.printedPageLabel,
     })
     .from(reportAttachments)
-    .innerJoin(
-      documentPages,
-      sql`${documentPages.assetId} = ${reportAttachments.assetId}`
-    )
+    .innerJoin(documentPages, reportAttachmentPageJoin())
     .where(
       and(
         eq(reportAttachments.reportId, reportId),

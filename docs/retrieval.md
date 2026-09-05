@@ -66,7 +66,7 @@ plumbing:
 
 | Item | Status |
 | --- | --- |
-| `mustContain` / `excerptHitAtK` (excerpt, not just filename+page) | **done** — every public gold hit with a unique answering substring sets `mustContain` |
+| `mustContain` / `excerptHitAtK` (excerpt, not just filename+page) | **done** — optional. Public set uses it on the two truncation cases (`equipment-executed-log-negative`, `equipment-page-2-locator`). The LLM judge + `passCriteria` grades the rest; paraphrase is allowed |
 | `mustNotContainAnywhere` / `noFalsePositiveAtK` | **done** |
 | LLM judge + required `passCriteria` | **done** (added after the metric work) |
 | Path-gated Vitest + live `pnpm retrieval-eval -- --from-gcs` in CI | **done** |
@@ -86,8 +86,10 @@ truncation is gone.
 
 ### Harness status (phase 0)
 
-The loader and public `mustContain` gold are in. Remaining work is
-operational, not a new retrieval design:
+The loader is in. Public pass/fail is the LLM judge (`passCriteria`).
+`mustContain` stays optional excerpt gold, not the default bar.
+
+Remaining work is operational, not a new retrieval design:
 
 1. **Private overlay file.** Copy
    `scripts/eval/retrieval-cases.local.example.json` to gitignored
@@ -110,7 +112,9 @@ signal.
 
 1. Ingest writes `document_pages` (transcript + optional Gemini
    `pageContext` + retrieval columns) and `document_chunks` (vector +
-   English FTS on `contextual_text`).
+   English FTS on `contextual_text`). Chunks join the report attachment by
+   `assetId` when both are set (library links). Eval ingest and legacy
+   rows have null `assetId` and join on `attachmentId`.
 2. After pages exist, ingest persists `document_outline_spans` (heading
    ranges + unioned identifiers) before chunk/embed.
 3. `searchReportDocuments()` classifies the query:
