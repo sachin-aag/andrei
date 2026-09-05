@@ -116,9 +116,20 @@ pnpm retrieval-eval -- --report-id <id>   # search an already-ingested report
 CI (`.github/workflows/ci.yml` job `Retrieval eval (GCS + judge)`) runs
 `--from-gcs` only when the retrieval harness or `searchReportDocuments`
 implementation changes. It skips cleanly when Vertex / GCS secrets are
-missing. Secrets: `GOOGLE_VERTEX_PROJECT`, `GCP_SERVICE_ACCOUNT_KEY`,
-`RETRIEVAL_EVAL_GCS_BUCKET`. After changing the PDF builders, re-run
-`pnpm retrieval-eval:upload`.
+missing. GitHub Actions authenticates with Workload Identity Federation
+(OIDC) — not a JSON service-account key (`constraints/iam.disableServiceAccountKeyCreation`).
+Required Actions secrets:
+
+- `GOOGLE_VERTEX_PROJECT`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER` (`projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/github`)
+- `GCP_SERVICE_ACCOUNT_EMAIL` (the GitHub Actions SA, not the Vercel runtime SA)
+- `RETRIEVAL_EVAL_GCS_BUCKET`
+
+Do not add `GCP_SERVICE_ACCOUNT_KEY`. The job needs `permissions.id-token: write`.
+The same WIF secrets are used by `.github/workflows/pdf-ingest-soak.yml`.
+Laptop upload still uses your user ADC (`gcloud auth application-default login`
+then `pnpm retrieval-eval:upload`). After changing the PDF builders, re-run
+that upload.
 
 Local ingest uses `ATTACHMENT_STORAGE_BACKEND=local` (the bucket is the
 corpus source, not where CI writes attachment bytes). Runs write JSON
