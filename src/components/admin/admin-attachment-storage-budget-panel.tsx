@@ -101,7 +101,7 @@ export function AdminAttachmentStorageBudgetPanel({
         <div>
           <h2 className="text-base font-semibold">Attachment storage</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Total PDF and Word file storage for this workspace. Linking a library
+            Total PDF and Word file storage for this workspace. Linking a vault
             file into a report does not count twice. When the hard limit is on,
             new uploads are blocked once stored bytes reach the cap.
           </p>
@@ -134,7 +134,7 @@ export function AdminAttachmentStorageBudgetPanel({
             />
           </div>
           <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-            This cap does not reset monthly. Deleting a file from the library
+            This cap does not reset monthly. Deleting a file from the vault
             frees space unless it is still attached to a report.
           </p>
           {status.isOverBudget ? (

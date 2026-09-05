@@ -79,7 +79,7 @@ export async function linkLibraryItemsToReport(
   const assetIds = [...new Set(input.assetIds ?? [])];
   const libraryFolderIds = [...new Set(input.libraryFolderIds ?? [])];
   if (assetIds.length === 0 && libraryFolderIds.length === 0) {
-    return { ok: false, error: "No library items selected", status: 400 };
+    return { ok: false, error: "No vault items selected", status: 400 };
   }
 
   const limits = getAttachmentLimits();

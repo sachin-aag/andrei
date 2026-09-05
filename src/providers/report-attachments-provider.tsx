@@ -676,7 +676,7 @@ export function ReportAttachmentsProvider({
         error?: string;
       };
       if (!response.ok) {
-        throw new Error(data.error ?? "Could not add from library");
+        throw new Error(data.error ?? "Could not add from vault");
       }
       if (Array.isArray(data.folders)) {
         setFolders((prev) => {
@@ -703,7 +703,7 @@ export function ReportAttachmentsProvider({
       }
       const count = data.attachments?.length ?? 0;
       toast.success(
-        count === 1 ? "Added 1 document from library" : `Added ${count} documents from library`
+        count === 1 ? "Added 1 document from vault" : `Added ${count} documents from vault`
       );
     },
     [canMutateAttachments, reportId, upsertAttachment]

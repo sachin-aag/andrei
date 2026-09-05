@@ -47,7 +47,7 @@ describe("libraryPreviewSrc", () => {
         mimeType: PDF_MIME_TYPE,
         page: 2,
       })
-    ).toBe("/api/attachment-library/asset-1/content?proxy=1&page=2");
+    ).toBe("/api/attachment-vault/asset-1/content?proxy=1&page=2");
   });
 
   it("uses the server-rendered HTML preview for library Word documents", () => {
@@ -57,14 +57,14 @@ describe("libraryPreviewSrc", () => {
         mimeType: DOCX_MIME_TYPE,
         page: 1,
       })
-    ).toBe("/api/attachment-library/asset-2/preview");
+    ).toBe("/api/attachment-vault/asset-2/preview");
   });
 });
 
 describe("libraryDownloadHref", () => {
   it("requests a direct download for library assets", () => {
     expect(libraryDownloadHref("asset-1")).toBe(
-      "/api/attachment-library/asset-1/content?download=1"
+      "/api/attachment-vault/asset-1/content?download=1"
     );
   });
 });

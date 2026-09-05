@@ -123,7 +123,7 @@ NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 
 They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
 `docs/whitelabel-vercel-deploy.md`. Primary sidebar is Reports, then Document
-library (`/library`), then Insights on demo only (`insightsEnabled`; MJ and
+Document vault (`/vault`), then Insights on demo only (`insightsEnabled`; MJ and
 Convergent hide the link and `/insights` redirects home). Report workspace
 chrome is Document | Agent.
 New reports open in Agent; returning to a report restores that user's last

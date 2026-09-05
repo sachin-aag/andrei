@@ -70,7 +70,7 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/api/attachment-library?scope=mine")) {
+      if (url.includes("/api/attachment-vault?scope=mine")) {
         return jsonResponse({ folders: [folder], assets: [asset] });
       }
       if (url.includes("/access")) {
@@ -167,7 +167,7 @@ describe("DocumentLibrarySection explorer", () => {
     });
   });
 
-  it("lets people upload files or a folder from the profile library", async () => {
+  it("lets people upload files or a folder from the document vault", async () => {
     renderLibrary();
     await screen.findByTestId("library-explorer");
     expect(screen.getByTestId("library-upload-files")).toBeInTheDocument();

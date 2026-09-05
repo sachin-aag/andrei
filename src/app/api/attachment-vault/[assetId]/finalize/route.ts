@@ -124,7 +124,7 @@ export async function POST(
       action: "attachment_uploaded",
       entityType: "attachment",
       entityId: assetId,
-      summary: `Library attachment uploaded: ${claimed.filename}`,
+      summary: `Vault attachment uploaded: ${claimed.filename}`,
       newValue: {
         filename: claimed.filename,
         sizeBytes: promoted.sizeBytes,

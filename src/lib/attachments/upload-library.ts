@@ -15,7 +15,7 @@ export async function reserveLibraryUpload({
   libraryFolderId: string | null;
   relativePath?: string;
 }): Promise<{ assetId: string; uploadUrl: string }> {
-  const response = await fetch("/api/attachment-library/upload-url", {
+  const response = await fetch("/api/attachment-vault/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -44,7 +44,7 @@ export async function finalizeLibraryUpload({
   assetId: string;
   filename: string;
 }): Promise<AttachmentLibraryAssetRecord> {
-  const response = await fetch(`/api/attachment-library/${assetId}/finalize`, {
+  const response = await fetch(`/api/attachment-vault/${assetId}/finalize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: "{}",
@@ -99,7 +99,7 @@ export async function uploadFileToLibrary({
   } catch (error) {
     const message =
       error instanceof Error ? error.message : `Could not upload ${file.name}`;
-    await fetch(`/api/attachment-library/${assetId}`, {
+    await fetch(`/api/attachment-vault/${assetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ uploadFailed: true, error: message }),

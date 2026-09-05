@@ -44,9 +44,9 @@ export function AppShell({
   );
   const mainId = useId();
   const { branding, insightsEnabled } = getCustomerPack();
-  const documentLibraryItem = {
-    href: "/library",
-    label: "Document library",
+  const documentVaultItem = {
+    href: "/vault",
+    label: "Document vault",
     icon: Folder,
   };
 
@@ -54,14 +54,14 @@ export function AppShell({
     user.role === "admin"
       ? [
           { href: "/admin/reports", label: "Reports", icon: FileText },
-          documentLibraryItem,
+          documentVaultItem,
           { href: "/admin/users", label: "Users", icon: Users },
           { href: "/admin/limits", label: "Limits", icon: Gauge },
           { href: "/admin/prompts", label: "Prompts", icon: ScrollText },
         ]
       : [
           { href: "/", label: "Reports", icon: FileText },
-          documentLibraryItem,
+          documentVaultItem,
           ...(insightsEnabled
             ? [{ href: "/insights", label: "Insights", icon: BarChart3 }]
             : []),

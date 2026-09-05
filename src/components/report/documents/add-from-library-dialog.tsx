@@ -164,13 +164,13 @@ export function AddFromLibraryDialog({
     setLoading(true);
     try {
       const response = await fetch(
-        `/api/attachment-library?scope=${encodeURIComponent(nextScope)}`
+        `/api/attachment-vault?scope=${encodeURIComponent(nextScope)}`
       );
       const data = (await response.json().catch(() => ({}))) as LibraryResponse & {
         error?: string;
       };
       if (!response.ok) {
-        toast.error(data.error ?? "Could not load document library");
+        toast.error(data.error ?? "Could not load document vault");
         return;
       }
       setLibrary(data);
@@ -209,7 +209,7 @@ export function AddFromLibraryDialog({
       onOpenChange(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not add from library"
+        error instanceof Error ? error.message : "Could not add from vault"
       );
     } finally {
       setLinking(false);
@@ -231,7 +231,7 @@ export function AddFromLibraryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
         <DialogHeader className="shrink-0 space-y-1 px-6 pt-6">
-          <DialogTitle>Add from library</DialogTitle>
+          <DialogTitle>Add from vault</DialogTitle>
           <DialogDescription>
             Reuse documents you have uploaded or that were shared with you.
             Processing runs once per file.
@@ -263,7 +263,7 @@ export function AddFromLibraryDialog({
             </div>
           ) : library && library.assets.length === 0 ? (
             <p className="px-2 py-6 text-center text-sm text-[var(--muted-foreground)]">
-              No documents in this library view yet.
+              No documents in this vault view yet.
             </p>
           ) : (
             <LibraryTreeNode

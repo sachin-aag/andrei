@@ -22,7 +22,7 @@ The same engine ships as three customer packs: **demo** (Andrei branding, invest
 
 Insights dashboards exist under `/insights` on the **demo** pack (`insightsEnabled`). MJ and Convergent hide the nav item and redirect those routes home. The dashboards are currently backed by mock data.
 
-The workspace **Document library** is a primary sidebar item under Reports (`/library`): upload PDFs and Word files once, then attach them to reports.
+The workspace **Document vault** is a primary sidebar item under Reports (`/vault`): upload PDFs and Word files once, then attach them to reports.
 
 ---
 

@@ -37,7 +37,7 @@ export function libraryPreviewSrc(input: {
   page: number;
 }): string {
   const { assetId, mimeType, page } = input;
-  const base = `/api/attachment-library/${assetId}`;
+  const base = `/api/attachment-vault/${assetId}`;
   if (kindFromMime(mimeType) === "docx") {
     return `${base}/preview`;
   }
@@ -46,5 +46,5 @@ export function libraryPreviewSrc(input: {
 }
 
 export function libraryDownloadHref(assetId: string): string {
-  return `/api/attachment-library/${assetId}/content?download=1`;
+  return `/api/attachment-vault/${assetId}/content?download=1`;
 }

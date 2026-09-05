@@ -36,14 +36,14 @@ const engineer = {
 };
 
 function postRequest(body: unknown) {
-  return new Request("http://localhost/api/attachment-library/upload-url", {
+  return new Request("http://localhost/api/attachment-vault/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json", origin: "http://localhost" },
     body: JSON.stringify(body),
   });
 }
 
-describe("/api/attachment-library/upload-url", () => {
+describe("/api/attachment-vault/upload-url", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ensureLibraryFolderPath).mockResolvedValue({

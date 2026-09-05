@@ -132,43 +132,43 @@ describe("AppShell brand chrome", () => {
 });
 
 describe("AppShell primary navigation", () => {
-  it("places Document library under Reports and keeps Insights on demo", () => {
+  it("places Document vault under Reports and keeps Insights on demo", () => {
     setCustomer("demo");
     render(
       <AppShell user={engineer} initialUsers={[engineer]}>
         <div>main</div>
       </AppShell>
     );
-    expect(primaryNavHrefs()).toEqual(["/", "/library", "/insights"]);
+    expect(primaryNavHrefs()).toEqual(["/", "/vault", "/insights"]);
     expect(
-      screen.getByRole("link", { name: "Document library" })
+      screen.getByRole("link", { name: "Document vault" })
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Insights" })).toBeInTheDocument();
   });
 
-  it("hides Insights on MJ and keeps Document library under Reports", () => {
+  it("hides Insights on MJ and keeps Document vault under Reports", () => {
     setCustomer("mj");
     render(
       <AppShell user={engineer} initialUsers={[engineer]}>
         <div>main</div>
       </AppShell>
     );
-    expect(primaryNavHrefs()).toEqual(["/", "/library"]);
+    expect(primaryNavHrefs()).toEqual(["/", "/vault"]);
     expect(screen.queryByRole("link", { name: "Insights" })).not.toBeInTheDocument();
   });
 
-  it("hides Insights on Convergent and keeps Document library under Reports", () => {
+  it("hides Insights on Convergent and keeps Document vault under Reports", () => {
     setCustomer("convergent");
     render(
       <AppShell user={engineer} initialUsers={[engineer]}>
         <div>main</div>
       </AppShell>
     );
-    expect(primaryNavHrefs()).toEqual(["/", "/library"]);
+    expect(primaryNavHrefs()).toEqual(["/", "/vault"]);
     expect(screen.queryByRole("link", { name: "Insights" })).not.toBeInTheDocument();
   });
 
-  it("places Document library under Reports in the admin nav", () => {
+  it("places Document vault under Reports in the admin nav", () => {
     setCustomer("demo");
     render(
       <AppShell user={admin} initialUsers={[admin]}>
@@ -177,7 +177,7 @@ describe("AppShell primary navigation", () => {
     );
     expect(primaryNavHrefs()).toEqual([
       "/admin/reports",
-      "/library",
+      "/vault",
       "/admin/users",
       "/admin/limits",
       "/admin/prompts",

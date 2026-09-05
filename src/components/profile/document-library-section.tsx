@@ -126,9 +126,9 @@ function locationLabel(
   folderId: string | null,
   folders: AttachmentLibraryFolderRecord[]
 ): string {
-  if (!folderId) return "Library root";
+  if (!folderId) return "Vault root";
   const folder = folders.find((item) => item.id === folderId);
-  return folder ? folderLabel(folder, folders) : "Library root";
+  return folder ? folderLabel(folder, folders) : "Vault root";
 }
 
 function describeMoveSelection(
@@ -357,7 +357,7 @@ function MoveToFolderDialog({
               <SelectValue placeholder="Choose a folder" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={LIBRARY_ROOT}>Library root</SelectItem>
+              <SelectItem value={LIBRARY_ROOT}>Vault root</SelectItem>
               {destinationOptions.map((folder) => (
                 <SelectItem key={folder.id} value={folder.id}>
                   {folder.label}
@@ -482,7 +482,7 @@ function LibraryAssetDetails({
           onClick={onDeleteAsset}
           className="text-[var(--destructive)] hover:text-[var(--destructive)]"
         >
-          {deleting ? "Removing…" : "Remove from library"}
+          {deleting ? "Removing…" : "Remove from vault"}
         </Button>
       </div>
     </div>
@@ -526,12 +526,12 @@ export function DocumentLibrarySection({
   const loadLibrary = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/attachment-library?scope=mine");
+      const response = await fetch("/api/attachment-vault?scope=mine");
       const data = (await response.json().catch(() => ({}))) as LibraryResponse & {
         error?: string;
       };
       if (!response.ok) {
-        toast.error(data.error ?? "Could not load your document library");
+        toast.error(data.error ?? "Could not load your document vault");
         return;
       }
       setLibrary({ folders: data.folders ?? [], assets: data.assets ?? [] });
@@ -545,7 +545,7 @@ export function DocumentLibrarySection({
   }, [loadLibrary]);
 
   const loadGrants = useCallback(async (assetId: string) => {
-    const response = await fetch(`/api/attachment-library/${assetId}/access`);
+    const response = await fetch(`/api/attachment-vault/${assetId}/access`);
     const data = (await response.json().catch(() => ({}))) as {
       grants?: { granteeUserId: string }[];
       error?: string;
@@ -589,7 +589,7 @@ export function DocumentLibrarySection({
     setSaving(true);
     try {
       const response = await fetch(
-        `/api/attachment-library/${inspectedAssetId}/access`,
+        `/api/attachment-vault/${inspectedAssetId}/access`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -613,7 +613,7 @@ export function DocumentLibrarySection({
       setCreatingFolder(false);
       return;
     }
-    const response = await fetch("/api/attachment-library/folders", {
+    const response = await fetch("/api/attachment-vault/folders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, parentId: null }),
@@ -636,7 +636,7 @@ export function DocumentLibrarySection({
     ) {
       return;
     }
-    const response = await fetch(`/api/attachment-library/folders/${folderId}`, {
+    const response = await fetch(`/api/attachment-vault/folders/${folderId}`, {
       method: "DELETE",
     });
     const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -674,7 +674,7 @@ export function DocumentLibrarySection({
 
     setMoving(true);
     try {
-      const response = await fetch("/api/attachment-library/move", {
+      const response = await fetch("/api/attachment-vault/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -695,7 +695,7 @@ export function DocumentLibrarySection({
       const moved = (data.movedAssets ?? 0) + (data.movedFolders ?? 0);
       const destinationName =
         moveDestination === LIBRARY_ROOT
-          ? "library root"
+          ? "vault root"
           : library?.folders.find((folder) => folder.id === moveDestination)
               ?.name ?? "the selected folder";
       toast.success(
@@ -745,8 +745,8 @@ export function DocumentLibrarySection({
     if (uploaded > 0) {
       toast.success(
         uploaded === 1
-          ? "Uploaded 1 file to your library"
-          : `Uploaded ${uploaded} files to your library`
+          ? "Uploaded 1 file to your vault"
+          : `Uploaded ${uploaded} files to your vault`
       );
     }
   };
@@ -788,7 +788,7 @@ export function DocumentLibrarySection({
     if (!inspectedAssetId) return;
     if (
       !window.confirm(
-        "Remove this file from your library? It will stay on reports that already use it, but you cannot add it to new reports."
+        "Remove this file from your vault? It will stay on reports that already use it, but you cannot add it to new reports."
       )
     ) {
       return;
@@ -796,7 +796,7 @@ export function DocumentLibrarySection({
     setDeleting(true);
     try {
       const response = await fetch(
-        `/api/attachment-library/${inspectedAssetId}`,
+        `/api/attachment-vault/${inspectedAssetId}`,
         { method: "DELETE" }
       );
       const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -814,7 +814,7 @@ export function DocumentLibrarySection({
         return next;
       });
       await loadLibrary();
-      toast.success("Removed from library");
+      toast.success("Removed from vault");
     } finally {
       setDeleting(false);
     }
@@ -881,13 +881,13 @@ export function DocumentLibrarySection({
     <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
       {hideIntro ? null : (
         <>
-          <h2 className="text-base font-semibold">Document library</h2>
+          <h2 className="text-base font-semibold">Document vault</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
             Upload files or folders here, or drop them onto a folder. Nested
             folders are kept. A folder must contain only PDF and Word files —
             anything else stops the upload before it starts. Click a file to
             see details. Open a preview when you want to read it. Files already
-            on reports stay there if you remove them from the library.
+            on reports stay there if you remove them from the vault.
           </p>
         </>
       )}
@@ -900,7 +900,7 @@ export function DocumentLibrarySection({
           )}
         >
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          Loading library…
+          Loading vault…
         </div>
       ) : (
         <div
@@ -1158,7 +1158,7 @@ export function DocumentLibrarySection({
               ) : (
                 <p className="p-6 text-sm text-[var(--muted-foreground)]">
                   {isEmpty
-                    ? "Upload PDF or Word files, or drop a folder, to start your library."
+                    ? "Upload PDF or Word files, or drop a folder, to start your vault."
                     : "Click a file to see its details. Double-click, or use Open preview, to read it. Check files or folders, then Move to folder, to organize them."}
                 </p>
               )}

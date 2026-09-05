@@ -52,7 +52,7 @@ export function AttachmentUploadMenu({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setLibraryOpen(true)}>
             <Library className="size-4" aria-hidden="true" />
-            Add from library
+            Add from vault
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
