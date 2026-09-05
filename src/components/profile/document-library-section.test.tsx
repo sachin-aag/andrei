@@ -116,6 +116,17 @@ describe("DocumentLibrarySection explorer", () => {
     expect(screen.queryByTestId("library-asset-preview")).not.toBeInTheDocument();
   });
 
+  it("opens preview on double-click without showing it on a single click", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+
+    const file = await screen.findByTestId("library-file-asset-1");
+    await user.dblClick(file);
+
+    expect(await screen.findByTestId("library-asset-preview")).toBeInTheDocument();
+    expect(screen.queryByTestId("library-details-pane")).not.toBeInTheDocument();
+  });
+
   it("opens a destination dialog instead of moving immediately", async () => {
     const user = userEvent.setup();
     renderLibrary();
@@ -131,6 +142,20 @@ describe("DocumentLibrarySection explorer", () => {
     expect(
       screen.getByRole("button", { name: "Move 1 item" })
     ).toBeDisabled();
+  });
+
+  it("lets Move to folder act on the clicked file without a checkbox", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await user.click(await screen.findByText("coa.pdf"));
+    expect(screen.getByText(/coa\.pdf is selected/i)).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("library-move-to-folder"));
+    expect(await screen.findByTestId("library-move-dialog")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Choose where to put coa.pdf/i)
+    ).toBeInTheDocument();
   });
 
   it("does not show a preview window before a file is opened", async () => {

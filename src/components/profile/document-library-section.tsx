@@ -201,11 +201,17 @@ function LibraryProfileTree({
                 }
                 aria-label={`Select folder ${folder.name}`}
               />
-              <Folder
-                className="size-4 shrink-0 text-[var(--muted-foreground)]"
-                aria-hidden="true"
-              />
-              <span className="min-w-0 flex-1 truncate text-sm">{folder.name}</span>
+              <button
+                type="button"
+                onClick={() => onToggleFolderCollapsed(folder.id)}
+                className="flex min-w-0 flex-1 items-center gap-1 text-left"
+              >
+                <Folder
+                  className="size-4 shrink-0 text-[var(--muted-foreground)]"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-sm">{folder.name}</span>
+              </button>
               <button
                 type="button"
                 aria-label={`Delete folder ${folder.name}`}
@@ -810,8 +816,10 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                   disabled={moveItemCount === 0}
                   title={
                     moveItemCount === 0
-                      ? "Select files or folders first"
-                      : "Choose a destination folder for the selection"
+                      ? "Select a file or folder first"
+                      : checkedCount > 0
+                        ? "Choose a destination folder for the checked items"
+                        : `Choose a destination folder for ${inspectedAsset?.filename ?? "this file"}`
                   }
                   onClick={() => openMoveDialog("checked")}
                   data-testid="library-move-to-folder"
@@ -860,6 +868,14 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                   <span className="font-medium text-[var(--foreground)]">
                     Move {checkedCount} to folder…
                   </span>
+                </p>
+              ) : inspectedAsset && !previewOpen ? (
+                <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
+                  {inspectedAsset.filename} is selected.{" "}
+                  <span className="font-medium text-[var(--foreground)]">
+                    Move to folder…
+                  </span>{" "}
+                  picks where it goes.
                 </p>
               ) : null}
 
