@@ -180,7 +180,8 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   `document_chunks_contextual_text_fts_en_idx`.
 - `readDocumentOutline` prefers stored `document_outline_spans` on the active
   ingest run and falls back to `buildOutlineFromStoredPages`.
-- Plan and gold cases: `docs/retrieval.md`, `pnpm retrieval-eval`.
+- Plan and gold cases: `docs/retrieval.md`. CI live path is
+  `pnpm retrieval-eval -- --from-gcs` (GCS corpus + ingest + LLM judge).
 - Default retrieval is adaptive (agentic grep: complementary
   `search_documents` queries, `excludePages` / `nextExcludePages` rounds,
   `mode=keyword` for lexical hits, `document_outline`). Classifier forces

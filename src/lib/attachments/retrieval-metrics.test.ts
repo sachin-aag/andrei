@@ -40,30 +40,40 @@ describe("recall and MRR", () => {
 });
 
 describe("parseRetrievalCases", () => {
-  it("rejects an empty gold list", () => {
+  it("requires passCriteria", () => {
     expect(() =>
       parseRetrievalCases([
-        { id: "x", query: "SW-LWB-4", kind: "identifier", gold: [] },
+        {
+          id: "x",
+          query: "SW-EVAL-7",
+          kind: "identifier",
+          gold: [{ filename: "software-requirements.pdf", page: 2 }],
+        },
       ])
-    ).toThrow(/gold/);
+    ).toThrow(/passCriteria/);
   });
 
   it("parses optional mustContain per gold hit", () => {
     const [entry] = parseRetrievalCases([
       {
         id: "x",
-        query: "logic analyzer",
+        query: "portable spectrum analyzer",
         kind: "semantic",
+        passCriteria: "Must name Narda SRM-3006",
         gold: [
           {
             filename: "report.pdf",
-            page: 121,
-            mustContain: ["Logic Analyzer", "Saleae"],
+            page: 2,
+            mustContain: ["Portable Spectrum Analyzer", "Narda"],
           },
         ],
       },
     ]);
-    expect(entry!.gold[0]!.mustContain).toEqual(["Logic Analyzer", "Saleae"]);
+    expect(entry!.gold[0]!.mustContain).toEqual([
+      "Portable Spectrum Analyzer",
+      "Narda",
+    ]);
+    expect(entry!.passCriteria).toBe("Must name Narda SRM-3006");
   });
 
   it("rejects an empty mustContain array", () => {
@@ -71,27 +81,23 @@ describe("parseRetrievalCases", () => {
       parseRetrievalCases([
         {
           id: "x",
-          query: "logic analyzer",
+          query: "portable spectrum analyzer",
           kind: "semantic",
-          gold: [{ filename: "report.pdf", page: 121, mustContain: [] }],
+          passCriteria: "Must name the instrument",
+          gold: [{ filename: "report.pdf", page: 2, mustContain: [] }],
         },
       ])
     ).toThrow(/mustContain/);
   });
 
-  it("allows empty gold only when mustNotContainAnywhere is set", () => {
-    expect(() =>
-      parseRetrievalCases([
-        { id: "x", query: "SW-LWB-4", kind: "identifier", gold: [] },
-      ])
-    ).toThrow(/gold/);
-
+  it("allows empty gold when passCriteria is set", () => {
     const [entry] = parseRetrievalCases([
       {
         id: "x",
         query: "SW-LWB-4",
         kind: "identifier",
         gold: [],
+        passCriteria: "This ID is not in the corpus.",
         mustNotContainAnywhere: ["SW-LWB-4"],
       },
     ]);
@@ -102,60 +108,62 @@ describe("parseRetrievalCases", () => {
 
 describe("excerptContainsAny", () => {
   it("matches case-insensitively across OCR line breaks", () => {
-    expect(excerptContainsAny("...Logic\nAnalyzer\nSaleae...", ["Logic Analyzer"])).toBe(
-      true
-    );
+    expect(
+      excerptContainsAny("...Portable\nSpectrum Analyzer\nNarda...", [
+        "Portable Spectrum Analyzer",
+      ])
+    ).toBe(true);
   });
 
   it("does not match when the term is absent", () => {
-    expect(excerptContainsAny("Torque Wrench Sturtevant Richmont", ["Logic Analyzer"])).toBe(
-      false
-    );
+    expect(
+      excerptContainsAny("Torque Wrench Sturtevant Richmont", [
+        "Portable Spectrum Analyzer",
+      ])
+    ).toBe(false);
   });
 });
 
 describe("excerptHitAtK", () => {
   const gold = [
     {
-      filename: "Mechanical Test Report.pdf",
-      page: 121,
-      mustContain: ["Logic Analyzer", "Saleae"],
+      filename: "dv-protocol-equipment.pdf",
+      page: 2,
+      mustContain: ["Portable Spectrum Analyzer", "Narda"],
     },
   ];
 
   it("is null when no gold hit declares mustContain", () => {
     const results = [
-      { filename: "Mechanical Test Report.pdf", pageNumber: 121, text: "anything" },
+      { filename: "dv-protocol-equipment.pdf", pageNumber: 2, text: "anything" },
     ];
     expect(
       excerptHitAtK(
         results,
-        [{ filename: "Mechanical Test Report.pdf", page: 121 }],
+        [{ filename: "dv-protocol-equipment.pdf", page: 2 }],
         5
       )
     ).toBeNull();
   });
 
-  it("reproduces the reported regression: page found, excerpt is the wrong 900 chars", () => {
-    // This is the exact production failure: search returns page 121 with a
-    // header/UUT-table snippet that never reaches the Table 3 equipment row.
+  it("is 0 when the page is found but the excerpt is the wrong slice", () => {
     const results = [
       {
-        filename: "Mechanical Test Report.pdf",
-        pageNumber: 121,
-        text: "TOP-00051 — Equipment Description Model 3 - Model System Design Verification Protocol 825-00024 Rev. G Manufacturer Cirtronics Serial Number To be noted in report Straight Handpiece New Englan…",
+        filename: "dv-protocol-equipment.pdf",
+        pageNumber: 2,
+        text: "UUT HEADER TOP-EVAL-01 Cirtronics Serial pending Straight Handpiece lot 1 …",
       },
     ];
-    expect(recallAtK(results, gold, 5)).toBe(1); // page-level recall says "found"
-    expect(excerptHitAtK(results, gold, 5)).toBe(0); // excerpt never proves it
+    expect(recallAtK(results, gold, 5)).toBe(1);
+    expect(excerptHitAtK(results, gold, 5)).toBe(0);
   });
 
-  it("scores 1 once the excerpt is centered on the match", () => {
+  it("scores 1 once the excerpt includes the answering row", () => {
     const results = [
       {
-        filename: "Mechanical Test Report.pdf",
-        pageNumber: 121,
-        text: "…Table 3: Required Testing Equipment … Logic Analyzer Saleae (or equivalent) N/A Oscilloscope Rigol MSO1104 (or equivalent) Yes…",
+        filename: "dv-protocol-equipment.pdf",
+        pageNumber: 2,
+        text: "Required Testing Equipment Portable Spectrum Analyzer Narda SRM-3006 Oscilloscope",
       },
     ];
     expect(excerptHitAtK(results, gold, 5)).toBe(1);
@@ -178,9 +186,9 @@ describe("excerptHitAtK", () => {
       { filename: "noise.pdf", pageNumber: 1, text: "" },
       { filename: "noise.pdf", pageNumber: 2, text: "" },
       {
-        filename: "Mechanical Test Report.pdf",
-        pageNumber: 121,
-        text: "Logic Analyzer Saleae",
+        filename: "dv-protocol-equipment.pdf",
+        pageNumber: 2,
+        text: "Portable Spectrum Analyzer Narda",
       },
     ];
     expect(excerptHitAtK(results, gold, 2)).toBe(0);

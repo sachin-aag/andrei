@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { classifyRetrievalQuery } from "@/lib/attachments/retrieval-query";
 import { parseRetrievalCases } from "@/lib/attachments/retrieval-metrics";
+import {
+  PROTOCOL_EQUIPMENT_FILENAME,
+  SOFTWARE_REQUIREMENTS_FILENAME,
+} from "./retrieval-corpus";
 
 const casesPath = path.join(
   process.cwd(),
@@ -14,65 +18,40 @@ describe("retrieval-cases.json", () => {
     JSON.parse(readFileSync(casesPath, "utf8"))
   );
 
-  it("has about twenty public gold cases with unique ids", () => {
-    expect(cases.length).toBeGreaterThanOrEqual(18);
-    expect(cases.length).toBeLessThanOrEqual(30);
+  it("has a small public set with unique ids and passCriteria", () => {
+    expect(cases.length).toBeGreaterThanOrEqual(6);
+    expect(cases.length).toBeLessThanOrEqual(20);
     const ids = cases.map((entry) => entry.id);
     expect(new Set(ids).size).toBe(ids.length);
+    for (const entry of cases) {
+      expect(entry.passCriteria.trim().length).toBeGreaterThan(20);
+    }
   });
 
   it("declares kind that matches classifyRetrievalQuery", () => {
     for (const entry of cases) {
-      expect(classifyRetrievalQuery(entry.query).kind).toBe(entry.kind);
+      expect(classifyRetrievalQuery(entry.query).kind, entry.id).toBe(
+        entry.kind
+      );
     }
   });
 
-  it("uses in-repo sample filenames", () => {
+  it("scores the generated eval corpus, not a customer PDF", () => {
     const filenames = new Set(
       cases.flatMap((entry) => entry.gold.map((hit) => hit.filename))
     );
-    expect(filenames.has("appendix-b-790-00134r-revu.pdf")).toBe(true);
-    expect(filenames.has("SOP-DP-QA-010-R04 SOP.pdf")).toBe(true);
-  });
-
-  it("has real content assertions, not just page-hit assertions", () => {
-    // recallAtK can score 1.0 while every excerpt shows the wrong part of a
-    // matched page; excerptHitAtK only means something once cases declare
-    // mustContain. Guard against the schema going in but no case ever using
-    // it (silently reverting to page-hit-only coverage).
-    const withMustContain = cases.filter((entry) =>
-      entry.gold.some((hit) => (hit.mustContain?.length ?? 0) > 0)
+    expect(filenames).toEqual(
+      new Set([PROTOCOL_EQUIPMENT_FILENAME, SOFTWARE_REQUIREMENTS_FILENAME])
     );
-    expect(withMustContain.length).toBeGreaterThanOrEqual(6);
   });
 
-  it("every mustContain entry is a non-empty, trimmed string", () => {
-    for (const entry of cases) {
-      for (const hit of entry.gold) {
-        for (const term of hit.mustContain ?? []) {
-          expect(term.trim().length).toBeGreaterThan(0);
-          expect(term).toBe(term.trim());
-        }
-      }
+  it("covers identifier, locator, semantic, and a true-negative", () => {
+    const kinds = new Set(cases.map((entry) => entry.kind));
+    expect(kinds).toEqual(new Set(["identifier", "locator", "semantic"]));
+    const negatives = cases.filter((entry) => entry.gold.length === 0);
+    expect(negatives.length).toBeGreaterThanOrEqual(1);
+    for (const entry of negatives) {
+      expect(entry.mustNotContainAnywhere?.length ?? 0).toBeGreaterThan(0);
     }
-  });
-
-  it("cases without mustContain document why in notes", () => {
-    // Not a hard requirement everywhere, but every SOP/appendix-b case that
-    // skips mustContain should say why (scan-only, paraphrase, OCR
-    // fragility) so a future contributor doesn't assume it was an oversight.
-    const sopAndAppendixB = cases.filter((entry) =>
-      entry.gold.some(
-        (hit) =>
-          hit.filename === "SOP-DP-QA-010-R04 SOP.pdf" ||
-          hit.filename === "appendix-b-790-00134r-revu.pdf"
-      )
-    );
-    const undocumentedGaps = sopAndAppendixB.filter(
-      (entry) =>
-        !entry.gold.some((hit) => (hit.mustContain?.length ?? 0) > 0) &&
-        !entry.notes
-    );
-    expect(undocumentedGaps.map((entry) => entry.id)).toEqual([]);
   });
 });

@@ -19,13 +19,19 @@ export type RetrievalEvalCase = {
   kind: "identifier" | "locator" | "semantic";
   gold: RetrievalGoldHit[];
   /**
+   * Natural-language bar for the LLM judge. Required. Describes what a
+   * careful reader must be able to conclude from the returned excerpts
+   * (or that the answer is legitimately not in the corpus).
+   */
+  passCriteria: string;
+  /**
    * A term that legitimately does not exist in this report's attachments
    * (e.g. a requirement ID that only exists in a different, unrelated
    * document) must not appear in ANY returned excerpt within top-k. Guards
    * against cross-document identifier leakage / hallucinated matches — a
    * query can correctly have `gold: []` (nothing to find) while still
    * failing if the model would confidently cite the wrong page. `gold` may
-   * be empty only when this is set and non-empty.
+   * be empty when `passCriteria` is set.
    */
   mustNotContainAnywhere?: string[];
   notes?: string;
@@ -122,8 +128,8 @@ export function excerptContainsAny(
  *
  * A case can score `recallAtK` = 1.0 while `excerptHitAtK` = 0: the page was
  * found, but the excerpt shown to the model was the wrong 900 characters of
- * that page (e.g. Table 3's "Logic Analyzer" row buried below a repeated
- * UUT header that wins the truncation).
+ * that page (a table row buried below a repeated UUT header that wins a
+ * prefix truncation).
  */
 export function excerptHitAtK(
   results: readonly RankedFilenamePageText[],
@@ -187,17 +193,13 @@ function parseRetrievalCase(entry: unknown, index: number): RetrievalEvalCase {
   if (!RETRIEVAL_CASE_KINDS.has(kind)) {
     throw new Error(`${id}.kind must be identifier, locator, or semantic`);
   }
+  const passCriteria = requiredString(row.passCriteria, `${id}.passCriteria`);
   const mustNotContainAnywhere = parseMustContain(
     row.mustNotContainAnywhere,
     id
   );
   if (!Array.isArray(row.gold)) {
     throw new Error(`${id}.gold must be an array`);
-  }
-  if (row.gold.length === 0 && !mustNotContainAnywhere) {
-    throw new Error(
-      `${id}.gold must be a non-empty array unless mustNotContainAnywhere is set`
-    );
   }
   const gold = row.gold.map((hit, goldIndex) => {
     if (!hit || typeof hit !== "object") {
@@ -226,6 +228,7 @@ function parseRetrievalCase(entry: unknown, index: number): RetrievalEvalCase {
     query,
     kind: kind as RetrievalEvalCase["kind"],
     gold,
+    passCriteria,
     ...(mustNotContainAnywhere ? { mustNotContainAnywhere } : {}),
     ...(notes ? { notes } : {}),
   };
