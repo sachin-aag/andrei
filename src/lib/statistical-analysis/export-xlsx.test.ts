@@ -267,6 +267,15 @@ describe("buildAnalyticsXlsx", () => {
     expect(chartXml.some((xml) => xml.includes("c:lineChart"))).toBe(true);
     expect(chartXml.join("")).toContain("Assay sixpack");
     expect(chartXml.join("")).toMatch(/Torque|Tip Detachment/);
+    const histogramXml = chartXml.find(
+      (xml) =>
+        xml.includes("Capability Histogram") && xml.includes("c:barChart")
+    );
+    expect(histogramXml).toBeDefined();
+    expect(histogramXml).toContain("c:scatterChart");
+    expect(histogramXml).toContain('scatterStyle val="smooth"');
+    expect(histogramXml).toContain('<c:smooth val="1"/>');
+    expect(histogramXml).toMatch(/<c:ptCount val="8[0-9]"\/>/);
   });
 
   it("does not embed a PNG snapshot when a preview image exists", async () => {

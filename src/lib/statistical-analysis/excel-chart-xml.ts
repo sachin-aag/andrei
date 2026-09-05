@@ -22,7 +22,8 @@ export type ExcelChartKind =
   | "area"
   | "column"
   | "columnStacked"
-  | "columnLine";
+  | "columnLine"
+  | "columnScatter";
 
 export type ExcelCellRange = {
   sheetName: string;
@@ -54,6 +55,10 @@ export type ExcelChartSeries = {
   hiddenFill?: boolean;
   /** Place this series on the line chart of a column+line combo. */
   asLine?: boolean;
+  /** Place this series on the scatter overlay of a column+scatter combo. */
+  asScatter?: boolean;
+  /** Excel Bezier smoothing on a scatter line (distribution-fit curves). */
+  smooth?: boolean;
 };
 
 export type ExcelNativeChart = {
@@ -191,7 +196,7 @@ function scatterSerXml(series: ExcelChartSeries, idx: number): string {
   const x = series.x ?? series.cats;
   if (!x) return "";
   const style = series.scatterStyle ?? "marker";
-  return `<c:ser><c:idx val="${idx}"/><c:order val="${idx}"/>${seriesTx(series.name)}${lineProps({ ...series, scatterStyle: style })}${markerXml({ ...series, scatterStyle: style })}<c:xVal>${cacheXml(x, "num")}</c:xVal><c:yVal>${cacheXml(series.vals, "num")}</c:yVal>${errBarsXml(series)}<c:smooth val="0"/></c:ser>`;
+  return `<c:ser><c:idx val="${idx}"/><c:order val="${idx}"/>${seriesTx(series.name)}${lineProps({ ...series, scatterStyle: style })}${markerXml({ ...series, scatterStyle: style })}<c:xVal>${cacheXml(x, "num")}</c:xVal><c:yVal>${cacheXml(series.vals, "num")}</c:yVal>${errBarsXml(series)}<c:smooth val="${series.smooth ? "1" : "0"}"/></c:ser>`;
 }
 
 function catValSerXml(
@@ -233,10 +238,14 @@ function valAxXml(opts: {
   max?: number | null;
   grid: boolean;
   crossBetween?: boolean;
+  hidden?: boolean;
 }): string {
-  const grid = opts.grid ? "<c:majorGridlines/>" : "";
+  const grid = opts.hidden || !opts.grid ? "" : "<c:majorGridlines/>";
   const between = opts.crossBetween === false ? "" : `<c:crossBetween val="between"/>`;
-  return `<c:valAx><c:axId val="${opts.axId}"/>${scalingXml(opts.min ?? null, opts.max ?? null)}<c:delete val="0"/><c:axPos val="${opts.pos}"/>${grid}${titleXml(opts.title, "axis")}<c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${opts.crossAx}"/><c:crosses val="autoZero"/>${between}</c:valAx>`;
+  const ticks = opts.hidden
+    ? `<c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="none"/>`
+    : `<c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/>`;
+  return `<c:valAx><c:axId val="${opts.axId}"/>${scalingXml(opts.min ?? null, opts.max ?? null)}<c:delete val="${opts.hidden ? "1" : "0"}"/><c:axPos val="${opts.pos}"/>${grid}${titleXml(opts.hidden ? undefined : opts.title, "axis")}<c:numFmt formatCode="General" sourceLinked="1"/>${ticks}<c:crossAx val="${opts.crossAx}"/><c:crosses val="autoZero"/>${between}</c:valAx>`;
 }
 
 function catAxXml(opts: {
@@ -249,7 +258,10 @@ function catAxXml(opts: {
 
 function scatterStyleVal(
   series: ExcelChartSeries[]
-): "marker" | "line" | "lineMarker" {
+): "marker" | "line" | "lineMarker" | "smooth" | "smoothMarker" {
+  if (series.some((item) => item.smooth)) {
+    return series.some((item) => item.marker) ? "smoothMarker" : "smooth";
+  }
   if (series.some((item) => item.scatterStyle === "lineMarker")) {
     return "lineMarker";
   }
@@ -308,6 +320,18 @@ export function buildChartXml(chart: ExcelNativeChart): string {
         .map((item, idx) => catValSerXml(item, columns.length + idx, "line"))
         .join("");
       plot = `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${colBody}<c:gapWidth val="80"/><c:axId val="1"/><c:axId val="2"/></c:barChart><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${lineBody}<c:marker val="1"/><c:axId val="1"/><c:axId val="2"/></c:lineChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}`;
+      break;
+    }
+    case "columnScatter": {
+      const columns = series.filter((item) => !item.asScatter);
+      const scatters = series.filter((item) => item.asScatter);
+      const colBody = columns
+        .map((item, idx) => catValSerXml(item, idx, "solid"))
+        .join("");
+      const scatterBody = scatters
+        .map((item, idx) => scatterSerXml(item, columns.length + idx))
+        .join("");
+      plot = `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${colBody}<c:gapWidth val="80"/><c:axId val="1"/><c:axId val="2"/></c:barChart><c:scatterChart><c:scatterStyle val="${scatterStyleVal(scatters)}"/><c:varyColors val="0"/>${scatterBody}<c:axId val="3"/><c:axId val="2"/></c:scatterChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}${valAxXml({ axId: 3, crossAx: 2, pos: "b", min: xMin, max: xMax, grid: false, crossBetween: false, hidden: true })}`;
       break;
     }
     default: {
