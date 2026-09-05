@@ -25,14 +25,14 @@ No LLM `docKind` taxonomy in v1. Exact IDs reuse `requirementIds()` in
 `searchReportDocuments()`. Analytics stays keyword-first at the tool layer.
 Do not bump `CHAT_PROMPT_VERSION` unless prompt copy changes.
 
-Gold labels are **filename + page**, optionally with **excerpt content**
-(`mustContain`) and **cross-document negatives** (`mustNotContainAnywhere`)
-— see Phase 0. Public cases live in `scripts/eval/retrieval-cases.json`
-(in-repo sample PDFs). A later 1.5 GB slice uses gitignored
-`scripts/eval/retrieval-cases.local.json`; `retrieval-cases.local.example.json`
-is the git-tracked template for that file (real customer PDF, cannot be
-committed — copy and rename once ingested locally). Do not use the chat
-agent to generate labels.
+Gold labels are **filename + page** plus a required **`passCriteria`**
+string for the LLM judge. Optional **excerpt content** (`mustContain`) and
+**cross-document negatives** (`mustNotContainAnywhere`) still exist as
+deterministic metrics. Public cases live in
+`scripts/eval/retrieval-cases.json` and target a synthetic born-digital
+corpus (not a customer PDF). CI downloads that corpus from a test GCS
+bucket, ingests it, searches, and judges. Do not use the chat agent to
+generate labels.
 
 Parser version is `v4` so a **reprocess** writes the new columns. Clean
 ready files are left alone.
@@ -41,7 +41,7 @@ ready files are left alone.
 
 | Phase | What | Status |
 | --- | --- | --- |
-| 0 | Retrieval eval harness, ~20 gold cases, timings | **done** |
+| 0 | Retrieval eval harness, synthetic GCS corpus, LLM judge | **done** |
 | 1 | Persist deterministic page metadata | **done** |
 | 2 | Persist outline spans; outline reads prefer stored spans | **done** |
 | 3 | Exact-identifier retrieval, page collapse, skip embed when exact fills `limit` | **done** |
@@ -87,30 +87,42 @@ Entry points: `src/lib/attachments/retrieval.ts`,
 `src/lib/attachments/page-outline.ts`,
 `src/lib/attachments/run-document-ingest.ts`. Eval:
 `pnpm retrieval-eval` (default `--dry-run` validates cases;
-`--report-id` runs live search).
+`--from-gcs` is the CI path; `--live` generates the same PDFs without
+GCS; `--report-id` searches an already-ingested report).
 
 ## Phase 0 — eval harness
 
-**Done**, extended for the excerpt-truncation regression below.
-`scripts/eval/retrieval-eval.ts` + `scripts/eval/retrieval-cases.json`.
-Metrics: Recall@5, Recall@10, MRR, ExcerptHit@5, NoFalsePositive@5,
-embed/sql/total ms, `skippedEmbedding`. Runs write JSON under
-`scripts/eval/retrieval-runs/` (gitignored).
+**Done.** `scripts/eval/retrieval-eval.ts` + `scripts/eval/retrieval-cases.json`
++ a synthetic corpus (`scripts/eval/retrieval-corpus.ts`).
 
-Public gold is grounded in:
+The public cases are small on purpose: two born-digital PDFs that reproduce
+the failure modes that matter (right page / wrong 900-character slice,
+required-vs-executed tables, identifier lookup, cross-file leak, true
+negative). They are not a customer attachment and are not the in-repo
+SOP / Appendix B scans.
 
-- `docs/sample_files/appendix-b-790-00134r-revu.pdf` — 62-page scan, no
-  text layer past page 1 (verified with `unpdf`), no human transcription;
-  tests treat **SW-LWB-4 on page 31** but do not assert `mustContain` —
-  the exact OCR wording is unverified and must not be guessed.
-- `docs/sample_files/SOP-DP-QA-010-R04 SOP.pdf` — pages from
-  `docs/sop-010-r04-transcription.md`. That doc's *literal quoted* form
-  names / column labels / questions back `mustContain` on several cases;
-  its *paraphrased* summaries (TOC flow, numeric RPN tables with
-  dash-glyph-sensitive ranges, the A02 decision-tree diagram) do not — see
-  each case's `notes` for why.
-- `docs/sample_files/DEV-QC-25-010 Copy (1).pdf` — filename locators
-  only (almost no native text; do not invent page numbers).
+**Pass/fail** is an LLM judge (`scripts/eval/retrieval-judge.ts`,
+`RETRIEVAL_JUDGE_PROMPT_VERSION`). Recall@5 is informational. A
+`mustNotContainAnywhere` leak fails the case before the judge runs.
+
+```bash
+pnpm retrieval-eval -- --dry-run          # parse + print cases
+pnpm retrieval-eval:upload                # one-time: write PDFs to the test bucket
+pnpm retrieval-eval -- --from-gcs         # CI path: download, ingest, search, judge
+pnpm retrieval-eval -- --live             # same PDFs, skip GCS (laptop + Vertex)
+pnpm retrieval-eval -- --report-id <id>   # search an already-ingested report
+```
+
+CI (`.github/workflows/ci.yml` job `Retrieval eval (GCS + judge)`) runs
+`--from-gcs` only when the retrieval harness or `searchReportDocuments`
+implementation changes. It skips cleanly when Vertex / GCS secrets are
+missing. Secrets: `GOOGLE_VERTEX_PROJECT`, `GCP_SERVICE_ACCOUNT_KEY`,
+`RETRIEVAL_EVAL_GCS_BUCKET`. After changing the PDF builders, re-run
+`pnpm retrieval-eval:upload`.
+
+Local ingest uses `ATTACHMENT_STORAGE_BACKEND=local` (the bucket is the
+corpus source, not where CI writes attachment bytes). Runs write JSON
+under `scripts/eval/retrieval-runs/` (gitignored).
 
 Schema for a case:
 
@@ -119,71 +131,23 @@ Schema for a case:
   "id": "...",
   "query": "...",
   "kind": "identifier" | "locator" | "semantic",
+  "passCriteria": "What a careful reader must conclude from the excerpts.",
   "gold": [
-    { "filename": "...", "page": 1, "mustContain": ["..."] } // mustContain optional
+    { "filename": "dv-protocol-equipment.pdf", "page": 2, "mustContain": ["..."] }
   ],
-  "mustNotContainAnywhere": ["..."], // optional; gold may be [] only when this is set
+  "mustNotContainAnywhere": ["..."], // optional deterministic leak check
   "notes": "..."
 }
 ```
 
-Vitest validates the JSON (`scripts/eval/retrieval-cases.test.ts`).
+`passCriteria` is required. `gold` may be empty when the correct answer is
+"not in this corpus." Vitest validates the JSON, the PDF anchors, and the
+judge prompt (`scripts/eval/retrieval-*.test.ts`).
 
-### Known gap this schema now catches: excerpt truncation (fixed in phase 3.5)
-
-Recall@k asks "did we find the right page?" It does not ask "did the model
-see the part of the page that answers the question?" Both production and
-this branch returned page 121 of a real Convergent DV attachment for
-"logic analyzer" / "Saleae" / `"logic analyzer"` (Recall@5 = 1.0 across
-multiple Langfuse traces) while every returned excerpt was the chunk-0
-UUT/header boilerplate — Table 3's Logic Analyzer row never appeared in
-any snippet the model saw. The model correctly reported "not found" from
-what it was shown; a screenshot (bypassing chunk search entirely) answered
-it instantly. Investigated 2026-09-04; see `mech-logic-analyzer` in
-`scripts/eval/retrieval-cases.local.example.json` for the full trace
-citations.
-
-Two new gold-hit-level / case-level fields close this blind spot:
-
-- **`mustContain`** (per gold hit) — substrings the *excerpt text* must
-  contain, not just the filename+page. `excerptHitAtK` scores this; it is
-  `null` (not 0) for hits that don't declare it, so unverifiable scanned
-  pages don't drag the aggregate down. A case can score Recall@5 = 1.0 and
-  ExcerptHit@5 = 0 simultaneously — that combination *is* the bug.
-- **`mustNotContainAnywhere`** (per case) — terms that must not appear in
-  *any* returned excerpt in the top-k window. For queries whose correct
-  answer is "not found" (e.g. `SW-LWB-4` against a report that doesn't
-  have it — see `mech-sw-lwb-4-cross-document-negative`), a hallucinated
-  match on the wrong document is worse than a correct negative.
-  `noFalsePositiveAtK` scores this; also `null` when unset. `gold` may be
-  `[]` only when this field is set and non-empty.
-
-Only add `mustContain` / `mustNotContainAnywhere` from a *verified* source:
-a `read_document_page` tool output (verbatim, not LLM-summarized), a
-`document-review-extract` finding cross-confirmed across more than one
-batch call, a human transcription doc, or a literal PDF text layer read
-with `unpdf`. Do not paraphrase a summary into a `mustContain` string and
-call it verified — that turns the metric into testing your own guess.
-
-### Local corpus example (real customer PDF, cannot be committed)
-
-`scripts/eval/retrieval-cases.local.example.json` is git-tracked and
-inert by default — the harness only loads `retrieval-cases.local.json`
-(gitignored), so the example does nothing until a contributor copies it.
-It mines six real cases against a 273-page Convergent Solea Model 3
-Design Verification attachment (`Mechanical Test Report Attachments
-only.pdf`) from production Langfuse traces: the Logic Analyzer excerpt
-bug, its "not on the executed-equipment-log pages" companion, the
-SW-LWB-4 cross-document negative, a UUT table that spans three pages, a
-deviation form buried among near-identical templates, and a cover/purpose
-page. Every gold value cites the Langfuse trace it came from.
-
-To use it: ingest that attachment into a local dev report under the same
-filename, `cp scripts/eval/retrieval-cases.local.example.json
-scripts/eval/retrieval-cases.local.json`, then
-`pnpm retrieval-eval -- --report-id <id>`. `retrieval-cases.local.example.test.ts`
-keeps the template itself honest against schema changes even without that
-PDF present (dry-run parse only — it does not hit the DB).
+The protocol PDF's required-equipment page starts with enough UUT header
+lines that a 900-character prefix never reaches the answering row — that
+is the excerpt-truncation case phase 3.5 exists to pass. The judge must
+fail header-only slices even when Recall@5 is 1.0.
 
 ## Phase 1 — page metadata
 
@@ -221,8 +185,8 @@ that already fills `limit` skips embeddings in hybrid too.
 
 ## Phase 3.5 — excerpt quality + lexical fast path
 
-**Done.** Three changes close the Logic Analyzer regression without
-raising caps or re-ingesting ready files:
+**Done.** Three changes close the right-page / wrong-excerpt regression
+without raising caps or re-ingesting ready files:
 
 1. **`buildMatchCenteredSnippet()`** — search excerpts center on the query
    phrase (or longest matching token) instead of always truncating from
@@ -237,9 +201,10 @@ raising caps or re-ingesting ready files:
    When the lexical pass alone fills `limit` with positive scores, skip the
    query embedding (same fast-path shape as identifier queries).
 
-Eval: `excerptHitAtK` on `mech-logic-analyzer` in
-`scripts/eval/retrieval-cases.local.example.json` should turn green once the
-local corpus is ingested. `recallAtK` was already 1.0 for that case.
+Eval: `equipment-required-instrument` in `retrieval-cases.json` is the
+synthetic version of that bug. The judge (and a 900-character prefix
+fixture test on the generated PDF) fail if excerpts snap back to
+header-only slices. `recallAtK` can still be 1.0.
 
 ## Phase 4 — file / span routing (not started)
 

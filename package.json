@@ -37,7 +37,8 @@
     "soak:ocr-compare": "tsx --env-file=.env --env-file=.env.local scripts/soak-ocr-compare.ts",
     "model-sweep": "tsx scripts/eval/run-model-sweep.ts",
     "compare-evals": "tsx scripts/eval/compare-eval-runs.ts",
-    "retrieval-eval": "tsx scripts/eval/retrieval-eval.ts"
+    "retrieval-eval": "tsx scripts/eval/retrieval-eval.ts",
+    "retrieval-eval:upload": "tsx scripts/eval/upload-retrieval-corpus.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",

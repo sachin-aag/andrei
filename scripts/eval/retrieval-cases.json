@@ -1,188 +1,67 @@
 [
   {
-    "id": "appendix-b-sw-lwb-4",
+    "id": "equipment-required-instrument",
+    "query": "what portable spectrum analyzer is required",
+    "kind": "semantic",
+    "gold": [{ "filename": "dv-protocol-equipment.pdf", "page": 2 }],
+    "passCriteria": "The excerpts must name the Portable Spectrum Analyzer and the vendor/model Narda SRM-3006 from the Required Testing Equipment table. Header-only UUT boilerplate without that row is a fail."
+  },
+  {
+    "id": "equipment-table-heading",
+    "query": "Required Testing Equipment",
+    "kind": "semantic",
+    "gold": [{ "filename": "dv-protocol-equipment.pdf", "page": 2 }],
+    "passCriteria": "The excerpts must show the Required Testing Equipment table (not only the page-1 UUT header). At least one instrument row (spectrum analyzer, oscilloscope, or torque wrench) must be visible."
+  },
+  {
+    "id": "equipment-executed-log-negative",
+    "query": "which instruments appear on the executed equipment data table",
+    "kind": "semantic",
+    "gold": [{ "filename": "dv-protocol-equipment.pdf", "page": 3 }],
+    "passCriteria": "The executed equipment log lists a Torque Wrench (Sturtevant) and Digital Calipers. It must not claim a Portable Spectrum Analyzer or Narda SRM-3006 was used on the executed run. Required-equipment vs executed-log are different tables."
+  },
+  {
+    "id": "equipment-page-2-locator",
+    "query": "dv-protocol-equipment.pdf page 2",
+    "kind": "locator",
+    "gold": [{ "filename": "dv-protocol-equipment.pdf", "page": 2 }],
+    "passCriteria": "The top hit must be dv-protocol-equipment.pdf page 2. The excerpt should include Required Testing Equipment content from that page, not only UUT header boilerplate."
+  },
+  {
+    "id": "sw-eval-7-identifier",
+    "query": "SW-EVAL-7",
+    "kind": "identifier",
+    "gold": [{ "filename": "software-requirements.pdf", "page": 2 }],
+    "passCriteria": "SW-EVAL-7 is a software requirement on software-requirements.pdf (laser interlock latency). Excerpts must include the literal ID SW-EVAL-7 and must not attribute it to dv-protocol-equipment.pdf."
+  },
+  {
+    "id": "sw-eval-7-description",
+    "query": "laser interlock latency requirement",
+    "kind": "semantic",
+    "gold": [{ "filename": "software-requirements.pdf", "page": 2 }],
+    "passCriteria": "The excerpts must connect laser interlock latency to requirement SW-EVAL-7 on the software requirements table."
+  },
+  {
+    "id": "software-file-locator",
+    "query": "software-requirements.pdf",
+    "kind": "locator",
+    "gold": [{ "filename": "software-requirements.pdf", "page": 2 }],
+    "passCriteria": "Hits must come from software-requirements.pdf, not the protocol equipment PDF. Prefer the requirements table page over an empty cover."
+  },
+  {
+    "id": "sw-lwb-4-absent",
     "query": "SW-LWB-4",
     "kind": "identifier",
-    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 31 }],
-    "notes": "Table 4 software requirements; fixture tests treat SW-LWB-4 on page 31. No mustContain: this PDF is a 62-page scan with no embedded text layer past page 1 (verified via unpdf against the sample file) and has no human transcription doc, so exact OCR wording is unverified — do not add mustContain by guessing."
+    "gold": [],
+    "mustNotContainAnywhere": ["SW-LWB-4"],
+    "passCriteria": "SW-LWB-4 does not exist in this corpus. A pass is empty results or excerpts that do not claim this ID is present. Citing either eval PDF as containing SW-LWB-4 is a fail."
   },
   {
-    "id": "appendix-b-laser-wavelength",
-    "query": "laser wavelength bandwidth",
-    "kind": "semantic",
-    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 31 }],
-    "notes": "No mustContain: scan-only PDF, no verified transcript (see appendix-b-sw-lwb-4)."
-  },
-  {
-    "id": "appendix-b-table-4-heading",
-    "query": "TABLE 4 SOFTWARE REQUIREMENTS",
-    "kind": "semantic",
-    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 31 }],
-    "notes": "No mustContain: scan-only PDF, no verified transcript (see appendix-b-sw-lwb-4)."
-  },
-  {
-    "id": "appendix-b-page-31-locator",
-    "query": "appendix-b-790-00134r-revu.pdf page 31",
-    "kind": "locator",
-    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 31 }],
-    "notes": "No mustContain: scan-only PDF, no verified transcript (see appendix-b-sw-lwb-4)."
-  },
-  {
-    "id": "sop-fmea-grid",
-    "query": "FMEA grid potential failure severity",
-    "kind": "semantic",
-    "gold": [
-      {
-        "filename": "SOP-DP-QA-010-R04 SOP.pdf",
-        "page": 37,
-        "mustContain": ["Potential Failure", "Detectability"]
-      }
-    ],
-    "notes": "docs/sop-010-r04-transcription.md §2 FMEA grid — printed column list (items 3 and 10) is the mustContain source; exercises the same excerpt-truncation risk as the Mechanical Test Report Table 3 bug (long table, target row may sit past a snippet's first N chars)."
-  },
-  {
-    "id": "sop-f02-cover",
-    "query": "Template for Risk Assessment by FMEA",
-    "kind": "semantic",
-    "gold": [
-      {
-        "filename": "SOP-DP-QA-010-R04 SOP.pdf",
-        "page": 28,
-        "mustContain": ["Template for Risk Assessment by FMEA"]
-      }
-    ],
-    "notes": "docs/sop-010-r04-transcription.md §1 — exact bolded form name."
-  },
-  {
-    "id": "sop-f02-toc",
-    "query": "F02 table of contents Pre-Approval Risk identification",
-    "kind": "semantic",
-    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 29 }],
-    "notes": "No mustContain: transcription §1 paraphrases the TOC flow with arrows, not a verbatim OCR quote of the printed headings."
-  },
-  {
-    "id": "sop-f02-pre-approval",
-    "query": "Performed By User Dept Reviewed By Risk Assessment Team",
-    "kind": "semantic",
-    "gold": [
-      {
-        "filename": "SOP-DP-QA-010-R04 SOP.pdf",
-        "page": 30,
-        "mustContain": ["Performed By"]
-      }
-    ],
-    "notes": "docs/sop-010-r04-transcription.md §1 A. Pre-Approval — literal table column label."
-  },
-  {
-    "id": "sop-r01-fmea",
-    "query": "Risk IDs start at R01",
-    "kind": "semantic",
-    "gold": [
-      {
-        "filename": "SOP-DP-QA-010-R04 SOP.pdf",
-        "page": 37,
-        "mustContain": ["R01"]
-      }
-    ]
-  },
-  {
-    "id": "sop-risk-communication",
-    "query": "Risk Assessment Summary and Conclusion Before Implementation",
-    "kind": "semantic",
-    "gold": [
-      {
-        "filename": "SOP-DP-QA-010-R04 SOP.pdf",
-        "page": 38,
-        "mustContain": ["Risk Assessment Summary and Conclusion"]
-      }
-    ],
-    "notes": "docs/sop-010-r04-transcription.md §1 item 3.1 — literal printed heading."
-  },
-  {
-    "id": "sop-mitigation-tracker",
-    "query": "Mitigation plan and closure tracker",
-    "kind": "semantic",
-    "gold": [
-      {
-        "filename": "SOP-DP-QA-010-R04 SOP.pdf",
-        "page": 39,
-        "mustContain": ["Mitigation Plan"]
-      }
-    ]
-  },
-  {
-    "id": "sop-f04-template",
-    "query": "Template for New Risk Residual Risk F04",
-    "kind": "semantic",
-    "gold": [
-      {
-        "filename": "SOP-DP-QA-010-R04 SOP.pdf",
-        "page": 43,
-        "mustContain": ["Template for New Risk"]
-      }
-    ],
-    "notes": "docs/sop-010-r04-transcription.md §7 — exact bolded form name (SOP/DP/QA/010/F04-R00)."
-  },
-  {
-    "id": "sop-f04-grid",
-    "query": "F04 residual risk grid page 45",
-    "kind": "locator",
-    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 45 }],
-    "notes": "No mustContain: transcription §7 says the grid reuses F02's columns, not a verbatim quote of page 45 itself."
-  },
-  {
-    "id": "sop-rpn-table-06",
-    "query": "RPN bands Low 1-8 Medium 9-24",
-    "kind": "semantic",
-    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 15 }],
-    "notes": "No mustContain: numeric ranges use an en dash in the transcription (docs/sop-010-r04-transcription.md §4); asserting exact dash glyphs would test OCR punctuation, not excerpt placement, and risks a false-negative unrelated to retrieval quality."
-  },
-  {
-    "id": "sop-quantitative-rubric",
-    "query": "RPN equals severity times probability times detectability",
-    "kind": "semantic",
-    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 13 }],
-    "notes": "No mustContain: same dash/numeric fragility as sop-rpn-table-06."
-  },
-  {
-    "id": "sop-a02-decision",
-    "query": "A02 informal qualitative versus formal quantitative QRM",
-    "kind": "semantic",
-    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 23 }],
-    "notes": "No mustContain: page 23 is a decision-tree diagram (annexure); docs/sop-010-r04-transcription.md §6 summarizes it, it does not quote rendered diagram text."
-  },
-  {
-    "id": "sop-f01-questions",
-    "query": "F01 potential impact on product quality scope well defined",
-    "kind": "semantic",
-    "gold": [
-      {
-        "filename": "SOP-DP-QA-010-R04 SOP.pdf",
-        "page": 26,
-        "mustContain": ["scope well defined"]
-      }
-    ],
-    "notes": "docs/sop-010-r04-transcription.md §6 — literal quoted A02 question 2."
-  },
-  {
-    "id": "sop-dp-qa-010-identifier",
-    "query": "SOP-DP-QA-010",
+    "id": "cross-file-no-leak",
+    "query": "SW-EVAL-7",
     "kind": "identifier",
-    "gold": [{ "filename": "SOP-DP-QA-010-R04 SOP.pdf", "page": 1 }],
-    "notes": "Document number shaped like requirementIds(); cover is printed page 1 of 51."
-  },
-  {
-    "id": "dev-qc-filename-locator",
-    "query": "DEV-QC-25-010 Copy (1).pdf",
-    "kind": "identifier",
-    "gold": [{ "filename": "DEV-QC-25-010 Copy (1).pdf", "page": 1 }],
-    "notes": "Filename contains DEV-QC-25-010, which requirementIds() treats as an identifier. Scan with little native text — gold is page 1, do not invent inner pages."
-  },
-  {
-    "id": "appendix-b-filename-locator",
-    "query": "790-00134r-revu.pdf",
-    "kind": "locator",
-    "gold": [{ "filename": "appendix-b-790-00134r-revu.pdf", "page": 1 }],
-    "notes": "No mustContain: a filename locator, not a content lookup."
+    "gold": [{ "filename": "software-requirements.pdf", "page": 2 }],
+    "mustNotContainAnywhere": ["Narda SRM-3006"],
+    "passCriteria": "Hits for SW-EVAL-7 must come from software-requirements.pdf. They must not paste the protocol equipment table (Narda SRM-3006) into the software-requirement excerpts."
   }
 ]
