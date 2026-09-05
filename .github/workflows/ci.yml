@@ -32,6 +32,7 @@ jobs:
           filters: |
             harness:
               - 'scripts/eval/**'
+              - '.github/workflows/ci.yml'
               - 'src/lib/attachments/retrieval.ts'
               - 'src/lib/attachments/retrieval.test.ts'
               - 'src/lib/attachments/retrieval-query.ts'
@@ -79,6 +80,7 @@ jobs:
           filters: |
             harness:
               - 'scripts/eval/**'
+              - '.github/workflows/ci.yml'
               - 'src/lib/attachments/retrieval.ts'
               - 'src/lib/attachments/retrieval.test.ts'
               - 'src/lib/attachments/retrieval-query.ts'

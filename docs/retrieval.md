@@ -114,8 +114,8 @@ pnpm retrieval-eval -- --report-id <id>   # search an already-ingested report
 ```
 
 CI (`.github/workflows/ci.yml` job `Retrieval eval (GCS + judge)`) runs
-`--from-gcs` only when the retrieval harness or `searchReportDocuments`
-implementation changes. It skips cleanly when Vertex / GCS secrets are
+`--from-gcs` only when the retrieval harness, `searchReportDocuments`
+implementation, or `.github/workflows/ci.yml` changes. It skips cleanly when Vertex / GCS secrets are
 missing. GitHub Actions authenticates with Workload Identity Federation
 (OIDC) — not a JSON service-account key (`constraints/iam.disableServiceAccountKeyCreation`).
 Required Actions secrets:
