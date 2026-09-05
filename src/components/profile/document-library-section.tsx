@@ -27,14 +27,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type {
   AttachmentLibraryAssetRecord,
   AttachmentLibraryFolderRecord,
@@ -120,6 +114,22 @@ function folderLabel(
     parentId = parent.parentId;
   }
   return parts.join(" / ");
+}
+
+function destinationFoldersByParent(
+  folders: AttachmentLibraryFolderRecord[]
+): Map<string | null, AttachmentLibraryFolderRecord[]> {
+  const byParent = new Map<string | null, AttachmentLibraryFolderRecord[]>();
+  for (const folder of folders) {
+    const key = folder.parentId ?? null;
+    const list = byParent.get(key) ?? [];
+    list.push(folder);
+    byParent.set(key, list);
+  }
+  for (const list of byParent.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }
+  return byParent;
 }
 
 function locationLabel(
@@ -314,6 +324,97 @@ function LibraryProfileTree({
   );
 }
 
+function MoveDestinationTree({
+  folderId,
+  depth,
+  foldersByParent,
+  selectedId,
+  collapsedFolderIds,
+  onSelect,
+  onToggleCollapsed,
+}: {
+  folderId: string | null;
+  depth: number;
+  foldersByParent: Map<string | null, AttachmentLibraryFolderRecord[]>;
+  selectedId: string | null;
+  collapsedFolderIds: Set<string>;
+  onSelect: (folderId: string) => void;
+  onToggleCollapsed: (folderId: string) => void;
+}) {
+  const childFolders = foldersByParent.get(folderId) ?? [];
+  const indent = depth * 16 + 8;
+
+  return (
+    <div>
+      {childFolders.map((folder) => {
+        const nested = foldersByParent.get(folder.id) ?? [];
+        const hasChildren = nested.length > 0;
+        const collapsed = collapsedFolderIds.has(folder.id);
+        const selected = selectedId === folder.id;
+        return (
+          <div key={folder.id}>
+            <div
+              className={cn(
+                "flex items-center gap-0.5 rounded-md py-0.5 pr-2",
+                selected
+                  ? "bg-[var(--secondary)]"
+                  : "hover:bg-[var(--secondary)]/50"
+              )}
+              style={{ paddingLeft: `${indent}px` }}
+            >
+              {hasChildren ? (
+                <button
+                  type="button"
+                  aria-label={
+                    collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`
+                  }
+                  onClick={() => onToggleCollapsed(folder.id)}
+                  className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
+                >
+                  {collapsed ? (
+                    <ChevronRight className="size-3.5" aria-hidden="true" />
+                  ) : (
+                    <ChevronDown className="size-3.5" aria-hidden="true" />
+                  )}
+                </button>
+              ) : (
+                <span className="size-5 shrink-0" aria-hidden="true" />
+              )}
+              <button
+                type="button"
+                role="treeitem"
+                aria-selected={selected}
+                onClick={() => onSelect(folder.id)}
+                className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-1 text-left"
+                data-testid={`library-move-folder-${folder.id}`}
+              >
+                <Folder
+                  className="size-4 shrink-0 text-[var(--muted-foreground)]"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {folder.name}
+                </span>
+              </button>
+            </div>
+            {hasChildren && !collapsed ? (
+              <MoveDestinationTree
+                folderId={folder.id}
+                depth={depth + 1}
+                foldersByParent={foldersByParent}
+                selectedId={selectedId}
+                collapsedFolderIds={collapsedFolderIds}
+                onSelect={onSelect}
+                onToggleCollapsed={onToggleCollapsed}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MoveToFolderDialog({
   open,
   onOpenChange,
@@ -321,7 +422,9 @@ function MoveToFolderDialog({
   itemCount,
   destination,
   onDestinationChange,
-  destinationOptions,
+  destinationFolders,
+  createFolderParentLabel,
+  onCreateFolder,
   moving,
   onConfirm,
 }: {
@@ -331,10 +434,55 @@ function MoveToFolderDialog({
   itemCount: number;
   destination: string | null;
   onDestinationChange: (value: string) => void;
-  destinationOptions: { id: string; label: string }[];
+  destinationFolders: AttachmentLibraryFolderRecord[];
+  createFolderParentLabel: string;
+  onCreateFolder: (name: string) => Promise<void>;
   moving: boolean;
   onConfirm: () => void;
 }) {
+  const [newFolderName, setNewFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const foldersByParent = useMemo(
+    () => destinationFoldersByParent(destinationFolders),
+    [destinationFolders]
+  );
+  const rootSelected = destination === LIBRARY_ROOT;
+
+  useEffect(() => {
+    if (!open) {
+      setNewFolderName("");
+      setCreatingFolder(false);
+      setCreating(false);
+      setCollapsedFolderIds(new Set());
+    }
+  }, [open]);
+
+  const handleCreateFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name || creatingFolder) return;
+    setCreatingFolder(true);
+    try {
+      await onCreateFolder(name);
+      setNewFolderName("");
+      setCreating(false);
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const toggleCollapsed = (folderId: string) => {
+    setCollapsedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="library-move-dialog">
@@ -345,27 +493,100 @@ function MoveToFolderDialog({
             stay on those reports.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
-          <Label htmlFor="library-move-destination">Destination</Label>
-          <Select
-            value={destination ?? undefined}
-            onValueChange={onDestinationChange}
+        <div className="space-y-3">
+          <Label id="library-move-destination-label">Destination</Label>
+          <div
+            role="tree"
+            aria-labelledby="library-move-destination-label"
+            data-testid="library-move-destination-tree"
+            className="max-h-64 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--background)] py-1"
           >
-            <SelectTrigger
-              id="library-move-destination"
-              aria-label="Destination folder"
+            <button
+              type="button"
+              role="treeitem"
+              aria-selected={rootSelected}
+              onClick={() => onDestinationChange(LIBRARY_ROOT)}
+              className={cn(
+                "flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-sm",
+                rootSelected
+                  ? "bg-[var(--secondary)]"
+                  : "hover:bg-[var(--secondary)]/50"
+              )}
+              data-testid="library-move-vault-root"
             >
-              <SelectValue placeholder="Choose a folder" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={LIBRARY_ROOT}>Vault root</SelectItem>
-              {destinationOptions.map((folder) => (
-                <SelectItem key={folder.id} value={folder.id}>
-                  {folder.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              <FolderUp
+                className="size-4 shrink-0 text-[var(--muted-foreground)]"
+                aria-hidden="true"
+              />
+              Vault root
+            </button>
+            <MoveDestinationTree
+              folderId={null}
+              depth={0}
+              foldersByParent={foldersByParent}
+              selectedId={destination === LIBRARY_ROOT ? null : destination}
+              collapsedFolderIds={collapsedFolderIds}
+              onSelect={onDestinationChange}
+              onToggleCollapsed={toggleCollapsed}
+            />
+          </div>
+
+          {creating ? (
+            <div className="space-y-2">
+              <Label htmlFor="library-move-new-folder">New folder name</Label>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Creates inside {createFolderParentLabel}.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  id="library-move-new-folder"
+                  value={newFolderName}
+                  onChange={(event) => setNewFolderName(event.target.value)}
+                  placeholder="Folder name"
+                  autoFocus
+                  disabled={creatingFolder || moving}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleCreateFolder();
+                    }
+                  }}
+                  data-testid="library-move-new-folder-input"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={
+                    creatingFolder || moving || newFolderName.trim().length === 0
+                  }
+                  onClick={() => void handleCreateFolder()}
+                  data-testid="library-move-create-folder"
+                >
+                  {creatingFolder ? (
+                    <>
+                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                      Creating…
+                    </>
+                  ) : (
+                    "Create"
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={moving}
+              onClick={() => setCreating(true)}
+              data-testid="library-move-create-folder-option"
+            >
+              <FolderPlus className="size-3.5" aria-hidden="true" />
+              Create new folder
+            </Button>
+          )}
         </div>
         <DialogFooter>
           <Button
@@ -681,6 +902,29 @@ export function DocumentLibrarySection({
     }
     setMoveDestination(null);
     setMoveDialogOpen(true);
+  };
+
+  const createMoveDestinationFolder = async (name: string) => {
+    const parentId =
+      moveDestination != null && moveDestination !== LIBRARY_ROOT
+        ? moveDestination
+        : null;
+    const response = await fetch("/api/attachment-vault/folders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, parentId }),
+    });
+    const data = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      folder?: { id: string };
+    };
+    if (!response.ok || !data.folder?.id) {
+      toast.error(data.error ?? "Could not create folder");
+      return;
+    }
+    await loadLibrary({ silent: true });
+    setMoveDestination(data.folder.id);
+    toast.success("Folder created");
   };
 
   const confirmMove = async () => {
@@ -1196,10 +1440,14 @@ export function DocumentLibrarySection({
         itemCount={Math.max(moveItemCount, 1)}
         destination={moveDestination}
         onDestinationChange={setMoveDestination}
-        destinationOptions={moveTargetOptions.map((folder) => ({
-          id: folder.id,
-          label: folderLabel(folder, folderOptions),
-        }))}
+        destinationFolders={moveTargetOptions}
+        createFolderParentLabel={
+          moveDestination == null || moveDestination === LIBRARY_ROOT
+            ? "Vault root"
+            : (folderOptions.find((folder) => folder.id === moveDestination)
+                ?.name ?? "Vault root")
+        }
+        onCreateFolder={createMoveDestinationFolder}
         moving={moving}
         onConfirm={() => void confirmMove()}
       />
