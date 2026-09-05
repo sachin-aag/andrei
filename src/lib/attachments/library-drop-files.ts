@@ -50,25 +50,13 @@ export function classifyCollectedLibraryFiles(
       accepted.push(item);
       continue;
     }
-    rejectedNames.push(basename(item.relativePath) || item.file.name);
+    rejectedNames.push(item.relativePath || item.file.name);
   }
   return { accepted, rejectedNames };
 }
 
-export function libraryUnsupportedFilesError(rejectedNames: string[]): string {
-  const unique = [...new Set(rejectedNames)];
-  if (unique.length === 1) {
-    return `${unique[0]} is not a PDF or Word document. Remove unsupported files and try again.`;
-  }
-  const shown = unique.slice(0, 3);
-  const extra = unique.length - shown.length;
-  const list =
-    extra > 0
-      ? `${shown.join(", ")}, and ${extra} more`
-      : unique.length === 2
-        ? `${shown[0]} and ${shown[1]}`
-        : `${shown[0]}, ${shown[1]}, and ${shown[2]}`;
-  return `This folder includes ${list}, which are not PDF or Word documents. Remove them and try again.`;
+export function uniqueRejectedLibraryNames(rejectedNames: string[]): string[] {
+  return [...new Set(rejectedNames)];
 }
 
 export function libraryTargetFolderDepth(
@@ -94,10 +82,8 @@ export function libraryUploadBatchError(
   scan: LibraryUploadScan,
   targetFolderDepth: number
 ): string | null {
-  if (scan.rejectedNames.length > 0) {
-    return libraryUnsupportedFilesError(scan.rejectedNames);
-  }
   if (scan.accepted.length === 0) {
+    if (scan.rejectedNames.length > 0) return null;
     return "No PDF or Word documents found in that folder";
   }
   for (const item of scan.accepted) {
