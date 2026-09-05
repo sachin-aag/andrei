@@ -41,7 +41,7 @@ ready files are left alone.
 
 | Phase | What | Status |
 | --- | --- | --- |
-| 0 | Retrieval eval harness | **partial** — live CI path works; original gold set and production overlay are not done (see [Harness backlog](#harness-backlog-phase-0)) |
+| 0 | Retrieval eval harness | **partial** — CI gates the synthetic nine; overlay is a laptop `--report-id` path. That is not proof the 273-page Convergent file is fixed (see [Harness status](#harness-status-phase-0)) |
 | 1 | Persist deterministic page metadata | **done** |
 | 2 | Persist outline spans; outline reads prefer stored spans | **done** |
 | 3 | Exact-identifier retrieval, page collapse, skip embed when exact fills `limit` | **done** |
@@ -66,53 +66,45 @@ plumbing:
 
 | Item | Status |
 | --- | --- |
-| `mustContain` / `excerptHitAtK` (excerpt, not just filename+page) | **done** — wired; only 2 of 9 public cases set `mustContain` |
+| `mustContain` / `excerptHitAtK` (excerpt, not just filename+page) | **done** — every public gold hit with a unique answering substring sets `mustContain` |
 | `mustNotContainAnywhere` / `noFalsePositiveAtK` | **done** |
 | LLM judge + required `passCriteria` | **done** (added after the metric work) |
 | Path-gated Vitest + live `pnpm retrieval-eval -- --from-gcs` in CI | **done** |
 | Synthetic GCS corpus (two born-digital PDFs, nine cases) | **done** — replaced the sample-PDF gold |
 | GitHub OIDC WIF (no JSON SA key); CI download-only (no seed/upload) | **done** |
 | Phase 3.5 product fix (match-centered snippet, best chunk per page, lexical fast path, quote over `visual_interpretation`, locator ranking) | **done** — this was the product tangent that the harness was meant to gate |
-| Six Langfuse-mined cases against the real 273-page Convergent attachment (`retrieval-cases.local.example.json`) | **not done** — dropped when the public set went synthetic |
-| Public gold on `docs/sample_files/` (Appendix B `SW-LWB-4`, SOP-010 FMEA pages) | **not done** — those cases no longer run |
-| `retrieval-cases.local.json` overlay loaded by the runner | **not done** — `.gitignore` still reserves the file; `retrieval-eval.ts` no longer merges it |
-| `mustContain` on every gold hit that has a unique answering substring | **not done** — 7 cases are judge-only |
-| CI artifacts / run comparison over time | **not done** — runs write gitignored JSON locally only |
-| Private `--report-id` path in CI against a production-shaped report | **not done** — CLI flag exists; CI always ingests the synthetic corpus |
+| Six Langfuse-mined cases (`retrieval-cases.local.example.json`) | **done as a template** — copy to gitignored `retrieval-cases.local.json` for a laptop `--report-id` run. Not CI |
+| `retrieval-cases.local.json` overlay loaded by the runner | **done** — laptop `--dry-run` / `--report-id` only; CI `--from-gcs` / `--live` never merge it |
+| Public gold on `docs/sample_files/` (Appendix B `SW-LWB-4`, SOP-010 FMEA pages) | **dropped** — the synthetic corpus is the public gold |
+| CI `--report-id` against a production-shaped report | **dropped** — `--report-id` stays a laptop path |
+| CI run-artifact / Recall@5 trend across PRs | **dropped** — CI already uploads `retrieval-runs/` JSON; a trend series is not leftover for this architecture |
 
-Do not mark phase 0 complete until the backlog below is either done or
-explicitly dropped.
+Phase 0 stays **partial** because the synthetic nine is not the 273-page
+Convergent file. Run that file with the overlay + `--report-id` on a
+laptop. Do not treat a green CI job as proof that production excerpt
+truncation is gone.
 
-### Harness backlog (phase 0)
+### Harness status (phase 0)
 
-Restore these without putting customer PDFs in the repo:
+The loader and public `mustContain` gold are in. Remaining work is
+operational, not a new retrieval design:
 
-1. **Private overlay.** Track a template (the old
-   `retrieval-cases.local.example.json`) and load gitignored
-   `retrieval-cases.local.json` again. Mine the six production Langfuse
-   traces (including “logic analyzer” / page 121 on the 273-page DV file)
-   so CI or a laptop `--report-id` run can fail the real bug class, not
-   only the synthetic stand-in.
-2. **Excerpt gold on the public set.** Add `mustContain` to the seven
-   cases that still rely on the judge alone (`equipment-required-instrument`,
-   `equipment-table-heading`, the three `SW-EVAL-7` hits, `software-file-locator`).
-   Keep `mustContain` unset only when OCR wording is unverified.
-3. **Sample-PDF smoke (optional).** Either add a few Appendix B / SOP-010
-   cases back as a non-CI `--report-id` suite, or delete the leftover
-   gitignore entry and say the synthetic corpus is the only gold.
-4. **Run history.** Upload `scripts/eval/retrieval-runs/*.json` from the
-   live CI job (or a small summary) so Recall@5 / judge pass rate can be
-   compared across PRs. A cross-encoder reranker still needs that signal;
-   the deterministic score in phase 6 does not.
-5. **Ship with current `main`.** `main` already has
-   `0056_attachment_library` / `0057_attachment_storage_budget`. This
-   branch’s retrieval migration is also tagged `0056`. Renumber it to
-   `0058` (and journal idx) before merging to `main`. Do not leave two
-   `0056_*.sql` files.
+1. **Private overlay file.** Copy
+   `scripts/eval/retrieval-cases.local.example.json` to gitignored
+   `retrieval-cases.local.json` on a machine that already ingested the
+   273-page Convergent attachment, then `pnpm retrieval-eval -- --report-id <id>`.
+   CI must not do this.
+2. **Ship with current `main`.** Renumber this branch’s retrieval
+   migration to `0058_document_page_retrieval_metadata` (journal idx after
+   `0056_attachment_library` / `0057_attachment_storage_budget`). Do not
+   leave two `0056_*.sql` files.
 
-Phases 4–6 are implemented. The synthetic nine-case set still gates excerpt
-regressions in CI; it is not enough to decide a learned/cross-encoder
-reranker. Do not add one until run history exists.
+### Not a leftover for this architecture
+
+Do not restore Appendix B / SOP-010 as public gold. Do not add a
+cross-encoder. Do not add Recall@5 trend comparison as a merge
+requirement. The deterministic rerank in phase 6 does not need that
+signal.
 
 ## How search works today (phases 0–6)
 
@@ -156,34 +148,36 @@ Entry points: `src/lib/attachments/retrieval.ts`,
 `src/lib/attachments/page-metadata.ts`,
 `src/lib/attachments/page-outline.ts`,
 `src/lib/attachments/run-document-ingest.ts`. Eval:
-`pnpm retrieval-eval` (default `--dry-run` validates cases;
-`--from-gcs` is the CI path (download only; never upload); `--live` generates the same PDFs without
-GCS; `--report-id` searches an already-ingested report).
+`pnpm retrieval-eval` (default `--dry-run` validates cases and merges a
+local overlay when present; `--from-gcs` is the CI path (download only;
+never upload; never overlay); `--live` generates the same PDFs without
+GCS and never overlays; `--report-id` searches an already-ingested
+report and merges the overlay).
 
 ## Phase 0 — eval harness
 
 **Partial.** `scripts/eval/retrieval-eval.ts` + `scripts/eval/retrieval-cases.json`
 + a synthetic corpus (`scripts/eval/retrieval-corpus.ts`). See
-[Harness backlog](#harness-backlog-phase-0) for what this replaced and
-what is still missing.
+[Harness status](#harness-status-phase-0).
 
 The public cases are small on purpose: two born-digital PDFs that reproduce
 the failure modes that matter (right page / wrong 900-character slice,
 required-vs-executed tables, identifier lookup, cross-file leak, true
 negative). They are **not** a customer attachment and are **not** the
-in-repo SOP / Appendix B scans — those golds were dropped and have not
-been restored as a private overlay.
+in-repo SOP / Appendix B scans. Those golds stay dropped. Private
+production cases live in the optional overlay, not in CI.
 
 **Pass/fail** is an LLM judge (`scripts/eval/retrieval-judge.ts`,
 `RETRIEVAL_JUDGE_PROMPT_VERSION`). Recall@5 is informational. A
 `mustNotContainAnywhere` leak fails the case before the judge runs.
 
 ```bash
-pnpm retrieval-eval -- --dry-run          # parse + print cases
+pnpm retrieval-eval -- --dry-run          # parse + print cases (merges overlay if present)
 pnpm retrieval-eval:upload                # laptop only: write PDFs to the test bucket
-pnpm retrieval-eval -- --from-gcs         # CI path: download, ingest, search, judge (no upload)
-pnpm retrieval-eval -- --live             # same PDFs, skip GCS (laptop + Vertex)
-pnpm retrieval-eval -- --report-id <id>   # search an already-ingested report
+pnpm retrieval-eval -- --from-gcs         # CI path: download, ingest, search, judge (no overlay)
+pnpm retrieval-eval -- --live             # same PDFs, skip GCS (laptop + Vertex; no overlay)
+cp scripts/eval/retrieval-cases.local.example.json scripts/eval/retrieval-cases.local.json
+pnpm retrieval-eval -- --report-id <id>   # already-ingested report + overlay
 ```
 
 CI (`.github/workflows/ci.yml` job `Retrieval eval (GCS + judge)`) runs
@@ -324,9 +318,10 @@ queries keep the exact / lexical skip-embed path. There is no new chat
 **Done (deterministic).** Candidates are reordered with
 `rerankHitsForQuery()` before slicing to `limit`: locator file/page
 boost, then identifier-in-excerpt / filename, then `lexicalMatchScore`.
-Ties keep original order. Do **not** add a cross-encoder until the
-harness has run history that shows Recall@10 high and Recall@5 / MRR
-weak.
+Ties keep original order. Do **not** add a cross-encoder. The synthetic
+nine is not production-scale proof that a learned reranker is needed.
+CI already uploads `retrieval-runs/` JSON; a Recall@5 trend series is
+not leftover for this architecture.
 
 ## Locked non-goals
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { classifyRetrievalQuery } from "@/lib/attachments/retrieval-query";
 import { parseRetrievalCases } from "@/lib/attachments/retrieval-metrics";
 import {
+  CORPUS_ANCHORS,
   PROTOCOL_EQUIPMENT_FILENAME,
   SOFTWARE_REQUIREMENTS_FILENAME,
 } from "./retrieval-corpus";
@@ -45,17 +46,29 @@ describe("retrieval-cases.json", () => {
     );
   });
 
-  it("requires executed-log and page-2 excerpts to show table rows, not only the page", () => {
-    const executed = cases.find(
-      (entry) => entry.id === "equipment-executed-log-negative"
-    );
-    const locator = cases.find(
-      (entry) => entry.id === "equipment-page-2-locator"
-    );
-    expect(executed?.gold[0]?.mustContain).toEqual(["Digital Calipers"]);
-    expect(locator?.gold[0]?.mustContain).toEqual([
-      "Required Testing Equipment",
-    ]);
+  it("puts mustContain on every gold hit with a unique answering substring", () => {
+    const expected: Record<string, string[]> = {
+      "equipment-required-instrument": [CORPUS_ANCHORS.narda],
+      "equipment-table-heading": [CORPUS_ANCHORS.requiredTable],
+      "equipment-executed-log-negative": [CORPUS_ANCHORS.digitalCalipers],
+      "equipment-page-2-locator": [CORPUS_ANCHORS.requiredTable],
+      "sw-eval-7-identifier": [CORPUS_ANCHORS.swEval7],
+      "sw-eval-7-description": [
+        CORPUS_ANCHORS.swEval7,
+        CORPUS_ANCHORS.interlock,
+      ],
+      "software-file-locator": [CORPUS_ANCHORS.swEval7],
+      "cross-file-no-leak": [CORPUS_ANCHORS.swEval7],
+    };
+    for (const entry of cases) {
+      if (entry.gold.length === 0) {
+        expect(entry.mustNotContainAnywhere?.length ?? 0).toBeGreaterThan(0);
+        continue;
+      }
+      expect(expected[entry.id], entry.id).toBeDefined();
+      expect(entry.gold).toHaveLength(1);
+      expect(entry.gold[0]?.mustContain).toEqual(expected[entry.id]);
+    }
   });
 
   it("covers identifier, locator, semantic, and a true-negative", () => {
