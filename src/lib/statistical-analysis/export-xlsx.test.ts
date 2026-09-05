@@ -272,9 +272,9 @@ describe("buildAnalyticsXlsx", () => {
         xml.includes("Capability Histogram") && xml.includes("c:barChart")
     );
     expect(histogramXml).toBeDefined();
-    expect(histogramXml).toContain("c:scatterChart");
-    expect(histogramXml).toContain('scatterStyle val="smooth"');
+    expect(histogramXml).toContain("c:lineChart");
     expect(histogramXml).toContain('<c:smooth val="1"/>');
+    expect(histogramXml).toContain('<c:gapWidth val="0"/>');
     expect(histogramXml).toMatch(/<c:ptCount val="8[0-9]"\/>/);
   });
 

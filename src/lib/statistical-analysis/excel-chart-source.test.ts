@@ -52,18 +52,28 @@ describe("buildAnalysisChartSource", () => {
     const iTable = source.tables.find((table) => table.id === "i-chart");
     expect(typeof iTable?.rows[0]?.[1]).toBe("number");
     const hist = source.tables.find((table) => table.id === "capability-hist");
-    const fit = source.tables.find((table) => table.id === "capability-hist-fit");
-    expect(hist?.rows.length).toBeGreaterThan(0);
-    expect(fit?.rows.length).toBe(outcome.result.histogram.overallCurve.length);
-    expect(fit?.rows.length).toBeGreaterThan(hist!.rows.length);
-    expect(fit?.headers).toEqual(["X", "Overall", "Within"]);
+    expect(hist?.headers).toEqual([
+      "X",
+      "Count",
+      "Overall",
+      "Within",
+      "LSL",
+      "USL",
+    ]);
+    expect(hist?.rows.length).toBe(outcome.result.histogram.overallCurve.length);
+    expect(hist?.rows.length).toBeGreaterThan(
+      outcome.result.histogram.bins.length
+    );
+    const overallCol = hist?.rows.map((row) => row[2]) ?? [];
+    expect(overallCol.every((value) => typeof value === "number")).toBe(true);
     const histogramChart = source.charts.find((chart) =>
       chart.title.includes("Capability Histogram")
     );
-    expect(histogramChart?.kind).toBe("columnScatter");
+    expect(histogramChart?.kind).toBe("columnLine");
+    expect(histogramChart?.gapWidth).toBe(0);
     expect(
       histogramChart?.series.some(
-        (series) => series.name === "Overall" && series.asScatter && series.smooth
+        (series) => series.name === "Overall" && series.asLine && series.smooth
       )
     ).toBe(true);
   });

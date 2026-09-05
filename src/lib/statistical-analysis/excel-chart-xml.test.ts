@@ -73,7 +73,7 @@ describe("excel chart xml helpers", () => {
     expect(xml).toContain("001838");
   });
 
-  it("overlays a smooth scatter fit on histogram columns", () => {
+  it("emits a dense smoothed histogram fit as column+line", () => {
     const range = (
       col0: number,
       rowStart: number,
@@ -86,32 +86,32 @@ describe("excel chart xml helpers", () => {
       rowEnd,
       cache,
     });
+    const xs = Array.from({ length: 20 }, (_, i) => 8 + i * 0.4);
     const xml = buildChartXml({
       title: "Capability Histogram",
-      kind: "columnScatter",
+      kind: "columnLine",
       xAxisTitle: "Measurement",
       yAxisTitle: "Count",
-      xMin: 8,
-      xMax: 16,
       yMin: 0,
       yMax: 4,
+      gapWidth: 0,
+      tickLblSkip: 3,
       series: [
         {
           name: "Count",
           color: "#001838",
-          cats: range(0, 20, 24, [9, 11, 13, 15, 17]),
-          vals: range(1, 20, 24, [1, 2, 3, 1, 1]),
+          cats: range(0, 20, 39, xs),
+          vals: range(1, 20, 39, xs.map((_, i) => (i > 4 && i < 14 ? 2 : 0))),
         },
         {
           name: "Overall",
           color: "#5b8ad0",
-          scatterStyle: "line",
           marker: false,
           dash: true,
-          asScatter: true,
+          asLine: true,
           smooth: true,
-          x: range(0, 30, 32, [8, 12, 16]),
-          vals: range(1, 30, 32, [0.2, 2.4, 0.2]),
+          cats: range(0, 20, 39, xs),
+          vals: range(1, 20, 39, xs.map((x) => Math.exp(-((x - 12) ** 2) / 4))),
         },
       ],
       anchorRow: 1,
@@ -120,11 +120,11 @@ describe("excel chart xml helpers", () => {
       heightEmu: 1,
     });
     expect(xml).toContain("c:barChart");
-    expect(xml).toContain("c:scatterChart");
-    expect(xml).toContain('scatterStyle val="smooth"');
+    expect(xml).toContain("c:lineChart");
+    expect(xml).toContain('<c:gapWidth val="0"/>');
     expect(xml).toContain('<c:smooth val="1"/>');
-    expect(xml).toContain("'Assay sixpack'!$A$30:$A$32");
-    expect(xml).toContain("<c:axId val=\"3\"/>");
+    expect(xml).toContain('<c:tickLblSkip val="3"/>');
+    expect(xml).toContain("'Assay sixpack'!$A$20:$A$39");
   });
 });
 

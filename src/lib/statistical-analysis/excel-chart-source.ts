@@ -50,7 +50,6 @@ export type SeriesRef = {
   noLine?: boolean;
   hiddenFill?: boolean;
   asLine?: boolean;
-  asScatter?: boolean;
   smooth?: boolean;
 };
 
@@ -63,6 +62,8 @@ export type PlannedChart = {
   xMax?: number | null;
   yMin?: number | null;
   yMax?: number | null;
+  gapWidth?: number;
+  tickLblSkip?: number;
   series: SeriesRef[];
 };
 
@@ -140,7 +141,6 @@ export function resolvePlannedCharts(
           noLine: ref.noLine,
           hiddenFill: ref.hiddenFill,
           asLine: ref.asLine,
-          asScatter: ref.asScatter,
           smooth: ref.smooth,
         } satisfies ExcelChartSeries,
       ];
@@ -157,6 +157,8 @@ export function resolvePlannedCharts(
         xMax: chart.xMax,
         yMin: chart.yMin,
         yMax: chart.yMax,
+        gapWidth: chart.gapWidth,
+        tickLblSkip: chart.tickLblSkip,
         series,
         ...anchor,
       } satisfies ExcelNativeChart,
@@ -175,31 +177,33 @@ function padRows(
   });
 }
 
-function paddedHistogramCategories(
-  bins: Array<{ x0: number; x1: number; count: number }>,
-  xMin: number,
-  xMax: number
-): Array<{ midpoint: number; count: number | null }> {
-  if (bins.length === 0) return [];
-  const width = bins[0]!.x1 - bins[0]!.x0;
-  const rows: Array<{ midpoint: number; count: number | null }> = bins.map(
-    (bin) => ({
-      midpoint: (bin.x0 + bin.x1) / 2,
-      count: bin.count,
-    })
-  );
-  if (!(width > 0)) return rows;
-  const firstX0 = bins[0]!.x0;
-  const lastX1 = bins[bins.length - 1]!.x1;
-  for (let i = 1; firstX0 - i * width + width / 2 >= xMin; i += 1) {
-    const x0 = firstX0 - i * width;
-    rows.unshift({ midpoint: x0 + width / 2, count: null });
+function countAtBin(
+  x: number,
+  bins: Array<{ x0: number; x1: number; count: number }>
+): number | null {
+  for (const bin of bins) {
+    if (x >= bin.x0 && x < bin.x1) return bin.count;
   }
-  for (let i = 1; lastX1 + (i - 1) * width + width / 2 <= xMax; i += 1) {
-    const x0 = lastX1 + (i - 1) * width;
-    rows.push({ midpoint: x0 + width / 2, count: null });
+  const last = bins[bins.length - 1];
+  if (last && x === last.x1) return last.count;
+  return null;
+}
+
+function specLimitSpike(
+  xs: number[],
+  spec: number,
+  yMax: number
+): Array<number | null> {
+  const values: Array<number | null> = xs.map(() => null);
+  if (xs.length === 0) return values;
+  let best = 0;
+  for (let i = 1; i < xs.length; i++) {
+    if (Math.abs(xs[i]! - spec) < Math.abs(xs[best]! - spec)) best = i;
   }
-  return rows;
+  const next = best + 1 < xs.length ? best + 1 : Math.max(0, best - 1);
+  values[best] = 0;
+  values[next] = yMax;
+  return values;
 }
 
 function scatterKind(mark: ReturnType<typeof parseChartMark>): {
@@ -627,6 +631,10 @@ function histogramTable(
   colors: ReturnType<typeof chartBrandColors>
 ): AnalysisChartSource {
   if (histogram.bins.length === 0) return { tables: [], charts: [] };
+  const showOverall =
+    showDistributionLines && histogram.overallCurve.length > 0;
+  const showWithin =
+    showDistributionLines && histogram.withinCurve.length > 0;
   const scale = histogramChartScale({
     bins: histogram.bins,
     overallCurve: histogram.overallCurve,
@@ -637,24 +645,40 @@ function histogramTable(
     showLsl,
     showUsl,
   });
-  const categories = paddedHistogramCategories(
-    histogram.bins,
-    scale.xMin,
-    scale.xMax
+  const xs =
+    showOverall
+      ? histogram.overallCurve.map((point) => point.x)
+      : showWithin
+        ? histogram.withinCurve.map((point) => point.x)
+        : histogram.bins.map((bin) => (bin.x0 + bin.x1) / 2);
+  const overallY = showOverall
+    ? histogram.overallCurve.map((point) => point.y)
+    : null;
+  const withinY = showWithin
+    ? histogram.withinCurve.map((point) => point.y)
+    : null;
+  const counts = xs.map((x, i) =>
+    overallY || withinY
+      ? countAtBin(x, histogram.bins)
+      : (histogram.bins[i]?.count ?? null)
   );
-  const width = histogram.bins[0]!.x1 - histogram.bins[0]!.x0;
-  const first = categories[0]!;
-  const last = categories[categories.length - 1]!;
-  const xMin = width > 0 ? first.midpoint - width / 2 : scale.xMin;
-  const xMax = width > 0 ? last.midpoint + width / 2 : scale.xMax;
-  const tables: ChartSourceTable[] = [
-    {
-      id,
-      title,
-      headers: ["Midpoint", "Count"],
-      rows: categories.map((bin) => [bin.midpoint, bin.count]),
-    },
-  ];
+  const drawLsl = showLsl && lsl != null;
+  const drawUsl = showUsl && usl != null;
+  const lslY = drawLsl ? specLimitSpike(xs, lsl, scale.yMax) : null;
+  const uslY = drawUsl ? specLimitSpike(xs, usl, scale.yMax) : null;
+  const headers = ["X", "Count"];
+  if (overallY) headers.push("Overall");
+  if (withinY) headers.push("Within");
+  if (lslY) headers.push("LSL");
+  if (uslY) headers.push("USL");
+  const rows = xs.map((x, i) => {
+    const row: Array<string | number | null> = [x, counts[i] ?? null];
+    if (overallY) row.push(overallY[i] ?? null);
+    if (withinY) row.push(withinY[i] ?? null);
+    if (lslY) row.push(lslY[i] ?? null);
+    if (uslY) row.push(uslY[i] ?? null);
+    return row;
+  });
   const series: SeriesRef[] = [
     {
       name: "Count",
@@ -664,119 +688,72 @@ function histogramTable(
       color: colors.brand600,
     },
   ];
-  const showOverall =
-    showDistributionLines && histogram.overallCurve.length > 0;
-  const showWithin =
-    showDistributionLines && histogram.withinCurve.length > 0;
-  if (showOverall || showWithin) {
-    const headers = ["X"];
-    if (showOverall) headers.push("Overall");
-    if (showWithin) headers.push("Within");
-    const n = Math.max(
-      showOverall ? histogram.overallCurve.length : 0,
-      showWithin ? histogram.withinCurve.length : 0
-    );
-    const rows = Array.from({ length: n }, (_, i) => {
-      const x =
-        histogram.overallCurve[i]?.x ?? histogram.withinCurve[i]?.x ?? null;
-      const row: Array<string | number | null> = [x];
-      if (showOverall) row.push(histogram.overallCurve[i]?.y ?? null);
-      if (showWithin) row.push(histogram.withinCurve[i]?.y ?? null);
-      return row;
+  let col = 2;
+  if (overallY) {
+    series.push({
+      name: "Overall",
+      tableId: id,
+      catCol: 0,
+      valCol: col,
+      color: colors.brand400,
+      marker: false,
+      dash: true,
+      asLine: true,
+      smooth: true,
     });
-    tables.push({
-      id: `${id}-fit`,
-      title: `${title} — distribution fit`,
-      headers,
-      rows,
-    });
-    let col = 1;
-    if (showOverall) {
-      series.push({
-        name: "Overall",
-        tableId: `${id}-fit`,
-        xCol: 0,
-        valCol: col,
-        color: colors.brand400,
-        marker: false,
-        dash: true,
-        asScatter: true,
-        smooth: true,
-        scatterStyle: "line",
-      });
-      col += 1;
-    }
-    if (showWithin) {
-      series.push({
-        name: "Within",
-        tableId: `${id}-fit`,
-        xCol: 0,
-        valCol: col,
-        color: colors.brand600,
-        marker: false,
-        asScatter: true,
-        smooth: true,
-        scatterStyle: "line",
-      });
-    }
+    col += 1;
   }
-  if (showLsl && lsl != null) {
-    tables.push({
-      id: `${id}-lsl`,
-      title: "LSL",
-      headers: ["X", "LSL"],
-      rows: [
-        [lsl, 0],
-        [lsl, scale.yMax],
-      ],
+  if (withinY) {
+    series.push({
+      name: "Within",
+      tableId: id,
+      catCol: 0,
+      valCol: col,
+      color: colors.brand600,
+      marker: false,
+      asLine: true,
+      smooth: true,
     });
+    col += 1;
+  }
+  if (lslY) {
     series.push({
       name: "LSL",
-      tableId: `${id}-lsl`,
-      xCol: 0,
-      valCol: 1,
+      tableId: id,
+      catCol: 0,
+      valCol: col,
       color: colors.limit,
       dash: true,
       marker: false,
-      asScatter: true,
-      scatterStyle: "line",
+      asLine: true,
     });
+    col += 1;
   }
-  if (showUsl && usl != null) {
-    tables.push({
-      id: `${id}-usl`,
-      title: "USL",
-      headers: ["X", "USL"],
-      rows: [
-        [usl, 0],
-        [usl, scale.yMax],
-      ],
-    });
+  if (uslY) {
     series.push({
       name: "USL",
-      tableId: `${id}-usl`,
-      xCol: 0,
-      valCol: 1,
+      tableId: id,
+      catCol: 0,
+      valCol: col,
       color: colors.limit,
       dash: true,
       marker: false,
-      asScatter: true,
-      scatterStyle: "line",
+      asLine: true,
     });
   }
-  const hasScatter = series.some((item) => item.asScatter);
+  const hasLines = series.some((item) => item.asLine);
   return {
-    tables,
+    tables: [{ id, title, headers, rows }],
     charts: [
       {
         title,
-        kind: hasScatter ? "columnScatter" : "column",
+        kind: hasLines ? "columnLine" : "column",
         xAxisTitle: "Measurement",
         yAxisTitle: "Count",
-        xMin,
-        xMax,
         yMin: 0,
         yMax: scale.yMax,
+        gapWidth: hasLines ? 0 : 80,
+        tickLblSkip: xs.length > 12 ? Math.ceil(xs.length / 8) : undefined,
         series,
       },
     ],
