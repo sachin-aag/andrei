@@ -573,9 +573,9 @@ export const attachmentAccessGrants = pgTable(
 );
 
 /**
- * User-defined folders for organising a report's PDF evidence. Purely
- * organisational: deleting a folder never deletes attachments (see the folder
- * DELETE route, which reparents children first).
+ * User-defined folders for organising a report's PDF evidence. Deleting a
+ * folder removes the folder and every nested subfolder and attachment inside
+ * it (see the folder DELETE route).
  */
 export const reportAttachmentFolders = pgTable(
   "report_attachment_folders",
