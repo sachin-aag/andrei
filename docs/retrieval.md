@@ -41,11 +41,11 @@ ready files are left alone.
 
 | Phase | What | Status |
 | --- | --- | --- |
-| 0 | Retrieval eval harness, synthetic GCS corpus, LLM judge | **done** |
+| 0 | Retrieval eval harness | **partial** — live CI path works; original gold set and production overlay are not done (see [Harness backlog](#harness-backlog-phase-0)) |
 | 1 | Persist deterministic page metadata | **done** |
 | 2 | Persist outline spans; outline reads prefer stored spans | **done** |
 | 3 | Exact-identifier retrieval, page collapse, skip embed when exact fills `limit` | **done** |
-| 3.5 | Match-centered excerpts, best chunk per page, lexical fast path | **done** |
+| 3.5 | Match-centered excerpts, best chunk per page, lexical fast path, quote-over-visual, locator ranking | **done** |
 | 4 | File / span routing (filename + outline identifiers before chunk search) | not started |
 | 5 | Embed batching / auto retrieval mode (separate from chat `mode`) | not started |
 | 6 | Reranker experiment (only after the harness shows ranking is the bottleneck) | not started |
@@ -54,7 +54,66 @@ BM25 as a third arm is deferred with the reranker. Metadata is
 **filterable columns** at file / page / span grain, not more prose stuffed
 into every chunk. Chunks inherit page columns via `pageId`.
 
-## How search works today (phases 0–3)
+### What landed vs the original harness plan
+
+Phase 0 started as dry-run JSON + Recall@k / MRR against in-repo sample
+PDFs (Appendix B, SOP-010) and a gitignored local overlay. The follow-up
+was to make the harness catch **right page, wrong excerpt** and
+**cross-document false positives**, then grade real Langfuse failures.
+
+What actually shipped is a smaller public set plus a lot of adjacent
+plumbing:
+
+| Item | Status |
+| --- | --- |
+| `mustContain` / `excerptHitAtK` (excerpt, not just filename+page) | **done** — wired; only 2 of 9 public cases set `mustContain` |
+| `mustNotContainAnywhere` / `noFalsePositiveAtK` | **done** |
+| LLM judge + required `passCriteria` | **done** (added after the metric work) |
+| Path-gated Vitest + live `pnpm retrieval-eval -- --from-gcs` in CI | **done** |
+| Synthetic GCS corpus (two born-digital PDFs, nine cases) | **done** — replaced the sample-PDF gold |
+| GitHub OIDC WIF (no JSON SA key); CI download-only (no seed/upload) | **done** |
+| Phase 3.5 product fix (match-centered snippet, best chunk per page, lexical fast path, quote over `visual_interpretation`, locator ranking) | **done** — this was the product tangent that the harness was meant to gate |
+| Six Langfuse-mined cases against the real 273-page Convergent attachment (`retrieval-cases.local.example.json`) | **not done** — dropped when the public set went synthetic |
+| Public gold on `docs/sample_files/` (Appendix B `SW-LWB-4`, SOP-010 FMEA pages) | **not done** — those cases no longer run |
+| `retrieval-cases.local.json` overlay loaded by the runner | **not done** — `.gitignore` still reserves the file; `retrieval-eval.ts` no longer merges it |
+| `mustContain` on every gold hit that has a unique answering substring | **not done** — 7 cases are judge-only |
+| CI artifacts / run comparison over time | **not done** — runs write gitignored JSON locally only |
+| Private `--report-id` path in CI against a production-shaped report | **not done** — CLI flag exists; CI always ingests the synthetic corpus |
+
+Do not mark phase 0 complete until the backlog below is either done or
+explicitly dropped.
+
+### Harness backlog (phase 0)
+
+Restore these without putting customer PDFs in the repo:
+
+1. **Private overlay.** Track a template (the old
+   `retrieval-cases.local.example.json`) and load gitignored
+   `retrieval-cases.local.json` again. Mine the six production Langfuse
+   traces (including “logic analyzer” / page 121 on the 273-page DV file)
+   so CI or a laptop `--report-id` run can fail the real bug class, not
+   only the synthetic stand-in.
+2. **Excerpt gold on the public set.** Add `mustContain` to the seven
+   cases that still rely on the judge alone (`equipment-required-instrument`,
+   `equipment-table-heading`, the three `SW-EVAL-7` hits, `software-file-locator`).
+   Keep `mustContain` unset only when OCR wording is unverified.
+3. **Sample-PDF smoke (optional).** Either add a few Appendix B / SOP-010
+   cases back as a non-CI `--report-id` suite, or delete the leftover
+   gitignore entry and say the synthetic corpus is the only gold.
+4. **Run history.** Upload `scripts/eval/retrieval-runs/*.json` from the
+   live CI job (or a small summary) so Recall@5 / judge pass rate can be
+   compared across PRs. Phase 6 still needs that signal before a reranker.
+5. **Ship with current `main`.** `main` already has
+   `0056_attachment_library` / `0057_attachment_storage_budget`. This
+   branch’s retrieval migration is also tagged `0056`. Renumber it to
+   `0058` (and journal idx) before merging to `main`. Do not leave two
+   `0056_*.sql` files.
+
+Phases 4–6 stay blocked on a harness that can tell ranking from excerpt
+failure. The synthetic nine-case set is enough to gate excerpt regressions
+in CI; it is not enough to decide a reranker.
+
+## How search works today (phases 0–3.5)
 
 1. Ingest writes `document_pages` (transcript + optional Gemini
    `pageContext` + retrieval columns) and `document_chunks` (vector +
@@ -92,14 +151,17 @@ GCS; `--report-id` searches an already-ingested report).
 
 ## Phase 0 — eval harness
 
-**Done.** `scripts/eval/retrieval-eval.ts` + `scripts/eval/retrieval-cases.json`
-+ a synthetic corpus (`scripts/eval/retrieval-corpus.ts`).
+**Partial.** `scripts/eval/retrieval-eval.ts` + `scripts/eval/retrieval-cases.json`
++ a synthetic corpus (`scripts/eval/retrieval-corpus.ts`). See
+[Harness backlog](#harness-backlog-phase-0) for what this replaced and
+what is still missing.
 
 The public cases are small on purpose: two born-digital PDFs that reproduce
 the failure modes that matter (right page / wrong 900-character slice,
 required-vs-executed tables, identifier lookup, cross-file leak, true
-negative). They are not a customer attachment and are not the in-repo
-SOP / Appendix B scans.
+negative). They are **not** a customer attachment and are **not** the
+in-repo SOP / Appendix B scans — those golds were dropped and have not
+been restored as a private overlay.
 
 **Pass/fail** is an LLM judge (`scripts/eval/retrieval-judge.ts`,
 `RETRIEVAL_JUDGE_PROMPT_VERSION`). Recall@5 is informational. A
