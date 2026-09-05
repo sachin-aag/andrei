@@ -500,6 +500,7 @@ Grouped by subsystem. Run a folder with `pnpm test -- src/lib/import`.
 | DOCX signatures | `docx/signature-block.test.ts` |
 | Plain text | `plain-text/placeholder-at-offset.test.ts`, `text/bracket-span.test.ts` |
 | Bulk eval tooling | `sample-eval/bulk-eval-aggregates.test.ts` |
+| Retrieval eval harness | `scripts/eval/retrieval-cases.test.ts`, `retrieval-corpus.test.ts`, `retrieval-judge.test.ts`, `retrieval-gcs.test.ts`, `retrieval-eval.test.ts`; metrics in `src/lib/attachments/retrieval-metrics.test.ts` |
 
 </details>
 
@@ -519,12 +520,13 @@ Spot-check **live Gemini** evaluation periodically — E2E stubs AI via `ALLOW_T
 
 | Job | Command | Notes |
 |-----|---------|-------|
-| Unit | `pnpm test` | All Vitest |
+| Unit | `pnpm test` | All Vitest. Retrieval eval unit tests are also gated in CI to run only when the harness / search files change. |
 | E2E | `pnpm test:e2e` | Postgres service container, `drizzle-kit push`, Chromium + Firefox + WebKit |
+| Retrieval eval | `pnpm retrieval-eval -- --from-gcs` | Path-gated. Downloads synthetic PDFs from `RETRIEVAL_EVAL_GCS_BUCKET`, Vertex-ingests, searches, LLM-judges. Does not upload. Skips if Vertex/GCS secrets are missing. |
 
 Workflow: `.github/workflows/ci.yml`
 
-**GitHub Actions secrets:** E2E does **not** need production secrets. It uses an ephemeral Postgres service, a fixed `AUTH_SECRET`, test-login bypass (`ALLOW_TEST_LOGIN` in `playwright.config.ts`), and stubbed AI (`ALLOW_TEST_SKIP_EVALUATION` / `ALLOW_TEST_SKIP_SUGGESTIONS`). Do **not** point CI E2E at `secrets.DATABASE_URL` (Neon) — that would share real data and drift from schema. Optional repo secrets (`DATABASE_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `LANGFUSE_*`) are for Vercel/deploy only; the build job may read `DATABASE_URL` as a parseable stub but never connects. `CredentialsSignin` in E2E logs is expected when the “wrong password” auth test runs.
+**GitHub Actions secrets:** E2E does **not** need production secrets. It uses an ephemeral Postgres service, a fixed `AUTH_SECRET`, test-login bypass (`ALLOW_TEST_LOGIN` in `playwright.config.ts`), and stubbed AI (`ALLOW_TEST_SKIP_EVALUATION` / `ALLOW_TEST_SKIP_SUGGESTIONS`). Do **not** point CI E2E at `secrets.DATABASE_URL` (Neon) — that would share real data and drift from schema. Optional repo secrets (`DATABASE_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `LANGFUSE_*`) are for Vercel/deploy only; the build job may read `DATABASE_URL` as a parseable stub but never connects. `CredentialsSignin` in E2E logs is expected when the “wrong password” auth test runs. Live retrieval eval and the PDF ingest soak authenticate with GitHub OIDC WIF (`GOOGLE_VERTEX_PROJECT`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT_EMAIL`, plus `RETRIEVAL_EVAL_GCS_BUCKET` for eval). Do **not** add `GCP_SERVICE_ACCOUNT_KEY`. Jobs skip if those secrets are unset.
 
 ---
 

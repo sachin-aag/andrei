@@ -192,7 +192,7 @@ import {
   listReadyDocumentsForReport,
   readDocumentOutline,
   readDocumentPage,
-  searchReportDocuments,
+  searchReportDocumentsMany,
   toClientDocumentSearchResults,
 } from "@/lib/attachments/retrieval";
 import {
@@ -723,19 +723,15 @@ function buildSearchDocumentsTool(opts: {
     attachmentIds?: string[];
   }) {
     const queryList = collectSearchQueries(input);
-    const arms = await Promise.all(
-      queryList.map((query) =>
-        searchReportDocuments({
-          reportId,
-          query,
-          limit: input.limit,
-          attachmentIds: input.attachmentIds,
-          backfill: input.attachmentIds === undefined,
-          mode: input.mode,
-          excludePages: input.excludePages,
-        })
-      )
-    );
+    const arms = await searchReportDocumentsMany({
+      reportId,
+      queries: queryList,
+      limit: input.limit,
+      attachmentIds: input.attachmentIds,
+      backfill: input.attachmentIds === undefined,
+      mode: input.mode,
+      excludePages: input.excludePages,
+    });
     const byId = new Map<string, (typeof arms)[number][number]>();
     for (const arm of arms) {
       for (const hit of arm) {

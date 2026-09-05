@@ -10,10 +10,20 @@ const RECURRING_LINE_MAX_CHARS = 80;
 const BOILERPLATE_LINE_RE =
   /^(confidential|proprietary|page\s+\d+|printed on|©|\(c\)|convergent\s*dental|solea|all rights reserved)/i;
 
+export const PAGE_IDENTIFIER_DIGEST_CAP = 8;
+export const PAGE_IDENTIFIER_STORE_CAP = 40;
+
 export type OutlineSpan = {
   title: string;
   pageStart: number;
   pageEnd: number;
+  identifiers?: string[];
+};
+
+export type PageMetadata = {
+  outlineTitle: string | null;
+  identifiers: string[];
+  digest: string;
 };
 
 export type OutlinePageInput = {
@@ -117,16 +127,27 @@ export function derivePageOutlineDigest(
   transcript: string,
   options?: { recurringLines?: ReadonlySet<string> }
 ): string {
+  return derivePageMetadata(transcript, options).digest;
+}
+
+export function derivePageMetadata(
+  transcript: string,
+  options?: { recurringLines?: ReadonlySet<string> }
+): PageMetadata {
   const recurring = options?.recurringLines ?? new Set<string>();
   const kept = splitLines(transcript).filter(
     (line) => !isBoilerplateLine(line, recurring)
   );
-  if (kept.length === 0) return "";
+  if (kept.length === 0) {
+    return { outlineTitle: null, identifiers: [], digest: "" };
+  }
 
   const heading = detectHeading(kept);
-  const ids = requirementIds(kept.join("\n")).slice(0, 8);
+  const allIds = requirementIds(kept.join("\n"));
+  const digestIds = allIds.slice(0, PAGE_IDENTIFIER_DIGEST_CAP);
+  const identifiers = allIds.slice(0, PAGE_IDENTIFIER_STORE_CAP);
   const excerptSource = kept
-    .filter((line) => line !== heading && !ids.includes(line))
+    .filter((line) => line !== heading && !digestIds.includes(line))
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
@@ -135,14 +156,21 @@ export function derivePageOutlineDigest(
       ? excerptSource
       : `${excerptSource.slice(0, PAGE_OUTLINE_EXCERPT_CHARS).trimEnd()}…`;
 
-  const parts = [heading, ids.join(" "), excerpt].filter(
+  const parts = [heading, digestIds.join(" "), excerpt].filter(
     (part) => part && part.trim().length > 0
   );
   const joined = parts.join(" — ").replace(/\s+/g, " ").trim();
-  if (!joined) return "";
-  return joined.length <= PAGE_OUTLINE_MAX_CHARS
-    ? joined
-    : `${joined.slice(0, PAGE_OUTLINE_MAX_CHARS).trimEnd()}…`;
+  const digest = !joined
+    ? ""
+    : joined.length <= PAGE_OUTLINE_MAX_CHARS
+      ? joined
+      : `${joined.slice(0, PAGE_OUTLINE_MAX_CHARS).trimEnd()}…`;
+
+  return {
+    outlineTitle: heading,
+    identifiers,
+    digest,
+  };
 }
 
 export function groupOutlineSpans(

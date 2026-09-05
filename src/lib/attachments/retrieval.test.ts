@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildKeywordTsQuery,
+  buildMatchCenteredSnippet,
   buildOutlineFromStoredPages,
   normalizeAttachmentIdFilter,
   reciprocalRankFusion,
+  reportAttachmentChunkJoin,
   searchReportDocuments,
+  searchReportDocumentsDetailed,
+  searchReportDocumentsMany,
   verifyCitation,
 } from "@/lib/attachments/retrieval";
 
@@ -27,9 +31,16 @@ vi.mock("@/db", () => ({
 const embedMock = vi.fn(async () => ({
   embedding: Array.from({ length: 768 }, () => 0.01),
 }));
+const embedManyMock = vi.fn(async (opts: unknown) => {
+  const values = (opts as { values?: string[] }).values ?? [];
+  return {
+    embeddings: values.map(() => Array.from({ length: 768 }, () => 0.01)),
+  };
+});
 
 vi.mock("ai", () => ({
   embed: (...args: unknown[]) => embedMock(...(args as [])),
+  embedMany: (opts: unknown) => embedManyMock(opts),
 }));
 
 vi.mock("@ai-sdk/google", () => ({
@@ -50,6 +61,24 @@ function chunkRow(chunkId: string, attachmentId: string, pageNumber = 1) {
     sourceSha256: "sha",
   };
 }
+
+describe("reportAttachmentChunkJoin", () => {
+  it("matches library links by assetId and eval/legacy rows by attachmentId", () => {
+    const names: string[] = [];
+    const seen = new Set<unknown>();
+    const walk = (value: unknown) => {
+      if (value == null || typeof value !== "object" || seen.has(value)) return;
+      seen.add(value);
+      if ("name" in value && typeof value.name === "string") {
+        names.push(value.name);
+      }
+      for (const child of Object.values(value)) walk(child);
+    };
+    walk(reportAttachmentChunkJoin());
+    expect(names).toContain("asset_id");
+    expect(names).toContain("attachment_id");
+  });
+});
 
 describe("reciprocalRankFusion", () => {
   it("merges vector and keyword rankings by reciprocal rank", () => {
@@ -131,10 +160,12 @@ describe("searchReportDocuments with tagged attachments", () => {
     limitMock.mockReset();
     limitMock.mockResolvedValue([]);
     embedMock.mockClear();
+    embedManyMock.mockClear();
   });
 
   it("does not label results when no attachments are tagged", async () => {
     limitMock
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([chunkRow("c1", "att_1")])
       .mockResolvedValueOnce([]);
 
@@ -146,13 +177,17 @@ describe("searchReportDocuments with tagged attachments", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]!.pinned).toBeUndefined();
-    // vector + keyword only: no backfill pass for an unrestricted search.
-    expect(limitMock).toHaveBeenCalledTimes(2);
+    // lexical + vector + keyword; no backfill pass for an unrestricted search.
+    expect(limitMock).toHaveBeenCalledTimes(3);
   });
 
   it("marks tagged hits and skips backfill when they fill the limit", async () => {
     limitMock
-      .mockResolvedValueOnce([chunkRow("c1", "att_1"), chunkRow("c2", "att_1")])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        chunkRow("c1", "att_1", 1),
+        chunkRow("c2", "att_1", 2),
+      ])
       .mockResolvedValueOnce([]);
 
     const results = await searchReportDocuments({
@@ -163,12 +198,14 @@ describe("searchReportDocuments with tagged attachments", () => {
     });
 
     expect(results.map((r) => r.pinned)).toEqual([true, true]);
-    expect(limitMock).toHaveBeenCalledTimes(2);
+    expect(limitMock).toHaveBeenCalledTimes(3);
   });
 
   it("backfills from the rest of the report when tagged hits fall short", async () => {
     limitMock
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([chunkRow("c1", "att_1")])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([chunkRow("c9", "att_other")])
       .mockResolvedValueOnce([]);
@@ -182,13 +219,14 @@ describe("searchReportDocuments with tagged attachments", () => {
 
     expect(results.map((r) => r.chunkId)).toEqual(["c1", "c9"]);
     expect(results.map((r) => r.pinned)).toEqual([true, false]);
-    // Tagged pass + backfill pass, but the query is embedded only once.
-    expect(limitMock).toHaveBeenCalledTimes(4);
+    // Tagged lexical + fused + backfill lexical + fused; query embedded once.
+    expect(limitMock).toHaveBeenCalledTimes(6);
     expect(embedMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not backfill when explicit tags define the attachment scope", async () => {
     limitMock
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([chunkRow("c1", "att_1")])
       .mockResolvedValueOnce([]);
 
@@ -202,7 +240,7 @@ describe("searchReportDocuments with tagged attachments", () => {
 
     expect(results.map((r) => r.chunkId)).toEqual(["c1"]);
     expect(results.map((r) => r.pinned)).toEqual([true]);
-    expect(limitMock).toHaveBeenCalledTimes(2);
+    expect(limitMock).toHaveBeenCalledTimes(3);
   });
 
   it("skips retrieval entirely for a blank query", async () => {
@@ -260,6 +298,236 @@ describe("searchReportDocuments with tagged attachments", () => {
     });
 
     expect(results.map((r) => r.pageNumber)).toEqual([32]);
+  });
+
+  it("collapses to the best-matching chunk per page when the query is lexical", async () => {
+    limitMock
+      .mockResolvedValueOnce([
+        {
+          ...chunkRow("c2", "att_1", 121),
+          contextualText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+          rawText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          ...chunkRow("c1", "att_1", 121),
+          contextualText: "TOP-00051 UUT header boilerplate",
+          rawText: "TOP-00051 UUT header boilerplate",
+        },
+        {
+          ...chunkRow("c2", "att_1", 121),
+          contextualText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+          rawText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+        },
+        chunkRow("c3", "att_1", 122),
+      ])
+      .mockResolvedValueOnce([]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "logic analyzer",
+      limit: 5,
+    });
+
+    expect(results.map((r) => r.chunkId)).toEqual(["c2", "c3"]);
+    expect(results[0]!.text).toContain("Logic Analyzer");
+    expect(results[0]!.text).toContain("Saleae");
+    expect(embedMock).toHaveBeenCalledTimes(1);
+    expect(limitMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("skips the query embedding when lexical hits alone fill the limit", async () => {
+    limitMock.mockResolvedValueOnce([
+      {
+        ...chunkRow("c2", "att_1", 121),
+        contextualText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+        rawText: "Table 3 Required Testing Equipment Logic Analyzer Saleae",
+      },
+    ]);
+
+    const { results, timing } = await searchReportDocumentsDetailed({
+      reportId: "report-1",
+      query: "logic analyzer",
+      limit: 1,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.text).toContain("Logic Analyzer");
+    expect(timing.skippedEmbedding).toBe(true);
+    expect(embedMock).not.toHaveBeenCalled();
+    expect(limitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the quote transcript instead of a visual-interpretation summary", async () => {
+    limitMock.mockResolvedValueOnce([
+      {
+        ...chunkRow("visual", "att_1", 3),
+        sourceKind: "visual_interpretation",
+        rawText:
+          "this page lists which instruments appear on the executed equipment data table",
+        contextualText:
+          "Document: att_1.pdf | Page 3 | executed log\n\nthis page lists which instruments appear on the executed equipment data table",
+      },
+      {
+        ...chunkRow("quote", "att_1", 3),
+        sourceKind: "quote",
+        rawText:
+          "EXECUTED Equipment Data Table Torque Wrench Sturtevant Digital Calipers",
+        contextualText:
+          "Document: att_1.pdf | Page 3 | executed log\n\nEXECUTED Equipment Data Table Torque Wrench Sturtevant Digital Calipers",
+      },
+    ]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "which instruments appear on the executed equipment data table",
+      limit: 5,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.chunkId).toBe("quote");
+    expect(results[0]!.text).toContain("Digital Calipers");
+    expect(results[0]!.text).not.toMatch(/this page lists which instruments/i);
+  });
+
+  it("ranks an explicit page locator ahead of earlier pages of the same file", async () => {
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+      {
+        ...chunkRow("p1", "att_1", 1),
+        filename: "dv-protocol-equipment.pdf",
+        rawText: "UUT HEADER page one boilerplate",
+        contextualText:
+          "Document: dv-protocol-equipment.pdf | Page 1 | header\n\nUUT HEADER page one boilerplate",
+      },
+      {
+        ...chunkRow("p2", "att_1", 2),
+        filename: "dv-protocol-equipment.pdf",
+        rawText: `${"UUT HEADER repeating boilerplate ".repeat(40)}Required Testing Equipment Narda SRM-3006`,
+        contextualText:
+          "Document: dv-protocol-equipment.pdf | Page 2 | required\n\nRequired Testing Equipment Narda SRM-3006",
+      },
+    ]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "dv-protocol-equipment.pdf page 2",
+      limit: 5,
+    });
+
+    expect(results.map((row) => row.pageNumber)).toEqual([2, 1]);
+    expect(results[0]!.text).toContain("Required Testing Equipment");
+  });
+
+  it("skips the query embedding when exact identifier hits fill the limit", async () => {
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([chunkRow("c31", "att_1", 31)]);
+
+    const { results, timing } = await searchReportDocumentsDetailed({
+      reportId: "report-1",
+      query: "SW-LWB-4",
+      limit: 1,
+    });
+
+    expect(results.map((r) => r.pageNumber)).toEqual([31]);
+    expect(timing.skippedEmbedding).toBe(true);
+    expect(timing.queryKind).toBe("identifier");
+    expect(embedMock).not.toHaveBeenCalled();
+    expect(limitMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("restricts an identifier query to the file whose summary mentions the id", async () => {
+    limitMock
+      .mockResolvedValueOnce([
+        {
+          attachmentId: "att_sw",
+          filename: "software-requirements.pdf",
+          documentSummary: "Includes SW-EVAL-7 laser interlock.",
+        },
+        {
+          attachmentId: "att_dv",
+          filename: "dv-protocol-equipment.pdf",
+          documentSummary: "Required testing equipment.",
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          ...chunkRow("hit", "att_sw", 2),
+          filename: "software-requirements.pdf",
+          rawText: "SW-EVAL-7 Laser interlock latency Pass",
+          contextualText: "SW-EVAL-7 Laser interlock latency Pass",
+        },
+      ]);
+
+    const { results, timing } = await searchReportDocumentsDetailed({
+      reportId: "report-1",
+      query: "SW-EVAL-7",
+      limit: 1,
+    });
+
+    expect(results.map((row) => row.attachmentId)).toEqual(["att_sw"]);
+    expect(timing.skippedEmbedding).toBe(true);
+    expect(embedMock).not.toHaveBeenCalled();
+    expect(limitMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("reranks an identifier mention ahead of a lexical-only page", async () => {
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          ...chunkRow("noise", "att_1", 1),
+          filename: "other.pdf",
+          rawText: "unrelated equipment table header",
+          contextualText: "unrelated equipment table header",
+        },
+        {
+          ...chunkRow("hit", "att_1", 2),
+          filename: "software-requirements.pdf",
+          rawText: "SW-EVAL-7 Laser interlock latency Pass",
+          contextualText: "SW-EVAL-7 Laser interlock latency Pass",
+        },
+      ]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "SW-EVAL-7",
+      limit: 2,
+    });
+
+    expect(results.map((row) => row.chunkId)).toEqual(["hit", "noise"]);
+  });
+
+  it("embeds unique semantic queries once via embedMany", async () => {
+    const arms = await searchReportDocumentsMany({
+      reportId: "report-1",
+      queries: ["dissolution failure", "root cause analysis"],
+      limit: 5,
+    });
+
+    expect(arms).toHaveLength(2);
+    expect(embedManyMock).toHaveBeenCalledTimes(1);
+    expect(embedMock).not.toHaveBeenCalled();
+    const batched = embedManyMock.mock.calls[0]?.[0] as { values: string[] };
+    expect(batched.values).toEqual(["dissolution failure", "root cause analysis"]);
+  });
+});
+
+describe("buildMatchCenteredSnippet export", () => {
+  it("is re-exported from retrieval for callers that build tool excerpts", () => {
+    const snippet = buildMatchCenteredSnippet(
+      "aaa ".repeat(40) + "Logic Analyzer Saleae",
+      "logic analyzer",
+      80
+    );
+    expect(snippet).toContain("Logic Analyzer");
   });
 });
 
