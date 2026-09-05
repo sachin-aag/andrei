@@ -11,6 +11,11 @@ import {
 import {
   canManageAttachmentAsset,
 } from "@/lib/attachments/library-access";
+import {
+  AttachmentPageBudgetExceededError,
+  attachmentPageBudgetExceededResponse,
+} from "@/lib/attachments/page-budget";
+import { startVaultAssetIngest } from "@/lib/attachments/start-vault-ingest";
 import { syncAssetProcessing } from "@/lib/attachments/sync-asset-processing";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -52,6 +57,7 @@ export async function POST(
 
   if (
     asset.processingStatus === "ready" &&
+    asset.activeIngestRunId &&
     asset.gcsGeneration &&
     (!requestedGeneration || requestedGeneration === asset.gcsGeneration)
   ) {
@@ -100,8 +106,8 @@ export async function POST(
     });
 
     await syncAssetProcessing(claimed.id, {
-      processingStatus: "ready",
-      processingProgress: 100,
+      processingStatus: "queued",
+      processingProgress: 0,
       processingPage: null,
       processingError: null,
       sha256: promoted.sha256,
@@ -116,6 +122,28 @@ export async function POST(
       .from(attachmentAssets)
       .where(eq(attachmentAssets.id, assetId));
     if (!updated) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    try {
+      await startVaultAssetIngest(assetId, promoted.generation);
+    } catch (error) {
+      if (error instanceof AttachmentPageBudgetExceededError) {
+        await syncAssetProcessing(assetId, {
+          processingStatus: "failed",
+          processingProgress: 0,
+          processingError: error.message,
+        });
+        return attachmentPageBudgetExceededResponse(error);
+      }
+      throw error;
+    }
+
+    const [afterIngest] = await db
+      .select()
+      .from(attachmentAssets)
+      .where(eq(attachmentAssets.id, assetId));
+    if (!afterIngest) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -134,7 +162,7 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ asset: toLibraryAssetDto(updated, "mine") });
+    return NextResponse.json({ asset: toLibraryAssetDto(afterIngest, "mine") });
   } catch (error) {
     const message = sanitizeFinalizeError(error);
     await syncAssetProcessing(assetId, {
