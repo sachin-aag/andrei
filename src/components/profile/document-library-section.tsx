@@ -61,6 +61,7 @@ const LIBRARY_ROOT = "__library_root__";
 type Props = {
   currentUser: Pick<WorkspaceUser, "id" | "role">;
   workspaceUsers: WorkspaceUser[];
+  hideIntro?: boolean;
 };
 
 type LibraryResponse = {
@@ -488,7 +489,11 @@ function LibraryAssetDetails({
   );
 }
 
-export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
+export function DocumentLibrarySection({
+  currentUser,
+  workspaceUsers,
+  hideIntro = false,
+}: Props) {
   const [library, setLibrary] = useState<LibraryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [inspectedAssetId, setInspectedAssetId] = useState<string | null>(null);
@@ -873,25 +878,35 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
   }, [library]);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
-      <h2 className="text-base font-semibold">Document library</h2>
-      <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        Upload files or folders here, or drop them onto a folder. Nested folders
-        are kept. A folder must contain only PDF and Word files — anything else
-        stops the upload before it starts. Click a file to see details. Open a
-        preview when you want to read it. Files already on reports stay there if
-        you remove them from the library.
-      </p>
+    <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+      {hideIntro ? null : (
+        <>
+          <h2 className="text-base font-semibold">Document library</h2>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            Upload files or folders here, or drop them onto a folder. Nested
+            folders are kept. A folder must contain only PDF and Word files —
+            anything else stops the upload before it starts. Click a file to
+            see details. Open a preview when you want to read it. Files already
+            on reports stay there if you remove them from the library.
+          </p>
+        </>
+      )}
 
       {loading ? (
-        <div className="mt-6 flex items-center gap-2 text-sm text-[var(--muted-foreground)]">
+        <div
+          className={cn(
+            "flex items-center gap-2 text-sm text-[var(--muted-foreground)]",
+            hideIntro ? null : "mt-6"
+          )}
+        >
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           Loading library…
         </div>
       ) : (
         <div
           className={cn(
-            "mt-5 flex min-w-0 flex-col overflow-hidden rounded-md border border-[var(--border)] lg:flex-row",
+            "flex min-w-0 flex-col overflow-hidden rounded-md border border-[var(--border)] lg:flex-row",
+            hideIntro ? null : "mt-5",
             previewOpen
               ? "h-[min(70vh,720px)]"
               : "lg:min-h-[280px]"

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ImgHTMLAttributes, ReactNode } from "react";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
@@ -59,6 +59,22 @@ const engineer: WorkspaceUser = {
   title: "Engineer",
 };
 
+const admin: WorkspaceUser = {
+  id: "u-admin",
+  name: "Test Admin",
+  email: "test.admin@example.com",
+  role: "admin",
+  title: "Admin",
+};
+
+function primaryNavHrefs() {
+  const nav = screen.getByRole("complementary", { name: "Primary navigation" });
+  return within(nav)
+    .getAllByRole("link")
+    .map((link) => link.getAttribute("href"))
+    .filter((href) => href !== "/profile");
+}
+
 function setCustomer(id: "demo" | "mj" | "convergent") {
   vi.stubEnv("ANDREI_CUSTOMER", id);
   vi.stubEnv("NEXT_PUBLIC_ANDREI_CUSTOMER", id);
@@ -112,5 +128,60 @@ describe("AppShell brand chrome", () => {
     expect(
       screen.queryByRole("link", { name: "Statistical Analysis" })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("AppShell primary navigation", () => {
+  it("places Document library under Reports and keeps Insights on demo", () => {
+    setCustomer("demo");
+    render(
+      <AppShell user={engineer} initialUsers={[engineer]}>
+        <div>main</div>
+      </AppShell>
+    );
+    expect(primaryNavHrefs()).toEqual(["/", "/library", "/insights"]);
+    expect(
+      screen.getByRole("link", { name: "Document library" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Insights" })).toBeInTheDocument();
+  });
+
+  it("hides Insights on MJ and keeps Document library under Reports", () => {
+    setCustomer("mj");
+    render(
+      <AppShell user={engineer} initialUsers={[engineer]}>
+        <div>main</div>
+      </AppShell>
+    );
+    expect(primaryNavHrefs()).toEqual(["/", "/library"]);
+    expect(screen.queryByRole("link", { name: "Insights" })).not.toBeInTheDocument();
+  });
+
+  it("hides Insights on Convergent and keeps Document library under Reports", () => {
+    setCustomer("convergent");
+    render(
+      <AppShell user={engineer} initialUsers={[engineer]}>
+        <div>main</div>
+      </AppShell>
+    );
+    expect(primaryNavHrefs()).toEqual(["/", "/library"]);
+    expect(screen.queryByRole("link", { name: "Insights" })).not.toBeInTheDocument();
+  });
+
+  it("places Document library under Reports in the admin nav", () => {
+    setCustomer("demo");
+    render(
+      <AppShell user={admin} initialUsers={[admin]}>
+        <div>main</div>
+      </AppShell>
+    );
+    expect(primaryNavHrefs()).toEqual([
+      "/admin/reports",
+      "/library",
+      "/admin/users",
+      "/admin/limits",
+      "/admin/prompts",
+    ]);
+    expect(screen.queryByRole("link", { name: "Insights" })).not.toBeInTheDocument();
   });
 });

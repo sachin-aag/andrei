@@ -20,7 +20,9 @@ The same engine ships as three customer packs: **demo** (Andrei branding, invest
 - **DOCX export** (and MJ Word import) matching the customer template.
 - **Admin** — users, password policy, retention, audit trail, and e-signatures (21 CFR Part 11-style hash chain).
 
-Insights dashboards exist under `/insights` and are currently backed by mock data.
+Insights dashboards exist under `/insights` on the **demo** pack (`insightsEnabled`). MJ and Convergent hide the nav item and redirect those routes home. The dashboards are currently backed by mock data.
+
+The workspace **Document library** is a primary sidebar item under Reports (`/library`): upload PDFs and Word files once, then attach them to reports.
 
 ---
 
