@@ -207,9 +207,9 @@ describe("DocumentLibrarySection explorer", () => {
   it("archives a file into the collapsed Archive section and can restore it", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    let folders = [folder];
+    const folders = [folder];
     let assets = [asset];
-    let archivedFolders: typeof folder[] = [];
+    const archivedFolders: typeof folder[] = [];
     let archivedAssets: Array<typeof asset> = [];
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
