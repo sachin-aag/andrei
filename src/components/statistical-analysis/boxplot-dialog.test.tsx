@@ -44,7 +44,7 @@ describe("BoxplotDialog", () => {
       expect.objectContaining({
         yColumnId: "c1",
         categoryColumnIds: [],
-        title: "",
+        title: "Boxplot of C1",
         rowStart: null,
         rowEnd: null,
         xAxisLabel: null,

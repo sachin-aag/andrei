@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePlotTitle } from "@/components/statistical-analysis/use-plot-title";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -138,7 +139,6 @@ export function CapabilityDialog({
         defaultRowEnd != null ? String(defaultRowEnd) : ""
       );
   const [columnId, setColumnId] = useState(defaultColumnId);
-  const [title, setTitle] = useState(defaultTitle);
   const [lsl, setLsl] = useState(initialLimits.lsl);
   const [usl, setUsl] = useState(initialLimits.usl);
   const [target, setTarget] = useState(initialLimits.target);
@@ -175,6 +175,13 @@ export function CapabilityDialog({
     ? columnNumericValues(selectedColumn, rowSelection)
     : { values: [], skipped: 0 };
   const rowLabel = formatRowSelection(rowSelection);
+  const suggestedTitle = rowLabel
+    ? `${selectedColumn?.name ?? "Analysis"} (${rowLabel})`
+    : (selectedColumn?.name ?? "Analysis title");
+  const { title, setTitle, resolvedTitle } = usePlotTitle(
+    suggestedTitle,
+    defaultTitle
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -278,12 +285,8 @@ export function CapabilityDialog({
             </Label>
             <Input
               id="sixpack-title"
+              data-testid="sixpack-title"
               value={title}
-              placeholder={
-                rowLabel
-                  ? `${selectedColumn?.name ?? "Analysis"} (${rowLabel})`
-                  : (selectedColumn?.name ?? "Analysis title")
-              }
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
@@ -369,7 +372,7 @@ export function CapabilityDialog({
             onClick={() =>
               onSubmit({
                 columnId,
-                title: title.trim(),
+                title: resolvedTitle,
                 lsl: parseOptionalNumber(lsl),
                 usl: parseOptionalNumber(usl),
                 target: parseOptionalNumber(target),
