@@ -10,6 +10,7 @@ import {
   loadLibraryFolder,
   validateLibraryFolderPlacement,
 } from "@/lib/attachments/library-folders";
+import { archiveLibraryItems } from "@/lib/attachments/library-archive";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
 export type ManageAssetResult =
@@ -58,29 +59,16 @@ export async function moveLibraryAsset(
   return { ok: true, asset: toLibraryAssetDto(updated, "mine") };
 }
 
-/** Soft-delete removes the file from the library UI only; report links stay. */
+/** Archive removes the file from the live vault UI; report links stay. */
 export async function softDeleteLibraryAsset(
   user: Pick<WorkspaceUser, "id" | "role">,
   assetId: string
-): Promise<{ ok: true } | { ok: false; error: string; status: 403 | 404 }> {
-  const asset = await loadAccessibleAsset(user, assetId);
-  if (!asset) {
-    return { ok: false, error: "Not found", status: 404 };
-  }
-  if (!canManageAttachmentAsset(user, asset)) {
-    return { ok: false, error: "Forbidden", status: 403 };
-  }
-
-  await db
-    .update(attachmentAssets)
-    .set({ deletedAt: new Date() })
-    .where(
-      and(
-        eq(attachmentAssets.id, assetId),
-        isNull(attachmentAssets.deletedAt)
-      )
-    );
-
+): Promise<{ ok: true } | { ok: false; error: string; status: 400 | 403 | 404 }> {
+  const result = await archiveLibraryItems(user, {
+    assetIds: [assetId],
+    folderIds: [],
+  });
+  if (!result.ok) return result;
   return { ok: true };
 }
 

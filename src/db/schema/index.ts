@@ -492,10 +492,15 @@ export const attachmentLibraryFolders = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => ({
     ownerIdx: index("attachment_library_folders_owner_idx").on(t.ownerId),
     parentIdx: index("attachment_library_folders_parent_idx").on(t.parentId),
+    ownerArchivedIdx: index("attachment_library_folders_owner_archived_idx").on(
+      t.ownerId,
+      t.archivedAt
+    ),
   })
 );
 

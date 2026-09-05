@@ -47,6 +47,7 @@ const asset = {
   processingPage: null,
   processingError: null,
   uploadedAt: "2026-08-20T02:47:00.000Z",
+  archivedAt: null as string | null,
   accessKind: "mine" as const,
 };
 
@@ -56,6 +57,7 @@ const folder = {
   parentId: null,
   name: "Quality",
   createdAt: "2026-08-20T02:00:00.000Z",
+  archivedAt: null as string | null,
 };
 
 function jsonResponse(body: unknown, ok = true): Response {
@@ -200,5 +202,107 @@ describe("DocumentLibrarySection explorer", () => {
         .mocked(fetch)
         .mock.calls.every(([input]) => !String(input).includes("/upload-url"))
     ).toBe(true);
+  });
+
+  it("archives a file into the collapsed Archive section and can restore it", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    let folders = [folder];
+    let assets = [asset];
+    let archivedFolders: typeof folder[] = [];
+    let archivedAssets: Array<typeof asset> = [];
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/attachment-vault?scope=mine")) {
+        return jsonResponse({ folders, assets, archivedFolders, archivedAssets });
+      }
+      if (url.includes("/access")) {
+        return jsonResponse({ grants: [] });
+      }
+      if (url.endsWith("/api/attachment-vault/archive") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as {
+          assetIds?: string[];
+        };
+        if (body.assetIds?.includes(asset.id)) {
+          assets = [];
+          archivedAssets = [{ ...asset, archivedAt: "2026-09-05T00:00:00.000Z" }];
+        }
+        return jsonResponse({ archivedAssets: 1, archivedFolders: 0 });
+      }
+      if (url.endsWith("/api/attachment-vault/unarchive") && init?.method === "POST") {
+        assets = [asset];
+        archivedAssets = [];
+        return jsonResponse({ restoredAssets: 1, restoredFolders: 0 });
+      }
+      return jsonResponse({ error: "unexpected" }, false);
+    });
+
+    renderLibrary();
+    await screen.findByText("coa.pdf");
+    expect(screen.queryByTestId("library-archive")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Archive coa.pdf" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("library-archive")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("library-file-asset-1")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("library-archive-toggle"));
+    expect(await screen.findByTestId("library-archived-file-asset-1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Unarchive coa.pdf" }));
+    await waitFor(() => {
+      expect(screen.queryByTestId("library-archive")).not.toBeInTheDocument();
+    });
+    expect(await screen.findByTestId("library-file-asset-1")).toBeInTheDocument();
+  });
+
+  it("archives a folder and every file inside it", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const nestedAsset = {
+      ...asset,
+      id: "asset-nested",
+      libraryFolderId: folder.id,
+      filename: "batch.pdf",
+    };
+    let folders = [folder];
+    let assets = [nestedAsset];
+    let archivedFolders: typeof folder[] = [];
+    let archivedAssets: Array<typeof nestedAsset> = [];
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/attachment-vault?scope=mine")) {
+        return jsonResponse({ folders, assets, archivedFolders, archivedAssets });
+      }
+      if (url.includes("/access")) {
+        return jsonResponse({ grants: [] });
+      }
+      if (url.endsWith("/api/attachment-vault/archive") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as {
+          folderIds?: string[];
+        };
+        expect(body.folderIds).toEqual([folder.id]);
+        folders = [];
+        assets = [];
+        archivedFolders = [{ ...folder, archivedAt: "2026-09-05T00:00:00.000Z" }];
+        archivedAssets = [{ ...nestedAsset, archivedAt: "2026-09-05T00:00:00.000Z" }];
+        return jsonResponse({ archivedAssets: 1, archivedFolders: 1 });
+      }
+      return jsonResponse({ error: "unexpected" }, false);
+    });
+
+    renderLibrary();
+    await screen.findByText("batch.pdf");
+    await user.click(screen.getByRole("button", { name: "Archive folder Quality" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("library-archive")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Quality")).not.toBeInTheDocument();
+    await user.click(screen.getByTestId("library-archive-toggle"));
+    expect(screen.getByText("Quality")).toBeInTheDocument();
+    expect(screen.getByText("batch.pdf")).toBeInTheDocument();
   });
 });

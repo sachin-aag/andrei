@@ -1,4 +1,4 @@
-import { and, eq, exists, isNull, ne, or, sql } from "drizzle-orm";
+import { and, isNull, ne, sql } from "drizzle-orm";
 import { attachmentAssets, reportAttachments } from "@/db/schema";
 
 type SelectClient = {
@@ -12,10 +12,10 @@ function asNumber(value: unknown): number {
 
 /**
  * Stored attachment bytes that still occupy the workspace quota.
- * Counts each library asset once (including in-flight uploads). Soft-deleted
- * library files still count while a report keeps a live link. Failed rows and
- * fully removed files do not count. Legacy report rows without an asset are
- * added separately so they are not missed.
+ * Counts each library asset once (including in-flight uploads and archived
+ * vault files). Failed rows do not count. Legacy report rows without an asset
+ * are added separately so they are not missed. Linking a vault file into a
+ * report does not count twice.
  */
 export async function getAttachmentStorageUsageBytes(
   client?: SelectClient
@@ -26,25 +26,7 @@ export async function getAttachmentStorageUsageBytes(
       total: sql<string>`coalesce(sum(${attachmentAssets.sizeBytes}::bigint), 0)`,
     })
     .from(attachmentAssets)
-    .where(
-      and(
-        ne(attachmentAssets.processingStatus, "failed"),
-        or(
-          isNull(attachmentAssets.deletedAt),
-          exists(
-            db
-              .select({ id: reportAttachments.id })
-              .from(reportAttachments)
-              .where(
-                and(
-                  eq(reportAttachments.assetId, attachmentAssets.id),
-                  isNull(reportAttachments.deletedAt)
-                )
-              )
-          )
-        )
-      )
-    );
+    .where(ne(attachmentAssets.processingStatus, "failed"));
   const [legacyRow] = await db
     .select({
       total: sql<string>`coalesce(sum(${reportAttachments.sizeBytes}::bigint), 0)`,

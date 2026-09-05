@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { attachmentLibraryFolders } from "@/db/schema";
 import { toLibraryFolderDto } from "@/lib/attachments/library-dto";
@@ -21,24 +21,32 @@ export async function listLibraryFoldersForOwner(
   const rows = await db
     .select()
     .from(attachmentLibraryFolders)
-    .where(eq(attachmentLibraryFolders.ownerId, ownerId))
+    .where(
+      and(
+        eq(attachmentLibraryFolders.ownerId, ownerId),
+        isNull(attachmentLibraryFolders.archivedAt)
+      )
+    )
     .orderBy(asc(attachmentLibraryFolders.name));
   return rows.map(toLibraryFolderDto);
 }
 
 export async function loadLibraryFolder(
   ownerId: string,
-  folderId: string
+  folderId: string,
+  options?: { includeArchived?: boolean }
 ): Promise<FolderRow | undefined> {
+  const filters = [
+    eq(attachmentLibraryFolders.id, folderId),
+    eq(attachmentLibraryFolders.ownerId, ownerId),
+  ];
+  if (!options?.includeArchived) {
+    filters.push(isNull(attachmentLibraryFolders.archivedAt));
+  }
   const [folder] = await db
     .select()
     .from(attachmentLibraryFolders)
-    .where(
-      and(
-        eq(attachmentLibraryFolders.id, folderId),
-        eq(attachmentLibraryFolders.ownerId, ownerId)
-      )
-    );
+    .where(and(...filters));
   return folder;
 }
 
@@ -60,14 +68,17 @@ export async function validateLibraryFolderPlacement({
     .select({
       id: attachmentLibraryFolders.id,
       parentId: attachmentLibraryFolders.parentId,
+      archivedAt: attachmentLibraryFolders.archivedAt,
     })
     .from(attachmentLibraryFolders)
     .where(eq(attachmentLibraryFolders.ownerId, ownerId));
 
-  const parentById = new Map(rows.map((row) => [row.id, row.parentId]));
-  if (!parentById.has(parentId)) {
+  const parent = rows.find((row) => row.id === parentId);
+  if (!parent || parent.archivedAt != null) {
     return { error: "Parent folder not found", status: 404 };
   }
+
+  const parentById = new Map(rows.map((row) => [row.id, row.parentId]));
 
   let depth = 1;
   let cursor: string | null = parentId;
@@ -131,7 +142,10 @@ export async function ensureLibraryFolderPath({
   let currentParent = parentId;
   for (const name of names) {
     const match = existing.find(
-      (folder) => folder.parentId === currentParent && folder.name === name
+      (folder) =>
+        folder.parentId === currentParent &&
+        folder.name === name &&
+        folder.archivedAt == null
     );
     if (match) {
       currentParent = match.id;
