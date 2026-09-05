@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseRetrievalCases } from "@/lib/attachments/retrieval-metrics";
 import {
+  deterministicRetrievalEvalFailure,
   mergeRetrievalEvalCases,
   parseRetrievalEvalArgs,
   shouldLoadLocalOverlay,
@@ -116,5 +117,34 @@ describe("mergeRetrievalEvalCases", () => {
     expect(merged.find((entry) => entry.id === "shared")?.query).toBe(
       "logic analyzer"
     );
+  });
+});
+
+describe("deterministicRetrievalEvalFailure", () => {
+  it("does not fail the judge path when mustContain is unset", () => {
+    expect(
+      deterministicRetrievalEvalFailure({
+        leak: null,
+        excerptHit: null,
+        recallAt5: 1,
+      })
+    ).toBeNull();
+  });
+
+  it("names a miss on filename+page separately from a bad excerpt", () => {
+    expect(
+      deterministicRetrievalEvalFailure({
+        leak: null,
+        excerptHit: 0,
+        recallAt5: 0,
+      })
+    ).toMatch(/filename\+page not in top-5/);
+    expect(
+      deterministicRetrievalEvalFailure({
+        leak: null,
+        excerptHit: 0,
+        recallAt5: 1,
+      })
+    ).toMatch(/mustContain missing/);
   });
 });

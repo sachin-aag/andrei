@@ -119,6 +119,28 @@ export function loadRetrievalEvalCases(
   return merged;
 }
 
+/**
+ * Deterministic gates before the LLM judge. `mustContain` is opt-in excerpt
+ * gold (right page, wrong 900-character slice). Pass/fail for the rest is
+ * `passCriteria` via the judge — paraphrase is allowed.
+ */
+export function deterministicRetrievalEvalFailure(input: {
+  leak: number | null;
+  excerptHit: number | null;
+  recallAt5: number | null;
+}): string | null {
+  if (input.leak === 0) {
+    return "Deterministic fail: mustNotContainAnywhere leaked into a top-5 excerpt.";
+  }
+  if (input.excerptHit === 0) {
+    if (input.recallAt5 === 0) {
+      return "Deterministic fail: gold filename+page not in top-5.";
+    }
+    return "Deterministic fail: gold excerpt mustContain missing from the matching top-5 hit.";
+  }
+  return null;
+}
+
 function enableLocalAttachmentStorage(): void {
   process.env.ATTACHMENT_STORAGE_BACKEND = "local";
   process.env.ALLOW_LOCAL_ATTACHMENT_STORAGE = "true";
@@ -169,16 +191,18 @@ async function runCases(input: {
     }));
     const leak = noFalsePositiveAtK(ranked, entry.mustNotContainAnywhere, 5);
     const excerptHit = excerptHitAtK(ranked, entry.gold, 5);
+    const recallAt5 =
+      entry.gold.length > 0 ? recallAtK(ranked, entry.gold, 5) : null;
+    const deterministicFail = deterministicRetrievalEvalFailure({
+      leak,
+      excerptHit,
+      recallAt5,
+    });
     let verdict: "pass" | "fail";
     let reasoning: string;
-    if (leak === 0) {
+    if (deterministicFail) {
       verdict = "fail";
-      reasoning =
-        "Deterministic fail: mustNotContainAnywhere leaked into a top-5 excerpt.";
-    } else if (excerptHit === 0) {
-      verdict = "fail";
-      reasoning =
-        "Deterministic fail: gold excerpt mustContain missing from the matching top-5 hit.";
+      reasoning = deterministicFail;
     } else {
       const judged = await judgeRetrievalCase(entry, ranked.slice(0, 5));
       verdict = judged.verdict;
@@ -191,7 +215,7 @@ async function runCases(input: {
       kind: entry.kind,
       verdict,
       reasoning,
-      recallAt5: entry.gold.length > 0 ? recallAtK(ranked, entry.gold, 5) : null,
+      recallAt5,
       excerptHitAt5: excerptHit,
       noFalsePositiveAt5: leak,
       skippedEmbedding: timing.skippedEmbedding,

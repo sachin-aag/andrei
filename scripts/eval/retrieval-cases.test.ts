@@ -46,28 +46,29 @@ describe("retrieval-cases.json", () => {
     );
   });
 
-  it("puts mustContain on every gold hit with a unique answering substring", () => {
-    const expected: Record<string, string[]> = {
-      "equipment-required-instrument": [CORPUS_ANCHORS.narda],
-      "equipment-table-heading": [CORPUS_ANCHORS.requiredTable],
-      "equipment-executed-log-negative": [CORPUS_ANCHORS.digitalCalipers],
-      "equipment-page-2-locator": [CORPUS_ANCHORS.requiredTable],
-      "sw-eval-7-identifier": [CORPUS_ANCHORS.swEval7],
-      "sw-eval-7-description": [
-        CORPUS_ANCHORS.swEval7,
-        CORPUS_ANCHORS.interlock,
-      ],
-      "software-file-locator": [CORPUS_ANCHORS.swEval7],
-      "cross-file-no-leak": [CORPUS_ANCHORS.swEval7],
-    };
-    for (const entry of cases) {
-      if (entry.gold.length === 0) {
-        expect(entry.mustNotContainAnywhere?.length ?? 0).toBeGreaterThan(0);
-        continue;
-      }
-      expect(expected[entry.id], entry.id).toBeDefined();
-      expect(entry.gold).toHaveLength(1);
-      expect(entry.gold[0]?.mustContain).toEqual(expected[entry.id]);
+  it("keeps mustContain only on the excerpt-truncation cases; the judge grades the rest", () => {
+    const executed = cases.find(
+      (entry) => entry.id === "equipment-executed-log-negative"
+    );
+    const locator = cases.find(
+      (entry) => entry.id === "equipment-page-2-locator"
+    );
+    expect(executed?.gold[0]?.mustContain).toEqual([
+      CORPUS_ANCHORS.digitalCalipers,
+    ]);
+    expect(locator?.gold[0]?.mustContain).toEqual([
+      CORPUS_ANCHORS.requiredTable,
+    ]);
+    const judgeOnly = cases.filter(
+      (entry) =>
+        entry.gold.length > 0 &&
+        entry.id !== "equipment-executed-log-negative" &&
+        entry.id !== "equipment-page-2-locator"
+    );
+    expect(judgeOnly.length).toBeGreaterThanOrEqual(4);
+    for (const entry of judgeOnly) {
+      expect(entry.gold[0]?.mustContain, entry.id).toBeUndefined();
+      expect(entry.passCriteria.trim().length).toBeGreaterThan(20);
     }
   });
 
