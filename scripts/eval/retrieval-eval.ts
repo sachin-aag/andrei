@@ -6,8 +6,9 @@
  *   pnpm retrieval-eval -- --live
  *   pnpm retrieval-eval -- --report-id <id>
  *
- * `--from-gcs` downloads the test corpus from the retrieval-eval GCS prefix,
- * ingests it, searches, and LLM-judges. That is the CI path.
+ * `--from-gcs` downloads the test corpus from the retrieval-eval GCS prefix
+ * (and seeds the bucket from the in-repo builders if objects are missing),
+ * then ingests, searches, and LLM-judges. That is the CI path.
  * `--live` generates the same PDFs locally (no bucket) for a laptop run.
  * `--report-id` searches an already-ingested report (no ingest).
  */
@@ -172,7 +173,7 @@ async function resolveReportId(args: RetrievalEvalCliArgs): Promise<string> {
   if (args.reportId) return args.reportId;
   enableLocalAttachmentStorage();
   const files = args.fromGcs
-    ? await (await import("./retrieval-gcs")).downloadRetrievalCorpus()
+    ? await (await import("./retrieval-gcs")).loadRetrievalEvalCorpus()
     : await (await import("./retrieval-corpus")).buildRetrievalCorpus();
   const { ingestCorpusIntoNewReport } = await import("./retrieval-eval-setup");
   const reportId = await ingestCorpusIntoNewReport(files);

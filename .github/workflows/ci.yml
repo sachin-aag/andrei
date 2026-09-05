@@ -225,7 +225,7 @@ jobs:
         id: gcp
         run: |
           if [ -z "$GOOGLE_VERTEX_PROJECT" ] || [ -z "$GCP_WORKLOAD_IDENTITY_PROVIDER" ] || [ -z "$GCP_SERVICE_ACCOUNT_EMAIL" ] || [ -z "$RETRIEVAL_EVAL_GCS_BUCKET" ]; then
-            echo "::notice title=Retrieval eval skipped::Add GOOGLE_VERTEX_PROJECT, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, and RETRIEVAL_EVAL_GCS_BUCKET Actions secrets, then pnpm retrieval-eval:upload once. Do not add GCP_SERVICE_ACCOUNT_KEY (org policy blocks JSON keys)."
+            echo "::notice title=Retrieval eval skipped::Add GOOGLE_VERTEX_PROJECT, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, and RETRIEVAL_EVAL_GCS_BUCKET Actions secrets. Do not add GCP_SERVICE_ACCOUNT_KEY (org policy blocks JSON keys)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"

@@ -522,7 +522,7 @@ Spot-check **live Gemini** evaluation periodically — E2E stubs AI via `ALLOW_T
 |-----|---------|-------|
 | Unit | `pnpm test` | All Vitest. Retrieval eval unit tests are also gated in CI to run only when the harness / search files change. |
 | E2E | `pnpm test:e2e` | Postgres service container, `drizzle-kit push`, Chromium + Firefox + WebKit |
-| Retrieval eval | `pnpm retrieval-eval -- --from-gcs` | Path-gated. Downloads synthetic PDFs from `RETRIEVAL_EVAL_GCS_BUCKET`, Vertex-ingests, searches, LLM-judges. Skips if Vertex/GCS secrets are missing. |
+| Retrieval eval | `pnpm retrieval-eval -- --from-gcs` | Path-gated. Downloads synthetic PDFs from `RETRIEVAL_EVAL_GCS_BUCKET` (seeds the prefix from in-repo builders if empty), Vertex-ingests, searches, LLM-judges. Skips if Vertex/GCS secrets are missing. |
 
 Workflow: `.github/workflows/ci.yml`
 
