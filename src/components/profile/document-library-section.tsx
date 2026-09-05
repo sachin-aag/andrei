@@ -33,6 +33,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -58,6 +59,7 @@ import { cn } from "@/lib/utils";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
 const LIBRARY_ROOT = "__library_root__";
+const CREATE_FOLDER = "__create_folder__";
 
 type Props = {
   currentUser: Pick<WorkspaceUser, "id" | "role">;
@@ -322,7 +324,6 @@ function MoveToFolderDialog({
   destination,
   onDestinationChange,
   destinationOptions,
-  createFolderParentLabel,
   onCreateFolder,
   moving,
   onConfirm,
@@ -334,13 +335,13 @@ function MoveToFolderDialog({
   destination: string | null;
   onDestinationChange: (value: string) => void;
   destinationOptions: { id: string; label: string }[];
-  createFolderParentLabel: string;
   onCreateFolder: (name: string) => Promise<void>;
   moving: boolean;
   onConfirm: () => void;
 }) {
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const creating = destination === CREATE_FOLDER;
 
   useEffect(() => {
     if (!open) {
@@ -348,6 +349,13 @@ function MoveToFolderDialog({
       setCreatingFolder(false);
     }
   }, [open]);
+
+  const handleDestinationChange = (value: string) => {
+    if (value !== CREATE_FOLDER) {
+      setNewFolderName("");
+    }
+    onDestinationChange(value);
+  };
 
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
@@ -376,7 +384,7 @@ function MoveToFolderDialog({
             <Label htmlFor="library-move-destination">Destination</Label>
             <Select
               value={destination ?? undefined}
-              onValueChange={onDestinationChange}
+              onValueChange={handleDestinationChange}
             >
               <SelectTrigger
                 id="library-move-destination"
@@ -385,6 +393,13 @@ function MoveToFolderDialog({
                 <SelectValue placeholder="Choose a folder" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem
+                  value={CREATE_FOLDER}
+                  data-testid="library-move-create-folder-option"
+                >
+                  Create new folder
+                </SelectItem>
+                <SelectSeparator />
                 <SelectItem value={LIBRARY_ROOT}>Vault root</SelectItem>
                 {destinationOptions.map((folder) => (
                   <SelectItem key={folder.id} value={folder.id}>
@@ -395,44 +410,46 @@ function MoveToFolderDialog({
             </Select>
           </div>
 
-          <div className="space-y-2 border-t border-[var(--border)] pt-4">
-            <Label htmlFor="library-move-new-folder">Or create a new folder</Label>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Creates inside {createFolderParentLabel}.
-            </p>
-            <div className="flex gap-2">
-              <Input
-                id="library-move-new-folder"
-                value={newFolderName}
-                onChange={(event) => setNewFolderName(event.target.value)}
-                placeholder="Folder name"
-                disabled={creatingFolder || moving}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void handleCreateFolder();
+          {creating ? (
+            <div className="space-y-2">
+              <Label htmlFor="library-move-new-folder">Folder name</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="library-move-new-folder"
+                  value={newFolderName}
+                  onChange={(event) => setNewFolderName(event.target.value)}
+                  placeholder="Folder name"
+                  autoFocus
+                  disabled={creatingFolder || moving}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleCreateFolder();
+                    }
+                  }}
+                  data-testid="library-move-new-folder-input"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={
+                    creatingFolder || moving || newFolderName.trim().length === 0
                   }
-                }}
-                data-testid="library-move-new-folder-input"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={creatingFolder || moving || newFolderName.trim().length === 0}
-                onClick={() => void handleCreateFolder()}
-                data-testid="library-move-create-folder"
-              >
-                {creatingFolder ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
-                    Creating…
-                  </>
-                ) : (
-                  "Create"
-                )}
-              </Button>
+                  onClick={() => void handleCreateFolder()}
+                  data-testid="library-move-create-folder"
+                >
+                  {creatingFolder ? (
+                    <>
+                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                      Creating…
+                    </>
+                  ) : (
+                    "Create"
+                  )}
+                </Button>
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
         <DialogFooter>
           <Button
@@ -444,7 +461,7 @@ function MoveToFolderDialog({
           </Button>
           <Button
             type="button"
-            disabled={moving || destination == null}
+            disabled={moving || destination == null || creating}
             onClick={onConfirm}
             data-testid="library-move-confirm"
           >
@@ -731,7 +748,9 @@ export function DocumentLibrarySection({
 
   const createMoveDestinationFolder = async (name: string) => {
     const parentId =
-      moveDestination != null && moveDestination !== LIBRARY_ROOT
+      moveDestination != null &&
+      moveDestination !== LIBRARY_ROOT &&
+      moveDestination !== CREATE_FOLDER
         ? moveDestination
         : null;
     const response = await fetch("/api/attachment-vault/folders", {
@@ -753,7 +772,7 @@ export function DocumentLibrarySection({
   };
 
   const confirmMove = async () => {
-    if (moveDestination == null) return;
+    if (moveDestination == null || moveDestination === CREATE_FOLDER) return;
     const assetIds =
       checkedAssetIds.size > 0
         ? [...checkedAssetIds]
@@ -940,11 +959,6 @@ export function DocumentLibrarySection({
       !checkedFolderIds.has(folder.id) &&
       !isFolderUnderAny(folder.id, checkedFolderIds, folderOptions)
   );
-
-  const moveCreateFolderParentLabel =
-    moveDestination != null && moveDestination !== LIBRARY_ROOT
-      ? locationLabel(moveDestination, folderOptions)
-      : "Vault root";
 
   const movingAssets =
     checkedAssetIds.size > 0
@@ -1274,7 +1288,6 @@ export function DocumentLibrarySection({
           id: folder.id,
           label: folderLabel(folder, folderOptions),
         }))}
-        createFolderParentLabel={moveCreateFolderParentLabel}
         onCreateFolder={createMoveDestinationFolder}
         moving={moving}
         onConfirm={() => void confirmMove()}

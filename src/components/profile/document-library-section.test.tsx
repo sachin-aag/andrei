@@ -66,6 +66,11 @@ function jsonResponse(body: unknown, ok = true): Response {
 }
 
 beforeEach(() => {
+  HTMLElement.prototype.hasPointerCapture = () => false;
+  HTMLElement.prototype.setPointerCapture = () => {};
+  HTMLElement.prototype.releasePointerCapture = () => {};
+  HTMLElement.prototype.scrollIntoView = () => {};
+
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
@@ -80,6 +85,14 @@ beforeEach(() => {
     })
   );
 });
+
+async function openDestinationMenu(
+  user: ReturnType<typeof userEvent.setup>
+) {
+  const trigger = screen.getByRole("combobox", { name: "Destination folder" });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+}
 
 function renderLibrary() {
   return render(
@@ -143,6 +156,19 @@ describe("DocumentLibrarySection explorer", () => {
     expect(
       screen.getByRole("button", { name: "Move 1 item" })
     ).toBeDisabled();
+    expect(
+      screen.queryByText(/Or create a new folder/i)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("library-move-new-folder-input")
+    ).not.toBeInTheDocument();
+
+    await openDestinationMenu(user);
+    expect(
+      await screen.findByRole("option", { name: "Create new folder" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Vault root" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Quality" })).toBeInTheDocument();
   });
 
   it("lets Move to folder act on the clicked file without a checkbox", async () => {
@@ -159,7 +185,7 @@ describe("DocumentLibrarySection explorer", () => {
     ).toBeInTheDocument();
   });
 
-  it("can create a new folder from the move dialog", async () => {
+  it("can create a new folder from the destination dropdown", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -180,21 +206,6 @@ describe("DocumentLibrarySection explorer", () => {
           },
         });
       }
-      if (url.includes("/api/attachment-vault?scope=mine")) {
-        return jsonResponse({
-          folders: [
-            folder,
-            {
-              id: "folder-new",
-              ownerId: "user-1",
-              parentId: null,
-              name: "Batch records",
-              createdAt: "2026-08-20T03:00:00.000Z",
-            },
-          ],
-          assets: [asset],
-        });
-      }
       return jsonResponse({ error: "unexpected" }, false);
     });
 
@@ -202,9 +213,17 @@ describe("DocumentLibrarySection explorer", () => {
     await user.click(await screen.findByText("coa.pdf"));
     await user.click(screen.getByTestId("library-move-to-folder"));
     expect(await screen.findByTestId("library-move-dialog")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("library-move-new-folder-input")
+    ).not.toBeInTheDocument();
+
+    await openDestinationMenu(user);
+    await user.click(
+      await screen.findByRole("option", { name: "Create new folder" })
+    );
 
     await user.type(
-      screen.getByTestId("library-move-new-folder-input"),
+      await screen.findByTestId("library-move-new-folder-input"),
       "Batch records"
     );
     await user.click(screen.getByTestId("library-move-create-folder"));
