@@ -252,6 +252,10 @@ async function repairMissingSchema(pool: pg.Pool): Promise<void> {
         { tag: "0033_report_attachments", tableName: "report_attachments" },
       ],
     },
+    {
+      tag: "0057_attachment_storage_budget",
+      tableName: "attachment_storage_budget_settings",
+    },
   ];
 
   for (const repair of repairs) {
