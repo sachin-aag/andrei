@@ -159,6 +159,68 @@ describe("DocumentLibrarySection explorer", () => {
     ).toBeInTheDocument();
   });
 
+  it("can create a new folder from the move dialog", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/attachment-vault?scope=mine")) {
+        return jsonResponse({ folders: [folder], assets: [asset] });
+      }
+      if (url.includes("/access")) {
+        return jsonResponse({ grants: [] });
+      }
+      if (url.endsWith("/api/attachment-vault/folders") && init?.method === "POST") {
+        return jsonResponse({
+          folder: {
+            ...folder,
+            id: "folder-new",
+            name: "Batch records",
+            parentId: null,
+          },
+        });
+      }
+      if (url.includes("/api/attachment-vault?scope=mine")) {
+        return jsonResponse({
+          folders: [
+            folder,
+            {
+              id: "folder-new",
+              ownerId: "user-1",
+              parentId: null,
+              name: "Batch records",
+              createdAt: "2026-08-20T03:00:00.000Z",
+            },
+          ],
+          assets: [asset],
+        });
+      }
+      return jsonResponse({ error: "unexpected" }, false);
+    });
+
+    renderLibrary();
+    await user.click(await screen.findByText("coa.pdf"));
+    await user.click(screen.getByTestId("library-move-to-folder"));
+    expect(await screen.findByTestId("library-move-dialog")).toBeInTheDocument();
+
+    await user.type(
+      screen.getByTestId("library-move-new-folder-input"),
+      "Batch records"
+    );
+    await user.click(screen.getByTestId("library-move-create-folder"));
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith("Folder created");
+    });
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input).endsWith("/api/attachment-vault/folders") &&
+          init?.method === "POST"
+      )
+    ).toBe(true);
+  });
+
   it("does not show a preview window before a file is opened", async () => {
     renderLibrary();
     await screen.findByTestId("library-explorer");
