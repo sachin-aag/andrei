@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  downloadGcsCorpus,
+  missingCorpusFilenames,
+  RetrievalEvalCorpusMissingError,
   retrievalEvalGcsBucket,
   retrievalEvalGcsPrefix,
+  type RetrievalCorpusIo,
 } from "./retrieval-gcs";
-import { RETRIEVAL_EVAL_GCS_PREFIX } from "./retrieval-corpus";
+import {
+  CORPUS_FILENAMES,
+  RETRIEVAL_EVAL_GCS_PREFIX,
+} from "./retrieval-corpus";
 
 describe("retrieval eval GCS helpers", () => {
   afterEach(() => {
@@ -33,5 +40,50 @@ describe("retrieval eval GCS helpers", () => {
     expect(retrievalEvalGcsPrefix()).toBe(RETRIEVAL_EVAL_GCS_PREFIX);
     vi.stubEnv("RETRIEVAL_EVAL_GCS_PREFIX", "custom-prefix");
     expect(retrievalEvalGcsPrefix()).toBe("custom-prefix/");
+  });
+});
+
+function fakePdf(label: string): Buffer {
+  return Buffer.from(`pdf:${label}`);
+}
+
+function memoryCorpusIo(initial: Record<string, Buffer> = {}): RetrievalCorpusIo {
+  const store = new Map(Object.entries(initial));
+  return {
+    listRelativeNames: async () => [...store.keys()],
+    download: async (filename) => {
+      const bytes = store.get(filename);
+      if (!bytes) throw new Error(`missing ${filename}`);
+      return bytes;
+    },
+  };
+}
+
+describe("downloadGcsCorpus", () => {
+  it("reports which corpus filenames are missing", () => {
+    expect(missingCorpusFilenames([])).toEqual([...CORPUS_FILENAMES]);
+    expect(missingCorpusFilenames([CORPUS_FILENAMES[0]])).toEqual([
+      CORPUS_FILENAMES[1],
+    ]);
+    expect(missingCorpusFilenames([...CORPUS_FILENAMES])).toEqual([]);
+  });
+
+  it("downloads when every corpus object is already in GCS", async () => {
+    const io = memoryCorpusIo({
+      [CORPUS_FILENAMES[0]]: fakePdf("gcs-a"),
+      [CORPUS_FILENAMES[1]]: fakePdf("gcs-b"),
+    });
+    const files = await downloadGcsCorpus(io);
+    expect(files.map((file) => file.bytes.toString())).toEqual([
+      "pdf:gcs-a",
+      "pdf:gcs-b",
+    ]);
+  });
+
+  it("fails instead of uploading when objects are missing", async () => {
+    const io = memoryCorpusIo();
+    await expect(downloadGcsCorpus(io)).rejects.toBeInstanceOf(
+      RetrievalEvalCorpusMissingError
+    );
   });
 });

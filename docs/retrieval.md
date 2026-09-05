@@ -87,7 +87,7 @@ Entry points: `src/lib/attachments/retrieval.ts`,
 `src/lib/attachments/page-outline.ts`,
 `src/lib/attachments/run-document-ingest.ts`. Eval:
 `pnpm retrieval-eval` (default `--dry-run` validates cases;
-`--from-gcs` is the CI path; `--live` generates the same PDFs without
+`--from-gcs` is the CI path (download only; never upload); `--live` generates the same PDFs without
 GCS; `--report-id` searches an already-ingested report).
 
 ## Phase 0 — eval harness
@@ -107,18 +107,30 @@ SOP / Appendix B scans.
 
 ```bash
 pnpm retrieval-eval -- --dry-run          # parse + print cases
-pnpm retrieval-eval:upload                # one-time: write PDFs to the test bucket
-pnpm retrieval-eval -- --from-gcs         # CI path: download, ingest, search, judge
+pnpm retrieval-eval:upload                # laptop only: write PDFs to the test bucket
+pnpm retrieval-eval -- --from-gcs         # CI path: download, ingest, search, judge (no upload)
 pnpm retrieval-eval -- --live             # same PDFs, skip GCS (laptop + Vertex)
 pnpm retrieval-eval -- --report-id <id>   # search an already-ingested report
 ```
 
 CI (`.github/workflows/ci.yml` job `Retrieval eval (GCS + judge)`) runs
-`--from-gcs` only when the retrieval harness or `searchReportDocuments`
-implementation changes. It skips cleanly when Vertex / GCS secrets are
-missing. Secrets: `GOOGLE_VERTEX_PROJECT`, `GCP_SERVICE_ACCOUNT_KEY`,
-`RETRIEVAL_EVAL_GCS_BUCKET`. After changing the PDF builders, re-run
-`pnpm retrieval-eval:upload`.
+`--from-gcs` only when the retrieval harness, `searchReportDocuments`
+implementation, or `.github/workflows/ci.yml` changes. It skips cleanly when Vertex / GCS secrets are
+missing. GitHub Actions authenticates with Workload Identity Federation
+(OIDC) — not a JSON service-account key (`constraints/iam.disableServiceAccountKeyCreation`).
+Required Actions secrets:
+
+- `GOOGLE_VERTEX_PROJECT`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER` (`projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/github`)
+- `GCP_SERVICE_ACCOUNT_EMAIL` (the GitHub Actions SA, not the Vercel runtime SA)
+- `RETRIEVAL_EVAL_GCS_BUCKET`
+
+Do not add `GCP_SERVICE_ACCOUNT_KEY`. The job needs `permissions.id-token: write`.
+The same WIF secrets are used by `.github/workflows/pdf-ingest-soak.yml`.
+`--from-gcs` downloads the corpus from the bucket. It does **not** generate
+or upload objects. Add new files with laptop ADC (`pnpm retrieval-eval:upload`
+or `gsutil cp`), not GitHub Actions. The GitHub Actions SA needs
+`roles/storage.objectViewer` on the eval bucket (not objectCreator).
 
 Local ingest uses `ATTACHMENT_STORAGE_BACKEND=local` (the bucket is the
 corpus source, not where CI writes attachment bytes). Runs write JSON
@@ -200,6 +212,14 @@ without raising caps or re-ingesting ready files:
    before hybrid search and merge those rows ahead of vector/keyword hits.
    When the lexical pass alone fills `limit` with positive scores, skip the
    query embedding (same fast-path shape as identifier queries).
+4. **Quote over visual-interpretation** — Gemini layout summaries match
+   query wording (“instruments on the executed table”) without naming the
+   rows. Collapse keeps a `quote`/`transcript` chunk when one exists on
+   that page. Snippets come from `raw_text`, not the contextual header.
+5. **Locator ranking + tail snippets** — `dv-protocol-equipment.pdf page 2`
+   boosts that file+page to the top. Filename/page-only queries excerpt the
+   page tail so a 900-character window reaches the table below running
+   headers.
 
 Eval: `equipment-required-instrument` in `retrieval-cases.json` is the
 synthetic version of that bug. The judge (and a 900-character prefix

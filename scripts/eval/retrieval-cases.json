@@ -17,14 +17,14 @@
     "id": "equipment-executed-log-negative",
     "query": "which instruments appear on the executed equipment data table",
     "kind": "semantic",
-    "gold": [{ "filename": "dv-protocol-equipment.pdf", "page": 3 }],
+    "gold": [{ "filename": "dv-protocol-equipment.pdf", "page": 3, "mustContain": ["Digital Calipers"] }],
     "passCriteria": "The executed equipment log lists a Torque Wrench (Sturtevant) and Digital Calipers. It must not claim a Portable Spectrum Analyzer or Narda SRM-3006 was used on the executed run. Required-equipment vs executed-log are different tables."
   },
   {
     "id": "equipment-page-2-locator",
     "query": "dv-protocol-equipment.pdf page 2",
     "kind": "locator",
-    "gold": [{ "filename": "dv-protocol-equipment.pdf", "page": 2 }],
+    "gold": [{ "filename": "dv-protocol-equipment.pdf", "page": 2, "mustContain": ["Required Testing Equipment"] }],
     "passCriteria": "The top hit must be dv-protocol-equipment.pdf page 2. The excerpt should include Required Testing Equipment content from that page, not only UUT header boilerplate."
   },
   {

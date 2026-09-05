@@ -33,6 +33,7 @@ export const CORPUS_ANCHORS = {
   executedLog: "EXECUTED Equipment Data Table",
   torqueWrench: "Torque Wrench",
   sturtevant: "Sturtevant",
+  digitalCalipers: "Digital Calipers",
   swEval7: "SW-EVAL-7",
   interlock: "Laser interlock latency",
 } as const;
@@ -93,7 +94,7 @@ export async function buildProtocolEquipmentPdf(): Promise<Buffer> {
     CORPUS_ANCHORS.executedLog,
     "Instrument / Vendor / Used",
     `${CORPUS_ANCHORS.torqueWrench} / ${CORPUS_ANCHORS.sturtevant} / Yes`,
-    "Digital Calipers / Mitutoyo / Yes",
+    `${CORPUS_ANCHORS.digitalCalipers} / Mitutoyo / Yes`,
     "Timer / GraLab / Yes",
     "Force Gauge / Mark-10 / Yes",
     "This executed run log does not include a spectrum analyzer.",
@@ -171,6 +172,7 @@ export async function assertCorpusAnchors(
   assertContains(requiredPage, CORPUS_ANCHORS.narda, "protocol p.2");
   assertContains(executedPage, CORPUS_ANCHORS.executedLog, "protocol p.3");
   assertContains(executedPage, CORPUS_ANCHORS.torqueWrench, "protocol p.3");
+  assertContains(executedPage, CORPUS_ANCHORS.digitalCalipers, "protocol p.3");
   assertAbsent(executedPage, CORPUS_ANCHORS.narda, "protocol p.3");
   assertContains(requirementsPage, CORPUS_ANCHORS.swEval7, "software p.2");
   assertContains(requirementsPage, CORPUS_ANCHORS.interlock, "software p.2");

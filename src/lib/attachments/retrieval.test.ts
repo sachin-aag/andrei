@@ -331,6 +331,66 @@ describe("searchReportDocuments with tagged attachments", () => {
     expect(limitMock).toHaveBeenCalledTimes(1);
   });
 
+  it("returns the quote transcript instead of a visual-interpretation summary", async () => {
+    limitMock.mockResolvedValueOnce([
+      {
+        ...chunkRow("visual", "att_1", 3),
+        sourceKind: "visual_interpretation",
+        rawText:
+          "this page lists which instruments appear on the executed equipment data table",
+        contextualText:
+          "Document: att_1.pdf | Page 3 | executed log\n\nthis page lists which instruments appear on the executed equipment data table",
+      },
+      {
+        ...chunkRow("quote", "att_1", 3),
+        sourceKind: "quote",
+        rawText:
+          "EXECUTED Equipment Data Table Torque Wrench Sturtevant Digital Calipers",
+        contextualText:
+          "Document: att_1.pdf | Page 3 | executed log\n\nEXECUTED Equipment Data Table Torque Wrench Sturtevant Digital Calipers",
+      },
+    ]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "which instruments appear on the executed equipment data table",
+      limit: 5,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.chunkId).toBe("quote");
+    expect(results[0]!.text).toContain("Digital Calipers");
+    expect(results[0]!.text).not.toMatch(/this page lists which instruments/i);
+  });
+
+  it("ranks an explicit page locator ahead of earlier pages of the same file", async () => {
+    limitMock.mockResolvedValueOnce([
+      {
+        ...chunkRow("p1", "att_1", 1),
+        filename: "dv-protocol-equipment.pdf",
+        rawText: "UUT HEADER page one boilerplate",
+        contextualText:
+          "Document: dv-protocol-equipment.pdf | Page 1 | header\n\nUUT HEADER page one boilerplate",
+      },
+      {
+        ...chunkRow("p2", "att_1", 2),
+        filename: "dv-protocol-equipment.pdf",
+        rawText: `${"UUT HEADER repeating boilerplate ".repeat(40)}Required Testing Equipment Narda SRM-3006`,
+        contextualText:
+          "Document: dv-protocol-equipment.pdf | Page 2 | required\n\nRequired Testing Equipment Narda SRM-3006",
+      },
+    ]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "dv-protocol-equipment.pdf page 2",
+      limit: 5,
+    });
+
+    expect(results.map((row) => row.pageNumber)).toEqual([2, 1]);
+    expect(results[0]!.text).toContain("Required Testing Equipment");
+  });
+
   it("skips the query embedding when exact identifier hits fill the limit", async () => {
     limitMock.mockResolvedValueOnce([chunkRow("c31", "att_1", 31)]);
 

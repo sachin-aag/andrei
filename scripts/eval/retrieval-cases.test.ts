@@ -45,6 +45,19 @@ describe("retrieval-cases.json", () => {
     );
   });
 
+  it("requires executed-log and page-2 excerpts to show table rows, not only the page", () => {
+    const executed = cases.find(
+      (entry) => entry.id === "equipment-executed-log-negative"
+    );
+    const locator = cases.find(
+      (entry) => entry.id === "equipment-page-2-locator"
+    );
+    expect(executed?.gold[0]?.mustContain).toEqual(["Digital Calipers"]);
+    expect(locator?.gold[0]?.mustContain).toEqual([
+      "Required Testing Equipment",
+    ]);
+  });
+
   it("covers identifier, locator, semantic, and a true-negative", () => {
     const kinds = new Set(cases.map((entry) => entry.kind));
     expect(kinds).toEqual(new Set(["identifier", "locator", "semantic"]));

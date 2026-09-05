@@ -32,6 +32,7 @@ jobs:
           filters: |
             harness:
               - 'scripts/eval/**'
+              - '.github/workflows/ci.yml'
               - 'src/lib/attachments/retrieval.ts'
               - 'src/lib/attachments/retrieval.test.ts'
               - 'src/lib/attachments/retrieval-query.ts'
@@ -79,6 +80,7 @@ jobs:
           filters: |
             harness:
               - 'scripts/eval/**'
+              - '.github/workflows/ci.yml'
               - 'src/lib/attachments/retrieval.ts'
               - 'src/lib/attachments/retrieval.test.ts'
               - 'src/lib/attachments/retrieval-query.ts'
@@ -195,6 +197,7 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: read
+      id-token: write
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -219,33 +222,34 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check Vertex and GCS secrets
-        id: key
+        id: gcp
         run: |
-          if [ -z "$GOOGLE_VERTEX_PROJECT" ] || [ -z "$GCP_SERVICE_ACCOUNT_KEY" ] || [ -z "$RETRIEVAL_EVAL_GCS_BUCKET" ]; then
-            echo "::notice title=Retrieval eval skipped::Add GOOGLE_VERTEX_PROJECT, GCP_SERVICE_ACCOUNT_KEY, and RETRIEVAL_EVAL_GCS_BUCKET Actions secrets, then pnpm retrieval-eval:upload once."
+          if [ -z "$GOOGLE_VERTEX_PROJECT" ] || [ -z "$GCP_WORKLOAD_IDENTITY_PROVIDER" ] || [ -z "$GCP_SERVICE_ACCOUNT_EMAIL" ] || [ -z "$RETRIEVAL_EVAL_GCS_BUCKET" ]; then
+            echo "::notice title=Retrieval eval skipped::Add GOOGLE_VERTEX_PROJECT, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL, and RETRIEVAL_EVAL_GCS_BUCKET Actions secrets. Do not add GCP_SERVICE_ACCOUNT_KEY (org policy blocks JSON keys)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
         env:
           GOOGLE_VERTEX_PROJECT: ${{ secrets.GOOGLE_VERTEX_PROJECT }}
-          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
           RETRIEVAL_EVAL_GCS_BUCKET: ${{ secrets.RETRIEVAL_EVAL_GCS_BUCKET }}
 
       - uses: pnpm/action-setup@v4
-        if: steps.key.outputs.skip == 'false'
+        if: steps.gcp.outputs.skip == 'false'
 
       - uses: actions/setup-node@v4
-        if: steps.key.outputs.skip == 'false'
+        if: steps.gcp.outputs.skip == 'false'
         with:
           node-version: "22"
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-        if: steps.key.outputs.skip == 'false'
+        if: steps.gcp.outputs.skip == 'false'
 
       - name: Apply database schema
-        if: steps.key.outputs.skip == 'false'
+        if: steps.gcp.outputs.skip == 'false'
         env:
           DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
         run: |
@@ -262,13 +266,14 @@ jobs:
           pnpm exec drizzle-kit push --force
 
       - name: Authenticate to Google Cloud
-        if: steps.key.outputs.skip == 'false'
+        if: steps.gcp.outputs.skip == 'false'
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Run retrieval eval from GCS
-        if: steps.key.outputs.skip == 'false'
+        if: steps.gcp.outputs.skip == 'false'
         env:
           GOOGLE_VERTEX_PROJECT: ${{ secrets.GOOGLE_VERTEX_PROJECT }}
           RETRIEVAL_EVAL_GCS_BUCKET: ${{ secrets.RETRIEVAL_EVAL_GCS_BUCKET }}
@@ -276,7 +281,7 @@ jobs:
         run: pnpm retrieval-eval -- --from-gcs
 
       - name: Upload retrieval eval run
-        if: always() && steps.key.outputs.skip == 'false'
+        if: always() && steps.gcp.outputs.skip == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: retrieval-eval-run

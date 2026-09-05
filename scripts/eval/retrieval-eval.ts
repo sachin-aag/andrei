@@ -7,7 +7,8 @@
  *   pnpm retrieval-eval -- --report-id <id>
  *
  * `--from-gcs` downloads the test corpus from the retrieval-eval GCS prefix,
- * ingests it, searches, and LLM-judges. That is the CI path.
+ * then ingests, searches, and LLM-judges. That is the CI path. CI never
+ * uploads or seeds the bucket — add objects with `pnpm retrieval-eval:upload`.
  * `--live` generates the same PDFs locally (no bucket) for a laptop run.
  * `--report-id` searches an already-ingested report (no ingest).
  */
@@ -20,6 +21,7 @@ import {
   noFalsePositiveAtK,
   parseRetrievalCases,
   recallAtK,
+  excerptHitAtK,
   type RetrievalEvalCase,
 } from "@/lib/attachments/retrieval-metrics";
 
@@ -97,6 +99,7 @@ async function runCases(input: {
     verdict: "pass" | "fail";
     reasoning: string;
     recallAt5: number | null;
+    excerptHitAt5: number | null;
     noFalsePositiveAt5: number | null;
     skippedEmbedding: boolean;
     embedMs: number;
@@ -125,12 +128,17 @@ async function runCases(input: {
       text: hit.text,
     }));
     const leak = noFalsePositiveAtK(ranked, entry.mustNotContainAnywhere, 5);
+    const excerptHit = excerptHitAtK(ranked, entry.gold, 5);
     let verdict: "pass" | "fail";
     let reasoning: string;
     if (leak === 0) {
       verdict = "fail";
       reasoning =
         "Deterministic fail: mustNotContainAnywhere leaked into a top-5 excerpt.";
+    } else if (excerptHit === 0) {
+      verdict = "fail";
+      reasoning =
+        "Deterministic fail: gold excerpt mustContain missing from the matching top-5 hit.";
     } else {
       const judged = await judgeRetrievalCase(entry, ranked.slice(0, 5));
       verdict = judged.verdict;
@@ -144,6 +152,7 @@ async function runCases(input: {
       verdict,
       reasoning,
       recallAt5: entry.gold.length > 0 ? recallAtK(ranked, entry.gold, 5) : null,
+      excerptHitAt5: excerptHit,
       noFalsePositiveAt5: leak,
       skippedEmbedding: timing.skippedEmbedding,
       embedMs: timing.embedMs,
@@ -157,8 +166,10 @@ async function runCases(input: {
     const last = rows.at(-1)!;
     const recallLabel =
       last.recallAt5 == null ? "n/a" : last.recallAt5.toFixed(2);
+    const excerptLabel =
+      last.excerptHitAt5 == null ? "n/a" : last.excerptHitAt5.toFixed(2);
     console.log(
-      `${entry.id}  ${verdict.toUpperCase()}  R@5=${recallLabel}  embed=${
+      `${entry.id}  ${verdict.toUpperCase()}  R@5=${recallLabel}  excerpt@5=${excerptLabel}  embed=${
         timing.skippedEmbedding ? "skip" : `${timing.embedMs}ms`
       }  sql=${timing.sqlMs}ms`
     );
@@ -172,7 +183,7 @@ async function resolveReportId(args: RetrievalEvalCliArgs): Promise<string> {
   if (args.reportId) return args.reportId;
   enableLocalAttachmentStorage();
   const files = args.fromGcs
-    ? await (await import("./retrieval-gcs")).downloadRetrievalCorpus()
+    ? await (await import("./retrieval-gcs")).loadRetrievalEvalCorpus()
     : await (await import("./retrieval-corpus")).buildRetrievalCorpus();
   const { ingestCorpusIntoNewReport } = await import("./retrieval-eval-setup");
   const reportId = await ingestCorpusIntoNewReport(files);
