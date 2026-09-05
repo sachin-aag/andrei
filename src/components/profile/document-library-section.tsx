@@ -304,6 +304,7 @@ function LibraryProfileTree({
                 filename={asset.filename}
                 uploadedAt={asset.uploadedAt}
                 processingStatus={asset.processingStatus}
+                processingProgress={asset.processingProgress}
               />
             </button>
           </div>
@@ -523,26 +524,47 @@ export function DocumentLibrarySection({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  const loadLibrary = useCallback(async () => {
-    setLoading(true);
+  const loadLibrary = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+    }
     try {
       const response = await fetch("/api/attachment-vault?scope=mine");
       const data = (await response.json().catch(() => ({}))) as LibraryResponse & {
         error?: string;
       };
       if (!response.ok) {
-        toast.error(data.error ?? "Could not load your document vault");
+        if (!options?.silent) {
+          toast.error(data.error ?? "Could not load your document vault");
+        }
         return;
       }
       setLibrary({ folders: data.folders ?? [], assets: data.assets ?? [] });
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void loadLibrary();
   }, [loadLibrary]);
+
+  const hasIndexingAssets = (library?.assets ?? []).some(
+    (asset) =>
+      asset.processingStatus === "validating" ||
+      asset.processingStatus === "queued" ||
+      asset.processingStatus === "processing"
+  );
+
+  useEffect(() => {
+    if (!hasIndexingAssets) return;
+    const timer = window.setInterval(() => {
+      void loadLibrary({ silent: true });
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [hasIndexingAssets, loadLibrary]);
 
   const loadGrants = useCallback(async (assetId: string) => {
     const response = await fetch(`/api/attachment-vault/${assetId}/access`);

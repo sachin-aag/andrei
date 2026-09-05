@@ -21,4 +21,22 @@ describe("reportProcessingForLinkedAsset", () => {
       })
     ).toEqual({ processingStatus: "ready", shouldStartIngest: false });
   });
+
+  it("does not restart ingest while vault upload indexing is in flight", () => {
+    expect(
+      reportProcessingForLinkedAsset({
+        activeIngestRunId: null,
+        gcsGeneration: "gen-1",
+        processingStatus: "processing",
+      })
+    ).toEqual({ processingStatus: "processing", shouldStartIngest: false });
+
+    expect(
+      reportProcessingForLinkedAsset({
+        activeIngestRunId: null,
+        gcsGeneration: "gen-1",
+        processingStatus: "queued",
+      })
+    ).toEqual({ processingStatus: "queued", shouldStartIngest: false });
+  });
 });
