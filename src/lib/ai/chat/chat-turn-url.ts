@@ -14,6 +14,23 @@ export function parseChatTargetFromBody(body: unknown): WorkProductView | null {
   return isWorkProductView(target) ? target : null;
 }
 
+/**
+ * Report vs Analytics for failure telemetry. Both products share one
+ * `useChat` host on `/api/reports/:id/chat`; Analytics turns are routed by
+ * `chatTarget` in the POST body (and copied onto the user-message metadata).
+ * Do not infer the surface from the host `api` path.
+ */
+export function chatFailureSurfaceFromSend(input: {
+  body?: unknown;
+  metadata?: unknown;
+}): WorkProductView {
+  return (
+    parseChatTargetFromBody(input.body) ??
+    parseChatTargetFromBody(input.metadata) ??
+    "report"
+  );
+}
+
 /** Send analytics-targeted turns to the stats assistant; everything else stays on report chat. */
 export function resolveChatTurnUrl(
   reportId: string,

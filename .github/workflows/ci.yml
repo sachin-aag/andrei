@@ -16,11 +16,38 @@ env:
   DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@127.0.0.1:5432/ci' }}
 
 jobs:
+  retrieval-changes:
+    name: Detect retrieval eval changes
+    runs-on: ubuntu-latest
+    outputs:
+      harness: ${{ steps.filter.outputs.harness }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect retrieval eval harness changes
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            harness:
+              - 'scripts/eval/**'
+              - 'src/lib/attachments/retrieval.ts'
+              - 'src/lib/attachments/retrieval.test.ts'
+              - 'src/lib/attachments/retrieval-query.ts'
+              - 'src/lib/attachments/retrieval-query.test.ts'
+              - 'src/lib/attachments/retrieval-metrics.ts'
+              - 'src/lib/attachments/retrieval-metrics.test.ts'
+
   lint-typecheck-test-build:
     name: Lint, typecheck, test, build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # paths-filter diffs against the base/previous commit below; a
+          # shallow (depth-1) checkout can't see it on push events.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -35,7 +62,40 @@ jobs:
 
       - run: pnpm run typecheck
 
-      - run: pnpm test
+      # Retrieval eval tests are scoped out of every run and gated below —
+      # an unrelated PR shouldn't pay for them. Keep this exclude list, the
+      # `harness` filter here, the live `retrieval-eval` job filter, and the
+      # conditional Vitest file list all in sync.
+      - name: Run tests (excluding retrieval eval harness)
+        run: |
+          pnpm exec vitest run \
+            --exclude "scripts/eval/**" \
+            --exclude "src/lib/attachments/retrieval-metrics.test.ts"
+
+      - name: Detect retrieval eval harness changes
+        id: retrieval-filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            harness:
+              - 'scripts/eval/**'
+              - 'src/lib/attachments/retrieval.ts'
+              - 'src/lib/attachments/retrieval.test.ts'
+              - 'src/lib/attachments/retrieval-query.ts'
+              - 'src/lib/attachments/retrieval-query.test.ts'
+              - 'src/lib/attachments/retrieval-metrics.ts'
+              - 'src/lib/attachments/retrieval-metrics.test.ts'
+
+      - name: Run retrieval eval harness tests
+        if: steps.retrieval-filter.outputs.harness == 'true'
+        run: |
+          pnpm exec vitest run \
+            scripts/eval/retrieval-cases.test.ts \
+            scripts/eval/retrieval-corpus.test.ts \
+            scripts/eval/retrieval-judge.test.ts \
+            scripts/eval/retrieval-gcs.test.ts \
+            scripts/eval/retrieval-eval.test.ts \
+            src/lib/attachments/retrieval-metrics.test.ts
 
       - run: pnpm run build
 
@@ -126,3 +186,100 @@ jobs:
           name: playwright-results
           path: test-results/
           retention-days: 7
+
+  retrieval-eval:
+    name: Retrieval eval (GCS + judge)
+    needs: retrieval-changes
+    if: needs.retrieval-changes.outputs.harness == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+      AUTH_SECRET: ci-test-secret-not-for-production-use
+      ATTACHMENT_STORAGE_BACKEND: local
+      ALLOW_LOCAL_ATTACHMENT_STORAGE: "true"
+      DOCUMENT_EXTRACT_LOCATION: global
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Vertex and GCS secrets
+        id: key
+        run: |
+          if [ -z "$GOOGLE_VERTEX_PROJECT" ] || [ -z "$GCP_SERVICE_ACCOUNT_KEY" ] || [ -z "$RETRIEVAL_EVAL_GCS_BUCKET" ]; then
+            echo "::notice title=Retrieval eval skipped::Add GOOGLE_VERTEX_PROJECT, GCP_SERVICE_ACCOUNT_KEY, and RETRIEVAL_EVAL_GCS_BUCKET Actions secrets, then pnpm retrieval-eval:upload once."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GOOGLE_VERTEX_PROJECT: ${{ secrets.GOOGLE_VERTEX_PROJECT }}
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          RETRIEVAL_EVAL_GCS_BUCKET: ${{ secrets.RETRIEVAL_EVAL_GCS_BUCKET }}
+
+      - uses: pnpm/action-setup@v4
+        if: steps.key.outputs.skip == 'false'
+
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.skip == 'false'
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+        if: steps.key.outputs.skip == 'false'
+
+      - name: Apply database schema
+        if: steps.key.outputs.skip == 'false'
+        env:
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+        run: |
+          node --input-type=module <<'EOF'
+          import pg from "pg";
+          const url = process.env.DATABASE_URL;
+          if (!url) throw new Error("DATABASE_URL is not set");
+          const pool = new pg.Pool({ connectionString: url });
+          await pool.query("CREATE EXTENSION IF NOT EXISTS vector");
+          await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
+          await pool.end();
+          console.log("extensions ready");
+          EOF
+          pnpm exec drizzle-kit push --force
+
+      - name: Authenticate to Google Cloud
+        if: steps.key.outputs.skip == 'false'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Run retrieval eval from GCS
+        if: steps.key.outputs.skip == 'false'
+        env:
+          GOOGLE_VERTEX_PROJECT: ${{ secrets.GOOGLE_VERTEX_PROJECT }}
+          RETRIEVAL_EVAL_GCS_BUCKET: ${{ secrets.RETRIEVAL_EVAL_GCS_BUCKET }}
+          DOCUMENT_EXTRACT_GOOGLE_MODEL_ID: ${{ vars.DOCUMENT_EXTRACT_GOOGLE_MODEL_ID }}
+        run: pnpm retrieval-eval -- --from-gcs
+
+      - name: Upload retrieval eval run
+        if: always() && steps.key.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-eval-run
+          path: scripts/eval/retrieval-runs/
+          if-no-files-found: ignore
+          retention-days: 14

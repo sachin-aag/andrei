@@ -25,10 +25,14 @@ No LLM `docKind` taxonomy in v1. Exact IDs reuse `requirementIds()` in
 `searchReportDocuments()`. Analytics stays keyword-first at the tool layer.
 Do not bump `CHAT_PROMPT_VERSION` unless prompt copy changes.
 
-Gold labels are **filename + page**. Public cases live in
-`scripts/eval/retrieval-cases.json` (in-repo sample PDFs). A later 1.5 GB
-slice uses gitignored `scripts/eval/retrieval-cases.local.json`. Do not use
-the chat agent to generate labels.
+Gold labels are **filename + page** plus a required **`passCriteria`**
+string for the LLM judge. Optional **excerpt content** (`mustContain`) and
+**cross-document negatives** (`mustNotContainAnywhere`) still exist as
+deterministic metrics. Public cases live in
+`scripts/eval/retrieval-cases.json` and target a synthetic born-digital
+corpus (not a customer PDF). CI downloads that corpus from a test GCS
+bucket, ingests it, searches, and judges. Do not use the chat agent to
+generate labels.
 
 Parser version is `v4` so a **reprocess** writes the new columns. Clean
 ready files are left alone.
@@ -37,10 +41,11 @@ ready files are left alone.
 
 | Phase | What | Status |
 | --- | --- | --- |
-| 0 | Retrieval eval harness, ~20 gold cases, timings | **done** |
+| 0 | Retrieval eval harness, synthetic GCS corpus, LLM judge | **done** |
 | 1 | Persist deterministic page metadata | **done** |
 | 2 | Persist outline spans; outline reads prefer stored spans | **done** |
 | 3 | Exact-identifier retrieval, page collapse, skip embed when exact fills `limit` | **done** |
+| 3.5 | Match-centered excerpts, best chunk per page, lexical fast path | **done** |
 | 4 | File / span routing (filename + outline identifiers before chunk search) | not started |
 | 5 | Embed batching / auto retrieval mode (separate from chat `mode`) | not started |
 | 6 | Reranker experiment (only after the harness shows ranking is the bottleneck) | not started |
@@ -66,9 +71,15 @@ into every chunk. Chunks inherit page columns via `pageId`.
    - **semantic** — no extra SQL. Vector + FTS + RRF. Call counts for
      unrestricted semantic search stay at two (vector + keyword).
 4. Results collapse to the best chunk per `(attachmentId, pageNumber)`
-   (first wins) so grep rounds move page-to-page.
-5. `@` tags still pin then backfill. They are not a hard filter.
-6. `readDocumentOutline` returns stored spans when the active ingest run
+   (highest lexical overlap with the query, not chunk ordinal 0). Search
+   excerpts are centered on the query match instead of always taking the
+   first 900 characters of the winning chunk.
+5. Semantic/locator queries also run a lexical `ILIKE` pass (phrase + token
+   AND) before hybrid search. When those hits alone fill `limit` with
+   positive lexical scores, skip `embedRetrievalQuery` (same fast-path shape
+   as identifier queries).
+6. `@` tags still pin then backfill. They are not a hard filter.
+7. `readDocumentOutline` returns stored spans when the active ingest run
    has them; otherwise it builds spans from page transcripts.
 
 Entry points: `src/lib/attachments/retrieval.ts`,
@@ -76,27 +87,67 @@ Entry points: `src/lib/attachments/retrieval.ts`,
 `src/lib/attachments/page-outline.ts`,
 `src/lib/attachments/run-document-ingest.ts`. Eval:
 `pnpm retrieval-eval` (default `--dry-run` validates cases;
-`--report-id` runs live search).
+`--from-gcs` is the CI path; `--live` generates the same PDFs without
+GCS; `--report-id` searches an already-ingested report).
 
 ## Phase 0 — eval harness
 
-**Done.** `scripts/eval/retrieval-eval.ts` +
-`scripts/eval/retrieval-cases.json`. Metrics: Recall@5, Recall@10, MRR,
-embed/sql/total ms, `skippedEmbedding`. Runs write JSON under
-`scripts/eval/retrieval-runs/` (gitignored).
+**Done.** `scripts/eval/retrieval-eval.ts` + `scripts/eval/retrieval-cases.json`
++ a synthetic corpus (`scripts/eval/retrieval-corpus.ts`).
 
-Public gold is grounded in:
+The public cases are small on purpose: two born-digital PDFs that reproduce
+the failure modes that matter (right page / wrong 900-character slice,
+required-vs-executed tables, identifier lookup, cross-file leak, true
+negative). They are not a customer attachment and are not the in-repo
+SOP / Appendix B scans.
 
-- `docs/sample_files/appendix-b-790-00134r-revu.pdf` — 62-page scan;
-  tests treat **SW-LWB-4 on page 31**.
-- `docs/sample_files/SOP-DP-QA-010-R04 SOP.pdf` — pages from
-  `docs/sop-010-r04-transcription.md`.
-- `docs/sample_files/DEV-QC-25-010 Copy (1).pdf` — filename locators
-  only (almost no native text; do not invent page numbers).
+**Pass/fail** is an LLM judge (`scripts/eval/retrieval-judge.ts`,
+`RETRIEVAL_JUDGE_PROMPT_VERSION`). Recall@5 is informational. A
+`mustNotContainAnywhere` leak fails the case before the judge runs.
 
-Schema for a case: `{ id, query, kind, gold: [{ filename, page }], notes? }`.
-`kind` is `identifier` | `locator` | `semantic`. Vitest validates the JSON
-(`scripts/eval/retrieval-cases.test.ts`).
+```bash
+pnpm retrieval-eval -- --dry-run          # parse + print cases
+pnpm retrieval-eval:upload                # one-time: write PDFs to the test bucket
+pnpm retrieval-eval -- --from-gcs         # CI path: download, ingest, search, judge
+pnpm retrieval-eval -- --live             # same PDFs, skip GCS (laptop + Vertex)
+pnpm retrieval-eval -- --report-id <id>   # search an already-ingested report
+```
+
+CI (`.github/workflows/ci.yml` job `Retrieval eval (GCS + judge)`) runs
+`--from-gcs` only when the retrieval harness or `searchReportDocuments`
+implementation changes. It skips cleanly when Vertex / GCS secrets are
+missing. Secrets: `GOOGLE_VERTEX_PROJECT`, `GCP_SERVICE_ACCOUNT_KEY`,
+`RETRIEVAL_EVAL_GCS_BUCKET`. After changing the PDF builders, re-run
+`pnpm retrieval-eval:upload`.
+
+Local ingest uses `ATTACHMENT_STORAGE_BACKEND=local` (the bucket is the
+corpus source, not where CI writes attachment bytes). Runs write JSON
+under `scripts/eval/retrieval-runs/` (gitignored).
+
+Schema for a case:
+
+```jsonc
+{
+  "id": "...",
+  "query": "...",
+  "kind": "identifier" | "locator" | "semantic",
+  "passCriteria": "What a careful reader must conclude from the excerpts.",
+  "gold": [
+    { "filename": "dv-protocol-equipment.pdf", "page": 2, "mustContain": ["..."] }
+  ],
+  "mustNotContainAnywhere": ["..."], // optional deterministic leak check
+  "notes": "..."
+}
+```
+
+`passCriteria` is required. `gold` may be empty when the correct answer is
+"not in this corpus." Vitest validates the JSON, the PDF anchors, and the
+judge prompt (`scripts/eval/retrieval-*.test.ts`).
+
+The protocol PDF's required-equipment page starts with enough UUT header
+lines that a 900-character prefix never reaches the answering row — that
+is the excerpt-truncation case phase 3.5 exists to pass. The judge must
+fail header-only slices even when Recall@5 is 1.0.
 
 ## Phase 1 — page metadata
 
@@ -131,6 +182,29 @@ none (legacy ready files).
 Identifier queries run exact-first. Page collapse is on for every mode.
 Keyword-only Analytics grep still skips embeddings; an identifier query
 that already fills `limit` skips embeddings in hybrid too.
+
+## Phase 3.5 — excerpt quality + lexical fast path
+
+**Done.** Three changes close the right-page / wrong-excerpt regression
+without raising caps or re-ingesting ready files:
+
+1. **`buildMatchCenteredSnippet()`** — search excerpts center on the query
+   phrase (or longest matching token) instead of always truncating from
+   character 0. `toSearchResult()` uses this for every `search_documents`
+   hit.
+2. **`collapseToBestChunkPerPage(query)`** — when multiple chunks from the
+   same page compete, keep the one with the highest `lexicalMatchScore()`
+   against the query, not the first row returned by RRF/SQL ordering.
+3. **`lexicalChunkSearch()`** — for semantic/locator queries, run an
+   `ILIKE` pass (phrase OR token-AND on `contextual_text` / `raw_text`)
+   before hybrid search and merge those rows ahead of vector/keyword hits.
+   When the lexical pass alone fills `limit` with positive scores, skip the
+   query embedding (same fast-path shape as identifier queries).
+
+Eval: `equipment-required-instrument` in `retrieval-cases.json` is the
+synthetic version of that bug. The judge (and a 900-character prefix
+fixture test on the generated PDF) fail if excerpts snap back to
+header-only slices. `recallAtK` can still be 1.0.
 
 ## Phase 4 — file / span routing (not started)
 
