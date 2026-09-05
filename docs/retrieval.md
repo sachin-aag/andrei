@@ -46,9 +46,9 @@ ready files are left alone.
 | 2 | Persist outline spans; outline reads prefer stored spans | **done** |
 | 3 | Exact-identifier retrieval, page collapse, skip embed when exact fills `limit` | **done** |
 | 3.5 | Match-centered excerpts, best chunk per page, lexical fast path, quote-over-visual, locator ranking | **done** |
-| 4 | File / span routing (filename + outline identifiers before chunk search) | not started |
-| 5 | Embed batching / auto retrieval mode (separate from chat `mode`) | not started |
-| 6 | Reranker experiment (only after the harness shows ranking is the bottleneck) | not started |
+| 4 | File / span routing (filename + outline identifiers before chunk search) | **done** |
+| 5 | Embed batching / auto retrieval mode (separate from chat `mode`) | **done** |
+| 6 | Deterministic rerank (no cross-encoder) | **done** |
 
 BM25 as a third arm is deferred with the reranker. Metadata is
 **filterable columns** at file / page / span grain, not more prose stuffed
@@ -102,18 +102,19 @@ Restore these without putting customer PDFs in the repo:
    gitignore entry and say the synthetic corpus is the only gold.
 4. **Run history.** Upload `scripts/eval/retrieval-runs/*.json` from the
    live CI job (or a small summary) so Recall@5 / judge pass rate can be
-   compared across PRs. Phase 6 still needs that signal before a reranker.
+   compared across PRs. A cross-encoder reranker still needs that signal;
+   the deterministic score in phase 6 does not.
 5. **Ship with current `main`.** `main` already has
    `0056_attachment_library` / `0057_attachment_storage_budget`. This
    branch’s retrieval migration is also tagged `0056`. Renumber it to
    `0058` (and journal idx) before merging to `main`. Do not leave two
    `0056_*.sql` files.
 
-Phases 4–6 stay blocked on a harness that can tell ranking from excerpt
-failure. The synthetic nine-case set is enough to gate excerpt regressions
-in CI; it is not enough to decide a reranker.
+Phases 4–6 are implemented. The synthetic nine-case set still gates excerpt
+regressions in CI; it is not enough to decide a learned/cross-encoder
+reranker. Do not add one until run history exists.
 
-## How search works today (phases 0–3.5)
+## How search works today (phases 0–6)
 
 1. Ingest writes `document_pages` (transcript + optional Gemini
    `pageContext` + retrieval columns) and `document_chunks` (vector +
@@ -126,7 +127,7 @@ in CI; it is not enough to decide a reranker.
      `document_chunks.raw_text` for legacy rows. Hits prepend hybrid RRF.
      If they already fill `limit`, skip `embedRetrievalQuery`.
    - **locator** — page / filename wording, no requirement id. Hybrid
-     (or keyword-only) as before. Phase 4 will route files/spans first.
+     (or keyword-only) as before. File/span routing runs first (phase 4).
    - **semantic** — no extra SQL. Vector + FTS + RRF. Call counts for
      unrestricted semantic search stay at two (vector + keyword).
 4. Results collapse to the best chunk per `(attachmentId, pageNumber)`
@@ -137,8 +138,18 @@ in CI; it is not enough to decide a reranker.
    AND) before hybrid search. When those hits alone fill `limit` with
    positive lexical scores, skip `embedRetrievalQuery` (same fast-path shape
    as identifier queries).
-6. `@` tags still pin then backfill. They are not a hard filter.
-7. `readDocumentOutline` returns stored spans when the active ingest run
+6. Identifier and locator queries load ready files + stored outline spans
+   and **route** to matching attachments (filename / `document_summary`) or
+   heading spans (`identifiers`) before chunk search. If that pass is under
+   `limit`, the rest of the report is backfilled. `@` tags still pin then
+   backfill and are not a hard filter. Semantic queries do not restrict.
+7. `search_documents` `queries[]` embeds unique **semantic** strings with one
+   `embedMany` (`searchReportDocumentsMany`). Identifier / locator queries
+   keep the skip-embed path. There is no new chat `mode` enum.
+8. Candidates are **reranked** with a deterministic score (locator file/page
+   boost, then identifier-in-excerpt, then `lexicalMatchScore`) before
+   slicing to `limit`. Ties keep original order. Not a cross-encoder.
+9. `readDocumentOutline` returns stored spans when the active ingest run
    has them; otherwise it builds spans from page transcripts.
 
 Entry points: `src/lib/attachments/retrieval.ts`,
@@ -288,23 +299,34 @@ synthetic version of that bug. The judge (and a 900-character prefix
 fixture test on the generated PDF) fail if excerpts snap back to
 header-only slices. `recallAtK` can still be 1.0.
 
-## Phase 4 — file / span routing (not started)
+## Phase 4 — file / span routing
 
-Before chunk search, restrict to attachments / outline spans whose
-filename, `document_summary`, or span `identifiers` match a locator or
-id. Keep pin + backfill. Do not hard-filter `@` tags.
+**Done.** Before chunk search, identifier and locator queries load ready
+files + stored outline spans and restrict to attachments / spans whose
+filename, `document_summary`, or span `identifiers` match. Semantic
+queries are unrestricted. If the routed pass is under `limit`, the rest
+of the report is backfilled (whole-file routes are excluded from that
+pass; span routes are not, so other pages of the same file can still
+appear). `@` tags still pin then backfill and are not a hard filter —
+routing is skipped when tags are present so a tagged file is never
+dropped for missing the route.
 
-## Phase 5 — embed batching / auto mode (not started)
+## Phase 5 — embed batching / auto mode
 
-Batch query embeddings when `search_documents` sends `queries[]`. A
-server-side auto path is not a new chat tool enum — Document chat should
-keep defaulting to hybrid-with-ids. Only add a mode if a benchmark needs
-an ablation.
+**Done.** `search_documents` `queries[]` goes through
+`searchReportDocumentsMany()`. Unique semantic strings share one
+`embedMany`; a single query still uses `embed`. Identifier and locator
+queries keep the exact / lexical skip-embed path. There is no new chat
+`mode` enum — Document chat stays hybrid-with-ids.
 
-## Phase 6 — reranker (not started)
+## Phase 6 — reranker
 
-Run only if Recall@10 is high and Recall@5 / MRR are weak on the harness.
-Do not add a cross-encoder “because RAG blogs say so.”
+**Done (deterministic).** Candidates are reordered with
+`rerankHitsForQuery()` before slicing to `limit`: locator file/page
+boost, then identifier-in-excerpt / filename, then `lexicalMatchScore`.
+Ties keep original order. Do **not** add a cross-encoder until the
+harness has run history that shows Recall@10 high and Recall@5 / MRR
+weak.
 
 ## Locked non-goals
 

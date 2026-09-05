@@ -8,6 +8,7 @@ import {
   lexicalQueryTokens,
   rankHitsForQuery,
   requestedPageNumbers,
+  rerankHitsForQuery,
 } from "./retrieval-query";
 
 describe("classifyRetrievalQuery", () => {
@@ -182,5 +183,39 @@ describe("locator ranking", () => {
       "dv-protocol-equipment.pdf page 2"
     );
     expect(ranked.map((row) => row.id)).toEqual(["p2", "p1", "other"]);
+  });
+});
+
+describe("rerankHitsForQuery", () => {
+  it("promotes a hit whose excerpt names the identifier", () => {
+    const ranked = rerankHitsForQuery(
+      [
+        {
+          filename: "other.pdf",
+          pageNumber: 1,
+          excerpt: "unrelated equipment table header",
+          id: "noise",
+        },
+        {
+          filename: "software-requirements.pdf",
+          pageNumber: 2,
+          excerpt: "SW-EVAL-7 Laser interlock latency Pass",
+          id: "hit",
+        },
+      ],
+      "SW-EVAL-7"
+    );
+    expect(ranked.map((row) => row.id)).toEqual(["hit", "noise"]);
+  });
+
+  it("keeps original order when scores tie", () => {
+    const ranked = rerankHitsForQuery(
+      [
+        { filename: "a.pdf", pageNumber: 1, excerpt: "alpha", id: "first" },
+        { filename: "b.pdf", pageNumber: 2, excerpt: "alpha", id: "second" },
+      ],
+      "dissolution failure"
+    );
+    expect(ranked.map((row) => row.id)).toEqual(["first", "second"]);
   });
 });

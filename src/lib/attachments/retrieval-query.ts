@@ -61,6 +61,60 @@ export function locatorHitBoost(
   return boost;
 }
 
+export type RetrievalHitLike = {
+  filename: string;
+  pageNumber: number;
+  excerpt?: string;
+  text?: string;
+  rawText?: string;
+  contextualText?: string;
+};
+
+function hitHaystack(hit: RetrievalHitLike): string {
+  return (
+    hit.excerpt ??
+    hit.text ??
+    hit.rawText ??
+    hit.contextualText ??
+    ""
+  ).replace(/\s+/g, " ");
+}
+
+/**
+ * Deterministic relevance for phase 6. Locator file/page boost dominates;
+ * identifier mentions in the excerpt or filename come next; lexical overlap
+ * breaks remaining ties. Not a cross-encoder.
+ */
+export function hitRelevanceScore(hit: RetrievalHitLike, query: string): number {
+  const classified = classifyRetrievalQuery(query);
+  const haystack = hitHaystack(hit);
+  const lower = haystack.toLowerCase();
+  let score = locatorHitBoost(hit, query) * 1_000_000;
+  for (const id of classified.identifiers) {
+    const needle = id.toLowerCase();
+    if (lower.includes(needle) || hit.filename.toLowerCase().includes(needle)) {
+      score += 50_000;
+    }
+  }
+  score += lexicalMatchScore(haystack, query);
+  return score;
+}
+
+/** Reorder candidates before slicing to `limit`. Ties keep original order. */
+export function rerankHitsForQuery<T extends RetrievalHitLike>(
+  rows: readonly T[],
+  query: string
+): T[] {
+  return rows
+    .map((hit, index) => ({
+      hit,
+      index,
+      score: hitRelevanceScore(hit, query),
+    }))
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map((row) => row.hit);
+}
+
 /** Locator queries name a file and/or page — those hits belong first. */
 export function rankHitsForQuery<
   T extends { filename: string; pageNumber: number },
@@ -74,10 +128,7 @@ export function rankHitsForQuery<
   ) {
     return [...rows];
   }
-  return [...rows].sort(
-    (left, right) =>
-      locatorHitBoost(right, query) - locatorHitBoost(left, query)
-  );
+  return rerankHitsForQuery(rows, query);
 }
 
 function chunkSourceKind(row: unknown): string | undefined {

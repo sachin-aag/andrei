@@ -7,6 +7,7 @@ import {
   reciprocalRankFusion,
   searchReportDocuments,
   searchReportDocumentsDetailed,
+  searchReportDocumentsMany,
   verifyCitation,
 } from "@/lib/attachments/retrieval";
 
@@ -29,9 +30,16 @@ vi.mock("@/db", () => ({
 const embedMock = vi.fn(async () => ({
   embedding: Array.from({ length: 768 }, () => 0.01),
 }));
+const embedManyMock = vi.fn(async (opts: unknown) => {
+  const values = (opts as { values?: string[] }).values ?? [];
+  return {
+    embeddings: values.map(() => Array.from({ length: 768 }, () => 0.01)),
+  };
+});
 
 vi.mock("ai", () => ({
   embed: (...args: unknown[]) => embedMock(...(args as [])),
+  embedMany: (opts: unknown) => embedManyMock(opts),
 }));
 
 vi.mock("@ai-sdk/google", () => ({
@@ -133,6 +141,7 @@ describe("searchReportDocuments with tagged attachments", () => {
     limitMock.mockReset();
     limitMock.mockResolvedValue([]);
     embedMock.mockClear();
+    embedManyMock.mockClear();
   });
 
   it("does not label results when no attachments are tagged", async () => {
@@ -364,7 +373,10 @@ describe("searchReportDocuments with tagged attachments", () => {
   });
 
   it("ranks an explicit page locator ahead of earlier pages of the same file", async () => {
-    limitMock.mockResolvedValueOnce([
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
       {
         ...chunkRow("p1", "att_1", 1),
         filename: "dv-protocol-equipment.pdf",
@@ -392,7 +404,10 @@ describe("searchReportDocuments with tagged attachments", () => {
   });
 
   it("skips the query embedding when exact identifier hits fill the limit", async () => {
-    limitMock.mockResolvedValueOnce([chunkRow("c31", "att_1", 31)]);
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([chunkRow("c31", "att_1", 31)]);
 
     const { results, timing } = await searchReportDocumentsDetailed({
       reportId: "report-1",
@@ -404,7 +419,85 @@ describe("searchReportDocuments with tagged attachments", () => {
     expect(timing.skippedEmbedding).toBe(true);
     expect(timing.queryKind).toBe("identifier");
     expect(embedMock).not.toHaveBeenCalled();
-    expect(limitMock).toHaveBeenCalledTimes(1);
+    expect(limitMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("restricts an identifier query to the file whose summary mentions the id", async () => {
+    limitMock
+      .mockResolvedValueOnce([
+        {
+          attachmentId: "att_sw",
+          filename: "software-requirements.pdf",
+          documentSummary: "Includes SW-EVAL-7 laser interlock.",
+        },
+        {
+          attachmentId: "att_dv",
+          filename: "dv-protocol-equipment.pdf",
+          documentSummary: "Required testing equipment.",
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          ...chunkRow("hit", "att_sw", 2),
+          filename: "software-requirements.pdf",
+          rawText: "SW-EVAL-7 Laser interlock latency Pass",
+          contextualText: "SW-EVAL-7 Laser interlock latency Pass",
+        },
+      ]);
+
+    const { results, timing } = await searchReportDocumentsDetailed({
+      reportId: "report-1",
+      query: "SW-EVAL-7",
+      limit: 1,
+    });
+
+    expect(results.map((row) => row.attachmentId)).toEqual(["att_sw"]);
+    expect(timing.skippedEmbedding).toBe(true);
+    expect(embedMock).not.toHaveBeenCalled();
+    expect(limitMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("reranks an identifier mention ahead of a lexical-only page", async () => {
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          ...chunkRow("noise", "att_1", 1),
+          filename: "other.pdf",
+          rawText: "unrelated equipment table header",
+          contextualText: "unrelated equipment table header",
+        },
+        {
+          ...chunkRow("hit", "att_1", 2),
+          filename: "software-requirements.pdf",
+          rawText: "SW-EVAL-7 Laser interlock latency Pass",
+          contextualText: "SW-EVAL-7 Laser interlock latency Pass",
+        },
+      ]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "SW-EVAL-7",
+      limit: 2,
+    });
+
+    expect(results.map((row) => row.chunkId)).toEqual(["hit", "noise"]);
+  });
+
+  it("embeds unique semantic queries once via embedMany", async () => {
+    const arms = await searchReportDocumentsMany({
+      reportId: "report-1",
+      queries: ["dissolution failure", "root cause analysis"],
+      limit: 5,
+    });
+
+    expect(arms).toHaveLength(2);
+    expect(embedManyMock).toHaveBeenCalledTimes(1);
+    expect(embedMock).not.toHaveBeenCalled();
+    const batched = embedManyMock.mock.calls[0]?.[0] as { values: string[] };
+    expect(batched.values).toEqual(["dissolution failure", "root cause analysis"]);
   });
 });
 

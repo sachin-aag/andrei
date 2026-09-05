@@ -1,7 +1,19 @@
-import { embed, type EmbeddingModel } from "ai";
+import { embed, embedMany, type EmbeddingModel } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createVertex } from "@ai-sdk/google-vertex";
-import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db } from "@/db";
 import {
   attachmentIngestRuns,
@@ -22,9 +34,17 @@ import {
   lexicalMatchScore,
   lexicalQueryTokens,
   rankHitsForQuery,
+  rerankHitsForQuery,
   searchPageKey,
   type RetrievalQueryKind,
 } from "@/lib/attachments/retrieval-query";
+import {
+  routeSearchTargets,
+  routedAttachmentIds,
+  type RouteableDocument,
+  type RouteableSpan,
+  type RoutedSearchTarget,
+} from "@/lib/attachments/retrieval-route";
 import { rewriteChunkDocumentHeader } from "@/lib/attachments/chunk-pages";
 
 export { buildOutlineFromStoredPages };
@@ -35,6 +55,7 @@ export {
   lexicalMatchScore,
   lexicalQueryTokens,
   rankHitsForQuery,
+  rerankHitsForQuery,
   searchPageKey,
 };
 export type { RetrievalQueryKind } from "@/lib/attachments/retrieval-query";
@@ -340,22 +361,40 @@ export function toClientDocumentSearchResults(
   return results.map(stripServerOnlyFields);
 }
 
+const QUERY_EMBED_PROVIDER_OPTIONS = {
+  google: {
+    taskType: "RETRIEVAL_QUERY" as const,
+    outputDimensionality: ATTACHMENT_EMBEDDING_DIMENSIONS,
+  },
+  googleVertex: {
+    taskType: "RETRIEVAL_QUERY" as const,
+    outputDimensionality: ATTACHMENT_EMBEDDING_DIMENSIONS,
+  },
+};
+
 async function embedRetrievalQuery(query: string): Promise<number[]> {
   const result = await embed({
     model: resolveAttachmentEmbeddingModel(),
     value: query,
-    providerOptions: {
-      google: {
-        taskType: "RETRIEVAL_QUERY",
-        outputDimensionality: ATTACHMENT_EMBEDDING_DIMENSIONS,
-      },
-      googleVertex: {
-        taskType: "RETRIEVAL_QUERY",
-        outputDimensionality: ATTACHMENT_EMBEDDING_DIMENSIONS,
-      },
-    },
+    providerOptions: QUERY_EMBED_PROVIDER_OPTIONS,
   });
   return result.embedding;
+}
+
+/** One `embedMany` for 2+ query strings; a single query still uses `embed`. */
+export async function embedRetrievalQueries(
+  queries: readonly string[]
+): Promise<number[][]> {
+  if (queries.length === 0) return [];
+  if (queries.length === 1) {
+    return [await embedRetrievalQuery(queries[0]!)];
+  }
+  const result = await embedMany({
+    model: resolveAttachmentEmbeddingModel(),
+    values: [...queries],
+    providerOptions: QUERY_EMBED_PROVIDER_OPTIONS,
+  });
+  return result.embeddings;
 }
 
 function candidateSelect() {
@@ -403,6 +442,119 @@ function identifiersIlikeSql(identifiers: readonly string[]) {
   );
 }
 
+type ChunkSearchScope = {
+  includeAttachmentIds?: string[];
+  excludeAttachmentIds?: string[];
+  routeTargets?: RoutedSearchTarget[];
+};
+
+function routeTargetsSql(targets: readonly RoutedSearchTarget[] | undefined) {
+  if (!targets || targets.length === 0) return undefined;
+  const wholeIds = [
+    ...new Set(
+      targets
+        .filter((target) => target.pageStart == null || target.pageEnd == null)
+        .map((target) => target.attachmentId)
+    ),
+  ];
+  const ranged = targets.filter(
+    (target) => target.pageStart != null && target.pageEnd != null
+  );
+  const parts = [];
+  if (wholeIds.length > 0) {
+    parts.push(inArray(documentChunks.attachmentId, wholeIds));
+  }
+  for (const target of ranged) {
+    parts.push(
+      and(
+        eq(documentChunks.attachmentId, target.attachmentId),
+        gte(documentChunks.pageNumber, target.pageStart!),
+        lte(documentChunks.pageNumber, target.pageEnd!)
+      )
+    );
+  }
+  if (parts.length === 0) return undefined;
+  if (parts.length === 1) return parts[0];
+  return or(...parts);
+}
+
+function chunkScopeSql(scope: ChunkSearchScope) {
+  const routeSql = routeTargetsSql(scope.routeTargets);
+  return [
+    ...((scope.includeAttachmentIds?.length ?? 0) > 0
+      ? [inArray(documentChunks.attachmentId, scope.includeAttachmentIds!)]
+      : []),
+    ...((scope.excludeAttachmentIds?.length ?? 0) > 0
+      ? [notInArray(documentChunks.attachmentId, scope.excludeAttachmentIds!)]
+      : []),
+    ...(routeSql ? [routeSql] : []),
+  ];
+}
+
+async function loadRouteableIndex(reportId: string): Promise<{
+  documents: RouteableDocument[];
+  spans: RouteableSpan[];
+}> {
+  const documents = await db
+    .select({
+      attachmentId: reportAttachments.id,
+      filename: reportAttachments.filename,
+      documentSummary: attachmentIngestRuns.documentSummary,
+    })
+    .from(reportAttachments)
+    .innerJoin(
+      attachmentIngestRuns,
+      eq(reportAttachments.activeIngestRunId, attachmentIngestRuns.id)
+    )
+    .where(
+      and(
+        eq(reportAttachments.reportId, reportId),
+        isNull(reportAttachments.deletedAt),
+        isNotNull(reportAttachments.activeIngestRunId)
+      )
+    )
+    .orderBy(reportAttachments.uploadedAt)
+    .limit(50);
+
+  const spans = await db
+    .select({
+      attachmentId: documentOutlineSpans.attachmentId,
+      pageStart: documentOutlineSpans.pageStart,
+      pageEnd: documentOutlineSpans.pageEnd,
+      identifiers: documentOutlineSpans.identifiers,
+    })
+    .from(documentOutlineSpans)
+    .innerJoin(
+      reportAttachments,
+      eq(documentOutlineSpans.attachmentId, reportAttachments.id)
+    )
+    .where(
+      and(
+        eq(documentOutlineSpans.reportId, reportId),
+        eq(reportAttachments.reportId, reportId),
+        isNull(reportAttachments.deletedAt),
+        isNotNull(reportAttachments.activeIngestRunId),
+        eq(documentOutlineSpans.ingestRunId, reportAttachments.activeIngestRunId)
+      )
+    )
+    .orderBy(documentOutlineSpans.ordinal)
+    .limit(2_000);
+
+  return {
+    documents: documents.map((row) => ({
+      attachmentId: row.attachmentId,
+      filename: row.filename,
+      documentSummary: row.documentSummary ?? null,
+    })),
+    spans: spans.map((row) => ({
+      attachmentId: row.attachmentId,
+      pageStart: row.pageStart,
+      pageEnd: row.pageEnd,
+      identifiers: row.identifiers ?? [],
+    })),
+  };
+}
+
 function chunkText(row: CandidateRow): string {
   return row.contextualText || row.rawText;
 }
@@ -429,6 +581,7 @@ async function fusedChunkSearch({
   limit,
   includeAttachmentIds = [],
   excludeAttachmentIds = [],
+  routeTargets,
 }: {
   reportId: string;
   trimmed: string;
@@ -436,6 +589,7 @@ async function fusedChunkSearch({
   limit: number;
   includeAttachmentIds?: string[];
   excludeAttachmentIds?: string[];
+  routeTargets?: RoutedSearchTarget[];
 }): Promise<CandidateRow[]> {
   const candidateLimit = Math.max(limit * 5, DEFAULT_CANDIDATE_LIMIT);
 
@@ -445,13 +599,11 @@ async function fusedChunkSearch({
     isNull(reportAttachments.deletedAt),
     isNotNull(reportAttachments.activeIngestRunId),
     eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
-    // Empty arrays would generate invalid SQL, so only apply a live filter.
-    ...(includeAttachmentIds.length > 0
-      ? [inArray(documentChunks.attachmentId, includeAttachmentIds)]
-      : []),
-    ...(excludeAttachmentIds.length > 0
-      ? [notInArray(documentChunks.attachmentId, excludeAttachmentIds)]
-      : [])
+    ...chunkScopeSql({
+      includeAttachmentIds,
+      excludeAttachmentIds,
+      routeTargets,
+    })
   );
 
   const vectorRows = queryVector
@@ -505,12 +657,14 @@ async function exactIdentifierChunkSearch({
   limit,
   includeAttachmentIds = [],
   excludeAttachmentIds = [],
+  routeTargets,
 }: {
   reportId: string;
   identifiers: readonly string[];
   limit: number;
   includeAttachmentIds?: string[];
   excludeAttachmentIds?: string[];
+  routeTargets?: RoutedSearchTarget[];
 }): Promise<CandidateRow[]> {
   if (identifiers.length === 0) return [];
   const candidateLimit = Math.max(limit * 5, DEFAULT_CANDIDATE_LIMIT);
@@ -520,12 +674,11 @@ async function exactIdentifierChunkSearch({
     isNull(reportAttachments.deletedAt),
     isNotNull(reportAttachments.activeIngestRunId),
     eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
-    ...(includeAttachmentIds.length > 0
-      ? [inArray(documentChunks.attachmentId, includeAttachmentIds)]
-      : []),
-    ...(excludeAttachmentIds.length > 0
-      ? [notInArray(documentChunks.attachmentId, excludeAttachmentIds)]
-      : [])
+    ...chunkScopeSql({
+      includeAttachmentIds,
+      excludeAttachmentIds,
+      routeTargets,
+    })
   );
 
   const overlapRows = await db
@@ -580,12 +733,14 @@ async function lexicalChunkSearch({
   limit,
   includeAttachmentIds = [],
   excludeAttachmentIds = [],
+  routeTargets,
 }: {
   reportId: string;
   trimmed: string;
   limit: number;
   includeAttachmentIds?: string[];
   excludeAttachmentIds?: string[];
+  routeTargets?: RoutedSearchTarget[];
 }): Promise<CandidateRow[]> {
   const tokens = lexicalQueryTokens(trimmed);
   if (tokens.length === 0) return [];
@@ -597,12 +752,11 @@ async function lexicalChunkSearch({
     isNull(reportAttachments.deletedAt),
     isNotNull(reportAttachments.activeIngestRunId),
     eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
-    ...(includeAttachmentIds.length > 0
-      ? [inArray(documentChunks.attachmentId, includeAttachmentIds)]
-      : []),
-    ...(excludeAttachmentIds.length > 0
-      ? [notInArray(documentChunks.attachmentId, excludeAttachmentIds)]
-      : [])
+    ...chunkScopeSql({
+      includeAttachmentIds,
+      excludeAttachmentIds,
+      routeTargets,
+    })
   );
 
   const matchConditions = [];
@@ -657,8 +811,10 @@ async function lexicalChunkSearch({
  * Results carry `pinned` so the model can tell the two apart.
  *
  * Identifier queries (`requirementIds()`) run exact page-id overlap first and
- * skip the query embedding when those hits already fill `limit`. Every mode
- * collapses to one chunk per page.
+ * skip the query embedding when those hits already fill `limit`. Locator and
+ * identifier queries route to matching files / outline spans first, then
+ * backfill. Every mode collapses to one chunk per page and reranks before
+ * slicing to `limit`.
  */
 export async function searchReportDocuments({
   reportId,
@@ -669,6 +825,7 @@ export async function searchReportDocuments({
   backfill = true,
   mode = "hybrid",
   excludePages,
+  queryEmbedding,
 }: {
   reportId: string;
   query: string;
@@ -678,6 +835,7 @@ export async function searchReportDocuments({
   backfill?: boolean;
   mode?: DocumentSearchMode;
   excludePages?: readonly { attachmentId: string; pageNumber: number }[];
+  queryEmbedding?: readonly number[];
 }): Promise<DocumentSearchResult[]> {
   const { results } = await searchReportDocumentsDetailed({
     reportId,
@@ -688,8 +846,90 @@ export async function searchReportDocuments({
     backfill,
     mode,
     excludePages,
+    queryEmbedding,
   });
   return results;
+}
+
+/**
+ * Search several queries with one `embedMany` for the semantic strings that
+ * still need a vector. Identifier / locator queries keep the skip-embed path.
+ */
+export async function searchReportDocumentsMany({
+  reportId,
+  queries,
+  limit = DEFAULT_DOCUMENT_SEARCH_LIMIT,
+  snippetChars = DEFAULT_SNIPPET_CHARS,
+  attachmentIds,
+  backfill = true,
+  mode = "hybrid",
+  excludePages,
+}: {
+  reportId: string;
+  queries: readonly string[];
+  limit?: number;
+  snippetChars?: number;
+  attachmentIds?: readonly string[];
+  backfill?: boolean;
+  mode?: DocumentSearchMode;
+  excludePages?: readonly { attachmentId: string; pageNumber: number }[];
+}): Promise<DocumentSearchResult[][]> {
+  const normalized = queries.map((query) => query.replace(/\s+/g, " ").trim());
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const query of normalized) {
+    if (!query || seen.has(query)) continue;
+    seen.add(query);
+    unique.push(query);
+  }
+  if (unique.length === 0) {
+    return normalized.map(() => []);
+  }
+
+  const shared = {
+    reportId,
+    limit,
+    snippetChars,
+    attachmentIds,
+    backfill,
+    mode,
+    excludePages,
+  };
+
+  if (unique.length === 1) {
+    const { results } = await searchReportDocumentsDetailed({
+      ...shared,
+      query: unique[0]!,
+    });
+    const byQuery = new Map([[unique[0]!, results]]);
+    return normalized.map((query) => (query ? (byQuery.get(query) ?? []) : []));
+  }
+
+  const toEmbed =
+    mode === "keyword"
+      ? []
+      : unique.filter((query) => classifyRetrievalQuery(query).kind === "semantic");
+  const embeddings =
+    toEmbed.length > 0 ? await embedRetrievalQueries(toEmbed) : [];
+  const embeddingByQuery = new Map(
+    toEmbed.map((query, index) => [query, embeddings[index]!])
+  );
+
+  const detailedByQuery = new Map<string, DocumentSearchResult[]>();
+  await Promise.all(
+    unique.map(async (query) => {
+      const { results } = await searchReportDocumentsDetailed({
+        ...shared,
+        query,
+        queryEmbedding: embeddingByQuery.get(query),
+      });
+      detailedByQuery.set(query, results);
+    })
+  );
+
+  return normalized.map((query) =>
+    query ? (detailedByQuery.get(query) ?? []) : []
+  );
 }
 
 export async function searchReportDocumentsDetailed({
@@ -701,6 +941,7 @@ export async function searchReportDocumentsDetailed({
   backfill = true,
   mode = "hybrid",
   excludePages,
+  queryEmbedding,
 }: {
   reportId: string;
   query: string;
@@ -710,6 +951,7 @@ export async function searchReportDocumentsDetailed({
   backfill?: boolean;
   mode?: DocumentSearchMode;
   excludePages?: readonly { attachmentId: string; pageNumber: number }[];
+  queryEmbedding?: readonly number[];
 }): Promise<{ results: DocumentSearchResult[]; timing: RetrievalTiming }> {
   const totalStarted = Date.now();
   let embedMs = 0;
@@ -759,7 +1001,7 @@ export async function searchReportDocumentsDetailed({
   );
 
   const take = (rows: CandidateRow[], pinned?: boolean): DocumentSearchResult[] =>
-    rankHitsForQuery(
+    rerankHitsForQuery(
       collapseToBestChunkPerPage(rows, { query: trimmed, textFrom: chunkText }).filter(
         (row) =>
           !excludeKeys.has(searchPageKey(row.attachmentId, row.pageNumber))
@@ -796,10 +1038,7 @@ export async function searchReportDocumentsDetailed({
     }
   };
 
-  const exactSearch = (scope: {
-    includeAttachmentIds?: string[];
-    excludeAttachmentIds?: string[];
-  }) =>
+  const exactSearch = (scope: ChunkSearchScope) =>
     timedSql(() =>
       exactIdentifierChunkSearch({
         reportId,
@@ -809,13 +1048,7 @@ export async function searchReportDocumentsDetailed({
       })
     );
 
-  const fusedSearch = (
-    queryVec: string | null,
-    scope: {
-      includeAttachmentIds?: string[];
-      excludeAttachmentIds?: string[];
-    }
-  ) =>
+  const fusedSearch = (queryVec: string | null, scope: ChunkSearchScope) =>
     timedSql(() =>
       fusedChunkSearch({
         reportId,
@@ -829,20 +1062,21 @@ export async function searchReportDocumentsDetailed({
   const embedIfNeeded = async (): Promise<string | null> => {
     if (needsKeyword) return null;
     if (queryVector) return queryVector;
+    if (queryEmbedding && queryEmbedding.length > 0) {
+      queryVector = vectorLiteral([...queryEmbedding]);
+      return queryVector;
+    }
     const started = Date.now();
     try {
-      const queryEmbedding = await embedRetrievalQuery(trimmed);
-      queryVector = vectorLiteral(queryEmbedding);
+      const embedding = await embedRetrievalQuery(trimmed);
+      queryVector = vectorLiteral(embedding);
       return queryVector;
     } finally {
       embedMs += Date.now() - started;
     }
   };
 
-  const lexicalSearch = (scope: {
-    includeAttachmentIds?: string[];
-    excludeAttachmentIds?: string[];
-  }) =>
+  const lexicalSearch = (scope: ChunkSearchScope) =>
     classified.kind === "identifier" || needsKeyword
       ? Promise.resolve([] as CandidateRow[])
       : timedSql(() =>
@@ -854,10 +1088,32 @@ export async function searchReportDocumentsDetailed({
           })
         );
 
+  const routeTargets =
+    pinnedIds.length === 0 && classified.kind !== "semantic"
+      ? await timedSql(async () => {
+          const index = await loadRouteableIndex(reportId);
+          return routeSearchTargets({
+            query: trimmed,
+            documents: index.documents,
+            spans: index.spans,
+          });
+        })
+      : [];
+  const routedScope: ChunkSearchScope =
+    routeTargets.length > 0 ? { routeTargets } : {};
+  const routedIds = routedAttachmentIds(routeTargets);
+  const wholeFileRoutedIds = routedAttachmentIds(
+    routeTargets.filter(
+      (target) => target.pageStart == null || target.pageEnd == null
+    )
+  );
+
   if (pinnedIds.length === 0) {
     const [exactRows, lexicalRows] = await Promise.all([
-      classified.identifiers.length > 0 ? exactSearch({}) : Promise.resolve([]),
-      lexicalSearch({}),
+      classified.identifiers.length > 0
+        ? exactSearch(routedScope)
+        : Promise.resolve([]),
+      lexicalSearch(routedScope),
     ]);
     const exactTaken = take(exactRows);
     if (classified.identifiers.length > 0 && exactTaken.length >= limit) {
@@ -877,10 +1133,36 @@ export async function searchReportDocumentsDetailed({
     }
 
     const vector = await embedIfNeeded();
-    const fusedRows = await fusedSearch(vector, {});
+    const fusedRows = await fusedSearch(vector, routedScope);
+    const routedMerged = mergeUniqueChunks(
+      [...exactRows, ...lexicalRows, ...fusedRows],
+      trimmed
+    );
+    const routedTaken = take(routedMerged);
+    if (routedIds.length === 0 || routedTaken.length >= limit) {
+      return {
+        results: routedTaken,
+        timing: emptyTiming(skippedEmbedding),
+      };
+    }
+
+    const backfillScope: ChunkSearchScope =
+      wholeFileRoutedIds.length > 0
+        ? { excludeAttachmentIds: wholeFileRoutedIds }
+        : {};
+    const [exactBackfill, lexicalBackfill] = await Promise.all([
+      classified.identifiers.length > 0
+        ? exactSearch(backfillScope)
+        : Promise.resolve([]),
+      lexicalSearch(backfillScope),
+    ]);
+    const backfillFused = await fusedSearch(vector, backfillScope);
     return {
       results: take(
-        mergeUniqueChunks([...exactRows, ...lexicalRows, ...fusedRows], trimmed)
+        mergeUniqueChunks(
+          [...routedMerged, ...exactBackfill, ...lexicalBackfill, ...backfillFused],
+          trimmed
+        )
       ),
       timing: emptyTiming(skippedEmbedding),
     };
