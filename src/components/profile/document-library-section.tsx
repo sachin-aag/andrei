@@ -573,39 +573,37 @@ function MoveToFolderDialog({
                 </Button>
               </div>
             </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              disabled={moving}
-              onClick={() => setCreating(true)}
-              data-testid="library-move-create-folder-option"
-            >
-              <FolderPlus className="size-3.5" aria-hidden="true" />
-              Create new folder
-            </Button>
-          )}
+          ) : null}
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between">
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            disabled={moving || creatingFolder}
+            onClick={() => setCreating(true)}
+            data-testid="library-move-create-folder-option"
           >
-            Cancel
+            New Folder
           </Button>
-          <Button
-            type="button"
-            disabled={moving || destination == null}
-            onClick={onConfirm}
-            data-testid="library-move-confirm"
-          >
-            {moving
-              ? "Moving…"
-              : `Move ${itemCount} item${itemCount === 1 ? "" : "s"}`}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={moving || destination == null}
+              onClick={onConfirm}
+              data-testid="library-move-confirm"
+            >
+              {moving
+                ? "Moving…"
+                : `Move ${itemCount} item${itemCount === 1 ? "" : "s"}`}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

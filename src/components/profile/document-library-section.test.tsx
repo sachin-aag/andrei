@@ -151,6 +151,8 @@ describe("DocumentLibrarySection explorer", () => {
     expect(
       screen.getByRole("button", { name: "Move 1 item" })
     ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "New Folder" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
   });
 
   it("shows nested destinations as a folder tree, not flattened paths", async () => {
@@ -209,7 +211,7 @@ describe("DocumentLibrarySection explorer", () => {
     await user.click(await screen.findByText("coa.pdf"));
     await user.click(screen.getByTestId("library-move-to-folder"));
     await user.click(await screen.findByTestId("library-move-folder-folder-1"));
-    await user.click(screen.getByTestId("library-move-create-folder-option"));
+    await user.click(screen.getByRole("button", { name: "New Folder" }));
 
     expect(screen.getByText(/Creates inside Quality/)).toBeInTheDocument();
     await user.type(
