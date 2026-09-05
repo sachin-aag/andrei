@@ -7,16 +7,16 @@ import {
   type FolderNode,
 } from "@/lib/attachments/folder-subtree";
 
-export type VaultTree = {
-  foldersByParent: Map<string | null, FolderNode[]>;
+export type VaultTree<T extends FolderNode = FolderNode> = {
+  foldersByParent: Map<string | null, T[]>;
   parentById: Map<string, string | null>;
   assetsByFolder: Map<string | null, AttachmentLibraryAssetRecord[]>;
 };
 
-export function buildVaultTree(
-  folders: FolderNode[],
+export function buildVaultTree<T extends FolderNode>(
+  folders: T[],
   assets: AttachmentLibraryAssetRecord[]
-): VaultTree {
+): VaultTree<T> {
   const foldersByParent = buildFoldersByParent(folders);
   const parentById = new Map(folders.map((folder) => [folder.id, folder.parentId]));
   const assetsByFolder = new Map<string | null, AttachmentLibraryAssetRecord[]>();
