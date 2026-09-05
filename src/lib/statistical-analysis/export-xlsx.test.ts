@@ -8,6 +8,7 @@ import {
   buildAnalyticsXlsx,
   formatWorksheetSourceLine,
 } from "./export-xlsx";
+import { listZipPaths, zipText } from "./excel-chart-xml";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
 import {
   CAPABILITY_SIXPACK_NORMAL,
@@ -19,10 +20,6 @@ import { createEmptyWorksheet } from "./worksheet";
 
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-const TINY_PNG_BYTES = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64"
-);
 
 function sampleAnalytics(): ReportAnalyticsView {
   const outcome = computeCapabilitySixpackFromValues(
@@ -173,7 +170,32 @@ describe("buildAnalyticsXlsx", () => {
     expect(sixpack?.getCell("A1").value).toBe("Assay sixpack");
     expect(sixpack?.getCell("A2").value).toBe("Field");
     expect(sixpack?.getCell("B3").value).toBe("Assay sixpack");
-    expect(String(sixpack?.getCell("A1").value)).toBeTruthy();
+    expect(
+      listZipPaths(buffer).some((path) => path.startsWith("xl/charts/"))
+    ).toBe(false);
+  });
+
+  it("writes numeric observation values so Excel can chart them", async () => {
+    const buffer = await buildAnalyticsXlsx(sampleAnalytics());
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+    const sixpack = workbook.getWorksheet("Assay sixpack");
+    const scatter = workbook.getWorksheet("Torque scatter");
+    let indexRow = 0;
+    sixpack?.eachRow((row, number) => {
+      if (row.getCell(1).value === "Index") indexRow = number;
+    });
+    expect(indexRow).toBeGreaterThan(0);
+    expect(sixpack?.getCell(indexRow + 1, 1).value).toBe(1);
+    expect(sixpack?.getCell(indexRow + 1, 2).value).toBe(10);
+
+    let xyHeader = 0;
+    scatter?.eachRow((row, number) => {
+      if (row.getCell(1).value === "Chart") xyHeader = number;
+    });
+    expect(xyHeader).toBeGreaterThan(0);
+    expect(typeof scatter?.getCell(xyHeader + 1, 4).value).toBe("number");
+    expect(typeof scatter?.getCell(xyHeader + 1, 5).value).toBe("number");
   });
 
   it("puts the sheet title and attachment source on the banner row", async () => {
@@ -219,31 +241,35 @@ describe("buildAnalyticsXlsx", () => {
     expect(scatter?.getCell("F1").value).toBe(sourceLine);
   });
 
-  it("embeds plot images when includePlots is true", async () => {
+  it("embeds native Excel charts bound to numeric source tables", async () => {
     const buffer = await buildAnalyticsXlsx(sampleAnalytics(), {
       includePlots: true,
     });
+    const paths = listZipPaths(buffer);
+    expect(paths.some((path) => path.startsWith("xl/charts/chart"))).toBe(true);
+    expect(paths.some((path) => path.startsWith("xl/drawings/drawing"))).toBe(
+      true
+    );
+
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as never);
-
     const sixpack = workbook.getWorksheet("Assay sixpack");
     const scatter = workbook.getWorksheet("Torque scatter");
-    expect(sixpack?.getImages().length).toBeGreaterThan(0);
-    expect(scatter?.getImages().length).toBeGreaterThan(0);
-    expect(sixpack?.getImages()[0]?.range.tl.nativeRow).toBe(1);
+    expect(sixpack?.getImages() ?? []).toEqual([]);
+    expect(scatter?.getImages() ?? []).toEqual([]);
     expect(sixpack?.getCell("A1").value).toBe("Assay sixpack");
     expect(sixpack?.getCell("A1").value).not.toBe("Plots");
 
-    const imageId = sixpack?.getImages()[0]?.imageId;
-    expect(imageId).toBeDefined();
-    const embedded = workbook.getImage(Number(imageId));
-    const png = embedded.buffer
-      ? Buffer.from(embedded.buffer)
-      : Buffer.from(embedded.base64 ?? "", "base64");
-    expect(png.byteLength).toBeGreaterThan(20_000);
+    const chartXml = [...paths]
+      .filter((path) => path.startsWith("xl/charts/chart"))
+      .map((path) => zipText(buffer, path) ?? "");
+    expect(chartXml.some((xml) => xml.includes("c:scatterChart"))).toBe(true);
+    expect(chartXml.some((xml) => xml.includes("c:lineChart"))).toBe(true);
+    expect(chartXml.join("")).toContain("Assay sixpack");
+    expect(chartXml.join("")).toMatch(/Torque|Tip Detachment/);
   });
 
-  it("embeds the captured preview at the top of the analysis sheet", async () => {
+  it("does not embed a PNG snapshot when a preview image exists", async () => {
     const analytics = sampleAnalytics();
     const sixpackAnalysis = analytics.analyses[0]!;
     analytics.analyses[0] = {
@@ -260,20 +286,14 @@ describe("buildAnalyticsXlsx", () => {
     const buffer = await buildAnalyticsXlsx(analytics, { includePlots: true });
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as never);
-
     const sixpack = workbook.getWorksheet("Assay sixpack");
-    const images = sixpack?.getImages() ?? [];
-    expect(images).toHaveLength(1);
-    expect(images[0]?.range.tl.nativeRow).toBe(1);
-    expect(images[0]?.range.tl.nativeCol).toBe(0);
+    expect(sixpack?.getImages() ?? []).toEqual([]);
     expect(sixpack?.getCell("A1").value).toBe("Assay sixpack");
-    expect(sixpack?.getCell("A1").value).not.toBe("Plots");
-    expect(sixpack?.getCell("A1").value).not.toBe("Field");
-
-    const imageId = images[0]?.imageId;
-    expect(imageId).toBeDefined();
-    const embedded = workbook.getImage(Number(imageId));
-    const bytes = embedded.buffer ?? Buffer.from(embedded.base64 ?? "", "base64");
-    expect(bytes).toEqual(TINY_PNG_BYTES);
+    expect(listZipPaths(buffer).some((path) => path.includes("xl/media/"))).toBe(
+      false
+    );
+    expect(
+      listZipPaths(buffer).some((path) => path.startsWith("xl/charts/chart"))
+    ).toBe(true);
   });
 });

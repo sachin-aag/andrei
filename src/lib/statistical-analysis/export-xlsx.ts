@@ -4,8 +4,17 @@ import {
   uniqueChartCitations,
   type ChartCitation,
 } from "@/lib/charts/chart-spec";
+import {
+  buildAnalysisChartSource,
+  chartSlotRows,
+  resolvePlannedCharts,
+  type WrittenChartTable,
+} from "./excel-chart-source";
+import {
+  injectExcelCharts,
+  type SheetChartPlan,
+} from "./excel-chart-xml";
 import { formatPValue, formatPpm, formatStat } from "./format";
-import { plotImagesForExport } from "./render-analysis-plots";
 import {
   formatRowSelection,
   normalizeRowSelection,
@@ -30,8 +39,6 @@ export type BuildAnalyticsXlsxOptions = {
 };
 
 const INVALID_SHEET_CHARS = /[*?:/\\[\]]/g;
-/** Excel default column is ~64px at 96dpi; used to place the banner source over a plot. */
-const EXCEL_DEFAULT_COL_WIDTH_PX = 64;
 const BANNER_FONT: Partial<ExcelJS.Font> = { bold: true, size: 14 };
 const BANNER_ROW_HEIGHT = 22;
 
@@ -157,7 +164,10 @@ function citationsForAnalysis(
   ]);
 }
 
-function maxSectionColumnCount(sections: Array<string[][]>): number {
+type SheetCell = string | number | null | undefined;
+type SheetSection = SheetCell[][];
+
+function maxSectionColumnCount(sections: SheetSection[]): number {
   let max = 2;
   for (const section of sections) {
     for (const row of section) {
@@ -165,11 +175,6 @@ function maxSectionColumnCount(sections: Array<string[][]>): number {
     }
   }
   return max;
-}
-
-function plotColumnCount(widthPx: number): number {
-  if (widthPx <= 0) return 0;
-  return Math.ceil(widthPx / EXCEL_DEFAULT_COL_WIDTH_PX);
 }
 
 function safeSheetName(base: string, used: Set<string>): string {
@@ -192,7 +197,7 @@ function safeSheetName(base: string, used: Set<string>): string {
 
 function addRows(
   sheet: ExcelJS.Worksheet,
-  rows: Array<Array<string | number | null | undefined>>
+  rows: SheetSection
 ): void {
   for (const row of rows) {
     sheet.addRow(row.map((cell) => cell ?? ""));
@@ -241,7 +246,7 @@ function addSpecsSheet(
   }
 }
 
-function sixpackRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
+function sixpackRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
   if (!isSixpackAnalysis(analysis)) return [];
   const { config, results } = analysis;
   const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
@@ -278,14 +283,14 @@ function sixpackRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
     [
       ["Index", "Value"],
       ...results.individuals.values.map((value, index) => [
-        String(index + 1),
-        formatStat(value),
+        index + 1,
+        value,
       ]),
     ],
   ];
 }
 
-function anovaRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
+function anovaRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
   if (!isAnovaAnalysis(analysis)) return [];
   const { config, results } = analysis;
   const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
@@ -360,7 +365,7 @@ function anovaRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
   ];
 }
 
-function scatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
+function scatterRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
   if (!isScatterAnalysis(analysis)) return [];
   const spec = analysis.results.specs[0];
   return [
@@ -382,8 +387,8 @@ function scatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
           item.title,
           point.series ?? "",
           point.label,
-          String(point.x),
-          String(point.y),
+          point.x,
+          point.y,
           item.uom,
         ])
       ),
@@ -400,7 +405,7 @@ function scatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
   ];
 }
 
-function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
+function xyScatterRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
   if (!isXyScatterAnalysis(analysis)) return [];
   const spec = analysis.results.specs[0];
   const rows = formatRowSelection(normalizeRowSelection(analysis.config)) || "all";
@@ -428,8 +433,8 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
           item.title,
           point.series ?? "",
           point.label,
-          String(point.x),
-          String(point.y),
+          point.x,
+          point.y,
         ])
       ),
     ],
@@ -445,7 +450,7 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
   ];
 }
 
-function boxplotRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
+function boxplotRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
   if (!isBoxplotAnalysis(analysis)) return [];
   const { config, results } = analysis;
   const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
@@ -480,21 +485,21 @@ function boxplotRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
       ],
       ...results.groups.map((group) => [
         ...(group.labels.length > 0 ? group.labels : ["All"]),
-        String(group.n),
-        formatStat(group.min),
-        formatStat(group.q1),
-        formatStat(group.median),
-        formatStat(group.q3),
-        formatStat(group.max),
-        formatStat(group.whiskerLow),
-        formatStat(group.whiskerHigh),
-        String(group.outliers.length),
+        group.n,
+        group.min,
+        group.q1,
+        group.median,
+        group.q3,
+        group.max,
+        group.whiskerLow,
+        group.whiskerHigh,
+        group.outliers.length,
       ]),
     ],
   ];
 }
 
-function histogramRows(analysis: StatisticalAnalysisSummary): Array<string[][]> {
+function histogramRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
   if (!isHistogramAnalysis(analysis)) return [];
   const { config, results } = analysis;
   const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
@@ -523,9 +528,9 @@ function histogramRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
     [
       ["x0", "x1", "Count"],
       ...results.histogram.bins.map((bin) => [
-        formatStat(bin.x0),
-        formatStat(bin.x1),
-        String(bin.count),
+        bin.x0,
+        bin.x1,
+        bin.count,
       ]),
     ],
   ];
@@ -533,7 +538,7 @@ function histogramRows(analysis: StatisticalAnalysisSummary): Array<string[][]> 
 
 function analysisSections(
   analysis: StatisticalAnalysisSummary
-): Array<string[][]> {
+): SheetSection[] {
   if (isScatterAnalysis(analysis)) return scatterRows(analysis);
   if (isXyScatterAnalysis(analysis)) return xyScatterRows(analysis);
   if (isAnovaAnalysis(analysis)) return anovaRows(analysis);
@@ -544,53 +549,83 @@ function analysisSections(
   return exhaustive;
 }
 
-async function addAnalysisSheet(
+function writeChartSourceTables(
+  sheet: ExcelJS.Worksheet,
+  tables: Array<{
+    id: string;
+    title: string;
+    headers: string[];
+    rows: Array<Array<string | number | null>>;
+  }>
+): Map<string, WrittenChartTable> {
+  const written = new Map<string, WrittenChartTable>();
+  for (const table of tables) {
+    const titleRow = sheet.addRow([table.title]);
+    titleRow.getCell(1).font = { bold: true };
+    const headerRow = sheet.addRow(table.headers);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true };
+    });
+    const dataStart = headerRow.number + 1;
+    for (const row of table.rows) {
+      sheet.addRow(row.map((cell) => (cell == null ? null : cell)));
+    }
+    const dataEnd =
+      table.rows.length === 0 ? headerRow.number : dataStart + table.rows.length - 1;
+    written.set(table.id, {
+      dataStart,
+      dataEnd,
+      headers: table.headers,
+      rows: table.rows,
+    });
+    sheet.addRow([]);
+  }
+  return written;
+}
+
+function addAnalysisSheet(
   workbook: ExcelJS.Workbook,
   analysis: StatisticalAnalysisSummary,
   columns: readonly WorksheetColumn[],
   usedNames: Set<string>,
   includePlots: boolean
-): Promise<void> {
+): SheetChartPlan | null {
   const sheet = workbook.addWorksheet(safeSheetName(analysis.title, usedNames));
   const sections = analysisSections(analysis);
-  const plots = includePlots ? await plotImagesForExport(analysis) : [];
-  const widestPlot = plots.reduce((max, plot) => Math.max(max, plot.width), 0);
+  const source = includePlots
+    ? buildAnalysisChartSource(analysis)
+    : { tables: [], charts: [] };
+  const tableWidth = Math.max(
+    2,
+    ...source.tables.map((table) => table.headers.length)
+  );
   addBannerRow(sheet, {
     title: analysis.title,
     source: formatWorksheetSourceLine(citationsForAnalysis(analysis, columns)),
     lastColIndex: bannerLastColIndex(
-      Math.max(maxSectionColumnCount(sections), plotColumnCount(widestPlot))
+      Math.max(maxSectionColumnCount(sections), tableWidth)
     ),
   });
 
-  let nextRow = 1;
-  for (const plot of plots) {
-    const imageId = workbook.addImage({
-      base64: plot.buffer.toString("base64"),
-      extension: "png",
-    });
-    sheet.addImage(imageId, {
-      tl: { col: 0, row: nextRow },
-      ext: { width: plot.width, height: plot.height },
-    });
-    nextRow += excelRowsForImageHeight(plot.height);
-  }
-  while (sheet.rowCount < nextRow) {
+  const slot = chartSlotRows(source.charts.length);
+  for (let i = 0; i < slot; i += 1) {
     sheet.addRow([]);
   }
-  if (plots.length > 0) {
-    sheet.addRow([]);
+
+  let plan: SheetChartPlan | null = null;
+  if (source.charts.length > 0) {
+    const written = writeChartSourceTables(sheet, source.tables);
+    const charts = resolvePlannedCharts(sheet.name, source.charts, written);
+    if (charts.length > 0) {
+      plan = { sheetName: sheet.name, charts };
+    }
   }
 
   for (const section of sections) {
     addRows(sheet, section);
     sheet.addRow([]);
   }
-}
-
-/** Excel default row is 15pt ≈ 20px at 96dpi. `tl.row` is 0-based. */
-function excelRowsForImageHeight(heightPx: number): number {
-  return Math.max(4, Math.ceil(heightPx / 20) + 1);
+  return plan;
 }
 
 export function analyticsExportFilename(documentNo: string | null): string {
@@ -617,16 +652,20 @@ export async function buildAnalyticsXlsx(
   }
   addSpecsSheet(workbook, analytics.worksheet, columns, usedNames);
 
+  const chartPlans: SheetChartPlan[] = [];
   for (const analysis of analytics.analyses) {
-    await addAnalysisSheet(
+    const plan = addAnalysisSheet(
       workbook,
       analysis,
       columns,
       usedNames,
       includePlots
     );
+    if (plan) chartPlans.push(plan);
   }
 
   const arrayBuffer = await workbook.xlsx.writeBuffer();
-  return new Uint8Array(arrayBuffer);
+  const bytes = new Uint8Array(arrayBuffer);
+  if (!includePlots) return bytes;
+  return injectExcelCharts(bytes, chartPlans);
 }

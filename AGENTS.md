@@ -153,6 +153,8 @@ the box stays). Columns written from a
 file (`write_column` after extract/scan/read) keep page citations when known,
 or the document name when the page is unavailable, on the column and chart
 spec for CSV download. Plot figures do not show `p. N`.
+Analytics **Export with Excel charts** writes native Excel charts bound to
+numeric source tables (editable in Excel), not PNG snapshots.
 Editing a cell drops that citation. Attachment extract-and-plot is Analytics chat
 only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
 There is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA

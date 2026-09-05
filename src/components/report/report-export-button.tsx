@@ -101,7 +101,7 @@ export function ReportExportButton({
                 rel="noreferrer"
                 onClick={() => track({ format: "xlsx", includePlots: true })}
               >
-                Export with plots
+                Export with Excel charts
               </a>
             </DropdownMenuItem>
           </DropdownMenuContent>
