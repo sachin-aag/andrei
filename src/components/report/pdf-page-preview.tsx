@@ -173,7 +173,7 @@ export function PdfPagePreview({
 
   if (state.status === "error") {
     return (
-      <div className="h-full overflow-auto bg-[var(--muted)]">
+      <div className="h-full overflow-auto overscroll-contain bg-[var(--muted)]">
         <div className="p-6 text-sm text-[var(--muted-foreground)]">
           Could not render this page in the browser. Use Download to open the
           file.
@@ -184,7 +184,7 @@ export function PdfPagePreview({
 
   if (state.status === "loading") {
     return (
-      <div className="h-full overflow-auto bg-[var(--muted)]">
+      <div className="h-full overflow-auto overscroll-contain bg-[var(--muted)]">
         <div className="p-6 text-sm text-[var(--muted-foreground)]">
           {formatPreviewProgress(state.loadedBytes, state.totalBytes)}
         </div>
@@ -420,7 +420,7 @@ function PdfDocumentPages({
         data-pdf-preview-scroll=""
         role="region"
         aria-label={`${title} preview`}
-        className="min-h-0 flex-1 overflow-auto bg-[var(--muted)]"
+        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-[var(--muted)]"
       >
         <div className="flex flex-col items-center gap-4 p-4">
           {Array.from({ length: numPages }, (_, index) => index + 1).map(

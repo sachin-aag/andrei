@@ -3,11 +3,16 @@ import { NextResponse } from "next/server";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { reportAttachments } from "@/db/schema";
+import { attachmentAssets, reportAttachments } from "@/db/schema";
 import { toAttachmentDto } from "@/lib/attachments/dto";
 import { kindFromMime } from "@/lib/attachments/file-types";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { getMalwareScanner } from "@/lib/attachments/malware-scan";
+import {
+  loadAssetForAttachment,
+  syncAssetProcessing,
+} from "@/lib/attachments/sync-asset-processing";
+import { storageSourceForAttachment } from "@/lib/attachments/resolve-attachment";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
 import {
   AttachmentPageBudgetExceededError,
@@ -64,37 +69,84 @@ export async function POST(
   if (!attachment) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const asset = await loadAssetForAttachment(attachment);
+  const storageSource = storageSourceForAttachment(attachment, asset);
+  const resolvedStatus = asset?.processingStatus ?? attachment.processingStatus;
+  const resolvedGeneration = asset?.gcsGeneration ?? attachment.gcsGeneration;
+
   if (
-    attachment.processingStatus === "ready" &&
-    attachment.gcsGeneration &&
-    (!requestedGeneration || requestedGeneration === attachment.gcsGeneration)
+    resolvedStatus === "ready" &&
+    resolvedGeneration &&
+    (!requestedGeneration || requestedGeneration === resolvedGeneration)
   ) {
-    return NextResponse.json({ attachment: toAttachmentDto(attachment) });
+    return NextResponse.json({ attachment: toAttachmentDto(attachment, asset) });
   }
   if (
     IN_FLIGHT_STATUSES.includes(
-      attachment.processingStatus as (typeof IN_FLIGHT_STATUSES)[number]
+      resolvedStatus as (typeof IN_FLIGHT_STATUSES)[number]
     )
   ) {
-    return NextResponse.json({ attachment: toAttachmentDto(attachment) });
+    return NextResponse.json({ attachment: toAttachmentDto(attachment, asset) });
   }
 
-  const [claimed] = await db
-    .update(reportAttachments)
-    .set({
+  if (asset) {
+    const [claimedAsset] = await db
+      .update(attachmentAssets)
+      .set({
+        processingStatus: "validating",
+        processingProgress: 10,
+        processingError: null,
+      })
+      .where(
+        and(
+          eq(attachmentAssets.id, asset.id),
+          inArray(attachmentAssets.processingStatus, [...FINALIZE_CLAIM_STATUSES])
+        )
+      )
+      .returning();
+    if (!claimedAsset) {
+      const [currentAsset] = await db
+        .select()
+        .from(attachmentAssets)
+        .where(eq(attachmentAssets.id, asset.id));
+      const [current] = await db
+        .select()
+        .from(reportAttachments)
+        .where(eq(reportAttachments.id, attachmentId));
+      if (!current) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.json({
+        attachment: toAttachmentDto(current, currentAsset ?? null),
+      });
+    }
+    await syncAssetProcessing(asset.id, {
       processingStatus: "validating",
       processingProgress: 10,
       processingError: null,
-    })
-    .where(
-      and(
-        eq(reportAttachments.id, attachmentId),
-        eq(reportAttachments.reportId, reportId),
-        isNull(reportAttachments.deletedAt),
-        inArray(reportAttachments.processingStatus, [...FINALIZE_CLAIM_STATUSES])
-      )
-    )
-    .returning();
+    });
+  }
+
+  const [claimed] = asset
+    ? [attachment]
+    : await db
+        .update(reportAttachments)
+        .set({
+          processingStatus: "validating",
+          processingProgress: 10,
+          processingError: null,
+        })
+        .where(
+          and(
+            eq(reportAttachments.id, attachmentId),
+            eq(reportAttachments.reportId, reportId),
+            isNull(reportAttachments.deletedAt),
+            inArray(reportAttachments.processingStatus, [
+              ...FINALIZE_CLAIM_STATUSES,
+            ])
+          )
+        )
+        .returning();
 
   if (!claimed) {
     const [current] = await db
@@ -110,15 +162,17 @@ export async function POST(
     if (!current) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    return NextResponse.json({ attachment: toAttachmentDto(current) });
+    return NextResponse.json({ attachment: toAttachmentDto(current, asset) });
   }
 
   try {
     const storage = getAttachmentStorage();
     const limits = getAttachmentLimits();
-    const stagingMetadata = await storage.getObjectMetadata(claimed.stagingObjectKey);
+    const stagingMetadata = await storage.getObjectMetadata(
+      storageSource.stagingObjectKey
+    );
     if (
-      Math.abs(stagingMetadata.sizeBytes - claimed.sizeBytes) >
+      Math.abs(stagingMetadata.sizeBytes - storageSource.sizeBytes) >
       SIZE_TOLERANCE_BYTES
     ) {
       throw new Error("Uploaded file size did not match reservation");
@@ -126,8 +180,7 @@ export async function POST(
     if (stagingMetadata.sizeBytes > limits.maxAttachmentBytes) {
       throw new Error("Uploaded file exceeds size limit");
     }
-    // Kind is derived from the canonical MIME persisted at reservation time.
-    const kind = kindFromMime(claimed.mimeType);
+    const kind = kindFromMime(storageSource.mimeType);
     if (!kind) {
       throw new Error("Unsupported attachment type");
     }
@@ -135,56 +188,67 @@ export async function POST(
       throw new Error("Uploaded object type does not match the reservation");
     }
 
-    const buffer = await storage.readObjectBuffer(claimed.stagingObjectKey);
+    const buffer = await storage.readObjectBuffer(storageSource.stagingObjectKey);
     const { pageCount } =
       kind === "docx"
         ? validateDocx(buffer)
         : await validatePdf(buffer, { maxPages: limits.maxAttachmentPages });
-    const scanResult = await getMalwareScanner().scan(buffer, claimed.filename);
+    const scanResult = await getMalwareScanner().scan(buffer, attachment.filename);
     if (!scanResult.ok) {
       throw new Error(scanResult.reason);
     }
 
     const sha256 = createHash("sha256").update(buffer).digest("hex");
     await promoteObject(
-      claimed.stagingObjectKey,
-      claimed.permanentObjectKey
+      storageSource.stagingObjectKey,
+      storageSource.permanentObjectKey
     );
     const permanentMetadata = await storage.getObjectMetadata(
-      claimed.permanentObjectKey
+      storageSource.permanentObjectKey
     );
 
-    const [updated] = await db
-      .update(reportAttachments)
-      .set({
-        processingStatus: "queued",
-        processingProgress: 0,
-        processingPage: null,
-        processingError: null,
-        sha256,
-        pageCount,
-        gcsGeneration: permanentMetadata.generation,
-        crc32c: permanentMetadata.crc32c,
-        sizeBytes: permanentMetadata.sizeBytes,
-      })
-      .where(
-        and(
-          eq(reportAttachments.id, attachmentId),
-          eq(reportAttachments.processingStatus, "validating")
-        )
-      )
-      .returning();
+    const processingPatch = {
+      processingStatus: "queued" as const,
+      processingProgress: 0,
+      processingPage: null,
+      processingError: null,
+      sha256,
+      pageCount,
+      gcsGeneration: permanentMetadata.generation,
+      crc32c: permanentMetadata.crc32c,
+      sizeBytes: permanentMetadata.sizeBytes,
+    };
 
-    if (!updated) {
-      const [current] = await db
-        .select()
-        .from(reportAttachments)
-        .where(eq(reportAttachments.id, attachmentId));
-      if (!current) {
-        return NextResponse.json({ error: "Not found" }, { status: 404 });
-      }
-      return NextResponse.json({ attachment: toAttachmentDto(current) });
+    if (asset) {
+      await syncAssetProcessing(asset.id, processingPatch);
+    } else {
+      await db
+        .update(reportAttachments)
+        .set(processingPatch)
+        .where(
+          and(
+            eq(reportAttachments.id, attachmentId),
+            eq(reportAttachments.processingStatus, "validating")
+          )
+        );
     }
+
+    const [updated] = await db
+      .select()
+      .from(reportAttachments)
+      .where(eq(reportAttachments.id, attachmentId));
+    if (!updated) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const updatedAsset = asset
+      ? (
+          await db
+            .select()
+            .from(attachmentAssets)
+            .where(eq(attachmentAssets.id, asset.id))
+            .limit(1)
+        )[0]
+      : null;
 
     await startDocumentIngest(attachmentId, permanentMetadata.generation);
     await recordAuditEvent({
@@ -193,9 +257,9 @@ export async function POST(
       entityType: "attachment",
       entityId: attachmentId,
       reportId,
-      summary: `Attachment uploaded: ${claimed.filename}`,
+      summary: `Attachment uploaded: ${attachment.filename}`,
       newValue: {
-        filename: claimed.filename,
+        filename: attachment.filename,
         sizeBytes: permanentMetadata.sizeBytes,
         pageCount,
         sha256,
@@ -203,28 +267,40 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ attachment: toAttachmentDto(updated) });
+    return NextResponse.json({
+      attachment: toAttachmentDto(updated, updatedAsset ?? null),
+    });
   } catch (error) {
     if (error instanceof AttachmentPageBudgetExceededError) {
-      await db
-        .update(reportAttachments)
-        .set({
-          processingStatus: "failed",
-          processingProgress: 0,
-          processingError: error.message,
-        })
-        .where(eq(reportAttachments.id, attachmentId));
+      const failPatch = {
+        processingStatus: "failed" as const,
+        processingProgress: 0,
+        processingError: error.message,
+      };
+      if (asset) {
+        await syncAssetProcessing(asset.id, failPatch);
+      } else {
+        await db
+          .update(reportAttachments)
+          .set(failPatch)
+          .where(eq(reportAttachments.id, attachmentId));
+      }
       return attachmentPageBudgetExceededResponse(error);
     }
     const message = sanitizeFinalizeError(error);
-    await db
-      .update(reportAttachments)
-      .set({
-        processingStatus: "failed",
-        processingProgress: 0,
-        processingError: message,
-      })
-      .where(eq(reportAttachments.id, attachmentId));
+    const failPatch = {
+      processingStatus: "failed" as const,
+      processingProgress: 0,
+      processingError: message,
+    };
+    if (asset) {
+      await syncAssetProcessing(asset.id, failPatch);
+    } else {
+      await db
+        .update(reportAttachments)
+        .set(failPatch)
+        .where(eq(reportAttachments.id, attachmentId));
+    }
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

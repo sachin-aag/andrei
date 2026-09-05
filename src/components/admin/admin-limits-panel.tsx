@@ -2,18 +2,22 @@
 
 import { AdminAiBudgetPanel } from "@/components/admin/admin-ai-budget-panel";
 import { AdminAttachmentPageBudgetPanel } from "@/components/admin/admin-attachment-page-budget-panel";
+import { AdminAttachmentStorageBudgetPanel } from "@/components/admin/admin-attachment-storage-budget-panel";
 import { AdminVoiceBudgetPanel } from "@/components/admin/admin-voice-budget-panel";
 import type { AiBudgetStatus } from "@/lib/ai/usage";
 import type { AttachmentPageBudgetStatus } from "@/lib/attachments/page-budget";
+import type { AttachmentStorageBudgetStatus } from "@/lib/attachments/storage-budget";
 import type { VoiceBudgetStatus } from "@/lib/voice/budget";
 
 export function AdminLimitsPanel({
   initialAiBudgetStatus,
   initialAttachmentPageBudgetStatus,
+  initialAttachmentStorageBudgetStatus,
   initialVoiceBudgetStatus,
 }: {
   initialAiBudgetStatus: AiBudgetStatus;
   initialAttachmentPageBudgetStatus: AttachmentPageBudgetStatus;
+  initialAttachmentStorageBudgetStatus: AttachmentStorageBudgetStatus;
   initialVoiceBudgetStatus: VoiceBudgetStatus;
 }) {
   return (
@@ -22,13 +26,17 @@ export function AdminLimitsPanel({
         <h1 className="text-2xl font-semibold tracking-tight">Limits</h1>
         <p className="mt-1 text-sm text-[var(--muted-foreground)]">
           Monthly caps for Gemini AI spend, attachment page processing, and
-          voice transcription. All reset on the first day of each month (UTC).
+          voice transcription (reset on the first day of each month, UTC), plus
+          a workspace-wide cap on stored attachment files.
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-10 py-6">
         <div className="grid max-w-4xl gap-4">
           <AdminAiBudgetPanel initialStatus={initialAiBudgetStatus} />
+          <AdminAttachmentStorageBudgetPanel
+            initialStatus={initialAttachmentStorageBudgetStatus}
+          />
           <AdminAttachmentPageBudgetPanel
             initialStatus={initialAttachmentPageBudgetStatus}
           />

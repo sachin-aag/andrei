@@ -1,6 +1,6 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { reportAttachments } from "@/db/schema";
+import { attachmentAssets, reportAttachments } from "@/db/schema";
 import type { ReportAttachmentRecord } from "@/types/report";
 import { toAttachmentDto } from "@/lib/attachments/dto";
 
@@ -17,5 +17,24 @@ export async function listActiveAttachments(
       )
     )
     .orderBy(asc(reportAttachments.uploadedAt));
-  return rows.map(toAttachmentDto);
+
+  const assetIds = [
+    ...new Set(
+      rows
+        .map((row) => row.assetId)
+        .filter((id): id is string => id != null)
+    ),
+  ];
+  const assets =
+    assetIds.length === 0
+      ? []
+      : await db
+          .select()
+          .from(attachmentAssets)
+          .where(inArray(attachmentAssets.id, assetIds));
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+
+  return rows.map((row) =>
+    toAttachmentDto(row, row.assetId ? assetById.get(row.assetId) : null)
+  );
 }

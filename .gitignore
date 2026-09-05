@@ -123,6 +123,10 @@ scripts/eval/retrieval-cases.local.json
 /investor-deck/
 /investor-screenshots/
 
+# Investor deck / screenshots (local-only marketing assets)
+/investor-deck/
+/investor-screenshots/
+
 # Large media artifacts (keep out of git)
 *.mp4
 *.mov

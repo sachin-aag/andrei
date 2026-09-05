@@ -21,11 +21,18 @@ function mockContext(overrides: Record<string, unknown> = {}) {
     folders: [],
     uploadProgress: {},
     canMutateAttachments: true,
+    isWorkspaceAdmin: false,
     uploadFiles: vi.fn(),
+    linkFromLibrary: vi.fn(),
     moveAttachment: vi.fn(),
     moveFolder: vi.fn(),
     ...overrides,
   });
+}
+
+async function openUploadMenu(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Add attachment" }));
+  await user.click(screen.getByRole("menuitem", { name: "Upload new" }));
 }
 
 function renderPanel() {
@@ -41,9 +48,7 @@ function renderPanel() {
 
 function actionOrder(): string[] {
   const folder = screen.getByRole("button", { name: "New folder" });
-  const upload = screen.getByRole("button", {
-    name: "Upload PDF or Word document",
-  });
+  const upload = screen.getByRole("button", { name: "Add attachment" });
   const spinner = screen.queryByRole("status", { name: "Uploading document" });
   const nodes = [spinner, folder, upload].filter(
     (node): node is HTMLElement => node != null
@@ -67,9 +72,7 @@ describe("DocumentsPanel attachment actions", () => {
     expect(
       screen.queryByRole("status", { name: "Uploading document" })
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Upload PDF or Word document" })
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add attachment" })).toBeEnabled();
     expect(actionOrder()).toEqual(["folder", "upload"]);
   });
 
@@ -88,9 +91,7 @@ describe("DocumentsPanel attachment actions", () => {
     });
     renderPanel();
 
-    const upload = screen.getByRole("button", {
-      name: "Upload PDF or Word document",
-    });
+    const upload = screen.getByRole("button", { name: "Add attachment" });
     expect(upload).toBeEnabled();
     expect(actionOrder()).toEqual(["spinner", "folder", "upload"]);
   });
@@ -116,9 +117,7 @@ describe("DocumentsPanel attachment actions", () => {
     ) as HTMLInputElement;
     const clickSpy = vi.spyOn(input, "click");
 
-    await user.click(
-      screen.getByRole("button", { name: "Upload PDF or Word document" })
-    );
+    await openUploadMenu(user);
     expect(clickSpy).toHaveBeenCalled();
   });
 });

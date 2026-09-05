@@ -68,6 +68,11 @@ export type CustomerPack = {
    */
   statisticalAnalysisEnabled: boolean;
   /**
+   * Primary-nav Insights dashboards (`/insights`). Demo only for now;
+   * MJ and Convergent hide the link and redirect the routes home.
+   */
+  insightsEnabled: boolean;
+  /**
    * Spoken locales for composer voice dictation (Vertex Gemini, same
    * resolver as chat). MJ includes Hindi and Marathi; other packs are
    * English-only. Transcripts stay in the spoken script (Devanagari is
@@ -170,6 +175,7 @@ export const DEMO_PACK: CustomerPack = {
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
+  insightsEnabled: true,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
   branding: ANDREI_BRANDING,
 };
@@ -191,6 +197,7 @@ export const CONVERGENT_PACK: CustomerPack = {
   citationsAtEndOfSection: true,
   expertReviewEnabled: true,
   statisticalAnalysisEnabled: true,
+  insightsEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
   branding: CONVERGENT_BRANDING,
 };
@@ -208,6 +215,7 @@ export const MJ_PACK: CustomerPack = {
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
+  insightsEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_MJ_CODES,
   branding: MJ_BRANDING,
 };
@@ -238,6 +246,12 @@ export function isStatisticalAnalysisEnabled(
   pack: CustomerPack = getCustomerPack()
 ): boolean {
   return pack.statisticalAnalysisEnabled;
+}
+
+export function isInsightsEnabled(
+  pack: CustomerPack = getCustomerPack()
+): boolean {
+  return pack.insightsEnabled;
 }
 
 export function voiceInputLanguageCodes(

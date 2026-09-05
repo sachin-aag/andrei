@@ -8,7 +8,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
-  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,6 +17,7 @@ import { warmupPdfjsPreview } from "@/lib/attachments/load-pdfjs";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import type { DocumentType, SectionType } from "@/db/schema";
 import { getReportTableOfContents } from "@/lib/document-types/convergent/table-of-contents";
+import { AttachmentUploadMenu } from "./attachment-upload-menu";
 import { DocumentTreeNodes } from "./document-tree";
 import { DragProvider, useDocumentDrag } from "./drag-context";
 import { NewFolderRow } from "./new-folder-row";
@@ -138,7 +138,7 @@ function ExpandedDocumentsPanel({
   tableOfContents: ReturnType<typeof getReportTableOfContents>;
   onJumpToSection: (section: SectionType) => void;
 }) {
-  const { attachments, folders, canMutateAttachments, uploadFiles, uploadProgress } =
+  const { attachments, folders, canMutateAttachments, uploadFiles, uploadProgress, linkFromLibrary, isWorkspaceAdmin } =
     useReportAttachments();
   const { dragging, endDrag } = useDocumentDrag();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -215,17 +215,13 @@ function ExpandedDocumentsPanel({
       >
         <FolderPlus className="size-4" aria-hidden="true" />
       </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="size-7"
-        aria-label="Upload PDF or Word document"
-        title="Upload PDF or Word document"
-        onClick={() => inputRef.current?.click()}
-      >
-        <Upload className="size-4" aria-hidden="true" />
-      </Button>
+      <AttachmentUploadMenu
+        isAdmin={isWorkspaceAdmin}
+        onUploadClick={() => inputRef.current?.click()}
+        onLinkFromLibrary={(selection) =>
+          linkFromLibrary({ ...selection, targetFolderId: null })
+        }
+      />
       <input
         ref={inputRef}
         type="file"

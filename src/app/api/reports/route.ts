@@ -56,7 +56,7 @@ import {
   validateAssignedManagerIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
-import { activeReportsFilter } from "@/lib/reports/tombstone";
+import { visibleReportsFilter } from "@/lib/reports/tombstone";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -71,7 +71,7 @@ export async function GET() {
       rows = await db
         .select()
         .from(reports)
-        .where(and(eq(reports.authorId, user.id), activeReportsFilter()))
+        .where(and(eq(reports.authorId, user.id), visibleReportsFilter()))
         .orderBy(desc(reports.updatedAt));
       break;
     case "manager":
@@ -80,7 +80,7 @@ export async function GET() {
         .from(reports)
         .where(
           and(
-            activeReportsFilter(),
+            visibleReportsFilter(),
             or(
               eq(reports.assignedManagerId, user.id),
               sql`exists (
@@ -99,7 +99,7 @@ export async function GET() {
       rows = await db
         .select()
         .from(reports)
-        .where(activeReportsFilter())
+        .where(visibleReportsFilter())
         .orderBy(desc(reports.updatedAt));
       break;
     case "admin":

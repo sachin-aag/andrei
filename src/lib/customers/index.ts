@@ -9,6 +9,7 @@ export {
   getCustomerPack,
   isDocumentTypeEnabled,
   isStatisticalAnalysisEnabled,
+  isInsightsEnabled,
   voiceInputLanguageCodes,
   DEMO_PACK,
   MJ_PACK,
