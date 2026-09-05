@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { toast } from "sonner";
 import { DocumentLibrarySection } from "./document-library-section";
 
 vi.mock("sonner", () => ({
@@ -176,5 +177,28 @@ describe("DocumentLibrarySection explorer", () => {
       expect.stringContaining(".pdf")
     );
     expect(screen.getByTestId("library-upload-folder-input")).toBeInTheDocument();
+  });
+
+  it("errors before upload when a folder includes an unsupported file", async () => {
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
+    const input = screen.getByTestId("library-upload-folder-input");
+    const pdf = new File(["%PDF"], "coa.pdf", { type: "application/pdf" });
+    Object.defineProperty(pdf, "webkitRelativePath", {
+      value: "q1_batch/coa.pdf",
+    });
+    const txt = new File(["hi"], "notes.txt", { type: "text/plain" });
+    Object.defineProperty(txt, "webkitRelativePath", {
+      value: "q1_batch/notes.txt",
+    });
+    fireEvent.change(input, { target: { files: [pdf, txt] } });
+    expect(toast.error).toHaveBeenCalledWith(
+      "notes.txt is not a PDF or Word document. Remove unsupported files and try again."
+    );
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.every(([input]) => !String(input).includes("/upload-url"))
+    ).toBe(true);
   });
 });

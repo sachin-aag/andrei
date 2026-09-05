@@ -332,7 +332,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 ## Subsystem: Attachments (ingest + evidence)
 
-**Purpose:** PDF/DOCX evidence for chat (and future citation), not a replacement for the report body. Canonical bytes live in `attachment_assets` (Profile document library + report links). Uploads are capped by a workspace-wide stored-bytes budget (default 100 GiB) on Admin → Limits; linking an existing library file into a report does not count twice. Profile can upload files or folders (`POST /api/attachment-library/upload-url` → finalize). Library-only files are marked `ready` for preview; the first report link starts ingest when the asset has no ingest run.
+**Purpose:** PDF/DOCX evidence for chat (and future citation), not a replacement for the report body. Canonical bytes live in `attachment_assets` (Profile document library + report links). Uploads are capped by a workspace-wide stored-bytes budget (default 100 GiB) on Admin → Limits; linking an existing library file into a report does not count twice. Profile can upload files or folders (`POST /api/attachment-library/upload-url` → finalize). A folder is scanned first: nested PDF/DOCX paths create library folders (max depth 8); any other user file aborts the batch before bytes are sent (Finder/Explorer junk like `.DS_Store` is ignored). Library-only files are marked `ready` for preview; the first report link starts ingest when the asset has no ingest run.
 
 **Entry point:** `runDocumentIngest()` in `src/lib/attachments/run-document-ingest.ts`. Extract + embed is **Vertex-only** (`GOOGLE_VERTEX_PROJECT`). Stub: `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
 

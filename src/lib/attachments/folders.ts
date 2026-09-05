@@ -2,11 +2,13 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { reportAttachmentFolders } from "@/db/schema";
 import { toAttachmentFolderDto } from "@/lib/attachments/dto";
+import {
+  MAX_FOLDER_DEPTH,
+  MAX_FOLDER_NAME_LENGTH,
+} from "@/lib/attachments/folder-limits";
 import type { ReportAttachmentFolderRecord } from "@/types/report";
 
-/** Guards against runaway nesting in the UI tree and in move-cycle checks. */
-export const MAX_FOLDER_DEPTH = 8;
-export const MAX_FOLDER_NAME_LENGTH = 80;
+export { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH };
 
 type FolderRow = typeof reportAttachmentFolders.$inferSelect;
 

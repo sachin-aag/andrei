@@ -41,6 +41,8 @@ import type {
 } from "@/lib/attachments/library-dto";
 import { formatLibraryUploadedAt } from "@/lib/attachments/library-display";
 import {
+  libraryTargetFolderDepth,
+  libraryUploadBatchError,
   libraryUploadFilesFromDataTransfer,
   libraryUploadFilesFromList,
   type LibraryUploadFile,
@@ -744,36 +746,37 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     }
   };
 
+  const startLibraryUpload = (
+    scan: ReturnType<typeof libraryUploadFilesFromList>,
+    targetFolderId: string | null
+  ) => {
+    const error = libraryUploadBatchError(
+      scan,
+      libraryTargetFolderDepth(library?.folders ?? [], targetFolderId)
+    );
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    void uploadLibraryBatch(scan.accepted, targetFolderId);
+  };
+
   const handleSelectedFiles = (
     fileList: FileList | null,
     targetFolderId: string | null
   ) => {
     if (!fileList || fileList.length === 0) return;
-    const { accepted, skipped } = libraryUploadFilesFromList(fileList);
-    if (skipped > 0) {
-      toast.error(
-        skipped === 1
-          ? "Skipped 1 file that is not a PDF or Word document"
-          : `Skipped ${skipped} files that are not PDF or Word documents`
-      );
-    }
-    void uploadLibraryBatch(accepted, targetFolderId);
+    startLibraryUpload(libraryUploadFilesFromList(fileList), targetFolderId);
   };
 
   const handleDropOnFolder = async (
     folderId: string | null,
     dataTransfer: DataTransfer
   ) => {
-    const { accepted, skipped } =
-      await libraryUploadFilesFromDataTransfer(dataTransfer);
-    if (skipped > 0) {
-      toast.error(
-        skipped === 1
-          ? "Skipped 1 file that is not a PDF or Word document"
-          : `Skipped ${skipped} files that are not PDF or Word documents`
-      );
-    }
-    await uploadLibraryBatch(accepted, folderId);
+    startLibraryUpload(
+      await libraryUploadFilesFromDataTransfer(dataTransfer),
+      folderId
+    );
   };
 
   const deleteInspectedAsset = async () => {
@@ -873,9 +876,11 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
     <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
       <h2 className="text-base font-semibold">Document library</h2>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-        Upload files or folders here, or drop them onto a folder. Click a file
-        to see details. Open a preview when you want to read it. Files already
-        on reports stay there if you remove them from the library.
+        Upload files or folders here, or drop them onto a folder. Nested folders
+        are kept. A folder must contain only PDF and Word files — anything else
+        stops the upload before it starts. Click a file to see details. Open a
+        preview when you want to read it. Files already on reports stay there if
+        you remove them from the library.
       </p>
 
       {loading ? (
@@ -1044,8 +1049,8 @@ export function DocumentLibrarySection({ currentUser, workspaceUsers }: Props) {
                 </p>
               ) : isEmpty ? (
                 <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
-                  Drop PDF or Word files and folders here, or use Upload files /
-                  Upload folder.
+                  Drop a folder of PDF and Word files, or use Upload files /
+                  Upload folder. Other file types stop the upload.
                 </p>
               ) : null}
 
