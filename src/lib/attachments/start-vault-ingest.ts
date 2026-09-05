@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db";
 import { attachmentAssets, reportAttachments } from "@/db/schema";
-import { ensureVaultIngestHolderReport } from "@/lib/reports/vault-ingest-holder";
+import { ensureVaultIngestHolderReport } from "@/lib/reports/ensure-vault-ingest-holder";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
 import { syncAssetProcessing } from "@/lib/attachments/sync-asset-processing";
 import {
