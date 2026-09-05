@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
   attachmentAssets,
@@ -21,6 +21,8 @@ export type AttachmentLibrarySnapshot = {
   scope: LibraryListScope;
   folders: AttachmentLibraryFolderRecord[];
   assets: AttachmentLibraryAssetRecord[];
+  archivedFolders: AttachmentLibraryFolderRecord[];
+  archivedAssets: AttachmentLibraryAssetRecord[];
 };
 
 function accessKindForAsset(
@@ -38,31 +40,59 @@ export async function listAttachmentLibrary(
 ): Promise<AttachmentLibrarySnapshot> {
   const scope = libraryScopeForUser(user, requestedScope);
   const assetIds = await listAccessibleAssetIds(user, scope);
-  if (assetIds.length === 0) {
-    return { scope, folders: [], assets: [] };
-  }
 
-  const [assets, folders] = await Promise.all([
+  const liveFolderQuery =
+    scope === "all"
+      ? db
+          .select()
+          .from(attachmentLibraryFolders)
+          .where(isNull(attachmentLibraryFolders.archivedAt))
+          .orderBy(asc(attachmentLibraryFolders.name))
+      : db
+          .select()
+          .from(attachmentLibraryFolders)
+          .where(
+            and(
+              eq(attachmentLibraryFolders.ownerId, user.id),
+              isNull(attachmentLibraryFolders.archivedAt)
+            )
+          )
+          .orderBy(asc(attachmentLibraryFolders.name));
+
+  const [assets, folders, archivedAssets, archivedFolders] = await Promise.all([
+    assetIds.length === 0
+      ? Promise.resolve([])
+      : db
+          .select()
+          .from(attachmentAssets)
+          .where(
+            and(
+              inArray(attachmentAssets.id, assetIds),
+              isNull(attachmentAssets.deletedAt)
+            )
+          )
+          .orderBy(asc(attachmentAssets.uploadedAt)),
+    liveFolderQuery,
     db
       .select()
       .from(attachmentAssets)
       .where(
         and(
-          inArray(attachmentAssets.id, assetIds),
-          isNull(attachmentAssets.deletedAt)
+          eq(attachmentAssets.ownerId, user.id),
+          isNotNull(attachmentAssets.deletedAt)
         )
       )
       .orderBy(asc(attachmentAssets.uploadedAt)),
-    scope === "all"
-      ? db
-          .select()
-          .from(attachmentLibraryFolders)
-          .orderBy(asc(attachmentLibraryFolders.name))
-      : db
-          .select()
-          .from(attachmentLibraryFolders)
-          .where(eq(attachmentLibraryFolders.ownerId, user.id))
-          .orderBy(asc(attachmentLibraryFolders.name)),
+    db
+      .select()
+      .from(attachmentLibraryFolders)
+      .where(
+        and(
+          eq(attachmentLibraryFolders.ownerId, user.id),
+          isNotNull(attachmentLibraryFolders.archivedAt)
+        )
+      )
+      .orderBy(asc(attachmentLibraryFolders.name)),
   ]);
 
   return {
@@ -70,6 +100,10 @@ export async function listAttachmentLibrary(
     folders: folders.map(toLibraryFolderDto),
     assets: assets.map((asset) =>
       toLibraryAssetDto(asset, accessKindForAsset(user, asset, scope))
+    ),
+    archivedFolders: archivedFolders.map(toLibraryFolderDto),
+    archivedAssets: archivedAssets.map((asset) =>
+      toLibraryAssetDto(asset, "mine")
     ),
   };
 }

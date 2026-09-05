@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -10,7 +12,6 @@ import {
   FolderPlus,
   FolderUp,
   Loader2,
-  Trash2,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -61,7 +62,39 @@ type Props = {
 type LibraryResponse = {
   folders: AttachmentLibraryFolderRecord[];
   assets: AttachmentLibraryAssetRecord[];
+  archivedFolders: AttachmentLibraryFolderRecord[];
+  archivedAssets: AttachmentLibraryAssetRecord[];
 };
+
+const ARCHIVE_FILE_CONFIRM =
+  "Archive this file? It moves to Archive at the bottom of this page. Reports that already use it keep it.";
+const ARCHIVE_FOLDER_CONFIRM =
+  "Archive this folder and everything inside it? You can restore it from Archive. Reports that already use these files keep them.";
+const ARCHIVE_SELECTION_CONFIRM =
+  "Archive the selected items? Folders take everything inside them. You can restore them from Archive. Reports that already use these files keep them.";
+
+function buildArchiveChildren(
+  folders: AttachmentLibraryFolderRecord[],
+  assets: AttachmentLibraryAssetRecord[]
+) {
+  const archivedFolderIds = new Set(folders.map((folder) => folder.id));
+  return buildFolderChildren(
+    folders.map((folder) => ({
+      ...folder,
+      parentId:
+        folder.parentId && archivedFolderIds.has(folder.parentId)
+          ? folder.parentId
+          : null,
+    })),
+    assets.map((asset) => ({
+      ...asset,
+      libraryFolderId:
+        asset.libraryFolderId && archivedFolderIds.has(asset.libraryFolderId)
+          ? asset.libraryFolderId
+          : null,
+    }))
+  );
+}
 
 function buildFolderChildren(
   folders: AttachmentLibraryFolderRecord[],
@@ -169,7 +202,8 @@ function LibraryProfileTree({
   onToggleAssetCheck,
   onToggleFolderCheck,
   onToggleFolderCollapsed,
-  onDeleteFolder,
+  onArchiveFolder,
+  onArchiveAsset,
   onDropOnFolder,
 }: {
   folderId: string | null;
@@ -185,7 +219,8 @@ function LibraryProfileTree({
   onToggleAssetCheck: (assetId: string, checked: boolean) => void;
   onToggleFolderCheck: (folderId: string, checked: boolean) => void;
   onToggleFolderCollapsed: (folderId: string) => void;
-  onDeleteFolder: (folderId: string) => void;
+  onArchiveFolder: (folderId: string) => void;
+  onArchiveAsset: (assetId: string) => void;
   onDropOnFolder: (folderId: string | null, dataTransfer: DataTransfer) => void;
 }) {
   const childFolders = foldersByParent.get(folderId) ?? [];
@@ -248,12 +283,12 @@ function LibraryProfileTree({
               </button>
               <button
                 type="button"
-                aria-label={`Delete folder ${folder.name}`}
-                title="Delete folder"
-                onClick={() => onDeleteFolder(folder.id)}
+                aria-label={`Archive folder ${folder.name}`}
+                title="Archive folder"
+                onClick={() => onArchiveFolder(folder.id)}
                 className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
               >
-                <Trash2 className="size-3.5" aria-hidden="true" />
+                <Archive className="size-3.5" aria-hidden="true" />
               </button>
             </div>
             {collapsed ? null : (
@@ -271,7 +306,8 @@ function LibraryProfileTree({
                 onToggleAssetCheck={onToggleAssetCheck}
                 onToggleFolderCheck={onToggleFolderCheck}
                 onToggleFolderCollapsed={onToggleFolderCollapsed}
-                onDeleteFolder={onDeleteFolder}
+                onArchiveFolder={onArchiveFolder}
+                onArchiveAsset={onArchiveAsset}
                 onDropOnFolder={onDropOnFolder}
               />
             )}
@@ -285,7 +321,7 @@ function LibraryProfileTree({
           <div
             key={asset.id}
             className={cn(
-              "flex items-start gap-2 rounded-md py-1.5 pr-2 transition-colors",
+              "group flex items-start gap-2 rounded-md py-1.5 pr-2 transition-colors",
               inspected
                 ? "bg-[var(--secondary)] text-[var(--foreground)]"
                 : checked
@@ -317,9 +353,217 @@ function LibraryProfileTree({
                 processingProgress={asset.processingProgress}
               />
             </button>
+            <button
+              type="button"
+              aria-label={`Archive ${asset.filename}`}
+              title="Archive file"
+              onClick={() => onArchiveAsset(asset.id)}
+              className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
+            >
+              <Archive className="size-3.5" aria-hidden="true" />
+            </button>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function LibraryArchiveTree({
+  folderId,
+  depth,
+  foldersByParent,
+  assetsByFolder,
+  collapsedFolderIds,
+  inspectedAssetId,
+  onInspectAsset,
+  onOpenAsset,
+  onToggleFolderCollapsed,
+  onUnarchiveFolder,
+  onUnarchiveAsset,
+}: {
+  folderId: string | null;
+  depth: number;
+  foldersByParent: Map<string | null, AttachmentLibraryFolderRecord[]>;
+  assetsByFolder: Map<string | null, AttachmentLibraryAssetRecord[]>;
+  collapsedFolderIds: Set<string>;
+  inspectedAssetId: string | null;
+  onInspectAsset: (assetId: string) => void;
+  onOpenAsset: (assetId: string) => void;
+  onToggleFolderCollapsed: (folderId: string) => void;
+  onUnarchiveFolder: (folderId: string) => void;
+  onUnarchiveAsset: (assetId: string) => void;
+}) {
+  const childFolders = foldersByParent.get(folderId) ?? [];
+  const childAssets = assetsByFolder.get(folderId) ?? [];
+  const indent = depth * 12 + 8;
+
+  return (
+    <div className="space-y-0.5">
+      {childFolders.map((folder) => {
+        const collapsed = collapsedFolderIds.has(folder.id);
+        return (
+          <div key={folder.id}>
+            <div
+              className="group flex items-center gap-1 rounded-md py-1 pr-2 hover:bg-[var(--secondary)]/50"
+              style={{ paddingLeft: `${indent}px` }}
+            >
+              <button
+                type="button"
+                aria-label={collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
+                onClick={() => onToggleFolderCollapsed(folder.id)}
+                className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
+              >
+                {collapsed ? (
+                  <ChevronRight className="size-3.5" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="size-3.5" aria-hidden="true" />
+                )}
+              </button>
+              <Folder
+                className="size-4 shrink-0 text-[var(--muted-foreground)]"
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1 truncate text-sm">{folder.name}</span>
+              <button
+                type="button"
+                aria-label={`Unarchive folder ${folder.name}`}
+                title="Unarchive folder"
+                onClick={() => onUnarchiveFolder(folder.id)}
+                className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] group-hover:opacity-100"
+              >
+                <ArchiveRestore className="size-3.5" aria-hidden="true" />
+              </button>
+            </div>
+            {collapsed ? null : (
+              <LibraryArchiveTree
+                folderId={folder.id}
+                depth={depth + 1}
+                foldersByParent={foldersByParent}
+                assetsByFolder={assetsByFolder}
+                collapsedFolderIds={collapsedFolderIds}
+                inspectedAssetId={inspectedAssetId}
+                onInspectAsset={onInspectAsset}
+                onOpenAsset={onOpenAsset}
+                onToggleFolderCollapsed={onToggleFolderCollapsed}
+                onUnarchiveFolder={onUnarchiveFolder}
+                onUnarchiveAsset={onUnarchiveAsset}
+              />
+            )}
+          </div>
+        );
+      })}
+      {childAssets.map((asset) => {
+        const inspected = inspectedAssetId === asset.id;
+        return (
+          <div
+            key={asset.id}
+            className={cn(
+              "group flex items-start gap-2 rounded-md py-1.5 pr-2",
+              inspected
+                ? "bg-[var(--secondary)] text-[var(--foreground)]"
+                : "hover:bg-[var(--secondary)]/50"
+            )}
+            style={{ paddingLeft: `${indent + 20}px` }}
+          >
+            <button
+              type="button"
+              onClick={() => onInspectAsset(asset.id)}
+              onDoubleClick={() => onOpenAsset(asset.id)}
+              className="min-w-0 flex-1 text-left"
+              data-testid={`library-archived-file-${asset.id}`}
+            >
+              <LibraryAssetLabel
+                filename={asset.filename}
+                uploadedAt={asset.uploadedAt}
+                processingStatus={asset.processingStatus}
+                processingProgress={asset.processingProgress}
+              />
+            </button>
+            <button
+              type="button"
+              aria-label={`Unarchive ${asset.filename}`}
+              title="Unarchive file"
+              onClick={() => onUnarchiveAsset(asset.id)}
+              className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] group-hover:opacity-100"
+            >
+              <ArchiveRestore className="size-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LibraryArchiveSection({
+  folders,
+  assets,
+  inspectedAssetId,
+  collapsedFolderIds,
+  onInspectAsset,
+  onOpenAsset,
+  onToggleFolderCollapsed,
+  onUnarchiveFolder,
+  onUnarchiveAsset,
+}: {
+  folders: AttachmentLibraryFolderRecord[];
+  assets: AttachmentLibraryAssetRecord[];
+  inspectedAssetId: string | null;
+  collapsedFolderIds: Set<string>;
+  onInspectAsset: (assetId: string) => void;
+  onOpenAsset: (assetId: string) => void;
+  onToggleFolderCollapsed: (folderId: string) => void;
+  onUnarchiveFolder: (folderId: string) => void;
+  onUnarchiveAsset: (assetId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const tree = useMemo(
+    () => buildArchiveChildren(folders, assets),
+    [folders, assets]
+  );
+  const count = folders.length + assets.length;
+
+  return (
+    <div
+      className="shrink-0 border-t border-[var(--border)]"
+      data-testid="library-archive"
+    >
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-[var(--secondary)]/40"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        data-testid="library-archive-toggle"
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 text-[var(--muted-foreground)]" aria-hidden="true" />
+        ) : (
+          <ChevronRight className="size-3.5 text-[var(--muted-foreground)]" aria-hidden="true" />
+        )}
+        <Archive className="size-3.5 text-[var(--muted-foreground)]" aria-hidden="true" />
+        <span className="text-xs font-medium text-[var(--muted-foreground)]">
+          Archive
+        </span>
+        <span className="text-xs text-[var(--muted-foreground)]">{count}</span>
+      </button>
+      {open ? (
+        <div className="max-h-48 overflow-y-auto overscroll-contain px-2 pb-2">
+          <LibraryArchiveTree
+            folderId={null}
+            depth={0}
+            foldersByParent={tree.foldersByParent}
+            assetsByFolder={tree.assetsByFolder}
+            collapsedFolderIds={collapsedFolderIds}
+            inspectedAssetId={inspectedAssetId}
+            onInspectAsset={onInspectAsset}
+            onOpenAsset={onOpenAsset}
+            onToggleFolderCollapsed={onToggleFolderCollapsed}
+            onUnarchiveFolder={onUnarchiveFolder}
+            onUnarchiveAsset={onUnarchiveAsset}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -616,11 +860,11 @@ function LibraryAssetDetails({
   shareCandidates,
   granteeIds,
   saving,
-  deleting,
+  archiving,
   onOpenPreview,
   onGranteeIdsChange,
   onSaveGrants,
-  onDeleteAsset,
+  onArchiveOrRestore,
   onMoveThisFile,
 }: {
   asset: AttachmentLibraryAssetRecord;
@@ -628,19 +872,20 @@ function LibraryAssetDetails({
   shareCandidates: WorkspaceUser[];
   granteeIds: string[];
   saving: boolean;
-  deleting: boolean;
+  archiving: boolean;
   onOpenPreview: () => void;
   onGranteeIdsChange: (ids: string[]) => void;
   onSaveGrants: () => void;
-  onDeleteAsset: () => void;
+  onArchiveOrRestore: () => void;
   onMoveThisFile: () => void;
 }) {
+  const archived = asset.archivedAt != null;
   return (
     <div className="space-y-5 p-4" data-testid="library-details-pane">
       <div className="min-w-0">
         <h3 className="truncate text-sm font-medium">{asset.filename}</h3>
         <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-          Uploaded {formatLibraryUploadedAt(asset.uploadedAt)}
+          {archived ? "Archived" : `Uploaded ${formatLibraryUploadedAt(asset.uploadedAt)}`}
         </p>
       </div>
 
@@ -656,53 +901,73 @@ function LibraryAssetDetails({
         Open preview
       </Button>
 
-      <div className="space-y-2">
-        <p className="text-sm font-medium">Location</p>
+      {archived ? (
         <p className="text-sm text-[var(--muted-foreground)]">
-          {locationLabel(asset.libraryFolderId, folderOptions)}
+          This file is in Archive. Restore it to add it to new reports. Reports
+          that already use it still have it.
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={onMoveThisFile}
-        >
-          <FolderInput className="size-3.5" aria-hidden="true" />
-          Move this file to a folder…
-        </Button>
-      </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Location</p>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            {locationLabel(asset.libraryFolderId, folderOptions)}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={onMoveThisFile}
+          >
+            <FolderInput className="size-3.5" aria-hidden="true" />
+            Move this file to a folder…
+          </Button>
+        </div>
+      )}
 
-      <div>
-        <h3 className="text-sm font-medium">Shared with</h3>
-        <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-          Revoking access stops new reports from linking this file. Existing
-          report links stay in place.
-        </p>
-      </div>
-      <ManagerSelector
-        managers={shareCandidates}
-        selectedIds={granteeIds}
-        onSelectedIdsChange={onGranteeIdsChange}
-        placeholder="Add colleagues…"
-        emptyMessage="No other workspace users are available."
-      />
+      {archived ? null : (
+        <>
+          <div>
+            <h3 className="text-sm font-medium">Shared with</h3>
+            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+              Revoking access stops new reports from linking this file. Existing
+              report links stay in place.
+            </p>
+          </div>
+          <ManagerSelector
+            managers={shareCandidates}
+            selectedIds={granteeIds}
+            onSelectedIdsChange={onGranteeIdsChange}
+            placeholder="Add colleagues…"
+            emptyMessage="No other workspace users are available."
+          />
+        </>
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          disabled={saving}
-          onClick={onSaveGrants}
-        >
-          {saving ? "Saving…" : "Save sharing"}
-        </Button>
+        {archived ? null : (
+          <Button type="button" disabled={saving} onClick={onSaveGrants}>
+            {saving ? "Saving…" : "Save sharing"}
+          </Button>
+        )}
         <Button
           type="button"
           variant="outline"
-          disabled={deleting}
-          onClick={onDeleteAsset}
-          className="text-[var(--destructive)] hover:text-[var(--destructive)]"
+          disabled={archiving}
+          onClick={onArchiveOrRestore}
+          className={
+            archived
+              ? undefined
+              : "text-[var(--destructive)] hover:text-[var(--destructive)]"
+          }
+          data-testid="library-details-archive"
         >
-          {deleting ? "Removing…" : "Remove from vault"}
+          {archiving
+            ? archived
+              ? "Restoring…"
+              : "Archiving…"
+            : archived
+              ? "Unarchive"
+              : "Archive"}
         </Button>
       </div>
     </div>
@@ -734,7 +999,7 @@ export function DocumentLibrarySection({
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveDestination, setMoveDestination] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [uploading, setUploading] = useState<{
     current: number;
     total: number;
@@ -758,7 +1023,12 @@ export function DocumentLibrarySection({
         }
         return;
       }
-      setLibrary({ folders: data.folders ?? [], assets: data.assets ?? [] });
+      setLibrary({
+        folders: data.folders ?? [],
+        assets: data.assets ?? [],
+        archivedFolders: data.archivedFolders ?? [],
+        archivedAssets: data.archivedAssets ?? [],
+      });
     } finally {
       if (!options?.silent) {
         setLoading(false);
@@ -822,8 +1092,15 @@ export function DocumentLibrarySection({
   }, []);
 
   const checkedCount = checkedAssetIds.size + checkedFolderIds.size;
+  const inspectedIsArchived =
+    library?.archivedAssets.some((asset) => asset.id === inspectedAssetId) ??
+    false;
   const moveItemCount =
-    checkedCount > 0 ? checkedCount : inspectedAssetId ? 1 : 0;
+    checkedCount > 0
+      ? checkedCount
+      : inspectedAssetId && !inspectedIsArchived
+        ? 1
+        : 0;
 
   const saveGrants = async () => {
     if (!inspectedAssetId) return;
@@ -869,28 +1146,65 @@ export function DocumentLibrarySection({
     await loadLibrary();
   };
 
-  const deleteFolder = async (folderId: string) => {
-    if (
-      !window.confirm(
-        "Delete this folder? Files inside move to the parent folder. Reports are not affected."
-      )
-    ) {
-      return;
+  const postArchiveChange = async (
+    path: "archive" | "unarchive",
+    payload: { assetIds: string[]; folderIds: string[] }
+  ) => {
+    setArchiving(true);
+    try {
+      const response = await fetch(`/api/attachment-vault/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        toast.error(
+          data.error ??
+            (path === "archive" ? "Could not archive" : "Could not unarchive")
+        );
+        return false;
+      }
+      await loadLibrary();
+      return true;
+    } finally {
+      setArchiving(false);
     }
-    const response = await fetch(`/api/attachment-vault/folders/${folderId}`, {
-      method: "DELETE",
-    });
-    const data = (await response.json().catch(() => ({}))) as { error?: string };
-    if (!response.ok) {
-      toast.error(data.error ?? "Could not delete folder");
-      return;
-    }
-    setCheckedFolderIds((prev) => {
+  };
+
+  const archiveItems = async (assetIds: string[], folderIds: string[]) => {
+    if (assetIds.length === 0 && folderIds.length === 0) return;
+    const confirmMessage =
+      folderIds.length > 0 && assetIds.length === 0 && folderIds.length === 1
+        ? ARCHIVE_FOLDER_CONFIRM
+        : assetIds.length === 1 && folderIds.length === 0
+          ? ARCHIVE_FILE_CONFIRM
+          : ARCHIVE_SELECTION_CONFIRM;
+    if (!window.confirm(confirmMessage)) return;
+    const ok = await postArchiveChange("archive", { assetIds, folderIds });
+    if (!ok) return;
+    setCheckedAssetIds((prev) => {
       const next = new Set(prev);
-      next.delete(folderId);
+      for (const id of assetIds) next.delete(id);
       return next;
     });
-    await loadLibrary();
+    setCheckedFolderIds((prev) => {
+      const next = new Set(prev);
+      for (const id of folderIds) next.delete(id);
+      return next;
+    });
+    if (assetIds.includes(inspectedAssetId ?? "")) {
+      setInspectedAssetId(null);
+      setPreviewAssetId(null);
+      setGranteeIds([]);
+    }
+    toast.success("Moved to Archive");
+  };
+
+  const unarchiveItems = async (assetIds: string[], folderIds: string[]) => {
+    const ok = await postArchiveChange("unarchive", { assetIds, folderIds });
+    if (!ok) return;
+    toast.success("Restored from Archive");
   };
 
   const openMoveDialog = (scope: "checked" | "inspected") => {
@@ -1048,42 +1362,6 @@ export function DocumentLibrarySection({
     );
   };
 
-  const deleteInspectedAsset = async () => {
-    if (!inspectedAssetId) return;
-    if (
-      !window.confirm(
-        "Remove this file from your vault? It will stay on reports that already use it, but you cannot add it to new reports."
-      )
-    ) {
-      return;
-    }
-    setDeleting(true);
-    try {
-      const response = await fetch(
-        `/api/attachment-vault/${inspectedAssetId}`,
-        { method: "DELETE" }
-      );
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        toast.error(data.error ?? "Could not remove file");
-        return;
-      }
-      const closedId = inspectedAssetId;
-      setInspectedAssetId(null);
-      setPreviewAssetId((preview) => (preview === closedId ? null : preview));
-      setGranteeIds([]);
-      setCheckedAssetIds((prev) => {
-        const next = new Set(prev);
-        next.delete(closedId);
-        return next;
-      });
-      await loadLibrary();
-      toast.success("Removed from vault");
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   const tree = useMemo(() => {
     if (!library) {
       return { foldersByParent: new Map(), assetsByFolder: new Map() };
@@ -1096,8 +1374,11 @@ export function DocumentLibrarySection({
     for (const asset of library?.assets ?? []) {
       map.set(asset.id, asset);
     }
+    for (const asset of library?.archivedAssets ?? []) {
+      map.set(asset.id, asset);
+    }
     return map;
-  }, [library?.assets]);
+  }, [library?.assets, library?.archivedAssets]);
 
   const inspectedAsset = inspectedAssetId
     ? assetById.get(inspectedAssetId)
@@ -1132,12 +1413,15 @@ export function DocumentLibrarySection({
 
   useEffect(() => {
     if (!library) return;
-    const liveIds = new Set(library.assets.map((asset) => asset.id));
+    const knownIds = new Set([
+      ...library.assets.map((asset) => asset.id),
+      ...library.archivedAssets.map((asset) => asset.id),
+    ]);
     setInspectedAssetId((active) =>
-      active && liveIds.has(active) ? active : null
+      active && knownIds.has(active) ? active : null
     );
     setPreviewAssetId((preview) =>
-      preview && liveIds.has(preview) ? preview : null
+      preview && knownIds.has(preview) ? preview : null
     );
   }, [library]);
 
@@ -1150,8 +1434,9 @@ export function DocumentLibrarySection({
             Upload files or folders here, or drop them onto a folder. Nested
             folders are kept. A folder must contain only PDF and Word files —
             anything else stops the upload before it starts. Click a file to
-            see details. Open a preview when you want to read it. Files already
-            on reports stay there if you remove them from the vault.
+            see details. Open a preview when you want to read it. Archive hides
+            a file from this list; reports that already use it keep it. Restore
+            from Archive at the bottom of the file list.
           </p>
         </>
       )}
@@ -1232,6 +1517,37 @@ export function DocumentLibrarySection({
                   {checkedCount > 0
                     ? `Move ${checkedCount} to folder…`
                     : "Move to folder…"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1 px-2 text-xs"
+                  disabled={
+                    uploading != null ||
+                    (checkedCount === 0 &&
+                      (!inspectedAssetId || inspectedIsArchived))
+                  }
+                  title={
+                    checkedCount > 0
+                      ? "Archive the checked items"
+                      : inspectedAssetId && !inspectedIsArchived
+                        ? `Archive ${inspectedAsset?.filename ?? "this file"}`
+                        : "Select a file or folder first"
+                  }
+                  onClick={() => {
+                    if (checkedCount > 0) {
+                      void archiveItems([...checkedAssetIds], [...checkedFolderIds]);
+                      return;
+                    }
+                    if (inspectedAssetId && !inspectedIsArchived) {
+                      void archiveItems([inspectedAssetId], []);
+                    }
+                  }}
+                  data-testid="library-archive-selected"
+                >
+                  <Archive className="size-3.5" aria-hidden="true" />
+                  {checkedCount > 0 ? `Archive ${checkedCount}` : "Archive"}
                 </Button>
                 <Button
                   type="button"
@@ -1368,12 +1684,37 @@ export function DocumentLibrarySection({
                     return next;
                   });
                 }}
-                onDeleteFolder={(folderId) => void deleteFolder(folderId)}
+                onArchiveFolder={(folderId) => void archiveItems([], [folderId])}
+                onArchiveAsset={(assetId) => void archiveItems([assetId], [])}
                 onDropOnFolder={(folderId, dataTransfer) =>
                   void handleDropOnFolder(folderId, dataTransfer)
                 }
               />
             </div>
+            {(library?.archivedFolders.length ?? 0) +
+              (library?.archivedAssets.length ?? 0) >
+            0 ? (
+              <LibraryArchiveSection
+                folders={library?.archivedFolders ?? []}
+                assets={library?.archivedAssets ?? []}
+                inspectedAssetId={inspectedAssetId}
+                collapsedFolderIds={collapsedFolderIds}
+                onInspectAsset={inspectAsset}
+                onOpenAsset={openPreview}
+                onToggleFolderCollapsed={(id) => {
+                  setCollapsedFolderIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                }}
+                onUnarchiveFolder={(folderId) =>
+                  void unarchiveItems([], [folderId])
+                }
+                onUnarchiveAsset={(assetId) => void unarchiveItems([assetId], [])}
+              />
+            ) : null}
           </div>
 
           {previewAsset ? (
@@ -1412,11 +1753,17 @@ export function DocumentLibrarySection({
                   shareCandidates={shareCandidates}
                   granteeIds={granteeIds}
                   saving={saving}
-                  deleting={deleting}
+                  archiving={archiving}
                   onOpenPreview={() => openPreview(inspectedAsset.id)}
                   onGranteeIdsChange={setGranteeIds}
                   onSaveGrants={() => void saveGrants()}
-                  onDeleteAsset={() => void deleteInspectedAsset()}
+                  onArchiveOrRestore={() => {
+                    if (inspectedAsset.archivedAt) {
+                      void unarchiveItems([inspectedAsset.id], []);
+                      return;
+                    }
+                    void archiveItems([inspectedAsset.id], []);
+                  }}
                   onMoveThisFile={() => openMoveDialog("inspected")}
                 />
               ) : (

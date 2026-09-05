@@ -38,8 +38,9 @@ export type LinkLibraryResult =
 
 async function loadLibraryFolderTree(rootFolderIds: string[]) {
   const allFolders = await db.select().from(attachmentLibraryFolders);
-  const byParent = new Map<string | null, typeof allFolders>();
-  for (const folder of allFolders) {
+  const liveFolders = allFolders.filter((folder) => folder.archivedAt == null);
+  const byParent = new Map<string | null, typeof liveFolders>();
+  for (const folder of liveFolders) {
     const key = folder.parentId ?? null;
     const list = byParent.get(key) ?? [];
     list.push(folder);
@@ -58,7 +59,7 @@ async function loadLibraryFolderTree(rootFolderIds: string[]) {
     }
   }
 
-  return allFolders.filter((folder) => selected.has(folder.id));
+  return liveFolders.filter((folder) => selected.has(folder.id));
 }
 
 async function loadAssetsForLibraryFolders(folderIds: string[]) {

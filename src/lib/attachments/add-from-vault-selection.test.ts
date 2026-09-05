@@ -29,6 +29,7 @@ const assets: AttachmentLibraryAssetRecord[] = [
     processingPage: null,
     processingError: null,
     accessKind: "mine",
+    archivedAt: null,
   },
   {
     id: "a2",
@@ -45,6 +46,7 @@ const assets: AttachmentLibraryAssetRecord[] = [
     processingPage: null,
     processingError: null,
     accessKind: "mine",
+    archivedAt: null,
   },
   {
     id: "a3",
@@ -61,6 +63,7 @@ const assets: AttachmentLibraryAssetRecord[] = [
     processingPage: null,
     processingError: null,
     accessKind: "mine",
+    archivedAt: null,
   },
 ];
 
