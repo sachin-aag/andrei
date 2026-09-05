@@ -1209,6 +1209,7 @@ export function ReportProvider({
                                   initialAttachments={bundle.attachments}
                                   initialFolders={bundle.attachmentFolders ?? []}
                                   canMutateAttachments={canMutateAttachments}
+                                  isWorkspaceAdmin={currentUserRole === "admin"}
                                 >
                                   {children}
                                 </ReportAttachmentsProvider>

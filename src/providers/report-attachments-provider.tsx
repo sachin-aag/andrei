@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { AttachmentQuotaDialog } from "@/components/report/documents/attachment-quota-dialog";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
+import { collectFolderSubtreeIds } from "@/lib/attachments/folder-subtree";
 import {
   formatAttachmentCountLimitMessage,
   formatAttachmentWouldExceedMessage,
@@ -79,6 +80,13 @@ type ReportAttachmentsContextValue = {
   closeDocument: () => void;
   documentOpenEpoch: number;
   uploadFiles: (files: FileList, folderId?: FolderId) => Promise<void>;
+  linkFromLibrary: (selection: {
+    assetIds: string[];
+    libraryFolderIds: string[];
+    excludedAssetIds?: string[];
+    targetFolderId?: FolderId;
+  }) => Promise<void>;
+  isWorkspaceAdmin: boolean;
   removeAttachment: (id: string) => Promise<void>;
   retryAttachment: (id: string) => Promise<void>;
   moveAttachment: (id: string, folderId: FolderId) => Promise<void>;
@@ -108,12 +116,14 @@ export function ReportAttachmentsProvider({
   initialAttachments,
   initialFolders,
   canMutateAttachments,
+  isWorkspaceAdmin,
   children,
 }: {
   reportId: string;
   initialAttachments: ReportAttachmentRecord[];
   initialFolders: ReportAttachmentFolderRecord[];
   canMutateAttachments: boolean;
+  isWorkspaceAdmin: boolean;
   children: ReactNode;
 }) {
   const [attachments, setAttachments] =
@@ -220,6 +230,7 @@ export function ReportAttachmentsProvider({
         id: attachmentId,
         reportId,
         folderId,
+        assetId: null,
         filename: file.name,
         description: null,
         mimeType: attachmentUploadMime(file),
@@ -627,19 +638,79 @@ export function ReportAttachmentsProvider({
         return;
       }
 
-      // The server reparents children to the deleted folder's parent.
-      const removed = folders.find((item) => item.id === id);
-      const parentId = removed?.parentId ?? null;
-      setFolders((prev) =>
-        prev
-          .filter((item) => item.id !== id)
-          .map((item) => (item.parentId === id ? { ...item, parentId } : item))
+      // The server deletes the folder subtree and every attachment inside it.
+      const subtreeFolderIds = collectFolderSubtreeIds(
+        id,
+        folders.map((item) => ({ id: item.id, parentId: item.parentId }))
       );
+      setFolders((prev) => prev.filter((item) => !subtreeFolderIds.has(item.id)));
       setAttachments((prev) =>
-        prev.map((item) => (item.folderId === id ? { ...item, folderId: parentId } : item))
+        prev.filter(
+          (item) => item.folderId == null || !subtreeFolderIds.has(item.folderId)
+        )
       );
     },
     [canMutateAttachments, folders, reportId]
+  );
+
+  const linkFromLibrary = useCallback(
+    async (selection: {
+      assetIds: string[];
+      libraryFolderIds: string[];
+      excludedAssetIds?: string[];
+      targetFolderId?: FolderId;
+    }) => {
+      if (!canMutateAttachments) {
+        toast.error("You cannot add attachments to this report.");
+        return;
+      }
+      const response = await fetch(`/api/reports/${reportId}/attachments/link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetIds: selection.assetIds,
+          libraryFolderIds: selection.libraryFolderIds,
+          excludedAssetIds: selection.excludedAssetIds,
+          targetFolderId: selection.targetFolderId ?? null,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        attachments?: ReportAttachmentRecord[];
+        folders?: ReportAttachmentFolderRecord[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not add from vault");
+      }
+      if (Array.isArray(data.folders)) {
+        setFolders((prev) => {
+          const existing = new Set(prev.map((folder) => folder.id));
+          const merged = [...prev];
+          for (const folder of data.folders!) {
+            if (!existing.has(folder.id)) {
+              merged.push({
+                id: folder.id,
+                reportId,
+                parentId: folder.parentId,
+                name: folder.name,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          }
+          return merged;
+        });
+      }
+      if (Array.isArray(data.attachments)) {
+        for (const attachment of data.attachments) {
+          upsertAttachment(attachment);
+        }
+      }
+      const count = data.attachments?.length ?? 0;
+      toast.success(
+        count === 1 ? "Added 1 document from vault" : `Added ${count} documents from vault`
+      );
+    },
+    [canMutateAttachments, reportId, upsertAttachment]
   );
 
   const activeAttachmentRecord = activeAttachment
@@ -660,6 +731,8 @@ export function ReportAttachmentsProvider({
       closeDocument,
       documentOpenEpoch,
       uploadFiles,
+      linkFromLibrary,
+      isWorkspaceAdmin,
       removeAttachment,
       retryAttachment,
       moveAttachment,
@@ -682,6 +755,8 @@ export function ReportAttachmentsProvider({
       closeDocument,
       documentOpenEpoch,
       uploadFiles,
+      linkFromLibrary,
+      isWorkspaceAdmin,
       removeAttachment,
       retryAttachment,
       moveAttachment,

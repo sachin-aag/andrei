@@ -36,7 +36,7 @@ export default async function ProfilePage() {
           </p>
         </div>
 
-        <div className="grid max-w-4xl gap-6 px-10 py-6 lg:grid-cols-[1fr_1.2fr]">
+        <div className="grid max-w-6xl gap-6 px-10 py-6 lg:grid-cols-[1fr_1.2fr]">
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
             <h2 className="text-base font-semibold">Account</h2>
             <dl className="mt-4 space-y-3 text-sm">

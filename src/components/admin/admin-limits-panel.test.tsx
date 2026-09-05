@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { AdminLimitsPanel } from "./admin-limits-panel";
 import type { AiBudgetStatus } from "@/lib/ai/usage";
 import type { AttachmentPageBudgetStatus } from "@/lib/attachments/page-budget";
+import type { AttachmentStorageBudgetStatus } from "@/lib/attachments/storage-budget";
 import type { VoiceBudgetStatus } from "@/lib/voice/budget";
 
 const aiBudget: AiBudgetStatus = {
@@ -45,6 +46,18 @@ const attachmentBudget: AttachmentPageBudgetStatus = {
   eventCount: 3,
 };
 
+const storageBudget: AttachmentStorageBudgetStatus = {
+  byteLimit: 107_374_182_400,
+  limitGb: 100,
+  enforceHardLimit: true,
+  warningThresholdPercent: 80,
+  usedBytes: 2.5 * 1024 * 1024 * 1024,
+  usedGb: 2.5,
+  percentUsed: 2.5,
+  isWarning: false,
+  isOverBudget: false,
+};
+
 const voiceBudget: VoiceBudgetStatus = {
   monthlyMinuteLimit: 100_000,
   enforceHardLimit: true,
@@ -61,11 +74,12 @@ const voiceBudget: VoiceBudgetStatus = {
 };
 
 describe("AdminLimitsPanel", () => {
-  it("shows AI, attachment page, and voice transcription budgets together", () => {
+  it("shows AI, attachment storage, page, and voice transcription budgets together", () => {
     render(
       <AdminLimitsPanel
         initialAiBudgetStatus={aiBudget}
         initialAttachmentPageBudgetStatus={attachmentBudget}
+        initialAttachmentStorageBudgetStatus={storageBudget}
         initialVoiceBudgetStatus={voiceBudget}
       />
     );
@@ -73,11 +87,16 @@ describe("AdminLimitsPanel", () => {
     expect(screen.getByRole("heading", { name: "Limits" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "AI monthly budget" })).toBeInTheDocument();
     expect(
+      screen.getByRole("heading", { name: "Attachment storage" })
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("heading", { name: "Attachment page budget" })
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Voice transcription budget" })
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("Limit (GB)")).toHaveValue(100);
+    expect(screen.getByText(/2.5 of 100 GB/)).toBeInTheDocument();
     expect(screen.getByLabelText("Monthly limit (minutes)")).toHaveValue(100_000);
     expect(screen.getByText(/3 of 100,000 minutes/)).toBeInTheDocument();
     expect(screen.getByText("Voice Transcribe")).toBeInTheDocument();

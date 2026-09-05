@@ -3,6 +3,7 @@ import { and, asc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
 import mammoth from "mammoth";
 import { db } from "@/db";
 import {
+  attachmentAssets,
   attachmentIngestRuns,
   documentChunks,
   documentIngestBatches,
@@ -22,6 +23,8 @@ import {
   extractDocxEmbeddedImages,
   formatDocxPageVisualInterpretation,
 } from "@/lib/attachments/docx-images";
+import { syncAssetProcessing } from "@/lib/attachments/sync-asset-processing";
+import { storageSourceForAttachment } from "@/lib/attachments/resolve-attachment";
 import {
   DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID,
   embedDocumentChunks,
@@ -76,6 +79,7 @@ export type RunDocumentIngestOptions = {
 type IngestInit = {
   runId: string;
   attachmentId: string;
+  assetId: string | null;
   reportId: string;
   filename: string;
   kind: AttachmentKind;
@@ -176,10 +180,23 @@ async function initializeIngestRun(
   if (!attachment) {
     throw new Error("Attachment not found");
   }
+  const asset = attachment.assetId
+    ? (
+        await db
+          .select()
+          .from(attachmentAssets)
+          .where(eq(attachmentAssets.id, attachment.assetId))
+          .limit(1)
+      )[0]
+    : null;
+  const storageSource = storageSourceForAttachment(attachment, asset);
   if (attachment.deletedAt) {
     throw cancelledError("Attachment was deleted before ingestion started");
   }
-  if (!attachment.gcsGeneration || attachment.gcsGeneration !== generation) {
+  if (
+    !storageSource.gcsGeneration ||
+    storageSource.gcsGeneration !== generation
+  ) {
     throw new Error("Attachment source changed before ingestion started");
   }
 
@@ -231,6 +248,7 @@ async function initializeIngestRun(
     await tx.insert(attachmentIngestRuns).values({
       id: runId,
       attachmentId: attachment.id,
+      assetId: attachment.assetId,
       reportId: attachment.reportId,
       status: "running",
       parserVersion: PARSER_VERSION,
@@ -250,6 +268,17 @@ async function initializeIngestRun(
         processingError: null,
       })
       .where(eq(reportAttachments.id, attachment.id));
+    if (attachment.assetId) {
+      await tx
+        .update(attachmentAssets)
+        .set({
+          processingStatus: "processing",
+          processingProgress: 0,
+          processingPage: null,
+          processingError: null,
+        })
+        .where(eq(attachmentAssets.id, attachment.assetId));
+    }
     return { runId, extractModelId, embeddingModelId };
   });
 
@@ -258,10 +287,11 @@ async function initializeIngestRun(
   return {
     runId: started.runId,
     attachmentId: attachment.id,
+    assetId: attachment.assetId,
     reportId: attachment.reportId,
     filename: attachment.filename,
-    kind: kindFromMime(attachment.mimeType) ?? "pdf",
-    sourceObjectKey: attachment.permanentObjectKey,
+    kind: kindFromMime(storageSource.mimeType) ?? "pdf",
+    sourceObjectKey: storageSource.permanentObjectKey,
     sourceGeneration: generation,
     extractModelId: started.extractModelId,
     embeddingModelId: started.embeddingModelId,
@@ -365,6 +395,7 @@ async function runDocxIngest(init: IngestInit): Promise<void> {
         pages.map((page) => ({
           ingestRunId: init.runId,
           attachmentId: init.attachmentId,
+          assetId: init.assetId,
           reportId: init.reportId,
           pageNumber: page.pageNumber,
           printedPageLabel: null,
@@ -649,6 +680,7 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
     .select({
       sourceGeneration: attachmentIngestRuns.sourceGeneration,
       extractModelId: attachmentIngestRuns.extractModelId,
+      assetId: attachmentIngestRuns.assetId,
     })
     .from(attachmentIngestRuns)
     .where(eq(attachmentIngestRuns.id, batch.ingestRunId))
@@ -712,10 +744,12 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
           )
         );
       if (extracted.pages.length > 0) {
+        const assetId = run.assetId ?? null;
         await tx.insert(documentPages).values(
           extracted.pages.map((page) => ({
             ingestRunId: batch.ingestRunId,
             attachmentId: batch.attachmentId,
+            assetId,
             reportId: batch.reportId,
             pageNumber: page.pageNumber,
             printedPageLabel: page.printedPageLabel,
@@ -763,6 +797,12 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
 async function persistGapPagesForBatch(
   batch: typeof documentIngestBatches.$inferSelect
 ): Promise<void> {
+  const [run] = await db
+    .select({ assetId: attachmentIngestRuns.assetId })
+    .from(attachmentIngestRuns)
+    .where(eq(attachmentIngestRuns.id, batch.ingestRunId))
+    .limit(1);
+  const assetId = run?.assetId ?? null;
   const pages: ExtractedPage[] = [];
   for (let pageNumber = batch.pageStart; pageNumber <= batch.pageEnd; pageNumber += 1) {
     pages.push(gapExtractedPage(pageNumber));
@@ -782,6 +822,7 @@ async function persistGapPagesForBatch(
         pages.map((page) => ({
           ingestRunId: batch.ingestRunId,
           attachmentId: batch.attachmentId,
+          assetId,
           reportId: batch.reportId,
           pageNumber: page.pageNumber,
           printedPageLabel: page.printedPageLabel,
@@ -903,6 +944,7 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
     chunks.map((chunk, index) => ({
       ingestRunId: input.runId,
       attachmentId: input.attachmentId,
+      assetId: input.assetId,
       reportId: input.reportId,
       pageId: chunk.pageId,
       pageNumber: chunk.pageNumber,
@@ -992,6 +1034,21 @@ async function markRunReady(
       })
       .where(eq(reportAttachments.id, input.attachmentId));
   });
+
+  const [linked] = await db
+    .select({ assetId: reportAttachments.assetId })
+    .from(reportAttachments)
+    .where(eq(reportAttachments.id, input.attachmentId))
+    .limit(1);
+  if (linked?.assetId) {
+    await syncAssetProcessing(linked.assetId, {
+      activeIngestRunId: input.runId,
+      processingStatus: "ready",
+      processingProgress: 100,
+      processingPage: null,
+      processingError: warning,
+    });
+  }
 
   await recordAttachmentPageUsage({
     ingestRunId: input.runId,

@@ -86,6 +86,11 @@ describe("MJ customer pack content", () => {
     expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
   });
 
+  it("hides Insights on MJ", () => {
+    expect(MJ_PACK.insightsEnabled).toBe(false);
+    expect(DEMO_PACK.insightsEnabled).toBe(true);
+  });
+
   it("disables design verification and enables quality risk assessment", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",

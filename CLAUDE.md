@@ -60,8 +60,9 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 - `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, `revisions` (product History snapshots + inline diff), and `export`/`complete-export` (DOCX).
 - `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
-- `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings, Limits). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `ai-budget`, `attachment-page-budget`, `voice-budget`, `reports/[reportId]/{purge,source-docx}`.
-- `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Currently backed by `src/lib/insights/mock-data.ts`.
+- `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings, Limits). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `ai-budget`, `attachment-page-budget`, `attachment-storage-budget`, `voice-budget`, `reports/[reportId]/{purge,source-docx}`.
+- `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Demo pack only (`insightsEnabled`); MJ and Convergent redirect `/insights` home. Currently backed by `src/lib/insights/mock-data.ts`.
+- `src/app/vault/` — Workspace document vault (PDF/Word explorer, upload, folders). Primary nav item under Reports. `/library` redirects here.
 - `src/app/api/site-access/` — Site-wide password gate (see Site Access subsystem).
 - `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
 - `src/components/report/` — Editor UI: `report-workspace.tsx` (header Document | Agent chrome + work-product Report | Analytics pane + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results + analytics chat), `review-rail/` (manager comment margin UI), History compare (`document-revision-history.tsx` / `document-revision-diff.tsx` / `analytics-revision-diff.tsx`).
@@ -75,7 +76,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
 - `src/lib/storage/` — Attachment blob storage (GCS vs local).
 - `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
-- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ vs Convergent overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding, `statisticalAnalysisEnabled`.
+- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ vs Convergent overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding, `statisticalAnalysisEnabled`, `insightsEnabled`.
 - `src/lib/statistical-analysis/` — Report-scoped worksheet ops, I-MR Normal Capability Sixpack, analytics store and stats-only chat tools.
 - `src/lib/reports/` — Report domain logic: access control (`access.ts`), manager authorization, deviation-no generation, submit validation, source-docx persistence, blank-section seeding, tombstones.
 - `src/lib/admin/` — Admin-console business logic (user/retention/password-policy operations).
@@ -121,7 +122,7 @@ Password lifecycle is enforced beyond NextAuth: `mustChangePassword`/`passwordEx
 
 ### Customer packs
 
-`src/lib/customers/` resolves `ANDREI_CUSTOMER` (default `demo`). Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Packs overlay criteria descriptions, eval prompts (`promptVersion` is distinct for MJ and Convergent), export template, hidden sections, enabled document types, Word import, and branding. Do not use feature flags for customer identity. Deploys: `docs/whitelabel-vercel-deploy.md`.
+`src/lib/customers/` resolves `ANDREI_CUSTOMER` (default `demo`). Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Packs overlay criteria descriptions, eval prompts (`promptVersion` is distinct for MJ and Convergent), export template, hidden sections, enabled document types, Word import, branding, and `insightsEnabled` (demo-only Insights nav). Do not use feature flags for customer identity. Deploys: `docs/whitelabel-vercel-deploy.md`.
 
 ## Environment variables
 
@@ -332,7 +333,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 ## Subsystem: Attachments (ingest + evidence)
 
-**Purpose:** PDF/DOCX evidence for chat (and future citation), not a replacement for the report body.
+**Purpose:** PDF/DOCX evidence for chat (and future citation), not a replacement for the report body. Canonical bytes live in `attachment_assets` (Document vault at `/vault` + report links). Uploads are capped by a workspace-wide stored-bytes budget (default 100 GiB) on Admin → Limits; linking an existing vault file into a report does not count twice. The vault page can upload files or folders (`POST /api/attachment-vault/upload-url` → finalize). A folder is scanned first: nested PDF/DOCX paths create vault folders (max depth 8); any other user file aborts the batch before bytes are sent (Finder/Explorer junk like `.DS_Store` is ignored). Vault-only files are marked `ready` for preview; the first report link starts ingest when the asset has no ingest run.
 
 **Entry point:** `runDocumentIngest()` in `src/lib/attachments/run-document-ingest.ts`. Extract + embed is **Vertex-only** (`GOOGLE_VERTEX_PROJECT`). Stub: `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
 

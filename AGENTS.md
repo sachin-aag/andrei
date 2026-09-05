@@ -122,7 +122,10 @@ NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 ```
 
 They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
-`docs/whitelabel-vercel-deploy.md`. Report workspace chrome is Document | Agent.
+`docs/whitelabel-vercel-deploy.md`. Primary sidebar is Reports, then Document
+Document vault (`/vault`), then Insights on demo only (`insightsEnabled`; MJ and
+Convergent hide the link and `/insights` redirects home). Report workspace
+chrome is Document | Agent.
 New reports open in Agent; returning to a report restores that user's last
 chrome for it. Report | Analytics in the composer is independent of the focused canvas pane in both Document and Agent chrome (locked while a turn is running). Mixed Report + Analytics turns can share a thread; each message is tagged Report or Analytics (`chat_messages.metadata.chatTarget`, stamped by the route). Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. History is on Report and Analytics (pane-scoped compare). Report compare diffs prose, every table, and added/removed figures; Analytics compare is a cell/plot list. Worksheet versions are `analyticsRevisions`, not `documentRevisions`. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent).
 Statistical Analysis lives on the work-product **Analytics** pane (worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + Tukey boxplot + one-way ANOVA) and is on for demo, MJ,
