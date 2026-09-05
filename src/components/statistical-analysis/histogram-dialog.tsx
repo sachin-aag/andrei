@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePlotTitle } from "@/components/statistical-analysis/use-plot-title";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -128,7 +129,6 @@ export function HistogramDialog({
       }
     : limitsForColumn(worksheet, defaultColumnId);
   const [columnId, setColumnId] = useState(defaultColumnId);
-  const [title, setTitle] = useState(defaultTitle);
   const [lsl, setLsl] = useState(initialLimits.lsl);
   const [usl, setUsl] = useState(initialLimits.usl);
   const [showDistributionLines, setShowDistributionLines] = useState(
@@ -159,9 +159,13 @@ export function HistogramDialog({
     ? columnNumericValues(selectedColumn, rowSelection)
     : { values: [], skipped: 0 };
   const rowLabel = formatRowSelection(rowSelection);
-  const placeholderTitle = selectedColumn
+  const suggestedTitle = selectedColumn
     ? histogramFallbackTitle(selectedColumn.name, rowLabel)
     : "Histogram title";
+  const { title, setTitle, resolvedTitle } = usePlotTitle(
+    suggestedTitle,
+    defaultTitle
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -256,7 +260,6 @@ export function HistogramDialog({
               id="histogram-title"
               data-testid="histogram-title"
               value={title}
-              placeholder={placeholderTitle}
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
@@ -376,7 +379,7 @@ export function HistogramDialog({
             onClick={() =>
               onSubmit({
                 columnId,
-                title: title.trim(),
+                title: resolvedTitle,
                 lsl: parseOptionalNumber(lsl),
                 usl: parseOptionalNumber(usl),
                 showDistributionLines,

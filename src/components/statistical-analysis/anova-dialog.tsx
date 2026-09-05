@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePlotTitle } from "@/components/statistical-analysis/use-plot-title";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -87,7 +88,6 @@ export function AnovaDialog({
       suggestFactorColumn(worksheet, fallbackResponse) ??
       ""
   );
-  const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(
     defaultRowStart != null ? String(defaultRowStart) : ""
   );
@@ -103,12 +103,16 @@ export function AnovaDialog({
     rowEnd: parseOptionalRow(rowEnd),
   });
   const rowLabel = formatRowSelection(rowSelection);
-  const placeholderTitle =
+  const suggestedTitle =
     responseColumn && factorColumn
       ? rowLabel
         ? `${responseColumn.name} by ${factorColumn.name} (${rowLabel})`
         : `${responseColumn.name} by ${factorColumn.name}`
       : "Analysis title";
+  const { title, setTitle, resolvedTitle } = usePlotTitle(
+    suggestedTitle,
+    defaultTitle
+  );
   const canSubmit =
     Boolean(responseColumnId) &&
     Boolean(factorColumnId) &&
@@ -231,8 +235,8 @@ export function AnovaDialog({
             </Label>
             <Input
               id="anova-title"
+              data-testid="anova-title"
               value={title}
-              placeholder={placeholderTitle}
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
@@ -260,7 +264,7 @@ export function AnovaDialog({
               onSubmit({
                 responseColumnId,
                 factorColumnId,
-                title: title.trim(),
+                title: resolvedTitle,
                 rowStart: parseOptionalRow(rowStart),
                 rowEnd: parseOptionalRow(rowEnd),
               })

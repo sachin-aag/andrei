@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePlotTitle } from "@/components/statistical-analysis/use-plot-title";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -140,7 +141,6 @@ export function AnalyzeDialog({
   const [factorColumnId, setFactorColumnId] = useState(
     () => suggestFactorColumn(worksheet, fallbackColumnId) ?? ""
   );
-  const [title, setTitle] = useState("");
   const [lsl, setLsl] = useState(initialLimits.lsl);
   const [usl, setUsl] = useState(initialLimits.usl);
   const [target, setTarget] = useState(initialLimits.target);
@@ -182,15 +182,17 @@ export function AnalyzeDialog({
     ? columnNumericValues(selectedColumn, rowSelection)
     : { values: [], skipped: 0 };
   const rowLabel = formatRowSelection(rowSelection);
-  const sixpackTitlePlaceholder = rowLabel
-    ? `${selectedColumn?.name ?? "Analysis"} (${rowLabel})`
-    : (selectedColumn?.name ?? "Analysis title");
-  const anovaTitlePlaceholder =
-    selectedColumn && factorColumn
-      ? rowLabel
-        ? `${selectedColumn.name} by ${factorColumn.name} (${rowLabel})`
-        : `${selectedColumn.name} by ${factorColumn.name}`
-      : "Analysis title";
+  const suggestedTitle =
+    kind === ONE_WAY_ANOVA
+      ? selectedColumn && factorColumn
+        ? rowLabel
+          ? `${selectedColumn.name} by ${factorColumn.name} (${rowLabel})`
+          : `${selectedColumn.name} by ${factorColumn.name}`
+        : "Analysis title"
+      : rowLabel
+        ? `${selectedColumn?.name ?? "Analysis"} (${rowLabel})`
+        : (selectedColumn?.name ?? "Analysis title");
+  const { title, setTitle, resolvedTitle } = usePlotTitle(suggestedTitle);
   const anovaCanSubmit =
     Boolean(columnId) &&
     Boolean(factorColumnId) &&
@@ -210,7 +212,7 @@ export function AnalyzeDialog({
         values: {
           responseColumnId: columnId,
           factorColumnId,
-          title: title.trim(),
+          title: resolvedTitle,
           rowStart: parseOptionalRow(rowStart),
           rowEnd: parseOptionalRow(rowEnd),
         },
@@ -221,7 +223,7 @@ export function AnalyzeDialog({
       kind: CAPABILITY_SIXPACK_NORMAL,
       values: {
         columnId,
-        title: title.trim(),
+        title: resolvedTitle,
         lsl: parseOptionalNumber(lsl),
         usl: parseOptionalNumber(usl),
         target: parseOptionalNumber(target),
@@ -442,12 +444,8 @@ export function AnalyzeDialog({
                 </Label>
                 <Input
                   id="analyze-title"
+                  data-testid="analyze-title"
                   value={title}
-                  placeholder={
-                    kind === ONE_WAY_ANOVA
-                      ? anovaTitlePlaceholder
-                      : sixpackTitlePlaceholder
-                  }
                   onChange={(event) => setTitle(event.target.value)}
                 />
               </div>
