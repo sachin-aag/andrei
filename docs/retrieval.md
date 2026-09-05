@@ -94,10 +94,9 @@ operational, not a new retrieval design:
    `retrieval-cases.local.json` on a machine that already ingested the
    273-page Convergent attachment, then `pnpm retrieval-eval -- --report-id <id>`.
    CI must not do this.
-2. **Ship with current `main`.** Renumber this branch’s retrieval
-   migration to `0058_document_page_retrieval_metadata` (journal idx after
-   `0056_attachment_library` / `0057_attachment_storage_budget`). Do not
-   leave two `0056_*.sql` files.
+2. **Ship with current `main`.** This branch’s retrieval SQL is
+   `0058_document_page_retrieval_metadata` so it does not collide with
+   `0056_attachment_library` / `0057_attachment_storage_budget`.
 
 ### Not a leftover for this architecture
 
