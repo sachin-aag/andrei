@@ -39,6 +39,8 @@ pnpm seed-demo-reports    # seed demo reports for the demo engineer (loads .env 
 pnpm sample-eval-report   # bulk AI evaluation of sample DOCXs → HTML report (needs gateway key)
 pnpm model-sweep          # run the AI eval across multiple models (scripts/eval/)
 pnpm compare-evals        # diff two eval runs (scripts/eval/)
+pnpm retrieval-eval       # attachment retrieval gold cases (default --dry-run; --from-gcs CI download+ingest+judge; --live local PDFs; --report-id skip ingest)
+pnpm retrieval-eval:upload # laptop ADC only: write synthetic eval PDFs to RETRIEVAL_EVAL_GCS_BUCKET (CI never uploads)
 pnpm soak:pdf-ingest      # local PDF extract soak (Vertex; no DB/GCS writes)
 ```
 
@@ -339,11 +341,11 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Pipeline:**
 1. Upload stored via `src/lib/storage/` (GCS production; local only with `ATTACHMENT_STORAGE_BACKEND=local` + `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`)
-2. Vertex extract (`extract-batch.ts`, `DOCUMENT_EXTRACT_PROMPT_VERSION`) → `document_pages` (`pageContext` + transcript)
-3. Chunk (`chunk-pages.ts`) + embed (`embed-chunks.ts`, 768-d) → `document_chunks`
+2. Vertex extract (`extract-batch.ts`, `DOCUMENT_EXTRACT_PROMPT_VERSION`) → `document_pages` (`pageContext` + transcript + `identifiers` / `outlineTitle` / nullable `hasTable`/`hasFigure`)
+3. Outline spans persisted on the ingest run, then chunk (`chunk-pages.ts`) + embed (`embed-chunks.ts`, 768-d) → `document_chunks`
 4. `documentSummary` written on the ingest run; listed by `listReadyDocumentsForReport`
 
-**Chat retrieval:** `searchReportDocuments`, `readDocumentPage`, `readDocumentOutline` in `src/lib/attachments/retrieval.ts`. FTS: `to_tsvector('english', contextual_text)` + `document_chunks_contextual_text_fts_en_idx`. Release gates: `docs/pdf-evidence-deployment-checklist.md`.
+**Chat retrieval:** `searchReportDocuments`, `readDocumentPage`, `readDocumentOutline` in `src/lib/attachments/retrieval.ts`. Identifier queries (`requirementIds()`) hit `document_pages.identifiers` first and skip the query embedding when those hits fill `limit`. Results collapse to one chunk per page. FTS: `to_tsvector('english', contextual_text)` + `document_chunks_contextual_text_fts_en_idx`. Outline reads prefer stored `document_outline_spans`. Plan: `docs/retrieval.md`. Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 
 ## Subsystem: Redrafts
 

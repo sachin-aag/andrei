@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { documentChunks } from "@/db/schema";
+import { documentChunks, documentOutlineSpans, documentPages } from "@/db/schema";
 
 describe("document_chunks schema", () => {
   it("declares a 768-dimension embedding column", () => {
@@ -14,5 +14,23 @@ describe("document_chunks schema", () => {
         }
       ).config?.dimensions;
     expect(dims).toBe(768);
+  });
+});
+
+describe("document_pages retrieval columns", () => {
+  it("declares identifiers, outline title, and nullable visual flags", () => {
+    expect(documentPages.identifiers.name).toBe("identifiers");
+    expect(documentPages.outlineTitle.name).toBe("outline_title");
+    expect(documentPages.hasTable.name).toBe("has_table");
+    expect(documentPages.hasFigure.name).toBe("has_figure");
+  });
+});
+
+describe("document_outline_spans schema", () => {
+  it("declares heading range columns", () => {
+    expect(documentOutlineSpans.ordinal.name).toBe("ordinal");
+    expect(documentOutlineSpans.pageStart.name).toBe("page_start");
+    expect(documentOutlineSpans.pageEnd.name).toBe("page_end");
+    expect(documentOutlineSpans.identifiers.name).toBe("identifiers");
   });
 });

@@ -33,6 +33,10 @@ import {
   derivePageOutlineDigest,
   isPlaceholderPageContext,
 } from "@/lib/attachments/page-outline";
+import {
+  mergeVisualPresenceFlags,
+  visualPresenceFlags,
+} from "@/lib/attachments/page-metadata";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 
 export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
@@ -115,7 +119,11 @@ export type ExtractedPage = {
   pageContext: string;
   printedPageLabel: string | null;
   confidence: number | null;
+  hasTable: boolean | null;
+  hasFigure: boolean | null;
 };
+
+const UNCLASSIFIED_VISUAL = visualPresenceFlags({ classified: false });
 
 export type ExtractRecovery =
   | "none"
@@ -280,6 +288,11 @@ async function extractFromTextLayer(
 
   const pages: ExtractedPage[] = textLayer.pages.map((page) => {
     const insight = byPageNumber.get(page.pageNumber);
+    const flags = visualPresenceFlags({
+      classified: insight != null,
+      tables: insight?.tables,
+      figures: insight?.figures,
+    });
     return {
       pageNumber: page.pageNumber,
       transcript: page.text,
@@ -292,6 +305,8 @@ async function extractFromTextLayer(
       ),
       printedPageLabel: insight?.printedPageLabel?.trim() || null,
       confidence: insight?.confidence ?? null,
+      hasTable: flags.hasTable,
+      hasFigure: flags.hasFigure,
     };
   });
 
@@ -391,6 +406,7 @@ async function extractMixedPagesWithDocumentAi(
         pageContext: "",
         printedPageLabel: null,
         confidence: null,
+        ...UNCLASSIFIED_VISUAL,
       });
       continue;
     }
@@ -407,6 +423,7 @@ async function extractMixedPagesWithDocumentAi(
         pageContext: "",
         printedPageLabel: null,
         confidence: ocrPage.confidence,
+        ...UNCLASSIFIED_VISUAL,
       });
       continue;
     }
@@ -611,6 +628,7 @@ async function extractScannedPages(
           pageContext: "",
           printedPageLabel: null,
           confidence: ocrPage.confidence,
+          ...UNCLASSIFIED_VISUAL,
         });
         continue;
       }
@@ -1065,6 +1083,7 @@ function mergeTilePages(
     .filter((value): value is number => value != null);
   const labeled = parts.find((page) => page.printedPageLabel);
   const context = parts.find((page) => page.pageContext.trim());
+  const flags = mergeVisualPresenceFlags(parts);
   return {
     pageNumber,
     transcript: transcripts.join("\n\n"),
@@ -1072,6 +1091,8 @@ function mergeTilePages(
     pageContext: truncate(context?.pageContext.trim() ?? "", MAX_PAGE_CONTEXT_CHARS),
     printedPageLabel: labeled?.printedPageLabel ?? null,
     confidence: confidences.length > 0 ? Math.min(...confidences) : null,
+    hasTable: flags.hasTable,
+    hasFigure: flags.hasFigure,
   };
 }
 
@@ -1084,6 +1105,7 @@ export function gapExtractedPage(pageNumber: number): ExtractedPage {
     pageContext: note,
     printedPageLabel: null,
     confidence: 0,
+    ...UNCLASSIFIED_VISUAL,
   };
 }
 
@@ -1393,18 +1415,27 @@ function normalizeExtractedBatch(
   pageEnd: number
 ): Omit<ExtractBatchResult, "mode" | "recovery" | "finishReason" | "usage"> {
   const remapped = remapExtractedPageNumbers(raw.pages, pageStart, pageEnd);
-  const pages = remapped.map((page) => ({
-    pageNumber: page.pageNumber,
-    transcript: page.transcript.trim(),
-    visualInterpretation: composeVisualInterpretation({
-      visualInterpretation: page.visualInterpretation ?? "",
-      tables: page.tables ?? [],
-      figures: page.figures ?? [],
-    }),
-    pageContext: truncate((page.pageContext ?? "").trim(), MAX_PAGE_CONTEXT_CHARS),
-    printedPageLabel: page.printedPageLabel?.trim() || null,
-    confidence: page.confidence,
-  }));
+  const pages = remapped.map((page) => {
+    const flags = visualPresenceFlags({
+      classified: true,
+      tables: page.tables,
+      figures: page.figures,
+    });
+    return {
+      pageNumber: page.pageNumber,
+      transcript: page.transcript.trim(),
+      visualInterpretation: composeVisualInterpretation({
+        visualInterpretation: page.visualInterpretation ?? "",
+        tables: page.tables ?? [],
+        figures: page.figures ?? [],
+      }),
+      pageContext: truncate((page.pageContext ?? "").trim(), MAX_PAGE_CONTEXT_CHARS),
+      printedPageLabel: page.printedPageLabel?.trim() || null,
+      confidence: page.confidence,
+      hasTable: flags.hasTable,
+      hasFigure: flags.hasFigure,
+    };
+  });
 
   return {
     pages,

@@ -115,8 +115,13 @@ docs/convergent-onboarding-temporary-passwords.md
 # Local chart fixture renders (`scripts/render-chart-fixture.ts`)
 /tmp/
 
-# Ralph loop local scratch (do not commit)
-.cursor/ralph/scratchpad.md
+scripts/eval/retrieval-runs/
+scripts/eval/retrieval-cases.local.json
+
+
+# Investor deck / screenshots (local-only marketing assets)
+/investor-deck/
+/investor-screenshots/
 
 # Investor deck / screenshots (local-only marketing assets)
 /investor-deck/

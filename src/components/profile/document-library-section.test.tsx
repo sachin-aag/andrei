@@ -60,6 +60,14 @@ const folder = {
   archivedAt: null as string | null,
 };
 
+const nestedFolder = {
+  id: "folder-2",
+  ownerId: "user-1",
+  parentId: "folder-1",
+  name: "Batch records",
+  createdAt: "2026-08-20T02:10:00.000Z",
+};
+
 function jsonResponse(body: unknown, ok = true): Response {
   return {
     ok,
@@ -73,7 +81,7 @@ beforeEach(() => {
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/attachment-vault?scope=mine")) {
-        return jsonResponse({ folders: [folder], assets: [asset] });
+        return jsonResponse({ folders: [folder, nestedFolder], assets: [asset] });
       }
       if (url.includes("/access")) {
         return jsonResponse({ grants: [] });
@@ -145,6 +153,88 @@ describe("DocumentLibrarySection explorer", () => {
     expect(
       screen.getByRole("button", { name: "Move 1 item" })
     ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "New Folder" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("shows nested destinations as a folder tree, not flattened paths", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await user.click(await screen.findByText("coa.pdf"));
+    await user.click(screen.getByTestId("library-move-to-folder"));
+
+    expect(await screen.findByTestId("library-move-destination-tree")).toBeInTheDocument();
+    expect(screen.getByTestId("library-move-vault-root")).toHaveTextContent(
+      "Vault root"
+    );
+    expect(screen.getByTestId("library-move-folder-folder-1")).toHaveTextContent(
+      "Quality"
+    );
+    expect(screen.getByTestId("library-move-folder-folder-2")).toHaveTextContent(
+      "Batch records"
+    );
+    expect(screen.queryByText("Quality / Batch records")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("library-move-folder-folder-2"));
+    expect(screen.getByRole("button", { name: "Move 1 item" })).toBeEnabled();
+  });
+
+  it("can create a nested folder from the move explorer", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/attachment-vault?scope=mine")) {
+        return jsonResponse({ folders: [folder, nestedFolder], assets: [asset] });
+      }
+      if (url.includes("/access")) {
+        return jsonResponse({ grants: [] });
+      }
+      if (url.endsWith("/api/attachment-vault/folders") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as {
+          name?: string;
+          parentId?: string | null;
+        };
+        return jsonResponse({
+          folder: {
+            id: "folder-new",
+            ownerId: "user-1",
+            parentId: body.parentId ?? null,
+            name: body.name ?? "New",
+            createdAt: "2026-08-20T03:00:00.000Z",
+          },
+        });
+      }
+      return jsonResponse({ error: "unexpected" }, false);
+    });
+
+    renderLibrary();
+    await user.click(await screen.findByText("coa.pdf"));
+    await user.click(screen.getByTestId("library-move-to-folder"));
+    await user.click(await screen.findByTestId("library-move-folder-folder-1"));
+    await user.click(screen.getByRole("button", { name: "New Folder" }));
+
+    expect(screen.getByText(/Creates inside Quality/)).toBeInTheDocument();
+    await user.type(
+      await screen.findByTestId("library-move-new-folder-input"),
+      "COAs"
+    );
+    await user.click(screen.getByTestId("library-move-create-folder"));
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith("Folder created");
+    });
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).endsWith("/api/attachment-vault/folders") &&
+        init?.method === "POST"
+    );
+    expect(createCall).toBeTruthy();
+    expect(JSON.parse(String(createCall?.[1]?.body ?? "{}"))).toMatchObject({
+      name: "COAs",
+      parentId: "folder-1",
+    });
   });
 
   it("lets Move to folder act on the clicked file without a checkbox", async () => {
