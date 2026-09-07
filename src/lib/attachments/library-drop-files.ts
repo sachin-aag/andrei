@@ -109,6 +109,52 @@ export function libraryUploadFilesFromList(
   );
 }
 
+const LIBRARY_UPLOAD_SCAN_CHUNK = 40;
+
+/** Let React paint a spinner before a long folder scan continues. */
+export function yieldToPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        setTimeout(resolve, 0);
+      });
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
+/**
+ * Same scan as `libraryUploadFilesFromList`, but yields between chunks so a
+ * large folder cannot freeze the page before our upload dialog can paint.
+ */
+export async function libraryUploadFilesFromListAsync(
+  fileList: FileList | File[],
+  options?: {
+    chunkSize?: number;
+    onProgress?: (scanned: number, total: number) => void;
+  }
+): Promise<LibraryUploadScan> {
+  const total = fileList.length;
+  const chunkSize = Math.max(1, options?.chunkSize ?? LIBRARY_UPLOAD_SCAN_CHUNK);
+  const collected: LibraryUploadFile[] = [];
+
+  for (let index = 0; index < total; index += 1) {
+    const file = fileList[index]!;
+    collected.push({
+      file,
+      relativePath: relativePathForFile(file),
+    });
+    const scanned = index + 1;
+    const atChunkEnd = scanned % chunkSize === 0 || scanned === total;
+    if (!atChunkEnd) continue;
+    options?.onProgress?.(scanned, total);
+    if (scanned < total) await yieldToPaint();
+  }
+
+  return classifyCollectedLibraryFiles(collected);
+}
+
 async function walkEntry(
   entry: FileSystemEntry,
   prefix: string,

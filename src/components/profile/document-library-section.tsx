@@ -39,8 +39,9 @@ import {
   libraryTargetFolderDepth,
   libraryUploadBatchError,
   libraryUploadFilesFromDataTransfer,
-  libraryUploadFilesFromList,
+  libraryUploadFilesFromListAsync,
   uniqueRejectedLibraryNames,
+  yieldToPaint,
   type LibraryUploadFile,
 } from "@/lib/attachments/library-drop-files";
 import { uploadFileToLibrary } from "@/lib/attachments/upload-library";
@@ -855,80 +856,196 @@ function MoveToFolderDialog({
   );
 }
 
-function LibraryUnsupportedUploadDialog({
-  open,
-  rejectedNames,
-  acceptedCount,
-  onCancel,
-  onProceed,
+type LibraryUploadUi =
+  | { phase: "picking" }
+  | { phase: "scanning"; scanned: number; total: number }
+  | {
+      phase: "unsupported";
+      files: LibraryUploadFile[];
+      rejectedNames: string[];
+      targetFolderId: string | null;
+    }
+  | { phase: "uploading"; current: number; total: number; filename: string }
+  | { phase: "error"; message: string }
+  | { phase: "complete"; uploaded: number; failed: number };
+
+function isLibraryUploadBusy(state: LibraryUploadUi | null): boolean {
+  return state?.phase === "scanning" || state?.phase === "uploading";
+}
+
+function libraryUploadCopy(state: LibraryUploadUi): {
+  title: string;
+  description: string;
+} {
+  switch (state.phase) {
+    case "picking":
+      return {
+        title: "Preparing upload",
+        description:
+          "Choose a folder. Large folders can take a moment to load.",
+      };
+    case "scanning":
+      return {
+        title: "Checking folder",
+        description:
+          state.total > 0
+            ? state.scanned > 0
+              ? `Checking ${state.scanned} of ${state.total} files…`
+              : `Checking ${state.total} files…`
+            : "Checking files. This can take a moment for a large folder.",
+      };
+    case "uploading":
+      return {
+        title: "Uploading to vault",
+        description: `${state.current} of ${state.total} · ${state.filename}`,
+      };
+    case "error":
+      return { title: "Could not upload", description: state.message };
+    case "complete":
+      return {
+        title: "Upload complete",
+        description:
+          state.failed > 0
+            ? `Uploaded ${state.uploaded} of ${state.uploaded + state.failed} files. ${state.failed} could not be uploaded.`
+            : state.uploaded === 1
+              ? "Uploaded 1 file to your vault."
+              : `Uploaded ${state.uploaded} files to your vault.`,
+      };
+    case "unsupported": {
+      const uniqueCount = uniqueRejectedLibraryNames(state.rejectedNames).length;
+      const canProceed = state.files.length > 0;
+      const plural = uniqueCount !== 1;
+      return {
+        title:
+          canProceed && plural
+            ? "Some files aren't supported"
+            : plural
+              ? "These files aren't supported"
+              : "This file isn't supported",
+        description: canProceed
+          ? `The vault accepts PDF and Word documents. ${
+              plural ? "These files" : "This file"
+            } will be skipped if you continue.`
+          : `The vault accepts PDF and Word documents. ${
+              plural
+                ? "None of these files can be added."
+                : "This file can't be added."
+            }`,
+      };
+    }
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
+function LibraryUploadDialog({
+  state,
+  onDismiss,
+  onProceedUnsupported,
 }: {
-  open: boolean;
-  rejectedNames: string[];
-  acceptedCount: number;
-  onCancel: () => void;
-  onProceed: () => void;
+  state: LibraryUploadUi | null;
+  onDismiss: () => void;
+  onProceedUnsupported: () => void;
 }) {
-  const uniqueNames = uniqueRejectedLibraryNames(rejectedNames);
-  const canProceed = acceptedCount > 0;
-  const plural = uniqueNames.length !== 1;
+  const busy = isLibraryUploadBusy(state);
+  const unsupported = state?.phase === "unsupported" ? state : null;
+  const uniqueNames = uniqueRejectedLibraryNames(unsupported?.rejectedNames ?? []);
+  const canProceed = (unsupported?.files.length ?? 0) > 0;
+  const { title, description } = state
+    ? libraryUploadCopy(state)
+    : { title: "Preparing upload", description: "" };
+  const showSpinner =
+    state?.phase === "picking" ||
+    state?.phase === "scanning" ||
+    state?.phase === "uploading";
 
   return (
     <Dialog
-      open={open}
+      open={state != null}
       onOpenChange={(next) => {
-        if (!next) onCancel();
+        if (!next && !busy) onDismiss();
       }}
     >
-      <DialogContent data-testid="library-unsupported-files-dialog">
+      <DialogContent
+        className={cn("sm:max-w-md", busy && "[&>button]:hidden")}
+        onPointerDownOutside={(event) => {
+          if (busy) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (busy) event.preventDefault();
+        }}
+        data-testid={
+          unsupported ? "library-unsupported-files-dialog" : "library-upload-dialog"
+        }
+      >
         <DialogHeader>
-          <DialogTitle>
-            {canProceed && plural
-              ? "Some files aren't supported"
-              : plural
-                ? "These files aren't supported"
-                : "This file isn't supported"}
-          </DialogTitle>
-          <DialogDescription>
-            {canProceed
-              ? `The vault accepts PDF and Word documents. ${
-                  plural ? "These files" : "This file"
-                } will be skipped if you continue.`
-              : `The vault accepts PDF and Word documents. ${
-                  plural
-                    ? "None of these files can be added."
-                    : "This file can't be added."
-                }`}
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <ul
-          className="max-h-48 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-          data-testid="library-unsupported-files-list"
-        >
-          {uniqueNames.map((name) => (
-            <li key={name} className="truncate py-0.5" title={name}>
-              {name}
-            </li>
-          ))}
-        </ul>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            data-testid="library-unsupported-cancel"
+        {showSpinner ? (
+          <div
+            className="flex items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-3"
+            aria-live="polite"
+            aria-busy="true"
           >
-            Cancel
-          </Button>
-          {canProceed ? (
-            <Button
-              type="button"
-              onClick={onProceed}
-              data-testid="library-unsupported-proceed"
-            >
-              Skip and upload the rest
-            </Button>
-          ) : null}
-        </DialogFooter>
+            <Loader2
+              className="size-5 shrink-0 animate-spin text-[var(--muted-foreground)]"
+              aria-hidden="true"
+            />
+            <p className="text-sm text-[var(--muted-foreground)]">
+              {state?.phase === "uploading"
+                ? "Keep this tab open until the upload finishes."
+                : "This stays on screen while the folder loads."}
+            </p>
+          </div>
+        ) : null}
+        {unsupported ? (
+          <ul
+            className="max-h-48 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            data-testid="library-unsupported-files-list"
+          >
+            {uniqueNames.map((name) => (
+              <li key={name} className="truncate py-0.5" title={name}>
+                {name}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {showSpinner ? null : (
+          <DialogFooter>
+            {unsupported ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onDismiss}
+                  data-testid="library-unsupported-cancel"
+                >
+                  Cancel
+                </Button>
+                {canProceed ? (
+                  <Button
+                    type="button"
+                    onClick={onProceedUnsupported}
+                    data-testid="library-unsupported-proceed"
+                  >
+                    Skip and upload the rest
+                  </Button>
+                ) : null}
+              </>
+            ) : (
+              <Button
+                type="button"
+                onClick={onDismiss}
+                data-testid="library-upload-dialog-dismiss"
+              >
+                OK
+              </Button>
+            )}
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -1080,18 +1197,11 @@ export function DocumentLibrarySection({
   const [moveDestination, setMoveDestination] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [archiving, setArchiving] = useState(false);
-  const [uploading, setUploading] = useState<{
-    current: number;
-    total: number;
-    filename: string;
-  } | null>(null);
-  const [unsupportedUpload, setUnsupportedUpload] = useState<{
-    files: LibraryUploadFile[];
-    rejectedNames: string[];
-    targetFolderId: string | null;
-  } | null>(null);
+  const [uploadUi, setUploadUi] = useState<LibraryUploadUi | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const uploadBusy = isLibraryUploadBusy(uploadUi);
+  const uploadLocked = uploadBusy || uploadUi?.phase === "picking";
 
   const loadLibrary = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
@@ -1378,11 +1488,15 @@ export function DocumentLibrarySection({
     files: LibraryUploadFile[],
     targetFolderId: string | null
   ) => {
-    if (files.length === 0) return;
+    if (files.length === 0) {
+      setUploadUi(null);
+      return;
+    }
     let failed = 0;
     for (let index = 0; index < files.length; index += 1) {
       const item = files[index]!;
-      setUploading({
+      setUploadUi({
+        phase: "uploading",
         current: index + 1,
         total: files.length,
         filename: item.file.name,
@@ -1402,20 +1516,26 @@ export function DocumentLibrarySection({
         );
       }
     }
-    setUploading(null);
     await loadLibrary();
     const uploaded = files.length - failed;
-    if (uploaded > 0) {
-      toast.success(
-        uploaded === 1
-          ? "Uploaded 1 file to your vault"
-          : `Uploaded ${uploaded} files to your vault`
-      );
+    if (uploaded === 0) {
+      setUploadUi({
+        phase: "error",
+        message:
+          files.length === 1
+            ? `Could not upload ${files[0]!.file.name}`
+            : "Could not upload those files",
+      });
+      return;
     }
+    setUploadUi({ phase: "complete", uploaded, failed });
   };
 
   const startLibraryUpload = (
-    scan: ReturnType<typeof libraryUploadFilesFromList>,
+    scan: {
+      accepted: LibraryUploadFile[];
+      rejectedNames: string[];
+    },
     targetFolderId: string | null
   ) => {
     const error = libraryUploadBatchError(
@@ -1423,11 +1543,12 @@ export function DocumentLibrarySection({
       libraryTargetFolderDepth(library?.folders ?? [], targetFolderId)
     );
     if (error) {
-      toast.error(error);
+      setUploadUi({ phase: "error", message: error });
       return;
     }
     if (scan.rejectedNames.length > 0) {
-      setUnsupportedUpload({
+      setUploadUi({
+        phase: "unsupported",
         files: scan.accepted,
         rejectedNames: scan.rejectedNames,
         targetFolderId,
@@ -1437,23 +1558,61 @@ export function DocumentLibrarySection({
     void uploadLibraryBatch(scan.accepted, targetFolderId);
   };
 
-  const handleSelectedFiles = (
-    fileList: FileList | null,
+  const handleSelectedFiles = async (
+    fileList: FileList | File[] | null,
     targetFolderId: string | null
   ) => {
-    if (!fileList || fileList.length === 0) return;
-    startLibraryUpload(libraryUploadFilesFromList(fileList), targetFolderId);
+    if (!fileList || fileList.length === 0) {
+      setUploadUi((current) => (current?.phase === "picking" ? null : current));
+      return;
+    }
+    setUploadUi({ phase: "scanning", scanned: 0, total: fileList.length });
+    await yieldToPaint();
+    const scan = await libraryUploadFilesFromListAsync(fileList, {
+      onProgress: (scanned, total) => {
+        setUploadUi({ phase: "scanning", scanned, total });
+      },
+    });
+    startLibraryUpload(scan, targetFolderId);
   };
 
   const handleDropOnFolder = async (
     folderId: string | null,
     dataTransfer: DataTransfer
   ) => {
+    setUploadUi({ phase: "scanning", scanned: 0, total: 0 });
+    await yieldToPaint();
     startLibraryUpload(
       await libraryUploadFilesFromDataTransfer(dataTransfer),
       folderId
     );
   };
+
+  const openLibraryFilePicker = (kind: "files" | "folder") => {
+    setUploadUi({ phase: "picking" });
+    window.setTimeout(() => {
+      const input =
+        kind === "folder" ? folderInputRef.current : fileInputRef.current;
+      input?.click();
+    }, 0);
+  };
+
+  const handlePickerCancel = useCallback(() => {
+    setUploadUi((current) => (current?.phase === "picking" ? null : current));
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    const inputs = [fileInputRef.current, folderInputRef.current];
+    for (const input of inputs) {
+      input?.addEventListener("cancel", handlePickerCancel);
+    }
+    return () => {
+      for (const input of inputs) {
+        input?.removeEventListener("cancel", handlePickerCancel);
+      }
+    };
+  }, [handlePickerCancel, loading]);
 
   const tree = useMemo(() => {
     if (!library) {
@@ -1571,8 +1730,8 @@ export function DocumentLibrarySection({
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={uploading != null}
-                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadLocked}
+                  onClick={() => openLibraryFilePicker("files")}
                   data-testid="library-upload-files"
                 >
                   <Upload className="size-3.5" aria-hidden="true" />
@@ -1583,8 +1742,8 @@ export function DocumentLibrarySection({
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={uploading != null}
-                  onClick={() => folderInputRef.current?.click()}
+                  disabled={uploadLocked}
+                  onClick={() => openLibraryFilePicker("folder")}
                   data-testid="library-upload-folder"
                 >
                   <FolderUp className="size-3.5" aria-hidden="true" />
@@ -1595,7 +1754,7 @@ export function DocumentLibrarySection({
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={moveItemCount === 0 || uploading != null}
+                  disabled={moveItemCount === 0 || uploadLocked}
                   title={
                     moveItemCount === 0
                       ? "Select a file or folder first"
@@ -1617,7 +1776,7 @@ export function DocumentLibrarySection({
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
                   disabled={
-                    uploading != null ||
+                    uploadLocked ||
                     (checkedCount === 0 &&
                       (!inspectedAssetId || inspectedIsArchived))
                   }
@@ -1647,7 +1806,7 @@ export function DocumentLibrarySection({
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={uploading != null}
+                  disabled={uploadLocked}
                   onClick={() => setCreatingFolder(true)}
                 >
                   <FolderPlus className="size-3.5" aria-hidden="true" />
@@ -1675,8 +1834,11 @@ export function DocumentLibrarySection({
                 className="hidden"
                 data-testid="library-upload-files-input"
                 onChange={(event) => {
-                  handleSelectedFiles(event.target.files, null);
+                  const files = event.target.files
+                    ? Array.from(event.target.files)
+                    : [];
                   event.target.value = "";
+                  void handleSelectedFiles(files, null);
                 }}
               />
               <input
@@ -1692,8 +1854,11 @@ export function DocumentLibrarySection({
                 className="hidden"
                 data-testid="library-upload-folder-input"
                 onChange={(event) => {
-                  handleSelectedFiles(event.target.files, null);
+                  const files = event.target.files
+                    ? Array.from(event.target.files)
+                    : [];
                   event.target.value = "";
+                  void handleSelectedFiles(files, null);
                 }}
               />
               {creatingFolder ? (
@@ -1715,10 +1880,10 @@ export function DocumentLibrarySection({
                 />
               ) : null}
 
-              {uploading ? (
+              {uploadUi?.phase === "uploading" ? (
                 <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
-                  Uploading {uploading.current} of {uploading.total} ·{" "}
-                  {uploading.filename}
+                  Uploading {uploadUi.current} of {uploadUi.total} ·{" "}
+                  {uploadUi.filename}
                 </p>
               ) : checkedCount > 0 ? (
                 <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
@@ -1871,16 +2036,12 @@ export function DocumentLibrarySection({
         </div>
       )}
 
-      <LibraryUnsupportedUploadDialog
-        open={unsupportedUpload != null}
-        rejectedNames={unsupportedUpload?.rejectedNames ?? []}
-        acceptedCount={unsupportedUpload?.files.length ?? 0}
-        onCancel={() => setUnsupportedUpload(null)}
-        onProceed={() => {
-          if (!unsupportedUpload) return;
-          const pending = unsupportedUpload;
-          setUnsupportedUpload(null);
-          void uploadLibraryBatch(pending.files, pending.targetFolderId);
+      <LibraryUploadDialog
+        state={uploadUi}
+        onDismiss={() => setUploadUi(null)}
+        onProceedUnsupported={() => {
+          if (uploadUi?.phase !== "unsupported") return;
+          void uploadLibraryBatch(uploadUi.files, uploadUi.targetFolderId);
         }}
       />
 

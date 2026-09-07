@@ -6,6 +6,7 @@ import {
   libraryTargetFolderDepth,
   libraryUploadBatchError,
   libraryUploadFilesFromList,
+  libraryUploadFilesFromListAsync,
   uniqueRejectedLibraryNames,
 } from "./library-drop-files";
 
@@ -85,5 +86,25 @@ describe("library folder upload scan", () => {
     ];
     expect(libraryTargetFolderDepth(folders, null)).toBe(0);
     expect(libraryTargetFolderDepth(folders, "b")).toBe(2);
+  });
+
+  it("scans a large list in chunks and reports progress", async () => {
+    const files = [
+      fileWithPath("a.pdf", "batch/a.pdf"),
+      fileWithPath("b.pdf", "batch/b.pdf"),
+      fileWithPath("notes.txt", "batch/notes.txt", "text/plain"),
+    ];
+    const progress: Array<[number, number]> = [];
+    const scan = await libraryUploadFilesFromListAsync(files, {
+      chunkSize: 1,
+      onProgress: (scanned, total) => progress.push([scanned, total]),
+    });
+    expect(progress).toEqual([
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ]);
+    expect(scan.accepted.map((item) => item.file.name)).toEqual(["a.pdf", "b.pdf"]);
+    expect(scan.rejectedNames).toEqual(["batch/notes.txt"]);
   });
 });

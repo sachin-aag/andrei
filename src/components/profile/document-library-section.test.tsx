@@ -292,12 +292,25 @@ describe("DocumentLibrarySection explorer", () => {
     expect(screen.getByTestId("library-upload-folder-input")).toBeInTheDocument();
   });
 
+  it("shows our loading dialog as soon as Upload folder is clicked", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
+    await user.click(screen.getByTestId("library-upload-folder"));
+    expect(await screen.findByTestId("library-upload-dialog")).toBeInTheDocument();
+    expect(screen.getByText("Preparing upload")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Large folders can take a moment to load/i)
+    ).toBeInTheDocument();
+  });
+
   it("asks before uploading when a folder includes an unsupported file", async () => {
     renderLibrary();
     await screen.findByTestId("library-explorer");
     const input = screen.getByTestId("library-upload-folder-input");
     fireEvent.change(input, { target: { files: folderUploadFiles() } });
 
+    expect(await screen.findByTestId("library-upload-dialog")).toBeInTheDocument();
     expect(
       await screen.findByTestId("library-unsupported-files-dialog")
     ).toBeInTheDocument();
@@ -356,6 +369,8 @@ describe("DocumentLibrarySection explorer", () => {
     expect(
       screen.queryByTestId("library-unsupported-files-dialog")
     ).not.toBeInTheDocument();
+    expect(await screen.findByText("Upload complete")).toBeInTheDocument();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("does not offer proceed when a folder has no PDF or Word files", async () => {
@@ -377,6 +392,23 @@ describe("DocumentLibrarySection explorer", () => {
       screen.queryByTestId("library-unsupported-proceed")
     ).not.toBeInTheDocument();
     expect(uploadFileToLibrary).not.toHaveBeenCalled();
+  });
+
+  it("shows our upload dialog instead of a page toast when a folder finishes", async () => {
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
+    const pdf = new File(["%PDF"], "coa.pdf", { type: "application/pdf" });
+    Object.defineProperty(pdf, "webkitRelativePath", {
+      value: "q1_batch/coa.pdf",
+    });
+    fireEvent.change(screen.getByTestId("library-upload-folder-input"), {
+      target: { files: [pdf] },
+    });
+
+    expect(await screen.findByTestId("library-upload-dialog")).toBeInTheDocument();
+    expect(await screen.findByText("Upload complete")).toBeInTheDocument();
+    expect(screen.getByText("Uploaded 1 file to your vault.")).toBeInTheDocument();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("archives a file into the collapsed Archive section and can restore it", async () => {
