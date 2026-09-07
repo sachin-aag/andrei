@@ -32,10 +32,10 @@ export default async function DocumentVaultPage() {
           </h1>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
             Upload files or folders here, or drop them onto a folder. Nested
-            folders are kept. A folder must contain only PDF and Word files —
-            anything else stops the upload before it starts. Click a file to see
-            details. Open a preview when you want to read it. Files already on
-            reports stay there if you remove them from the vault.
+            folders are kept. PDF and Word files are added; other types are
+            listed so you can skip them or cancel. Click a file to see details.
+            Open a preview when you want to read it. Files already on reports
+            stay there if you remove them from the vault.
           </p>
         </div>
 

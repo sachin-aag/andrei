@@ -4,9 +4,9 @@ import {
   classifyCollectedLibraryFiles,
   isIgnorableLibraryUploadName,
   libraryTargetFolderDepth,
-  libraryUnsupportedFilesError,
   libraryUploadBatchError,
   libraryUploadFilesFromList,
+  uniqueRejectedLibraryNames,
 } from "./library-drop-files";
 
 function fileWithPath(
@@ -29,15 +29,13 @@ describe("library folder upload scan", () => {
     expect(libraryUploadBatchError(scan, 0)).toBeNull();
   });
 
-  it("rejects the whole batch when any real file is not PDF or Word", () => {
+  it("lists unsupported files without blocking accepted PDF and Word files", () => {
     const pdf = fileWithPath("coa.pdf", "q1_batch/coa.pdf");
     const txt = fileWithPath("notes.txt", "q1_batch/notes.txt", "text/plain");
     const scan = libraryUploadFilesFromList([pdf, txt]);
     expect(scan.accepted.map((item) => item.file.name)).toEqual(["coa.pdf"]);
-    expect(scan.rejectedNames).toEqual(["notes.txt"]);
-    expect(libraryUploadBatchError(scan, 0)).toBe(
-      "notes.txt is not a PDF or Word document. Remove unsupported files and try again."
-    );
+    expect(scan.rejectedNames).toEqual(["q1_batch/notes.txt"]);
+    expect(libraryUploadBatchError(scan, 0)).toBeNull();
   });
 
   it("ignores Finder/Explorer metadata so those files do not block the folder", () => {
@@ -51,12 +49,22 @@ describe("library folder upload scan", () => {
     expect(libraryUploadBatchError(scan, 0)).toBeNull();
   });
 
-  it("lists a few unsupported names when several files are wrong", () => {
+  it("dedupes rejected names for the confirm list", () => {
     expect(
-      libraryUnsupportedFilesError(["notes.txt", "photo.png", "data.xlsx", "x.csv"])
-    ).toBe(
-      "This folder includes notes.txt, photo.png, data.xlsx, and 1 more, which are not PDF or Word documents. Remove them and try again."
-    );
+      uniqueRejectedLibraryNames([
+        "q1/notes.txt",
+        "q1/photo.png",
+        "q1/notes.txt",
+      ])
+    ).toEqual(["q1/notes.txt", "q1/photo.png"]);
+  });
+
+  it("does not treat a folder of only unsupported files as a hard error", () => {
+    const txt = fileWithPath("notes.txt", "q1_batch/notes.txt", "text/plain");
+    const scan = libraryUploadFilesFromList([txt]);
+    expect(scan.accepted).toHaveLength(0);
+    expect(scan.rejectedNames).toEqual(["q1_batch/notes.txt"]);
+    expect(libraryUploadBatchError(scan, 0)).toBeNull();
   });
 
   it("blocks a nested path that would exceed folder depth", () => {

@@ -4,10 +4,15 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { toast } from "sonner";
+import { uploadFileToLibrary } from "@/lib/attachments/upload-library";
 import { DocumentLibrarySection } from "./document-library-section";
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
+}));
+
+vi.mock("@/lib/attachments/upload-library", () => ({
+  uploadFileToLibrary: vi.fn(),
 }));
 
 vi.mock("@/components/report/attachment-preview-panel", () => ({
@@ -76,6 +81,10 @@ function jsonResponse(body: unknown, ok = true): Response {
 }
 
 beforeEach(() => {
+  vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(uploadFileToLibrary).mockReset();
+  vi.mocked(uploadFileToLibrary).mockResolvedValue(asset);
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
@@ -90,6 +99,18 @@ beforeEach(() => {
     })
   );
 });
+
+function folderUploadFiles() {
+  const pdf = new File(["%PDF"], "coa.pdf", { type: "application/pdf" });
+  Object.defineProperty(pdf, "webkitRelativePath", {
+    value: "q1_batch/coa.pdf",
+  });
+  const txt = new File(["hi"], "notes.txt", { type: "text/plain" });
+  Object.defineProperty(txt, "webkitRelativePath", {
+    value: "q1_batch/notes.txt",
+  });
+  return [pdf, txt];
+}
 
 function renderLibrary() {
   return render(
@@ -271,27 +292,91 @@ describe("DocumentLibrarySection explorer", () => {
     expect(screen.getByTestId("library-upload-folder-input")).toBeInTheDocument();
   });
 
-  it("errors before upload when a folder includes an unsupported file", async () => {
+  it("asks before uploading when a folder includes an unsupported file", async () => {
     renderLibrary();
     await screen.findByTestId("library-explorer");
     const input = screen.getByTestId("library-upload-folder-input");
-    const pdf = new File(["%PDF"], "coa.pdf", { type: "application/pdf" });
-    Object.defineProperty(pdf, "webkitRelativePath", {
-      value: "q1_batch/coa.pdf",
+    fireEvent.change(input, { target: { files: folderUploadFiles() } });
+
+    expect(
+      await screen.findByTestId("library-unsupported-files-dialog")
+    ).toBeInTheDocument();
+    expect(screen.getByText("This file isn't supported")).toBeInTheDocument();
+    expect(screen.getByText("q1_batch/notes.txt")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Skip and upload the rest" })
+    ).toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(uploadFileToLibrary).not.toHaveBeenCalled();
+  });
+
+  it("cancels a mixed folder upload from the unsupported-files dialog", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
+    fireEvent.change(screen.getByTestId("library-upload-folder-input"), {
+      target: { files: folderUploadFiles() },
     });
+    expect(
+      await screen.findByTestId("library-unsupported-files-dialog")
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("library-unsupported-cancel"));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("library-unsupported-files-dialog")
+      ).not.toBeInTheDocument();
+    });
+    expect(uploadFileToLibrary).not.toHaveBeenCalled();
+  });
+
+  it("uploads accepted files after confirming skip on unsupported types", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
+    fireEvent.change(screen.getByTestId("library-upload-folder-input"), {
+      target: { files: folderUploadFiles() },
+    });
+    expect(
+      await screen.findByTestId("library-unsupported-files-dialog")
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("library-unsupported-proceed"));
+
+    await waitFor(() => {
+      expect(uploadFileToLibrary).toHaveBeenCalledTimes(1);
+    });
+    expect(uploadFileToLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file: expect.objectContaining({ name: "coa.pdf" }),
+        relativePath: "q1_batch/coa.pdf",
+      })
+    );
+    expect(
+      screen.queryByTestId("library-unsupported-files-dialog")
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer proceed when a folder has no PDF or Word files", async () => {
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
     const txt = new File(["hi"], "notes.txt", { type: "text/plain" });
     Object.defineProperty(txt, "webkitRelativePath", {
       value: "q1_batch/notes.txt",
     });
-    fireEvent.change(input, { target: { files: [pdf, txt] } });
-    expect(toast.error).toHaveBeenCalledWith(
-      "notes.txt is not a PDF or Word document. Remove unsupported files and try again."
-    );
+    fireEvent.change(screen.getByTestId("library-upload-folder-input"), {
+      target: { files: [txt] },
+    });
+
     expect(
-      vi
-        .mocked(fetch)
-        .mock.calls.every(([input]) => !String(input).includes("/upload-url"))
-    ).toBe(true);
+      await screen.findByTestId("library-unsupported-files-dialog")
+    ).toBeInTheDocument();
+    expect(screen.getByText("This file isn't supported")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("library-unsupported-proceed")
+    ).not.toBeInTheDocument();
+    expect(uploadFileToLibrary).not.toHaveBeenCalled();
   });
 
   it("archives a file into the collapsed Archive section and can restore it", async () => {

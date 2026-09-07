@@ -40,6 +40,7 @@ import {
   libraryUploadBatchError,
   libraryUploadFilesFromDataTransfer,
   libraryUploadFilesFromList,
+  uniqueRejectedLibraryNames,
   type LibraryUploadFile,
 } from "@/lib/attachments/library-drop-files";
 import { uploadFileToLibrary } from "@/lib/attachments/upload-library";
@@ -854,6 +855,85 @@ function MoveToFolderDialog({
   );
 }
 
+function LibraryUnsupportedUploadDialog({
+  open,
+  rejectedNames,
+  acceptedCount,
+  onCancel,
+  onProceed,
+}: {
+  open: boolean;
+  rejectedNames: string[];
+  acceptedCount: number;
+  onCancel: () => void;
+  onProceed: () => void;
+}) {
+  const uniqueNames = uniqueRejectedLibraryNames(rejectedNames);
+  const canProceed = acceptedCount > 0;
+  const plural = uniqueNames.length !== 1;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+    >
+      <DialogContent data-testid="library-unsupported-files-dialog">
+        <DialogHeader>
+          <DialogTitle>
+            {canProceed && plural
+              ? "Some files aren't supported"
+              : plural
+                ? "These files aren't supported"
+                : "This file isn't supported"}
+          </DialogTitle>
+          <DialogDescription>
+            {canProceed
+              ? `The vault accepts PDF and Word documents. ${
+                  plural ? "These files" : "This file"
+                } will be skipped if you continue.`
+              : `The vault accepts PDF and Word documents. ${
+                  plural
+                    ? "None of these files can be added."
+                    : "This file can't be added."
+                }`}
+          </DialogDescription>
+        </DialogHeader>
+        <ul
+          className="max-h-48 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+          data-testid="library-unsupported-files-list"
+        >
+          {uniqueNames.map((name) => (
+            <li key={name} className="truncate py-0.5" title={name}>
+              {name}
+            </li>
+          ))}
+        </ul>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            data-testid="library-unsupported-cancel"
+          >
+            Cancel
+          </Button>
+          {canProceed ? (
+            <Button
+              type="button"
+              onClick={onProceed}
+              data-testid="library-unsupported-proceed"
+            >
+              Skip and upload the rest
+            </Button>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function LibraryAssetDetails({
   asset,
   folderOptions,
@@ -1004,6 +1084,11 @@ export function DocumentLibrarySection({
     current: number;
     total: number;
     filename: string;
+  } | null>(null);
+  const [unsupportedUpload, setUnsupportedUpload] = useState<{
+    files: LibraryUploadFile[];
+    rejectedNames: string[];
+    targetFolderId: string | null;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -1341,6 +1426,14 @@ export function DocumentLibrarySection({
       toast.error(error);
       return;
     }
+    if (scan.rejectedNames.length > 0) {
+      setUnsupportedUpload({
+        files: scan.accepted,
+        rejectedNames: scan.rejectedNames,
+        targetFolderId,
+      });
+      return;
+    }
     void uploadLibraryBatch(scan.accepted, targetFolderId);
   };
 
@@ -1432,11 +1525,11 @@ export function DocumentLibrarySection({
           <h2 className="text-base font-semibold">Document vault</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
             Upload files or folders here, or drop them onto a folder. Nested
-            folders are kept. A folder must contain only PDF and Word files —
-            anything else stops the upload before it starts. Click a file to
-            see details. Open a preview when you want to read it. Archive hides
-            a file from this list; reports that already use it keep it. Restore
-            from Archive at the bottom of the file list.
+            folders are kept. PDF and Word files are added; other types are
+            listed so you can skip them or cancel. Click a file to see details.
+            Open a preview when you want to read it. Archive hides a file from
+            this list; reports that already use it keep it. Restore from Archive
+            at the bottom of the file list.
           </p>
         </>
       )}
@@ -1645,7 +1738,7 @@ export function DocumentLibrarySection({
               ) : isEmpty ? (
                 <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
                   Drop a folder of PDF and Word files, or use Upload files /
-                  Upload folder. Other file types stop the upload.
+                  Upload folder. Other file types can be skipped.
                 </p>
               ) : null}
 
@@ -1777,6 +1870,19 @@ export function DocumentLibrarySection({
           )}
         </div>
       )}
+
+      <LibraryUnsupportedUploadDialog
+        open={unsupportedUpload != null}
+        rejectedNames={unsupportedUpload?.rejectedNames ?? []}
+        acceptedCount={unsupportedUpload?.files.length ?? 0}
+        onCancel={() => setUnsupportedUpload(null)}
+        onProceed={() => {
+          if (!unsupportedUpload) return;
+          const pending = unsupportedUpload;
+          setUnsupportedUpload(null);
+          void uploadLibraryBatch(pending.files, pending.targetFolderId);
+        }}
+      />
 
       <MoveToFolderDialog
         open={moveDialogOpen}
