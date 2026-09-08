@@ -40,6 +40,7 @@ import { ChatMarkdown } from "@/components/report/chat-markdown";
 import { openCitedDocumentOrToast } from "@/lib/citations/open-cited-document";
 import { ChatMessageTargetTag } from "@/components/report/chat-message-target-tag";
 import {
+  assistantOffersAnalyticsSwitch,
   chatMessageTargetLabel,
   tagChatMessages,
   type ChatMessageTarget,
@@ -51,6 +52,7 @@ import {
   AskUserForm,
   type AskUserQuestionInput,
 } from "@/components/report/chat-ask-user-form";
+import { SwitchToAnalyticsCard } from "@/components/report/chat-switch-to-analytics";
 import {
   ANALYTICS_CHAT_MODE_OPTIONS,
   CHAT_PACE_OPTIONS,
@@ -342,6 +344,15 @@ function MentionChips({
 }
 
 
+function textFromChatMessage(message: UIMessage | undefined): string {
+  if (!message) return "";
+  return (message.parts ?? [])
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("\n")
+    .trim();
+}
+
 const MessageTurn = memo(function MessageTurn({
   message,
   chatTarget,
@@ -350,6 +361,9 @@ const MessageTurn = memo(function MessageTurn({
   streaming = false,
   filenameByAttachmentId,
   onOpenCitation,
+  showAnalyticsSwitch = false,
+  onSwitchToAnalytics,
+  composerOnAnalytics = false,
 }: {
   message: UIMessage;
   chatTarget: ChatMessageTarget | null;
@@ -358,6 +372,9 @@ const MessageTurn = memo(function MessageTurn({
   streaming?: boolean;
   filenameByAttachmentId?: AttachmentFilenameLookup;
   onOpenCitation?: (raw: string) => void;
+  showAnalyticsSwitch?: boolean;
+  onSwitchToAnalytics?: () => void;
+  composerOnAnalytics?: boolean;
 }) {
   const isUser = message.role === "user";
   const targetLabel = chatTarget ? chatMessageTargetLabel(chatTarget) : null;
@@ -463,6 +480,12 @@ const MessageTurn = memo(function MessageTurn({
           }
         )
       )}
+      {showAnalyticsSwitch && onSwitchToAnalytics ? (
+        <SwitchToAnalyticsCard
+          onSwitch={onSwitchToAnalytics}
+          composerOnAnalytics={composerOnAnalytics}
+        />
+      ) : null}
       <TurnChangeSummary
         parts={parts}
         metadata={
@@ -1412,10 +1435,15 @@ export function ChatPanel({
   }, []);
 
   const send = useCallback(
-    async (text: string, images?: PendingChatImage[]) => {
+    async (
+      text: string,
+      images?: PendingChatImage[],
+      target?: WorkProductView
+    ) => {
       const attached = images ?? pendingImages;
       const trimmed = text.trim();
       const files = attached.map((image) => image.part);
+      const sendTarget = target ?? chatTarget;
       if (
         (!trimmed && files.length === 0) ||
         busy ||
@@ -1451,13 +1479,13 @@ export function ChatPanel({
         return;
       }
       if (sessionRuntime.busy) return;
-      lastSendTargetRef.current = chatTarget;
-      setLastSendTarget(chatTarget);
+      lastSendTargetRef.current = sendTarget;
+      setLastSendTarget(sendTarget);
       savedScrollRef.current = { kind: "bottom" };
       if (
         workspaceChrome === "agent" &&
         mode === "agent" &&
-        chatTarget !== "analytics"
+        sendTarget !== "analytics"
       ) {
         try {
           await flushPendingSectionSaves();
@@ -1482,7 +1510,7 @@ export function ChatPanel({
         mode,
         pace,
         workspaceChrome,
-        chatTarget,
+        chatTarget: sendTarget,
       };
       if (tagsForRequest.length > 0) {
         body.mentions = tagsForRequest.map((mention) => ({
@@ -1490,7 +1518,7 @@ export function ChatPanel({
           id: mention.id,
         }));
       }
-      const metadata = { chatTarget };
+      const metadata = { chatTarget: sendTarget };
       if (trimmed && files.length > 0) {
         void sessionRuntime.sendMessage(
           { text: trimmed, files, metadata },
@@ -1706,6 +1734,21 @@ export function ChatPanel({
                 visibleStartIndex + i === messages.length - 1 &&
                 m.role === "assistant"
               }
+              showAnalyticsSwitch={
+                statsEnabled &&
+                m.role === "assistant" &&
+                assistantOffersAnalyticsSwitch(
+                  "metadata" in m
+                    ? (m as { metadata?: unknown }).metadata
+                    : undefined
+                )
+              }
+              onSwitchToAnalytics={() => {
+                const replay = textFromChatMessage(visibleMessages[i - 1]);
+                setComposerChatTarget("analytics");
+                if (replay) void send(replay, [], "analytics");
+              }}
+              composerOnAnalytics={targetingAnalytics}
             />
           ))
         )}

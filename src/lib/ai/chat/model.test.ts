@@ -49,6 +49,27 @@ describe("chatAssistantTurnMetadata", () => {
       chatTarget: "report",
     });
   });
+
+  it("stamps a Switch-to-Analytics offer only when asked", () => {
+    expect(
+      chatAssistantTurnMetadata({
+        pace: "quick",
+        mode: "agent",
+        promptVersion: "chat-v85-worksheet-switch-send",
+        chatTarget: "report",
+        switchToAnalytics: true,
+      }).switchToAnalytics
+    ).toBe(true);
+    expect(
+      chatAssistantTurnMetadata({
+        pace: "quick",
+        mode: "agent",
+        promptVersion: "chat-v85-worksheet-switch-send",
+        chatTarget: "report",
+        switchToAnalytics: false,
+      }).switchToAnalytics
+    ).toBeUndefined();
+  });
 });
 
 describe("isChatPace", () => {

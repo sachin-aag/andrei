@@ -22,7 +22,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v83-strict-attachment-tags";
+export const CHAT_PROMPT_VERSION = "chat-v85-worksheet-switch-send";
 
 export type ChatMode = "plan" | "agent";
 
@@ -93,6 +93,9 @@ Follow the latest user message. Agent mode means you MAY edit when they asked �
 - A write request (draft, fill, write, edit, add, insert, remove, rewrite, paste, put, place, start the report, or a yes to your offer to draft): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with the highest-signal sections — still only because they asked.
 - A bare statement, pasted content, or correction: if this prompt has a "Tools available this turn" block saying write tools are not loaded, answer in chat. Otherwise in Agent mode treat it as a write and deliver the change. In Ask mode, answer.
 Empty fields and ready documents are not a request to write.`;
+
+const SWITCH_TO_ANALYTICS_RULES = `## Analytics worksheet
+This turn asked to fill or plot on the Analytics worksheet, but the composer is on Report. A Switch to Analytics button is on this reply. Do not paste a markdown table, worksheet, or CSV into chat. Do not call document edit tools. One short sentence: they can use that button (the Report | Analytics work-product selector — not Ask vs Agent). Do not tell them to retype the request.`;
 
 const QUESTION_RULES = `## Asking questions
 When you need facts from the engineer, call the ask_user tool. It renders a structured answer form in the chat. NEVER write questions as prose, numbered lists, or markdown in your reply.
@@ -180,6 +183,7 @@ ${
       ? "- Charts are the only generated pixels. When the engineer asked in words for a chart of cited attachment data, call plot_measurements (never invent a data point, and never volunteer a chart). Restyle reuses the stored chartSpec — do not extract again."
       : "- Do not generate chart pixels in Document chat. When the engineer asked for a measurement plot, scatter, or capability chart, tell them to open **Analytics** and ask the Statistical Analysis assistant to extract the numbers from attachments and plot them. Plot → Plot measurements is for worksheet columns only. Do not call a chart tool here — it is not available."
   }
+- Worksheet columns are not writable from Document chat. When they asked to fill, extract into, or dump numbers onto the Analytics worksheet, tell them to set the Report | Analytics selector to Analytics. Do not paste a markdown table into chat as a stand-in.
 - Do not paste markdown like ![alt](narrative#1) into draft_field or propose_edit — those cannot create or remove figures.`;
 }
 
@@ -356,6 +360,11 @@ export function buildChatSystemPrompt(opts: {
   editPolicy?: ChatEditPolicy;
   /** Latest-turn intent. Read/social turns run without the write tools. */
   intent?: ChatUserIntentKind;
+  /**
+   * High-confidence Document→Analytics redirect. A Switch to Analytics
+   * button is on the reply; do not dump a worksheet table into chat.
+   */
+  switchToAnalytics?: boolean;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
@@ -404,10 +413,13 @@ export function buildChatSystemPrompt(opts: {
     mode === "agent"
       ? intentToolAvailabilityRule(opts.intent ?? "write", "document")
       : null;
+  const switchBlock = opts.switchToAnalytics
+    ? `\n\n${SWITCH_TO_ANALYTICS_RULES}`
+    : "";
 
   return `${chat.persona}
 
-${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}
+${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}
 
 ${LANGUAGE_RULES}
 
