@@ -53,11 +53,8 @@ export function withSourceCitation<
   return { ...hit, citation: sourceCitationBracket(hit.filename, hit.pageNumber) };
 }
 
-export function documentCitationRule(citationsAtEndOfSection: boolean): string {
-  if (citationsAtEndOfSection) {
-    return 'Cite evidence as [filename, p. N] when a tool result has a page for that fact. Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.';
-  }
-  return "Cite evidence in prose as [filename, p. N] when a tool result has a page for that fact. Use [filename] only when the page is missing or ambiguous. Never use <to be filled> in a citation.";
+export function documentCitationRule(): string {
+  return 'Cite evidence as [filename, p. N] when a tool result has a page for that fact. Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.';
 }
 
 function uniquePreserveOrder(items: readonly string[]): string[] {
@@ -734,8 +731,8 @@ export function normalizeTrailingCitationBlockInDoc(doc: JSONContent): JSONConte
 }
 
 /**
- * Move inline document citations to a trailing block at the end of `text`.
- * Used for whole-field drafts when citations-at-end mode is on.
+ * Move source citation brackets to a trailing Citations: block and leave
+ * numbered `[n]` markers on the claim. Used for whole-field drafts.
  */
 export function moveCitationsToEndOfText(text: string): string {
   const { body, lines } = splitTrailingCitationBlock(text);
@@ -815,20 +812,14 @@ export function splitEditForCitationsAtEnd(
 }
 
 /**
- * Apply pack policy: drop `second` when the mode is off; split citations
- * to the end when it is on.
+ * Number source brackets at the claim and park them under a trailing
+ * Citations: heading. This is the only citation style.
  */
 export function prepareEditForCitationMode<T extends SplitSuggestionEdit>(
   edit: T,
-  opts: { citationsAtEndOfSection: boolean; existingFieldText?: string }
+  opts?: { existingFieldText?: string }
 ): T {
-  if (!opts.citationsAtEndOfSection) {
-    if (!edit.second) return edit;
-    const rest = { ...edit };
-    delete rest.second;
-    return rest;
-  }
-  return { ...edit, ...splitEditForCitationsAtEnd(edit, opts) };
+  return { ...edit, ...splitEditForCitationsAtEnd(edit, opts ?? {}) };
 }
 
 /**

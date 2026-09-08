@@ -158,19 +158,13 @@ export function documentTypeShortLabel(type: DocumentType): string {
 }
 
 /**
- * Numbered `[n]` markers + trailing Citations: list. On for the whole
- * Convergent and MJ packs, and for generic (blank) documents on demo. Off for
- * demo investigation / design verification.
+ * Numbered `[n]` markers + trailing Citations: list. This is the only
+ * citation style — every pack and document type uses it.
  */
 export function citationsAtEndOfSectionFor(
-  documentType?: DocumentType | null
+  _documentType?: DocumentType | null
 ): boolean {
-  if (getCustomerPack().citationsAtEndOfSection) return true;
-  if (!documentType) return false;
-  return (
-    getDocumentType(resolveDocumentType(documentType)).citationsAtEndOfSection ===
-    true
-  );
+  return true;
 }
 
 export function engineerReportsSubtitle(

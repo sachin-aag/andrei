@@ -203,8 +203,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   tables (blank data cells, no surrounding prose) are empty, not partial
   — `sectionHasTable` still sees them. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if
-  missing or ambiguous). Do not reject or rewrite a draft that omitted a
-  known page. **Focused** is an explicit skim.
+  missing or ambiguous). The saved field converts those to numbered `[n]`
+  markers plus a trailing Citations: list on every pack — there is no
+  inline `[filename, p. N]` document style. Do not reject or rewrite a
+  draft that omitted a known page. **Focused** is an explicit skim.
   Adaptive turns skip auto-evidence so the model must grep.
   Adaptive/focused turns do not expose `start_document_review`. Comprehensive
   `continue_document_review` drains the remaining queue in one call with a

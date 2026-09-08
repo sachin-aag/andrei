@@ -6,7 +6,7 @@ import {
   isDvTableSection,
 } from "@/lib/document-types/design-verification/sections";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v22-angle-placeholders" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v23-numbered-citations-all-packs" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -39,10 +39,7 @@ function fieldHintForSection(section: SectionType): string {
   return "";
 }
 
-export function buildSuggestionSystemPrompt(
-  section: SectionType,
-  opts?: { citationsAtEndOfSection?: boolean }
-): string {
+export function buildSuggestionSystemPrompt(section: SectionType): string {
   const fields = SUGGEST_TARGET_FIELD_PATTERNS[section].join(", ");
   const fieldHint = fieldHintForSection(section);
   const tableFormatBlock = isDvTableSection(section)
@@ -82,18 +79,14 @@ CRITERION-SPECIFIC PLACEMENT RULES:
 OPERATIONS (implicit from deleteText/insertText):
 - replace: both deleteText and insertText non-empty
 - insert: deleteText empty, insertText non-empty (anchor locates where to insert after)
-- delete: insertText empty, deleteText non-empty${tableFormatBlock}${
-    opts?.citationsAtEndOfSection
-      ? `
+- delete: insertText empty, deleteText non-empty${tableFormatBlock}
 
 CITATIONS AT END OF SECTION (required):
 - Put [filename, p. N] or [filename] immediately after the claim or table-cell text they support. Do NOT invent numbers such as [1]; the application assigns numbered markers and parks \`1. [filename, p. N]\` under a trailing "Citations:" heading.
 - Multiple sources on one claim become adjacent source brackets: [file-a.pdf, p. 1][file-b.pdf, p. 2].
 - If the same source already appears in the field's Citations list, still put the source bracket at the new claim so the number can be reused.
 - A split edit is still accepted: primary body change, "second": { "anchorText": "", "deleteText": "", "insertText": "Citations:\\n[filename, p. N]" }. Prefer inline source brackets in insertText.
-- Never write a citation as a placeholder.`
-      : ""
-  }`;
+- Never write a citation as a placeholder.`;
 }
 
 export function buildSuggestionUserPrompt({
@@ -102,7 +95,6 @@ export function buildSuggestionUserPrompt({
   priorBlock,
   evidenceBlock,
   failingCriteria,
-  citationsAtEndOfSection,
 }: {
   section: SectionType;
   contentStr: string;
@@ -114,7 +106,6 @@ export function buildSuggestionUserPrompt({
     reasoning: string;
     status: CriterionStatus;
   }>;
-  citationsAtEndOfSection?: boolean;
 }): string {
   const statusLabel = (status: CriterionStatus) =>
     status === "not_met" ? "NOT MET" : status === "partially_met" ? "PARTIALLY MET" : status;
@@ -176,9 +167,7 @@ Table cell edit (SECTION CONTENT shows "[2,3] Pass"):
   "scope": { "kind": "cell", "row": 2, "col": 3 },
   "reasoning": "Records the actual result for this test in its cell."
 }
-${
-    citationsAtEndOfSection
-      ? `
+
 Citation at the claim (source bracket; the app numbers it and parks the list):
 {
   "criterionKey": "results.satisfied_by",
@@ -188,8 +177,6 @@ Citation at the claim (source bracket; the app numbers it and parks the list):
   "insertText": " The measured value was 9.8 W [protocol.pdf, p. 3].",
   "reasoning": "Adds the measured value in the claim and cites the protocol."
 }
-`
-      : ""
-  }
+
 Return one suggestion object per failing criterion key listed above.`;
 }
