@@ -22,7 +22,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v84-worksheet-switch";
+export const CHAT_PROMPT_VERSION = "chat-v85-worksheet-switch-send";
 
 export type ChatMode = "plan" | "agent";
 
@@ -95,7 +95,7 @@ Follow the latest user message. Agent mode means you MAY edit when they asked �
 Empty fields and ready documents are not a request to write.`;
 
 const SWITCH_TO_ANALYTICS_RULES = `## Analytics worksheet
-This turn asked to fill or plot on the Analytics worksheet, but the composer is on Report. A Switch to Analytics button is on this reply. Do not paste a markdown table, worksheet, or CSV into chat. Do not call document edit tools. One short sentence: they can use that button (the Report | Analytics work-product selector — not Ask vs Agent) and send the same request.`;
+This turn asked to fill or plot on the Analytics worksheet, but the composer is on Report. A Switch to Analytics button is on this reply. Do not paste a markdown table, worksheet, or CSV into chat. Do not call document edit tools. One short sentence: they can use that button (the Report | Analytics work-product selector — not Ask vs Agent). Do not tell them to retype the request.`;
 
 const QUESTION_RULES = `## Asking questions
 When you need facts from the engineer, call the ask_user tool. It renders a structured answer form in the chat. NEVER write questions as prose, numbered lists, or markdown in your reply.

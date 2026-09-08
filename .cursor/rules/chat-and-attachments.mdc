@@ -26,7 +26,9 @@ Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Flash-Lite when rules would emit `ambiguous_agent_mode`, and on Document
 chat when the text looks like a worksheet dump). The same call may set
 `switchToAnalytics` when Lite is ≥0.75 sure the destination is the Analytics
-grid — Report chat then shows a Switch to Analytics button. Stub chat,
+grid — Report chat then shows a Switch to Analytics button; clicking it
+sets Analytics and resends the original request. A yes / go for it after
+that copy is a write. Stub chat,
 timeout, and parse failures keep the rules decision with no widget.
 Retrieval maps those turns to focused (`reason: no_task`) and skips
 kickoff evidence. A yes after the assistant offered to draft is a write

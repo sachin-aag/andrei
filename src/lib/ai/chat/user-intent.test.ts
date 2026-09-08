@@ -46,6 +46,25 @@ describe("classifyChatUserIntent", () => {
         recentAssistantTexts: ["I drafted Purpose from the protocol."],
       }).kind
     ).toBe("social");
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        surface: "analytics",
+        recentAssistantTexts: [
+          "Hello! How can I help you with your statistical analysis today?",
+          "You can use the Switch to Analytics button on the Report | Analytics work-product selector at the top of the interface to open the Analytics worksheet.",
+        ],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_analytics_switch" });
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        surface: "analytics",
+        recentAssistantTexts: [
+          "Hello! How can I help you with your statistical analysis today?",
+        ],
+      })
+    ).toEqual({ kind: "social", reason: "ack_without_task" });
   });
 
   it("matches explicit produce and start-the-report phrasing", () => {

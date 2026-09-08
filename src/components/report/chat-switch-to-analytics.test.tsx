@@ -14,14 +14,14 @@ describe("SwitchToAnalyticsCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Switch to Analytics" }));
     expect(onSwitch).toHaveBeenCalledOnce();
     expect(
-      screen.getByText("Switched to Analytics. Send the same request again.")
+      screen.getByText("Switched to Analytics. Sending your request.")
     ).toBeInTheDocument();
 
     rerender(
       <SwitchToAnalyticsCard onSwitch={onSwitch} composerOnAnalytics={true} />
     );
     expect(
-      screen.getByText("Switched to Analytics. Send the same request again.")
+      screen.getByText("Switched to Analytics. Sending your request.")
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Switch to Analytics" })

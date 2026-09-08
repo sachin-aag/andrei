@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v84-worksheet-switch");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v85-worksheet-switch-send");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -253,6 +253,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("## Analytics worksheet");
     expect(prompt).toContain("Switch to Analytics button");
     expect(prompt).toContain("Do not paste a markdown table");
+    expect(prompt).toContain("Do not tell them to retype the request");
   });
 
   it("ask mode forbids editing and answers questions", () => {

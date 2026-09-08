@@ -168,6 +168,24 @@ describe("resolveChatUserIntent", () => {
     );
     expect(prompt).toContain("preferredSurface=analytics");
     expect(prompt).toContain("extract conductivity into the worksheet");
+    expect(prompt).toContain("yes / go for it / do it after you told them to switch");
+  });
+
+  it("does not call Lite for go-for-it after a Switch to Analytics reply", async () => {
+    await expect(
+      resolveChatUserIntent({
+        userText: "go for it",
+        mode: "agent",
+        surface: "analytics",
+        recentAssistantTexts: [
+          "You can use the Switch to Analytics button on the Report | Analytics selector.",
+        ],
+      })
+    ).resolves.toEqual({
+      kind: "write",
+      reason: "confirm_analytics_switch",
+    });
+    expect(generateTextMock).not.toHaveBeenCalled();
   });
 
   it("runs the same Lite call for Ask-mode worksheet dumps that rules would skip", async () => {

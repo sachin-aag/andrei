@@ -44,7 +44,7 @@ export function SwitchToAnalyticsCard({
           </p>
           {switched ? (
             <p className="text-[11px] text-[var(--muted-foreground)]">
-              Switched to Analytics. Send the same request again.
+              Switched to Analytics. Sending your request.
             </p>
           ) : (
             <button

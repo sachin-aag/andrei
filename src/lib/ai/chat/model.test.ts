@@ -55,7 +55,7 @@ describe("chatAssistantTurnMetadata", () => {
       chatAssistantTurnMetadata({
         pace: "quick",
         mode: "agent",
-        promptVersion: "chat-v84-worksheet-switch",
+        promptVersion: "chat-v85-worksheet-switch-send",
         chatTarget: "report",
         switchToAnalytics: true,
       }).switchToAnalytics
@@ -64,7 +64,7 @@ describe("chatAssistantTurnMetadata", () => {
       chatAssistantTurnMetadata({
         pace: "quick",
         mode: "agent",
-        promptVersion: "chat-v84-worksheet-switch",
+        promptVersion: "chat-v85-worksheet-switch-send",
         chatTarget: "report",
         switchToAnalytics: false,
       }).switchToAnalytics

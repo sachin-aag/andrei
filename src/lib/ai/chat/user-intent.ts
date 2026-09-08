@@ -112,6 +112,10 @@ const QUESTION_START_RE =
 const ASSISTANT_WRITE_OFFER_RE =
   /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot)|ready to draft|start drafting|i(?:'ll| will) draft)\b/i;
 
+/** Report chat pointed them at Analytics; a yes is continue-the-extract, not small talk. */
+const SWITCH_TO_ANALYTICS_OFFER_RE =
+  /Switch to Analytics button|belongs on the Analytics worksheet/i;
+
 /** Skip-all on an Analytics page-number form — search, do not placeholder. */
 const ASK_USER_ANSWERS_RE = /^Answers to your questions:/i;
 const SKIPPED_PLACEHOLDER_RE = /\(skipped — use a placeholder\)/i;
@@ -168,6 +172,12 @@ export function classifyChatUserIntent(
   if (CONFIRM_RE.test(latest)) {
     if (offeredWrite) {
       return { kind: "write", reason: "confirm_write_offer" };
+    }
+    const offeredAnalyticsSwitch = (input.recentAssistantTexts ?? []).some(
+      (text) => SWITCH_TO_ANALYTICS_OFFER_RE.test(text)
+    );
+    if (offeredAnalyticsSwitch) {
+      return { kind: "write", reason: "confirm_analytics_switch" };
     }
     return { kind: "social", reason: "ack_without_task" };
   }
