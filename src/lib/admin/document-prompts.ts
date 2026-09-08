@@ -7,7 +7,6 @@ import {
 } from "@/lib/ai/suggest-prompts";
 import {
   buildEvaluationSystemPromptForType,
-  citationsAtEndOfSectionFor,
   evaluationCapabilityFor,
   getDocumentType,
   getEvaluatableSections,
@@ -48,7 +47,6 @@ export function buildAdminDocumentPromptCatalog(
 ): AdminDocumentPromptCatalog {
   const def = getDocumentType(documentType);
   const evaluatable = getEvaluatableSections(documentType);
-  const citationsAtEnd = citationsAtEndOfSectionFor(documentType);
   const blocks: AdminPromptBlock[] = [];
 
   pushIfNonEmpty(blocks, {
@@ -128,9 +126,7 @@ export function buildAdminDocumentPromptCatalog(
         subtitle: firstSection
           ? `Representative (${firstSection}); matrix sections may include extra table rules`
           : undefined,
-        body: buildSuggestionSystemPrompt(firstSection, {
-          citationsAtEndOfSection: citationsAtEnd,
-        }),
+        body: buildSuggestionSystemPrompt(firstSection),
       });
 
       pushIfNonEmpty(blocks, {
@@ -149,7 +145,6 @@ export function buildAdminDocumentPromptCatalog(
               status: "not_met",
             },
           ],
-          citationsAtEndOfSection: citationsAtEnd,
         }),
       });
     }

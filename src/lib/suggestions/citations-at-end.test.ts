@@ -345,17 +345,7 @@ describe("prepareEditForCitationMode", () => {
     },
   };
 
-  it("drops a second part when the mode is off", () => {
-    expect(
-      prepareEditForCitationMode(split, { citationsAtEndOfSection: false })
-    ).toEqual({
-      anchorText: "met spec",
-      deleteText: "",
-      insertText: " at 9.8 W [protocol.pdf, p. 3]",
-    });
-  });
-
-  it("splits when the mode is on", () => {
+  it("splits source brackets to a trailing Citations list", () => {
     expect(
       prepareEditForCitationMode(
         {
@@ -363,7 +353,7 @@ describe("prepareEditForCitationMode", () => {
           deleteText: "",
           insertText: " at 9.8 W [protocol.pdf, p. 3]",
         },
-        { citationsAtEndOfSection: true }
+        { existingFieldText: "" }
       )
     ).toEqual({
       anchorText: "met spec",
@@ -379,14 +369,11 @@ describe("prepareEditForCitationMode", () => {
 });
 
 describe("documentCitationRule", () => {
-  it("asks for inline cites when the mode is off and end-of-section when on", () => {
-    expect(documentCitationRule(false)).toContain("in prose");
-    expect(documentCitationRule(false)).not.toContain("end of the section");
-    expect(documentCitationRule(true)).toContain("end of the section field");
-    expect(documentCitationRule(true)).toContain("Citations:");
-    expect(documentCitationRule(true)).toContain("split edit");
-    expect(documentCitationRule(false)).toContain("missing or ambiguous");
-    expect(documentCitationRule(true)).toContain("missing or ambiguous");
+  it("asks for source brackets that the app numbers at the end of the section", () => {
+    expect(documentCitationRule()).toContain("end of the section field");
+    expect(documentCitationRule()).toContain("Citations:");
+    expect(documentCitationRule()).toContain("split edit");
+    expect(documentCitationRule()).toContain("missing or ambiguous");
   });
 });
 

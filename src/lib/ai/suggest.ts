@@ -33,7 +33,6 @@ import {
 } from "@/lib/attachments/retrieval";
 import type { EditScope } from "@/lib/suggestions/locator";
 import { parseEditScope } from "@/lib/ai/suggestion-gating";
-import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { prepareEditForCitationMode } from "@/lib/suggestions/citations-at-end";
 
 export type SuggestionDropReason =
@@ -255,7 +254,7 @@ async function retrieveEvidenceForCriteria({
 
 function finalizeRawSuggestion(
   s: RawSuggestion,
-  opts: { citationsAtEndOfSection: boolean; existingFieldText: string }
+  opts: { existingFieldText: string }
 ): RawSuggestion {
   const prepared = prepareEditForCitationMode(
     {
@@ -301,7 +300,6 @@ export async function generateSuggestionsForSection({
   allSections,
   gapCriteria,
   documentType,
-  citationsAtEndOfSection: citationsAtEndOfSectionOption,
 }: {
   section: SectionType;
   content: unknown;
@@ -316,10 +314,7 @@ export async function generateSuggestionsForSection({
     status: CriterionStatus;
   }>;
   documentType?: DocumentType;
-  citationsAtEndOfSection?: boolean;
 }): Promise<{ suggestions: GeneratedSuggestion[]; dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> }> {
-  const citationsAtEndOfSection =
-    citationsAtEndOfSectionOption ?? citationsAtEndOfSectionFor(documentType);
   if (gapCriteria.length === 0) {
     return { suggestions: [], dropped: [] };
   }
@@ -341,7 +336,6 @@ export async function generateSuggestionsForSection({
         continue;
       }
       const prepared = finalizeRawSuggestion(s, {
-        citationsAtEndOfSection,
         existingFieldText,
       });
       if (!suggestionHasContent(prepared)) {
@@ -364,9 +358,7 @@ export async function generateSuggestionsForSection({
   }
 
   const contentStr = existingFieldText;
-  const systemPrompt = buildSuggestionSystemPrompt(section, {
-    citationsAtEndOfSection,
-  });
+  const systemPrompt = buildSuggestionSystemPrompt(section);
   const priorBlock = buildPriorSectionsBlock(section, allSections);
   const evidenceByCriterion = await retrieveEvidenceForCriteria({
     reportId,
@@ -388,7 +380,6 @@ export async function generateSuggestionsForSection({
         reasoning: g.reasoning,
         status: g.status,
       })),
-      citationsAtEndOfSection,
     });
 
     await assertAiBudgetAvailable();
@@ -486,7 +477,6 @@ export async function generateSuggestionsForSection({
       continue;
     }
     const prepared = finalizeRawSuggestion(s, {
-      citationsAtEndOfSection,
       existingFieldText,
     });
     if (!suggestionHasContent(prepared)) {

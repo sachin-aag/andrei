@@ -25,7 +25,6 @@ import { runSheetExtractJob } from "./extract-sheet";
 import { createAnalyticsSearchGate } from "./search-loop";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
-import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import {
   alignExtractedDates,
   gateMetricSeriesExtract,
@@ -884,7 +883,6 @@ export function buildAnalyticsChatTools(opts: {
       reportId,
       canEdit: false,
       documentType,
-      citationsAtEndOfSection: citationsAtEndOfSectionFor(documentType),
       includePlotMeasurements: false,
       pinnedAttachmentIds,
     }) as Record<string, unknown>

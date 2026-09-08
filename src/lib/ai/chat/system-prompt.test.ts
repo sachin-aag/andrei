@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v86-mj-citations-angle-placeholders");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v87-numbered-citations-all-packs");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -60,32 +60,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Agent mode drafts; Ask mode does not");
   });
 
-  it("puts citations at the end of the section when the pack mode is on", () => {
+  it("parks citations at the end of the section", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
-      citationsAtEndOfSection: true,
     });
     expect(prompt).toContain("END of the section field");
     expect(prompt).toContain("Citations:");
     expect(prompt).toContain("immediately after the supported statement");
     expect(prompt).toContain("cite it as [filename, p. N]");
     expect(prompt).toContain("Do not invent [1]/[2] numbers");
-    expect(prompt).not.toContain(
-      "When you rely on retrieved evidence in prose, cite it as"
-    );
-  });
-
-  it("keeps inline citations when the pack mode is off", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "agent",
-      citationsAtEndOfSection: false,
-    });
-    expect(prompt).toContain(
-      "When you rely on retrieved evidence in prose, cite it as"
-    );
-    expect(prompt).not.toContain("END of the section field");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -319,12 +303,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("SOP/DP/QA/008");
   });
 
-  it("parks citations at the end on generic documents, not demo investigation", () => {
+  it("parks citations at the end on investigation reports and generic documents", () => {
     const investigation = buildChatSystemPrompt({ ...opts, mode: "agent" });
-    expect(investigation).toContain(
-      "When you rely on retrieved evidence in prose, cite it as"
-    );
-    expect(investigation).not.toContain("END of the section field");
+    expect(investigation).toContain("END of the section field");
+    expect(investigation).toContain("Citations:");
 
     const generic = buildChatSystemPrompt({
       ...opts,

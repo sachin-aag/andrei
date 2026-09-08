@@ -77,7 +77,6 @@ import {
   dataUrlToBase64,
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
-import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import {
   commitChatEdit,
@@ -883,8 +882,6 @@ export function buildChatTools(opts: {
   mentionedSections?: readonly SectionType[];
   retrievalPolicy?: RetrievalPolicy;
   documentReview?: DocumentReviewSession;
-  /** Citations at end of each field (Convergent pack, or generic documents). */
-  citationsAtEndOfSection?: boolean;
   /** Current chat messages — used to resolve chat-attached images. */
   messages?: UIMessage[];
   /** Document-chat scatter plots from attachments. Off when embedding Document tools in Analytics chat. */
@@ -1056,11 +1053,9 @@ export function buildChatTools(opts: {
   const sectionScope = opts.sectionScope ?? "all";
   const retrievalPolicy = opts.retrievalPolicy ?? "adaptive";
   const documentReview = opts.documentReview ?? new DocumentReviewSession();
-  const citationsAtEndOfSection =
-    opts.citationsAtEndOfSection ?? citationsAtEndOfSectionFor(documentType);
   const messages = opts.messages ?? [];
   const includePlotMeasurements = opts.includePlotMeasurements ?? true;
-  const citationRule = documentCitationRule(citationsAtEndOfSection);
+  const citationRule = documentCitationRule();
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
   const pinnedAttachmentIds = Array.from(
     new Set((opts.pinnedAttachmentIds ?? []).filter((id) => id.trim().length > 0))
@@ -1481,11 +1476,7 @@ export function buildChatTools(opts: {
 
     propose_edit: tool({
       description:
-        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table. Do not rewrite an existing table as a bulleted list; that is edit_table (edit_cells / insert_column).${
-          citationsAtEndOfSection
-            ? " Put document citations as [filename, p. N] immediately after the claim in insertText when the page is known; [filename] only if the page is missing or ambiguous. The server converts them to numbered markers and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
-            : ""
-        }${scopeHint}`,
+        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table. Do not rewrite an existing table as a bulleted list; that is edit_table (edit_cells / insert_column). Put document citations as [filename, p. N] immediately after the claim in insertText when the page is known; [filename] only if the page is missing or ambiguous. The server converts them to numbered markers and parks \`1. [filename, p. N]\` under a Citations: heading. A split \`second\` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1526,38 +1517,34 @@ export function buildChatTools(opts: {
           .describe(
             "One short sentence explaining the edit (shown to the engineer). Use the section names they see. Never mention recipe, SAMPLE, omit-if, targetField names, or tool names."
           ),
-        ...(citationsAtEndOfSection
-          ? {
-              second: z
-                .object({
-                  anchorText: z
-                    .string()
-                    .default("")
-                    .describe("Usually '' — empty anchor appends at the end of the field."),
-                  deleteText: z.string().default(""),
-                  insertText: z
-                    .string()
-                    .default("")
-                    .describe(
-                      "Citation(s) to append under a Citations: heading, e.g. 'Citations:\\n[protocol.pdf, p. 3]'. Prefer putting source brackets in the primary insertText instead."
-                    ),
-                  scope: z
-                    .object({
-                      kind: z.enum(["cell", "listItem"]),
-                      row: z.number().int().optional(),
-                      col: z.number().int().optional(),
-                      index: z.number().int().optional(),
-                      tableIndex: z.number().int().optional(),
-                      listIndex: z.number().int().optional(),
-                    })
-                    .nullish(),
-                })
-                .nullish()
-                .describe(
-                  "Second apply site in the same field. Use for an end-of-section citation while the primary part edits the claim."
-                ),
-            }
-          : {}),
+        second: z
+          .object({
+            anchorText: z
+              .string()
+              .default("")
+              .describe("Usually '' — empty anchor appends at the end of the field."),
+            deleteText: z.string().default(""),
+            insertText: z
+              .string()
+              .default("")
+              .describe(
+                "Citation(s) to append under a Citations: heading, e.g. 'Citations:\\n[protocol.pdf, p. 3]'. Prefer putting source brackets in the primary insertText instead."
+              ),
+            scope: z
+              .object({
+                kind: z.enum(["cell", "listItem"]),
+                row: z.number().int().optional(),
+                col: z.number().int().optional(),
+                index: z.number().int().optional(),
+                tableIndex: z.number().int().optional(),
+                listIndex: z.number().int().optional(),
+              })
+              .nullish(),
+          })
+          .nullish()
+          .describe(
+            "Second apply site in the same field. Use for an end-of-section citation while the primary part edits the claim."
+          ),
       }),
       execute: async ({
         section,
@@ -1605,7 +1592,7 @@ export function buildChatTools(opts: {
 
         const parsedScope = parseEditScope(scope);
         const rawSecond =
-          citationsAtEndOfSection && "second" in rest && rest.second
+          "second" in rest && rest.second
             ? (rest.second as ProposedSecondInput)
             : undefined;
         const fieldText = sectionFieldPlainText(loaded.content, section, resolvedField);
@@ -1631,7 +1618,7 @@ export function buildChatTools(opts: {
                 }
               : undefined,
           },
-          { citationsAtEndOfSection, existingFieldText: fieldText }
+          { existingFieldText: fieldText }
         );
         const check = checkProposedEdit(fieldText, prepared, fieldDoc);
         if (check.status !== "ok") {
@@ -2699,9 +2686,7 @@ export function buildChatTools(opts: {
           section,
           resolvedField
         );
-        const stripped = citationsAtEndOfSection
-          ? stripCitationsFromTableOperation(capturedOp, fieldText)
-          : { operation: capturedOp, citations: [] as string[] };
+        const stripped = stripCitationsFromTableOperation(capturedOp, fieldText);
         let applied;
         try {
           applied = applyTableOperation(fieldDoc, stripped.operation, {
@@ -2718,9 +2703,7 @@ export function buildChatTools(opts: {
         if (!applied.ok) {
           return { status: applied.status, hint: applied.hint };
         }
-        const second = citationsAtEndOfSection
-          ? citationAppendPart(stripped.citations, fieldText)
-          : undefined;
+        const second = citationAppendPart(stripped.citations, fieldText);
 
         const suggestionId = createId();
         const createTable =
@@ -2971,9 +2954,7 @@ export function buildChatTools(opts: {
 
         const suggestionId = createId();
         const normalizedMarkdown = normalizeSuggestionInsertText(markdown);
-        const draftMarkdown = citationsAtEndOfSection
-          ? moveCitationsToEndOfText(normalizedMarkdown)
-          : normalizedMarkdown;
+        const draftMarkdown = moveCitationsToEndOfText(normalizedMarkdown);
         if (committing) {
           return commitFieldEdit({
             section,

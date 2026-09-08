@@ -51,10 +51,10 @@ export type CustomerPack = {
    * When true, document citations are numbered at the claim and parked at
    * the end of each section field. New edits that add a source citation keep
    * a `[n]` marker beside the claim and append `n. [filename, p. N]` under
-   * Citations:. On for Convergent and MJ; off for demo. Generic (blank)
-   * documents enable the same mode via the document-type flag. Also
-   * enables the Export without citations DOCX option (trailing citation
-   * blocks and matching markers are dropped).
+   * Citations:. On for every pack (demo, MJ, Convergent). Generic (blank)
+   * documents also set the document-type flag. Enables the Export without
+   * citations DOCX option (trailing citation blocks and matching markers
+   * are dropped). There is no inline `[filename, p. N]` citation style.
    */
   citationsAtEndOfSection: boolean;
   /**
@@ -172,7 +172,7 @@ export const DEMO_PACK: CustomerPack = {
   evaluationSectionPromptAdditions: {},
   criterionDescriptionOverrides: {},
   wordImportEnabled: false,
-  citationsAtEndOfSection: false,
+  citationsAtEndOfSection: true,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
   insightsEnabled: true,
