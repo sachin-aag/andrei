@@ -1382,16 +1382,15 @@ export function DocumentLibrarySection({
     setPreviewAssetId(null);
   }, []);
 
-  const checkedCount = useMemo(() => {
-    if (!library) return 0;
-    return countVaultLinkSelection(
-      library.folders,
-      library.assets,
-      checkedFolderIds,
-      checkedAssetIds,
-      excludedAssetIds
-    );
-  }, [library, checkedFolderIds, checkedAssetIds, excludedAssetIds]);
+  const checkedCount = !library
+    ? 0
+    : countVaultLinkSelection(
+        library.folders,
+        library.assets,
+        checkedFolderIds,
+        checkedAssetIds,
+        excludedAssetIds
+      );
   const inspectedIsArchived =
     library?.archivedAssets.some((asset) => asset.id === inspectedAssetId) ??
     false;
@@ -1767,22 +1766,19 @@ export function DocumentLibrarySection({
     [library?.folders]
   );
 
-  const vaultSelectionPayload = useMemo(() => {
-    if (!library) {
-      return {
+  const vaultSelectionPayload = !library
+    ? {
         libraryFolderIds: [] as string[],
         assetIds: [] as string[],
         excludedAssetIds: [] as string[],
-      };
-    }
-    return buildVaultLinkPayload(
-      library.folders,
-      library.assets,
-      checkedFolderIds,
-      checkedAssetIds,
-      excludedAssetIds
-    );
-  }, [library, checkedFolderIds, checkedAssetIds, excludedAssetIds]);
+      }
+    : buildVaultLinkPayload(
+        library.folders,
+        library.assets,
+        checkedFolderIds,
+        checkedAssetIds,
+        excludedAssetIds
+      );
 
   const assetById = useMemo(() => {
     const map = new Map<string, AttachmentLibraryAssetRecord>();
