@@ -4,7 +4,6 @@ import {
   hasReference,
   isDelayed,
   isDirectImpact,
-  isGap,
   isNo,
   isOutOfTolerance,
   isYes,
@@ -20,12 +19,10 @@ import {
   parsePreventiveMaintenanceMatrix,
   parseQmsMatrix,
   parseQualificationMatrix,
-  parseReconciliationMatrix,
   parseResponsibilitiesMatrix,
 } from "./matrix-parser";
 import {
   ELR_FORMAT_APPLICABILITY,
-  ELR_RECONCILIATION_CHECKS,
   type ElrRecommendation,
 } from "./sections";
 
@@ -339,6 +336,42 @@ export function checkQmsRecords(ctx: EvaluationContext) {
   return listProblems(problems, `${parsed.rows.length} QMS record(s) listed`);
 }
 
+/**
+ * A QMS record marked as affecting the qualified state has to show up in the
+ * qualification history — an executed change control with no follow-up
+ * qualification activity is the gap this report exists to catch.
+ */
+export function checkQmsQualificationFollowUp(ctx: EvaluationContext) {
+  const qms = parseQmsMatrix(ctx.content);
+  if (!qms.ok) return verdict("not_met", qms.reason);
+  const impacting = qms.rows.filter(
+    (row) => isYes(row.qualificationImpact) && hasReference(row.documentRef)
+  );
+  if (impacting.length === 0) {
+    return verdict("met", "No QMS record is marked as affecting the qualified state");
+  }
+  const qualification = parseQualificationMatrix(
+    ctx.dependencies.elr_qualification ?? {}
+  );
+  if (!qualification.ok) {
+    return verdict("not_met", "Qualification history could not be read");
+  }
+  const haystack = qualification.rows
+    .map((row) => Object.values(row).join(" "))
+    .join(" ")
+    .toLowerCase();
+  const orphaned = impacting
+    .filter((row) => !haystack.includes(row.documentRef.trim().toLowerCase()))
+    .map(
+      (row) =>
+        `${row.documentRef.trim()} affects the qualified state but is not referenced in the qualification history`
+    );
+  return listProblems(
+    orphaned,
+    `${impacting.length} qualification-impacting record(s) are traced to a qualification activity`
+  );
+}
+
 export function checkAlarmDirectImpactAction(ctx: EvaluationContext) {
   const parsed = parseAlarmMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
@@ -444,54 +477,6 @@ export function checkCsvStatus(ctx: EvaluationContext) {
   );
 }
 
-/**
- * Section 15 is the point of the report. Every standing check must carry an
- * outcome, and a Gap must say what the gap is and what is being done.
- */
-export function checkReconciliationAnswered(ctx: EvaluationContext) {
-  const parsed = parseReconciliationMatrix(ctx.content);
-  if (!parsed.ok) return verdict("not_met", parsed.reason);
-  if (parsed.rows.length === 0) {
-    return verdict("not_met", "The reconciliation checks have been deleted");
-  }
-  if (parsed.rows.length < ELR_RECONCILIATION_CHECKS.length) {
-    return verdict(
-      "not_met",
-      `Only ${parsed.rows.length} of ${ELR_RECONCILIATION_CHECKS.length} standing reconciliation checks are present — do not delete rows`
-    );
-  }
-  const unanswered: string[] = [];
-  const problems: string[] = [];
-  parsed.rows.forEach((row, index) => {
-    const label = rowLabel(row.serial, index);
-    if (!row.outcome.trim()) {
-      unanswered.push(label);
-      return;
-    }
-    if (!isGap(row.outcome)) return;
-    if (!row.gapDescription.trim()) {
-      problems.push(`${label} is a gap with no description`);
-    }
-    if (!row.actionRequired.trim()) {
-      problems.push(`${label} is a gap with no action required`);
-    }
-  });
-  if (problems.length > 0) return listProblems(problems, "");
-  if (unanswered.length > 0) {
-    return verdict(
-      "not_met",
-      `${unanswered.length} reconciliation check(s) have no outcome: ${unanswered.slice(0, 4).join(", ")}`
-    );
-  }
-  const gaps = parsed.rows.filter((r) => isGap(r.outcome)).length;
-  return verdict(
-    "met",
-    gaps > 0
-      ? `All ${parsed.rows.length} checks answered; ${gaps} gap(s) described with actions`
-      : `All ${parsed.rows.length} checks answered with no gaps`
-  );
-}
-
 export function checkRecommendationSelected(ctx: EvaluationContext) {
   const content = ctx.content as
     | { recommendation?: ElrRecommendation }
@@ -514,39 +499,6 @@ export function checkRecommendationSelected(ctx: EvaluationContext) {
     );
   }
   return verdict("met", `Recommendation recorded (${recommendation})`);
-}
-
-/**
- * A conclusion of "continue routine use" is only coherent when Section 15 has
- * no open gap. This is the one check that reads across sections.
- */
-export function checkConclusionMatchesGaps(ctx: EvaluationContext) {
-  const content = ctx.content as
-    | { recommendation?: ElrRecommendation }
-    | null
-    | undefined;
-  const recommendation = (content?.recommendation ?? "").trim();
-  const parsed = parseReconciliationMatrix(ctx.dependencies.elr_reconciliation ?? {});
-  if (!parsed.ok) {
-    return verdict("not_met", "Reconciliation table could not be read");
-  }
-  const gaps = parsed.rows.filter((row) => isGap(row.outcome));
-  if (gaps.length === 0) {
-    return verdict("met", "No reconciliation gaps to reconcile with the conclusion");
-  }
-  if (!recommendation) {
-    return verdict("not_met", `${gaps.length} reconciliation gap(s) and no recommendation`);
-  }
-  if (recommendation === "continue") {
-    return verdict(
-      "not_met",
-      `Section 15 records ${gaps.length} gap(s); "continue routine use, no action required" contradicts them`
-    );
-  }
-  return verdict(
-    "met",
-    `${gaps.length} gap(s) are reflected in the recommendation`
-  );
 }
 
 export function checkElrRevisionHistory(ctx: EvaluationContext) {

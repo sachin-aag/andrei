@@ -587,50 +587,6 @@ export const CSV_STATUS_COLUMN_SCHEMA: readonly MatrixColumnSchema<CsvStatusColu
     { id: "remarks", label: "Remarks", aliases: ["remarks", "remark", "notes"] },
   ];
 
-export type ReconciliationColumnId =
-  | "serial"
-  | "check"
-  | "sectionRef"
-  | "outcome"
-  | "gapDescription"
-  | "actionRequired"
-  | "responsibility";
-
-export const RECONCILIATION_COLUMN_SCHEMA: readonly MatrixColumnSchema<ReconciliationColumnId>[] =
-  [
-    serialFor<ReconciliationColumnId>(),
-    {
-      id: "check",
-      label: "Reconciliation Check",
-      aliases: ["reconciliation check", "check", "checkpoint"],
-    },
-    {
-      id: "sectionRef",
-      label: "Section Ref.",
-      aliases: ["section ref", "section", "reference"],
-    },
-    {
-      id: "outcome",
-      label: "Outcome (Complies / Gap)",
-      aliases: ["outcome complies gap", "outcome", "result", "status"],
-    },
-    {
-      id: "gapDescription",
-      label: "Gap Description",
-      aliases: ["gap description", "gap", "observation"],
-    },
-    {
-      id: "actionRequired",
-      label: "Action Required",
-      aliases: ["action required", "action"],
-    },
-    {
-      id: "responsibility",
-      label: "Responsibility / TCD",
-      aliases: ["responsibility tcd", "responsibility", "owner", "tcd"],
-    },
-  ];
-
 export type ResponsibilitiesColumnId = "serial" | "department" | "responsibility";
 
 export const RESPONSIBILITIES_COLUMN_SCHEMA: readonly MatrixColumnSchema<ResponsibilitiesColumnId>[] =

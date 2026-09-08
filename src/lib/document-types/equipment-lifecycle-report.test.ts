@@ -9,12 +9,11 @@ import {
   checkAlarmDirectImpactAction,
   checkBreakdownRepeatCapa,
   checkCalibrationStatus,
-  checkConclusionMatchesGaps,
   checkMonitoringExcursionsLinked,
   checkPreventiveMaintenanceJustified,
+  checkQmsQualificationFollowUp,
   checkQmsRecords,
   checkQualificationFormatScope,
-  checkReconciliationAnswered,
   checkRecommendationSelected,
 } from "./elr/deterministic-checks";
 import {
@@ -25,8 +24,6 @@ import {
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
   ELR_QMS_HEADERS,
   ELR_QUALIFICATION_HEADERS,
-  ELR_RECONCILIATION_CHECKS,
-  ELR_RECONCILIATION_HEADERS,
   ELR_SECTION_KEYS,
   ELR_SECTION_LABELS,
   EMPTY_ELR_CONTENT,
@@ -111,13 +108,6 @@ describe("equipment lifecycle report definition", () => {
     }
   });
 
-  it("ships the standing reconciliation checks pre-filled", () => {
-    const table = EMPTY_ELR_CONTENT.elr_reconciliation.table;
-    const rows = table.content?.[0]?.content ?? [];
-    // header + one row per standing check
-    expect(rows).toHaveLength(ELR_RECONCILIATION_CHECKS.length + 1);
-  });
-
   it("treats the evidence tables as open-set inventories for chat", () => {
     const def = getDocumentType(TYPE);
     expect(def.chat.inventorySections).toContain("elr_qualification");
@@ -144,7 +134,6 @@ describe("equipment lifecycle report definition", () => {
     // Trend sub-fields are separate placeholders in the docx template.
     expect(data).toHaveProperty("breakdownTrendXml");
     expect(data).toHaveProperty("alarmTrendXml");
-    expect(data).toHaveProperty("reconciliationTableXml");
   });
 });
 
@@ -362,101 +351,100 @@ describe("ELR container-format scoping", () => {
   });
 });
 
-describe("ELR reconciliation and conclusion", () => {
-  function reconciliationTable(
-    overrides: Record<number, Record<string, string>> = {}
-  ): JSONContent {
-    return tableDoc([
-      [...ELR_RECONCILIATION_HEADERS],
-      ...ELR_RECONCILIATION_CHECKS.map((check, index) =>
-        row(ELR_RECONCILIATION_HEADERS, {
-          "Sr. No.": String(index + 1),
-          "Reconciliation Check": check.check,
-          "Section Ref.": check.sectionRef,
-          "Outcome (Complies / Gap)": "Complies",
-          ...(overrides[index] ?? {}),
-        })
-      ),
-    ]);
-  }
+describe("ELR criteria wiring", () => {
+  it("attaches the qualification dependency to the QMS follow-up check", () => {
+    const criteria = getCriteria(TYPE, "elr_qms");
+    const cross = criteria.find((c) => c.key === "qms.qualification_follow_up");
+    expect(cross?.kind).toBe("deterministic");
+    expect(cross?.dependsOn).toContain("elr_qualification");
+  });
 
-  it("fails when a standing check has been deleted", () => {
-    const table = tableDoc([
-      [...ELR_RECONCILIATION_HEADERS],
-      row(ELR_RECONCILIATION_HEADERS, {
+  it("gives every evaluable section at least one criterion except attachments", () => {
+    for (const key of ELR_SECTION_KEYS) {
+      const criteria = getCriteria(TYPE, key);
+      if (key === "elr_attachments") {
+        expect(criteria).toHaveLength(0);
+        continue;
+      }
+      expect(criteria.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("ELR qualification follow-up", () => {
+  const cc = (impact: string, ref = "CCF/EU/26/007") =>
+    tableDoc([
+      [...ELR_QMS_HEADERS],
+      row(ELR_QMS_HEADERS, {
         "Sr. No.": "1",
-        "Reconciliation Check": ELR_RECONCILIATION_CHECKS[0]!.check,
-        "Outcome (Complies / Gap)": "Complies",
+        "Type (CC / Dev / CAPA / OOS / OOT)": "CC",
+        "Document Reference No.": ref,
+        "Title / Description": "Sealing station modification",
+        "Format Applicability": "Line-common",
+        Status: "Closed",
+        "Qualification Impact (Y/N)": impact,
       }),
     ]);
-    const result = checkReconciliationAnswered(
-      ctx({ table }, { section: "elr_reconciliation" })
-    );
-    expect(result.status).toBe("not_met");
-    expect(result.reasoning).toMatch(/do not delete rows/i);
-  });
 
-  it("requires a description and action for a gap", () => {
-    const table = reconciliationTable({
-      2: { "Outcome (Complies / Gap)": "Gap" },
-    });
-    const result = checkReconciliationAnswered(
-      ctx({ table }, { section: "elr_reconciliation" })
-    );
-    expect(result.status).toBe("not_met");
-    expect(result.reasoning).toMatch(/gap with no description/i);
-  });
+  const qualification = (remark: string) =>
+    tableDoc([
+      [...ELR_QUALIFICATION_HEADERS],
+      row(ELR_QUALIFICATION_HEADERS, {
+        "Sr. No.": "1",
+        "Qualification Stage": "PRQ",
+        "Protocol / Report No.": "PRQR-25-PR-060",
+        "Format Applicability": "Vial",
+        Outcome: "Pass",
+        Remarks: remark,
+      }),
+    ]);
 
-  it("passes when every check is answered", () => {
-    const result = checkReconciliationAnswered(
-      ctx({ table: reconciliationTable() }, { section: "elr_reconciliation" })
-    );
-    expect(result.status).toBe("met");
-  });
-
-  it("rejects 'continue routine use' while a gap is open", () => {
-    const table = reconciliationTable({
-      0: {
-        "Outcome (Complies / Gap)": "Gap",
-        "Gap Description": "Excursion EM-26-004 has no deviation",
-        "Action Required": "Raise deviation",
-      },
-    });
-    const result = checkConclusionMatchesGaps(
+  it("flags a qualification-impacting change with no qualification activity", () => {
+    const result = checkQmsQualificationFollowUp(
       ctx(
+        { table: cc("Y") },
         {
-          narrative: narrative("Equipment remains qualified."),
-          recommendation: "continue",
-          recommendationNarrative: narrative("No action."),
-        },
-        { section: "elr_conclusion", dependencies: { elr_reconciliation: { table } } }
+          section: "elr_qms",
+          dependencies: { elr_qualification: { table: qualification("") } },
+        }
       )
     );
     expect(result.status).toBe("not_met");
-    expect(result.reasoning).toMatch(/contradicts/i);
+    expect(result.reasoning).toMatch(/not referenced in the qualification history/i);
   });
 
-  it("accepts an early re-qualification recommendation alongside a gap", () => {
-    const table = reconciliationTable({
-      0: {
-        "Outcome (Complies / Gap)": "Gap",
-        "Gap Description": "Excursion EM-26-004 has no deviation",
-        "Action Required": "Raise deviation",
-      },
-    });
-    const result = checkConclusionMatchesGaps(
+  it("passes when the qualification history cites the change control", () => {
+    const result = checkQmsQualificationFollowUp(
       ctx(
+        { table: cc("Y") },
         {
-          narrative: narrative("One gap remains open."),
-          recommendation: "early_requalification",
-          recommendationNarrative: narrative("Advance the PRQ."),
-        },
-        { section: "elr_conclusion", dependencies: { elr_reconciliation: { table } } }
+          section: "elr_qms",
+          dependencies: {
+            elr_qualification: {
+              table: qualification("Triggered by CCF/EU/26/007"),
+            },
+          },
+        }
       )
     );
     expect(result.status).toBe("met");
   });
 
+  it("is satisfied when nothing affects the qualified state", () => {
+    const result = checkQmsQualificationFollowUp(
+      ctx(
+        { table: cc("N") },
+        {
+          section: "elr_qms",
+          dependencies: { elr_qualification: { table: qualification("") } },
+        }
+      )
+    );
+    expect(result.status).toBe("met");
+  });
+});
+
+describe("ELR recommendation", () => {
   it("requires a recommendation to be selected", () => {
     const result = checkRecommendationSelected(
       ctx(
@@ -485,25 +473,19 @@ describe("ELR reconciliation and conclusion", () => {
     expect(result.status).toBe("partially_met");
     expect(result.reasoning).toMatch(/specify/i);
   });
-});
 
-describe("ELR criteria wiring", () => {
-  it("attaches the reconciliation dependency to the conclusion", () => {
-    const criteria = getCriteria(TYPE, "elr_conclusion");
-    const cross = criteria.find((c) => c.key === "conclusion.matches_gaps");
-    expect(cross?.kind).toBe("deterministic");
-    expect(cross?.dependsOn).toContain("elr_reconciliation");
-  });
-
-  it("gives every evaluable section at least one criterion except attachments", () => {
-    for (const key of ELR_SECTION_KEYS) {
-      const criteria = getCriteria(TYPE, key);
-      if (key === "elr_attachments") {
-        expect(criteria).toHaveLength(0);
-        continue;
-      }
-      expect(criteria.length).toBeGreaterThan(0);
-    }
+  it("accepts a selected recommendation with a written conclusion", () => {
+    const result = checkRecommendationSelected(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "continue",
+          recommendationNarrative: narrative("No action required."),
+        },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(result.status).toBe("met");
   });
 });
 

@@ -28,7 +28,6 @@ export const ELR_SECTION_KEYS = [
   "elr_access_control",
   "elr_audit_trail",
   "elr_csv_status",
-  "elr_reconciliation",
   "elr_conclusion",
   "elr_attachments",
   "elr_revision_history",
@@ -176,16 +175,6 @@ export const ELR_CSV_STATUS_HEADERS = [
   "Remarks",
 ] as const;
 
-export const ELR_RECONCILIATION_HEADERS = [
-  "Sr. No.",
-  "Reconciliation Check",
-  "Section Ref.",
-  "Outcome (Complies / Gap)",
-  "Gap Description",
-  "Action Required",
-  "Responsibility / TCD",
-] as const;
-
 export const ELR_ATTACHMENTS_HEADERS = [
   "Sr. No.",
   "Attachment No.",
@@ -201,66 +190,6 @@ export const ELR_REVISION_HISTORY_HEADERS = [
   "Change Control No.",
 ] as const;
 
-/**
- * Section 15 ships pre-filled. These are the standing cross-reference checks —
- * a compiler answers each one rather than inventing the list, so a gap is a
- * finding for the conclusion rather than a silently missing row.
- */
-export const ELR_RECONCILIATION_CHECKS: readonly {
-  check: string;
-  sectionRef: string;
-}[] = [
-  {
-    check: "Every monitoring excursion has a linked deviation record",
-    sectionRef: "7, 11",
-  },
-  {
-    check: "No calibration overdue as on the ELR cut-off date",
-    sectionRef: "8",
-  },
-  {
-    check: "PM compliance computed; every delayed or missed PM justified",
-    sectionRef: "9",
-  },
-  {
-    check: "Every repeat breakdown failure mode has a linked CAPA",
-    sectionRef: "10, 11",
-  },
-  {
-    check:
-      "Every change control with qualification impact 'Yes' has a corresponding qualification activity",
-    sectionRef: "11, 5",
-  },
-  {
-    check:
-      "Every Direct Impact alarm has a linked deviation or a documented action-plan reference",
-    sectionRef: "12, 11",
-  },
-  {
-    check:
-      "The set of alarm codes under trend remains appropriate to the equipment's direct-impact functions",
-    sectionRef: "12",
-  },
-  { check: "No lapse in audit trail review periods", sectionRef: "13.2" },
-  {
-    check: "Computerized system periodic review has not lapsed",
-    sectionRef: "14",
-  },
-  {
-    check: "PRQ sequence unbroken and next PRQ not overdue",
-    sectionRef: "5",
-  },
-  {
-    check: "Media fill coverage current for this container format",
-    sectionRef: "6",
-  },
-  {
-    check:
-      "Line-common records reported consistently in the counterpart container-format ELR",
-    sectionRef: "5, 11, 12, 13, 14",
-  },
-];
-
 // ---------------------------------------------------------------- content shapes
 
 export type ElrNarrativeSection = { narrative: JSONContent };
@@ -269,7 +198,7 @@ export type ElrNarrativeTableSection = {
   narrative: JSONContent;
   table: JSONContent;
 };
-/** Breakdowns and alarms carry an extra trend narrative (10.1 / 12.1). */
+/** Breakdowns and alarms carry an extra trend-summary narrative. */
 export type ElrTrendSection = {
   narrative: JSONContent;
   table: JSONContent;
@@ -317,7 +246,6 @@ export type ElrSectionMap = {
   elr_access_control: ElrTableSection;
   elr_audit_trail: ElrTableSection;
   elr_csv_status: ElrNarrativeTableSection;
-  elr_reconciliation: ElrTableSection;
   elr_conclusion: ElrConclusionSection;
   elr_attachments: ElrTableSection;
   elr_revision_history: ElrTableSection;
@@ -340,47 +268,10 @@ export const ELR_SECTION_LABELS: Record<ElrSectionKey, string> = {
   elr_access_control: "Access Control",
   elr_audit_trail: "Audit Trail Review",
   elr_csv_status: "Computerized System Validation Status",
-  elr_reconciliation: "Cross-Reference Reconciliation and Gap Summary",
   elr_conclusion: "Conclusion and Recommendation",
   elr_attachments: "Attachments",
   elr_revision_history: "Revision History",
 };
-
-function textCell(text: string): JSONContent {
-  return {
-    type: "tableCell",
-    attrs: { colspan: 1, rowspan: 1, colwidth: null },
-    content: [
-      {
-        type: "paragraph",
-        ...(text ? { content: [{ type: "text", text }] } : {}),
-      },
-    ],
-  };
-}
-
-/** Section 15 with its standing checks already populated. */
-function seededReconciliation(): JSONContent {
-  const doc = seededTableDoc(ELR_RECONCILIATION_HEADERS);
-  const table = doc.content?.[0];
-  if (!table) return doc;
-  table.content = [
-    table.content?.[0] as JSONContent,
-    ...ELR_RECONCILIATION_CHECKS.map((row, index) => ({
-      type: "tableRow",
-      content: [
-        textCell(String(index + 1)),
-        textCell(row.check),
-        textCell(row.sectionRef),
-        textCell(""),
-        textCell(""),
-        textCell(""),
-        textCell(""),
-      ],
-    })),
-  ];
-  return doc;
-}
 
 export const EMPTY_ELR_CONTENT: ElrSectionMap = {
   elr_objective: { narrative: emptyDoc() },
@@ -432,7 +323,6 @@ export const EMPTY_ELR_CONTENT: ElrSectionMap = {
     narrative: emptyDoc(),
     table: seededTableDoc(ELR_CSV_STATUS_HEADERS),
   },
-  elr_reconciliation: { table: seededReconciliation() },
   elr_conclusion: {
     narrative: emptyDoc(),
     recommendation: "",

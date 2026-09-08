@@ -10,7 +10,6 @@ import {
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
   ELR_QMS_HEADERS,
   ELR_QUALIFICATION_HEADERS,
-  ELR_RECONCILIATION_HEADERS,
   ELR_SECTION_LABELS,
 } from "./sections";
 
@@ -25,7 +24,6 @@ const TABLE_SCHEMAS: readonly (readonly [string, readonly string[]])[] = [
   ["elr_alarms", ELR_ALARM_HEADERS],
   ["elr_audit_trail", ELR_AUDIT_TRAIL_HEADERS],
   ["elr_csv_status", ELR_CSV_STATUS_HEADERS],
-  ["elr_reconciliation", ELR_RECONCILIATION_HEADERS],
 ];
 
 export const ELR_DRAFTING_GUIDANCE = `## Report shape
@@ -79,18 +77,14 @@ These pairings are checked. Draft them consistently:
 - An audit trail anomaly (Y) must carry a deviation reference.
 - A computerized system changed since the last PRQ (Y) must carry a change
   control reference.
-
-## Section 15 — do not rewrite the checks
-
-The reconciliation table ships pre-filled with the standing checks. Fill in
-Outcome, and for any Gap the description, action and owner. Do not delete,
-reorder or reword the checks themselves.
+- A QMS record marked as affecting the qualified state (Y) must be referenced
+  in the qualification history.
 
 ## Conclusion
 
 State whether the equipment remains in its qualified state for this container
-format. If Section 15 records any gap, "continue routine use, no action
-required" is not an available recommendation.
+format. Where a section carries an unresolved finding, the recommendation has
+to account for it — do not conclude "no action required" over an open gap.
 
 ## Verbosity
 

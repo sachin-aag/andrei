@@ -22,7 +22,6 @@ import {
   PREVENTIVE_MAINTENANCE_COLUMN_SCHEMA,
   QMS_COLUMN_SCHEMA,
   QUALIFICATION_COLUMN_SCHEMA,
-  RECONCILIATION_COLUMN_SCHEMA,
   RESPONSIBILITIES_COLUMN_SCHEMA,
   type AccessControlColumnId,
   type AlarmColumnId,
@@ -36,7 +35,6 @@ import {
   type PreventiveMaintenanceColumnId,
   type QmsColumnId,
   type QualificationColumnId,
-  type ReconciliationColumnId,
   type ResponsibilitiesColumnId,
 } from "./matrix-columns";
 
@@ -54,7 +52,6 @@ export type AlarmRow = Record<AlarmColumnId, string>;
 export type AccessControlRow = Record<AccessControlColumnId, string>;
 export type AuditTrailRow = Record<AuditTrailColumnId, string>;
 export type CsvStatusRow = Record<CsvStatusColumnId, string>;
-export type ReconciliationRow = Record<ReconciliationColumnId, string>;
 export type ResponsibilitiesRow = Record<ResponsibilitiesColumnId, string>;
 export type ElrRevisionHistoryRow = Record<ElrRevisionHistoryColumnId, string>;
 
@@ -133,10 +130,6 @@ export function parseCsvStatusMatrix(content: unknown) {
   return parseElrMatrix(content, CSV_STATUS_COLUMN_SCHEMA);
 }
 
-export function parseReconciliationMatrix(content: unknown) {
-  return parseElrMatrix(content, RECONCILIATION_COLUMN_SCHEMA);
-}
-
 export function parseResponsibilitiesMatrix(content: unknown) {
   return parseElrMatrix(content, RESPONSIBILITIES_COLUMN_SCHEMA);
 }
@@ -176,12 +169,4 @@ export function isDirectImpact(cell: string): boolean {
   const t = cell.trim();
   if (/indirect/i.test(t)) return false;
   return /^di\b/i.test(t) || /direct/i.test(t);
-}
-
-export function isGap(cell: string): boolean {
-  return /\bgap\b|not compl|fail|no\b/i.test(cell.trim());
-}
-
-export function isComplies(cell: string): boolean {
-  return /compl|yes|ok|met\b|satisf/i.test(cell.trim());
 }

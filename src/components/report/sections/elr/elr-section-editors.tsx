@@ -169,7 +169,7 @@ type TrendContent = {
   trend: JSONContent;
 };
 
-/** Breakdowns (10 / 10.1) and alarms (12 / 12.1): events plus a trend summary. */
+/** Breakdowns and alarms: the event table plus a trend summary. */
 function TrendEditor({
   section,
   narrativeLabel,
@@ -403,16 +403,6 @@ export function ElrCsvStatusEditor() {
   );
 }
 
-export function ElrReconciliationEditor() {
-  return (
-    <TableEditor
-      section="elr_reconciliation"
-      fieldLabel="Cross-reference reconciliation"
-      hint="These standing checks are fixed. Fill in Outcome, and for any Gap the description, action and owner. Do not delete or reword the checks."
-    />
-  );
-}
-
 export function ElrConclusionEditor() {
   const section: ElrSectionKey = "elr_conclusion";
   const { update } = useGenericReportSection<ElrConclusionSection>(section);
@@ -436,7 +426,7 @@ export function ElrConclusionEditor() {
         section={section}
         contentPath="narrative"
         label="Conclusion"
-        placeholder="State whether the equipment remains in its qualified state for this container format, on the basis of sections 5 to 15."
+        placeholder="State whether the equipment remains in its qualified state for this container format, on the basis of the evidence sections above."
         className="grid gap-2"
         value={content.narrative}
         onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}
@@ -464,10 +454,6 @@ export function ElrConclusionEditor() {
             </label>
           ))}
         </div>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          If section 15 records any gap, “continue routine use” is not
-          available.
-        </p>
       </div>
       <TiptapSectionField
         section={section}
