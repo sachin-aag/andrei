@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { toast } from "sonner";
 import { uploadFileToLibrary } from "@/lib/attachments/upload-library";
+import {
+  hasActiveSessionHold,
+  resetSessionHoldsForTests,
+} from "@/lib/auth/session-activity";
 import { DocumentLibrarySection } from "./document-library-section";
 
 vi.mock("sonner", () => ({
@@ -98,6 +102,10 @@ beforeEach(() => {
       return jsonResponse({ error: "unexpected" }, false);
     })
   );
+});
+
+afterEach(() => {
+  resetSessionHoldsForTests();
 });
 
 function folderUploadFiles() {
@@ -302,6 +310,7 @@ describe("DocumentLibrarySection explorer", () => {
     expect(
       screen.getByText(/Large folders can take a moment to load/i)
     ).toBeInTheDocument();
+    expect(hasActiveSessionHold()).toBe(true);
   });
 
   it("asks before uploading when a folder includes an unsupported file", async () => {
@@ -409,6 +418,41 @@ describe("DocumentLibrarySection explorer", () => {
     expect(await screen.findByText("Upload complete")).toBeInTheDocument();
     expect(screen.getByText("Uploaded 1 file to your vault.")).toBeInTheDocument();
     expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("holds the session and warns before closing while a folder is uploading", async () => {
+    let finishUpload: (value: typeof asset) => void = () => undefined;
+    vi.mocked(uploadFileToLibrary).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishUpload = resolve;
+        })
+    );
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
+    const pdf = new File(["%PDF"], "coa.pdf", { type: "application/pdf" });
+    Object.defineProperty(pdf, "webkitRelativePath", {
+      value: "q1_batch/coa.pdf",
+    });
+    fireEvent.change(screen.getByTestId("library-upload-folder-input"), {
+      target: { files: [pdf] },
+    });
+
+    expect(await screen.findByText("Uploading to vault")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Switching tabs is OK; closing this tab stops the upload/i)
+    ).toBeInTheDocument();
+    expect(hasActiveSessionHold()).toBe(true);
+
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+
+    await act(async () => {
+      finishUpload(asset);
+    });
+    expect(await screen.findByText("Upload complete")).toBeInTheDocument();
+    expect(hasActiveSessionHold()).toBe(false);
   });
 
   it("archives a file into the collapsed Archive section and can restore it", async () => {

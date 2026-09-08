@@ -7,6 +7,11 @@ import {
   INACTIVITY_TIMEOUT_UPDATED_EVENT,
   InactivityLogout,
 } from "@/components/auth/inactivity-logout";
+import {
+  beginSessionHold,
+  releaseSessionHold,
+  resetSessionHoldsForTests,
+} from "@/lib/auth/session-activity";
 
 vi.mock("next-auth/react", () => ({
   signOut: vi.fn(),
@@ -20,6 +25,7 @@ describe("InactivityLogout", () => {
   });
 
   afterEach(() => {
+    resetSessionHoldsForTests();
     vi.useRealTimers();
   });
 
@@ -77,6 +83,38 @@ describe("InactivityLogout", () => {
       vi.advanceTimersByTime(60_000);
     });
 
+    expect(signOut).toHaveBeenCalledWith({ callbackUrl: "/login" });
+  });
+
+  it("does not sign out while a session hold is active", () => {
+    beginSessionHold("document-library-upload");
+    render(<InactivityLogout timeoutMinutes={1} userId="user-1" />);
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(signOut).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("starts a fresh idle window after a session hold ends", () => {
+    beginSessionHold("document-library-upload");
+    render(<InactivityLogout timeoutMinutes={1} userId="user-1" />);
+
+    act(() => {
+      vi.advanceTimersByTime(45_000);
+      releaseSessionHold("document-library-upload");
+      vi.advanceTimersByTime(59_999);
+    });
+    expect(signOut).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
     expect(signOut).toHaveBeenCalledWith({ callbackUrl: "/login" });
   });
 });

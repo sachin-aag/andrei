@@ -45,6 +45,7 @@ import {
   type LibraryUploadFile,
 } from "@/lib/attachments/library-drop-files";
 import { uploadFileToLibrary } from "@/lib/attachments/upload-library";
+import { beginSessionHold } from "@/lib/auth/session-activity";
 import { ATTACHMENT_ACCEPT_ATTR } from "@/lib/attachments/file-types";
 import {
   libraryDownloadHref,
@@ -873,6 +874,15 @@ function isLibraryUploadBusy(state: LibraryUploadUi | null): boolean {
   return state?.phase === "scanning" || state?.phase === "uploading";
 }
 
+function isLibraryUploadSessionHold(state: LibraryUploadUi | null): boolean {
+  return (
+    state?.phase === "picking" ||
+    state?.phase === "scanning" ||
+    state?.phase === "unsupported" ||
+    state?.phase === "uploading"
+  );
+}
+
 function libraryUploadCopy(state: LibraryUploadUi): {
   title: string;
   description: string;
@@ -996,7 +1006,7 @@ function LibraryUploadDialog({
             />
             <p className="text-sm text-[var(--muted-foreground)]">
               {state?.phase === "uploading"
-                ? "Keep this tab open until the upload finishes."
+                ? "Keep this window open. Switching tabs is OK; closing this tab stops the upload."
                 : "This stays on screen while the folder loads."}
             </p>
           </div>
@@ -1202,6 +1212,24 @@ export function DocumentLibrarySection({
   const folderInputRef = useRef<HTMLInputElement>(null);
   const uploadBusy = isLibraryUploadBusy(uploadUi);
   const uploadLocked = uploadBusy || uploadUi?.phase === "picking";
+  const sessionHoldActive = isLibraryUploadSessionHold(uploadUi);
+
+  useEffect(() => {
+    if (!sessionHoldActive) return;
+    return beginSessionHold("document-library-upload");
+  }, [sessionHoldActive]);
+
+  useEffect(() => {
+    if (!uploadBusy) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [uploadBusy]);
 
   const loadLibrary = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
