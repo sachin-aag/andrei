@@ -30,15 +30,22 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  useBusyBrowserTab,
+  type BusyBrowserTabStatus,
+} from "@/hooks/use-busy-browser-tab";
 import type {
   AttachmentLibraryAssetRecord,
   AttachmentLibraryFolderRecord,
 } from "@/lib/attachments/library-dto";
 import { formatLibraryUploadedAt } from "@/lib/attachments/library-display";
 import {
+  canShowDirectoryPicker,
+  isDirectoryPickerAbort,
   libraryTargetFolderDepth,
   libraryUploadBatchError,
   libraryUploadFilesFromDataTransfer,
+  libraryUploadFilesFromDirectoryHandle,
   libraryUploadFilesFromListAsync,
   uniqueRejectedLibraryNames,
   yieldToPaint,
@@ -874,6 +881,35 @@ function isLibraryUploadBusy(state: LibraryUploadUi | null): boolean {
   return state?.phase === "scanning" || state?.phase === "uploading";
 }
 
+function busyBrowserTabFromLibraryUpload(
+  state: LibraryUploadUi | null
+): BusyBrowserTabStatus | null {
+  if (!state) return null;
+  switch (state.phase) {
+    case "scanning":
+      return {
+        phase: "checking",
+        scanned: state.scanned,
+        total: state.total,
+      };
+    case "uploading":
+      return {
+        phase: "uploading",
+        current: state.current,
+        total: state.total,
+      };
+    case "picking":
+    case "unsupported":
+    case "error":
+    case "complete":
+      return null;
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
 function isLibraryUploadSessionHold(state: LibraryUploadUi | null): boolean {
   return (
     state?.phase === "picking" ||
@@ -902,7 +938,9 @@ function libraryUploadCopy(state: LibraryUploadUi): {
             ? state.scanned > 0
               ? `Checking ${state.scanned} of ${state.total} files…`
               : `Checking ${state.total} files…`
-            : "Checking files. This can take a moment for a large folder.",
+            : state.scanned > 0
+              ? `Checking ${state.scanned} files…`
+              : "Checking files. This can take a moment for a large folder.",
       };
     case "uploading":
       return {
@@ -1213,6 +1251,11 @@ export function DocumentLibrarySection({
   const uploadBusy = isLibraryUploadBusy(uploadUi);
   const uploadLocked = uploadBusy || uploadUi?.phase === "picking";
   const sessionHoldActive = isLibraryUploadSessionHold(uploadUi);
+  const busyTabStatus = useMemo(
+    () => busyBrowserTabFromLibraryUpload(uploadUi),
+    [uploadUi]
+  );
+  useBusyBrowserTab(busyTabStatus);
 
   useEffect(() => {
     if (!sessionHoldActive) return;
@@ -1608,12 +1651,13 @@ export function DocumentLibrarySection({
     folderId: string | null,
     dataTransfer: DataTransfer
   ) => {
+    const scanPromise = libraryUploadFilesFromDataTransfer(dataTransfer, {
+      onProgress: (scanned) => {
+        setUploadUi({ phase: "scanning", scanned, total: 0 });
+      },
+    });
     setUploadUi({ phase: "scanning", scanned: 0, total: 0 });
-    await yieldToPaint();
-    startLibraryUpload(
-      await libraryUploadFilesFromDataTransfer(dataTransfer),
-      folderId
-    );
+    startLibraryUpload(await scanPromise, folderId);
   };
 
   const openLibraryFilePicker = (kind: "files" | "folder") => {
@@ -1623,6 +1667,34 @@ export function DocumentLibrarySection({
         kind === "folder" ? folderInputRef.current : fileInputRef.current;
       input?.click();
     }, 0);
+  };
+
+  const openFolderFromDirectoryPicker = async () => {
+    try {
+      const dir = await window.showDirectoryPicker({ mode: "read" });
+      setUploadUi({ phase: "scanning", scanned: 0, total: 0 });
+      const scan = await libraryUploadFilesFromDirectoryHandle(dir, {
+        onProgress: (scanned) => {
+          setUploadUi({ phase: "scanning", scanned, total: 0 });
+        },
+      });
+      startLibraryUpload(scan, null);
+    } catch (error) {
+      if (isDirectoryPickerAbort(error)) return;
+      setUploadUi({
+        phase: "error",
+        message:
+          error instanceof Error ? error.message : "Could not read that folder",
+      });
+    }
+  };
+
+  const handleUploadFolderClick = () => {
+    if (canShowDirectoryPicker()) {
+      void openFolderFromDirectoryPicker();
+      return;
+    }
+    openLibraryFilePicker("folder");
   };
 
   const handlePickerCancel = useCallback(() => {
@@ -1749,8 +1821,15 @@ export function DocumentLibrarySection({
             )}
           >
             <div className="flex items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
-              <p className="text-xs font-medium text-[var(--muted-foreground)]">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--muted-foreground)]">
                 Files
+                {uploadBusy ? (
+                  <Loader2
+                    className="size-3.5 animate-spin"
+                    aria-hidden="true"
+                    data-testid="library-upload-tab-spinner"
+                  />
+                ) : null}
               </p>
               <div className="flex flex-wrap items-center justify-end gap-1">
                 <Button
@@ -1771,7 +1850,7 @@ export function DocumentLibrarySection({
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
                   disabled={uploadLocked}
-                  onClick={() => openLibraryFilePicker("folder")}
+                  onClick={handleUploadFolderClick}
                   data-testid="library-upload-folder"
                 >
                   <FolderUp className="size-3.5" aria-hidden="true" />
@@ -1872,7 +1951,7 @@ export function DocumentLibrarySection({
               <input
                 ref={(node) => {
                   folderInputRef.current = node;
-                  if (node) {
+                  if (node && !canShowDirectoryPicker()) {
                     node.setAttribute("webkitdirectory", "");
                     node.setAttribute("directory", "");
                   }

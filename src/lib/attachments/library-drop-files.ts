@@ -155,6 +155,82 @@ export async function libraryUploadFilesFromListAsync(
   return classifyCollectedLibraryFiles(collected);
 }
 
+export function canShowDirectoryPicker(
+  target: { showDirectoryPicker?: unknown } = typeof window === "undefined"
+    ? {}
+    : window
+): boolean {
+  return typeof target.showDirectoryPicker === "function";
+}
+
+export function isDirectoryPickerAbort(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name: string }).name === "AbortError"
+  );
+}
+
+type DirectoryWalkOptions = {
+  onProgress?: (scanned: number) => void;
+};
+
+function directoryHandleEntries(
+  dir: FileSystemDirectoryHandle
+): AsyncIterableIterator<[string, FileSystemHandle]> {
+  if (typeof dir.entries !== "function") {
+    throw new Error("This browser cannot list folder contents");
+  }
+  return dir.entries();
+}
+
+async function collectFromHandle(
+  handle: FileSystemHandle,
+  prefix: string,
+  out: LibraryUploadFile[],
+  options?: DirectoryWalkOptions
+): Promise<void> {
+  switch (handle.kind) {
+    case "file": {
+      const file = await (handle as FileSystemFileHandle).getFile();
+      const relativePath = prefix ? `${prefix}/${handle.name}` : handle.name;
+      out.push({ file, relativePath });
+      options?.onProgress?.(out.length);
+      if (out.length % LIBRARY_UPLOAD_SCAN_CHUNK === 0) {
+        await yieldToPaint();
+      }
+      return;
+    }
+    case "directory": {
+      const dir = handle as FileSystemDirectoryHandle;
+      const nextPrefix = prefix ? `${prefix}/${dir.name}` : dir.name;
+      for await (const [, child] of directoryHandleEntries(dir)) {
+        await collectFromHandle(child, nextPrefix, out, options);
+      }
+      return;
+    }
+    default: {
+      const _exhaustive: never = handle.kind;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * Walk a directory handle from `showDirectoryPicker` / dropped
+ * `getAsFileSystemHandle`. Paths include the selected folder name, matching
+ * `webkitRelativePath` from `<input webkitdirectory>`.
+ */
+export async function libraryUploadFilesFromDirectoryHandle(
+  dir: FileSystemDirectoryHandle,
+  options?: DirectoryWalkOptions
+): Promise<LibraryUploadScan> {
+  const collected: LibraryUploadFile[] = [];
+  await collectFromHandle(dir, "", collected, options);
+  return classifyCollectedLibraryFiles(collected);
+}
+
 async function walkEntry(
   entry: FileSystemEntry,
   prefix: string,
@@ -187,21 +263,43 @@ async function walkEntry(
   }
 }
 
+/**
+ * Snapshot directory handles/entries in the drop event turn. Do not await
+ * paint before calling this — Chrome drops the handles after the gesture.
+ */
 export async function libraryUploadFilesFromDataTransfer(
-  dataTransfer: DataTransfer
+  dataTransfer: DataTransfer,
+  options?: DirectoryWalkOptions
 ): Promise<LibraryUploadScan> {
   const collected: LibraryUploadFile[] = [];
   const items = [...dataTransfer.items];
+  const canUseHandles = items.every(
+    (item) => typeof item.getAsFileSystemHandle === "function"
+  );
+
+  if (canUseHandles && items.length > 0) {
+    const handlePromises = items.map((item) => item.getAsFileSystemHandle());
+    const handles = await Promise.all(handlePromises);
+    for (const handle of handles) {
+      if (!handle) continue;
+      await collectFromHandle(handle, "", collected, options);
+    }
+    return classifyCollectedLibraryFiles(collected);
+  }
+
   if (items.some((item) => typeof item.webkitGetAsEntry === "function")) {
-    for (const item of items) {
-      const entry = item.webkitGetAsEntry?.();
+    const entries = items.map((item) => item.webkitGetAsEntry?.() ?? null);
+    for (let index = 0; index < items.length; index += 1) {
+      const entry = entries[index];
       if (entry) {
         await walkEntry(entry, "", collected);
-      } else if (item.kind === "file") {
-        const file = item.getAsFile();
-        if (!file) continue;
-        collected.push({ file, relativePath: relativePathForFile(file) });
+        continue;
       }
+      const item = items[index]!;
+      if (item.kind !== "file") continue;
+      const file = item.getAsFile();
+      if (!file) continue;
+      collected.push({ file, relativePath: relativePathForFile(file) });
     }
     return classifyCollectedLibraryFiles(collected);
   }
