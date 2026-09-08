@@ -469,6 +469,13 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "elr_csv_status",
     ],
     sectionIntentPatterns: [
+      ["elr_objective", [/\bobjective\b/i]],
+      ["elr_scope", [/\bscope\b/i]],
+      ["elr_responsibilities", [/responsibilit/i]],
+      [
+        "elr_system_description",
+        [/system description/i, /equipment description/i],
+      ],
       [
         "elr_qualification",
         [/qualification/i, /\bprq\b/i, /\biq\b|\boq\b|\bpq\b/i, /requalif/i],
@@ -479,9 +486,12 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       ["elr_breakdowns", [/breakdown/i, /downtime/i, /failure mode/i]],
       ["elr_qms", [/change control/i, /deviation/i, /\bcapa\b/i, /\boos\b|\boot\b/i, /\bccf\b/i]],
       ["elr_alarms", [/alarm/i, /\bdi\b.*impact/i, /nuisance/i]],
-      ["elr_audit_trail", [/audit trail/i, /access control/i, /privilege/i]],
+      ["elr_access_control", [/access control/i]],
+      ["elr_audit_trail", [/audit trail/i, /privilege/i]],
       ["elr_csv_status", [/\bcsv\b/i, /computerized system/i, /part 11/i, /scada/i]],
       ["elr_monitoring", [/monitoring/i, /excursion/i, /environmental/i]],
+      ["elr_conclusion", [/\bconclusion\b/i, /recommendation/i]],
+      ["elr_revision_history", [/revision history/i]],
     ],
   },
   suggestTargetFieldPatterns: pickPatterns(SUGGEST_TARGET_FIELD_PATTERNS),

@@ -112,7 +112,9 @@ describe("equipment lifecycle report definition", () => {
     const def = getDocumentType(TYPE);
     expect(def.chat.inventorySections).toContain("elr_qualification");
     expect(def.chat.inventorySections).toContain("elr_qms");
-    expect(def.prompts.promptVersion).toBe("mj-elr-v1");
+    expect(def.chat.inventorySections).not.toContain("elr_objective");
+    expect(def.chat.inventorySections).not.toContain("elr_scope");
+    expect(def.prompts.promptVersion).toBe("mj-elr-v2");
   });
 
   it("maps every section into the export template data", () => {

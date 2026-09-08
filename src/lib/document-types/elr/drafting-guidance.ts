@@ -100,6 +100,17 @@ dates. Every row should trace to an attached record. If a fact is missing, use
 a <label> placeholder and say what document would settle it. Search attached
 evidence before asking.
 
+When a sentence paraphrases an attached SOP, prior ELR, protocol, or record,
+put [filename, p. N] immediately after that sentence (copy the citation field
+from the tool result). Objective and Scope stay short, but they still cite the
+procedure page they rest on — the server converts those brackets to numbered
+[n] markers and parks a Citations: list at the end of the field. Do not omit
+citations because the section is short. Do not start a complete page-by-page
+review to draft Objective, Scope, Responsibilities, or Equipment description;
+grep for the procedure language instead. Full-document review is for the
+inventory tables (qualification history, monitoring, calibration, QMS, alarms,
+CSV).
+
 ## Section keys
 
 ${Object.entries(ELR_SECTION_LABELS)

@@ -183,7 +183,7 @@ export const DEMO_PACK: CustomerPack = {
 export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v7";
 export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v2";
 export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
-export const ELR_PROMPT_VERSION = "mj-elr-v1";
+export const ELR_PROMPT_VERSION = "mj-elr-v2";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
