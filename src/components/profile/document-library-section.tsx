@@ -36,9 +36,12 @@ import type {
 } from "@/lib/attachments/library-dto";
 import { formatLibraryUploadedAt } from "@/lib/attachments/library-display";
 import {
+  canShowDirectoryPicker,
+  isDirectoryPickerAbort,
   libraryTargetFolderDepth,
   libraryUploadBatchError,
   libraryUploadFilesFromDataTransfer,
+  libraryUploadFilesFromDirectoryHandle,
   libraryUploadFilesFromListAsync,
   uniqueRejectedLibraryNames,
   yieldToPaint,
@@ -902,7 +905,9 @@ function libraryUploadCopy(state: LibraryUploadUi): {
             ? state.scanned > 0
               ? `Checking ${state.scanned} of ${state.total} files…`
               : `Checking ${state.total} files…`
-            : "Checking files. This can take a moment for a large folder.",
+            : state.scanned > 0
+              ? `Checking ${state.scanned} files…`
+              : "Checking files. This can take a moment for a large folder.",
       };
     case "uploading":
       return {
@@ -1608,12 +1613,13 @@ export function DocumentLibrarySection({
     folderId: string | null,
     dataTransfer: DataTransfer
   ) => {
+    const scanPromise = libraryUploadFilesFromDataTransfer(dataTransfer, {
+      onProgress: (scanned) => {
+        setUploadUi({ phase: "scanning", scanned, total: 0 });
+      },
+    });
     setUploadUi({ phase: "scanning", scanned: 0, total: 0 });
-    await yieldToPaint();
-    startLibraryUpload(
-      await libraryUploadFilesFromDataTransfer(dataTransfer),
-      folderId
-    );
+    startLibraryUpload(await scanPromise, folderId);
   };
 
   const openLibraryFilePicker = (kind: "files" | "folder") => {
@@ -1623,6 +1629,34 @@ export function DocumentLibrarySection({
         kind === "folder" ? folderInputRef.current : fileInputRef.current;
       input?.click();
     }, 0);
+  };
+
+  const openFolderFromDirectoryPicker = async () => {
+    try {
+      const dir = await window.showDirectoryPicker({ mode: "read" });
+      setUploadUi({ phase: "scanning", scanned: 0, total: 0 });
+      const scan = await libraryUploadFilesFromDirectoryHandle(dir, {
+        onProgress: (scanned) => {
+          setUploadUi({ phase: "scanning", scanned, total: 0 });
+        },
+      });
+      startLibraryUpload(scan, null);
+    } catch (error) {
+      if (isDirectoryPickerAbort(error)) return;
+      setUploadUi({
+        phase: "error",
+        message:
+          error instanceof Error ? error.message : "Could not read that folder",
+      });
+    }
+  };
+
+  const handleUploadFolderClick = () => {
+    if (canShowDirectoryPicker()) {
+      void openFolderFromDirectoryPicker();
+      return;
+    }
+    openLibraryFilePicker("folder");
   };
 
   const handlePickerCancel = useCallback(() => {
@@ -1771,7 +1805,7 @@ export function DocumentLibrarySection({
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
                   disabled={uploadLocked}
-                  onClick={() => openLibraryFilePicker("folder")}
+                  onClick={handleUploadFolderClick}
                   data-testid="library-upload-folder"
                 >
                   <FolderUp className="size-3.5" aria-hidden="true" />
@@ -1872,7 +1906,7 @@ export function DocumentLibrarySection({
               <input
                 ref={(node) => {
                   folderInputRef.current = node;
-                  if (node) {
+                  if (node && !canShowDirectoryPicker()) {
                     node.setAttribute("webkitdirectory", "");
                     node.setAttribute("directory", "");
                   }

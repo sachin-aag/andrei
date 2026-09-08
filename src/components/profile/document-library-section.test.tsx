@@ -106,6 +106,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetSessionHoldsForTests();
+  Reflect.deleteProperty(window, "showDirectoryPicker");
 });
 
 function folderUploadFiles() {
@@ -298,6 +299,9 @@ describe("DocumentLibrarySection explorer", () => {
       expect.stringContaining(".pdf")
     );
     expect(screen.getByTestId("library-upload-folder-input")).toBeInTheDocument();
+    expect(screen.getByTestId("library-upload-folder-input")).toHaveAttribute(
+      "webkitdirectory"
+    );
   });
 
   it("shows our loading dialog as soon as Upload folder is clicked", async () => {
@@ -311,6 +315,56 @@ describe("DocumentLibrarySection explorer", () => {
       screen.getByText(/Large folders can take a moment to load/i)
     ).toBeInTheDocument();
     expect(hasActiveSessionHold()).toBe(true);
+  });
+
+  it("uses the directory picker instead of webkitdirectory when Chrome provides it", async () => {
+    const user = userEvent.setup();
+    const pdf = new File(["%PDF"], "coa.pdf", { type: "application/pdf" });
+    const picker = vi.fn().mockResolvedValue(
+      mockDirectoryHandle("q1_batch", [mockFileHandle(pdf)])
+    );
+    Object.defineProperty(window, "showDirectoryPicker", {
+      configurable: true,
+      value: picker,
+    });
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
+    const folderInput = screen.getByTestId(
+      "library-upload-folder-input"
+    ) as HTMLInputElement;
+    const inputClick = vi.spyOn(folderInput, "click");
+
+    await user.click(screen.getByTestId("library-upload-folder"));
+
+    expect(picker).toHaveBeenCalledTimes(1);
+    expect(inputClick).not.toHaveBeenCalled();
+    expect(folderInput).not.toHaveAttribute("webkitdirectory");
+    expect(screen.queryByText("Preparing upload")).not.toBeInTheDocument();
+    expect(await screen.findByText("Upload complete")).toBeInTheDocument();
+    expect(uploadFileToLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relativePath: "q1_batch/coa.pdf",
+      })
+    );
+  });
+
+  it("does not start an upload when the directory picker is cancelled", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, "showDirectoryPicker", {
+      configurable: true,
+      value: vi
+        .fn()
+        .mockRejectedValue(new DOMException("The user aborted a request.", "AbortError")),
+    });
+    renderLibrary();
+    await screen.findByTestId("library-explorer");
+    await user.click(screen.getByTestId("library-upload-folder"));
+    await waitFor(() => {
+      expect(window.showDirectoryPicker).toHaveBeenCalled();
+    });
+    expect(screen.queryByTestId("library-upload-dialog")).not.toBeInTheDocument();
+    expect(uploadFileToLibrary).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("asks before uploading when a folder includes an unsupported file", async () => {
@@ -557,3 +611,26 @@ describe("DocumentLibrarySection explorer", () => {
     expect(screen.getByText("batch.pdf")).toBeInTheDocument();
   });
 });
+
+function mockFileHandle(file: File): FileSystemFileHandle {
+  return {
+    kind: "file",
+    name: file.name,
+    getFile: async () => file,
+  } as FileSystemFileHandle;
+}
+
+function mockDirectoryHandle(
+  name: string,
+  children: FileSystemHandle[]
+): FileSystemDirectoryHandle {
+  return {
+    kind: "directory",
+    name,
+    async *entries() {
+      for (const child of children) {
+        yield [child.name, child] as [string, FileSystemHandle];
+      }
+    },
+  } as unknown as FileSystemDirectoryHandle;
+}
