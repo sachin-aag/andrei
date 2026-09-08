@@ -53,8 +53,14 @@ export function withSourceCitation<
   return { ...hit, citation: sourceCitationBracket(hit.filename, hit.pageNumber) };
 }
 
-export function documentCitationRule(): string {
-  return 'Cite evidence as [filename, p. N] when a tool result has a page for that fact. Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.';
+const PDF_PAGE_CITATION_RULE =
+  "Page numbers are the absolute PDF page position (what Adobe/pdf.js uses), never a printed page number from a header or footer. Copy the citation field from a tool result instead of composing one.";
+
+export function documentCitationRule(citationsAtEndOfSection: boolean): string {
+  if (citationsAtEndOfSection) {
+    return `Cite evidence as [filename, p. N] when a tool result has a page for that fact. ${PDF_PAGE_CITATION_RULE} Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.`;
+  }
+  return `Cite evidence in prose as [filename, p. N] when a tool result has a page for that fact. ${PDF_PAGE_CITATION_RULE} Use [filename] only when the page is missing or ambiguous. Never use <to be filled> in a citation.`;
 }
 
 function uniquePreserveOrder(items: readonly string[]): string[] {
@@ -175,6 +181,29 @@ function numberingFromTrailingLines(lines: readonly string[]): FieldCitationNumb
 
 function parseFieldCitationNumbering(existingFieldText: string): FieldCitationNumbering {
   return numberingFromTrailingLines(splitTrailingCitationBlock(existingFieldText).lines);
+}
+
+/** Numbered `[n]` → parked source bracket from the trailing Citations: list. */
+export function sourceCitationForNumber(
+  fieldText: string,
+  n: number
+): string | null {
+  if (!Number.isInteger(n) || n < 1) return null;
+  for (const { number, source } of parseFieldCitationNumbering(fieldText).entries()) {
+    if (number === n) return source;
+  }
+  return null;
+}
+
+/** Every numbered marker in `fieldText` mapped to its parked source. */
+export function sourceCitationsByNumber(
+  fieldText: string
+): ReadonlyMap<number, string> {
+  return new Map(
+    parseFieldCitationNumbering(fieldText)
+      .entries()
+      .map(({ number, source }) => [number, source])
+  );
 }
 
 function replaceSourceCitationsWithMarkers(
@@ -812,14 +841,20 @@ export function splitEditForCitationsAtEnd(
 }
 
 /**
- * Number source brackets at the claim and park them under a trailing
- * Citations: heading. This is the only citation style.
+ * Apply pack policy: drop `second` when the mode is off; split citations
+ * to the end when it is on.
  */
 export function prepareEditForCitationMode<T extends SplitSuggestionEdit>(
   edit: T,
-  opts?: { existingFieldText?: string }
+  opts: { citationsAtEndOfSection: boolean; existingFieldText?: string }
 ): T {
-  return { ...edit, ...splitEditForCitationsAtEnd(edit, opts ?? {}) };
+  if (!opts.citationsAtEndOfSection) {
+    if (!edit.second) return edit;
+    const rest = { ...edit };
+    delete rest.second;
+    return rest;
+  }
+  return { ...edit, ...splitEditForCitationsAtEnd(edit, opts) };
 }
 
 /**

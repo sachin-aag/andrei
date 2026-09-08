@@ -11,6 +11,7 @@ import {
   normalizeTrailingCitationBlockInText,
   prepareEditForCitationMode,
   sourceCitationBracket,
+  sourceCitationForNumber,
   splitEditForCitationsAtEnd,
   stripCitationsFromTableOperation,
   stripCitationsFromText,
@@ -54,6 +55,19 @@ describe("stripCitationsFromText", () => {
     );
     expect(isCitationOnlyText("1. [results.xlsx, p. 1]")).toBe(true);
     expect(isCitationOnlyText("[1]")).toBe(false);
+  });
+});
+
+describe("sourceCitationForNumber", () => {
+  it("looks up a parked source from the trailing Citations list", () => {
+    const field = [
+      "Output met spec [1] for configuration A.",
+      "",
+      "Citations:",
+      "1. [protocol.pdf, p. 3]",
+    ].join("\n");
+    expect(sourceCitationForNumber(field, 1)).toBe("[protocol.pdf, p. 3]");
+    expect(sourceCitationForNumber(field, 2)).toBeNull();
   });
 });
 
@@ -345,7 +359,17 @@ describe("prepareEditForCitationMode", () => {
     },
   };
 
-  it("splits source brackets to a trailing Citations list", () => {
+  it("drops a second part when the mode is off", () => {
+    expect(
+      prepareEditForCitationMode(split, { citationsAtEndOfSection: false })
+    ).toEqual({
+      anchorText: "met spec",
+      deleteText: "",
+      insertText: " at 9.8 W [protocol.pdf, p. 3]",
+    });
+  });
+
+  it("splits when the mode is on", () => {
     expect(
       prepareEditForCitationMode(
         {
@@ -353,7 +377,7 @@ describe("prepareEditForCitationMode", () => {
           deleteText: "",
           insertText: " at 9.8 W [protocol.pdf, p. 3]",
         },
-        { existingFieldText: "" }
+        { citationsAtEndOfSection: true }
       )
     ).toEqual({
       anchorText: "met spec",
@@ -369,11 +393,16 @@ describe("prepareEditForCitationMode", () => {
 });
 
 describe("documentCitationRule", () => {
-  it("asks for source brackets that the app numbers at the end of the section", () => {
-    expect(documentCitationRule()).toContain("end of the section field");
-    expect(documentCitationRule()).toContain("Citations:");
-    expect(documentCitationRule()).toContain("split edit");
-    expect(documentCitationRule()).toContain("missing or ambiguous");
+  it("asks for inline cites when the mode is off and end-of-section when on", () => {
+    expect(documentCitationRule(false)).toContain("in prose");
+    expect(documentCitationRule(false)).not.toContain("end of the section");
+    expect(documentCitationRule(true)).toContain("end of the section field");
+    expect(documentCitationRule(true)).toContain("Citations:");
+    expect(documentCitationRule(true)).toContain("split edit");
+    expect(documentCitationRule(false)).toContain("missing or ambiguous");
+    expect(documentCitationRule(true)).toContain("missing or ambiguous");
+    expect(documentCitationRule(false)).toMatch(/absolute PDF page/i);
+    expect(documentCitationRule(true)).toMatch(/absolute PDF page/i);
   });
 });
 

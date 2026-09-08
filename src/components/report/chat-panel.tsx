@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 import { ChatVoiceButton } from "@/components/report/chat-voice-button";
 import { useVoiceDictation } from "@/hooks/use-voice-dictation";
 import { ChatMarkdown } from "@/components/report/chat-markdown";
+import { openCitedDocumentOrToast } from "@/lib/citations/open-cited-document";
 import { ChatMessageTargetTag } from "@/components/report/chat-message-target-tag";
 import {
   assistantOffersAnalyticsSwitch,
@@ -358,6 +359,7 @@ const MessageTurn = memo(function MessageTurn({
   onAnswerQuestions,
   streaming = false,
   filenameByAttachmentId,
+  onOpenCitation,
   showAnalyticsSwitch = false,
   onSwitchToAnalytics,
   composerOnAnalytics = false,
@@ -368,6 +370,7 @@ const MessageTurn = memo(function MessageTurn({
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
   filenameByAttachmentId?: AttachmentFilenameLookup;
+  onOpenCitation?: (raw: string) => void;
   showAnalyticsSwitch?: boolean;
   onSwitchToAnalytics?: () => void;
   composerOnAnalytics?: boolean;
@@ -449,7 +452,11 @@ const MessageTurn = memo(function MessageTurn({
           (block, i) => {
             if (block.kind === "text") {
               if (!block.text.trim()) return null;
-              return <ChatMarkdown key={i}>{block.text}</ChatMarkdown>;
+              return (
+                <ChatMarkdown key={i} onOpenCitation={onOpenCitation}>
+                  {block.text}
+                </ChatMarkdown>
+              );
             }
             if (block.kind === "document-review") {
               const node = documentReviewActivityNode(block.parts);
@@ -619,7 +626,13 @@ export function ChatPanel({
     accessUser != null
       ? aiSuggestionLockReason(accessUser, report)
       : "You can't propose edits on this report right now.";
-  const { attachments, folders } = useReportAttachments();
+  const { attachments, folders, openDocument } = useReportAttachments();
+  const onOpenCitation = useCallback(
+    (raw: string) => {
+      openCitedDocumentOrToast({ raw, attachments, openDocument });
+    },
+    [attachments, openDocument]
+  );
   const filenameByAttachmentId = useMemo(() => {
     const map = new Map<string, string>();
     for (const attachment of attachments) {
@@ -1712,6 +1725,7 @@ export function ChatPanel({
               message={m}
               chatTarget={m.chatTarget}
               filenameByAttachmentId={filenameByAttachmentId}
+              onOpenCitation={onOpenCitation}
               askUserActive={
                 visibleStartIndex + i === messages.length - 1 &&
                 !busy &&

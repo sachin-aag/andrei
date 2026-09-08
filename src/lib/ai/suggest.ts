@@ -33,6 +33,7 @@ import {
 } from "@/lib/attachments/retrieval";
 import type { EditScope } from "@/lib/suggestions/locator";
 import { parseEditScope } from "@/lib/ai/suggestion-gating";
+import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { prepareEditForCitationMode } from "@/lib/suggestions/citations-at-end";
 
 export type SuggestionDropReason =
@@ -254,7 +255,7 @@ async function retrieveEvidenceForCriteria({
 
 function finalizeRawSuggestion(
   s: RawSuggestion,
-  opts: { existingFieldText: string }
+  opts: { citationsAtEndOfSection: boolean; existingFieldText: string }
 ): RawSuggestion {
   const prepared = prepareEditForCitationMode(
     {
@@ -315,6 +316,9 @@ export async function generateSuggestionsForSection({
   }>;
   documentType?: DocumentType;
 }): Promise<{ suggestions: GeneratedSuggestion[]; dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> }> {
+  const citationsAtEndOfSection = citationsAtEndOfSectionFor(
+    documentType ?? "investigation_report"
+  );
   if (gapCriteria.length === 0) {
     return { suggestions: [], dropped: [] };
   }
@@ -336,6 +340,7 @@ export async function generateSuggestionsForSection({
         continue;
       }
       const prepared = finalizeRawSuggestion(s, {
+        citationsAtEndOfSection,
         existingFieldText,
       });
       if (!suggestionHasContent(prepared)) {
@@ -477,6 +482,7 @@ export async function generateSuggestionsForSection({
       continue;
     }
     const prepared = finalizeRawSuggestion(s, {
+      citationsAtEndOfSection,
       existingFieldText,
     });
     if (!suggestionHasContent(prepared)) {

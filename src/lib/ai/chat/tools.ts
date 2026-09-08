@@ -77,6 +77,7 @@ import {
   dataUrlToBase64,
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
+import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import {
   commitChatEdit,
@@ -200,6 +201,11 @@ import {
 import { DocumentReviewSession ,
   documentReviewCoverageKey,
 } from "@/lib/ai/chat/document-review";
+import {
+  CitationPageLedger,
+  rewriteCitationPagesInText,
+  rewriteTableOperationCitations,
+} from "@/lib/ai/chat/citation-grounding";
 import {
   compareDraftedInventory,
   type RecommendedResultsInventory,
@@ -710,8 +716,9 @@ function buildSearchDocumentsTool(opts: {
   reportId: string;
   pinnedAttachmentIds: string[];
   citationRule: string;
+  citationLedger: CitationPageLedger;
 }) {
-  const { reportId, pinnedAttachmentIds, citationRule } = opts;
+  const { reportId, pinnedAttachmentIds, citationRule, citationLedger } = opts;
 
   async function runSearch(input: {
     query?: string;
@@ -741,6 +748,9 @@ function buildSearchDocumentsTool(opts: {
       if (byId.size >= SEARCH_DOCUMENTS_RESULT_CAP) break;
     }
     const merged = Array.from(byId.values());
+    for (const hit of merged) {
+      citationLedger.record(hit.filename, hit.pageNumber, hit.attachmentId);
+    }
     const truncated =
       merged.length >= SEARCH_DOCUMENTS_RESULT_CAP ||
       arms.some((arm) => arm.length >= input.limit);
@@ -882,6 +892,8 @@ export function buildChatTools(opts: {
   mentionedSections?: readonly SectionType[];
   retrievalPolicy?: RetrievalPolicy;
   documentReview?: DocumentReviewSession;
+  /** Citations at end of each field (Convergent pack, or generic documents). */
+  citationsAtEndOfSection?: boolean;
   /** Current chat messages — used to resolve chat-attached images. */
   messages?: UIMessage[];
   /** Document-chat scatter plots from attachments. Off when embedding Document tools in Analytics chat. */
@@ -1053,9 +1065,13 @@ export function buildChatTools(opts: {
   const sectionScope = opts.sectionScope ?? "all";
   const retrievalPolicy = opts.retrievalPolicy ?? "adaptive";
   const documentReview = opts.documentReview ?? new DocumentReviewSession();
+  const citationsAtEndOfSection =
+    opts.citationsAtEndOfSection ?? citationsAtEndOfSectionFor(documentType);
   const messages = opts.messages ?? [];
+  const citationLedger = new CitationPageLedger();
+  citationLedger.seedFromMessages(messages);
   const includePlotMeasurements = opts.includePlotMeasurements ?? true;
-  const citationRule = documentCitationRule();
+  const citationRule = documentCitationRule(citationsAtEndOfSection);
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
   const pinnedAttachmentIds = Array.from(
     new Set((opts.pinnedAttachmentIds ?? []).filter((id) => id.trim().length > 0))
@@ -1296,6 +1312,7 @@ export function buildChatTools(opts: {
       reportId,
       pinnedAttachmentIds,
       citationRule,
+      citationLedger,
     }),
 
     document_outline: tool({
@@ -1325,7 +1342,6 @@ export function buildChatTools(opts: {
           documentSummary: documentSummary || null,
           pages: outline.pages.map((page) => ({
             pageNumber: page.pageNumber,
-            printedPageLabel: page.printedPageLabel,
             pageContext: page.pageContext
               ? sanitizePromptMetadata(page.pageContext, 400) || null
               : null,
@@ -1356,9 +1372,17 @@ export function buildChatTools(opts: {
         if (outOfScope) return outOfScope;
         const page = await readDocumentPage({ reportId, attachmentId, pageNumber });
         if (!page) return { status: "not_found" as const };
+        citationLedger.record(page.filename, page.pageNumber, page.attachmentId);
         return {
           status: "found" as const,
-          page,
+          page: {
+            attachmentId: page.attachmentId,
+            filename: page.filename,
+            pageNumber: page.pageNumber,
+            transcript: page.transcript,
+            visualInterpretation: page.visualInterpretation,
+            pageContext: page.pageContext,
+          },
           citation: sourceCitationBracket(page.filename, page.pageNumber),
           trustBoundary: DOCUMENT_TRUST_BOUNDARY,
         };
@@ -1466,6 +1490,7 @@ export function buildChatTools(opts: {
       inputSchema: z.object({}),
       execute: async () => {
         const finished = documentReview.finish();
+        citationLedger.seedFromToolOutput("finish_document_review", finished);
         return {
           ...finished,
           citationRule,
@@ -1476,7 +1501,11 @@ export function buildChatTools(opts: {
 
     propose_edit: tool({
       description:
-        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table. Do not rewrite an existing table as a bulleted list; that is edit_table (edit_cells / insert_column). Put document citations as [filename, p. N] immediately after the claim in insertText when the page is known; [filename] only if the page is missing or ambiguous. The server converts them to numbered markers and parks \`1. [filename, p. N]\` under a Citations: heading. A split \`second\` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback.${scopeHint}`,
+        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table. Do not rewrite an existing table as a bulleted list; that is edit_table (edit_cells / insert_column).${
+          citationsAtEndOfSection
+            ? " Put document citations as [filename, p. N] immediately after the claim in insertText when the page is known; [filename] only if the page is missing or ambiguous. The server converts them to numbered markers and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
+            : ""
+        }${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1517,34 +1546,38 @@ export function buildChatTools(opts: {
           .describe(
             "One short sentence explaining the edit (shown to the engineer). Use the section names they see. Never mention recipe, SAMPLE, omit-if, targetField names, or tool names."
           ),
-        second: z
-          .object({
-            anchorText: z
-              .string()
-              .default("")
-              .describe("Usually '' — empty anchor appends at the end of the field."),
-            deleteText: z.string().default(""),
-            insertText: z
-              .string()
-              .default("")
-              .describe(
-                "Citation(s) to append under a Citations: heading, e.g. 'Citations:\\n[protocol.pdf, p. 3]'. Prefer putting source brackets in the primary insertText instead."
-              ),
-            scope: z
-              .object({
-                kind: z.enum(["cell", "listItem"]),
-                row: z.number().int().optional(),
-                col: z.number().int().optional(),
-                index: z.number().int().optional(),
-                tableIndex: z.number().int().optional(),
-                listIndex: z.number().int().optional(),
-              })
-              .nullish(),
-          })
-          .nullish()
-          .describe(
-            "Second apply site in the same field. Use for an end-of-section citation while the primary part edits the claim."
-          ),
+        ...(citationsAtEndOfSection
+          ? {
+              second: z
+                .object({
+                  anchorText: z
+                    .string()
+                    .default("")
+                    .describe("Usually '' — empty anchor appends at the end of the field."),
+                  deleteText: z.string().default(""),
+                  insertText: z
+                    .string()
+                    .default("")
+                    .describe(
+                      "Citation(s) to append under a Citations: heading, e.g. 'Citations:\\n[protocol.pdf, p. 3]'. Prefer putting source brackets in the primary insertText instead."
+                    ),
+                  scope: z
+                    .object({
+                      kind: z.enum(["cell", "listItem"]),
+                      row: z.number().int().optional(),
+                      col: z.number().int().optional(),
+                      index: z.number().int().optional(),
+                      tableIndex: z.number().int().optional(),
+                      listIndex: z.number().int().optional(),
+                    })
+                    .nullish(),
+                })
+                .nullish()
+                .describe(
+                  "Second apply site in the same field. Use for an end-of-section citation while the primary part edits the claim."
+                ),
+            }
+          : {}),
       }),
       execute: async ({
         section,
@@ -1592,7 +1625,7 @@ export function buildChatTools(opts: {
 
         const parsedScope = parseEditScope(scope);
         const rawSecond =
-          "second" in rest && rest.second
+          citationsAtEndOfSection && "second" in rest && rest.second
             ? (rest.second as ProposedSecondInput)
             : undefined;
         const fieldText = sectionFieldPlainText(loaded.content, section, resolvedField);
@@ -1618,7 +1651,7 @@ export function buildChatTools(opts: {
                 }
               : undefined,
           },
-          { existingFieldText: fieldText }
+          { citationsAtEndOfSection, existingFieldText: fieldText }
         );
         const check = checkProposedEdit(fieldText, prepared, fieldDoc);
         if (check.status !== "ok") {
@@ -1632,11 +1665,18 @@ export function buildChatTools(opts: {
           } as ProposeEditResult;
         }
 
-        const normalizedInsert = normalizeSuggestionInsertText(prepared.insertText);
+        const normalizedInsert = normalizeSuggestionInsertText(
+          rewriteCitationPagesInText(prepared.insertText, citationLedger)
+        );
         const second = prepared.second
           ? {
               ...prepared.second,
-              insertText: normalizeSuggestionInsertText(prepared.second.insertText),
+              insertText: normalizeSuggestionInsertText(
+                rewriteCitationPagesInText(
+                  prepared.second.insertText,
+                  citationLedger
+                )
+              ),
             }
           : undefined;
         const leadIn = isAppendLeadIn({
@@ -2680,13 +2720,18 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
-        const capturedOp = captureTableOperationSnapshots(fieldDoc, parsedOp);
+        const capturedOp = rewriteTableOperationCitations(
+          captureTableOperationSnapshots(fieldDoc, parsedOp),
+          citationLedger
+        );
         const fieldText = sectionFieldPlainText(
           loaded.content,
           section,
           resolvedField
         );
-        const stripped = stripCitationsFromTableOperation(capturedOp, fieldText);
+        const stripped = citationsAtEndOfSection
+          ? stripCitationsFromTableOperation(capturedOp, fieldText)
+          : { operation: capturedOp, citations: [] as string[] };
         let applied;
         try {
           applied = applyTableOperation(fieldDoc, stripped.operation, {
@@ -2703,7 +2748,9 @@ export function buildChatTools(opts: {
         if (!applied.ok) {
           return { status: applied.status, hint: applied.hint };
         }
-        const second = citationAppendPart(stripped.citations, fieldText);
+        const second = citationsAtEndOfSection
+          ? citationAppendPart(stripped.citations, fieldText)
+          : undefined;
 
         const suggestionId = createId();
         const createTable =
@@ -2954,7 +3001,12 @@ export function buildChatTools(opts: {
 
         const suggestionId = createId();
         const normalizedMarkdown = normalizeSuggestionInsertText(markdown);
-        const draftMarkdown = moveCitationsToEndOfText(normalizedMarkdown);
+        const draftMarkdown = rewriteCitationPagesInText(
+          citationsAtEndOfSection
+            ? moveCitationsToEndOfText(normalizedMarkdown)
+            : normalizedMarkdown,
+          citationLedger
+        );
         if (committing) {
           return commitFieldEdit({
             section,

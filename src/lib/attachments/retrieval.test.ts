@@ -4,13 +4,17 @@ import {
   buildMatchCenteredSnippet,
   buildOutlineFromStoredPages,
   normalizeAttachmentIdFilter,
+  parseCitationId,
+  readDocumentPage,
   reciprocalRankFusion,
   reportAttachmentChunkJoin,
   searchReportDocuments,
   searchReportDocumentsDetailed,
   searchReportDocumentsMany,
+  toClientDocumentSearchResults,
   verifyCitation,
 } from "@/lib/attachments/retrieval";
+import { withSourceCitation } from "@/lib/suggestions/citations-at-end";
 
 const limitMock = vi.fn(async () => [] as unknown[]);
 const orderByMock = vi.fn(() => builder);
@@ -179,6 +183,44 @@ describe("searchReportDocuments with tagged attachments", () => {
     expect(results[0]!.pinned).toBeUndefined();
     // lexical + vector + keyword; no backfill pass for an unrestricted search.
     expect(limitMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("cites the stored PDF page, not a printed footer number in the transcript", async () => {
+    const row = {
+      ...chunkRow("c1", "att_1", 118),
+      filename: "protocol.pdf",
+      rawText:
+        "Page 104 of 250\nPurpose and scope of this design verification.",
+      contextualText:
+        "Page 104 of 250 Purpose and scope of this design verification.",
+    };
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row])
+      .mockResolvedValueOnce([]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "verification objective",
+      limit: 5,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.pageNumber).toBe(118);
+    expect(results[0]!.filename).toBe("protocol.pdf");
+    expect(results[0]).not.toHaveProperty("printedPageLabel");
+    expect(results[0]!.citationId).toBe("att:att_1:p:118:c:c1");
+    expect(parseCitationId(results[0]!.citationId)).toMatchObject({
+      attachmentId: "att_1",
+      pageNumber: 118,
+      chunkId: "c1",
+    });
+    expect(withSourceCitation(results[0]!).citation).toBe(
+      "[protocol.pdf, p. 118]"
+    );
+    expect(toClientDocumentSearchResults(results)[0]).not.toHaveProperty(
+      "printedPageLabel"
+    );
   });
 
   it("marks tagged hits and skips backfill when they fill the limit", async () => {
@@ -555,6 +597,53 @@ describe("buildOutlineFromStoredPages", () => {
       pageStart: 31,
       pageEnd: 32,
     });
+  });
+});
+
+describe("readDocumentPage", () => {
+  beforeEach(() => {
+    limitMock.mockReset();
+  });
+
+  it("returns the absolute PDF page; printedPageLabel stays a separate field", async () => {
+    limitMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_1",
+        filename: "protocol.pdf",
+        description: null,
+        pageNumber: 118,
+        printedPageLabel: "104",
+        transcript: "Page 104 of 250\nPurpose and scope of this design verification.",
+        visualInterpretation: "",
+        pageContext: "Purpose and scope",
+        ingestRunId: "run-1",
+      },
+    ]);
+
+    const page = await readDocumentPage({
+      reportId: "report-1",
+      attachmentId: "att_1",
+      pageNumber: 118,
+    });
+
+    expect(page).toMatchObject({
+      attachmentId: "att_1",
+      filename: "protocol.pdf",
+      pageNumber: 118,
+      printedPageLabel: "104",
+    });
+    expect(withSourceCitation(page!).citation).toBe("[protocol.pdf, p. 118]");
+  });
+
+  it("does not look up a page by printed label when the argument is not a PDF page", async () => {
+    expect(
+      await readDocumentPage({
+        reportId: "report-1",
+        attachmentId: "att_1",
+        pageNumber: 0,
+      })
+    ).toBeNull();
+    expect(limitMock).not.toHaveBeenCalled();
   });
 });
 

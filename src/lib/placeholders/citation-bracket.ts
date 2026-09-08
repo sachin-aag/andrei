@@ -70,6 +70,139 @@ function citeCoreWithoutPage(core: string): string {
   return core.replace(PAGE_CITE_SUFFIX, "").trim();
 }
 
+/**
+ * Comma that starts another source inside one `[...]`, not extra pages of
+ * the same file (`p. 4, 26`) and not a comma glued to the extension (`,.pdf`).
+ */
+const NEW_SOURCE_COMMA_RE =
+  /,\s+(?=(?:(?!p\.\s*\d)[^[\]])*?\.(?:pdf|docx)\b|Attachment[_\s-]?(?:[IVXLCDM]+|\d+)\b|Appendix\s+(?:[A-Z](?:\.\d+)*|[IVXLCDM]{2,}|\d+)\b|[a-z0-9]{24}\b|\d{3,}-\d{4,})/i;
+
+const PAGE_GROUP_RE = /,\s*p\.\s*\d+(?:\s*,\s*\d+)*/i;
+const SOURCE_SEPARATOR_RE = /^\s*,\s+/;
+
+/**
+ * Split `[file A, p. N, file B, p. M]` into one inner string per source.
+ * Same-file page lists (`p. 4, 26, 163`) stay a single part.
+ */
+export function splitSourceCitationParts(inner: string): string[] {
+  const trimmed = inner.trim();
+  if (!trimmed) return [];
+  const parts: string[] = [];
+  let start = 0;
+  while (start < trimmed.length) {
+    const rest = trimmed.slice(start);
+    const pageGroup = PAGE_GROUP_RE.exec(rest);
+    if (pageGroup && pageGroup.index != null) {
+      const afterPage = rest.slice(pageGroup.index + pageGroup[0].length);
+      const sep = SOURCE_SEPARATOR_RE.exec(afterPage);
+      if (sep) {
+        const splitAt = start + pageGroup.index + pageGroup[0].length;
+        const piece = trimmed.slice(start, splitAt).trim();
+        if (piece) parts.push(piece);
+        start = splitAt + sep[0].length;
+        continue;
+      }
+    }
+    const fileComma = NEW_SOURCE_COMMA_RE.exec(rest);
+    if (fileComma && fileComma.index != null) {
+      const piece = rest.slice(0, fileComma.index).trim();
+      if (piece) parts.push(piece);
+      start += fileComma.index + fileComma[0].length;
+      continue;
+    }
+    const tail = rest.trim();
+    if (tail) parts.push(tail);
+    break;
+  }
+  return parts.length > 0 ? parts : [trimmed];
+}
+
+/** Clickable range inside a source `[...]` (offsets are in `match`). */
+export type SourceCitationLinkSpan = {
+  from: number;
+  to: number;
+  openRaw: string;
+};
+
+/**
+ * Click targets for a source bracket. One file stays the whole `[...]`.
+ * Combined cites (`[A.pdf, p. 1, B.pdf, p. 2]`) get one span per file so
+ * each can open on its own.
+ */
+export function sourceCitationLinkSpans(
+  match: string
+): SourceCitationLinkSpan[] {
+  if (!isSourceCitationBracket(match) || isNumericCitationMarker(match)) {
+    return [];
+  }
+  const inner = match.slice(1, -1);
+  const core = citationCoreFromInner(inner);
+  const parts = splitSourceCitationParts(core || inner);
+  if (parts.length <= 1) {
+    return [
+      {
+        from: 0,
+        to: match.length,
+        openRaw: core ? `[${core}]` : match,
+      },
+    ];
+  }
+
+  const spans: SourceCitationLinkSpan[] = [];
+  let searchFrom = 1;
+  for (const part of parts) {
+    const idx = match.indexOf(part, searchFrom);
+    if (idx < 0) continue;
+    spans.push({
+      from: idx,
+      to: idx + part.length,
+      openRaw: `[${part}]`,
+    });
+    searchFrom = idx + part.length;
+  }
+  if (spans.length === 0) {
+    return [
+      {
+        from: 0,
+        to: match.length,
+        openRaw: `[${parts[0]}]`,
+      },
+    ];
+  }
+  return spans;
+}
+
+/** Filename (or exhibit label) plus page numbers from a source citation. */
+export type ParsedSourceCitation = {
+  filename: string;
+  pages: number[];
+};
+
+function pageNumbersFromCore(core: string): number[] {
+  const suffix = PAGE_CITE_SUFFIX.exec(core);
+  if (!suffix) return [];
+  const digits = suffix[0].match(/\d+/g);
+  if (!digits) return [];
+  return digits
+    .map((raw) => Number(raw))
+    .filter((n) => Number.isInteger(n) && n >= 1);
+}
+
+/**
+ * Parse `[filename, p. N]` / `[filename]` into a filename and page list.
+ * The first page is the jump target when the cite lists several.
+ */
+export function parseSourceCitation(match: string): ParsedSourceCitation | null {
+  if (!isSourceCitationBracket(match)) return null;
+  const core = citationCoreFromInner(match.slice(1, -1));
+  if (!core) return null;
+  const part = splitSourceCitationParts(core)[0] ?? core;
+  if (!part) return null;
+  const filename = citeCoreWithoutPage(part);
+  if (!filename) return null;
+  return { filename, pages: pageNumbersFromCore(part) };
+}
+
 /** True when `core` is one or more Attachment_XIV-style exhibit labels. */
 function isAttachmentLabelCite(core: string): boolean {
   const withoutPage = citeCoreWithoutPage(core);

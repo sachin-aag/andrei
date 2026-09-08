@@ -49,7 +49,12 @@ import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
-import { createCitationHighlightExtension } from "@/lib/tiptap/citation-highlights";
+import {
+  createCitationHighlightExtension,
+  type CitationOpenHandlers,
+} from "@/lib/tiptap/citation-highlights";
+import { openCitedDocumentOrToast } from "@/lib/citations/open-cited-document";
+import { useReportAttachments } from "@/providers/report-attachments-provider";
 import {
   createPlaceholderHighlightExtension,
   isSelectionOverPlaceholder,
@@ -88,7 +93,6 @@ import { readSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import {
-  citationsAtEndOfSectionFor,
   editorProfileFor,
   getDocumentType,
   suggestionApplyModeFor,
@@ -383,8 +387,23 @@ export function TiptapSectionField({
     onAiSuggestionMarkActivate: () => {},
   });
 
+  const { attachments, openDocument } = useReportAttachments();
+  const citationHandlersRef = useRef<CitationOpenHandlers>({
+    onOpenCitation: () => {},
+  });
+  useLayoutEffect(() => {
+    citationHandlersRef.current = {
+      onOpenCitation: (raw) =>
+        openCitedDocumentOrToast({ raw, attachments, openDocument }),
+    };
+  }, [attachments, openDocument]);
+
   const getRanges = useCallback(() => rangesRef.current, []);
   const getHandlers = useCallback(() => handlersRef.current, []);
+  const getCitationHandlers = useCallback(
+    () => citationHandlersRef.current,
+    []
+  );
 
   const highlightExtension = useMemo(
     () =>
@@ -414,10 +433,11 @@ export function TiptapSectionField({
     [section, contentPath]
   );
 
-  const citationsAtEndOfSection = citationsAtEndOfSectionFor(report.documentType);
   const citationHighlightExtension = useMemo(
-    () => (citationsAtEndOfSection ? createCitationHighlightExtension() : null),
-    [citationsAtEndOfSection]
+    () =>
+      // eslint-disable-next-line react-hooks/refs -- ProseMirror calls this getter on click, not during render
+      createCitationHighlightExtension(getCitationHandlers),
+    [getCitationHandlers]
   );
 
   const filteredRanges = useMemo(() => {
@@ -512,7 +532,7 @@ export function TiptapSectionField({
         highlightExtension,
         suggestionWidgetsExtension,
         placeholderHighlightExtension,
-        ...(citationHighlightExtension ? [citationHighlightExtension] : []),
+        citationHighlightExtension,
       ],
       content: normalizeRichField(value, richFieldOptions),
       editable,

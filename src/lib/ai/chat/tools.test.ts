@@ -368,6 +368,7 @@ describe("buildChatTools document_outline", () => {
     expect(result.pages[0]?.pageContext).not.toMatch(/^# /);
     expect(result.pages[0]?.pageContext?.toLowerCase()).not.toMatch(/^system:/);
     expect(result.pages[0]).not.toHaveProperty("transcript");
+    expect(result.pages[0]).not.toHaveProperty("printedPageLabel");
     expect((result as { spans?: unknown[] }).spans).toEqual([]);
   });
 });
@@ -1328,6 +1329,67 @@ describe("buildChatTools propose vs commit", () => {
       (leadIn as { suggestionId: string }).suggestionId
     );
     expect(inserted).toHaveLength(2);
+  });
+
+  it("strips a citation page that search never returned and still drafts", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: "scope" },
+              output: {
+                results: [
+                  {
+                    filename: "protocol.pdf",
+                    pageNumber: 12,
+                    attachmentId: "att-1",
+                    citation: "[protocol.pdf, p. 12]",
+                  },
+                ],
+                seenPages: [
+                  {
+                    filename: "protocol.pdf",
+                    pageNumber: 12,
+                    attachmentId: "att-1",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Objective [protocol.pdf, p. 104]",
+        reasoning: "Draft scope.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.content).toContain("[protocol.pdf]");
+    expect(inserted[0]?.content).not.toContain("p. 104");
   });
 
   it("refuses draft_field on a filled field unless replaceFilledField is true", async () => {

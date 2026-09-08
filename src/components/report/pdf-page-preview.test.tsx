@@ -6,6 +6,7 @@ import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import { pdfjsPreviewLoadingOptions } from "@/lib/attachments/pdfjs-browser";
 import {
   PDF_PREVIEW_SCALE,
+  pdfPreviewPageSizeForRotation,
   pdfPreviewRenderScale,
 } from "@/lib/attachments/pdf-preview-layout";
 
@@ -39,11 +40,16 @@ function mockPdfPage(
     }: {
       scale: number;
       rotation?: number;
-    }) => ({
-      width: (overrides.width ?? 200) * scale,
-      height: (overrides.height ?? 400) * scale,
-      rotation,
-    }),
+    }) => {
+      const width = (overrides.width ?? 200) * scale;
+      const height = (overrides.height ?? 400) * scale;
+      const rotated = pdfPreviewPageSizeForRotation(width, height, rotation);
+      return {
+        width: rotated.width,
+        height: rotated.height,
+        rotation,
+      };
+    },
     getTextContent:
       overrides.getTextContent ??
       (async () => ({
@@ -233,6 +239,9 @@ describe("PdfPagePreview", () => {
     expect(screen.getByLabelText("Evidence.pdf preview")).toHaveAttribute(
       "data-pdf-preview-scroll"
     );
+    expect(screen.getByLabelText("Evidence.pdf preview")).toHaveClass("min-w-0");
+    const stack = document.querySelector("[data-pdf-preview-stack]");
+    expect(stack).toHaveClass("w-max", "min-w-full", "items-center");
   });
 
   it("does not reload the document when the requested page changes", async () => {
@@ -256,6 +265,100 @@ describe("PdfPagePreview", () => {
     );
 
     expect(await screen.findByText("Batch page 2")).toBeInTheDocument();
+    expect(getDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not drop painted pages while the preview is hidden", async () => {
+    const observers: Array<{
+      callback: IntersectionObserverCallback;
+      disconnected: boolean;
+      targets: Element[];
+    }> = [];
+
+    class ControllableIntersectionObserver {
+      readonly callback: IntersectionObserverCallback;
+      disconnected = false;
+      targets: Element[] = [];
+
+      constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback;
+        observers.push(this);
+      }
+
+      observe(target: Element) {
+        this.targets.push(target);
+        this.callback(
+          [
+            {
+              isIntersecting: true,
+              intersectionRatio: 1,
+              target,
+              boundingClientRect: target.getBoundingClientRect(),
+              intersectionRect: target.getBoundingClientRect(),
+              rootBounds: null,
+              time: 0,
+            } as IntersectionObserverEntry,
+          ],
+          this as unknown as IntersectionObserver
+        );
+      }
+
+      unobserve() {}
+      disconnect() {
+        this.disconnected = true;
+      }
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0];
+    }
+
+    vi.stubGlobal("IntersectionObserver", ControllableIntersectionObserver);
+
+    const { rerender } = render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+    await screen.findByText("Batch page 2");
+    expect(getDocument).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+        active={false}
+      />
+    );
+
+    for (const observer of observers) {
+      if (observer.disconnected) continue;
+      observer.callback(
+        observer.targets.map(
+          (target) =>
+            ({
+              isIntersecting: false,
+              intersectionRatio: 0,
+              target,
+              boundingClientRect: target.getBoundingClientRect(),
+              intersectionRect: target.getBoundingClientRect(),
+              rootBounds: null,
+              time: 0,
+            }) as IntersectionObserverEntry
+        ),
+        observer as unknown as IntersectionObserver
+      );
+    }
+
+    expect(screen.getByText("Batch page 1")).toBeInTheDocument();
+    expect(screen.getByText("Batch page 2")).toBeInTheDocument();
     expect(getDocument).toHaveBeenCalledTimes(1);
   });
 
@@ -601,6 +704,8 @@ describe("PdfPagePreview", () => {
       expect(pageShell.style.width).toBe(`${expectedRenderedWidth(1.25)}px`);
     });
     expect(screen.getByText("125%")).toBeInTheDocument();
+    const stack = document.querySelector("[data-pdf-preview-stack]");
+    expect(stack).toHaveClass("w-max", "min-w-full");
   });
 
   it("re-renders with rotation when the rotate button is clicked", async () => {
@@ -619,11 +724,39 @@ describe("PdfPagePreview", () => {
     await waitFor(() => {
       expect(getPage).toHaveBeenCalled();
       const lastRender = renderPage.mock.calls.at(-1)?.[0] as {
-        viewport?: { rotation?: number };
+        viewport?: { rotation?: number; width?: number };
       };
       expect(lastRender?.viewport).toEqual(
         expect.objectContaining({ rotation: 90 })
       );
+      // Landscape at 100% still fits the panel; overflow is a zoom/wide-page issue.
+      expect(lastRender?.viewport?.width).toBe(expectedRenderedWidth(1));
     });
+    expect(screen.getByLabelText("Evidence.pdf preview")).toHaveClass("min-w-0");
+  });
+
+  it("lets a zoomed landscape page grow wider than the panel", async () => {
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    const canvas = await screen.findByLabelText("Evidence.pdf, page 1");
+    const pageShell = canvas.closest("[data-pdf-page]") as HTMLElement;
+    fireEvent.click(screen.getByTestId("pdf-toolbar-rotate"));
+    fireEvent.click(screen.getByTestId("pdf-toolbar-zoom-in"));
+
+    await waitFor(() => {
+      expect(pageShell.style.width).toBe(`${expectedRenderedWidth(1.25)}px`);
+    });
+    expect(screen.getByLabelText("Evidence.pdf preview")).toHaveClass("min-w-0");
+    expect(document.querySelector("[data-pdf-preview-stack]")).toHaveClass(
+      "w-max",
+      "min-w-full"
+    );
   });
 });

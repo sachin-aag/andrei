@@ -11,6 +11,15 @@ import {
 } from "@/components/report/suggestion-card";
 import type { CommentRecord } from "@/types/report";
 
+const openDocumentMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/providers/report-attachments-provider", () => ({
+  useReportAttachments: () => ({
+    attachments: [{ id: "att-protocol", filename: "protocol.pdf" }],
+    openDocument: openDocumentMock,
+  }),
+}));
+
 const comment: CommentRecord = {
   id: "c1",
   reportId: "r1",
@@ -172,6 +181,37 @@ describe("SuggestionCardFace", () => {
     expect(
       screen.queryByText(/filling line FL-02 failed the in-process check/)
     ).not.toBeInTheDocument();
+  });
+
+  it("opens the cited attachment tab from Sources", async () => {
+    openDocumentMock.mockClear();
+    renderFixCard({
+      kind: "fix",
+      comment,
+      linkedEval: undefined,
+      queueIndex: 1,
+      queueTotal: 1,
+      payload: {
+        deleteText: "",
+        insertText: "ignored",
+        reasoning: "Cite the protocol.",
+        evidenceSources: [
+          {
+            citationId: "cite-1",
+            attachmentId: "att-protocol",
+            filename: "protocol.pdf",
+            pageNumber: 3,
+            chunkId: "chunk-1",
+            sourceKind: "attachment",
+            quote: "batch 12",
+            ingestRunId: "run-1",
+          },
+        ],
+      },
+    });
+
+    await userEvent.click(screen.getByTestId("citation-link"));
+    expect(openDocumentMock).toHaveBeenCalledWith("att-protocol", 3);
   });
 });
 

@@ -1134,7 +1134,8 @@ body:has([data-suggestion-preview-held]) {
   background: transparent !important;
 }
 
-/* Numeric `[n]` citation markers — static raised bubbles, screen-only. */
+/* Numeric `[n]` citation markers — raised bubbles, screen-only. Click opens
+   the matching attachment tab. */
 .ProseMirror .citation-ref {
   font-size: 0.68em;
   font-weight: 600;
@@ -1151,12 +1152,43 @@ body:has([data-suggestion-preview-held]) {
   -webkit-box-decoration-break: clone;
 }
 
+.ProseMirror .citation-ref[data-citation-open] {
+  cursor: pointer;
+}
+
+.ProseMirror .citation-ref[data-citation-open]:hover {
+  color: var(--brand-600);
+  background: var(--brand-100);
+}
+
 .ProseMirror span.suggestion-insert .citation-ref,
 .ProseMirror span.suggestion-insert-ai .citation-ref,
 .ProseMirror span.suggestion-delete .citation-ref,
 .ProseMirror span.suggestion-delete-ai .citation-ref {
   color: var(--muted-foreground);
   background: var(--muted);
+}
+
+/* `[filename, p. N]` source cites — in-document and chat hyperlinks. */
+.ProseMirror .citation-source,
+.chat-markdown button.citation-source {
+  color: var(--brand-500);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  cursor: pointer;
+}
+
+.chat-markdown button.citation-source {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+}
+
+.ProseMirror .citation-source:hover,
+.chat-markdown button.citation-source:hover {
+  color: var(--brand-600);
 }
 
 /* Plain-text mirror layer — no border/padding so line heights match the textarea. */
