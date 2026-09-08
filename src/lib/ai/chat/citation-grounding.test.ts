@@ -1,118 +1,168 @@
 import { describe, expect, it } from "vitest";
+import type { UIMessage } from "ai";
 import {
-  citationOutOfRangeMessage,
-  outOfRangeCitations,
-  parsedCitationsInText,
-  tableOperationCitationTexts,
+  CitationPageLedger,
+  rewriteCitationPagesInText,
+  rewriteTableOperationCitations,
 } from "@/lib/ai/chat/citation-grounding";
 
-const attachments = [
-  {
-    id: "att-1",
-    filename: "protocol.pdf",
-    pageCount: 61,
-  },
-  {
-    id: "att-2",
-    filename: "appendix-b.pdf",
-    pageCount: null,
-  },
-];
+function ledgerWithSearchHit(filename: string, page: number, id = "att-1") {
+  const ledger = new CitationPageLedger();
+  ledger.record(filename, page, id);
+  return ledger;
+}
 
-describe("parsedCitationsInText", () => {
-  it("parses page cites and ignores placeholders", () => {
-    expect(
-      parsedCitationsInText(
-        "Met spec [protocol.pdf, p. 3]. Use [batch number] later."
-      )
-    ).toEqual([{ filename: "protocol.pdf", pages: [3] }]);
-  });
-
-  it("parses multi-page cites on one file", () => {
-    expect(parsedCitationsInText("[protocol.pdf, p. 4, 26]")).toEqual([
-      { filename: "protocol.pdf", pages: [4, 26] },
-    ]);
-  });
-});
-
-describe("outOfRangeCitations", () => {
-  it("flags pages above the attachment pageCount", () => {
-    expect(
-      outOfRangeCitations(
-        ["See [protocol.pdf, p. 104] for the objective."],
-        attachments
-      )
-    ).toEqual([
+describe("CitationPageLedger", () => {
+  it("seeds pages from a prior search_documents tool result", () => {
+    const messages: UIMessage[] = [
       {
-        raw: "[protocol.pdf, p. 104]",
-        filename: "protocol.pdf",
-        page: 104,
-        pageCount: 61,
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-search_documents",
+            toolCallId: "call_search",
+            state: "output-available",
+            input: { query: "scope" },
+            output: {
+              results: [
+                {
+                  filename: "protocol.pdf",
+                  pageNumber: 12,
+                  attachmentId: "att-1",
+                  citation: "[protocol.pdf, p. 12]",
+                },
+              ],
+              seenPages: [
+                {
+                  filename: "protocol.pdf",
+                  pageNumber: 12,
+                  attachmentId: "att-1",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const ledger = new CitationPageLedger();
+    ledger.seedFromMessages(messages);
+    expect(ledger.decision("protocol.pdf", 12)).toBe("keep");
+    expect(ledger.decision("protocol.pdf", 104)).toBe("drop");
+  });
+
+  it("seeds pages from finish_document_review citationDigest", () => {
+    const ledger = new CitationPageLedger();
+    ledger.seedFromMessages([
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "call_finish",
+            state: "output-available",
+            input: {},
+            output: {
+              citationDigest: [
+                {
+                  filename: "Protocol.pdf",
+                  pageNumber: 118,
+                  citation: "[Protocol.pdf, p. 118]",
+                },
+              ],
+            },
+          },
+        ],
       },
     ]);
+    expect(ledger.decision("Protocol.pdf", 118)).toBe("keep");
+    expect(ledger.decision("Protocol.pdf", 104)).toBe("drop");
   });
 
-  it("allows in-range pages", () => {
-    expect(
-      outOfRangeCitations(["[protocol.pdf, p. 3]"], attachments)
-    ).toEqual([]);
+  it("does not treat document_outline pages as evidence", () => {
+    const ledger = new CitationPageLedger();
+    ledger.seedFromMessages([
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-document_outline",
+            toolCallId: "call_outline",
+            state: "output-available",
+            input: { attachmentId: "att-1" },
+            output: {
+              filename: "protocol.pdf",
+              pages: [{ pageNumber: 104, pageContext: "footer" }],
+            },
+          },
+        ],
+      },
+    ]);
+    expect(ledger.decision("protocol.pdf", 104)).toBe("unknown");
   });
+});
 
-  it("skips unresolvable filenames", () => {
+describe("rewriteCitationPagesInText", () => {
+  it("drops a page the tools never returned and keeps the filename cite", () => {
+    const ledger = ledgerWithSearchHit("protocol.pdf", 12);
     expect(
-      outOfRangeCitations(["[Appendix B, p. 99]"], attachments)
-    ).toEqual([]);
-  });
-
-  it("skips attachments with unknown pageCount", () => {
-    expect(
-      outOfRangeCitations(["[appendix-b.pdf, p. 999]"], attachments)
-    ).toEqual([]);
-  });
-
-  it("dedupes repeated violations", () => {
-    expect(
-      outOfRangeCitations(
-        ["[protocol.pdf, p. 104]", "[protocol.pdf, p. 104]"],
-        attachments
+      rewriteCitationPagesInText(
+        "The objective is verification [protocol.pdf, p. 104].",
+        ledger
       )
-    ).toHaveLength(1);
+    ).toBe("The objective is verification [protocol.pdf].");
+  });
+
+  it("keeps a page that search actually served", () => {
+    const ledger = ledgerWithSearchHit("protocol.pdf", 12);
+    expect(
+      rewriteCitationPagesInText("See [protocol.pdf, p. 12].", ledger)
+    ).toBe("See [protocol.pdf, p. 12].");
+  });
+
+  it("leaves cites alone when no pages were recorded for that file", () => {
+    const ledger = new CitationPageLedger();
+    expect(
+      rewriteCitationPagesInText("See [protocol.pdf, p. 104].", ledger)
+    ).toBe("See [protocol.pdf, p. 104].");
+  });
+
+  it("keeps grounded pages in a multi-page cite and drops the rest", () => {
+    const ledger = ledgerWithSearchHit("protocol.pdf", 4);
+    ledger.record("protocol.pdf", 26, "att-1");
+    expect(
+      rewriteCitationPagesInText("[protocol.pdf, p. 4, 104]", ledger)
+    ).toBe("[protocol.pdf, p. 4]");
+  });
+
+  it("leaves appendix-style cites that do not match an attachment", () => {
+    const ledger = ledgerWithSearchHit("protocol.pdf", 12);
+    expect(
+      rewriteCitationPagesInText("See [Appendix B, p. 104].", ledger)
+    ).toBe("See [Appendix B, p. 104].");
   });
 });
 
-describe("citationOutOfRangeMessage", () => {
-  it("names the file page count and PDF page rule", () => {
+describe("rewriteTableOperationCitations", () => {
+  it("strips ungrounded pages from edit_cells", () => {
+    const ledger = ledgerWithSearchHit("protocol.pdf", 12);
     expect(
-      citationOutOfRangeMessage([
+      rewriteTableOperationCitations(
         {
-          raw: "[protocol.pdf, p. 104]",
-          filename: "protocol.pdf",
-          page: 104,
-          pageCount: 61,
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            { row: 1, col: 1, insertText: "Pass [protocol.pdf, p. 104]" },
+          ],
         },
-      ])
-    ).toContain("61 pages");
-    expect(
-      citationOutOfRangeMessage([
-        {
-          raw: "[protocol.pdf, p. 104]",
-          filename: "protocol.pdf",
-          page: 104,
-          pageCount: 61,
-        },
-      ])
-    ).toMatch(/absolute PDF page/i);
-  });
-});
-
-describe("tableOperationCitationTexts", () => {
-  it("collects cell insert text from edit_cells", () => {
-    expect(
-      tableOperationCitationTexts({
-        kind: "edit_cells",
-        tableIndex: 0,
-        cells: [{ row: 1, col: 1, insertText: "Pass [protocol.pdf, p. 2]" }],
-      })
-    ).toEqual(["Pass [protocol.pdf, p. 2]"]);
+        ledger
+      )
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [{ row: 1, col: 1, insertText: "Pass [protocol.pdf]" }],
+    });
   });
 });

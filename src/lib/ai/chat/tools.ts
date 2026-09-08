@@ -202,11 +202,9 @@ import { DocumentReviewSession ,
   documentReviewCoverageKey,
 } from "@/lib/ai/chat/document-review";
 import {
-  citationOutOfRangeMessage,
-  outOfRangeCitations,
-  parsedCitationsInText,
-  tableOperationCitationTexts,
-  type ReadyAttachmentForCitations,
+  CitationPageLedger,
+  rewriteCitationPagesInText,
+  rewriteTableOperationCitations,
 } from "@/lib/ai/chat/citation-grounding";
 import {
   compareDraftedInventory,
@@ -251,8 +249,7 @@ export type ProposeEditResult =
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
-  | { status: "review_incomplete"; message: string }
-  | { status: "citation_out_of_range"; message: string };
+  | { status: "review_incomplete"; message: string };
 
 export type InsertImageResult =
   | {
@@ -291,8 +288,7 @@ export type EditTableResult =
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
-  | { status: "review_incomplete"; message: string }
-  | { status: "citation_out_of_range"; message: string };
+  | { status: "review_incomplete"; message: string };
 
 export type DraftFieldResult =
   | {
@@ -310,7 +306,6 @@ export type DraftFieldResult =
   | { status: "header_mismatch"; message: string }
   | { status: "figures_not_supported"; message: string }
   | { status: "review_incomplete"; message: string }
-  | { status: "citation_out_of_range"; message: string }
   | { status: typeof NOT_A_REWRITE_STATUS; hint: string; coverage: number }
   | {
       status: "inventory_mismatch";
@@ -721,8 +716,9 @@ function buildSearchDocumentsTool(opts: {
   reportId: string;
   pinnedAttachmentIds: string[];
   citationRule: string;
+  citationLedger: CitationPageLedger;
 }) {
-  const { reportId, pinnedAttachmentIds, citationRule } = opts;
+  const { reportId, pinnedAttachmentIds, citationRule, citationLedger } = opts;
 
   async function runSearch(input: {
     query?: string;
@@ -752,6 +748,9 @@ function buildSearchDocumentsTool(opts: {
       if (byId.size >= SEARCH_DOCUMENTS_RESULT_CAP) break;
     }
     const merged = Array.from(byId.values());
+    for (const hit of merged) {
+      citationLedger.record(hit.filename, hit.pageNumber, hit.attachmentId);
+    }
     const truncated =
       merged.length >= SEARCH_DOCUMENTS_RESULT_CAP ||
       arms.some((arm) => arm.length >= input.limit);
@@ -945,34 +944,6 @@ export function buildChatTools(opts: {
     return next;
   };
   const fieldReadSnapshots = new Map<string, unknown>();
-  let readyAttachmentsPromise: Promise<ReadyAttachmentForCitations[]> | null =
-    null;
-  const loadReadyAttachments = (): Promise<ReadyAttachmentForCitations[]> => {
-    readyAttachmentsPromise ??= listReadyDocumentsForReport(reportId).then(
-      (docs) =>
-        docs.map((doc) => ({
-          id: doc.attachmentId,
-          filename: doc.filename,
-          pageCount: doc.pageCount,
-        }))
-    );
-    return readyAttachmentsPromise;
-  };
-  const rejectOutOfRangeCitations = async (
-    texts: readonly string[]
-  ): Promise<{ status: "citation_out_of_range"; message: string } | null> => {
-    const hasPageCite = texts.some((text) =>
-      parsedCitationsInText(text).some((cite) => cite.pages.length > 0)
-    );
-    if (!hasPageCite) return null;
-    const attachments = await loadReadyAttachments();
-    const violations = outOfRangeCitations(texts, attachments);
-    if (violations.length === 0) return null;
-    return {
-      status: "citation_out_of_range",
-      message: citationOutOfRangeMessage(violations),
-    };
-  };
   const captureFieldSnapshot = (
     section: SectionType,
     targetField: string,
@@ -1097,6 +1068,8 @@ export function buildChatTools(opts: {
   const citationsAtEndOfSection =
     opts.citationsAtEndOfSection ?? citationsAtEndOfSectionFor(documentType);
   const messages = opts.messages ?? [];
+  const citationLedger = new CitationPageLedger();
+  citationLedger.seedFromMessages(messages);
   const includePlotMeasurements = opts.includePlotMeasurements ?? true;
   const citationRule = documentCitationRule(citationsAtEndOfSection);
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
@@ -1339,6 +1312,7 @@ export function buildChatTools(opts: {
       reportId,
       pinnedAttachmentIds,
       citationRule,
+      citationLedger,
     }),
 
     document_outline: tool({
@@ -1398,6 +1372,7 @@ export function buildChatTools(opts: {
         if (outOfScope) return outOfScope;
         const page = await readDocumentPage({ reportId, attachmentId, pageNumber });
         if (!page) return { status: "not_found" as const };
+        citationLedger.record(page.filename, page.pageNumber, page.attachmentId);
         return {
           status: "found" as const,
           page: {
@@ -1515,6 +1490,7 @@ export function buildChatTools(opts: {
       inputSchema: z.object({}),
       execute: async () => {
         const finished = documentReview.finish();
+        citationLedger.seedFromToolOutput("finish_document_review", finished);
         return {
           ...finished,
           citationRule,
@@ -1689,17 +1665,18 @@ export function buildChatTools(opts: {
           } as ProposeEditResult;
         }
 
-        const citationCheck = await rejectOutOfRangeCitations([
-          prepared.insertText,
-          prepared.second?.insertText ?? "",
-        ]);
-        if (citationCheck) return citationCheck;
-
-        const normalizedInsert = normalizeSuggestionInsertText(prepared.insertText);
+        const normalizedInsert = normalizeSuggestionInsertText(
+          rewriteCitationPagesInText(prepared.insertText, citationLedger)
+        );
         const second = prepared.second
           ? {
               ...prepared.second,
-              insertText: normalizeSuggestionInsertText(prepared.second.insertText),
+              insertText: normalizeSuggestionInsertText(
+                rewriteCitationPagesInText(
+                  prepared.second.insertText,
+                  citationLedger
+                )
+              ),
             }
           : undefined;
         const leadIn = isAppendLeadIn({
@@ -2743,7 +2720,10 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
-        const capturedOp = captureTableOperationSnapshots(fieldDoc, parsedOp);
+        const capturedOp = rewriteTableOperationCitations(
+          captureTableOperationSnapshots(fieldDoc, parsedOp),
+          citationLedger
+        );
         const fieldText = sectionFieldPlainText(
           loaded.content,
           section,
@@ -2771,13 +2751,6 @@ export function buildChatTools(opts: {
         const second = citationsAtEndOfSection
           ? citationAppendPart(stripped.citations, fieldText)
           : undefined;
-
-        const citationCheck = await rejectOutOfRangeCitations([
-          ...tableOperationCitationTexts(stripped.operation),
-          ...stripped.citations,
-          second?.insertText ?? "",
-        ]);
-        if (citationCheck) return citationCheck;
 
         const suggestionId = createId();
         const createTable =
@@ -3028,11 +3001,12 @@ export function buildChatTools(opts: {
 
         const suggestionId = createId();
         const normalizedMarkdown = normalizeSuggestionInsertText(markdown);
-        const draftMarkdown = citationsAtEndOfSection
-          ? moveCitationsToEndOfText(normalizedMarkdown)
-          : normalizedMarkdown;
-        const citationCheck = await rejectOutOfRangeCitations([draftMarkdown]);
-        if (citationCheck) return citationCheck;
+        const draftMarkdown = rewriteCitationPagesInText(
+          citationsAtEndOfSection
+            ? moveCitationsToEndOfText(normalizedMarkdown)
+            : normalizedMarkdown,
+          citationLedger
+        );
         if (committing) {
           return commitFieldEdit({
             section,

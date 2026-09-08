@@ -1341,25 +1341,53 @@ describe("buildChatTools propose vs commit", () => {
     expect(inserted).toHaveLength(2);
   });
 
-  it("refuses draft_field citations with out-of-range PDF pages", async () => {
-    listReadyDocumentsForReportMock.mockResolvedValueOnce([
-      {
-        attachmentId: "att-1",
-        filename: "protocol.pdf",
-        description: null,
-        pageCount: 61,
-        ingestRunId: "ingest-1",
-        documentSummary: null,
-      },
-    ]);
+  it("strips a citation page that search never returned and still drafts", async () => {
     mockDefineSectionSelect({ type: "doc", content: [] });
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
       actor,
       editPolicy: "propose",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: "scope" },
+              output: {
+                results: [
+                  {
+                    filename: "protocol.pdf",
+                    pageNumber: 12,
+                    attachmentId: "att-1",
+                    citation: "[protocol.pdf, p. 12]",
+                  },
+                ],
+                seenPages: [
+                  {
+                    filename: "protocol.pdf",
+                    pageNumber: 12,
+                    attachmentId: "att-1",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
     });
-    const blocked = await tools.draft_field!.execute!(
+    const drafted = await tools.draft_field!.execute!(
       {
         section: "define",
         targetField: "narrative",
@@ -1368,8 +1396,10 @@ describe("buildChatTools propose vs commit", () => {
       },
       TEST_TOOL_OPTIONS
     );
-    expect(blocked).toMatchObject({ status: "citation_out_of_range" });
-    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.content).toContain("[protocol.pdf]");
+    expect(inserted[0]?.content).not.toContain("p. 104");
   });
 
   it("refuses draft_field on a filled field unless replaceFilledField is true", async () => {
