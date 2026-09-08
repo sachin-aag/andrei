@@ -22,7 +22,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v85-worksheet-switch-send";
+export const CHAT_PROMPT_VERSION = "chat-v86-citation-pdf-pages";
 
 export type ChatMode = "plan" | "agent";
 

@@ -16,6 +16,7 @@ import {
   useReportEvaluations,
   useReportSections,
 } from "@/providers/report-provider";
+import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -179,6 +180,7 @@ export function SuggestionCardFace({
   onAccept: () => void;
   onDismiss: () => void;
 }) {
+  const { openDocument } = useReportAttachments();
   const { linkedEval, queueIndex, queueTotal } = card;
   const eff = linkedEval ? effectiveStatus(linkedEval) : "not_evaluated";
   const reasoning = card.kind === "fix" ? card.payload.reasoning : card.redraft.reasoning;
@@ -331,7 +333,20 @@ export function SuggestionCardFace({
               <ul className="space-y-1">
                 {evidenceSources.map((source) => (
                   <li key={source.citationId}>
-                    {source.filename}, p. {source.pageNumber}
+                    <button
+                      type="button"
+                      data-testid="citation-link"
+                      className="citation-source text-left"
+                      title={`Open ${source.filename}, p. ${source.pageNumber}`}
+                      onClick={() =>
+                        openDocument(
+                          source.attachmentId,
+                          source.pageNumber >= 1 ? source.pageNumber : 1
+                        )
+                      }
+                    >
+                      {source.filename}, p. {source.pageNumber}
+                    </button>
                   </li>
                 ))}
               </ul>

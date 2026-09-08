@@ -214,6 +214,7 @@ export function createCommentHighlightExtension(
             handleClick(_view, _pos, event) {
               const t = event.target as HTMLElement | null;
               if (!t) return false;
+              if (t.closest("[data-citation-open]")) return false;
               const el = t.closest("[data-comment-id]");
               if (el) {
                 if (el.classList.contains("comment-thread-bubble")) return false;

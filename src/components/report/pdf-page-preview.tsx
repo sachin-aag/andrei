@@ -25,7 +25,9 @@ import {
   PDF_FALLBACK_PAGE_HEIGHT,
   PDF_FALLBACK_PAGE_WIDTH,
   PDF_PREVIEW_HORIZONTAL_PADDING,
+  PDF_PREVIEW_PAGE_STACK_CLASSNAME,
   PDF_PREVIEW_SCALE,
+  pdfPreviewPageSizeForRotation,
   pdfPreviewRenderScale,
   type PdfPreviewTextSpan,
   type PdfTextContentItem,
@@ -83,12 +85,14 @@ export function PdfPagePreview({
   page,
   title,
   sizeBytes,
+  active = true,
   onVisiblePageChange,
 }: {
   src: string;
   page: number;
   title: string;
   sizeBytes?: number;
+  active?: boolean;
   onVisiblePageChange?: (page: number) => void;
 }) {
   const contentUrl = contentUrlFromPreviewSrc(src);
@@ -200,6 +204,7 @@ export function PdfPagePreview({
       pageWidth={state.pageWidth}
       pageHeight={state.pageHeight}
       initialPage={page}
+      active={active}
       onVisiblePageChangeRef={onVisiblePageChangeRef}
     />
   );
@@ -212,6 +217,7 @@ function PdfDocumentPages({
   pageWidth,
   pageHeight,
   initialPage,
+  active,
   onVisiblePageChangeRef,
 }: {
   pdf: PDFDocumentProxy;
@@ -220,6 +226,7 @@ function PdfDocumentPages({
   pageWidth: number;
   pageHeight: number;
   initialPage: number;
+  active: boolean;
   onVisiblePageChangeRef: RefObject<((page: number) => void) | undefined>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -318,7 +325,7 @@ function PdfDocumentPages({
 
   useEffect(() => {
     const root = scrollRef.current;
-    if (!root) return;
+    if (!root || !active) return;
 
     const updateNearPages = (changes: Map<number, boolean>) => {
       setNearPages((prev) => {
@@ -392,7 +399,7 @@ function PdfDocumentPages({
       prefetch?.disconnect();
       currentPage.disconnect();
     };
-  }, [numPages, prefetchNeighbors, reportVisiblePage]);
+  }, [active, numPages, prefetchNeighbors, reportVisiblePage]);
 
   useLayoutEffect(() => {
     const clamped = clampPdfPage(initialPage, numPages);
@@ -401,7 +408,7 @@ function PdfDocumentPages({
   }, [initialPage, numPages, onVisiblePageChangeRef, pdf]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
       <PdfPreviewToolbar
         numPages={numPages}
         pageInput={pageInput}
@@ -420,9 +427,12 @@ function PdfDocumentPages({
         data-pdf-preview-scroll=""
         role="region"
         aria-label={`${title} preview`}
-        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-[var(--muted)]"
+        className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain bg-[var(--muted)]"
       >
-        <div className="flex flex-col items-center gap-4 p-4">
+        <div
+          data-pdf-preview-stack=""
+          className={PDF_PREVIEW_PAGE_STACK_CLASSNAME}
+        >
           {Array.from({ length: numPages }, (_, index) => index + 1).map(
             (pageNumber) => (
               <PdfPreviewPage
@@ -566,8 +576,13 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   ]);
 
   const canvasVisible = isCanvasVisible(state);
-  const width = canvasVisible ? state.pageWidth : fallbackWidth;
-  const height = canvasVisible ? state.pageHeight : fallbackHeight;
+  const fallback = pdfPreviewPageSizeForRotation(
+    fallbackWidth,
+    fallbackHeight,
+    rotation
+  );
+  const width = canvasVisible ? state.pageWidth : fallback.width;
+  const height = canvasVisible ? state.pageHeight : fallback.height;
 
   return (
     <div

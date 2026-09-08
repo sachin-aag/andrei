@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -12,6 +12,8 @@ import {
   reactNodeToPlainText,
   rewriteChatMathHtmlConflicts,
 } from "@/components/report/chat-markdown-math";
+import { linkifyCitationChildren } from "@/lib/citations/linkify-citation-text";
+import { sourceCitationsByNumber } from "@/lib/suggestions/citations-at-end";
 
 function ChatMathFromMarkdown({
   className,
@@ -90,19 +92,91 @@ const COMPONENTS: Components = {
     ),
 };
 
+function wrapCitationChildren(
+  children: ReactNode,
+  onOpen: (raw: string) => void,
+  numbered: ReadonlyMap<number, string>
+): ReactNode {
+  return linkifyCitationChildren(children, onOpen, numbered);
+}
+
+function createCitationMarkdownComponents(
+  onOpen: (raw: string) => void,
+  numbered: ReadonlyMap<number, string>
+): Components {
+  return {
+    ...COMPONENTS,
+    p: ({ children }) => (
+      <p className="leading-relaxed">
+        {wrapCitationChildren(children, onOpen, numbered)}
+      </p>
+    ),
+    li: ({ children }) => (
+      <li className="pl-0.5">{wrapCitationChildren(children, onOpen, numbered)}</li>
+    ),
+    strong: ({ children }) => (
+      <strong className="font-semibold text-[var(--foreground)]">
+        {wrapCitationChildren(children, onOpen, numbered)}
+      </strong>
+    ),
+    em: ({ children }) => (
+      <em className="italic">{wrapCitationChildren(children, onOpen, numbered)}</em>
+    ),
+    h1: ({ children }) => (
+      <h1 className="text-sm font-semibold text-[var(--foreground)]">
+        {wrapCitationChildren(children, onOpen, numbered)}
+      </h1>
+    ),
+    h2: ({ children }) => (
+      <h2 className="text-sm font-semibold text-[var(--foreground)]">
+        {wrapCitationChildren(children, onOpen, numbered)}
+      </h2>
+    ),
+    h3: ({ children }) => (
+      <h3 className="text-[13px] font-semibold text-[var(--foreground)]">
+        {wrapCitationChildren(children, onOpen, numbered)}
+      </h3>
+    ),
+    blockquote: ({ children }) => (
+      <blockquote className="border-l-2 border-[var(--border)] pl-3 text-[var(--muted-foreground)]">
+        {wrapCitationChildren(children, onOpen, numbered)}
+      </blockquote>
+    ),
+    td: ({ children }) => (
+      <td>{wrapCitationChildren(children, onOpen, numbered)}</td>
+    ),
+    th: ({ children }) => (
+      <th>{wrapCitationChildren(children, onOpen, numbered)}</th>
+    ),
+  };
+}
+
 /** Renders assistant chat text as GitHub-flavored markdown with LaTeX math. */
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
+  onOpenCitation,
 }: {
   children: string;
+  onOpenCitation?: (raw: string) => void;
 }) {
   const markdown = rewriteChatMathHtmlConflicts(children);
+  const numberedSources = useMemo(
+    () => sourceCitationsByNumber(children),
+    [children]
+  );
+  const components = useMemo(
+    () =>
+      onOpenCitation
+        ? createCitationMarkdownComponents(onOpenCitation, numberedSources)
+        : COMPONENTS,
+    [onOpenCitation, numberedSources]
+  );
   return (
     <div className="chat-markdown min-w-0 wrap-anywhere space-y-2 text-sm leading-relaxed text-[var(--foreground)]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         remarkRehypeOptions={{ handlers: CHAT_MATH_HAST_HANDLERS }}
-        components={COMPONENTS}
+        components={components}
       >
         {markdown}
       </ReactMarkdown>

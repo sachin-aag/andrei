@@ -9,6 +9,7 @@ import {
   rankHitsForQuery,
   requestedPageNumbers,
   rerankHitsForQuery,
+  locatorHitBoost,
 } from "./retrieval-query";
 
 describe("classifyRetrievalQuery", () => {
@@ -183,6 +184,31 @@ describe("locator ranking", () => {
       "dv-protocol-equipment.pdf page 2"
     );
     expect(ranked.map((row) => row.id)).toEqual(["p2", "p1", "other"]);
+  });
+
+  it("boosts the stored PDF page, not a printed footer number in the excerpt", () => {
+    const footerOnAbsolute118 = {
+      filename: "protocol.pdf",
+      pageNumber: 118,
+      excerpt: "Page 104 of 250 Purpose and scope of this design verification.",
+      id: "abs-118",
+    };
+    const storedPage104 = {
+      filename: "protocol.pdf",
+      pageNumber: 104,
+      excerpt: "Unrelated table of contents.",
+      id: "abs-104",
+    };
+    expect(locatorHitBoost(footerOnAbsolute118, "protocol.pdf page 104")).toBe(
+      2
+    );
+    expect(locatorHitBoost(storedPage104, "protocol.pdf page 104")).toBe(3);
+    expect(
+      rankHitsForQuery(
+        [footerOnAbsolute118, storedPage104],
+        "protocol.pdf page 104"
+      ).map((row) => row.id)
+    ).toEqual(["abs-104", "abs-118"]);
   });
 });
 

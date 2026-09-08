@@ -202,6 +202,11 @@ import { DocumentReviewSession ,
   documentReviewCoverageKey,
 } from "@/lib/ai/chat/document-review";
 import {
+  CitationPageLedger,
+  rewriteCitationPagesInText,
+  rewriteTableOperationCitations,
+} from "@/lib/ai/chat/citation-grounding";
+import {
   compareDraftedInventory,
   type RecommendedResultsInventory,
 } from "@/lib/ai/chat/results-inventory";
@@ -711,8 +716,9 @@ function buildSearchDocumentsTool(opts: {
   reportId: string;
   pinnedAttachmentIds: string[];
   citationRule: string;
+  citationLedger: CitationPageLedger;
 }) {
-  const { reportId, pinnedAttachmentIds, citationRule } = opts;
+  const { reportId, pinnedAttachmentIds, citationRule, citationLedger } = opts;
 
   async function runSearch(input: {
     query?: string;
@@ -742,6 +748,9 @@ function buildSearchDocumentsTool(opts: {
       if (byId.size >= SEARCH_DOCUMENTS_RESULT_CAP) break;
     }
     const merged = Array.from(byId.values());
+    for (const hit of merged) {
+      citationLedger.record(hit.filename, hit.pageNumber, hit.attachmentId);
+    }
     const truncated =
       merged.length >= SEARCH_DOCUMENTS_RESULT_CAP ||
       arms.some((arm) => arm.length >= input.limit);
@@ -1059,6 +1068,8 @@ export function buildChatTools(opts: {
   const citationsAtEndOfSection =
     opts.citationsAtEndOfSection ?? citationsAtEndOfSectionFor(documentType);
   const messages = opts.messages ?? [];
+  const citationLedger = new CitationPageLedger();
+  citationLedger.seedFromMessages(messages);
   const includePlotMeasurements = opts.includePlotMeasurements ?? true;
   const citationRule = documentCitationRule(citationsAtEndOfSection);
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
@@ -1301,6 +1312,7 @@ export function buildChatTools(opts: {
       reportId,
       pinnedAttachmentIds,
       citationRule,
+      citationLedger,
     }),
 
     document_outline: tool({
@@ -1330,7 +1342,6 @@ export function buildChatTools(opts: {
           documentSummary: documentSummary || null,
           pages: outline.pages.map((page) => ({
             pageNumber: page.pageNumber,
-            printedPageLabel: page.printedPageLabel,
             pageContext: page.pageContext
               ? sanitizePromptMetadata(page.pageContext, 400) || null
               : null,
@@ -1361,9 +1372,17 @@ export function buildChatTools(opts: {
         if (outOfScope) return outOfScope;
         const page = await readDocumentPage({ reportId, attachmentId, pageNumber });
         if (!page) return { status: "not_found" as const };
+        citationLedger.record(page.filename, page.pageNumber, page.attachmentId);
         return {
           status: "found" as const,
-          page,
+          page: {
+            attachmentId: page.attachmentId,
+            filename: page.filename,
+            pageNumber: page.pageNumber,
+            transcript: page.transcript,
+            visualInterpretation: page.visualInterpretation,
+            pageContext: page.pageContext,
+          },
           citation: sourceCitationBracket(page.filename, page.pageNumber),
           trustBoundary: DOCUMENT_TRUST_BOUNDARY,
         };
@@ -1471,6 +1490,7 @@ export function buildChatTools(opts: {
       inputSchema: z.object({}),
       execute: async () => {
         const finished = documentReview.finish();
+        citationLedger.seedFromToolOutput("finish_document_review", finished);
         return {
           ...finished,
           citationRule,
@@ -1645,11 +1665,18 @@ export function buildChatTools(opts: {
           } as ProposeEditResult;
         }
 
-        const normalizedInsert = normalizeSuggestionInsertText(prepared.insertText);
+        const normalizedInsert = normalizeSuggestionInsertText(
+          rewriteCitationPagesInText(prepared.insertText, citationLedger)
+        );
         const second = prepared.second
           ? {
               ...prepared.second,
-              insertText: normalizeSuggestionInsertText(prepared.second.insertText),
+              insertText: normalizeSuggestionInsertText(
+                rewriteCitationPagesInText(
+                  prepared.second.insertText,
+                  citationLedger
+                )
+              ),
             }
           : undefined;
         const leadIn = isAppendLeadIn({
@@ -2693,7 +2720,10 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
-        const capturedOp = captureTableOperationSnapshots(fieldDoc, parsedOp);
+        const capturedOp = rewriteTableOperationCitations(
+          captureTableOperationSnapshots(fieldDoc, parsedOp),
+          citationLedger
+        );
         const fieldText = sectionFieldPlainText(
           loaded.content,
           section,
@@ -2971,9 +3001,12 @@ export function buildChatTools(opts: {
 
         const suggestionId = createId();
         const normalizedMarkdown = normalizeSuggestionInsertText(markdown);
-        const draftMarkdown = citationsAtEndOfSection
-          ? moveCitationsToEndOfText(normalizedMarkdown)
-          : normalizedMarkdown;
+        const draftMarkdown = rewriteCitationPagesInText(
+          citationsAtEndOfSection
+            ? moveCitationsToEndOfText(normalizedMarkdown)
+            : normalizedMarkdown,
+          citationLedger
+        );
         if (committing) {
           return commitFieldEdit({
             section,
