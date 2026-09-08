@@ -1,3 +1,5 @@
+import { fetchWithUploadChunkTimeout } from "@/lib/attachments/upload-chunk-timeout";
+
 export type UploadPdfResumableInput = {
   uploadUrl: string;
   file: File;
@@ -85,18 +87,19 @@ export async function uploadPdfResumable({
     const chunkStartedAt = Date.now();
     let response: Response;
     try {
-      response = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": contentType,
-          "Content-Range": `bytes ${offset}-${endExclusive - 1}/${file.size}`,
+      response = await fetchWithUploadChunkTimeout(
+        uploadUrl,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": contentType,
+            "Content-Range": `bytes ${offset}-${endExclusive - 1}/${file.size}`,
+          },
+          body: chunk,
+          signal,
         },
-        body: chunk,
-        signal: AbortSignal.any([
-          ...(signal ? [signal] : []),
-          AbortSignal.timeout(chunkTimeoutMs),
-        ]),
-      });
+        chunkTimeoutMs
+      );
     } catch (error) {
       const handled = await handleRetryableFailure({
         error,
@@ -211,16 +214,17 @@ async function queryUploadedOffset(input: {
   chunkTimeoutMs: number;
 }): Promise<number> {
   try {
-    const response = await fetch(input.uploadUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Range": `bytes */${input.fileSize}`,
+    const response = await fetchWithUploadChunkTimeout(
+      input.uploadUrl,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Range": `bytes */${input.fileSize}`,
+        },
+        signal: input.signal,
       },
-      signal: AbortSignal.any([
-        ...(input.signal ? [input.signal] : []),
-        AbortSignal.timeout(input.chunkTimeoutMs),
-      ]),
-    });
+      input.chunkTimeoutMs
+    );
     if (response.status === 308) {
       return nextOffsetFromRange(response.headers.get("Range"), input.fallback);
     }
