@@ -11,6 +11,7 @@ import {
   checkCalibrationStatus,
   checkMonitoringExcursionsLinked,
   checkPreventiveMaintenanceJustified,
+  checkPrqScheduleCurrent,
   checkQmsQualificationFollowUp,
   checkQmsRecords,
   checkQualificationFormatScope,
@@ -68,17 +69,21 @@ function ctx(
     section = "elr_monitoring",
     dependencies = {},
     formatScope = "Vial",
+    metadata = {},
   }: {
     section?: string;
     dependencies?: Record<string, unknown>;
     formatScope?: string;
+    metadata?: Record<string, unknown>;
   } = {}
 ): EvaluationContext {
   return {
     section: section as EvaluationContext["section"],
     content,
     dependencies,
-    report: { metadata: { formatScope } } as unknown as EvaluationContext["report"],
+    report: {
+      metadata: { formatScope, ...metadata },
+    } as unknown as EvaluationContext["report"],
   };
 }
 
@@ -114,14 +119,14 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).toContain("elr_qms");
     expect(def.chat.inventorySections).not.toContain("elr_objective");
     expect(def.chat.inventorySections).not.toContain("elr_scope");
-    expect(def.prompts.promptVersion).toBe("mj-elr-v2");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v1");
   });
 
   it("maps every section into the export template data", () => {
     const def = getDocumentType(TYPE);
     const data = def.export.buildTemplateData({
       report: {
-        documentNo: "ELR/DP/PR/26/001",
+        documentNo: "ELR-26-PR-001",
         metadata: { equipmentId: "E/PR/070", formatScope: "Vial" },
       } as unknown as Parameters<typeof def.export.buildTemplateData>[0]["report"],
       sections: ELR_SECTION_KEYS.map((section) => ({
@@ -373,6 +378,43 @@ describe("ELR criteria wiring", () => {
   });
 });
 
+describe("ELR periodic re-qualification schedule", () => {
+  const schedule = (metadata: Record<string, unknown>) =>
+    checkPrqScheduleCurrent(
+      ctx({}, { section: "elr_qualification", metadata })
+    );
+
+  it("flags a next PRQ that fell due before the ELR cut-off", () => {
+    const result = schedule({
+      nextPrqDate: "2026-08-15",
+      periodTo: "2026-09-30",
+    });
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/overdue|superseded/i);
+  });
+
+  it("flags a next PRQ falling exactly on the cut-off", () => {
+    expect(
+      schedule({ nextPrqDate: "2026-09-30", periodTo: "2026-09-30" }).status
+    ).toBe("not_met");
+  });
+
+  it("passes when the next PRQ falls after the period", () => {
+    const result = schedule({
+      nextPrqDate: "2027-02-15",
+      periodTo: "2026-09-30",
+    });
+    expect(result.status).toBe("met");
+  });
+
+  it("asks for the dates when the identity block is incomplete", () => {
+    expect(schedule({ periodTo: "2026-09-30" }).status).toBe("not_met");
+    expect(schedule({ nextPrqDate: "2027-02-15" }).reasoning).toMatch(
+      /period end/i
+    );
+  });
+});
+
 describe("ELR qualification follow-up", () => {
   const cc = (impact: string, ref = "CCF/EU/26/007") =>
     tableDoc([
@@ -509,7 +551,7 @@ describe("ELR docx template contract", () => {
     const def = getDocumentType(TYPE);
     const data = def.export.buildTemplateData({
       report: {
-        documentNo: "ELR/DP/PR/26/001",
+        documentNo: "ELR-26-PR-001",
         metadata: {},
       } as unknown as Parameters<typeof def.export.buildTemplateData>[0]["report"],
       sections: ELR_SECTION_KEYS.map((section) => ({

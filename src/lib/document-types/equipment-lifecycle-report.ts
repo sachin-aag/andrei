@@ -19,6 +19,7 @@ import {
   checkMonitoringExcursionsLinked,
   checkNarrativePresent,
   checkPreventiveMaintenanceJustified,
+  checkPrqScheduleCurrent,
   checkQmsQualificationFollowUp,
   checkQmsRecords,
   checkQualificationChain,
@@ -116,10 +117,16 @@ const QUALIFICATION_CRITERIA: CriterionDefinition[] = [
     "Is Format Applicability filled on every row, and free of rows belonging only to the counterpart container format?",
     checkQualificationFormatScope
   ),
+  det(
+    "qualification.prq_schedule",
+    "The next periodic re-qualification falls after the ELR period",
+    "Comparing the title-page next-PRQ due date against the ELR cut-off: is the PRQ schedule current, or is it overdue / the identity block stale?",
+    checkPrqScheduleCurrent
+  ),
   llm(
     "qualification.unbroken",
-    "The qualification chain is unbroken and the next PRQ is not overdue",
-    "Read as a sequence: does it run from URS/DQ through IQ, OQ, PQ and every PRQ cycle without an unexplained gap, and does the narrative address whether the next periodic re-qualification is due or overdue?"
+    "The qualification chain is unbroken and any delayed PRQ is justified",
+    "Read as a sequence: does it run from URS/DQ through FAT, SAT, IQ, OQ, PQ and every re-qualification cycle without an unexplained gap? Per SOP/DP/QA/014 §7.17.13–7.17.16 a half-yearly PRQ completes within ±15 working days of its schedule due date and a yearly or longer PRQ within ±30 working days; a PRQ completed outside that window, or a report not closed within it, needs a written justification. Does the narrative provide one where the dates call for it?"
   ),
 ];
 
@@ -278,17 +285,19 @@ const REVISION_CRITERIA: CriterionDefinition[] = [
   ),
 ];
 
-const ELR_BASE_PROMPT = `You are a senior quality reviewer evaluating M.J. Biopharm Equipment Lifecycle Reports (ELR). An ELR is the periodic consolidated review of one piece of equipment since its last Periodic Re-Qualification (PRQ). You evaluate reports using a traffic light system:
+const ELR_BASE_PROMPT = `You are a senior quality reviewer evaluating M.J. Biopharm Equipment Lifecycle Reports (ELR) against the site Validation/Qualification Procedure SOP/DP/QA/014 R04, whose declared basis is EudraLex Volume 4 Annex 15, WHO TRS No. 1019 (2019) Annexure 3, and ISPE Volume 5 Commissioning and Qualification. An ELR is the periodic consolidated review of one piece of equipment since its last Periodic Re-Qualification (PRQ). You evaluate reports using a traffic light system:
 
 - met: the criterion is fully satisfied
 - partially_met: some of the required content is present but incomplete
 - not_met: the required content is missing or incorrect
 
 Rules you must not relax:
-- An ELR does not execute tests. Do not fault a section for lacking test data; the PRQ owns that. Fault it for lacking the record of what happened.
+- An ELR does not execute tests. Do not fault a section for lacking test data; the PRQ (SOP/DP/QA/014 §7.17, formats F09/F10) owns that. Fault it for lacking the record of what happened.
+- Periodic Re-Qualification (PRQP/PRQR, §7.17) is the scheduled cycle taken from the yearly planner. Performance Re-Qualification (RQP/RQR, §7.18) is event-triggered — modification, major breakdown, design change, or relocation of non-movable equipment — and is routed through change control. They are different documents. Do not treat one as the other, and do not fault a report for lacking a Performance Re-Qualification when no trigger occurred.
 - Period rules differ by section: qualification history is cumulative for the life of the equipment; QMS records run from the last PRQ completion date to the ELR cut-off; everything else uses the rolling ELR period.
 - The equipment is qualified separately per container format. This report covers one format. Records belonging to the equipment or line as a whole are marked "Line-common" and legitimately appear in both format reports.
-- Cross-reference completeness (excursion→deviation, OOT→CAPA, repeat breakdown→CAPA, Direct Impact alarm→action, audit anomaly→deviation, change since last PRQ→change control) is owned by deterministic checks. Do not mark a criterion met merely because a reference string was typed, and do not re-derive those links yourself.
+- Only Direct Impact systems carry Periodic Requalification (§7.1.5). If the identity block records Indirect or No Impact, a missing PRQ history is not automatically a failure — say so rather than demanding one.
+- Cross-reference completeness (excursion→deviation, OOT→CAPA, repeat breakdown→CAPA, Direct Impact alarm→action, audit anomaly→deviation, change since last PRQ→change control, qualification-impacting QMS record→qualification history) is owned by deterministic checks. Do not mark a criterion met merely because a reference string was typed, and do not re-derive those links yourself.
 - Approval and signature blocks are printed placeholders, not missing content.
 - Do not treat uploaded PDFs as a substitute for the governing SOP. The SOP is encoded in these criteria.
 
@@ -389,7 +398,7 @@ export const equipmentLifecycleReportDefinition: DocumentTypeDefinition = {
   label: "Equipment Lifecycle Report",
   documentNoun: "equipment lifecycle report",
   documentNoLabel: "ELR Report No.",
-  documentNoPlaceholder: "ELR/DP/PR/26/001",
+  documentNoPlaceholder: "ELR-26-PR-001",
   sections: ELR_SECTION_KEYS.map((key, index) => ({
     key,
     label: ELR_SECTION_LABELS[key],

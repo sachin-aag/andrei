@@ -183,6 +183,48 @@ export function checkQualificationFormatScope(ctx: EvaluationContext) {
   return verdict("met", `Every row is scoped to ${format} or Line-common`);
 }
 
+/** Identity-block dates are `<input type="date">` values, so ISO and sortable. */
+function isoDate(value: unknown): string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
+    ? value.trim()
+    : "";
+}
+
+function metadataField(ctx: EvaluationContext, key: string): string {
+  const meta = ctx.report?.metadata;
+  if (!meta || typeof meta !== "object") return "";
+  const value = (meta as Record<string, unknown>)[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * SOP/DP/QA/014 §7.17.17: the periodic re-qualification report approval date is
+ * the done date, and the next due date runs from the original schedule. So a
+ * next-PRQ date falling on or before this ELR's cut-off means either the PRQ is
+ * overdue or the identity block was never updated after it was executed — both
+ * are findings, and both are invisible if nobody compares the two dates.
+ */
+export function checkPrqScheduleCurrent(ctx: EvaluationContext) {
+  const nextPrq = isoDate(metadataField(ctx, "nextPrqDate"));
+  const periodTo = isoDate(metadataField(ctx, "periodTo"));
+  if (!nextPrq) {
+    return verdict(
+      "not_met",
+      "Record the next periodic re-qualification due date on the title page"
+    );
+  }
+  if (!periodTo) {
+    return verdict("not_met", "Record the ELR period end date on the title page");
+  }
+  if (nextPrq <= periodTo) {
+    return verdict(
+      "not_met",
+      `Next PRQ is due ${nextPrq}, on or before the ELR cut-off ${periodTo} — either the PRQ is overdue, or it was executed and the title page still shows the superseded due date`
+    );
+  }
+  return verdict("met", `Next PRQ (${nextPrq}) falls after the ELR period`);
+}
+
 export function checkMediaFillTable(ctx: EvaluationContext) {
   const parsed = parseMediaFillMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);

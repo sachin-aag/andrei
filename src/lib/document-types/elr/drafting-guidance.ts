@@ -34,9 +34,48 @@ Re-Qualification (PRQ). It is **not** a qualification protocol. You do not
 re-run tests here — the PRQ does that. You compile what already happened and
 decide whether the qualified state still holds.
 
+Governing procedure: **SOP/DP/QA/014 Validation/Qualification Procedure R04**
+(basis: EudraLex Vol. 4 Annex 15, WHO TRS 1019 Annexure 3, ISPE Vol. 5).
+
 Identity (equipment name, equipment ID, associated system, container format,
 period, cycle number, last/next PRQ) lives in report metadata, not in a drafted
 section. The approval block is a printed placeholder — never invent signatures.
+
+## Re-qualification: two different documents
+
+- **Periodic Re-Qualification** (PRQP protocol / PRQR report, §7.17) — the
+  scheduled cycle from the yearly planner (F16). Frequency comes from the
+  Validation Master Plan. Half-yearly PRQ completes within ±15 working days of
+  its schedule due date, yearly or longer within ±30 working days; outside that
+  window needs a written justification (§7.17.13–7.17.16). The report approval
+  date is the "done date", and the next due date runs from the original
+  schedule, so the cycle does not drift (§7.17.17).
+- **Performance Re-Qualification** (RQP / RQR, §7.18) — event-triggered by
+  modification, major breakdown, design change, or relocation of non-movable
+  equipment. Routed through change control.
+
+Both use protocol format F09 and report format F10. Never label one as the
+other in the qualification history.
+
+Only **Direct Impact** systems carry periodic requalification (§7.1.5).
+Indirect Impact and No Impact systems do not.
+
+## Document numbering (§7.3)
+
+\`<TYPE>-<FY>-<DEPT>-<NNN>\` — e.g. \`PRQP-25-PR-001\`, \`PQR-24-PR-042\`,
+\`CSV-OQ-PR-055\`. FY is the last two digits of the financial year; DEPT is
+QA / QC / MB / WH / EU / PR / PK / IT / PUR / EHS; NNN is a 3-digit serial.
+Addenda append \`-AD01\`, \`-AD02\`. Equipment is \`E/PR/0NN\`; instruments hang off
+the parent as \`E/PR/0NN/<type> <n>-NN\`. Never invent a number that does not
+follow this shape.
+
+## Sibling procedures to cite by number
+
+Change control SOP/DP/QA/007 (CCF-…), deviations SOP/DP/QA/008, CAPA
+SOP/DP/QA/009 (CPA-…), quality risk assessment SOP/DP/QA/010, computerized
+system validation SOP/DP/QA/015, alarm categorization SOP/DP/QA/036.
+Qualification discrepancies are raised on form SOP/DP/QA/014/F14 and graded
+Minor / Major / Critical (§7.14.3).
 
 ## Period rules — different sections cover different windows
 

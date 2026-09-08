@@ -350,8 +350,13 @@ export type ElrMetadata = {
   formatScope: string;
   location: string;
   department: string;
-  /** Drives the review interval — the ELR frequency is risk-based, not fixed. */
+  /**
+   * System Level Impact Assessment outcome — Direct / Indirect / No Impact
+   * (SOP/DP/QA/014 §7.1.5). Only Direct Impact systems carry periodic
+   * requalification, so this drives what the report can reasonably demand.
+   */
   riskClassification: string;
+  /** Review interval. PRQ frequency is set by the Validation Master Plan (§7.17.2). */
   elrFrequency: string;
   cycleNo: string;
   periodFrom: string;

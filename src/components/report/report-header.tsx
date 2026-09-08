@@ -263,15 +263,15 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-risk-classification"
-            label="Equipment risk classification"
+            label="System impact (SLIA)"
             value={meta.riskClassification}
-            placeholder="Direct impact"
+            placeholder="Direct Impact"
             disabled={readOnly}
             onChange={set("riskClassification")}
           />
           <IdentityField
             id="elr-frequency"
-            label="ELR frequency (per risk classification)"
+            label="ELR frequency (per VMP)"
             value={meta.elrFrequency}
             placeholder="Half yearly"
             disabled={readOnly}
