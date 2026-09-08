@@ -109,4 +109,17 @@ describe("ChatMarkdown", () => {
     );
     expect(screen.queryByTestId("citation-link")).not.toBeInTheDocument();
   });
+
+  it("splits two files packed into one bracket into two links", async () => {
+    const onOpenCitation = vi.fn();
+    render(
+      <ChatMarkdown onOpenCitation={onOpenCitation}>
+        {String.raw`See [RTM for E-PR-068,.pdf, p. 100, CSV-RTM-PR-053.pdf, p. 5].`}
+      </ChatMarkdown>
+    );
+    const links = screen.getAllByTestId("citation-link");
+    expect(links).toHaveLength(2);
+    await userEvent.click(links[1]!);
+    expect(onOpenCitation).toHaveBeenCalledWith("[CSV-RTM-PR-053.pdf, p. 5]");
+  });
 });

@@ -6,6 +6,7 @@ import {
   citationNumberFromMarker,
   isNumericCitationMarker,
   isSourceCitationBracket,
+  sourceCitationLinkSpans,
 } from "@/lib/placeholders/citation-bracket";
 import { BRACKET_SPAN_REGEX } from "@/lib/placeholders/find";
 import { sourceCitationsByNumber } from "@/lib/suggestions/citations-at-end";
@@ -72,26 +73,30 @@ function scanBlockForCitations(
     if (isNumericCitationMarker(text)) {
       const number = citationNumberFromMarker(text);
       if (number == null) continue;
+      const parked = numberedSources.get(number);
+      const parkedSpans = parked ? sourceCitationLinkSpans(parked) : [];
       highlights.push({
         fromPos,
         toPos,
         kind: "numeric",
         number,
         text,
-        openRaw: numberedSources.get(number) ?? null,
+        openRaw: parkedSpans[0]?.openRaw ?? parked ?? null,
       });
       continue;
     }
 
     if (isSourceCitationBracket(text)) {
-      highlights.push({
-        fromPos,
-        toPos,
-        kind: "source",
-        number: null,
-        text,
-        openRaw: text,
-      });
+      for (const span of sourceCitationLinkSpans(text)) {
+        highlights.push({
+          fromPos: pmOffsetToPos(chunks, match.index + span.from),
+          toPos: pmOffsetToPos(chunks, match.index + span.to),
+          kind: "source",
+          number: null,
+          text: text.slice(span.from, span.to),
+          openRaw: span.openRaw,
+        });
+      }
     }
   }
   return highlights;

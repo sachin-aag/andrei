@@ -136,6 +136,29 @@ describe("citation highlight decorations", () => {
     expect(source?.openRaw).toBe("[protocol.pdf, p. 3]");
   });
 
+  it("splits two files in one bracket into two clickable spans", () => {
+    const schema = schemaWithTable();
+    const cite =
+      "[RTM for E-PR-068,.pdf, p. 100, CSV-RTM-PR-053.pdf, p. 5]";
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text(`Traceability ${cite}.`),
+      ]),
+    ]);
+    const highlights = findCitationHighlightsInPmDoc(doc).filter(
+      (h) => h.kind === "source"
+    );
+    expect(highlights).toHaveLength(2);
+    expect(highlights[0]?.openRaw).toBe("[RTM for E-PR-068,.pdf, p. 100]");
+    expect(highlights[1]?.openRaw).toBe("[CSV-RTM-PR-053.pdf, p. 5]");
+    expect(
+      doc.textBetween(highlights[0]!.fromPos, highlights[0]!.toPos)
+    ).toBe("RTM for E-PR-068,.pdf, p. 100");
+    expect(
+      doc.textBetween(highlights[1]!.fromPos, highlights[1]!.toPos)
+    ).toBe("CSV-RTM-PR-053.pdf, p. 5");
+  });
+
   it("remaps decorations across a mapping-only transaction", () => {
     const schema = schemaWithTable();
     const doc = schema.node("doc", null, [

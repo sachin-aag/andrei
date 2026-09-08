@@ -40,6 +40,37 @@ describe("openCitedDocument", () => {
     expect(openDocument).toHaveBeenCalledWith("att_1", 4);
   });
 
+  it("opens the first file when two sources share one bracket", () => {
+    const openDocument = vi.fn();
+    const files = [
+      { id: "att_rtm", filename: "RTM for E-PR-068,.pdf" },
+      { id: "att_csv", filename: "CSV-RTM-PR-053.pdf" },
+    ];
+    expect(
+      openCitedDocument({
+        raw: "[RTM for E-PR-068,.pdf, p. 100, CSV-RTM-PR-053.pdf, p. 5]",
+        attachments: files,
+        openDocument,
+      })
+    ).toEqual({ status: "opened", attachmentId: "att_rtm", page: 100 });
+    expect(openDocument).toHaveBeenCalledWith("att_rtm", 100);
+  });
+
+  it("opens a split second source at its own page", () => {
+    const openDocument = vi.fn();
+    const files = [
+      { id: "att_rtm", filename: "RTM for E-PR-068.pdf" },
+      { id: "att_csv", filename: "CSV-RTM-PR-053.pdf" },
+    ];
+    expect(
+      openCitedDocument({
+        raw: "[CSV-RTM-PR-053.pdf, p. 5]",
+        attachments: files,
+        openDocument,
+      })
+    ).toEqual({ status: "opened", attachmentId: "att_csv", page: 5 });
+  });
+
   it("does not open when the file is not on the report", () => {
     const openDocument = vi.fn();
     expect(

@@ -5,6 +5,8 @@ import {
   isSourceCitationBracket,
   parseSourceCitation,
   repairedCitationBracket,
+  sourceCitationLinkSpans,
+  splitSourceCitationParts,
 } from "@/lib/placeholders/citation-bracket";
 
 describe("isCitationShapedBracket", () => {
@@ -206,5 +208,72 @@ describe("parseSourceCitation", () => {
   it("returns null for numeric markers and placeholders", () => {
     expect(parseSourceCitation("[3]")).toBeNull();
     expect(parseSourceCitation("[batch number]")).toBeNull();
+  });
+
+  it("uses the first file when two sources share one bracket", () => {
+    expect(
+      parseSourceCitation(
+        "[RTM for E-PR-068,.pdf, p. 100, CSV-RTM-PR-053.pdf, p. 5]"
+      )
+    ).toEqual({
+      filename: "RTM for E-PR-068,.pdf",
+      pages: [100],
+    });
+  });
+});
+
+describe("splitSourceCitationParts", () => {
+  it("splits two files with pages in one bracket", () => {
+    expect(
+      splitSourceCitationParts(
+        "RTM for E-PR-068,.pdf, p. 100, CSV-RTM-PR-053.pdf, p. 5"
+      )
+    ).toEqual(["RTM for E-PR-068,.pdf, p. 100", "CSV-RTM-PR-053.pdf, p. 5"]);
+  });
+
+  it("keeps extra pages of the same file together", () => {
+    expect(
+      splitSourceCitationParts(
+        "825-00101(RevA) Model 3 Perioguide DV Report.pdf, p. 4, 26, 163, 260"
+      )
+    ).toEqual([
+      "825-00101(RevA) Model 3 Perioguide DV Report.pdf, p. 4, 26, 163, 260",
+    ]);
+  });
+
+  it("splits two filenames without pages", () => {
+    expect(splitSourceCitationParts("fileA.pdf, fileB.pdf")).toEqual([
+      "fileA.pdf",
+      "fileB.pdf",
+    ]);
+  });
+
+  it("splits attachment-label lists", () => {
+    expect(
+      splitSourceCitationParts("Attachment_XIV, Attachment_VIII")
+    ).toEqual(["Attachment_XIV", "Attachment_VIII"]);
+  });
+});
+
+describe("sourceCitationLinkSpans", () => {
+  it("keeps a single file as one whole-bracket link", () => {
+    expect(sourceCitationLinkSpans("[protocol.pdf, p. 3]")).toEqual([
+      { from: 0, to: "[protocol.pdf, p. 3]".length, openRaw: "[protocol.pdf, p. 3]" },
+    ]);
+  });
+
+  it("makes two inner links for a combined cite", () => {
+    const match =
+      "[RTM for E-PR-068,.pdf, p. 100, CSV-RTM-PR-053.pdf, p. 5]";
+    const spans = sourceCitationLinkSpans(match);
+    expect(spans).toHaveLength(2);
+    expect(spans[0]?.openRaw).toBe("[RTM for E-PR-068,.pdf, p. 100]");
+    expect(spans[1]?.openRaw).toBe("[CSV-RTM-PR-053.pdf, p. 5]");
+    expect(match.slice(spans[0]!.from, spans[0]!.to)).toBe(
+      "RTM for E-PR-068,.pdf, p. 100"
+    );
+    expect(match.slice(spans[1]!.from, spans[1]!.to)).toBe(
+      "CSV-RTM-PR-053.pdf, p. 5"
+    );
   });
 });

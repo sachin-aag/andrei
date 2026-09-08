@@ -33,4 +33,24 @@ describe("linkifyCitationText", () => {
     expect(screen.queryByTestId("citation-link")).not.toBeInTheDocument();
     expect(screen.getByText(/batch number/)).toBeInTheDocument();
   });
+
+  it("splits two files packed into one bracket into two links", async () => {
+    const onOpen = vi.fn();
+    render(
+      <>
+        {linkifyCitationText(
+          "See [RTM for E-PR-068,.pdf, p. 100, CSV-RTM-PR-053.pdf, p. 5].",
+          onOpen
+        )}
+      </>
+    );
+    const links = screen.getAllByTestId("citation-link");
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveTextContent("RTM for E-PR-068,.pdf, p. 100");
+    expect(links[1]).toHaveTextContent("CSV-RTM-PR-053.pdf, p. 5");
+    await userEvent.click(links[0]!);
+    expect(onOpen).toHaveBeenCalledWith("[RTM for E-PR-068,.pdf, p. 100]");
+    await userEvent.click(links[1]!);
+    expect(onOpen).toHaveBeenCalledWith("[CSV-RTM-PR-053.pdf, p. 5]");
+  });
 });
