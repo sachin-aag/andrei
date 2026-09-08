@@ -5,6 +5,7 @@ import {
   layoutPreviewTextSpans,
   pdfPreviewRenderScale,
   PDF_PREVIEW_HORIZONTAL_PADDING,
+  PDF_PREVIEW_PAGE_STACK_CLASSNAME,
   PDF_PREVIEW_SCALE,
 } from "@/lib/attachments/pdf-preview-layout";
 
@@ -98,5 +99,13 @@ describe("pdfPreviewRenderScale", () => {
       (viewportWidth - PDF_PREVIEW_HORIZONTAL_PADDING) * 1.25,
       5
     );
+  });
+});
+
+describe("PDF_PREVIEW_PAGE_STACK_CLASSNAME", () => {
+  it("sizes the stack to the page so zoomed overflow is scrollable on the left", () => {
+    expect(PDF_PREVIEW_PAGE_STACK_CLASSNAME).toContain("w-max");
+    expect(PDF_PREVIEW_PAGE_STACK_CLASSNAME).toContain("min-w-full");
+    expect(PDF_PREVIEW_PAGE_STACK_CLASSNAME).toContain("items-center");
   });
 });

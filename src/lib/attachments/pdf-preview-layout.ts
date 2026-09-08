@@ -11,6 +11,16 @@ export const PDF_PREVIEW_SCALE = 1.5;
 /** Horizontal padding on the scroll stack (`p-4` left + right). */
 export const PDF_PREVIEW_HORIZONTAL_PADDING = 32;
 
+/**
+ * Inner page stack. `w-max min-w-full` sizes the stack to the wider of the
+ * viewport and the page so a zoomed-in page can be scrolled to its left
+ * edge. Flex `items-center` alone overflow-centers a wider child; that
+ * left overflow is not in the scrollport, so the scrollbar sits at 0
+ * while the left of the page is clipped.
+ */
+export const PDF_PREVIEW_PAGE_STACK_CLASSNAME =
+  "flex w-max min-w-full flex-col items-center gap-4 p-4";
+
 /** US Letter at 72pt — placeholder size until the first painted page reports its viewport. */
 export const PDF_FALLBACK_PAGE_WIDTH = 612 * PDF_PREVIEW_SCALE;
 export const PDF_FALLBACK_PAGE_HEIGHT = 792 * PDF_PREVIEW_SCALE;

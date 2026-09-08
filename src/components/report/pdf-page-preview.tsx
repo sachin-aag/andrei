@@ -25,6 +25,7 @@ import {
   PDF_FALLBACK_PAGE_HEIGHT,
   PDF_FALLBACK_PAGE_WIDTH,
   PDF_PREVIEW_HORIZONTAL_PADDING,
+  PDF_PREVIEW_PAGE_STACK_CLASSNAME,
   PDF_PREVIEW_SCALE,
   pdfPreviewRenderScale,
   type PdfPreviewTextSpan,
@@ -422,7 +423,10 @@ function PdfDocumentPages({
         aria-label={`${title} preview`}
         className="min-h-0 flex-1 overflow-auto overscroll-contain bg-[var(--muted)]"
       >
-        <div className="flex flex-col items-center gap-4 p-4">
+        <div
+          data-pdf-preview-stack=""
+          className={PDF_PREVIEW_PAGE_STACK_CLASSNAME}
+        >
           {Array.from({ length: numPages }, (_, index) => index + 1).map(
             (pageNumber) => (
               <PdfPreviewPage

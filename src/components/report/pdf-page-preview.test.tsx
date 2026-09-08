@@ -233,6 +233,8 @@ describe("PdfPagePreview", () => {
     expect(screen.getByLabelText("Evidence.pdf preview")).toHaveAttribute(
       "data-pdf-preview-scroll"
     );
+    const stack = document.querySelector("[data-pdf-preview-stack]");
+    expect(stack).toHaveClass("w-max", "min-w-full", "items-center");
   });
 
   it("does not reload the document when the requested page changes", async () => {
@@ -601,6 +603,8 @@ describe("PdfPagePreview", () => {
       expect(pageShell.style.width).toBe(`${expectedRenderedWidth(1.25)}px`);
     });
     expect(screen.getByText("125%")).toBeInTheDocument();
+    const stack = document.querySelector("[data-pdf-preview-stack]");
+    expect(stack).toHaveClass("w-max", "min-w-full");
   });
 
   it("re-renders with rotation when the rotate button is clicked", async () => {
