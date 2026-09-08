@@ -805,6 +805,8 @@ export function buildAnalyticsChatTools(opts: {
   actor?: AuditActorSnapshot;
   /** Orchestrator plans and dispatches extract_sheet. Workers dump one sheet. */
   role?: "orchestrator" | "sheet_worker";
+  /** Chat-turn start so extract workers share the parent deadline. */
+  turnStartedAtMs?: number;
 }): ToolSet {
   const { reportId, canEdit, documentType, searchGate, focusedSheetId, actor } =
     opts;
@@ -1591,6 +1593,7 @@ export function buildAnalyticsChatTools(opts: {
             pages: input.pages,
             metric: input.metric,
             abortSignal,
+            turnStartedAtMs: opts.turnStartedAtMs,
           });
         },
       });

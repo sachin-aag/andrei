@@ -12,6 +12,8 @@ export type ChatUserIntentKind = (typeof CHAT_USER_INTENTS)[number];
 export type ChatUserIntentDecision = {
   kind: ChatUserIntentKind;
   reason: string;
+  /** High-confidence Document→Analytics redirect. Widget only when true. */
+  switchToAnalytics?: boolean;
 };
 
 export const DOCUMENT_WRITE_TOOLS = [
@@ -87,6 +89,20 @@ const ANALYTICS_WRITE_RE =
 const ANALYTICS_DESTINATION_RE =
   /\b(?:in|into|onto|to)\s+(?:the\s+|a\s+|my\s+)?(?:\w+\s+){0,2}(?:worksheet|work sheet|spreadsheet|sheet|grid|column)s?\b/i;
 
+/**
+ * Document-chat gate for "they asked to fill the Analytics worksheet".
+ * Tighter than `ANALYTICS_DESTINATION_RE`: bare "sheet" / "column" are too
+ * common in protocol tables. Questions stay lookups.
+ */
+const DOCUMENT_WORKSHEET_DESTINATION_RE =
+  /\b(?:in|into|onto|to)\s+(?:the\s+|a\s+|my\s+)?(?:\w+\s+){0,2}(?:worksheet|work sheet|spreadsheet)s?\b/i;
+
+const FILL_WORKSHEET_RE =
+  /\b(?:fill|populate|dump|extract|load|import)\b.{0,48}\b(?:into|in|onto|to)\s+(?:the\s+)?(?:data\s+)?(?:worksheet|work sheet|spreadsheet)\b/i;
+
+const FILL_THE_WORKSHEET_RE =
+  /\b(?:fill|populate)\s+(?:out\s+|in\s+)?(?:the\s+)?(?:data\s+)?(?:worksheet|work sheet|spreadsheet)\b/i;
+
 const ADVICE_QUESTION_RE =
   /\b(?:how should i|what should i (?:write|draft|put|say|include)|which section should i|how do i (?:write|draft))\b/i;
 
@@ -95,6 +111,10 @@ const QUESTION_START_RE =
 
 const ASSISTANT_WRITE_OFFER_RE =
   /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot)|ready to draft|start drafting|i(?:'ll| will) draft)\b/i;
+
+/** Report chat pointed them at Analytics; a yes is continue-the-extract, not small talk. */
+const SWITCH_TO_ANALYTICS_OFFER_RE =
+  /Switch to Analytics button|belongs on the Analytics worksheet/i;
 
 /** Skip-all on an Analytics page-number form — search, do not placeholder. */
 const ASK_USER_ANSWERS_RE = /^Answers to your questions:/i;
@@ -152,6 +172,12 @@ export function classifyChatUserIntent(
   if (CONFIRM_RE.test(latest)) {
     if (offeredWrite) {
       return { kind: "write", reason: "confirm_write_offer" };
+    }
+    const offeredAnalyticsSwitch = (input.recentAssistantTexts ?? []).some(
+      (text) => SWITCH_TO_ANALYTICS_OFFER_RE.test(text)
+    );
+    if (offeredAnalyticsSwitch) {
+      return { kind: "write", reason: "confirm_analytics_switch" };
     }
     return { kind: "social", reason: "ack_without_task" };
   }
@@ -223,6 +249,28 @@ export function needsLlmIntentClassification(
   decision: ChatUserIntentDecision
 ): boolean {
   return decision.reason === "ambiguous_agent_mode";
+}
+
+/**
+ * Cheap prefilter so Document chat can reuse the Flash-Lite intent call
+ * for a Switch-to-Analytics widget. The LLM still has to agree.
+ */
+export function looksLikeAnalyticsWorkProductRequest(userText: string): boolean {
+  const text = userText.replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  const polite = POLITE_REQUEST_PREFIX_RE.exec(text);
+  const instruction = (polite ? text.slice(polite[0].length).trim() : text) || text;
+  if (
+    QUESTION_START_RE.test(instruction) &&
+    !WRITE_RE.test(instruction.slice(0, 12))
+  ) {
+    return false;
+  }
+  return (
+    DOCUMENT_WORKSHEET_DESTINATION_RE.test(instruction) ||
+    FILL_WORKSHEET_RE.test(instruction) ||
+    FILL_THE_WORKSHEET_RE.test(instruction)
+  );
 }
 
 export function recentAssistantMessageTexts(

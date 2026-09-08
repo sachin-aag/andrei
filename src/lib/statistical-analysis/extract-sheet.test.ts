@@ -10,14 +10,31 @@ vi.mock("@/lib/ai/usage", () => ({
 }));
 import {
   EXTRACT_SHEET_CONCURRENCY,
+  SHEET_EXTRACT_MIN_START_MS,
   buildSheetWorkerPrompt,
   sheetExtractResultFromSteps,
+  sheetExtractShouldSkipStart,
   withSheetExtractSlot,
 } from "./extract-sheet";
+import { CHAT_SERVER_ABORT_MS } from "@/lib/ai/chat/assistant-turn";
 import {
   analyticsSheetJobComplete,
   type AnalyticsChatStep,
 } from "./search-loop";
+
+function extractStep(output: Record<string, unknown>): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "extract_numeric_series" }],
+    toolResults: [{ toolName: "extract_numeric_series", output }],
+  };
+}
+
+function scanStep(output: Record<string, unknown>): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "scan_attachments" }],
+    toolResults: [{ toolName: "scan_attachments", output }],
+  };
+}
 
 function writeStep(output: Record<string, unknown>): AnalyticsChatStep {
   return {
@@ -54,6 +71,9 @@ describe("sheetExtractResultFromSteps", () => {
       rowsWritten: 12,
       columns: [{ name: "Watts", rowsWritten: 12 }],
     });
+    expect(result?.message).toBe("Wrote 12 rows to Power.");
+    expect(result?.morePages).toBeUndefined();
+    expect(result?.truncated).toBeUndefined();
   });
 
   it("keeps an incomplete write when that was the last dump", () => {
@@ -73,6 +93,63 @@ describe("sheetExtractResultFromSteps", () => {
       sheetName: "Power",
       message: "Blanked cells",
     });
+  });
+
+  it("notes when a write landed after an extract still had more pages", () => {
+    const result = sheetExtractResultFromSteps(
+      [
+        extractStep({ morePages: true, pages: [4, 5, 6] }),
+        writeStep({
+          status: "written",
+          incomplete: false,
+          sheetName: "Power",
+          rowsWritten: 37,
+        }),
+      ],
+      "Power"
+    );
+    expect(result?.status).toBe("written");
+    expect(result?.morePages).toBe(true);
+    expect(result?.message).toBe(
+      "Wrote 37 rows to Power. Later pages still had more rows — this dump may be incomplete."
+    );
+  });
+
+  it("clears the more-pages flag when a later extract finished the file", () => {
+    const result = sheetExtractResultFromSteps(
+      [
+        extractStep({ morePages: true }),
+        extractStep({ morePages: false }),
+        writeStep({
+          status: "written",
+          incomplete: false,
+          sheetName: "Power",
+          rowsWritten: 37,
+        }),
+      ],
+      "Power"
+    );
+    expect(result?.message).toBe("Wrote 37 rows to Power.");
+    expect(result?.morePages).toBeUndefined();
+  });
+
+  it("notes when a write landed after a truncated scan", () => {
+    const result = sheetExtractResultFromSteps(
+      [
+        scanStep({ truncated: true }),
+        writeStep({
+          status: "written",
+          incomplete: false,
+          sheetName: "Power",
+          rowsWritten: 12,
+        }),
+      ],
+      "Power"
+    );
+    expect(result?.truncated).toBe(true);
+    expect(result?.message).toBe(
+      "Wrote 12 rows to Power. The last scan was truncated — remaining pages were not included."
+    );
   });
 });
 
@@ -192,5 +269,41 @@ describe("withSheetExtractSlot", () => {
     );
     await Promise.all(jobs);
     expect(maxInflight).toBe(EXTRACT_SHEET_CONCURRENCY);
+  });
+});
+
+describe("sheetExtractShouldSkipStart", () => {
+  it("does not skip when the turn start is unknown", () => {
+    expect(sheetExtractShouldSkipStart({})).toBe(false);
+  });
+
+  it("skips when the abort signal already fired", () => {
+    const abort = new AbortController();
+    abort.abort();
+    expect(
+      sheetExtractShouldSkipStart({
+        turnStartedAtMs: 0,
+        abortSignal: abort.signal,
+        nowMs: 0,
+      })
+    ).toBe(true);
+  });
+
+  it("skips when less than 30s remain on the chat turn", () => {
+    expect(
+      sheetExtractShouldSkipStart({
+        turnStartedAtMs: 0,
+        nowMs: CHAT_SERVER_ABORT_MS - SHEET_EXTRACT_MIN_START_MS + 1,
+      })
+    ).toBe(true);
+  });
+
+  it("starts when at least 30s remain", () => {
+    expect(
+      sheetExtractShouldSkipStart({
+        turnStartedAtMs: 0,
+        nowMs: CHAT_SERVER_ABORT_MS - SHEET_EXTRACT_MIN_START_MS,
+      })
+    ).toBe(false);
   });
 });

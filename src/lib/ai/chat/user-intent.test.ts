@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyChatUserIntent,
   intentToolAvailabilityRule,
+  looksLikeAnalyticsWorkProductRequest,
   messageHasChatImage,
   needsLlmIntentClassification,
   recentAssistantMessageTexts,
@@ -45,6 +46,25 @@ describe("classifyChatUserIntent", () => {
         recentAssistantTexts: ["I drafted Purpose from the protocol."],
       }).kind
     ).toBe("social");
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        surface: "analytics",
+        recentAssistantTexts: [
+          "Hello! How can I help you with your statistical analysis today?",
+          "You can use the Switch to Analytics button on the Report | Analytics work-product selector at the top of the interface to open the Analytics worksheet.",
+        ],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_analytics_switch" });
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        surface: "analytics",
+        recentAssistantTexts: [
+          "Hello! How can I help you with your statistical analysis today?",
+        ],
+      })
+    ).toEqual({ kind: "social", reason: "ack_without_task" });
   });
 
   it("matches explicit produce and start-the-report phrasing", () => {
@@ -299,6 +319,32 @@ describe("classifyChatUserIntent", () => {
     expect(
       classifyChatUserIntent({ userText: "hi", hasChatImages: true })
     ).toEqual({ kind: "read", reason: "chat_image" });
+  });
+});
+
+describe("looksLikeAnalyticsWorkProductRequest", () => {
+  it("matches filling or extracting into the worksheet", () => {
+    for (const text of [
+      "extract conductivity into the worksheet",
+      "put those numbers in the data worksheet",
+      "fill the worksheet",
+      "can you populate the spreadsheet from the PDF",
+      "yes put it in the data worksheet",
+    ]) {
+      expect(looksLikeAnalyticsWorkProductRequest(text)).toBe(true);
+    }
+  });
+
+  it("does not match report-section writes or worksheet lookups", () => {
+    for (const text of [
+      "what is in the worksheet?",
+      "add a sentence about the worksheet results to Measure",
+      "put the worksheet results into Measure",
+      "draft Purpose",
+      "add a column to the equipment table",
+    ]) {
+      expect(looksLikeAnalyticsWorkProductRequest(text)).toBe(false);
+    }
   });
 });
 
