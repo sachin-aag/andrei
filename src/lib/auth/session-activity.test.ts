@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   beginSessionHold,
   hasActiveSessionHold,
-  releaseSessionHold,
   resetSessionHoldsForTests,
 } from "./session-activity";
 

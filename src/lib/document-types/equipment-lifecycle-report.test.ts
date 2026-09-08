@@ -1,0 +1,560 @@
+import fs from "node:fs";
+import type { JSONContent } from "@tiptap/core";
+import PizZip from "pizzip";
+import { describe, expect, it } from "vitest";
+import { DEMO_PACK, MJ_PACK, isDocumentTypeEnabled } from "@/lib/customers/packs";
+import { getCriteria, getDocumentType, getWorkspaceSections } from ".";
+import type { EvaluationContext } from "./types";
+import {
+  checkAlarmDirectImpactAction,
+  checkBreakdownRepeatCapa,
+  checkCalibrationStatus,
+  checkConclusionMatchesGaps,
+  checkMonitoringExcursionsLinked,
+  checkPreventiveMaintenanceJustified,
+  checkQmsRecords,
+  checkQualificationFormatScope,
+  checkReconciliationAnswered,
+  checkRecommendationSelected,
+} from "./elr/deterministic-checks";
+import {
+  ELR_ALARM_HEADERS,
+  ELR_BREAKDOWN_HEADERS,
+  ELR_CALIBRATION_HEADERS,
+  ELR_MONITORING_HEADERS,
+  ELR_PREVENTIVE_MAINTENANCE_HEADERS,
+  ELR_QMS_HEADERS,
+  ELR_QUALIFICATION_HEADERS,
+  ELR_RECONCILIATION_CHECKS,
+  ELR_RECONCILIATION_HEADERS,
+  ELR_SECTION_KEYS,
+  ELR_SECTION_LABELS,
+  EMPTY_ELR_CONTENT,
+} from "./elr/sections";
+
+const TYPE = "equipment_lifecycle_report";
+
+function tableDoc(rows: readonly (readonly string[])[]): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: rows.map((cells, rowIndex) => ({
+          type: "tableRow",
+          content: cells.map((text) => ({
+            type: rowIndex === 0 ? "tableHeader" : "tableCell",
+            content: [
+              {
+                type: "paragraph",
+                content: text ? [{ type: "text", text }] : [],
+              },
+            ],
+          })),
+        })),
+      },
+    ],
+  };
+}
+
+/** Build a data row positionally against a header tuple. */
+function row(
+  headers: readonly string[],
+  values: Record<string, string>
+): string[] {
+  return [...headers].map((header) => values[header] ?? "");
+}
+
+function ctx(
+  content: unknown,
+  {
+    section = "elr_monitoring",
+    dependencies = {},
+    formatScope = "Vial",
+  }: {
+    section?: string;
+    dependencies?: Record<string, unknown>;
+    formatScope?: string;
+  } = {}
+): EvaluationContext {
+  return {
+    section: section as EvaluationContext["section"],
+    content,
+    dependencies,
+    report: { metadata: { formatScope } } as unknown as EvaluationContext["report"],
+  };
+}
+
+function narrative(text: string): JSONContent {
+  return {
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  };
+}
+
+describe("equipment lifecycle report definition", () => {
+  it("exposes ELR sections in report order with elr_ prefixes", () => {
+    const sections = getWorkspaceSections(TYPE).map((s) => s.key);
+    expect(sections).toEqual([...ELR_SECTION_KEYS]);
+    expect(sections.every((key) => key.startsWith("elr_"))).toBe(true);
+  });
+
+  it("keeps form numbering out of workspace labels", () => {
+    for (const key of ELR_SECTION_KEYS) {
+      expect(ELR_SECTION_LABELS[key]).not.toMatch(/^\d/);
+    }
+  });
+
+  it("seeds empty content for every section", () => {
+    for (const key of ELR_SECTION_KEYS) {
+      expect(EMPTY_ELR_CONTENT[key]).toBeDefined();
+    }
+  });
+
+  it("ships the standing reconciliation checks pre-filled", () => {
+    const table = EMPTY_ELR_CONTENT.elr_reconciliation.table;
+    const rows = table.content?.[0]?.content ?? [];
+    // header + one row per standing check
+    expect(rows).toHaveLength(ELR_RECONCILIATION_CHECKS.length + 1);
+  });
+
+  it("treats the evidence tables as open-set inventories for chat", () => {
+    const def = getDocumentType(TYPE);
+    expect(def.chat.inventorySections).toContain("elr_qualification");
+    expect(def.chat.inventorySections).toContain("elr_qms");
+    expect(def.prompts.promptVersion).toBe("mj-elr-v1");
+  });
+
+  it("maps every section into the export template data", () => {
+    const def = getDocumentType(TYPE);
+    const data = def.export.buildTemplateData({
+      report: {
+        documentNo: "ELR/DP/PR/26/001",
+        metadata: { equipmentId: "E/PR/070", formatScope: "Vial" },
+      } as unknown as Parameters<typeof def.export.buildTemplateData>[0]["report"],
+      sections: ELR_SECTION_KEYS.map((section) => ({
+        section,
+        content: EMPTY_ELR_CONTENT[section],
+      })),
+      ctx: undefined,
+      comments: [],
+    });
+    expect(data.equipmentId).toBe("E/PR/070");
+    expect(data.formatScope).toBe("Vial");
+    // Trend sub-fields are separate placeholders in the docx template.
+    expect(data).toHaveProperty("breakdownTrendXml");
+    expect(data).toHaveProperty("alarmTrendXml");
+    expect(data).toHaveProperty("reconciliationTableXml");
+  });
+});
+
+describe("ELR cross-reference checks", () => {
+  it("fails a monitoring excursion with no linked deviation", () => {
+    const table = tableDoc([
+      [...ELR_MONITORING_HEADERS],
+      row(ELR_MONITORING_HEADERS, {
+        "Sr. No.": "1",
+        "Monitoring Parameter": "Non-viable particle count",
+        "Excursion (Y/N)": "Y",
+      }),
+    ]);
+    const result = checkMonitoringExcursionsLinked(ctx({ table }));
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/excursion with no linked deviation/i);
+  });
+
+  it("passes a monitoring excursion that carries a deviation", () => {
+    const table = tableDoc([
+      [...ELR_MONITORING_HEADERS],
+      row(ELR_MONITORING_HEADERS, {
+        "Sr. No.": "1",
+        "Monitoring Parameter": "Non-viable particle count",
+        "Excursion (Y/N)": "Y",
+        "Linked Deviation Ref.": "DEV-26-011",
+      }),
+    ]);
+    expect(checkMonitoringExcursionsLinked(ctx({ table })).status).toBe("met");
+  });
+
+  it("treats an NA reference cell as unlinked", () => {
+    const table = tableDoc([
+      [...ELR_MONITORING_HEADERS],
+      row(ELR_MONITORING_HEADERS, {
+        "Sr. No.": "1",
+        "Monitoring Parameter": "Differential pressure",
+        "Excursion (Y/N)": "Yes",
+        "Linked Deviation Ref.": "NA",
+      }),
+    ]);
+    expect(checkMonitoringExcursionsLinked(ctx({ table })).status).toBe("not_met");
+  });
+
+  it("requires a CAPA for an out-of-tolerance calibration", () => {
+    const table = tableDoc([
+      [...ELR_CALIBRATION_HEADERS],
+      row(ELR_CALIBRATION_HEADERS, {
+        "Sr. No.": "1",
+        "Instrument ID / Tag": "E/PR/070/PT 2E-00",
+        "Result (Pass / OOT)": "OOT",
+      }),
+    ]);
+    const result = checkCalibrationStatus(ctx({ table }, { section: "elr_calibration" }));
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/out of tolerance/i);
+  });
+
+  it("requires a justification for a delayed PM", () => {
+    const table = tableDoc([
+      [...ELR_PREVENTIVE_MAINTENANCE_HEADERS],
+      row(ELR_PREVENTIVE_MAINTENANCE_HEADERS, {
+        "Sr. No.": "1",
+        "PM Checklist No.": "PMC/PR/014",
+        "Status (On-time / Delayed)": "Delayed",
+      }),
+    ]);
+    const result = checkPreventiveMaintenanceJustified(
+      ctx({ table }, { section: "elr_preventive_maintenance" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/justification/i);
+  });
+
+  it("requires a CAPA for a repeat breakdown", () => {
+    const table = tableDoc([
+      [...ELR_BREAKDOWN_HEADERS],
+      row(ELR_BREAKDOWN_HEADERS, {
+        "Sr. No.": "1",
+        "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+        "Repeat (Y/N)": "Y",
+      }),
+    ]);
+    const result = checkBreakdownRepeatCapa(
+      ctx({ table }, { section: "elr_breakdowns" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/repeat failure with no linked CAPA/i);
+  });
+
+  it("requires an action reference for a Direct Impact alarm only", () => {
+    const headers = ELR_ALARM_HEADERS;
+    const direct = tableDoc([
+      [...headers],
+      row(headers, {
+        "Sr. No.": "1",
+        "Alarm Code": "1951",
+        "Alarm Description": "FM Stirrer Motor Not Running",
+        "Criticality (DI / II)": "Direct Impact",
+        "No. of Repetitions": "128",
+      }),
+    ]);
+    expect(
+      checkAlarmDirectImpactAction(ctx({ table: direct }, { section: "elr_alarms" }))
+        .status
+    ).toBe("not_met");
+
+    const indirect = tableDoc([
+      [...headers],
+      row(headers, {
+        "Sr. No.": "1",
+        "Alarm Code": "1950",
+        "Alarm Description": "FM Nitrogen Not Available",
+        "Criticality (DI / II)": "Indirect Impact",
+        "No. of Repetitions": "0",
+      }),
+    ]);
+    expect(
+      checkAlarmDirectImpactAction(ctx({ table: indirect }, { section: "elr_alarms" }))
+        .status
+    ).toBe("met");
+  });
+});
+
+describe("ELR container-format scoping", () => {
+  const headers = ELR_QUALIFICATION_HEADERS;
+
+  it("rejects a row belonging to the counterpart format", () => {
+    const table = tableDoc([
+      [...headers],
+      row(headers, {
+        "Sr. No.": "1",
+        "Qualification Stage": "PQ",
+        "Protocol / Report No.": "PQR-24-PR-042",
+        "Format Applicability": "Cartridge",
+        Outcome: "Pass",
+      }),
+    ]);
+    const result = checkQualificationFormatScope(
+      ctx({ table }, { section: "elr_qualification", formatScope: "Vial" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/another format/i);
+  });
+
+  it("accepts this format and Line-common rows", () => {
+    const table = tableDoc([
+      [...headers],
+      row(headers, {
+        "Sr. No.": "1",
+        "Qualification Stage": "PQ",
+        "Protocol / Report No.": "PQR-24-PR-102",
+        "Format Applicability": "Vial",
+        Outcome: "Pass",
+      }),
+      row(headers, {
+        "Sr. No.": "2",
+        "Qualification Stage": "IQ",
+        "Protocol / Report No.": "CSV-IQ-PR-078",
+        "Format Applicability": "Line-common",
+        Outcome: "Pass",
+      }),
+    ]);
+    expect(
+      checkQualificationFormatScope(
+        ctx({ table }, { section: "elr_qualification", formatScope: "Vial" })
+      ).status
+    ).toBe("met");
+  });
+
+  it("flags rows with no applicability as partially met", () => {
+    const table = tableDoc([
+      [...headers],
+      row(headers, {
+        "Sr. No.": "1",
+        "Qualification Stage": "OQ",
+        "Protocol / Report No.": "CSV-OQ-PR-055",
+        Outcome: "Pass",
+      }),
+    ]);
+    expect(
+      checkQualificationFormatScope(
+        ctx({ table }, { section: "elr_qualification", formatScope: "Vial" })
+      ).status
+    ).toBe("partially_met");
+  });
+
+  it("blocks evaluation when the report has no container format", () => {
+    const table = tableDoc([[...headers]]);
+    const result = checkQualificationFormatScope(
+      ctx({ table }, { section: "elr_qualification", formatScope: "" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/container format/i);
+  });
+
+  it("rejects a QMS row scoped to the counterpart format", () => {
+    const table = tableDoc([
+      [...ELR_QMS_HEADERS],
+      row(ELR_QMS_HEADERS, {
+        "Sr. No.": "1",
+        "Type (CC / Dev / CAPA / OOS / OOT)": "CC",
+        "Document Reference No.": "CCF/EU/26/007",
+        "Title / Description": "PM checklist revision",
+        "Format Applicability": "Cartridge",
+        Status: "Closed",
+        "Qualification Impact (Y/N)": "N",
+      }),
+    ]);
+    const result = checkQmsRecords(
+      ctx({ table }, { section: "elr_qms", formatScope: "Vial" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/not this ELR's format/i);
+  });
+});
+
+describe("ELR reconciliation and conclusion", () => {
+  function reconciliationTable(
+    overrides: Record<number, Record<string, string>> = {}
+  ): JSONContent {
+    return tableDoc([
+      [...ELR_RECONCILIATION_HEADERS],
+      ...ELR_RECONCILIATION_CHECKS.map((check, index) =>
+        row(ELR_RECONCILIATION_HEADERS, {
+          "Sr. No.": String(index + 1),
+          "Reconciliation Check": check.check,
+          "Section Ref.": check.sectionRef,
+          "Outcome (Complies / Gap)": "Complies",
+          ...(overrides[index] ?? {}),
+        })
+      ),
+    ]);
+  }
+
+  it("fails when a standing check has been deleted", () => {
+    const table = tableDoc([
+      [...ELR_RECONCILIATION_HEADERS],
+      row(ELR_RECONCILIATION_HEADERS, {
+        "Sr. No.": "1",
+        "Reconciliation Check": ELR_RECONCILIATION_CHECKS[0]!.check,
+        "Outcome (Complies / Gap)": "Complies",
+      }),
+    ]);
+    const result = checkReconciliationAnswered(
+      ctx({ table }, { section: "elr_reconciliation" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/do not delete rows/i);
+  });
+
+  it("requires a description and action for a gap", () => {
+    const table = reconciliationTable({
+      2: { "Outcome (Complies / Gap)": "Gap" },
+    });
+    const result = checkReconciliationAnswered(
+      ctx({ table }, { section: "elr_reconciliation" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/gap with no description/i);
+  });
+
+  it("passes when every check is answered", () => {
+    const result = checkReconciliationAnswered(
+      ctx({ table: reconciliationTable() }, { section: "elr_reconciliation" })
+    );
+    expect(result.status).toBe("met");
+  });
+
+  it("rejects 'continue routine use' while a gap is open", () => {
+    const table = reconciliationTable({
+      0: {
+        "Outcome (Complies / Gap)": "Gap",
+        "Gap Description": "Excursion EM-26-004 has no deviation",
+        "Action Required": "Raise deviation",
+      },
+    });
+    const result = checkConclusionMatchesGaps(
+      ctx(
+        {
+          narrative: narrative("Equipment remains qualified."),
+          recommendation: "continue",
+          recommendationNarrative: narrative("No action."),
+        },
+        { section: "elr_conclusion", dependencies: { elr_reconciliation: { table } } }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/contradicts/i);
+  });
+
+  it("accepts an early re-qualification recommendation alongside a gap", () => {
+    const table = reconciliationTable({
+      0: {
+        "Outcome (Complies / Gap)": "Gap",
+        "Gap Description": "Excursion EM-26-004 has no deviation",
+        "Action Required": "Raise deviation",
+      },
+    });
+    const result = checkConclusionMatchesGaps(
+      ctx(
+        {
+          narrative: narrative("One gap remains open."),
+          recommendation: "early_requalification",
+          recommendationNarrative: narrative("Advance the PRQ."),
+        },
+        { section: "elr_conclusion", dependencies: { elr_reconciliation: { table } } }
+      )
+    );
+    expect(result.status).toBe("met");
+  });
+
+  it("requires a recommendation to be selected", () => {
+    const result = checkRecommendationSelected(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "",
+          recommendationNarrative: narrative(""),
+        },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+  });
+
+  it("asks for a specification when Other is chosen", () => {
+    const result = checkRecommendationSelected(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "other",
+          recommendationNarrative: narrative(""),
+        },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/specify/i);
+  });
+});
+
+describe("ELR criteria wiring", () => {
+  it("attaches the reconciliation dependency to the conclusion", () => {
+    const criteria = getCriteria(TYPE, "elr_conclusion");
+    const cross = criteria.find((c) => c.key === "conclusion.matches_gaps");
+    expect(cross?.kind).toBe("deterministic");
+    expect(cross?.dependsOn).toContain("elr_reconciliation");
+  });
+
+  it("gives every evaluable section at least one criterion except attachments", () => {
+    for (const key of ELR_SECTION_KEYS) {
+      const criteria = getCriteria(TYPE, key);
+      if (key === "elr_attachments") {
+        expect(criteria).toHaveLength(0);
+        continue;
+      }
+      expect(criteria.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("ELR docx template contract", () => {
+  function templateTags(): string[] {
+    const def = getDocumentType(TYPE);
+    const zip = new PizZip(fs.readFileSync(def.export.templatePath));
+    const xml = zip.file("word/document.xml")!.asText();
+    return [
+      ...new Set(
+        [...xml.matchAll(/\{(@?[A-Za-z][A-Za-z0-9]*)\}/g)].map((m) =>
+          m[1]!.replace(/^@/, "")
+        )
+      ),
+    ].sort();
+  }
+
+  function templateDataKeys(): string[] {
+    const def = getDocumentType(TYPE);
+    const data = def.export.buildTemplateData({
+      report: {
+        documentNo: "ELR/DP/PR/26/001",
+        metadata: {},
+      } as unknown as Parameters<typeof def.export.buildTemplateData>[0]["report"],
+      sections: ELR_SECTION_KEYS.map((section) => ({
+        section,
+        content: EMPTY_ELR_CONTENT[section],
+      })),
+      ctx: undefined,
+      comments: [],
+    });
+    return Object.keys(data).sort();
+  }
+
+  it("supplies a value for every placeholder in the template", () => {
+    const missing = templateTags().filter(
+      (tag) => !templateDataKeys().includes(tag)
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it("has no template data key without a placeholder", () => {
+    const tags = templateTags();
+    const unused = templateDataKeys().filter((key) => !tags.includes(key));
+    expect(unused).toEqual([]);
+  });
+});
+
+describe("ELR pack enablement", () => {
+  it("is enabled for MJ and not for demo", () => {
+    expect(isDocumentTypeEnabled(TYPE, MJ_PACK)).toBe(true);
+    expect(isDocumentTypeEnabled(TYPE, DEMO_PACK)).toBe(false);
+  });
+});

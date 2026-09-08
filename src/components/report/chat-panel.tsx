@@ -14,7 +14,6 @@ import {
   isFileUIPart,
   type FileUIPart,
   type UIMessage,
-  type UIMessagePart,
 } from "ai";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -704,11 +703,14 @@ export function ChatPanel({
   const savedScrollSessionKeyRef = useRef(sessionWindowKey);
   const visibleRef = useRef(visible);
   const restoringScrollRef = useRef(false);
-  visibleRef.current = visible;
-  if (savedScrollSessionKeyRef.current !== sessionWindowKey) {
+  useEffect(() => {
+    visibleRef.current = visible;
+  });
+  useLayoutEffect(() => {
+    if (savedScrollSessionKeyRef.current === sessionWindowKey) return;
     savedScrollSessionKeyRef.current = sessionWindowKey;
     savedScrollRef.current = null;
-  }
+  }, [sessionWindowKey]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionAnchorRef = useRef<HTMLDivElement>(null);
@@ -742,7 +744,9 @@ export function ChatPanel({
   });
   const voiceLock = voice.locked;
   const voiceLockRef = useRef(voiceLock);
-  voiceLockRef.current = voiceLock;
+  useEffect(() => {
+    voiceLockRef.current = voiceLock;
+  });
   const watchdog = chatWatchdogPhase({
     busy: streamBusy,
     elapsedMs,

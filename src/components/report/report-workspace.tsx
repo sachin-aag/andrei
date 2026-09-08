@@ -159,6 +159,27 @@ import {
   QraScopeEditor,
   QraTeamEditor,
 } from "./sections/qra/qra-section-editors";
+import {
+  ElrAccessControlEditor,
+  ElrAlarmsEditor,
+  ElrAttachmentsEditor,
+  ElrAuditTrailEditor,
+  ElrBreakdownsEditor,
+  ElrCalibrationEditor,
+  ElrConclusionEditor,
+  ElrCsvStatusEditor,
+  ElrMediaFillEditor,
+  ElrMonitoringEditor,
+  ElrObjectiveEditor,
+  ElrPreventiveMaintenanceEditor,
+  ElrQmsEditor,
+  ElrQualificationEditor,
+  ElrReconciliationEditor,
+  ElrResponsibilitiesEditor,
+  ElrRevisionHistoryEditor,
+  ElrScopeEditor,
+  ElrSystemDescriptionEditor,
+} from "./sections/elr/elr-section-editors";
 
 export type { WorkspaceMode };
 
@@ -235,6 +256,28 @@ const QRA_SECTION_EDITORS: Record<string, ComponentType> = {
   qra_revision_history: QraRevisionHistoryEditor,
 };
 
+const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
+  elr_objective: ElrObjectiveEditor,
+  elr_scope: ElrScopeEditor,
+  elr_responsibilities: ElrResponsibilitiesEditor,
+  elr_system_description: ElrSystemDescriptionEditor,
+  elr_qualification: ElrQualificationEditor,
+  elr_media_fill: ElrMediaFillEditor,
+  elr_monitoring: ElrMonitoringEditor,
+  elr_calibration: ElrCalibrationEditor,
+  elr_preventive_maintenance: ElrPreventiveMaintenanceEditor,
+  elr_breakdowns: ElrBreakdownsEditor,
+  elr_qms: ElrQmsEditor,
+  elr_alarms: ElrAlarmsEditor,
+  elr_access_control: ElrAccessControlEditor,
+  elr_audit_trail: ElrAuditTrailEditor,
+  elr_csv_status: ElrCsvStatusEditor,
+  elr_reconciliation: ElrReconciliationEditor,
+  elr_conclusion: ElrConclusionEditor,
+  elr_attachments: ElrAttachmentsEditor,
+  elr_revision_history: ElrRevisionHistoryEditor,
+};
+
 const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   DocumentType,
   Record<string, ComponentType>
@@ -244,6 +287,7 @@ const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   mechanical_design_verification: MECHANICAL_DV_SECTION_EDITORS,
   generic_document: { body: GenericDocumentEditor },
   quality_risk_assessment: QRA_SECTION_EDITORS,
+  equipment_lifecycle_report: ELR_SECTION_EDITORS,
 };
 
 export function ReportWorkspace({

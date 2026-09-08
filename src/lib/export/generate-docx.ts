@@ -504,7 +504,8 @@ export async function generateReportDocx({
   if (
     report.documentType === "design_verification" ||
     report.documentType === "mechanical_design_verification" ||
-    report.documentType === "quality_risk_assessment"
+    report.documentType === "quality_risk_assessment" ||
+    report.documentType === "equipment_lifecycle_report"
   ) {
     return generateDesignVerificationDocx({
       documentType: report.documentType,

@@ -82,6 +82,7 @@ export function tocHeadingSpecsForDocumentType(
       return CONVERGENT_MECHANICAL_DV_TOC_HEADINGS;
     case "investigation_report":
     case "quality_risk_assessment":
+    case "equipment_lifecycle_report":
     case "generic_document":
       return null;
     default: {

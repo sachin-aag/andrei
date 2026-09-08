@@ -91,14 +91,18 @@ describe("MJ customer pack content", () => {
     expect(DEMO_PACK.insightsEnabled).toBe(true);
   });
 
-  it("disables design verification and enables quality risk assessment", () => {
+  it("disables design verification and enables the MJ-only types", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",
       "quality_risk_assessment",
+      "equipment_lifecycle_report",
     ]);
     expect(isDocumentTypeEnabled("design_verification", MJ_PACK)).toBe(false);
     expect(isDocumentTypeEnabled("investigation_report", MJ_PACK)).toBe(true);
     expect(isDocumentTypeEnabled("quality_risk_assessment", MJ_PACK)).toBe(true);
+    expect(isDocumentTypeEnabled("equipment_lifecycle_report", MJ_PACK)).toBe(
+      true
+    );
     expect(
       engineerReportsSubtitle([
         { label: "Investigation Report" },

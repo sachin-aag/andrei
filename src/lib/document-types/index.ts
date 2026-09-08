@@ -5,6 +5,7 @@ import { buildDesignVerificationDefinition } from "./design-verification";
 import { genericDocumentDefinition } from "./generic-document";
 import { mechanicalDesignVerificationDefinition } from "./mechanical-design-verification";
 import { qualityRiskAssessmentDefinition } from "./quality-risk-assessment";
+import { equipmentLifecycleReportDefinition } from "./equipment-lifecycle-report";
 import type {
   CriterionDefinition,
   DocumentTypeDefinition,
@@ -31,6 +32,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return genericDocumentDefinition;
     case "quality_risk_assessment":
       return qualityRiskAssessmentDefinition;
+    case "equipment_lifecycle_report":
+      return equipmentLifecycleReportDefinition;
     default: {
       const exhaustive: never = type;
       throw new Error(`Unknown document type: ${exhaustive}`);
@@ -46,7 +49,8 @@ export function resolveDocumentType(
     type === "design_verification" ||
     type === "mechanical_design_verification" ||
     type === "generic_document" ||
-    type === "quality_risk_assessment"
+    type === "quality_risk_assessment" ||
+    type === "equipment_lifecycle_report"
   ) {
     return type;
   }

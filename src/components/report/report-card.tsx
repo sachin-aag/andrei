@@ -17,6 +17,8 @@ function untitledFallback(documentType: DocumentType | undefined): string {
       return "Untitled document";
     case "quality_risk_assessment":
       return "Untitled quality risk assessment";
+    case "equipment_lifecycle_report":
+      return "Untitled equipment lifecycle report";
     case "investigation_report":
     case undefined:
       return "Untitled deviation";

@@ -705,15 +705,16 @@ function MoveToFolderDialog({
     [destinationFolders]
   );
   const rootSelected = destination === LIBRARY_ROOT;
-
-  useEffect(() => {
+  const [dialogOpen, setDialogOpen] = useState(open);
+  if (open !== dialogOpen) {
+    setDialogOpen(open);
     if (!open) {
       setNewFolderName("");
       setCreatingFolder(false);
       setCreating(false);
       setCollapsedFolderIds(new Set());
     }
-  }, [open]);
+  }
 
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
@@ -1303,8 +1304,32 @@ export function DocumentLibrarySection({
   }, []);
 
   useEffect(() => {
-    void loadLibrary();
-  }, [loadLibrary]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/attachment-vault?scope=mine");
+        const data = (await response.json().catch(() => ({}))) as LibraryResponse & {
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!response.ok) {
+          toast.error(data.error ?? "Could not load your document vault");
+          return;
+        }
+        setLibrary({
+          folders: data.folders ?? [],
+          assets: data.assets ?? [],
+          archivedFolders: data.archivedFolders ?? [],
+          archivedAssets: data.archivedAssets ?? [],
+        });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const hasIndexingAssets = (library?.assets ?? []).some(
     (asset) =>
@@ -1763,19 +1788,18 @@ export function DocumentLibrarySection({
     !library || (library.assets.length === 0 && library.folders.length === 0);
   const previewOpen = previewAsset != null;
 
-  useEffect(() => {
-    if (!library) return;
+  if (library) {
     const knownIds = new Set([
       ...library.assets.map((asset) => asset.id),
       ...library.archivedAssets.map((asset) => asset.id),
     ]);
-    setInspectedAssetId((active) =>
-      active && knownIds.has(active) ? active : null
-    );
-    setPreviewAssetId((preview) =>
-      preview && knownIds.has(preview) ? preview : null
-    );
-  }, [library]);
+    if (inspectedAssetId && !knownIds.has(inspectedAssetId)) {
+      setInspectedAssetId(null);
+    }
+    if (previewAssetId && !knownIds.has(previewAssetId)) {
+      setPreviewAssetId(null);
+    }
+  }
 
   return (
     <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">

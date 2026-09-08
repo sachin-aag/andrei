@@ -14,6 +14,10 @@ import {
   QRA_DEFAULT_METADATA,
   type QraMetadata,
 } from "@/lib/document-types/qra/sections";
+import {
+  ELR_DEFAULT_METADATA,
+  type ElrMetadata,
+} from "@/lib/document-types/elr/sections";
 
 export type ReportRecord = {
   id: string;
@@ -86,6 +90,27 @@ export function qraMetadata(report: { metadata: ReportMetadata }): QraMetadata {
     idNo: meta.idNo ?? "",
     preApproval: meta.preApproval ?? "",
     postApproval: meta.postApproval ?? "",
+  };
+}
+
+export function elrMetadata(report: { metadata: ReportMetadata }): ElrMetadata {
+  const meta = report.metadata as Partial<ElrMetadata>;
+  return {
+    equipmentName: meta.equipmentName ?? "",
+    equipmentId: meta.equipmentId ?? "",
+    systemId: meta.systemId ?? "",
+    formatScope: meta.formatScope ?? "",
+    location: meta.location ?? "",
+    department: meta.department ?? ELR_DEFAULT_METADATA.department,
+    riskClassification: meta.riskClassification ?? "",
+    elrFrequency: meta.elrFrequency ?? "",
+    cycleNo: meta.cycleNo ?? "",
+    periodFrom: meta.periodFrom ?? "",
+    periodTo: meta.periodTo ?? "",
+    lastPrqNo: meta.lastPrqNo ?? "",
+    lastPrqDate: meta.lastPrqDate ?? "",
+    nextPrqDate: meta.nextPrqDate ?? "",
+    revision: meta.revision ?? ELR_DEFAULT_METADATA.revision,
   };
 }
 
