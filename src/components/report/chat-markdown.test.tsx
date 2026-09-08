@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { render, screen, waitFor } from "@testing-library/react";
-import { beforeAll, describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { ChatMarkdown } from "@/components/report/chat-markdown";
 import { ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 
@@ -72,5 +73,40 @@ describe("ChatMarkdown", () => {
   it("leaves dollar signs inside inline code", () => {
     render(<ChatMarkdown>{"Use `$x$` as a placeholder"}</ChatMarkdown>);
     expect(screen.getByText("$x$")).toBeInTheDocument();
+  });
+
+  it("turns source citations into buttons when a click handler is provided", async () => {
+    const onOpenCitation = vi.fn();
+    render(
+      <ChatMarkdown onOpenCitation={onOpenCitation}>
+        {String.raw`Output met spec [protocol.pdf, p. 3] for configuration A.`}
+      </ChatMarkdown>
+    );
+    await userEvent.click(screen.getByTestId("citation-link"));
+    expect(onOpenCitation).toHaveBeenCalledWith("[protocol.pdf, p. 3]");
+  });
+
+  it("opens the parked source for a numbered citation in the same message", async () => {
+    const onOpenCitation = vi.fn();
+    render(
+      <ChatMarkdown onOpenCitation={onOpenCitation}>
+        {["Output met spec [1].", "", "Citations:", "1. [protocol.pdf, p. 3]"].join(
+          "\n"
+        )}
+      </ChatMarkdown>
+    );
+    const links = screen.getAllByTestId("citation-link");
+    expect(links.length).toBeGreaterThanOrEqual(1);
+    await userEvent.click(links[0]!);
+    expect(onOpenCitation).toHaveBeenCalledWith("[protocol.pdf, p. 3]");
+  });
+
+  it("does not linkify citations without a click handler", () => {
+    render(
+      <ChatMarkdown>
+        {String.raw`Output met spec [protocol.pdf, p. 3] for configuration A.`}
+      </ChatMarkdown>
+    );
+    expect(screen.queryByTestId("citation-link")).not.toBeInTheDocument();
   });
 });

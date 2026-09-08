@@ -70,6 +70,35 @@ function citeCoreWithoutPage(core: string): string {
   return core.replace(PAGE_CITE_SUFFIX, "").trim();
 }
 
+/** Filename (or exhibit label) plus page numbers from a source citation. */
+export type ParsedSourceCitation = {
+  filename: string;
+  pages: number[];
+};
+
+function pageNumbersFromCore(core: string): number[] {
+  const suffix = PAGE_CITE_SUFFIX.exec(core);
+  if (!suffix) return [];
+  const digits = suffix[0].match(/\d+/g);
+  if (!digits) return [];
+  return digits
+    .map((raw) => Number(raw))
+    .filter((n) => Number.isInteger(n) && n >= 1);
+}
+
+/**
+ * Parse `[filename, p. N]` / `[filename]` into a filename and page list.
+ * The first page is the jump target when the cite lists several.
+ */
+export function parseSourceCitation(match: string): ParsedSourceCitation | null {
+  if (!isSourceCitationBracket(match)) return null;
+  const core = citationCoreFromInner(match.slice(1, -1));
+  if (!core) return null;
+  const filename = citeCoreWithoutPage(core);
+  if (!filename) return null;
+  return { filename, pages: pageNumbersFromCore(core) };
+}
+
 /** True when `core` is one or more Attachment_XIV-style exhibit labels. */
 function isAttachmentLabelCite(core: string): boolean {
   const withoutPage = citeCoreWithoutPage(core);

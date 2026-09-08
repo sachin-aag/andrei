@@ -3,6 +3,7 @@ import {
   isCitationShapedBracket,
   isNumericCitationMarker,
   isSourceCitationBracket,
+  parseSourceCitation,
   repairedCitationBracket,
 } from "@/lib/placeholders/citation-bracket";
 
@@ -173,5 +174,37 @@ describe("repairedCitationBracket", () => {
     expect(repairedCitationBracket("[batch-coa.pdf]")).toBeNull();
     expect(repairedCitationBracket("[Attachment_XIV]")).toBeNull();
     expect(repairedCitationBracket("[12]")).toBeNull();
+  });
+});
+
+describe("parseSourceCitation", () => {
+  it("parses filename and a single page", () => {
+    expect(parseSourceCitation("[protocol.pdf, p. 3]")).toEqual({
+      filename: "protocol.pdf",
+      pages: [3],
+    });
+  });
+
+  it("parses several pages and uses the first as the jump list", () => {
+    expect(
+      parseSourceCitation(
+        "[825-00101(RevA) Model 3 Perioguide DV Report.pdf, p. 4, 26, 163, 260]"
+      )
+    ).toEqual({
+      filename: "825-00101(RevA) Model 3 Perioguide DV Report.pdf",
+      pages: [4, 26, 163, 260],
+    });
+  });
+
+  it("omits pages when the cite has no page suffix", () => {
+    expect(parseSourceCitation("[protocol.pdf]")).toEqual({
+      filename: "protocol.pdf",
+      pages: [],
+    });
+  });
+
+  it("returns null for numeric markers and placeholders", () => {
+    expect(parseSourceCitation("[3]")).toBeNull();
+    expect(parseSourceCitation("[batch number]")).toBeNull();
   });
 });

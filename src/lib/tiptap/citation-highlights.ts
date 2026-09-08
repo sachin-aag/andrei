@@ -5,16 +5,25 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import {
   citationNumberFromMarker,
   isNumericCitationMarker,
+  isSourceCitationBracket,
 } from "@/lib/placeholders/citation-bracket";
 import { BRACKET_SPAN_REGEX } from "@/lib/placeholders/find";
+import { sourceCitationsByNumber } from "@/lib/suggestions/citations-at-end";
 
 const citationKey = new PluginKey<DecorationSet>("citationHighlights");
 
 export type CitationHighlight = {
   fromPos: number;
   toPos: number;
-  number: number;
+  kind: "numeric" | "source";
+  number: number | null;
   text: string;
+  /** Source bracket to open, when known. */
+  openRaw: string | null;
+};
+
+export type CitationOpenHandlers = {
+  onOpenCitation: (raw: string) => void;
 };
 
 type TextChunk = { pmStart: number; text: string };
@@ -37,9 +46,10 @@ function pmOffsetToPos(chunks: TextChunk[], offset: number): number {
   return last ? last.pmStart + last.text.length : 0;
 }
 
-function scanBlockForCitationMarkers(
+function scanBlockForCitations(
   block: PMNode,
-  blockPos: number
+  blockPos: number,
+  numberedSources: ReadonlyMap<number, string>
 ): CitationHighlight[] {
   const chunks: TextChunk[] = [];
   block.forEach((child, offset) => {
@@ -51,43 +61,103 @@ function scanBlockForCitationMarkers(
 
   const flat = chunks.map((c) => c.text).join("");
   const highlights: CitationHighlight[] = [];
-  BRACKET_SPAN_REGEX.lastIndex = 0;
+  const regex = new RegExp(BRACKET_SPAN_REGEX.source, "g");
   let match: RegExpExecArray | null;
-  while ((match = BRACKET_SPAN_REGEX.exec(flat)) !== null) {
-    if (!isNumericCitationMarker(match[0])) continue;
-    const number = citationNumberFromMarker(match[0]);
-    if (number == null) continue;
+  while ((match = regex.exec(flat)) !== null) {
+    const text = match[0];
     const fromPos = pmOffsetToPos(chunks, match.index);
-    const toPos = pmOffsetToPos(chunks, match.index + match[0].length);
+    const toPos = pmOffsetToPos(chunks, match.index + text.length);
     if (toPos <= fromPos) continue;
-    highlights.push({
-      fromPos,
-      toPos,
-      number,
-      text: match[0],
-    });
+
+    if (isNumericCitationMarker(text)) {
+      const number = citationNumberFromMarker(text);
+      if (number == null) continue;
+      highlights.push({
+        fromPos,
+        toPos,
+        kind: "numeric",
+        number,
+        text,
+        openRaw: numberedSources.get(number) ?? null,
+      });
+      continue;
+    }
+
+    if (isSourceCitationBracket(text)) {
+      highlights.push({
+        fromPos,
+        toPos,
+        kind: "source",
+        number: null,
+        text,
+        openRaw: text,
+      });
+    }
   }
   return highlights;
 }
 
-export function findNumericCitationMarkersInPmDoc(doc: PMNode): CitationHighlight[] {
+const CITATION_BLOCK_NAMES = new Set([
+  "paragraph",
+  "heading",
+  "tableCell",
+  "tableHeader",
+  "listItem",
+  "blockquote",
+]);
+
+export function findCitationHighlightsInPmDoc(doc: PMNode): CitationHighlight[] {
+  const numberedSources = sourceCitationsByNumber(
+    doc.textBetween(0, doc.content.size, "\n")
+  );
   const highlights: CitationHighlight[] = [];
-  const blockNames = new Set([
-    "paragraph",
-    "heading",
-    "tableCell",
-    "tableHeader",
-    "listItem",
-    "blockquote",
-  ]);
 
   doc.descendants((node, pos) => {
-    if (!blockNames.has(node.type.name)) return true;
-    highlights.push(...scanBlockForCitationMarkers(node, pos));
+    if (!CITATION_BLOCK_NAMES.has(node.type.name)) return true;
+    highlights.push(...scanBlockForCitations(node, pos, numberedSources));
     return true;
   });
 
   return highlights;
+}
+
+/** Numeric `[n]` markers only — used by tests and bubble styling. */
+export function findNumericCitationMarkersInPmDoc(
+  doc: PMNode
+): CitationHighlight[] {
+  return findCitationHighlightsInPmDoc(doc).filter(
+    (highlight) => highlight.kind === "numeric"
+  );
+}
+
+function citationDecorationAttrs(highlight: CitationHighlight): {
+  class: string;
+  "data-citation-number"?: string;
+  "data-citation-open"?: string;
+  "data-testid"?: string;
+  role?: string;
+  title?: string;
+} {
+  const className =
+    highlight.kind === "numeric" ? "citation-ref" : "citation-source";
+  const attrs: {
+    class: string;
+    "data-citation-number"?: string;
+    "data-citation-open"?: string;
+    "data-testid"?: string;
+    role?: string;
+    title?: string;
+  } = { class: className };
+  if (highlight.number != null) {
+    attrs["data-citation-number"] = String(highlight.number);
+  }
+  if (highlight.openRaw) {
+    attrs["data-citation-open"] = highlight.openRaw;
+    attrs["data-testid"] = "citation-link";
+    attrs.role = "link";
+    attrs.title = `Open ${highlight.openRaw.slice(1, -1)}`;
+  }
+  return attrs;
 }
 
 export function buildCitationDecorations(
@@ -99,25 +169,30 @@ export function buildCitationDecorations(
     const slice = doc.textBetween(highlight.fromPos, highlight.toPos);
     if (!slice.trim()) continue;
     decos.push(
-      Decoration.inline(highlight.fromPos, highlight.toPos, {
-        class: "citation-ref",
-        "data-citation-number": String(highlight.number),
-      })
+      Decoration.inline(
+        highlight.fromPos,
+        highlight.toPos,
+        citationDecorationAttrs(highlight)
+      )
     );
   }
   return DecorationSet.create(doc, decos);
 }
 
 /**
- * Styles numeric `[n]` citation markers as static raised bubbles.
- * Decorations never persist into saved TipTap JSON.
+ * Styles numeric `[n]` citation markers as raised bubbles and source
+ * `[filename, p. N]` cites as links. Clicking a resolved cite opens that
+ * attachment tab at the cited page. Decorations never persist into saved
+ * TipTap JSON.
  */
-export function createCitationHighlightExtension() {
+export function createCitationHighlightExtension(
+  getHandlers?: () => CitationOpenHandlers
+) {
   return Extension.create({
     name: "citationHighlights",
     addProseMirrorPlugins() {
       const rebuild = (doc: PMNode) =>
-        buildCitationDecorations(doc, findNumericCitationMarkersInPmDoc(doc));
+        buildCitationDecorations(doc, findCitationHighlightsInPmDoc(doc));
 
       return [
         new Plugin<DecorationSet>({
@@ -134,6 +209,17 @@ export function createCitationHighlightExtension() {
           props: {
             decorations(state) {
               return citationKey.getState(state) ?? DecorationSet.empty;
+            },
+            handleClick(_view, _pos, event) {
+              const target = event.target as HTMLElement | null;
+              if (!target) return false;
+              const el = target.closest("[data-citation-open]");
+              if (!el) return false;
+              const raw = el.getAttribute("data-citation-open");
+              if (!raw) return false;
+              event.preventDefault();
+              getHandlers?.().onOpenCitation(raw);
+              return true;
             },
           },
         }),

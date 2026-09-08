@@ -11,6 +11,7 @@ import {
   normalizeTrailingCitationBlockInText,
   prepareEditForCitationMode,
   sourceCitationBracket,
+  sourceCitationForNumber,
   splitEditForCitationsAtEnd,
   stripCitationsFromTableOperation,
   stripCitationsFromText,
@@ -54,6 +55,19 @@ describe("stripCitationsFromText", () => {
     );
     expect(isCitationOnlyText("1. [results.xlsx, p. 1]")).toBe(true);
     expect(isCitationOnlyText("[1]")).toBe(false);
+  });
+});
+
+describe("sourceCitationForNumber", () => {
+  it("looks up a parked source from the trailing Citations list", () => {
+    const field = [
+      "Output met spec [1] for configuration A.",
+      "",
+      "Citations:",
+      "1. [protocol.pdf, p. 3]",
+    ].join("\n");
+    expect(sourceCitationForNumber(field, 1)).toBe("[protocol.pdf, p. 3]");
+    expect(sourceCitationForNumber(field, 2)).toBeNull();
   });
 });
 

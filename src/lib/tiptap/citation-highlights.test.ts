@@ -5,6 +5,7 @@ import { Decoration } from "@tiptap/pm/view";
 import {
   buildCitationDecorations,
   createCitationHighlightExtension,
+  findCitationHighlightsInPmDoc,
   findNumericCitationMarkersInPmDoc,
 } from "@/lib/tiptap/citation-highlights";
 
@@ -24,10 +25,17 @@ function schemaWithTable() {
 function inlineDecorationAttrs(decoration: Decoration | undefined): {
   class?: string;
   "data-citation-number"?: string;
+  "data-citation-open"?: string;
 } {
   return (
     (decoration as Decoration & {
-      type?: { attrs?: { class?: string; "data-citation-number"?: string } };
+      type?: {
+        attrs?: {
+          class?: string;
+          "data-citation-number"?: string;
+          "data-citation-open"?: string;
+        };
+      };
     }).type?.attrs ?? {}
   );
 }
@@ -74,7 +82,7 @@ describe("citation highlight decorations", () => {
     );
   });
 
-  it("skips placeholders and source citations", () => {
+  it("skips placeholders when finding numeric markers", () => {
     const schema = schemaWithTable();
     const doc = schema.node("doc", null, [
       schema.node("paragraph", null, [
@@ -89,7 +97,7 @@ describe("citation highlight decorations", () => {
     expect(highlights[0]?.number).toBe(3);
   });
 
-  it("finds no bubbles for non-Convergent inline source citations", () => {
+  it("makes inline source citations clickable", () => {
     const schema = schemaWithTable();
     const doc = schema.node("doc", null, [
       schema.node("paragraph", null, [
@@ -97,7 +105,35 @@ describe("citation highlight decorations", () => {
       ]),
     ]);
     expect(findNumericCitationMarkersInPmDoc(doc)).toEqual([]);
+    const highlights = findCitationHighlightsInPmDoc(doc);
+    expect(highlights).toHaveLength(1);
+    expect(highlights[0]?.kind).toBe("source");
+    expect(highlights[0]?.openRaw).toBe("[protocol.pdf, p. 3]");
+
+    const decos = buildCitationDecorations(doc, highlights);
+    const deco = decos.find(highlights[0]!.fromPos, highlights[0]!.toPos)[0];
+    expect(inlineDecorationAttrs(deco).class).toBe("citation-source");
+    expect(inlineDecorationAttrs(deco)["data-citation-open"]).toBe(
+      "[protocol.pdf, p. 3]"
+    );
     expect(createCitationHighlightExtension().name).toBe("citationHighlights");
+  });
+
+  it("resolves numbered markers from the trailing Citations list", () => {
+    const schema = schemaWithTable();
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("Output met spec [1] for configuration A."),
+      ]),
+      schema.node("paragraph", null, [schema.text("Citations:")]),
+      schema.node("paragraph", null, [schema.text("1. [protocol.pdf, p. 3]")]),
+    ]);
+
+    const highlights = findCitationHighlightsInPmDoc(doc);
+    const numeric = highlights.find((h) => h.kind === "numeric");
+    const source = highlights.find((h) => h.kind === "source");
+    expect(numeric?.openRaw).toBe("[protocol.pdf, p. 3]");
+    expect(source?.openRaw).toBe("[protocol.pdf, p. 3]");
   });
 
   it("remaps decorations across a mapping-only transaction", () => {

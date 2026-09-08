@@ -198,7 +198,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   — `sectionHasTable` still sees them. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if
   missing or ambiguous). Do not reject or rewrite a draft that omitted a
-  known page. **Focused** is an explicit skim.
+  known page. Clicking those brackets (or numbered `[n]` that maps to
+  a parked source) in the document, chat, or suggestion Sources opens or
+  reuses that attachment canvas tab and scrolls the PDF to the cited
+  page. Word preview cannot jump to a page. **Focused** is an explicit skim.
   Adaptive turns skip auto-evidence so the model must grep.
   Adaptive/focused turns do not expose `start_document_review`. Comprehensive
   `continue_document_review` drains the remaining queue in one call with a

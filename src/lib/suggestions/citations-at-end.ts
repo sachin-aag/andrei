@@ -180,6 +180,29 @@ function parseFieldCitationNumbering(existingFieldText: string): FieldCitationNu
   return numberingFromTrailingLines(splitTrailingCitationBlock(existingFieldText).lines);
 }
 
+/** Numbered `[n]` → parked source bracket from the trailing Citations: list. */
+export function sourceCitationForNumber(
+  fieldText: string,
+  n: number
+): string | null {
+  if (!Number.isInteger(n) || n < 1) return null;
+  for (const { number, source } of parseFieldCitationNumbering(fieldText).entries()) {
+    if (number === n) return source;
+  }
+  return null;
+}
+
+/** Every numbered marker in `fieldText` mapped to its parked source. */
+export function sourceCitationsByNumber(
+  fieldText: string
+): ReadonlyMap<number, string> {
+  return new Map(
+    parseFieldCitationNumbering(fieldText)
+      .entries()
+      .map(({ number, source }) => [number, source])
+  );
+}
+
 function replaceSourceCitationsWithMarkers(
   text: string,
   numbering: FieldCitationNumbering
