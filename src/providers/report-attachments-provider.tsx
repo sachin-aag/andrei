@@ -28,6 +28,10 @@ import {
   isSupportedAttachmentFile,
   reserveAttachmentUpload,
 } from "@/lib/attachments/upload-pdf";
+import {
+  omitDocumentPreviewPage,
+  resolveDocumentPreviewOpen,
+} from "@/lib/attachments/document-preview-page";
 import type {
   ReportAttachmentFolderRecord,
   ReportAttachmentRecord,
@@ -76,7 +80,10 @@ type ReportAttachmentsContextValue = {
   activeAttachmentId: string | null;
   activeAttachment: ReportAttachmentRecord | null;
   activePage: number;
+  previewPageFor: (id: string) => number;
   openDocument: (id: string, page?: number) => void;
+  rememberDocumentPage: (id: string, page: number) => void;
+  forgetDocumentPreview: (id: string) => void;
   closeDocument: () => void;
   documentOpenEpoch: number;
   uploadFiles: (files: FileList, folderId?: FolderId) => Promise<void>;
@@ -135,6 +142,11 @@ export function ReportAttachmentsProvider({
   >({});
   const [activeAttachment, setActiveAttachment] =
     useState<ActiveAttachment | null>(null);
+  const [previewPageById, setPreviewPageById] = useState<
+    Record<string, number>
+  >({});
+  const previewPageByIdRef = useRef<Record<string, number>>({});
+  const lastViewedPageByIdRef = useRef<Record<string, number>>({});
   const [documentOpenEpoch, setDocumentOpenEpoch] = useState(0);
   const [quotaWarning, setQuotaWarning] = useState<string | null>(null);
   const quotaWarningShownRef = useRef(false);
@@ -189,10 +201,40 @@ export function ReportAttachmentsProvider({
     return () => window.clearInterval(interval);
   }, [attachments, refreshAttachments]);
 
-  const openDocument = useCallback((id: string, page = 1) => {
-    setActiveAttachment({ id, page: Math.max(1, page) });
+  const openDocument = useCallback((id: string, page?: number) => {
+    const resolved = resolveDocumentPreviewOpen({
+      previewPageById: previewPageByIdRef.current,
+      lastViewedPage: lastViewedPageByIdRef.current[id],
+      attachmentId: id,
+      requestedPage: page,
+    });
+    if (page !== undefined) {
+      lastViewedPageByIdRef.current[id] = resolved.page;
+    }
+    previewPageByIdRef.current = resolved.previewPageById;
+    setPreviewPageById(resolved.previewPageById);
+    setActiveAttachment((prev) => {
+      if (resolved.skipJump && prev?.id === id) return prev;
+      if (prev?.id === id && prev.page === resolved.page) return prev;
+      return { id, page: resolved.page };
+    });
     setDocumentOpenEpoch((epoch) => epoch + 1);
   }, []);
+
+  const rememberDocumentPage = useCallback((id: string, page: number) => {
+    lastViewedPageByIdRef.current[id] = Math.max(1, page);
+  }, []);
+
+  const forgetDocumentPreview = useCallback((id: string) => {
+    const next = omitDocumentPreviewPage(previewPageByIdRef.current, id);
+    previewPageByIdRef.current = next;
+    setPreviewPageById(next);
+  }, []);
+
+  const previewPageFor = useCallback(
+    (id: string) => previewPageById[id] ?? 1,
+    [previewPageById]
+  );
 
   const closeDocument = useCallback(() => {
     setActiveAttachment(null);
@@ -401,6 +443,13 @@ export function ReportAttachmentsProvider({
         return;
       }
       setAttachments((prev) => prev.filter((item) => item.id !== id));
+      delete lastViewedPageByIdRef.current[id];
+      const nextPreview = omitDocumentPreviewPage(
+        previewPageByIdRef.current,
+        id
+      );
+      previewPageByIdRef.current = nextPreview;
+      setPreviewPageById(nextPreview);
       rateSamplesRef.current.delete(id);
       setUploadProgress((prev) => {
         const next = { ...prev };
@@ -643,6 +692,20 @@ export function ReportAttachmentsProvider({
         id,
         folders.map((item) => ({ id: item.id, parentId: item.parentId }))
       );
+      const removedAttachmentIds = attachments
+        .filter(
+          (item) => item.folderId != null && subtreeFolderIds.has(item.folderId)
+        )
+        .map((item) => item.id);
+      if (removedAttachmentIds.length > 0) {
+        let previewPages = previewPageByIdRef.current;
+        for (const attachmentId of removedAttachmentIds) {
+          delete lastViewedPageByIdRef.current[attachmentId];
+          previewPages = omitDocumentPreviewPage(previewPages, attachmentId);
+        }
+        previewPageByIdRef.current = previewPages;
+        setPreviewPageById(previewPages);
+      }
       setFolders((prev) => prev.filter((item) => !subtreeFolderIds.has(item.id)));
       setAttachments((prev) =>
         prev.filter(
@@ -650,7 +713,7 @@ export function ReportAttachmentsProvider({
         )
       );
     },
-    [canMutateAttachments, folders, reportId]
+    [attachments, canMutateAttachments, folders, reportId]
   );
 
   const linkFromLibrary = useCallback(
@@ -727,7 +790,10 @@ export function ReportAttachmentsProvider({
       activeAttachmentId: activeAttachment?.id ?? null,
       activeAttachment: activeAttachmentRecord,
       activePage: activeAttachment?.page ?? 1,
+      previewPageFor,
       openDocument,
+      rememberDocumentPage,
+      forgetDocumentPreview,
       closeDocument,
       documentOpenEpoch,
       uploadFiles,
@@ -751,7 +817,10 @@ export function ReportAttachmentsProvider({
       canMutateAttachments,
       activeAttachment,
       activeAttachmentRecord,
+      previewPageFor,
       openDocument,
+      rememberDocumentPage,
+      forgetDocumentPreview,
       closeDocument,
       documentOpenEpoch,
       uploadFiles,

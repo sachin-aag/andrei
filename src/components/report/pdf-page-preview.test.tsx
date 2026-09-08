@@ -268,6 +268,100 @@ describe("PdfPagePreview", () => {
     expect(getDocument).toHaveBeenCalledTimes(1);
   });
 
+  it("does not drop painted pages while the preview is hidden", async () => {
+    const observers: Array<{
+      callback: IntersectionObserverCallback;
+      disconnected: boolean;
+      targets: Element[];
+    }> = [];
+
+    class ControllableIntersectionObserver {
+      readonly callback: IntersectionObserverCallback;
+      disconnected = false;
+      targets: Element[] = [];
+
+      constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback;
+        observers.push(this);
+      }
+
+      observe(target: Element) {
+        this.targets.push(target);
+        this.callback(
+          [
+            {
+              isIntersecting: true,
+              intersectionRatio: 1,
+              target,
+              boundingClientRect: target.getBoundingClientRect(),
+              intersectionRect: target.getBoundingClientRect(),
+              rootBounds: null,
+              time: 0,
+            } as IntersectionObserverEntry,
+          ],
+          this as unknown as IntersectionObserver
+        );
+      }
+
+      unobserve() {}
+      disconnect() {
+        this.disconnected = true;
+      }
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0];
+    }
+
+    vi.stubGlobal("IntersectionObserver", ControllableIntersectionObserver);
+
+    const { rerender } = render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+    await screen.findByText("Batch page 2");
+    expect(getDocument).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+        active={false}
+      />
+    );
+
+    for (const observer of observers) {
+      if (observer.disconnected) continue;
+      observer.callback(
+        observer.targets.map(
+          (target) =>
+            ({
+              isIntersecting: false,
+              intersectionRatio: 0,
+              target,
+              boundingClientRect: target.getBoundingClientRect(),
+              intersectionRect: target.getBoundingClientRect(),
+              rootBounds: null,
+              time: 0,
+            }) as IntersectionObserverEntry
+        ),
+        observer as unknown as IntersectionObserver
+      );
+    }
+
+    expect(screen.getByText("Batch page 1")).toBeInTheDocument();
+    expect(screen.getByText("Batch page 2")).toBeInTheDocument();
+    expect(getDocument).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the canvas before the text layer is ready", async () => {
     getPage.mockImplementation(async (pageNumber: number) =>
       mockPdfPage(pageNumber, {

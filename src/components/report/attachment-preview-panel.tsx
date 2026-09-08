@@ -25,6 +25,8 @@ export function AttachmentPreviewPanel({
   previewUrl,
   downloadUrl,
   page = 1,
+  active = true,
+  onVisiblePageChange,
   onClose,
   showClose = true,
   testId = "attachment-viewer",
@@ -33,6 +35,8 @@ export function AttachmentPreviewPanel({
   previewUrl: string;
   downloadUrl: string;
   page?: number;
+  active?: boolean;
+  onVisiblePageChange?: (page: number) => void;
   onClose?: () => void;
   showClose?: boolean;
   testId?: string;
@@ -46,7 +50,7 @@ export function AttachmentPreviewPanel({
   }
 
   useEffect(() => {
-    if (!onClose) return;
+    if (!onClose || !active) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -59,7 +63,7 @@ export function AttachmentPreviewPanel({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [active, onClose]);
 
   const isDocx = kindFromMime(attachment.mimeType) === "docx";
   const pageLabel = isDocx
@@ -141,7 +145,11 @@ export function AttachmentPreviewPanel({
               page={page}
               title={attachment.filename}
               sizeBytes={attachment.sizeBytes}
-              onVisiblePageChange={setVisiblePage}
+              active={active}
+              onVisiblePageChange={(nextPage) => {
+                setVisiblePage(nextPage);
+                onVisiblePageChange?.(nextPage);
+              }}
             />
           )
         ) : (

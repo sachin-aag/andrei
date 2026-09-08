@@ -85,12 +85,14 @@ export function PdfPagePreview({
   page,
   title,
   sizeBytes,
+  active = true,
   onVisiblePageChange,
 }: {
   src: string;
   page: number;
   title: string;
   sizeBytes?: number;
+  active?: boolean;
   onVisiblePageChange?: (page: number) => void;
 }) {
   const contentUrl = contentUrlFromPreviewSrc(src);
@@ -202,6 +204,7 @@ export function PdfPagePreview({
       pageWidth={state.pageWidth}
       pageHeight={state.pageHeight}
       initialPage={page}
+      active={active}
       onVisiblePageChangeRef={onVisiblePageChangeRef}
     />
   );
@@ -214,6 +217,7 @@ function PdfDocumentPages({
   pageWidth,
   pageHeight,
   initialPage,
+  active,
   onVisiblePageChangeRef,
 }: {
   pdf: PDFDocumentProxy;
@@ -222,6 +226,7 @@ function PdfDocumentPages({
   pageWidth: number;
   pageHeight: number;
   initialPage: number;
+  active: boolean;
   onVisiblePageChangeRef: RefObject<((page: number) => void) | undefined>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -320,7 +325,7 @@ function PdfDocumentPages({
 
   useEffect(() => {
     const root = scrollRef.current;
-    if (!root) return;
+    if (!root || !active) return;
 
     const updateNearPages = (changes: Map<number, boolean>) => {
       setNearPages((prev) => {
@@ -394,7 +399,7 @@ function PdfDocumentPages({
       prefetch?.disconnect();
       currentPage.disconnect();
     };
-  }, [numPages, prefetchNeighbors, reportVisiblePage]);
+  }, [active, numPages, prefetchNeighbors, reportVisiblePage]);
 
   useLayoutEffect(() => {
     const clamped = clampPdfPage(initialPage, numPages);

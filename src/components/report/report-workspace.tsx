@@ -54,7 +54,7 @@ import {
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { DocumentsPanel } from "./documents/documents-panel";
-import { AttachmentViewer } from "./attachment-viewer";
+import { AttachmentCanvasStack } from "./attachment-canvas-stack";
 import { StatisticalWorkspace, type AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -266,8 +266,14 @@ export function ReportWorkspace({
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
     useReportEvaluations();
-  const { activeAttachmentId, attachments, openDocument, closeDocument, documentOpenEpoch } =
-    useReportAttachments();
+  const {
+    activeAttachmentId,
+    attachments,
+    openDocument,
+    closeDocument,
+    forgetDocumentPreview,
+    documentOpenEpoch,
+  } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
     SectionType | undefined
   >();
@@ -806,6 +812,7 @@ export function ReportWorkspace({
         case "attachment": {
           const attachmentId = attachmentIdFromTab(id);
           if (!attachmentId) return;
+          forgetDocumentPreview(attachmentId);
           const nextActive = tabIdAfterClose(canvasTabs, id, liveActiveTabId);
           setOpenAttachmentIds((ids) =>
             removeAttachmentOpen(ids, attachmentId)
@@ -845,7 +852,7 @@ export function ReportWorkspace({
         }
       }
     },
-    [activeAttachmentId, liveActiveTabId, canvasTabs, closeDocument, openDocument, compare]
+    [activeAttachmentId, liveActiveTabId, canvasTabs, closeDocument, forgetDocumentPreview, openDocument, compare]
   );
 
   const handleChromeChange = useCallback(
@@ -1187,20 +1194,15 @@ export function ReportWorkspace({
                     />
                   </div>
                 ) : null}
-                {viewingDocument ? (
-                  <AttachmentCanvas
-                    onClose={() => {
-                      const attachmentId = attachmentIdFromTab(liveActiveTabId);
-                      if (attachmentId) {
-                        setOpenAttachmentIds((ids) =>
-                          removeAttachmentOpen(ids, attachmentId)
-                        );
-                      }
-                      selectWorkProductView("report");
-                      closeDocument();
-                    }}
-                  />
-                ) : null}
+                <AttachmentCanvasStack
+                  openAttachmentIds={liveOpenAttachmentIds}
+                  activeAttachmentId={
+                    viewingDocument
+                      ? attachmentIdFromTab(liveActiveTabId)
+                      : null
+                  }
+                  onCloseTab={(id) => closeCanvasTab(attachmentTabId(id))}
+                />
               </div>
             </>
           )}
@@ -1286,14 +1288,6 @@ export function ReportWorkspace({
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function AttachmentCanvas({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <AttachmentViewer onClose={onClose} />
     </div>
   );
 }
