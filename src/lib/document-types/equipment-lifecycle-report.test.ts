@@ -107,6 +107,28 @@ describe("equipment lifecycle report definition", () => {
     }
   });
 
+  it("mirrors the MJ F10 report shape", () => {
+    const sections = getWorkspaceSections(TYPE).map((s) => s.key);
+    // F10 calls section 1 "Purpose", and carries an abbreviations block plus a
+    // discrepancy section that our first draft was missing.
+    expect(ELR_SECTION_LABELS.elr_objective).toBe("Purpose");
+    expect(sections).toContain("elr_abbreviations");
+    expect(sections).toContain("elr_discrepancies");
+    // Discrepancy sits after the evidence sections and before the conclusion.
+    expect(sections.indexOf("elr_discrepancies")).toBeGreaterThan(
+      sections.indexOf("elr_csv_status")
+    );
+    expect(sections.indexOf("elr_discrepancies")).toBeLessThan(
+      sections.indexOf("elr_conclusion")
+    );
+  });
+
+  it("seeds a starter glossary that no criterion enforces", () => {
+    const rows = EMPTY_ELR_CONTENT.elr_abbreviations.table.content?.[0]?.content ?? [];
+    expect(rows.length).toBeGreaterThan(1);
+    expect(getCriteria(TYPE, "elr_abbreviations")).toHaveLength(0);
+  });
+
   it("seeds empty content for every section", () => {
     for (const key of ELR_SECTION_KEYS) {
       expect(EMPTY_ELR_CONTENT[key]).toBeDefined();
@@ -366,15 +388,24 @@ describe("ELR criteria wiring", () => {
     expect(cross?.dependsOn).toContain("elr_qualification");
   });
 
-  it("gives every evaluable section at least one criterion except attachments", () => {
+  // Attachments and abbreviations are boilerplate registers, not judgments.
+  const CRITERIA_FREE_SECTIONS = ["elr_attachments", "elr_abbreviations"];
+
+  it("gives every evaluable section at least one criterion except the registers", () => {
     for (const key of ELR_SECTION_KEYS) {
       const criteria = getCriteria(TYPE, key);
-      if (key === "elr_attachments") {
+      if (CRITERIA_FREE_SECTIONS.includes(key)) {
         expect(criteria).toHaveLength(0);
         continue;
       }
       expect(criteria.length).toBeGreaterThan(0);
     }
+  });
+
+  it("routes the conclusion through the discrepancy section", () => {
+    const criteria = getCriteria(TYPE, "elr_conclusion");
+    const decision = criteria.find((c) => c.key === "conclusion.states_decision");
+    expect(decision?.dependsOn).toContain("elr_discrepancies");
   });
 });
 

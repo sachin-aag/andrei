@@ -97,6 +97,8 @@ export function elrMetadata(report: { metadata: ReportMetadata }): ElrMetadata {
   const meta = report.metadata as Partial<ElrMetadata>;
   return {
     equipmentName: meta.equipmentName ?? "",
+    equipmentMake: meta.equipmentMake ?? "",
+    equipmentModel: meta.equipmentModel ?? "",
     equipmentId: meta.equipmentId ?? "",
     systemId: meta.systemId ?? "",
     formatScope: meta.formatScope ?? "",

@@ -161,6 +161,7 @@ import {
   QraTeamEditor,
 } from "./sections/qra/qra-section-editors";
 import {
+  ElrAbbreviationsEditor,
   ElrAccessControlEditor,
   ElrAlarmsEditor,
   ElrAttachmentsEditor,
@@ -169,6 +170,7 @@ import {
   ElrCalibrationEditor,
   ElrConclusionEditor,
   ElrCsvStatusEditor,
+  ElrDiscrepanciesEditor,
   ElrMediaFillEditor,
   ElrMonitoringEditor,
   ElrObjectiveEditor,
@@ -260,6 +262,7 @@ const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
   elr_objective: ElrObjectiveEditor,
   elr_scope: ElrScopeEditor,
   elr_responsibilities: ElrResponsibilitiesEditor,
+  elr_abbreviations: ElrAbbreviationsEditor,
   elr_system_description: ElrSystemDescriptionEditor,
   elr_qualification: ElrQualificationEditor,
   elr_media_fill: ElrMediaFillEditor,
@@ -272,6 +275,7 @@ const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
   elr_access_control: ElrAccessControlEditor,
   elr_audit_trail: ElrAuditTrailEditor,
   elr_csv_status: ElrCsvStatusEditor,
+  elr_discrepancies: ElrDiscrepanciesEditor,
   elr_conclusion: ElrConclusionEditor,
   elr_attachments: ElrAttachmentsEditor,
   elr_revision_history: ElrRevisionHistoryEditor,

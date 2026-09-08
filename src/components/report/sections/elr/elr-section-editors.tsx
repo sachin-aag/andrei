@@ -266,6 +266,16 @@ export function ElrResponsibilitiesEditor() {
   );
 }
 
+export function ElrAbbreviationsEditor() {
+  return (
+    <TableEditor
+      section="elr_abbreviations"
+      fieldLabel="Abbreviations"
+      hint="Starter glossary — keep the terms this report actually uses and delete the rest."
+    />
+  );
+}
+
 export function ElrSystemDescriptionEditor() {
   return (
     <NarrativeEditor
@@ -403,6 +413,16 @@ export function ElrCsvStatusEditor() {
   );
 }
 
+export function ElrDiscrepanciesEditor() {
+  return (
+    <NarrativeEditor
+      section="elr_discrepancies"
+      fieldLabel="Discrepancy / deviations observed while compiling this report"
+      placeholder="State &ldquo;No discrepancy has been observed during compilation of this report&rdquo;, or describe each discrepancy — a record that could not be located, a reference that did not reconcile, an incomplete data set — with what was done about it."
+    />
+  );
+}
+
 export function ElrConclusionEditor() {
   const section: ElrSectionKey = "elr_conclusion";
   const { update } = useGenericReportSection<ElrConclusionSection>(section);
@@ -425,7 +445,7 @@ export function ElrConclusionEditor() {
       <TiptapSectionField
         section={section}
         contentPath="narrative"
-        label="Conclusion"
+        label="Summary and conclusion"
         placeholder="State whether the equipment remains in its qualified state for this container format, on the basis of the evidence sections above."
         className="grid gap-2"
         value={content.narrative}

@@ -223,6 +223,22 @@ function ElrIdentityForm({
             onChange={set("equipmentName")}
           />
           <IdentityField
+            id="elr-equipment-make"
+            label="Equipment make"
+            value={meta.equipmentMake}
+            placeholder="Steriline SRL"
+            disabled={readOnly}
+            onChange={set("equipmentMake")}
+          />
+          <IdentityField
+            id="elr-equipment-model"
+            label="Equipment model"
+            value={meta.equipmentModel}
+            placeholder="VKFCM168"
+            disabled={readOnly}
+            onChange={set("equipmentModel")}
+          />
+          <IdentityField
             id="elr-equipment-id"
             label="Equipment ID"
             value={meta.equipmentId}

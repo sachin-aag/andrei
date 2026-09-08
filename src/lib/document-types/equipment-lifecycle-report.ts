@@ -267,12 +267,32 @@ const CSV_STATUS_CRITERIA: CriterionDefinition[] = [
   ),
 ];
 
+const DISCREPANCY_CRITERIA: CriterionDefinition[] = [
+  det(
+    "discrepancies.answered",
+    "The discrepancy section is answered rather than left blank",
+    "Does the section either state that no discrepancy was observed while compiling the report, or describe the ones that were?",
+    checkNarrativePresent
+  ),
+  llm(
+    "discrepancies.disposition",
+    "Each discrepancy carries a disposition",
+    "For every discrepancy raised — a record that could not be located, a reference that did not reconcile, an incomplete data set — does the section say what was done about it and whether it affects the conclusion? A bare list without disposition is not enough."
+  ),
+];
+
 const CONCLUSION_CRITERIA: CriterionDefinition[] = [
   det(
     "conclusion.recommendation",
     "A recommendation is selected and the conclusion is written",
     "Is one recommendation chosen, with a conclusion narrative and, for Other, a specified justification?",
     checkRecommendationSelected
+  ),
+  llm(
+    "conclusion.states_decision",
+    "The conclusion states a decision about the qualified state, not a summary of activity",
+    "Does the conclusion say whether the equipment remains in its qualified state for this container format and why, accounting for any discrepancy recorded in the discrepancy section and any unresolved finding in the evidence sections — rather than restating what was reviewed?",
+    ["elr_discrepancies"]
   ),
 ];
 
@@ -368,7 +388,9 @@ function mergeElrSection(key: string, raw: unknown): unknown {
     case "elr_objective":
     case "elr_scope":
     case "elr_system_description":
+    case "elr_discrepancies":
       return mergeNarrative(raw, key as ElrSectionKey);
+    case "elr_abbreviations":
     case "elr_access_control":
     case "elr_audit_trail":
     case "elr_attachments":
@@ -411,6 +433,7 @@ export const equipmentLifecycleReportDefinition: DocumentTypeDefinition = {
     elr_objective: OBJECTIVE_CRITERIA,
     elr_scope: SCOPE_CRITERIA,
     elr_responsibilities: RESPONSIBILITIES_CRITERIA,
+    elr_abbreviations: [],
     elr_system_description: SYSTEM_DESCRIPTION_CRITERIA,
     elr_qualification: QUALIFICATION_CRITERIA,
     elr_media_fill: MEDIA_FILL_CRITERIA,
@@ -423,6 +446,7 @@ export const equipmentLifecycleReportDefinition: DocumentTypeDefinition = {
     elr_access_control: ACCESS_CONTROL_CRITERIA,
     elr_audit_trail: AUDIT_TRAIL_CRITERIA,
     elr_csv_status: CSV_STATUS_CRITERIA,
+    elr_discrepancies: DISCREPANCY_CRITERIA,
     elr_conclusion: CONCLUSION_CRITERIA,
     elr_attachments: [],
     elr_revision_history: REVISION_CRITERIA,
@@ -453,6 +477,7 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "elr_alarms",
       "elr_audit_trail",
       "elr_csv_status",
+      "elr_discrepancies",
       "elr_conclusion",
     ],
     examplePrompts: {
@@ -499,6 +524,7 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       ["elr_audit_trail", [/audit trail/i, /privilege/i]],
       ["elr_csv_status", [/\bcsv\b/i, /computerized system/i, /part 11/i, /scada/i]],
       ["elr_monitoring", [/monitoring/i, /excursion/i, /environmental/i]],
+      ["elr_discrepancies", [/discrepanc/i]],
       ["elr_conclusion", [/\bconclusion\b/i, /recommendation/i]],
       ["elr_revision_history", [/revision history/i]],
     ],
@@ -539,6 +565,8 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       return {
         documentNo: report.documentNo,
         equipmentName: meta.equipmentName ?? "",
+        equipmentMake: meta.equipmentMake ?? "",
+        equipmentModel: meta.equipmentModel ?? "",
         equipmentId: meta.equipmentId ?? "",
         systemId: meta.systemId ?? "",
         formatScope: meta.formatScope ?? "",
@@ -559,6 +587,7 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         scopeXml: narrative("elr_scope"),
         responsibilitiesXml: narrative("elr_responsibilities"),
         responsibilitiesTableXml: field("elr_responsibilities", "table"),
+        abbreviationsTableXml: field("elr_abbreviations", "table"),
         systemDescriptionXml: narrative("elr_system_description"),
         qualificationXml: narrative("elr_qualification"),
         qualificationTableXml: field("elr_qualification", "table"),
@@ -585,6 +614,7 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         auditTrailTableXml: field("elr_audit_trail", "table"),
         csvStatusXml: narrative("elr_csv_status"),
         csvStatusTableXml: field("elr_csv_status", "table"),
+        discrepanciesXml: narrative("elr_discrepancies"),
         conclusionXml: narrative("elr_conclusion"),
         recommendationXml: field("elr_conclusion", "recommendationNarrative"),
         attachmentsTableXml: field("elr_attachments", "table"),

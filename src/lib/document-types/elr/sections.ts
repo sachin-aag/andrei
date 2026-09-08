@@ -16,6 +16,7 @@ export const ELR_SECTION_KEYS = [
   "elr_objective",
   "elr_scope",
   "elr_responsibilities",
+  "elr_abbreviations",
   "elr_system_description",
   "elr_qualification",
   "elr_media_fill",
@@ -28,6 +29,7 @@ export const ELR_SECTION_KEYS = [
   "elr_access_control",
   "elr_audit_trail",
   "elr_csv_status",
+  "elr_discrepancies",
   "elr_conclusion",
   "elr_attachments",
   "elr_revision_history",
@@ -50,6 +52,11 @@ export const ELR_RESPONSIBILITIES_HEADERS = [
   "Sr. No.",
   "Department",
   "Responsibilities",
+] as const;
+
+export const ELR_ABBREVIATIONS_HEADERS = [
+  "Abbreviation",
+  "Expansion",
 ] as const;
 
 export const ELR_QUALIFICATION_HEADERS = [
@@ -234,6 +241,7 @@ export type ElrSectionMap = {
   elr_objective: ElrNarrativeSection;
   elr_scope: ElrNarrativeSection;
   elr_responsibilities: ElrNarrativeTableSection;
+  elr_abbreviations: ElrTableSection;
   elr_system_description: ElrNarrativeSection;
   elr_qualification: ElrNarrativeTableSection;
   elr_media_fill: ElrNarrativeTableSection;
@@ -246,6 +254,7 @@ export type ElrSectionMap = {
   elr_access_control: ElrTableSection;
   elr_audit_trail: ElrTableSection;
   elr_csv_status: ElrNarrativeTableSection;
+  elr_discrepancies: ElrNarrativeSection;
   elr_conclusion: ElrConclusionSection;
   elr_attachments: ElrTableSection;
   elr_revision_history: ElrTableSection;
@@ -253,9 +262,10 @@ export type ElrSectionMap = {
 
 /** Workspace labels. Numbered headings live only in the export template. */
 export const ELR_SECTION_LABELS: Record<ElrSectionKey, string> = {
-  elr_objective: "Objective",
+  elr_objective: "Purpose",
   elr_scope: "Scope",
   elr_responsibilities: "Responsibilities",
+  elr_abbreviations: "Abbreviations",
   elr_system_description: "Equipment and System Description",
   elr_qualification: "Qualification and Periodic Re-Qualification History",
   elr_media_fill: "Media Fill / Aseptic Process Simulation",
@@ -268,10 +278,57 @@ export const ELR_SECTION_LABELS: Record<ElrSectionKey, string> = {
   elr_access_control: "Access Control",
   elr_audit_trail: "Audit Trail Review",
   elr_csv_status: "Computerized System Validation Status",
-  elr_conclusion: "Conclusion and Recommendation",
+  elr_discrepancies: "Discrepancy / Deviations",
+  elr_conclusion: "Summary, Conclusion and Recommendation",
   elr_attachments: "Attachments",
   elr_revision_history: "Revision History",
 };
+
+/**
+ * Starter glossary. Every MJ document carries an abbreviations block (F10 §3.2,
+ * F09 §5.0). This is boilerplate the compiler prunes, not a set of judgments —
+ * no criterion enforces any particular row.
+ */
+const ELR_STARTER_ABBREVIATIONS: readonly (readonly [string, string])[] = [
+  ["APS", "Aseptic Process Simulation"],
+  ["CAPA", "Corrective Action and Preventive Action"],
+  ["CC", "Change Control"],
+  ["CSV", "Computerized System Validation"],
+  ["ELR", "Equipment Lifecycle Report"],
+  ["IQ / OQ / PQ", "Installation / Operational / Performance Qualification"],
+  ["OOS / OOT", "Out of Specification / Out of Trend"],
+  ["PM", "Preventive Maintenance"],
+  ["PRQ", "Periodic Re-Qualification"],
+  ["QMS", "Quality Management System"],
+  ["SLIA", "System Level Impact Assessment"],
+];
+
+function textCell(text: string): JSONContent {
+  return {
+    type: "tableCell",
+    attrs: { colspan: 1, rowspan: 1, colwidth: null },
+    content: [
+      {
+        type: "paragraph",
+        ...(text ? { content: [{ type: "text", text }] } : {}),
+      },
+    ],
+  };
+}
+
+function seededAbbreviations(): JSONContent {
+  const doc = seededTableDoc(ELR_ABBREVIATIONS_HEADERS);
+  const table = doc.content?.[0];
+  if (!table) return doc;
+  table.content = [
+    table.content?.[0] as JSONContent,
+    ...ELR_STARTER_ABBREVIATIONS.map(([term, expansion]) => ({
+      type: "tableRow",
+      content: [textCell(term), textCell(expansion)],
+    })),
+  ];
+  return doc;
+}
 
 export const EMPTY_ELR_CONTENT: ElrSectionMap = {
   elr_objective: { narrative: emptyDoc() },
@@ -280,6 +337,7 @@ export const EMPTY_ELR_CONTENT: ElrSectionMap = {
     narrative: emptyDoc(),
     table: seededTableDoc(ELR_RESPONSIBILITIES_HEADERS),
   },
+  elr_abbreviations: { table: seededAbbreviations() },
   elr_system_description: { narrative: emptyDoc() },
   elr_qualification: {
     narrative: emptyDoc(),
@@ -323,6 +381,7 @@ export const EMPTY_ELR_CONTENT: ElrSectionMap = {
     narrative: emptyDoc(),
     table: seededTableDoc(ELR_CSV_STATUS_HEADERS),
   },
+  elr_discrepancies: { narrative: emptyDoc() },
   elr_conclusion: {
     narrative: emptyDoc(),
     recommendation: "",
@@ -341,6 +400,8 @@ export const EMPTY_ELR_CONTENT: ElrSectionMap = {
  */
 export type ElrMetadata = {
   equipmentName: string;
+  equipmentMake: string;
+  equipmentModel: string;
   equipmentId: string;
   systemId: string;
   /**
@@ -369,6 +430,8 @@ export type ElrMetadata = {
 
 export const ELR_DEFAULT_METADATA: ElrMetadata = {
   equipmentName: "",
+  equipmentMake: "",
+  equipmentModel: "",
   equipmentId: "",
   systemId: "",
   formatScope: "",
