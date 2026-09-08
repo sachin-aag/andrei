@@ -21,6 +21,11 @@ export function chatUserTurnMetadata(chatTarget: ChatMessageTarget): {
   return { chatTarget };
 }
 
+export function assistantOffersAnalyticsSwitch(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object") return false;
+  return (metadata as { switchToAnalytics?: unknown }).switchToAnalytics === true;
+}
+
 export function chatMessageTargetLabel(target: ChatMessageTarget): string {
   switch (target) {
     case "report":

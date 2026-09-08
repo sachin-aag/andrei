@@ -1,10 +1,14 @@
 /**
- * Flash-Lite gate for the ambiguous middle of write-vs-chat.
+ * Flash-Lite gate for the ambiguous middle of write-vs-chat, reused for a
+ * high-confidence Document→Analytics switch. One `classifyIntentWithLlm`
+ * call — not a second sequential model.
  *
  * Rules in `classifyChatUserIntent` still own greetings, explicit produce
- * verbs, and clear questions. This call only runs when those rules would
- * emit `ambiguous_agent_mode`. Timeout, stub chat, and parse failures fall
- * back to that rules decision. Retrieval policy is not this model's job.
+ * verbs, and clear questions. This call runs when those rules would emit
+ * `ambiguous_agent_mode`, or when Document chat looks like a worksheet dump
+ * (`looksLikeAnalyticsWorkProductRequest`). Timeout, stub chat, and parse
+ * failures fall back to the rules decision with no switch widget. Retrieval
+ * policy is not this model's job.
  */
 
 import { generateText, Output } from "ai";
@@ -12,6 +16,7 @@ import { z } from "zod";
 import type { DocumentType, SectionType } from "@/db/schema";
 import {
   classifyChatUserIntent,
+  looksLikeAnalyticsWorkProductRequest,
   needsLlmIntentClassification,
   type ChatUserIntentDecision,
   type ChatUserIntentKind,
@@ -34,13 +39,16 @@ import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-genera
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 
-export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v2-chrome-is-layout";
+export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v4-switch-confirm";
 export const INTENT_CLASSIFIER_TIMEOUT_MS = 2_500;
 const INTENT_MIN_CONFIDENCE = 0.4;
+/** Stricter than kind-classification — the switch widget must be rare. */
+const INTENT_SWITCH_MIN_CONFIDENCE = 0.75;
 
 const intentLlmSchema = z.object({
   kind: z.enum(["social", "read", "write"]),
   confidence: z.number().min(0).max(1),
+  preferredSurface: z.enum(["report", "analytics"]).optional(),
 });
 
 export type ResolveChatUserIntentInput = ClassifyChatUserIntentInput & {
@@ -57,13 +65,31 @@ export async function resolveChatUserIntent(
   input: ResolveChatUserIntentInput
 ): Promise<ChatUserIntentDecision> {
   const rules = classifyChatUserIntent(input);
-  if (!needsLlmIntentClassification(rules) || isTestStubChat()) {
+  const workProductGate =
+    input.surface === "document" &&
+    looksLikeAnalyticsWorkProductRequest(input.userText);
+  if (
+    isTestStubChat() ||
+    (!needsLlmIntentClassification(rules) && !workProductGate)
+  ) {
     return rules;
   }
 
   try {
     const llm = await classifyIntentWithLlm(input);
     if (!llm) return rules;
+    if (
+      workProductGate &&
+      llm.preferredSurface === "analytics" &&
+      llm.confidence >= INTENT_SWITCH_MIN_CONFIDENCE
+    ) {
+      return {
+        kind: "read",
+        reason: "llm_analytics_surface",
+        switchToAnalytics: true,
+      };
+    }
+    if (!needsLlmIntentClassification(rules)) return rules;
     if (llm.confidence < INTENT_MIN_CONFIDENCE) return rules;
     return { kind: llm.kind, reason: `llm_${llm.kind}` };
   } catch {
@@ -92,7 +118,11 @@ export function documentIntentFocus(input: {
 
 async function classifyIntentWithLlm(
   input: ResolveChatUserIntentInput
-): Promise<{ kind: ChatUserIntentKind; confidence: number } | null> {
+): Promise<{
+  kind: ChatUserIntentKind;
+  confidence: number;
+  preferredSurface?: "report" | "analytics";
+} | null> {
   const timeout = AbortSignal.timeout(INTENT_CLASSIFIER_TIMEOUT_MS);
   const abortSignal = input.abortSignal
     ? AbortSignal.any([input.abortSignal, timeout])
@@ -143,10 +173,13 @@ function buildIntentClassifierPrompt(input: ResolveChatUserIntentInput): string 
     .find(Boolean);
   const section = sanitizePromptMetadata(input.sectionLabel ?? "", 80);
   const lines = [
-    "Classify this chat turn. Output { kind, confidence } only.",
+    "Classify this chat turn. Output { kind, confidence, preferredSurface } only.",
     "kind=social: greeting, thanks, or a bare yes/ok with no task.",
     "kind=read: a question, plan, outline, writing advice, or lookup. Reply in chat. Do not edit the document or worksheet.",
     "kind=write: they asked to change the document or worksheet now (draft, insert, fill, edit, plot, extract into the grid, or yes to an offer to write).",
+    "A yes / go for it / do it after you told them to switch to Analytics is write — continue the earlier extract/fill request. Do not classify that as social.",
+    "preferredSurface=analytics: they asked to fill, extract into, or plot on the Analytics worksheet / spreadsheet / data grid. Not when they asked to put worksheet results into a report section.",
+    "preferredSurface=report: anything else, including drafting prose or editing a document table.",
     "Document vs Agent chrome is layout, not write intent. Both chromes land edits as reviewable suggestions.",
     "Ask vs Agent: Agent may write when asked. Ask must not write.",
     "Empty or partial sections are not a write request.",

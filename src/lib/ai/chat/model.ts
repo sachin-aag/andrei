@@ -83,6 +83,7 @@ export type ChatAssistantTurnMetadata = ChatPaceConfig & {
   promptVersion: string;
   chatTarget: ChatMessageTarget;
   changeSummary?: ChatTurnChangeSummary;
+  switchToAnalytics?: true;
 };
 
 export function chatAssistantTurnMetadata(input: {
@@ -91,13 +92,15 @@ export function chatAssistantTurnMetadata(input: {
   promptVersion: string;
   chatTarget: ChatMessageTarget;
   changeSummary?: ChatTurnChangeSummary;
+  switchToAnalytics?: boolean;
 }): ChatAssistantTurnMetadata {
-  const { changeSummary, ...rest } = input;
+  const { changeSummary, switchToAnalytics, ...rest } = input;
   return {
     ...chatPaceConfig(input.pace),
     ...rest,
     ...(changeSummary && changeSummary.items.length > 0
       ? { changeSummary }
       : {}),
+    ...(switchToAnalytics ? { switchToAnalytics: true as const } : {}),
   };
 }

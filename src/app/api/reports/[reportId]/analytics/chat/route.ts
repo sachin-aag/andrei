@@ -228,6 +228,7 @@ async function handleAnalyticsChatPost(
       pinnedAttachmentIds,
       focusedSheetId,
       actor: auditActorFromUser(user),
+      turnStartedAtMs,
     }),
     userIntent.kind,
     "analytics"

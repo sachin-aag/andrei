@@ -335,6 +335,7 @@ async function handleChatPost(
     reportId,
     userId: user.id,
   });
+  const switchToAnalytics = userIntent.switchToAnalytics === true;
   const retrievalDecision = classifyRetrievalPolicy({
     userText,
     recentUserTexts: recentUserMessageTexts(messages),
@@ -434,6 +435,7 @@ async function handleChatPost(
     retrievalPolicy: retrieval.policy,
     editPolicy,
     intent: userIntent.kind,
+    switchToAnalytics,
   });
 
   const allTools = buildChatTools({
@@ -708,7 +710,10 @@ async function handleChatPost(
     originalMessages: messages,
     // Stream thought summaries to the chat activity UI (expandable Thought lines).
     sendReasoning: true,
-    messageMetadata: () => ({ chatTarget: "report" as const }),
+    messageMetadata: () => ({
+      chatTarget: "report" as const,
+      ...(switchToAnalytics ? { switchToAnalytics: true as const } : {}),
+    }),
     // Drain the teed SSE now. Wrapping this in Next `after()` waits until the
     // HTTP response finishes — and the tee only finishes if this copy is
     // already being read. That deadlock wedged `next start` after a client
@@ -803,6 +808,7 @@ async function handleChatPost(
               mode,
               promptVersion: CHAT_PROMPT_VERSION,
               chatTarget: "report",
+              switchToAnalytics,
               changeSummary:
                 changeItems.length > 0 ? { items: changeItems } : undefined,
             }),
@@ -828,6 +834,7 @@ async function handleChatPost(
                   mode,
                   promptVersion: CHAT_PROMPT_VERSION,
                   chatTarget: "report",
+                  switchToAnalytics,
                   changeSummary: {
                     items: changeItems,
                     revisionNo: revision.revisionNo,
