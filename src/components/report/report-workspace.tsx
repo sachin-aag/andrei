@@ -758,6 +758,27 @@ export function ReportWorkspace({
     [agentChrome, previewCollapsed]
   );
 
+  // Preview header Close unmounts that file and returns to Report.
+  // The tab-strip X uses closeCanvasTab (neighbor to the left).
+  const closeAttachmentPreview = useCallback(
+    (attachmentId: string) => {
+      forgetDocumentPreview(attachmentId);
+      setOpenAttachmentIds((ids) =>
+        removeAttachmentOpen(ids, attachmentId)
+      );
+      if (activeAttachmentId === attachmentId) {
+        closeDocument();
+      }
+      selectWorkProductView("report");
+    },
+    [
+      activeAttachmentId,
+      closeDocument,
+      forgetDocumentPreview,
+      selectWorkProductView,
+    ]
+  );
+
   const selectCanvasTab = useCallback(
     (id: CanvasTabId) => {
       if (agentChrome && previewCollapsed) {
@@ -1201,7 +1222,7 @@ export function ReportWorkspace({
                       ? attachmentIdFromTab(liveActiveTabId)
                       : null
                   }
-                  onCloseTab={(id) => closeCanvasTab(attachmentTabId(id))}
+                  onCloseTab={closeAttachmentPreview}
                 />
               </div>
             </>
