@@ -85,6 +85,8 @@ function jsonResponse(body: unknown, ok = true): Response {
 }
 
 beforeEach(() => {
+  document.title = "Andrei";
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   vi.mocked(toast.error).mockClear();
   vi.mocked(toast.success).mockClear();
   vi.mocked(uploadFileToLibrary).mockReset();
@@ -105,6 +107,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  document.title = "Andrei";
   resetSessionHoldsForTests();
   Reflect.deleteProperty(window, "showDirectoryPicker");
 });
@@ -496,6 +499,8 @@ describe("DocumentLibrarySection explorer", () => {
     expect(
       screen.getByText(/Switching tabs is OK; closing this tab stops the upload/i)
     ).toBeInTheDocument();
+    expect(screen.getByTestId("library-upload-tab-spinner")).toBeInTheDocument();
+    expect(document.title).toBe("Uploading 1 of 1 — Andrei");
     expect(hasActiveSessionHold()).toBe(true);
 
     const unload = new Event("beforeunload", { cancelable: true });
@@ -506,6 +511,8 @@ describe("DocumentLibrarySection explorer", () => {
       finishUpload(asset);
     });
     expect(await screen.findByText("Upload complete")).toBeInTheDocument();
+    expect(screen.queryByTestId("library-upload-tab-spinner")).not.toBeInTheDocument();
+    expect(document.title).toBe("Andrei");
     expect(hasActiveSessionHold()).toBe(false);
   });
 

@@ -30,6 +30,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  useBusyBrowserTab,
+  type BusyBrowserTabStatus,
+} from "@/hooks/use-busy-browser-tab";
 import type {
   AttachmentLibraryAssetRecord,
   AttachmentLibraryFolderRecord,
@@ -877,6 +881,35 @@ function isLibraryUploadBusy(state: LibraryUploadUi | null): boolean {
   return state?.phase === "scanning" || state?.phase === "uploading";
 }
 
+function busyBrowserTabFromLibraryUpload(
+  state: LibraryUploadUi | null
+): BusyBrowserTabStatus | null {
+  if (!state) return null;
+  switch (state.phase) {
+    case "scanning":
+      return {
+        phase: "checking",
+        scanned: state.scanned,
+        total: state.total,
+      };
+    case "uploading":
+      return {
+        phase: "uploading",
+        current: state.current,
+        total: state.total,
+      };
+    case "picking":
+    case "unsupported":
+    case "error":
+    case "complete":
+      return null;
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
 function isLibraryUploadSessionHold(state: LibraryUploadUi | null): boolean {
   return (
     state?.phase === "picking" ||
@@ -1218,6 +1251,11 @@ export function DocumentLibrarySection({
   const uploadBusy = isLibraryUploadBusy(uploadUi);
   const uploadLocked = uploadBusy || uploadUi?.phase === "picking";
   const sessionHoldActive = isLibraryUploadSessionHold(uploadUi);
+  const busyTabStatus = useMemo(
+    () => busyBrowserTabFromLibraryUpload(uploadUi),
+    [uploadUi]
+  );
+  useBusyBrowserTab(busyTabStatus);
 
   useEffect(() => {
     if (!sessionHoldActive) return;
@@ -1783,8 +1821,15 @@ export function DocumentLibrarySection({
             )}
           >
             <div className="flex items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
-              <p className="text-xs font-medium text-[var(--muted-foreground)]">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--muted-foreground)]">
                 Files
+                {uploadBusy ? (
+                  <Loader2
+                    className="size-3.5 animate-spin"
+                    aria-hidden="true"
+                    data-testid="library-upload-tab-spinner"
+                  />
+                ) : null}
               </p>
               <div className="flex flex-wrap items-center justify-end gap-1">
                 <Button
