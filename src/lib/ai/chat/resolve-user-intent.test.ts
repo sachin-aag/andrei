@@ -77,7 +77,7 @@ describe("resolveChatUserIntent", () => {
     ).resolves.toEqual({ kind: "write", reason: "ambiguous_agent_mode" });
     await expect(
       resolveChatUserIntent({
-        userText: "extract conductivity into the worksheet",
+        userText: "fill the worksheet",
         mode: "agent",
         surface: "document",
       })
@@ -132,7 +132,7 @@ describe("resolveChatUserIntent", () => {
     generateTextMock.mockRejectedValueOnce(new Error("timeout"));
     await expect(
       resolveChatUserIntent({
-        userText: "extract conductivity into the worksheet",
+        userText: "fill the worksheet",
         mode: "agent",
         surface: "document",
       })
@@ -168,6 +168,22 @@ describe("resolveChatUserIntent", () => {
     );
     expect(prompt).toContain("preferredSurface=analytics");
     expect(prompt).toContain("extract conductivity into the worksheet");
+  });
+
+  it("runs the same Lite call for Ask-mode worksheet dumps that rules would skip", async () => {
+    mockIntent("write", 0.9, "analytics");
+    await expect(
+      resolveChatUserIntent({
+        userText: "fill the worksheet",
+        mode: "plan",
+        surface: "document",
+      })
+    ).resolves.toEqual({
+      kind: "read",
+      reason: "llm_analytics_surface",
+      switchToAnalytics: true,
+    });
+    expect(generateTextMock).toHaveBeenCalledOnce();
   });
 
   it("does not offer the switch when Lite is unsure or stays on Report", async () => {
