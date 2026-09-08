@@ -212,8 +212,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   Open attachment canvases stay mounted while the tab is open (hidden/inert
   like Analytics) so switching to Report does not show “Loading preview…”
   or reset the page. `openDocument(id)` without a page does not jump to 1;
-  an explicit `page` (citation) still jumps. Closing the tab unmounts the
-  preview. **Focused** is an explicit skim.
+  an explicit `page` (citation) still jumps. Closing the tab (header Close
+  or the tab X) unmounts the preview and restores the last canvas tab that
+  was active before that file. **Focused** is an explicit skim.
   Adaptive turns skip auto-evidence so the model must grep.
   Adaptive/focused turns do not expose `start_document_review`. Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
