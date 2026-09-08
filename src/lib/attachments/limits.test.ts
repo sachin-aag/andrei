@@ -10,22 +10,16 @@ describe("getAttachmentLimits", () => {
     expect(getAttachmentLimits()).toEqual({
       maxAttachmentBytes: 262_144_000,
       maxAttachmentPages: 500,
-      maxAttachmentsPerReport: 50,
-      maxAttachmentBytesPerReport: 1_073_741_824,
     });
   });
 
   it("uses positive integer env overrides", () => {
     vi.stubEnv("MAX_ATTACHMENT_BYTES", "10");
     vi.stubEnv("MAX_ATTACHMENT_PAGES", "11");
-    vi.stubEnv("MAX_ATTACHMENTS_PER_REPORT", "12");
-    vi.stubEnv("MAX_ATTACHMENT_BYTES_PER_REPORT", "13");
 
     expect(getAttachmentLimits()).toEqual({
       maxAttachmentBytes: 10,
       maxAttachmentPages: 11,
-      maxAttachmentsPerReport: 12,
-      maxAttachmentBytesPerReport: 13,
     });
   });
 
