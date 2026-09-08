@@ -387,6 +387,8 @@ describe("documentCitationRule", () => {
     expect(documentCitationRule(true)).toContain("split edit");
     expect(documentCitationRule(false)).toContain("missing or ambiguous");
     expect(documentCitationRule(true)).toContain("missing or ambiguous");
+    expect(documentCitationRule(false)).toMatch(/absolute PDF page/i);
+    expect(documentCitationRule(true)).toMatch(/absolute PDF page/i);
   });
 });
 

@@ -368,6 +368,7 @@ describe("buildChatTools document_outline", () => {
     expect(result.pages[0]?.pageContext).not.toMatch(/^# /);
     expect(result.pages[0]?.pageContext?.toLowerCase()).not.toMatch(/^system:/);
     expect(result.pages[0]).not.toHaveProperty("transcript");
+    expect(result.pages[0]).not.toHaveProperty("printedPageLabel");
     expect((result as { spans?: unknown[] }).spans).toEqual([]);
   });
 });
@@ -1338,6 +1339,37 @@ describe("buildChatTools propose vs commit", () => {
       (leadIn as { suggestionId: string }).suggestionId
     );
     expect(inserted).toHaveLength(2);
+  });
+
+  it("refuses draft_field citations with out-of-range PDF pages", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att-1",
+        filename: "protocol.pdf",
+        description: null,
+        pageCount: 61,
+        ingestRunId: "ingest-1",
+        documentSummary: null,
+      },
+    ]);
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const blocked = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Objective [protocol.pdf, p. 104]",
+        reasoning: "Draft scope.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(blocked).toMatchObject({ status: "citation_out_of_range" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
   it("refuses draft_field on a filled field unless replaceFilledField is true", async () => {

@@ -53,11 +53,14 @@ export function withSourceCitation<
   return { ...hit, citation: sourceCitationBracket(hit.filename, hit.pageNumber) };
 }
 
+const PDF_PAGE_CITATION_RULE =
+  "Page numbers are the absolute PDF page position (what Adobe/pdf.js uses), never a printed page number from a header or footer. Copy the citation field from a tool result instead of composing one.";
+
 export function documentCitationRule(citationsAtEndOfSection: boolean): string {
   if (citationsAtEndOfSection) {
-    return 'Cite evidence as [filename, p. N] when a tool result has a page for that fact. Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.';
+    return `Cite evidence as [filename, p. N] when a tool result has a page for that fact. ${PDF_PAGE_CITATION_RULE} Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.`;
   }
-  return "Cite evidence in prose as [filename, p. N] when a tool result has a page for that fact. Use [filename] only when the page is missing or ambiguous. Never use <to be filled> in a citation.";
+  return `Cite evidence in prose as [filename, p. N] when a tool result has a page for that fact. ${PDF_PAGE_CITATION_RULE} Use [filename] only when the page is missing or ambiguous. Never use <to be filled> in a citation.`;
 }
 
 function uniquePreserveOrder(items: readonly string[]): string[] {

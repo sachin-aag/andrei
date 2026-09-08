@@ -202,6 +202,13 @@ import { DocumentReviewSession ,
   documentReviewCoverageKey,
 } from "@/lib/ai/chat/document-review";
 import {
+  citationOutOfRangeMessage,
+  outOfRangeCitations,
+  parsedCitationsInText,
+  tableOperationCitationTexts,
+  type ReadyAttachmentForCitations,
+} from "@/lib/ai/chat/citation-grounding";
+import {
   compareDraftedInventory,
   type RecommendedResultsInventory,
 } from "@/lib/ai/chat/results-inventory";
@@ -244,7 +251,8 @@ export type ProposeEditResult =
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
-  | { status: "review_incomplete"; message: string };
+  | { status: "review_incomplete"; message: string }
+  | { status: "citation_out_of_range"; message: string };
 
 export type InsertImageResult =
   | {
@@ -283,7 +291,8 @@ export type EditTableResult =
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
-  | { status: "review_incomplete"; message: string };
+  | { status: "review_incomplete"; message: string }
+  | { status: "citation_out_of_range"; message: string };
 
 export type DraftFieldResult =
   | {
@@ -301,6 +310,7 @@ export type DraftFieldResult =
   | { status: "header_mismatch"; message: string }
   | { status: "figures_not_supported"; message: string }
   | { status: "review_incomplete"; message: string }
+  | { status: "citation_out_of_range"; message: string }
   | { status: typeof NOT_A_REWRITE_STATUS; hint: string; coverage: number }
   | {
       status: "inventory_mismatch";
@@ -935,6 +945,34 @@ export function buildChatTools(opts: {
     return next;
   };
   const fieldReadSnapshots = new Map<string, unknown>();
+  let readyAttachmentsPromise: Promise<ReadyAttachmentForCitations[]> | null =
+    null;
+  const loadReadyAttachments = (): Promise<ReadyAttachmentForCitations[]> => {
+    readyAttachmentsPromise ??= listReadyDocumentsForReport(reportId).then(
+      (docs) =>
+        docs.map((doc) => ({
+          id: doc.attachmentId,
+          filename: doc.filename,
+          pageCount: doc.pageCount,
+        }))
+    );
+    return readyAttachmentsPromise;
+  };
+  const rejectOutOfRangeCitations = async (
+    texts: readonly string[]
+  ): Promise<{ status: "citation_out_of_range"; message: string } | null> => {
+    const hasPageCite = texts.some((text) =>
+      parsedCitationsInText(text).some((cite) => cite.pages.length > 0)
+    );
+    if (!hasPageCite) return null;
+    const attachments = await loadReadyAttachments();
+    const violations = outOfRangeCitations(texts, attachments);
+    if (violations.length === 0) return null;
+    return {
+      status: "citation_out_of_range",
+      message: citationOutOfRangeMessage(violations),
+    };
+  };
   const captureFieldSnapshot = (
     section: SectionType,
     targetField: string,
@@ -1330,7 +1368,6 @@ export function buildChatTools(opts: {
           documentSummary: documentSummary || null,
           pages: outline.pages.map((page) => ({
             pageNumber: page.pageNumber,
-            printedPageLabel: page.printedPageLabel,
             pageContext: page.pageContext
               ? sanitizePromptMetadata(page.pageContext, 400) || null
               : null,
@@ -1363,7 +1400,14 @@ export function buildChatTools(opts: {
         if (!page) return { status: "not_found" as const };
         return {
           status: "found" as const,
-          page,
+          page: {
+            attachmentId: page.attachmentId,
+            filename: page.filename,
+            pageNumber: page.pageNumber,
+            transcript: page.transcript,
+            visualInterpretation: page.visualInterpretation,
+            pageContext: page.pageContext,
+          },
           citation: sourceCitationBracket(page.filename, page.pageNumber),
           trustBoundary: DOCUMENT_TRUST_BOUNDARY,
         };
@@ -1644,6 +1688,12 @@ export function buildChatTools(opts: {
             }),
           } as ProposeEditResult;
         }
+
+        const citationCheck = await rejectOutOfRangeCitations([
+          prepared.insertText,
+          prepared.second?.insertText ?? "",
+        ]);
+        if (citationCheck) return citationCheck;
 
         const normalizedInsert = normalizeSuggestionInsertText(prepared.insertText);
         const second = prepared.second
@@ -2722,6 +2772,13 @@ export function buildChatTools(opts: {
           ? citationAppendPart(stripped.citations, fieldText)
           : undefined;
 
+        const citationCheck = await rejectOutOfRangeCitations([
+          ...tableOperationCitationTexts(stripped.operation),
+          ...stripped.citations,
+          second?.insertText ?? "",
+        ]);
+        if (citationCheck) return citationCheck;
+
         const suggestionId = createId();
         const createTable =
           stripped.operation.kind === "create_table" ? stripped.operation : null;
@@ -2974,6 +3031,8 @@ export function buildChatTools(opts: {
         const draftMarkdown = citationsAtEndOfSection
           ? moveCitationsToEndOfText(normalizedMarkdown)
           : normalizedMarkdown;
+        const citationCheck = await rejectOutOfRangeCitations([draftMarkdown]);
+        if (citationCheck) return citationCheck;
         if (committing) {
           return commitFieldEdit({
             section,
