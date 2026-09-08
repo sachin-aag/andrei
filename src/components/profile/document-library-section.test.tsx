@@ -39,7 +39,26 @@ vi.mock("@/components/report/attachment-preview-panel", () => ({
 }));
 
 vi.mock("@/components/report/manager-selector", () => ({
-  ManagerSelector: () => <div>Sharing picker</div>,
+  ManagerSelector: ({
+    managers,
+    onSelectedIdsChange,
+    emptyMessage,
+  }: {
+    managers: { id: string; name: string }[];
+    onSelectedIdsChange: (ids: string[]) => void;
+    emptyMessage?: string;
+  }) =>
+    managers[0] ? (
+      <button
+        type="button"
+        data-testid="library-share-pick-user"
+        onClick={() => onSelectedIdsChange([managers[0]!.id])}
+      >
+        Add {managers[0].name}
+      </button>
+    ) : (
+      <div>{emptyMessage ?? "Sharing picker"}</div>
+    ),
 }));
 
 const asset = {
@@ -330,6 +349,91 @@ describe("DocumentLibrarySection explorer", () => {
     await screen.findByTestId("library-explorer");
     await waitFor(() => {
       expect(screen.queryByTestId("library-preview-pane")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("library-split-handle")).not.toBeInTheDocument();
+    expect(screen.getByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("Date modified")).toBeInTheDocument();
+  });
+
+  it("opens a resizable viewer when a file is selected", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await user.click(await screen.findByText("coa.pdf"));
+    expect(await screen.findByTestId("library-details-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("library-split-handle")).toBeInTheDocument();
+  });
+
+  it("filters the file list by name", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await screen.findByText("Quality");
+    await user.type(screen.getByTestId("library-search"), "coa");
+    expect(screen.getByText("coa.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("Quality")).not.toBeInTheDocument();
+  });
+
+  it("shares checked folders with selected colleagues", async () => {
+    const user = userEvent.setup();
+    const colleague = {
+      id: "user-2",
+      name: "Alex Chen",
+      email: "alex@example.com",
+      role: "manager" as const,
+      title: "QA",
+    };
+    const nestedAsset = {
+      ...asset,
+      id: "asset-2",
+      filename: "batch-record.pdf",
+      libraryFolderId: "folder-2",
+    };
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/attachment-vault?scope=mine")) {
+        return jsonResponse({
+          folders: [folder, nestedFolder],
+          assets: [asset, nestedAsset],
+        });
+      }
+      if (url.includes("/access")) {
+        return jsonResponse({ grants: [] });
+      }
+      if (url.endsWith("/api/attachment-vault/share") && init?.method === "POST") {
+        return jsonResponse({ sharedAssets: 1, granteeCount: 1 });
+      }
+      return jsonResponse({ error: "unexpected" }, false);
+    });
+
+    render(
+      <DocumentLibrarySection
+        currentUser={{ id: "user-1", role: "engineer" }}
+        workspaceUsers={[colleague]}
+      />
+    );
+    await screen.findByText("batch-record.pdf");
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select folder Quality" })
+    );
+    await user.click(screen.getByTestId("library-share-selected"));
+    expect(await screen.findByTestId("library-share-dialog")).toBeInTheDocument();
+    await user.click(screen.getByTestId("library-share-pick-user"));
+    await user.click(screen.getByTestId("library-share-confirm"));
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(
+        "Shared 1 file with 1 person"
+      );
+    });
+    const shareCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).endsWith("/api/attachment-vault/share") &&
+        init?.method === "POST"
+    );
+    expect(shareCall).toBeTruthy();
+    expect(JSON.parse(String(shareCall?.[1]?.body ?? "{}"))).toMatchObject({
+      folderIds: ["folder-1"],
+      granteeUserIds: ["user-2"],
     });
   });
 

@@ -12,14 +12,17 @@ import {
   FolderPlus,
   FolderUp,
   Loader2,
+  Search,
+  Share2,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AttachmentPreviewPanel } from "@/components/report/attachment-preview-panel";
 import { ManagerSelector } from "@/components/report/manager-selector";
 import { LibraryAssetLabel } from "@/components/profile/library-asset-label";
+import { VaultExplorerList } from "@/components/profile/vault-explorer-list";
+import { VaultShareDialog } from "@/components/profile/vault-share-dialog";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -61,7 +64,6 @@ import {
 import {
   buildVaultLinkPayload,
   countVaultLinkSelection,
-  isVaultAssetChecked,
   toggleVaultAssetSelection,
   toggleVaultFolderSelection,
 } from "@/lib/attachments/add-from-vault-selection";
@@ -69,6 +71,10 @@ import { cn } from "@/lib/utils";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
 const LIBRARY_ROOT = "__library_root__";
+const FILE_PANE_STORAGE_KEY = "vaultExplorerSplit:v1";
+const DEFAULT_FILE_PANE_RATIO = 0.68;
+const MIN_FILE_PANE_RATIO = 0.36;
+const MAX_FILE_PANE_RATIO = 0.82;
 
 type Props = {
   currentUser: Pick<WorkspaceUser, "id" | "role">;
@@ -203,202 +209,6 @@ function describeMoveSelection(
   if (names.length === 1) return names[0]!;
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names[0]} and ${names.length - 1} more`;
-}
-
-function LibraryProfileTree({
-  folderId,
-  depth,
-  foldersByParent,
-  assetsByFolder,
-  inspectedAssetId,
-  checkedAssetIds,
-  checkedFolderIds,
-  excludedAssetIds,
-  parentById,
-  collapsedFolderIds,
-  onInspectAsset,
-  onOpenAsset,
-  onToggleAssetCheck,
-  onToggleFolderCheck,
-  onToggleFolderCollapsed,
-  onArchiveFolder,
-  onArchiveAsset,
-  onDropOnFolder,
-}: {
-  folderId: string | null;
-  depth: number;
-  foldersByParent: Map<string | null, AttachmentLibraryFolderRecord[]>;
-  assetsByFolder: Map<string | null, AttachmentLibraryAssetRecord[]>;
-  inspectedAssetId: string | null;
-  checkedAssetIds: Set<string>;
-  checkedFolderIds: Set<string>;
-  excludedAssetIds: Set<string>;
-  parentById: Map<string, string | null>;
-  collapsedFolderIds: Set<string>;
-  onInspectAsset: (assetId: string) => void;
-  onOpenAsset: (assetId: string) => void;
-  onToggleAssetCheck: (
-    asset: AttachmentLibraryAssetRecord,
-    checked: boolean
-  ) => void;
-  onToggleFolderCheck: (folderId: string, checked: boolean) => void;
-  onToggleFolderCollapsed: (folderId: string) => void;
-  onArchiveFolder: (folderId: string) => void;
-  onArchiveAsset: (assetId: string) => void;
-  onDropOnFolder: (folderId: string | null, dataTransfer: DataTransfer) => void;
-}) {
-  const childFolders = foldersByParent.get(folderId) ?? [];
-  const childAssets = assetsByFolder.get(folderId) ?? [];
-  const indent = depth * 12 + 8;
-
-  return (
-    <div className="space-y-0.5">
-      {childFolders.map((folder) => {
-        const checked = checkedFolderIds.has(folder.id);
-        const collapsed = collapsedFolderIds.has(folder.id);
-        return (
-          <div key={folder.id}>
-            <div
-              className={cn(
-                "group flex items-center gap-1 rounded-md py-1 pr-2 hover:bg-[var(--secondary)]/50",
-                checked && "bg-[var(--secondary)]/40"
-              )}
-              style={{ paddingLeft: `${indent}px` }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                event.dataTransfer.dropEffect = "copy";
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onDropOnFolder(folder.id, event.dataTransfer);
-              }}
-            >
-              <button
-                type="button"
-                aria-label={collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
-                onClick={() => onToggleFolderCollapsed(folder.id)}
-                className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
-              >
-                {collapsed ? (
-                  <ChevronRight className="size-3.5" aria-hidden="true" />
-                ) : (
-                  <ChevronDown className="size-3.5" aria-hidden="true" />
-                )}
-              </button>
-              <Checkbox
-                checked={checked}
-                onCheckedChange={(value) =>
-                  onToggleFolderCheck(folder.id, value === true)
-                }
-                aria-label={`Select folder ${folder.name}`}
-              />
-              <button
-                type="button"
-                onClick={() => onToggleFolderCollapsed(folder.id)}
-                className="flex min-w-0 flex-1 items-center gap-1 text-left"
-              >
-                <Folder
-                  className="size-4 shrink-0 text-[var(--muted-foreground)]"
-                  aria-hidden="true"
-                />
-                <span className="min-w-0 flex-1 truncate text-sm">{folder.name}</span>
-              </button>
-              <button
-                type="button"
-                aria-label={`Archive folder ${folder.name}`}
-                title="Archive folder"
-                onClick={() => onArchiveFolder(folder.id)}
-                className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
-              >
-                <Archive className="size-3.5" aria-hidden="true" />
-              </button>
-            </div>
-            {collapsed ? null : (
-              <LibraryProfileTree
-                folderId={folder.id}
-                depth={depth + 1}
-                foldersByParent={foldersByParent}
-                assetsByFolder={assetsByFolder}
-                inspectedAssetId={inspectedAssetId}
-                checkedAssetIds={checkedAssetIds}
-                checkedFolderIds={checkedFolderIds}
-                excludedAssetIds={excludedAssetIds}
-                parentById={parentById}
-                collapsedFolderIds={collapsedFolderIds}
-                onInspectAsset={onInspectAsset}
-                onOpenAsset={onOpenAsset}
-                onToggleAssetCheck={onToggleAssetCheck}
-                onToggleFolderCheck={onToggleFolderCheck}
-                onToggleFolderCollapsed={onToggleFolderCollapsed}
-                onArchiveFolder={onArchiveFolder}
-                onArchiveAsset={onArchiveAsset}
-                onDropOnFolder={onDropOnFolder}
-              />
-            )}
-          </div>
-        );
-      })}
-      {childAssets.map((asset) => {
-        const checked = isVaultAssetChecked(
-          asset,
-          checkedFolderIds,
-          checkedAssetIds,
-          excludedAssetIds,
-          parentById
-        );
-        const inspected = inspectedAssetId === asset.id;
-        return (
-          <div
-            key={asset.id}
-            className={cn(
-              "group flex items-start gap-2 rounded-md py-1.5 pr-2 transition-colors",
-              inspected
-                ? "bg-[var(--secondary)] text-[var(--foreground)]"
-                : checked
-                  ? "bg-[var(--secondary)]/40"
-                  : "hover:bg-[var(--secondary)]/50"
-            )}
-            style={{ paddingLeft: `${indent + 20}px` }}
-          >
-            <Checkbox
-              checked={checked}
-              onCheckedChange={(value) =>
-                onToggleAssetCheck(asset, value === true)
-              }
-              aria-label={`Select ${asset.filename}`}
-              className="mt-0.5"
-              onClick={(event) => event.stopPropagation()}
-            />
-            <button
-              type="button"
-              onClick={() => onInspectAsset(asset.id)}
-              onDoubleClick={() => onOpenAsset(asset.id)}
-              className="min-w-0 flex-1 text-left"
-              data-testid={`library-file-${asset.id}`}
-            >
-              <LibraryAssetLabel
-                filename={asset.filename}
-                uploadedAt={asset.uploadedAt}
-                processingStatus={asset.processingStatus}
-                processingProgress={asset.processingProgress}
-              />
-            </button>
-            <button
-              type="button"
-              aria-label={`Archive ${asset.filename}`}
-              title="Archive file"
-              onClick={() => onArchiveAsset(asset.id)}
-              className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
-            >
-              <Archive className="size-3.5" aria-hidden="true" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 function LibraryArchiveTree({
@@ -1270,6 +1080,27 @@ export function DocumentLibrarySection({
   const [moveDestination, setMoveDestination] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filePaneRatio, setFilePaneRatio] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_FILE_PANE_RATIO;
+    try {
+      const stored = Number(window.localStorage.getItem(FILE_PANE_STORAGE_KEY));
+      if (
+        Number.isFinite(stored) &&
+        stored >= MIN_FILE_PANE_RATIO &&
+        stored <= MAX_FILE_PANE_RATIO
+      ) {
+        return stored;
+      }
+    } catch {
+      // Private browsing can throw.
+    }
+    return DEFAULT_FILE_PANE_RATIO;
+  });
+  const explorerRef = useRef<HTMLDivElement>(null);
+  const draggingSplit = useRef(false);
   const [uploadUi, setUploadUi] = useState<LibraryUploadUi | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -1592,6 +1423,77 @@ export function DocumentLibrarySection({
     }
   };
 
+  const persistFilePaneRatio = (next: number) => {
+    const clamped = Math.min(
+      MAX_FILE_PANE_RATIO,
+      Math.max(MIN_FILE_PANE_RATIO, next)
+    );
+    setFilePaneRatio(clamped);
+    try {
+      window.localStorage.setItem(FILE_PANE_STORAGE_KEY, String(clamped));
+    } catch {
+      // Ignore quota / private-mode failures.
+    }
+  };
+
+  const confirmShare = async (nextGranteeIds: string[]) => {
+    const payload =
+      checkedCount > 0
+        ? vaultSelectionPayload
+        : inspectedAssetId
+          ? {
+              libraryFolderIds: [] as string[],
+              assetIds: [inspectedAssetId],
+              excludedAssetIds: [] as string[],
+            }
+          : {
+              libraryFolderIds: [] as string[],
+              assetIds: [] as string[],
+              excludedAssetIds: [] as string[],
+            };
+    if (
+      payload.assetIds.length === 0 &&
+      payload.libraryFolderIds.length === 0
+    ) {
+      return;
+    }
+    setSharing(true);
+    try {
+      const response = await fetch("/api/attachment-vault/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetIds: payload.assetIds,
+          folderIds: payload.libraryFolderIds,
+          excludedAssetIds: payload.excludedAssetIds,
+          granteeUserIds: nextGranteeIds,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        sharedAssets?: number;
+        granteeCount?: number;
+      };
+      if (!response.ok) {
+        toast.error(data.error ?? "Could not share selection");
+        return;
+      }
+      const people = data.granteeCount ?? nextGranteeIds.length;
+      const files = data.sharedAssets ?? 0;
+      toast.success(
+        `Shared ${files} file${files === 1 ? "" : "s"} with ${people} ${
+          people === 1 ? "person" : "people"
+        }`
+      );
+      setShareDialogOpen(false);
+      if (inspectedAssetId) {
+        void loadGrants(inspectedAssetId);
+      }
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const uploadLibraryBatch = async (
     files: LibraryUploadFile[],
     targetFolderId: string | null
@@ -1840,8 +1742,17 @@ export function DocumentLibrarySection({
     );
   }, [library]);
 
+  const showViewer = previewAsset != null || inspectedAsset != null;
+
   return (
-    <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+    <section
+      className={cn(
+        "flex min-h-0 flex-col overflow-hidden bg-[var(--card)]",
+        hideIntro
+          ? "h-full"
+          : "rounded-lg border border-[var(--border)] p-5"
+      )}
+    >
       {hideIntro ? null : (
         <>
           <h2 className="text-base font-semibold">Document vault</h2>
@@ -1860,7 +1771,7 @@ export function DocumentLibrarySection({
         <div
           className={cn(
             "flex items-center gap-2 text-sm text-[var(--muted-foreground)]",
-            hideIntro ? null : "mt-6"
+            hideIntro ? "h-full justify-center" : "mt-6"
           )}
         >
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -1868,24 +1779,27 @@ export function DocumentLibrarySection({
         </div>
       ) : (
         <div
+          ref={explorerRef}
           className={cn(
-            "flex min-w-0 flex-col overflow-hidden rounded-md border border-[var(--border)] lg:flex-row",
-            hideIntro ? null : "mt-5",
-            previewOpen
-              ? "h-[min(70vh,720px)]"
-              : "lg:min-h-[280px]"
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex-row",
+            hideIntro ? null : "mt-5 rounded-md border border-[var(--border)]",
+            hideIntro || showViewer ? "h-full min-h-0" : "lg:min-h-[420px]"
           )}
           data-testid="library-explorer"
         >
           <div
             className={cn(
-              "flex min-h-0 min-w-0 flex-col border-b border-[var(--border)] lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r",
-              previewOpen ? "h-full" : "max-h-[min(420px,50vh)] lg:max-h-none"
+              "flex min-h-0 min-w-0 flex-col border-b border-[var(--border)] lg:border-b-0",
+              showViewer ? "lg:border-r" : "flex-1"
             )}
+            style={
+              showViewer
+                ? { flex: `0 0 ${Math.round(filePaneRatio * 1000) / 10}%` }
+                : undefined
+            }
           >
-            <div className="flex items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--muted-foreground)]">
-                Files
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+              <p className="mr-auto flex min-w-0 items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
                 {uploadBusy ? (
                   <Loader2
                     className="size-3.5 animate-spin"
@@ -1893,6 +1807,13 @@ export function DocumentLibrarySection({
                     data-testid="library-upload-tab-spinner"
                   />
                 ) : null}
+                {checkedCount > 0
+                  ? `${checkedCount} selected`
+                  : inspectedAsset && !previewOpen
+                    ? `${inspectedAsset.filename} is selected`
+                    : isEmpty
+                      ? "Drop PDF or Word files, or upload a folder"
+                      : "Click a file to see its details"}
               </p>
               <div className="flex flex-wrap items-center justify-end gap-1">
                 <Button
@@ -1905,7 +1826,7 @@ export function DocumentLibrarySection({
                   data-testid="library-upload-files"
                 >
                   <Upload className="size-3.5" aria-hidden="true" />
-                  Upload files
+                  Upload
                 </Button>
                 <Button
                   type="button"
@@ -1918,6 +1839,36 @@ export function DocumentLibrarySection({
                 >
                   <FolderUp className="size-3.5" aria-hidden="true" />
                   Upload folder
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1 px-2 text-xs"
+                  disabled={uploadLocked}
+                  onClick={() => setCreatingFolder(true)}
+                >
+                  <FolderPlus className="size-3.5" aria-hidden="true" />
+                  New folder
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1 px-2 text-xs"
+                  disabled={moveItemCount === 0 || shareCandidates.length === 0}
+                  title={
+                    shareCandidates.length === 0
+                      ? "No other workspace users to share with"
+                      : moveItemCount === 0
+                        ? "Select a file or folder first"
+                        : "Share the selected items"
+                  }
+                  onClick={() => setShareDialogOpen(true)}
+                  data-testid="library-share-selected"
+                >
+                  <Share2 className="size-3.5" aria-hidden="true" />
+                  {checkedCount > 0 ? `Share ${checkedCount}` : "Share"}
                 </Button>
                 <Button
                   type="button"
@@ -1937,8 +1888,8 @@ export function DocumentLibrarySection({
                 >
                   <FolderInput className="size-3.5" aria-hidden="true" />
                   {checkedCount > 0
-                    ? `Move ${checkedCount} to folder…`
-                    : "Move to folder…"}
+                    ? `Move ${checkedCount}`
+                    : "Move"}
                 </Button>
                 <Button
                   type="button"
@@ -1974,22 +1925,25 @@ export function DocumentLibrarySection({
                   <Archive className="size-3.5" aria-hidden="true" />
                   {checkedCount > 0 ? `Archive ${checkedCount}` : "Archive"}
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={uploadLocked}
-                  onClick={() => setCreatingFolder(true)}
-                >
-                  <FolderPlus className="size-3.5" aria-hidden="true" />
-                  New folder
-                </Button>
+                <label className="relative ml-1">
+                  <Search
+                    className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-[var(--muted-foreground)]"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search"
+                    aria-label="Search vault"
+                    className="h-7 w-40 bg-[var(--background)] pl-7 text-xs"
+                    data-testid="library-search"
+                  />
+                </label>
               </div>
             </div>
 
             <div
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
               onDragOver={(event) => {
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "copy";
@@ -2049,38 +2003,18 @@ export function DocumentLibrarySection({
                       setNewFolderName("");
                     }
                   }}
-                  className="mb-2 w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                  className="m-2 w-[calc(100%-1rem)] rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
                 />
               ) : null}
 
               {uploadUi?.phase === "uploading" ? (
-                <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
+                <p className="px-3 py-2 text-xs text-[var(--muted-foreground)]">
                   Uploading {uploadUi.current} of {uploadUi.total} ·{" "}
                   {uploadUi.filename}
                 </p>
-              ) : checkedCount > 0 ? (
-                <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
-                  {checkedCount} selected. Choose a destination with{" "}
-                  <span className="font-medium text-[var(--foreground)]">
-                    Move {checkedCount} to folder…
-                  </span>
-                </p>
-              ) : inspectedAsset && !previewOpen ? (
-                <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
-                  {inspectedAsset.filename} is selected.{" "}
-                  <span className="font-medium text-[var(--foreground)]">
-                    Move to folder…
-                  </span>{" "}
-                  picks where it goes.
-                </p>
-              ) : isEmpty ? (
-                <p className="mb-2 px-1 text-xs text-[var(--muted-foreground)]">
-                  Drop a folder of PDF and Word files, or use Upload files /
-                  Upload folder. Other file types can be skipped.
-                </p>
               ) : null}
 
-              <LibraryProfileTree
+              <VaultExplorerList
                 folderId={null}
                 depth={0}
                 foldersByParent={tree.foldersByParent}
@@ -2091,6 +2025,8 @@ export function DocumentLibrarySection({
                 excludedAssetIds={excludedAssetIds}
                 parentById={parentById}
                 collapsedFolderIds={collapsedFolderIds}
+                query={searchQuery}
+                showHeader
                 onInspectAsset={inspectAsset}
                 onOpenAsset={openPreview}
                 onToggleAssetCheck={(asset, checked) => {
@@ -2138,91 +2074,119 @@ export function DocumentLibrarySection({
                   void handleDropOnFolder(folderId, dataTransfer)
                 }
               />
+              {(library?.archivedFolders.length ?? 0) +
+                (library?.archivedAssets.length ?? 0) >
+              0 ? (
+                <LibraryArchiveSection
+                  folders={library?.archivedFolders ?? []}
+                  assets={library?.archivedAssets ?? []}
+                  inspectedAssetId={inspectedAssetId}
+                  collapsedFolderIds={collapsedFolderIds}
+                  onInspectAsset={inspectAsset}
+                  onOpenAsset={openPreview}
+                  onToggleFolderCollapsed={(id) => {
+                    setCollapsedFolderIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    });
+                  }}
+                  onUnarchiveFolder={(folderId) =>
+                    void unarchiveItems([], [folderId])
+                  }
+                  onUnarchiveAsset={(assetId) => void unarchiveItems([assetId], [])}
+                />
+              ) : null}
             </div>
-            {(library?.archivedFolders.length ?? 0) +
-              (library?.archivedAssets.length ?? 0) >
-            0 ? (
-              <LibraryArchiveSection
-                folders={library?.archivedFolders ?? []}
-                assets={library?.archivedAssets ?? []}
-                inspectedAssetId={inspectedAssetId}
-                collapsedFolderIds={collapsedFolderIds}
-                onInspectAsset={inspectAsset}
-                onOpenAsset={openPreview}
-                onToggleFolderCollapsed={(id) => {
-                  setCollapsedFolderIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(id)) next.delete(id);
-                    else next.add(id);
-                    return next;
-                  });
-                }}
-                onUnarchiveFolder={(folderId) =>
-                  void unarchiveItems([], [folderId])
-                }
-                onUnarchiveAsset={(assetId) => void unarchiveItems([assetId], [])}
-              />
-            ) : null}
           </div>
 
-          {previewAsset ? (
-            <div
-              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--background)]"
-              data-testid="library-preview-pane"
-            >
-              <AttachmentPreviewPanel
-                testId="library-asset-preview"
-                attachment={{
-                  id: previewAsset.id,
-                  filename: previewAsset.filename,
-                  description: previewAsset.description,
-                  mimeType: previewAsset.mimeType,
-                  sizeBytes: previewAsset.sizeBytes,
-                  pageCount: previewAsset.pageCount,
-                  processingStatus: previewAsset.processingStatus,
-                  processingPage: previewAsset.processingPage,
-                  processingError: previewAsset.processingError,
+          {showViewer ? (
+            <>
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize file list and viewer"
+                data-testid="library-split-handle"
+                tabIndex={0}
+                className="hidden w-1.5 shrink-0 cursor-col-resize bg-[var(--border)] hover:bg-[var(--brand-500)] lg:block"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  draggingSplit.current = true;
+                  event.currentTarget.setPointerCapture(event.pointerId);
                 }}
-                previewUrl={libraryPreviewSrc({
-                  assetId: previewAsset.id,
-                  mimeType: previewAsset.mimeType,
-                  page: 1,
-                })}
-                downloadUrl={libraryDownloadHref(previewAsset.id)}
-                onClose={closePreview}
+                onPointerMove={(event) => {
+                  if (!draggingSplit.current || !explorerRef.current) return;
+                  const rect = explorerRef.current.getBoundingClientRect();
+                  if (rect.width <= 0) return;
+                  persistFilePaneRatio((event.clientX - rect.left) / rect.width);
+                }}
+                onPointerUp={() => {
+                  draggingSplit.current = false;
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") {
+                    event.preventDefault();
+                    persistFilePaneRatio(filePaneRatio - 0.04);
+                  }
+                  if (event.key === "ArrowRight") {
+                    event.preventDefault();
+                    persistFilePaneRatio(filePaneRatio + 0.04);
+                  }
+                }}
               />
-            </div>
-          ) : (
-            <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--background)]">
-              {inspectedAsset ? (
-                <LibraryAssetDetails
-                  asset={inspectedAsset}
-                  folderOptions={folderOptions}
-                  shareCandidates={shareCandidates}
-                  granteeIds={granteeIds}
-                  saving={saving}
-                  archiving={archiving}
-                  onOpenPreview={() => openPreview(inspectedAsset.id)}
-                  onGranteeIdsChange={setGranteeIds}
-                  onSaveGrants={() => void saveGrants()}
-                  onArchiveOrRestore={() => {
-                    if (inspectedAsset.archivedAt) {
-                      void unarchiveItems([inspectedAsset.id], []);
-                      return;
-                    }
-                    void archiveItems([inspectedAsset.id], []);
-                  }}
-                  onMoveThisFile={() => openMoveDialog("inspected")}
-                />
-              ) : (
-                <p className="p-6 text-sm text-[var(--muted-foreground)]">
-                  {isEmpty
-                    ? "Upload PDF or Word files, or drop a folder, to start your vault."
-                    : "Click a file to see its details. Double-click, or use Open preview, to read it. Check files or folders, then Move to folder, to organize them."}
-                </p>
-              )}
-            </div>
-          )}
+              {previewAsset ? (
+                <div
+                  className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--background)]"
+                  data-testid="library-preview-pane"
+                >
+                  <AttachmentPreviewPanel
+                    testId="library-asset-preview"
+                    attachment={{
+                      id: previewAsset.id,
+                      filename: previewAsset.filename,
+                      description: previewAsset.description,
+                      mimeType: previewAsset.mimeType,
+                      sizeBytes: previewAsset.sizeBytes,
+                      pageCount: previewAsset.pageCount,
+                      processingStatus: previewAsset.processingStatus,
+                      processingPage: previewAsset.processingPage,
+                      processingError: previewAsset.processingError,
+                    }}
+                    previewUrl={libraryPreviewSrc({
+                      assetId: previewAsset.id,
+                      mimeType: previewAsset.mimeType,
+                      page: 1,
+                    })}
+                    downloadUrl={libraryDownloadHref(previewAsset.id)}
+                    onClose={closePreview}
+                  />
+                </div>
+              ) : inspectedAsset ? (
+                <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--background)]">
+                  <LibraryAssetDetails
+                    asset={inspectedAsset}
+                    folderOptions={folderOptions}
+                    shareCandidates={shareCandidates}
+                    granteeIds={granteeIds}
+                    saving={saving}
+                    archiving={archiving}
+                    onOpenPreview={() => openPreview(inspectedAsset.id)}
+                    onGranteeIdsChange={setGranteeIds}
+                    onSaveGrants={() => void saveGrants()}
+                    onArchiveOrRestore={() => {
+                      if (inspectedAsset.archivedAt) {
+                        void unarchiveItems([inspectedAsset.id], []);
+                        return;
+                      }
+                      void archiveItems([inspectedAsset.id], []);
+                    }}
+                    onMoveThisFile={() => openMoveDialog("inspected")}
+                  />
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </div>
       )}
 
@@ -2252,6 +2216,16 @@ export function DocumentLibrarySection({
         onCreateFolder={createMoveDestinationFolder}
         moving={moving}
         onConfirm={() => void confirmMove()}
+      />
+
+      <VaultShareDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        itemLabel={describeMoveSelection(movingAssets, movingFolders)}
+        itemCount={Math.max(moveItemCount, 1)}
+        shareCandidates={shareCandidates}
+        sharing={sharing}
+        onConfirm={(ids) => void confirmShare(ids)}
       />
     </section>
   );
