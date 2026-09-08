@@ -93,6 +93,19 @@ function isDocumentNumberCite(core: string): boolean {
 }
 
 /**
+ * MJ / pharma QMS identifiers. Slash SOP paths (`SOP/DP/QA/008`,
+ * `E/PR/070`, `ELR/DP/PR/26/001`) and hyphenated codes with a 2+ letter
+ * prefix plus a later letter segment (`PRQR-25-PR-005`). Does not match
+ * batch-style `B-2024-117` or two-part `DEV-001`.
+ */
+const QMS_DOCUMENT_ID =
+  /\b(?:[A-Z]{1,8}(?:\/[A-Z]{1,8})+\/\d{2,}(?:\/[A-Z0-9]+)*|[A-Z]{2,8}(?:-[A-Z]{1,8})*-\d{2,}(?:-[A-Z]{1,8}-\d{2,})+)\b/i;
+
+function isQmsDocumentIdCite(core: string): boolean {
+  return QMS_DOCUMENT_ID.test(citeCoreWithoutPage(core));
+}
+
+/**
  * Default `@paralleldrive/cuid2` `createId()` token (attachment primary keys).
  * Chat tools list `id=` next to the filename; the model sometimes pastes that
  * id in brackets. Same class as underscored report-number cites: a source
@@ -121,6 +134,7 @@ function isAttachmentIdCite(core: string): boolean {
  * - appendix / report-number cites (`[Appendix B]`,
  *   `[Appendix B DV Report 790-00134R(RevU)]`,
  *   `[790-00134R_Rev_U_Solea_Model_3_Software_…]`)
+ * - MJ QMS identifiers (`[PRQR-25-PR-005]`, `[SOP/DP/QA/008]`, `[E/PR/070]`)
  * - CUID2 attachment ids (`[me1q4zzhb1me0wwskpmqfw7i]`, optional page)
  * - mistaken `[cite: <to be filled>]` / `[cite,; <to be filled>]` wrappers
  */
@@ -134,6 +148,7 @@ export function isCitationShapedBracket(match: string): boolean {
   if (isAttachmentLabelCite(core)) return true;
   if (isAppendixCite(core)) return true;
   if (isDocumentNumberCite(core)) return true;
+  if (isQmsDocumentIdCite(core)) return true;
   if (isAttachmentIdCite(core)) return true;
   return hasSupportedAttachmentExtension(citeCoreWithoutPage(core));
 }

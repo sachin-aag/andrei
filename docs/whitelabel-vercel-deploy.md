@@ -82,7 +82,7 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 
 Partial Vertex config (`GOOGLE_VERTEX_PROJECT` without WIF) causes `Could not load the default credentials` on Vercel. Local-only attachment flags must never be set here or ingest 500s.
 
-MJ `promptVersion` is `mj-sop-dp-qa-008-v1`. Existing evaluations go stale on cutover — tell MJ they need a re-run.
+MJ `promptVersion` is `mj-sop-dp-qa-008-v2`. Existing evaluations go stale on cutover — tell MJ they need a re-run.
 
 ### andrei-convergent (Production + Preview)
 

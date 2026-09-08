@@ -73,8 +73,8 @@ describe("MJ customer pack content", () => {
     expect(DEMO_PACK.wordImportEnabled).toBe(false);
   });
 
-  it("keeps citations inline on MJ", () => {
-    expect(MJ_PACK.citationsAtEndOfSection).toBe(false);
+  it("parks citations at the end of each section, like Convergent", () => {
+    expect(MJ_PACK.citationsAtEndOfSection).toBe(true);
   });
 
   it("keeps expert review off on MJ", () => {

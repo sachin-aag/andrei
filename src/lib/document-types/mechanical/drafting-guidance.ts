@@ -26,7 +26,7 @@ order — never rename, reorder, add, or drop a column.
   with a unique after-table anchor (quote the last data row) so the note lands
   beneath the table. Never empty-anchor propose_edit a footnote — that pairs as
   a lead-in and lands ABOVE the table.
-- Fill known cells; use bracketed placeholders like [serial number] for
+- Fill known cells; use angle-bracket placeholders like <serial number> for
   unknowns. Leave an optional cell blank rather than inventing a column.
 
 2.3 Units Under Test [units_under_test] — targetField \`table\`:
@@ -89,7 +89,7 @@ const HOW_TO_USE = `## How to draft this report
   protocol first and the hardware protocol second throughout.
 - Do not copy sample names, dates, part numbers, serial numbers, asset tags,
   requirement IDs or change-order numbers unless they appear in the attachments.
-- If a fact is missing, use a bracketed placeholder. Do not invent or pad.
+- If a fact is missing, use an angle-bracket placeholder. Do not invent or pad.
 - Engineer-facing replies and reasoning never mention these drafting rules,
   SAMPLE, omit-if switches, targetField names, or tool names. Summarize the
   document sections you wrote. Never call this a recipe.

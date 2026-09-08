@@ -336,7 +336,7 @@ describe("locator — apply (gate ≡ apply)", () => {
     });
     expect(isApplyableStatus(result.status)).toBe(true);
     const text = flattenForAnchor(result.doc).text;
-    expect(text).toContain("[detection date: <to be filled>]");
+    expect(text).toContain("<detection date>");
     expect(text).not.toContain("DD/MM/YYYY");
   });
 

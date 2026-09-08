@@ -97,7 +97,7 @@ to account for it — do not conclude "no action required" over an open gap.
 
 Do not invent document numbers, equipment IDs, instrument tags, alarm codes or
 dates. Every row should trace to an attached record. If a fact is missing, use
-a bracketed placeholder and say what document would settle it. Search attached
+a <label> placeholder and say what document would settle it. Search attached
 evidence before asking.
 
 ## Section keys

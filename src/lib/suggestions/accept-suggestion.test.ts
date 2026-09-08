@@ -93,7 +93,7 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     if (a.ok && b.ok) {
       expect(a.nextSection).toEqual(b.nextSection);
       const text = JSON.stringify(a.nextSection);
-      expect(text).toContain("[detection date: <to be filled>]");
+      expect(text).toContain("<detection date>");
       expect(text).not.toContain("DD/MM/YYYY");
     }
 
@@ -125,7 +125,7 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     expect(json).toContain('"status":"accepted"');
     expect(json).not.toContain('"status":"pending"');
     expect(json).toContain("DD/MM/YYYY");
-    expect(json).toContain("[detection date: <to be filled>]");
+    expect(json).toContain("<detection date>");
   });
 
   it("tracked_change accept of an already-injected preview commits marks so they survive strip", async () => {
@@ -171,7 +171,7 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     expect(json).toContain('"status":"accepted"');
     const stripped = stripPendingSuggestionsExcept(narrative, null);
     expect(JSON.stringify(stripped)).toContain("suggestionInsert");
-    expect(JSON.stringify(stripped)).toContain("[detection date: <to be filled>]");
+    expect(JSON.stringify(stripped)).toContain("<detection date>");
   });
 
   it("accept leaves comment open when locate fails (no status flip)", async () => {

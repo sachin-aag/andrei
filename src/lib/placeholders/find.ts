@@ -36,25 +36,103 @@ export function fromPosFromPlaceholderId(
 }
 
 /**
- * Regex to find placeholders in the text.
- * Matches a bracketed placeholder containing either `<to be filled>` or
- * `to be filled`. AI suggestions sometimes omit the angle brackets, so keep
- * both forms visible in the completion checklist.
- * Examples: `[Batch No. 1: <to be filled>]`, `[<to be filled>]`, `[to be filled]`
+ * Legacy square-bracket placeholders (`[Batch No.: <to be filled>]`) plus
+ * canonical angle-bracket tokens (`<batch number>`, `<to be filled>`).
  */
-export const PLACEHOLDER_REGEX = /\[[^\]]*(?:<\s*)?to be filled(?:\s*>)?[^\]]*\]/gi;
+export const PLACEHOLDER_REGEX =
+  /\[[^\]]*(?:<\s*)?to be filled(?:\s*>)?[^\]]*\]|<[^<>]+>/gi;
 
 /** Any `[...]` span; paired with exclusions in `collectPlaceholderSpans`. */
 export const BRACKET_SPAN_REGEX = /\[[^\]]+\]/g;
+
+/** Any `<...>` span; inner `<to be filled>` inside `[...]` is skipped. */
+export const ANGLE_SPAN_REGEX = /<[^<>]+>/g;
 
 /** Citation-style `[12]` — not treated as an editable placeholder. */
 export { NUMERIC_ONLY_BRACKET };
 
 /**
- * Max length for a placeholder label (inner text before `: <to be filled>`).
+ * Max length for a placeholder label (inner text of `<label>` / before
+ * `: <to be filled>` on the legacy square form).
  * Shared by the scanner and the suggestion/document normalizer so they cannot drift.
  */
 export const MAX_PLACEHOLDER_LABEL_LENGTH = 40;
+
+/** Structural HTML tags — not Placeholders-panel labels (`<date>` is allowed). */
+const HTML_TAG_NAMES = new Set([
+  "a",
+  "article",
+  "aside",
+  "audio",
+  "b",
+  "blockquote",
+  "body",
+  "br",
+  "button",
+  "canvas",
+  "caption",
+  "col",
+  "colgroup",
+  "div",
+  "em",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "head",
+  "header",
+  "hr",
+  "html",
+  "i",
+  "iframe",
+  "img",
+  "input",
+  "li",
+  "main",
+  "math",
+  "mi",
+  "mn",
+  "mo",
+  "mrow",
+  "nav",
+  "ol",
+  "option",
+  "p",
+  "path",
+  "pre",
+  "script",
+  "section",
+  "select",
+  "source",
+  "span",
+  "strong",
+  "style",
+  "sub",
+  "sup",
+  "svg",
+  "table",
+  "tbody",
+  "td",
+  "textarea",
+  "tfoot",
+  "th",
+  "thead",
+  "tr",
+  "ul",
+  "video",
+]);
+
+export function isLikelyHtmlTag(inner: string): boolean {
+  const trimmed = inner.trim();
+  if (!trimmed || trimmed.startsWith("!") || trimmed.startsWith("?")) return true;
+  if (trimmed.includes("=") || trimmed.endsWith("/")) return true;
+  const name = trimmed.replace(/^\//, "").split(/[\s/]/, 1)[0]?.toLowerCase() ?? "";
+  return HTML_TAG_NAMES.has(name);
+}
 
 type TextSpan = { fromRel: number; toRel: number; text: string };
 
@@ -83,9 +161,9 @@ export function isActionablePlaceholderBracket(match: string): boolean {
   if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
 
   // Guidance-only labels without `: <to be filled>` — e.g. `[number]`,
-  // `[equipment ID]`, `[Personnel Name(s)]`. Cap length so long bracketed
-  // prose is not treated as a fill-in field; AI postprocess compacts labels
-  // to this same limit. Parentheses cover plural markers like `(s)`.
+  // `[equipment ID]`, `[Personnel Name(s)]`. Legacy square form; new drafts
+  // use `<number>`. Cap length so long bracketed prose is not treated as a
+  // fill-in field. Parentheses cover plural markers like `(s)`.
   if (
     !inner.includes(":") &&
     inner.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
@@ -97,13 +175,40 @@ export function isActionablePlaceholderBracket(match: string): boolean {
   return false;
 }
 
+/**
+ * True when `<...>` is a fill-in token (`<batch number>`, `<to be filled>`),
+ * not an HTML tag and not the inner `<to be filled>` of a square bracket.
+ */
+export function isActionablePlaceholderAngle(match: string): boolean {
+  if (!/^<[^<>]+>$/.test(match)) return false;
+  const inner = match.slice(1, -1);
+  if (isLikelyHtmlTag(inner)) return false;
+  if (/^\s*\d+\s*$/.test(inner)) return false;
+  if (/^formula$/i.test(inner.trim())) return false;
+  if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
+  if (/to\s+be\s+filled/i.test(inner)) return true;
+  if (/\be\.g\./i.test(inner)) return true;
+
+  const trimmed = inner.trim();
+  if (
+    !inner.includes(":") &&
+    trimmed.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
+    /^[\w\s./'()-]+$/i.test(trimmed)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function collectPlaceholderSpans(text: string): TextSpan[] {
   const spans: TextSpan[] = [];
+  const squareRanges: Array<{ from: number; to: number }> = [];
 
   BRACKET_SPAN_REGEX.lastIndex = 0;
   let bm: RegExpExecArray | null;
   while ((bm = BRACKET_SPAN_REGEX.exec(text)) !== null) {
     const raw = bm[0];
+    squareRanges.push({ from: bm.index, to: bm.index + raw.length });
     if (!isActionablePlaceholderBracket(raw)) continue;
 
     const seg = clipBracketPlaceholderText(raw);
@@ -114,7 +219,24 @@ export function collectPlaceholderSpans(text: string): TextSpan[] {
     });
   }
 
-  return spans;
+  ANGLE_SPAN_REGEX.lastIndex = 0;
+  let am: RegExpExecArray | null;
+  while ((am = ANGLE_SPAN_REGEX.exec(text)) !== null) {
+    const raw = am[0];
+    const from = am.index;
+    const to = from + raw.length;
+    if (squareRanges.some((range) => from >= range.from && to <= range.to)) {
+      continue;
+    }
+    if (!isActionablePlaceholderAngle(raw)) continue;
+    spans.push({
+      fromRel: from,
+      toRel: to,
+      text: raw,
+    });
+  }
+
+  return spans.toSorted((a, b) => a.fromRel - b.fromRel);
 }
 
 const BLOCK_CONTAINER_TYPES = new Set([
@@ -311,7 +433,7 @@ export function findPlaceholders(
   return placeholders;
 }
 
-/** Scan a plain-text field (textarea) for bracket placeholders. Positions are UTF-16 offsets. */
+/** Scan a plain-text field (textarea) for placeholders. Positions are UTF-16 offsets. */
 export function findPlaceholdersInPlainText(
   text: string,
   section: SectionType,

@@ -186,4 +186,45 @@ describe("findPlaceholders", () => {
     };
     expect(findPlaceholders(doc, "define", "narrative")).toEqual([]);
   });
+
+  it("finds canonical <label> placeholders and skips HTML tags", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Batch <batch number> in a <div> and <to be filled>.",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<batch number>",
+      "<to be filled>",
+    ]);
+  });
+
+  it("does not treat MJ QMS ids wrapped as to-be-filled as placeholders", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "since the last Periodic Re-Qualification [PRQR-25-PR-005: <to be filled>]. Use <last PRQ number> if unknown.",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<last PRQ number>",
+    ]);
+  });
 });

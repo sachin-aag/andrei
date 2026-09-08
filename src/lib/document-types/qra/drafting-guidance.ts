@@ -71,7 +71,7 @@ needs no mitigation.
 ## Evidence
 
 Do not invent batch numbers, equipment IDs, or failure modes. If a fact is
-missing, use a bracketed placeholder. Search attached evidence before asking.
+missing, use an angle-bracket placeholder like <failure mode>. Search attached evidence before asking.
 
 ## Section keys
 
