@@ -39,6 +39,7 @@ import { useVoiceDictation } from "@/hooks/use-voice-dictation";
 import { ChatMarkdown } from "@/components/report/chat-markdown";
 import { ChatMessageTargetTag } from "@/components/report/chat-message-target-tag";
 import {
+  assistantOffersAnalyticsSwitch,
   chatMessageTargetLabel,
   tagChatMessages,
   type ChatMessageTarget,
@@ -50,6 +51,7 @@ import {
   AskUserForm,
   type AskUserQuestionInput,
 } from "@/components/report/chat-ask-user-form";
+import { SwitchToAnalyticsCard } from "@/components/report/chat-switch-to-analytics";
 import {
   ANALYTICS_CHAT_MODE_OPTIONS,
   CHAT_PACE_OPTIONS,
@@ -348,6 +350,9 @@ const MessageTurn = memo(function MessageTurn({
   onAnswerQuestions,
   streaming = false,
   filenameByAttachmentId,
+  showAnalyticsSwitch = false,
+  onSwitchToAnalytics,
+  composerOnAnalytics = false,
 }: {
   message: UIMessage;
   chatTarget: ChatMessageTarget | null;
@@ -355,6 +360,9 @@ const MessageTurn = memo(function MessageTurn({
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
   filenameByAttachmentId?: AttachmentFilenameLookup;
+  showAnalyticsSwitch?: boolean;
+  onSwitchToAnalytics?: () => void;
+  composerOnAnalytics?: boolean;
 }) {
   const isUser = message.role === "user";
   const targetLabel = chatTarget ? chatMessageTargetLabel(chatTarget) : null;
@@ -456,6 +464,12 @@ const MessageTurn = memo(function MessageTurn({
           }
         )
       )}
+      {showAnalyticsSwitch && onSwitchToAnalytics ? (
+        <SwitchToAnalyticsCard
+          onSwitch={onSwitchToAnalytics}
+          composerOnAnalytics={composerOnAnalytics}
+        />
+      ) : null}
       <TurnChangeSummary
         parts={parts}
         metadata={
@@ -1692,6 +1706,17 @@ export function ChatPanel({
                 visibleStartIndex + i === messages.length - 1 &&
                 m.role === "assistant"
               }
+              showAnalyticsSwitch={
+                statsEnabled &&
+                m.role === "assistant" &&
+                assistantOffersAnalyticsSwitch(
+                  "metadata" in m
+                    ? (m as { metadata?: unknown }).metadata
+                    : undefined
+                )
+              }
+              onSwitchToAnalytics={() => setComposerChatTarget("analytics")}
+              composerOnAnalytics={targetingAnalytics}
             />
           ))
         )}

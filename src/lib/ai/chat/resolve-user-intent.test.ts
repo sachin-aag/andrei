@@ -39,9 +39,13 @@ vi.mock("@/lib/test/ai-bypass", () => ({
   isTestStubChat: vi.fn(() => false),
 }));
 
-function mockIntent(kind: "social" | "read" | "write", confidence = 0.9) {
+function mockIntent(
+  kind: "social" | "read" | "write",
+  confidence = 0.9,
+  preferredSurface?: "report" | "analytics"
+) {
   generateTextMock.mockResolvedValueOnce({
-    output: { kind, confidence },
+    output: { kind, confidence, preferredSurface },
     usage: { inputTokens: 40, outputTokens: 8 },
   } as never);
 }
@@ -71,6 +75,13 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
       })
     ).resolves.toEqual({ kind: "write", reason: "ambiguous_agent_mode" });
+    await expect(
+      resolveChatUserIntent({
+        userText: "extract conductivity into the worksheet",
+        mode: "agent",
+        surface: "document",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "produce_request" });
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 
@@ -118,6 +129,14 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
       })
     ).resolves.toEqual({ kind: "write", reason: "ambiguous_agent_mode" });
+    generateTextMock.mockRejectedValueOnce(new Error("timeout"));
+    await expect(
+      resolveChatUserIntent({
+        userText: "extract conductivity into the worksheet",
+        mode: "agent",
+        surface: "document",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "produce_request" });
   });
 
   it("falls back when Lite confidence is too low", async () => {
@@ -128,6 +147,58 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
       })
     ).resolves.toEqual({ kind: "write", reason: "ambiguous_agent_mode" });
+  });
+
+  it("runs Lite for a Document worksheet dump and offers Analytics at high confidence", async () => {
+    mockIntent("write", 0.92, "analytics");
+    await expect(
+      resolveChatUserIntent({
+        userText: "extract conductivity into the worksheet",
+        mode: "agent",
+        surface: "document",
+      })
+    ).resolves.toEqual({
+      kind: "read",
+      reason: "llm_analytics_surface",
+      switchToAnalytics: true,
+    });
+    expect(generateTextMock).toHaveBeenCalledOnce();
+    const prompt = String(
+      (generateTextMock.mock.calls[0]?.[0] as { prompt?: string }).prompt ?? ""
+    );
+    expect(prompt).toContain("preferredSurface=analytics");
+    expect(prompt).toContain("extract conductivity into the worksheet");
+  });
+
+  it("does not offer the switch when Lite is unsure or stays on Report", async () => {
+    mockIntent("write", 0.5, "analytics");
+    await expect(
+      resolveChatUserIntent({
+        userText: "fill the worksheet",
+        mode: "agent",
+        surface: "document",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "produce_request" });
+
+    mockIntent("write", 0.95, "report");
+    await expect(
+      resolveChatUserIntent({
+        userText: "put those numbers in the worksheet",
+        mode: "agent",
+        surface: "document",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "produce_request" });
+  });
+
+  it("does not switch on ambiguous Agent text even if Lite names Analytics", async () => {
+    mockIntent("read", 0.9, "analytics");
+    await expect(
+      resolveChatUserIntent({
+        userText: "plan the first 3 sections",
+        mode: "agent",
+        surface: "document",
+      })
+    ).resolves.toEqual({ kind: "read", reason: "llm_read" });
   });
 });
 

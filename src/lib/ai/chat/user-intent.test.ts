@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyChatUserIntent,
   intentToolAvailabilityRule,
+  looksLikeAnalyticsWorkProductRequest,
   messageHasChatImage,
   needsLlmIntentClassification,
   recentAssistantMessageTexts,
@@ -299,6 +300,32 @@ describe("classifyChatUserIntent", () => {
     expect(
       classifyChatUserIntent({ userText: "hi", hasChatImages: true })
     ).toEqual({ kind: "read", reason: "chat_image" });
+  });
+});
+
+describe("looksLikeAnalyticsWorkProductRequest", () => {
+  it("matches filling or extracting into the worksheet", () => {
+    for (const text of [
+      "extract conductivity into the worksheet",
+      "put those numbers in the data worksheet",
+      "fill the worksheet",
+      "can you populate the spreadsheet from the PDF",
+      "yes put it in the data worksheet",
+    ]) {
+      expect(looksLikeAnalyticsWorkProductRequest(text)).toBe(true);
+    }
+  });
+
+  it("does not match report-section writes or worksheet lookups", () => {
+    for (const text of [
+      "what is in the worksheet?",
+      "add a sentence about the worksheet results to Measure",
+      "put the worksheet results into Measure",
+      "draft Purpose",
+      "add a column to the equipment table",
+    ]) {
+      expect(looksLikeAnalyticsWorkProductRequest(text)).toBe(false);
+    }
   });
 });
 

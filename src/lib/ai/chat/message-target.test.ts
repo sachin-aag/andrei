@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assistantOffersAnalyticsSwitch,
   chatMessageTargetFromMetadata,
   chatMessageTargetFromParts,
   chatMessageTargetLabel,
@@ -22,6 +23,18 @@ describe("chatUserTurnMetadata", () => {
     expect(chatUserTurnMetadata("analytics")).toEqual({
       chatTarget: "analytics",
     });
+  });
+});
+
+describe("assistantOffersAnalyticsSwitch", () => {
+  it("is true only for the explicit metadata flag", () => {
+    expect(assistantOffersAnalyticsSwitch({ switchToAnalytics: true })).toBe(
+      true
+    );
+    expect(
+      assistantOffersAnalyticsSwitch({ chatTarget: "report" })
+    ).toBe(false);
+    expect(assistantOffersAnalyticsSwitch(null)).toBe(false);
   });
 });
 

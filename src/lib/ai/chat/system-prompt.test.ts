@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v83-strict-attachment-tags");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v84-worksheet-switch");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -234,6 +234,25 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("remove_image");
     expect(prompt).toContain("Never draft_field a field just to drop a figure");
     expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
+  });
+
+  it("tells Document chat not to dump a worksheet table into the thread", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("Worksheet columns are not writable from Document chat");
+    expect(prompt).toContain("Report | Analytics selector");
+    expect(prompt).not.toContain("## Analytics worksheet");
+  });
+
+  it("adds the switch-to-Analytics block only when the classifier is sure", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "read",
+      switchToAnalytics: true,
+    });
+    expect(prompt).toContain("## Analytics worksheet");
+    expect(prompt).toContain("Switch to Analytics button");
+    expect(prompt).toContain("Do not paste a markdown table");
   });
 
   it("ask mode forbids editing and answers questions", () => {
