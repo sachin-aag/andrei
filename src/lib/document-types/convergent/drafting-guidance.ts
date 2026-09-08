@@ -38,7 +38,7 @@ export const CONVERGENT_RECIPE_DRAFTING_GUIDANCE = `${dvFixedTableFormatGuidance
   Do not omit them.
 - Do not copy sample names, dates, versions, requirement IDs, JIRA tickets,
   asset tags, or addresses unless they appear in the attachments.
-- If a fact is missing, use a bracketed placeholder. Do not invent or pad.
+- If a fact is missing, use an angle-bracket placeholder like <configuration>. Do not invent or pad.
 - Engineer-facing replies and reasoning never mention these drafting rules,
   SAMPLE, omit-if switches, targetField names, or tool names. Summarize the
   document sections you wrote. Never call this a recipe.

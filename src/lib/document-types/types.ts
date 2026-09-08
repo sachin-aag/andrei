@@ -118,10 +118,11 @@ export type DocumentTypeDefinition = {
   /** TipTap schema/toolbar profile. Default `report_section` (no heading nodes). */
   editorProfile?: EditorProfile;
   /**
-   * When true, this type uses Convergent's citation mode: numbered `[n]`
+   * When true, this type uses numbered-citation mode: numbered `[n]`
    * markers at the claim, with `[filename, p. N]` parked under a trailing
    * Citations: heading. Combined with the pack flag by
-   * `citationsAtEndOfSectionFor`.
+   * `citationsAtEndOfSectionFor`. On for Convergent and MJ packs, and for
+   * generic documents on demo.
    */
   citationsAtEndOfSection?: boolean;
   sections: SectionDefinition[];

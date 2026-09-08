@@ -159,8 +159,8 @@ export function documentTypeShortLabel(type: DocumentType): string {
 
 /**
  * Numbered `[n]` markers + trailing Citations: list. On for the whole
- * Convergent pack, and for generic (blank) documents on demo. Off for
- * demo investigation / design verification and for MJ.
+ * Convergent and MJ packs, and for generic (blank) documents on demo. Off for
+ * demo investigation / design verification.
  */
 export function citationsAtEndOfSectionFor(
   documentType?: DocumentType | null

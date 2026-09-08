@@ -110,6 +110,20 @@ describe("isCitationShapedBracket", () => {
     expect(isSourceCitationBracket("[me1q4zzhb1me0wwskpmqfw7i]")).toBe(true);
   });
 
+  it("recognizes MJ QMS document identifiers", () => {
+    expect(isCitationShapedBracket("[PRQR-25-PR-005]")).toBe(true);
+    expect(
+      isCitationShapedBracket("[PRQR-25-PR-005: <to be filled>]")
+    ).toBe(true);
+    expect(isCitationShapedBracket("[SOP/DP/QA/008]")).toBe(true);
+    expect(isCitationShapedBracket("[ELR/DP/PR/26/001]")).toBe(true);
+    expect(isCitationShapedBracket("[E/PR/070]")).toBe(true);
+    expect(isSourceCitationBracket("[PRQR-25-PR-005]")).toBe(true);
+    expect(isCitationShapedBracket("[Batch number: B-2024-117]")).toBe(false);
+    expect(isCitationShapedBracket("[B-2024-117]")).toBe(false);
+    expect(isCitationShapedBracket("[DEV-001]")).toBe(false);
+  });
+
   it("rejects ordinary placeholders and guidance", () => {
     expect(isCitationShapedBracket("[batch number]")).toBe(false);
     expect(isCitationShapedBracket("[SOP No.: <to be filled>]")).toBe(false);
@@ -166,6 +180,12 @@ describe("repairedCitationBracket", () => {
     expect(
       repairedCitationBracket("[me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]")
     ).toBe("[me1q4zzhb1me0wwskpmqfw7i]");
+    expect(
+      repairedCitationBracket("[PRQR-25-PR-005: <to be filled>]")
+    ).toBe("[PRQR-25-PR-005]");
+    expect(
+      repairedCitationBracket("[SOP/DP/QA/008: <to be filled>]")
+    ).toBe("[SOP/DP/QA/008]");
   });
 
   it("returns null for real placeholders and bare citations", () => {

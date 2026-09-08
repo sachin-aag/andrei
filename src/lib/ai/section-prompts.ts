@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "andrei-whitelabel-v2-analyze-method";
+export const PROMPT_VERSION = "andrei-whitelabel-v3-angle-placeholders";
 
 /**
  * Common reviewer rules, scoring system, scope rule, and prompt-injection guard.
@@ -36,7 +36,7 @@ not_met when concrete information is missing, wrong, or structurally absent.
 NOTE ON TABLES: Narrative content may contain GitHub-flavored markdown tables (with a "| --- | --- |" separator row beneath the header). Merged cells (rowspan/colspan in the source document) are expanded so the merged value is repeated in every covered row or column — treat repeated values as a single grouped measurement rather than independent observations. Evaluate table content the same as prose: assess completeness, accuracy, and traceability of the data within tables.
 
 PLACEHOLDER TOKENS:
-- Section content may include bracket placeholders such as [Date: <to be filled>] or [Procedure reference: <to be filled>]. The author will complete them later in the Placeholders panel — not via Suggest fixes.
+- Section content may include angle-bracket placeholders such as <Date> or <Procedure reference>, and legacy square tokens such as [Date: <to be filled>]. The author will complete them later in the Placeholders panel — not via Suggest fixes.
 - For evaluation, treat each placeholder as if it will be filled with appropriate factual data that matches its label (date, time, personnel identifier, batch, procedure reference, location, etc.). Credit the criterion when the narrative places a placeholder where that fact belongs.
 - Do NOT mark not_met or partially_met solely because the literal bracket text appears instead of a final value. Judge structure, coverage, and whether the right kinds of facts are represented.
 - When the ONLY remaining gap is unfilled placeholder(s), status MUST be "partially_met" (never "not_met"). Reasoning may note that the author should complete the placeholder in the Placeholders panel.

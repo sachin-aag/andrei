@@ -12,7 +12,7 @@ export type AskUserQuestionInput = {
  * Structured answer form rendered when the assistant calls the ask_user tool.
  * Interactive only on the newest assistant turn; earlier turns show the
  * questions as a static list. Blank answers are sent as explicit skips so the
- * model uses bracketed placeholders instead of inventing facts.
+ * model uses angle-bracket placeholders instead of inventing facts.
  */
 export function AskUserForm({
   questions,
@@ -75,7 +75,7 @@ export function AskUserForm({
       ) : (
         <div className="mt-2.5 flex items-center justify-between gap-2">
           <span className="text-[11px] text-[var(--muted-foreground)]">
-            Skipped questions become bracketed placeholders.
+            Skipped questions become {"<label>"} placeholders.
           </span>
           <button
             type="button"

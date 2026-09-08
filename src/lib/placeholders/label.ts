@@ -1,8 +1,15 @@
 import { MAX_PLACEHOLDER_LABEL_LENGTH } from "./find";
 
-/** Human-readable label from `[Batch No.: <to be filled>]` style tokens. */
+/** Human-readable label from `<batch number>` or `[Batch No.: <to be filled>]`. */
 export function extractPlaceholderLabel(text: string): string {
-  let inner = text.replace(/^\[/, "").replace(/\]$/, "").trim();
+  let inner = text.trim();
+  if (inner.startsWith("<") && inner.endsWith(">")) {
+    inner = inner.slice(1, -1).trim();
+  } else if (inner.startsWith("[") && inner.endsWith("]")) {
+    inner = inner.slice(1, -1).trim();
+  }
+  const labeledFill = /^to\s+be\s+filled\s*:\s*(.*)$/i.exec(inner);
+  if (labeledFill) inner = labeledFill[1]?.trim() ?? "";
   inner = inner.replace(/<?\s*to be filled\s*>?/gi, "").trim();
   inner = inner.replace(/[:\-]+\s*$/, "").trim();
   return inner || text;

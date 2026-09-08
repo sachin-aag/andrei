@@ -93,7 +93,7 @@ exports[`suggestion apply — currently-correct snapshots (characterization) > r
     {
       "content": [
         {
-          "text": "On dated [detection date: <to be filled>] at approximately [time: <to be filled>] hrs, while performing routine operation.",
+          "text": "On dated <detection date> at approximately <time> hrs, while performing routine operation.",
           "type": "text",
         },
       ],

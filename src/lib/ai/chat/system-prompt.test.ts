@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v85-worksheet-switch-send");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v86-mj-citations-angle-placeholders");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {

@@ -51,7 +51,7 @@ export type CustomerPack = {
    * When true, document citations are numbered at the claim and parked at
    * the end of each section field. New edits that add a source citation keep
    * a `[n]` marker beside the claim and append `n. [filename, p. N]` under
-   * Citations:. On for Convergent; off for demo/MJ. Generic (blank)
+   * Citations:. On for Convergent and MJ; off for demo. Generic (blank)
    * documents enable the same mode via the document-type flag. Also
    * enables the Export without citations DOCX option (trailing citation
    * blocks and matching markers are dropped).
@@ -217,7 +217,7 @@ export const MJ_PACK: CustomerPack = {
   evaluationSectionPromptAdditions: MJ_SECTION_PROMPT_ADDITIONS,
   criterionDescriptionOverrides: MJ_CRITERION_DESCRIPTION_OVERRIDES,
   wordImportEnabled: true,
-  citationsAtEndOfSection: false,
+  citationsAtEndOfSection: true,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
