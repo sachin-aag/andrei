@@ -190,6 +190,47 @@ describe("DocumentLibrarySection explorer", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
   });
 
+  it("selects nested folders and files when a parent folder is checked", async () => {
+    const user = userEvent.setup();
+    const nestedAsset = {
+      ...asset,
+      id: "asset-2",
+      filename: "batch-record.pdf",
+      libraryFolderId: "folder-2",
+    };
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/attachment-vault?scope=mine")) {
+        return jsonResponse({
+          folders: [folder, nestedFolder],
+          assets: [asset, nestedAsset],
+        });
+      }
+      if (url.includes("/access")) {
+        return jsonResponse({ grants: [] });
+      }
+      return jsonResponse({ error: "unexpected" }, false);
+    });
+
+    renderLibrary();
+    await screen.findByText("batch-record.pdf");
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select folder Quality" })
+    );
+
+    expect(
+      screen.getByRole("checkbox", { name: "Select folder Batch records" })
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select batch-record.pdf" })
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select coa.pdf" })
+    ).not.toBeChecked();
+    expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
+  });
+
   it("shows nested destinations as a folder tree, not flattened paths", async () => {
     const user = userEvent.setup();
     renderLibrary();

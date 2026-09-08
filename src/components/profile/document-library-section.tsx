@@ -58,6 +58,13 @@ import {
   libraryDownloadHref,
   libraryPreviewSrc,
 } from "@/lib/attachments/preview-urls";
+import {
+  buildVaultLinkPayload,
+  countVaultLinkSelection,
+  isVaultAssetChecked,
+  toggleVaultAssetSelection,
+  toggleVaultFolderSelection,
+} from "@/lib/attachments/add-from-vault-selection";
 import { cn } from "@/lib/utils";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
@@ -206,6 +213,8 @@ function LibraryProfileTree({
   inspectedAssetId,
   checkedAssetIds,
   checkedFolderIds,
+  excludedAssetIds,
+  parentById,
   collapsedFolderIds,
   onInspectAsset,
   onOpenAsset,
@@ -223,10 +232,15 @@ function LibraryProfileTree({
   inspectedAssetId: string | null;
   checkedAssetIds: Set<string>;
   checkedFolderIds: Set<string>;
+  excludedAssetIds: Set<string>;
+  parentById: Map<string, string | null>;
   collapsedFolderIds: Set<string>;
   onInspectAsset: (assetId: string) => void;
   onOpenAsset: (assetId: string) => void;
-  onToggleAssetCheck: (assetId: string, checked: boolean) => void;
+  onToggleAssetCheck: (
+    asset: AttachmentLibraryAssetRecord,
+    checked: boolean
+  ) => void;
   onToggleFolderCheck: (folderId: string, checked: boolean) => void;
   onToggleFolderCollapsed: (folderId: string) => void;
   onArchiveFolder: (folderId: string) => void;
@@ -310,6 +324,8 @@ function LibraryProfileTree({
                 inspectedAssetId={inspectedAssetId}
                 checkedAssetIds={checkedAssetIds}
                 checkedFolderIds={checkedFolderIds}
+                excludedAssetIds={excludedAssetIds}
+                parentById={parentById}
                 collapsedFolderIds={collapsedFolderIds}
                 onInspectAsset={onInspectAsset}
                 onOpenAsset={onOpenAsset}
@@ -325,7 +341,13 @@ function LibraryProfileTree({
         );
       })}
       {childAssets.map((asset) => {
-        const checked = checkedAssetIds.has(asset.id);
+        const checked = isVaultAssetChecked(
+          asset,
+          checkedFolderIds,
+          checkedAssetIds,
+          excludedAssetIds,
+          parentById
+        );
         const inspected = inspectedAssetId === asset.id;
         return (
           <div
@@ -343,7 +365,7 @@ function LibraryProfileTree({
             <Checkbox
               checked={checked}
               onCheckedChange={(value) =>
-                onToggleAssetCheck(asset.id, value === true)
+                onToggleAssetCheck(asset, value === true)
               }
               aria-label={`Select ${asset.filename}`}
               className="mt-0.5"
@@ -1234,6 +1256,9 @@ export function DocumentLibrarySection({
   const [checkedFolderIds, setCheckedFolderIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [excludedAssetIds, setExcludedAssetIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
     () => new Set()
   );
@@ -1357,7 +1382,16 @@ export function DocumentLibrarySection({
     setPreviewAssetId(null);
   }, []);
 
-  const checkedCount = checkedAssetIds.size + checkedFolderIds.size;
+  const checkedCount = useMemo(() => {
+    if (!library) return 0;
+    return countVaultLinkSelection(
+      library.folders,
+      library.assets,
+      checkedFolderIds,
+      checkedAssetIds,
+      excludedAssetIds
+    );
+  }, [library, checkedFolderIds, checkedAssetIds, excludedAssetIds]);
   const inspectedIsArchived =
     library?.archivedAssets.some((asset) => asset.id === inspectedAssetId) ??
     false;
@@ -1449,16 +1483,9 @@ export function DocumentLibrarySection({
     if (!window.confirm(confirmMessage)) return;
     const ok = await postArchiveChange("archive", { assetIds, folderIds });
     if (!ok) return;
-    setCheckedAssetIds((prev) => {
-      const next = new Set(prev);
-      for (const id of assetIds) next.delete(id);
-      return next;
-    });
-    setCheckedFolderIds((prev) => {
-      const next = new Set(prev);
-      for (const id of folderIds) next.delete(id);
-      return next;
-    });
+    setCheckedAssetIds(new Set());
+    setCheckedFolderIds(new Set());
+    setExcludedAssetIds(new Set());
     if (assetIds.includes(inspectedAssetId ?? "")) {
       setInspectedAssetId(null);
       setPreviewAssetId(null);
@@ -1477,6 +1504,7 @@ export function DocumentLibrarySection({
     if (scope === "inspected" && inspectedAssetId) {
       setCheckedAssetIds(new Set([inspectedAssetId]));
       setCheckedFolderIds(new Set());
+      setExcludedAssetIds(new Set());
     }
     setMoveDestination(null);
     setMoveDialogOpen(true);
@@ -1507,13 +1535,22 @@ export function DocumentLibrarySection({
 
   const confirmMove = async () => {
     if (moveDestination == null) return;
-    const assetIds =
-      checkedAssetIds.size > 0
-        ? [...checkedAssetIds]
+    const payload =
+      checkedCount > 0
+        ? vaultSelectionPayload
         : inspectedAssetId
-          ? [inspectedAssetId]
-          : [];
-    const folderIds = [...checkedFolderIds];
+          ? {
+              libraryFolderIds: [] as string[],
+              assetIds: [inspectedAssetId],
+              excludedAssetIds: [] as string[],
+            }
+          : {
+              libraryFolderIds: [] as string[],
+              assetIds: [] as string[],
+              excludedAssetIds: [] as string[],
+            };
+    const assetIds = payload.assetIds;
+    const folderIds = payload.libraryFolderIds;
     if (assetIds.length === 0 && folderIds.length === 0) return;
 
     setMoving(true);
@@ -1547,6 +1584,7 @@ export function DocumentLibrarySection({
       );
       setCheckedAssetIds(new Set());
       setCheckedFolderIds(new Set());
+      setExcludedAssetIds(new Set());
       setMoveDialogOpen(false);
       setMoveDestination(null);
       await loadLibrary();
@@ -1721,6 +1759,31 @@ export function DocumentLibrarySection({
     return buildFolderChildren(library.folders, library.assets);
   }, [library]);
 
+  const parentById = useMemo(
+    () =>
+      new Map(
+        (library?.folders ?? []).map((folder) => [folder.id, folder.parentId])
+      ),
+    [library?.folders]
+  );
+
+  const vaultSelectionPayload = useMemo(() => {
+    if (!library) {
+      return {
+        libraryFolderIds: [] as string[],
+        assetIds: [] as string[],
+        excludedAssetIds: [] as string[],
+      };
+    }
+    return buildVaultLinkPayload(
+      library.folders,
+      library.assets,
+      checkedFolderIds,
+      checkedAssetIds,
+      excludedAssetIds
+    );
+  }, [library, checkedFolderIds, checkedAssetIds, excludedAssetIds]);
+
   const assetById = useMemo(() => {
     const map = new Map<string, AttachmentLibraryAssetRecord>();
     for (const asset of library?.assets ?? []) {
@@ -1741,22 +1804,26 @@ export function DocumentLibrarySection({
   );
   const folderOptions = library?.folders ?? [];
 
-  const moveTargetOptions = folderOptions.filter(
-    (folder) =>
-      !checkedFolderIds.has(folder.id) &&
-      !isFolderUnderAny(folder.id, checkedFolderIds, folderOptions)
-  );
+  const moveTargetOptions = folderOptions.filter((folder) => {
+    const selectedRoots = new Set(vaultSelectionPayload.libraryFolderIds);
+    return (
+      !selectedRoots.has(folder.id) &&
+      !isFolderUnderAny(folder.id, selectedRoots, folderOptions)
+    );
+  });
 
   const movingAssets =
-    checkedAssetIds.size > 0
-      ? [...checkedAssetIds]
+    vaultSelectionPayload.assetIds.length > 0
+      ? vaultSelectionPayload.assetIds
           .map((id) => assetById.get(id))
-          .filter((asset): asset is AttachmentLibraryAssetRecord => asset != null)
-      : inspectedAsset
+          .filter(
+            (asset): asset is AttachmentLibraryAssetRecord => asset != null
+          )
+      : inspectedAsset && !inspectedIsArchived
         ? [inspectedAsset]
         : [];
   const movingFolders = folderOptions.filter((folder) =>
-    checkedFolderIds.has(folder.id)
+    vaultSelectionPayload.libraryFolderIds.includes(folder.id)
   );
 
   const isEmpty =
@@ -1896,7 +1963,10 @@ export function DocumentLibrarySection({
                   }
                   onClick={() => {
                     if (checkedCount > 0) {
-                      void archiveItems([...checkedAssetIds], [...checkedFolderIds]);
+                      void archiveItems(
+                        vaultSelectionPayload.assetIds,
+                        vaultSelectionPayload.libraryFolderIds
+                      );
                       return;
                     }
                     if (inspectedAssetId && !inspectedIsArchived) {
@@ -2022,24 +2092,41 @@ export function DocumentLibrarySection({
                 inspectedAssetId={inspectedAssetId}
                 checkedAssetIds={checkedAssetIds}
                 checkedFolderIds={checkedFolderIds}
+                excludedAssetIds={excludedAssetIds}
+                parentById={parentById}
                 collapsedFolderIds={collapsedFolderIds}
                 onInspectAsset={inspectAsset}
                 onOpenAsset={openPreview}
-                onToggleAssetCheck={(id, checked) => {
-                  setCheckedAssetIds((prev) => {
-                    const next = new Set(prev);
-                    if (checked) next.add(id);
-                    else next.delete(id);
-                    return next;
-                  });
+                onToggleAssetCheck={(asset, checked) => {
+                  const nextSelectedAssets = new Set(checkedAssetIds);
+                  const nextExcludedAssets = new Set(excludedAssetIds);
+                  toggleVaultAssetSelection(
+                    asset,
+                    checked,
+                    checkedFolderIds,
+                    nextSelectedAssets,
+                    nextExcludedAssets,
+                    parentById
+                  );
+                  setCheckedAssetIds(nextSelectedAssets);
+                  setExcludedAssetIds(nextExcludedAssets);
                 }}
                 onToggleFolderCheck={(id, checked) => {
-                  setCheckedFolderIds((prev) => {
-                    const next = new Set(prev);
-                    if (checked) next.add(id);
-                    else next.delete(id);
-                    return next;
-                  });
+                  const nextSelectedFolders = new Set(checkedFolderIds);
+                  const nextSelectedAssets = new Set(checkedAssetIds);
+                  const nextExcludedAssets = new Set(excludedAssetIds);
+                  toggleVaultFolderSelection(
+                    id,
+                    checked,
+                    library?.folders ?? [],
+                    library?.assets ?? [],
+                    nextSelectedFolders,
+                    nextSelectedAssets,
+                    nextExcludedAssets
+                  );
+                  setCheckedFolderIds(nextSelectedFolders);
+                  setCheckedAssetIds(nextSelectedAssets);
+                  setExcludedAssetIds(nextExcludedAssets);
                 }}
                 onToggleFolderCollapsed={(id) => {
                   setCollapsedFolderIds((prev) => {
