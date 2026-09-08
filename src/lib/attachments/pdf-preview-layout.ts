@@ -13,10 +13,11 @@ export const PDF_PREVIEW_HORIZONTAL_PADDING = 32;
 
 /**
  * Inner page stack. `w-max min-w-full` sizes the stack to the wider of the
- * viewport and the page so a zoomed-in page can be scrolled to its left
- * edge. Flex `items-center` alone overflow-centers a wider child; that
- * left overflow is not in the scrollport, so the scrollbar sits at 0
- * while the left of the page is clipped.
+ * viewport and the page so a zoomed-in or landscape page can be scrolled to
+ * its left edge. Flex `items-center` alone overflow-centers a wider child;
+ * that left overflow is not in the scrollport, so the scrollbar sits at 0
+ * while the left of the page is clipped. Portrait at 100% already fits, so
+ * it did not hit this.
  */
 export const PDF_PREVIEW_PAGE_STACK_CLASSNAME =
   "flex w-max min-w-full flex-col items-center gap-4 p-4";
@@ -24,6 +25,30 @@ export const PDF_PREVIEW_PAGE_STACK_CLASSNAME =
 /** US Letter at 72pt — placeholder size until the first painted page reports its viewport. */
 export const PDF_FALLBACK_PAGE_WIDTH = 612 * PDF_PREVIEW_SCALE;
 export const PDF_FALLBACK_PAGE_HEIGHT = 792 * PDF_PREVIEW_SCALE;
+
+/** Placeholder box for a page that has not painted yet, swapped on 90° / 270°. */
+export function pdfPreviewPageSizeForRotation(
+  width: number,
+  height: number,
+  rotation: number
+): { width: number; height: number } {
+  const quarterTurns = (((rotation % 360) + 360) % 360) / 90;
+  if (quarterTurns === 1 || quarterTurns === 3) {
+    return { width: height, height: width };
+  }
+  return { width, height };
+}
+
+export function pdfPreviewFallbackPageSize(rotation: number): {
+  width: number;
+  height: number;
+} {
+  return pdfPreviewPageSizeForRotation(
+    PDF_FALLBACK_PAGE_WIDTH,
+    PDF_FALLBACK_PAGE_HEIGHT,
+    rotation
+  );
+}
 
 /**
  * Viewer zoom is relative to fit-to-width in the preview panel, not raw PDF

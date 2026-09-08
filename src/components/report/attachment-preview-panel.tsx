@@ -124,7 +124,7 @@ export function AttachmentPreviewPanel({
           </Button>
         ) : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden overscroll-contain">
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden overscroll-contain">
         {canPreview ? (
           isDocx ? (
             <iframe

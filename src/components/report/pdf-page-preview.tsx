@@ -27,6 +27,7 @@ import {
   PDF_PREVIEW_HORIZONTAL_PADDING,
   PDF_PREVIEW_PAGE_STACK_CLASSNAME,
   PDF_PREVIEW_SCALE,
+  pdfPreviewPageSizeForRotation,
   pdfPreviewRenderScale,
   type PdfPreviewTextSpan,
   type PdfTextContentItem,
@@ -402,7 +403,7 @@ function PdfDocumentPages({
   }, [initialPage, numPages, onVisiblePageChangeRef, pdf]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
       <PdfPreviewToolbar
         numPages={numPages}
         pageInput={pageInput}
@@ -421,7 +422,7 @@ function PdfDocumentPages({
         data-pdf-preview-scroll=""
         role="region"
         aria-label={`${title} preview`}
-        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-[var(--muted)]"
+        className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain bg-[var(--muted)]"
       >
         <div
           data-pdf-preview-stack=""
@@ -570,8 +571,13 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   ]);
 
   const canvasVisible = isCanvasVisible(state);
-  const width = canvasVisible ? state.pageWidth : fallbackWidth;
-  const height = canvasVisible ? state.pageHeight : fallbackHeight;
+  const fallback = pdfPreviewPageSizeForRotation(
+    fallbackWidth,
+    fallbackHeight,
+    rotation
+  );
+  const width = canvasVisible ? state.pageWidth : fallback.width;
+  const height = canvasVisible ? state.pageHeight : fallback.height;
 
   return (
     <div

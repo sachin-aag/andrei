@@ -6,6 +6,7 @@ import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import { pdfjsPreviewLoadingOptions } from "@/lib/attachments/pdfjs-browser";
 import {
   PDF_PREVIEW_SCALE,
+  pdfPreviewPageSizeForRotation,
   pdfPreviewRenderScale,
 } from "@/lib/attachments/pdf-preview-layout";
 
@@ -39,11 +40,16 @@ function mockPdfPage(
     }: {
       scale: number;
       rotation?: number;
-    }) => ({
-      width: (overrides.width ?? 200) * scale,
-      height: (overrides.height ?? 400) * scale,
-      rotation,
-    }),
+    }) => {
+      const width = (overrides.width ?? 200) * scale;
+      const height = (overrides.height ?? 400) * scale;
+      const rotated = pdfPreviewPageSizeForRotation(width, height, rotation);
+      return {
+        width: rotated.width,
+        height: rotated.height,
+        rotation,
+      };
+    },
     getTextContent:
       overrides.getTextContent ??
       (async () => ({
@@ -233,6 +239,7 @@ describe("PdfPagePreview", () => {
     expect(screen.getByLabelText("Evidence.pdf preview")).toHaveAttribute(
       "data-pdf-preview-scroll"
     );
+    expect(screen.getByLabelText("Evidence.pdf preview")).toHaveClass("min-w-0");
     const stack = document.querySelector("[data-pdf-preview-stack]");
     expect(stack).toHaveClass("w-max", "min-w-full", "items-center");
   });
@@ -623,11 +630,39 @@ describe("PdfPagePreview", () => {
     await waitFor(() => {
       expect(getPage).toHaveBeenCalled();
       const lastRender = renderPage.mock.calls.at(-1)?.[0] as {
-        viewport?: { rotation?: number };
+        viewport?: { rotation?: number; width?: number };
       };
       expect(lastRender?.viewport).toEqual(
         expect.objectContaining({ rotation: 90 })
       );
+      // Landscape at 100% still fits the panel; overflow is a zoom/wide-page issue.
+      expect(lastRender?.viewport?.width).toBe(expectedRenderedWidth(1));
     });
+    expect(screen.getByLabelText("Evidence.pdf preview")).toHaveClass("min-w-0");
+  });
+
+  it("lets a zoomed landscape page grow wider than the panel", async () => {
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    const canvas = await screen.findByLabelText("Evidence.pdf, page 1");
+    const pageShell = canvas.closest("[data-pdf-page]") as HTMLElement;
+    fireEvent.click(screen.getByTestId("pdf-toolbar-rotate"));
+    fireEvent.click(screen.getByTestId("pdf-toolbar-zoom-in"));
+
+    await waitFor(() => {
+      expect(pageShell.style.width).toBe(`${expectedRenderedWidth(1.25)}px`);
+    });
+    expect(screen.getByLabelText("Evidence.pdf preview")).toHaveClass("min-w-0");
+    expect(document.querySelector("[data-pdf-preview-stack]")).toHaveClass(
+      "w-max",
+      "min-w-full"
+    );
   });
 });

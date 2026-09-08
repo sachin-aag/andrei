@@ -7,6 +7,8 @@ import {
   PDF_PREVIEW_HORIZONTAL_PADDING,
   PDF_PREVIEW_PAGE_STACK_CLASSNAME,
   PDF_PREVIEW_SCALE,
+  pdfPreviewFallbackPageSize,
+  pdfPreviewPageSizeForRotation,
 } from "@/lib/attachments/pdf-preview-layout";
 
 describe("contentUrlFromPreviewSrc", () => {
@@ -103,9 +105,36 @@ describe("pdfPreviewRenderScale", () => {
 });
 
 describe("PDF_PREVIEW_PAGE_STACK_CLASSNAME", () => {
-  it("sizes the stack to the page so zoomed overflow is scrollable on the left", () => {
+  it("sizes the stack to the page so zoomed or landscape overflow is scrollable on the left", () => {
     expect(PDF_PREVIEW_PAGE_STACK_CLASSNAME).toContain("w-max");
     expect(PDF_PREVIEW_PAGE_STACK_CLASSNAME).toContain("min-w-full");
     expect(PDF_PREVIEW_PAGE_STACK_CLASSNAME).toContain("items-center");
+  });
+});
+
+describe("pdfPreviewPageSizeForRotation", () => {
+  it("keeps portrait dimensions at 0° and 180°", () => {
+    expect(pdfPreviewPageSizeForRotation(200, 400, 0)).toEqual({
+      width: 200,
+      height: 400,
+    });
+    expect(pdfPreviewPageSizeForRotation(200, 400, 180)).toEqual({
+      width: 200,
+      height: 400,
+    });
+  });
+
+  it("swaps into landscape on 90° and 270°", () => {
+    expect(pdfPreviewPageSizeForRotation(200, 400, 90)).toEqual({
+      width: 400,
+      height: 200,
+    });
+    expect(pdfPreviewPageSizeForRotation(200, 400, 270)).toEqual({
+      width: 400,
+      height: 200,
+    });
+    expect(pdfPreviewFallbackPageSize(90).width).toBeGreaterThan(
+      pdfPreviewFallbackPageSize(0).width
+    );
   });
 });
