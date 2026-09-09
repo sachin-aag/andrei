@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  assembleUserActivityRows,
-  clampPresenceSeconds,
-  formatActiveDuration,
-} from "./activity";
+import { formatActiveDuration } from "./activity-format";
+import { assembleUserActivityRows, clampPresenceSeconds } from "./activity";
 
 describe("clampPresenceSeconds", () => {
   it("drops junk and caps long gaps", () => {

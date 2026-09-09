@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   formatActiveDuration,
   type UserActivityReport,
-} from "@/lib/usage/activity";
+} from "@/lib/usage/activity-format";
 
 function formatUtcDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {

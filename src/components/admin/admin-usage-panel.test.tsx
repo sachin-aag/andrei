@@ -3,7 +3,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AdminUsagePanel } from "./admin-usage-panel";
-import type { UserActivityReport } from "@/lib/usage/activity";
+import type { UserActivityReport } from "@/lib/usage/activity-format";
 
 const report: UserActivityReport = {
   instanceId: "convergent",
