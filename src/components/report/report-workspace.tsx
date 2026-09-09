@@ -56,6 +56,8 @@ import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { DocumentsPanel } from "./documents/documents-panel";
 import { AttachmentCanvasStack } from "./attachment-canvas-stack";
+import { CanvasTabPane } from "./canvas-tab-pane";
+import { CanvasTabScrollProvider } from "./canvas-tab-scroll";
 import { StatisticalWorkspace, type AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -444,7 +446,6 @@ export function ReportWorkspace({
   const analyticsSurface = liveActiveTabId === "analytics";
   const comparing = liveActiveTabId === "history" && compare != null;
   const viewingDocument = canvasTabKind(liveActiveTabId) === "attachment";
-  const hideReportEditors = !reportSurface;
   const analyticsCanEdit = canSaveReportSection(
     { id: currentUserId, role: currentUserRole, email: currentUserEmail },
     report
@@ -945,6 +946,7 @@ export function ReportWorkspace({
   );
 
   return (
+    <CanvasTabScrollProvider userId={currentUserId} reportId={report.id}>
     <div className="flex h-full flex-col">
       <ElectronicSignatureDialog
         open={signDialog != null}
@@ -1124,44 +1126,49 @@ export function ReportWorkspace({
                   ) : null}
                 </div>
               </div>
-              <div
-                className={cn(
-                  "relative flex min-h-0 min-w-0 flex-1 flex-col",
-                  hideReportEditors ? "overflow-hidden" : "overflow-auto"
-                )}
-              >
-                {comparing && compare?.surface === "report" ? (
-                  <DocumentRevisionDiff
-                    reportId={report.id}
-                    from={compare.from}
-                    to={compare.to}
-                    onExit={() => {
-                      setCompare(null);
-                      setActiveTabId("report");
-                      setWorkProductView("report");
-                    }}
-                  />
+              <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+                {compare ? (
+                  <CanvasTabPane
+                    active={comparing}
+                    scrollable
+                    scrollTabId="history"
+                    testId="work-product-history-canvas"
+                  >
+                    {compare.surface === "report" ? (
+                      <DocumentRevisionDiff
+                        reportId={report.id}
+                        from={compare.from}
+                        to={compare.to}
+                        onExit={() => {
+                          setCompare(null);
+                          setActiveTabId("report");
+                          setWorkProductView("report");
+                        }}
+                      />
+                    ) : (
+                      <AnalyticsRevisionDiff
+                        reportId={report.id}
+                        from={compare.from}
+                        to={compare.to}
+                        onExit={() => {
+                          setCompare(null);
+                          setAnalyticsOpen(true);
+                          setActiveTabId("analytics");
+                          setWorkProductView("analytics");
+                        }}
+                      />
+                    )}
+                  </CanvasTabPane>
                 ) : null}
-                {comparing && compare?.surface === "analytics" ? (
-                  <AnalyticsRevisionDiff
-                    reportId={report.id}
-                    from={compare.from}
-                    to={compare.to}
-                    onExit={() => {
-                      setCompare(null);
-                      setAnalyticsOpen(true);
-                      setActiveTabId("analytics");
-                      setWorkProductView("analytics");
-                    }}
-                  />
-                ) : null}
+                <CanvasTabPane
+                  active={reportSurface}
+                  scrollable
+                  scrollTabId="report"
+                  testId="report-document-canvas"
+                >
                 <div
-                  hidden={hideReportEditors}
-                  inert={hideReportEditors}
-                  data-testid="report-document-canvas"
                   className={cn(
                     "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
-                    hideReportEditors && "hidden",
                     documentCanvasWidthClass({
                       continuousDocument,
                       reviewGutterVisible: showReviewGutter,
@@ -1251,14 +1258,11 @@ export function ReportWorkspace({
                     </aside>
                   ) : null}
                 </div>
+                </CanvasTabPane>
                 {analyticsOpen ? (
-                  <div
-                    hidden={!analyticsSurface}
-                    inert={!analyticsSurface}
-                    className={cn(
-                      "min-h-0 flex-1",
-                      !analyticsSurface && "hidden"
-                    )}
+                  <CanvasTabPane
+                    active={analyticsSurface}
+                    testId="report-analytics-canvas"
                   >
                     <StatisticalWorkspace
                       reportId={report.id}
@@ -1268,7 +1272,7 @@ export function ReportWorkspace({
                       focusApiRef={analyticsFocusRef}
                       onMentionSheetsChange={handleAnalyticsMentionSheetsChange}
                     />
-                  </div>
+                  </CanvasTabPane>
                 ) : null}
                 <AttachmentCanvasStack
                   openAttachmentIds={liveOpenAttachmentIds}
@@ -1365,5 +1369,6 @@ export function ReportWorkspace({
         </div>
       </div>
     </div>
+    </CanvasTabScrollProvider>
   );
 }

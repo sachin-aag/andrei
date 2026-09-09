@@ -75,6 +75,7 @@ import {
 import {
   collectPendingSuggestionMarkIds,
   injectSuggestionMarks,
+  resolveSuggestionPreviewSyncDoc,
   richDocsMatchIgnoringAiPreview,
   shouldApplyExternalValueToEditor,
   shouldSkipSuggestionDocSync,
@@ -1012,7 +1013,11 @@ export function TiptapSectionField({
       tablePreviewSuggestionIdRef.current = null;
     }
 
-    json = stripPendingSuggestionsExcept(json, activeSuggestionId);
+    json = resolveSuggestionPreviewSyncDoc({
+      editorDoc: json,
+      canonicalDoc: canonicalJson,
+      keepMarkId: activeSuggestionId,
+    });
 
     if (
       activeSuggestionId &&

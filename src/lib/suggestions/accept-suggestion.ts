@@ -50,6 +50,7 @@ import {
   writeMergedField,
 } from "@/lib/suggestions/resolve-merge";
 import { findOpenBlockPair } from "@/lib/suggestions/same-turn-block-pair";
+import { fetchWithKeepaliveIfSmall } from "@/lib/suggestions/keepalive-fetch";
 
 export type AcceptSuggestionResult =
   | {
@@ -334,11 +335,15 @@ export async function patchSection(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`/api/reports/${reportId}/sections/${section}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
+    const body = JSON.stringify({ content });
+    res = await fetchWithKeepaliveIfSmall(
+      `/api/reports/${reportId}/sections/${section}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }
+    );
   } catch {
     throw new SectionPersistError(0, "Could not save section. Please try again.");
   }

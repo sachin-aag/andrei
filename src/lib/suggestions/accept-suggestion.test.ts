@@ -4,6 +4,7 @@ import type { CommentRecord } from "@/types/report";
 import {
   acceptSuggestion,
   dismissSuggestion,
+  patchSection,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 import {
@@ -624,5 +625,25 @@ describe("acceptSuggestion same-turn table pair", () => {
     expect(JSON.stringify(result.ok ? result.nextSection : null)).not.toContain(
       "The VCS mapping follows."
     );
+  });
+});
+
+describe("patchSection", () => {
+  it("uses keepalive so Apply can finish after Back", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await patchSection("report-1", "define", {
+      narrative: { type: "doc", content: [] },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/reports/report-1/sections/define",
+      expect.objectContaining({
+        method: "PATCH",
+        keepalive: true,
+      })
+    );
+    vi.unstubAllGlobals();
   });
 });
