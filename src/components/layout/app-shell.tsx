@@ -10,6 +10,7 @@ import {
   FileText,
   Folder,
   Gauge,
+  Receipt,
   ScrollText,
   Users,
   PanelLeftClose,
@@ -57,6 +58,7 @@ export function AppShell({
           documentVaultItem,
           { href: "/admin/users", label: "Users", icon: Users },
           { href: "/admin/limits", label: "Limits", icon: Gauge },
+          { href: "/admin/usage", label: "Usage", icon: Receipt },
           { href: "/admin/prompts", label: "Prompts", icon: ScrollText },
         ]
       : [

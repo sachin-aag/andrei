@@ -180,6 +180,7 @@ describe("AppShell primary navigation", () => {
       "/vault",
       "/admin/users",
       "/admin/limits",
+      "/admin/usage",
       "/admin/prompts",
     ]);
     expect(screen.queryByRole("link", { name: "Insights" })).not.toBeInTheDocument();

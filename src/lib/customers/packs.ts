@@ -11,6 +11,12 @@ import {
 } from "./mj/prompts";
 import { resolveCustomerId, type CustomerId } from "./resolve";
 
+export const CUSTOMER_INSTANCE_LABELS: Record<CustomerId, string> = {
+  demo: "Demo",
+  mj: "MJ",
+  convergent: "Convergent",
+};
+
 export type LogoLayout = "icon" | "wordmark";
 
 export type CustomerBranding = {

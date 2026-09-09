@@ -95,10 +95,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!user.email) return;
       const wsUser = await db.query.workspaceUsers.findFirst({
         where: eq(workspaceUsers.email, user.email),
-        columns: { id: true },
+        columns: { id: true, name: true, email: true, role: true },
       });
       if (wsUser) {
         await recordLastLogin(wsUser.id);
+        const { notifyExternalUserLogin } = await import(
+          "@/lib/ops/notify-login"
+        );
+        void notifyExternalUserLogin({
+          name: wsUser.name,
+          email: wsUser.email,
+          role: wsUser.role,
+        }).catch((error) => {
+          console.error("login notification email failed", error);
+        });
       }
     },
   },

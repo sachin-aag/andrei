@@ -7,6 +7,7 @@ export {
 export { applyCriterionDescriptionOverrides } from "./overrides";
 export {
   getCustomerPack,
+  CUSTOMER_INSTANCE_LABELS,
   isDocumentTypeEnabled,
   isStatisticalAnalysisEnabled,
   isInsightsEnabled,

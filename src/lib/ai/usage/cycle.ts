@@ -16,3 +16,26 @@ export function monthCycleBoundsUtc(yearMonth: string): {
   const cycleEnd = new Date(Date.UTC(year, monthIndex + 1, 1, 0, 0, 0, 0));
   return { cycleStart, cycleEnd };
 }
+
+/** ISO week (Monday 00:00 UTC → next Monday), half-open. */
+export function isoWeekBoundsUtc(date = new Date()): {
+  weekStart: Date;
+  weekEnd: Date;
+} {
+  const day = date.getUTCDay();
+  const daysFromMonday = (day + 6) % 7;
+  const weekStart = new Date(
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      date.getUTCDate() - daysFromMonday,
+      0,
+      0,
+      0,
+      0
+    )
+  );
+  const weekEnd = new Date(weekStart);
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+  return { weekStart, weekEnd };
+}
