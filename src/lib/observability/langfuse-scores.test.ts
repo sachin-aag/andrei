@@ -17,6 +17,16 @@ vi.mock("./langfuse", () => ({
   getActiveTraceId,
   clipLangfuseAttribute: (value: string) =>
     value.length <= 200 ? value : value.slice(0, 200),
+  observationMetadata: (metadata: Record<string, unknown>) => {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(metadata)) {
+      if (value === undefined || value === null) continue;
+      const str = typeof value === "string" ? value : String(value);
+      if (str.length === 0) continue;
+      out[key] = str.length <= 200 ? str : str.slice(0, 200);
+    }
+    return out;
+  },
 }));
 
 import {
@@ -63,6 +73,10 @@ describe("Langfuse suggestion quality scores", () => {
         name: "suggestion_decision",
         value: "accepted",
         dataType: "CATEGORICAL",
+        metadata: {
+          section_id: "define",
+          contentPath: "narrative",
+        },
       })
     );
     expect(flush).toHaveBeenCalled();
@@ -98,6 +112,10 @@ describe("Langfuse suggestion quality scores", () => {
         name: "user_course_corrected",
         value: 1,
         dataType: "BOOLEAN",
+        metadata: {
+          reportId: "rpt-1",
+          reason: "undo_revert",
+        },
       })
     );
   });
@@ -142,6 +160,11 @@ describe("Langfuse suggestion quality scores", () => {
         name: "user_edited_after",
         value: 1,
         dataType: "BOOLEAN",
+        metadata: {
+          section_id: "define",
+          was_llm_generated: "true",
+          user_edited_after: "true",
+        },
       })
     );
     expect(createScore.mock.calls[0]?.[0]).not.toHaveProperty("traceId");

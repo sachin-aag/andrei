@@ -3,6 +3,7 @@ import {
   isLangfuseEnabled,
   clipLangfuseAttribute,
   getActiveTraceId,
+  observationMetadata,
 } from "./langfuse";
 
 /**
@@ -85,6 +86,10 @@ export async function recordSuggestionDecisionScore(
       value: params.decision,
       dataType: "CATEGORICAL",
       comment: clipLangfuseAttribute(comment),
+      metadata: observationMetadata({
+        section_id: params.section,
+        contentPath: params.contentPath,
+      }),
     });
     await client.flush();
   } catch (err) {
@@ -147,6 +152,10 @@ export async function recordUserCourseCorrectScore(
       value: 1,
       dataType: "BOOLEAN",
       comment: clipLangfuseAttribute(comment),
+      metadata: observationMetadata({
+        reportId: params.reportId,
+        reason: params.reason,
+      }),
     });
     await client.flush();
   } catch (err) {
@@ -202,6 +211,11 @@ export async function recordUserEditedAfterScore(
       value: 1,
       dataType: "BOOLEAN",
       comment: clipLangfuseAttribute(comment),
+      metadata: observationMetadata({
+        section_id: params.sectionId,
+        was_llm_generated: true,
+        user_edited_after: true,
+      }),
     });
     await client.flush();
   } catch (err) {
