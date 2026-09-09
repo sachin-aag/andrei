@@ -4,11 +4,11 @@ vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),
 }));
 
-vi.mock("@/lib/ai/usage", () => ({
-  getUserSpendReport: vi.fn(),
+vi.mock("@/lib/usage/activity", () => ({
+  getUserActivityReport: vi.fn(),
 }));
 
-import { getUserSpendReport } from "@/lib/ai/usage";
+import { getUserActivityReport } from "@/lib/usage/activity";
 import { getCurrentUser } from "@/lib/auth/session";
 import { GET } from "./route";
 
@@ -32,32 +32,27 @@ const report = {
   instanceId: "mj" as const,
   instanceLabel: "MJ",
   productName: "M.J. Biopharm",
+  today: "2026-09-09",
   yearMonth: "2026-09",
   weekStart: "2026-09-07T00:00:00.000Z",
   weekEnd: "2026-09-14T00:00:00.000Z",
   cycleStart: "2026-09-01T00:00:00.000Z",
   cycleEnd: "2026-10-01T00:00:00.000Z",
-  weekTotalUsd: 1.25,
-  monthTotalUsd: 4.5,
-  users: [
-    {
-      userId: "u-1",
-      name: "Priya Engineer",
-      email: "priya@mjbiopharm.com",
-      role: "engineer",
-      weekSpendUsd: 1.25,
-      monthSpendUsd: 4.5,
-    },
-  ],
+  dailyActiveUsers: 2,
+  weeklyActiveUsers: 4,
+  monthlyActiveUsers: 6,
+  weekTotalSeconds: 90,
+  monthTotalSeconds: 180,
+  users: [],
 };
 
 describe("/api/admin/usage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getUserSpendReport).mockResolvedValue(report);
+    vi.mocked(getUserActivityReport).mockResolvedValue(report);
   });
 
-  it("returns spend for admins", async () => {
+  it("returns activity for admins", async () => {
     vi.mocked(getCurrentUser).mockResolvedValue(admin as never);
     const response = await GET();
     expect(response.status).toBe(200);

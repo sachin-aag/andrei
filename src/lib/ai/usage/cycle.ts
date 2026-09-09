@@ -39,3 +39,8 @@ export function isoWeekBoundsUtc(date = new Date()): {
   weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
   return { weekStart, weekEnd };
 }
+
+/** UTC calendar date `YYYY-MM-DD`. */
+export function utcDateKey(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}

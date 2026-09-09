@@ -17,12 +17,6 @@ export { AiBudgetExceededError } from "./errors";
 export { estimateAiUsageCostUsd } from "./estimate-cost";
 export { normalizeTokenUsage } from "./token-usage";
 export { isAiBudgetTrackingSkipped } from "./enforcement";
-export {
-  getUserSpendReport,
-  CUSTOMER_INSTANCE_LABELS,
-  type UserSpendReport,
-  type UserSpendRow,
-} from "./user-spend";
 
 export type AiBudgetStatus = {
   monthlyBudgetUsd: number;

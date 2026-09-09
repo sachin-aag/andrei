@@ -5,7 +5,7 @@ import { AdminUsagePanel } from "@/components/admin/admin-usage-panel";
 import { listAdminUsers } from "@/lib/admin/users";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
-import { getUserSpendReport } from "@/lib/ai/usage";
+import { getUserActivityReport } from "@/lib/usage/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export default async function AdminUsagePage() {
   const [users, policy, report] = await Promise.all([
     listAdminUsers(),
     getPasswordPolicy(),
-    getUserSpendReport(),
+    getUserActivityReport(),
   ]);
   const shellUsers = users.map(({ id, name, email, role, title }) => ({
     id,

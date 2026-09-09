@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { roleLabel } from "@/lib/auth/roles";
 import { DEFAULT_INACTIVITY_TIMEOUT_MINUTES } from "@/lib/auth/inactivity-timeout";
 import { InactivityLogout } from "@/components/auth/inactivity-logout";
+import { PresenceHeartbeat } from "@/components/auth/presence-heartbeat";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { getCustomerPack } from "@/lib/customers/packs";
 
@@ -85,6 +86,7 @@ export function AppShell({
         timeoutMinutes={inactivityTimeoutMinutes}
         userId={user.id}
       />
+      <PresenceHeartbeat />
       <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)]">
       <a
         href={`#${mainId}`}

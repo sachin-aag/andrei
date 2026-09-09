@@ -1,5 +1,5 @@
 /**
- * Sachin and Aditya accounts are excluded from customer spend reporting
+ * Sachin and Aditya accounts are excluded from customer activity reporting
  * and from login-alert emails. Plus-aliases (`sachin+admin@…`) count too.
  */
 const INTERNAL_OPERATOR_LOCAL_PARTS = new Set(["sachin", "aditya"]);

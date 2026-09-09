@@ -3,6 +3,7 @@ import {
   pgTable,
   text,
   timestamp,
+  date,
   jsonb,
   pgEnum,
   boolean,
@@ -257,6 +258,28 @@ export const workspaceUsers = pgTable(
   },
   (t) => ({
     emailUnique: uniqueIndex("workspace_users_email_unique").on(t.email),
+  })
+);
+
+/** One UTC calendar day of foreground time per workspace user. */
+export const userActivityDays = pgTable(
+  "user_activity_days",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
+    dayUtc: date("day_utc", { mode: "string" }).notNull(),
+    activeSeconds: integer("active_seconds").notNull().default(0),
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({
+      name: "user_activity_days_pk",
+      columns: [t.userId, t.dayUtc],
+    }),
+    dayIdx: index("user_activity_days_day_utc_idx").on(t.dayUtc),
   })
 );
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getUserSpendReport } from "@/lib/ai/usage";
+import { getUserActivityReport } from "@/lib/usage/activity";
 
 async function requireAdmin() {
   const user = await getCurrentUser();
@@ -26,6 +26,6 @@ export async function GET() {
   const { response } = await requireAdmin();
   if (response) return response;
 
-  const report = await getUserSpendReport();
+  const report = await getUserActivityReport();
   return NextResponse.json(report);
 }

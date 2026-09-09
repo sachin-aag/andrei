@@ -45,6 +45,10 @@ vi.mock("@/components/auth/inactivity-logout", () => ({
   InactivityLogout: () => null,
 }));
 
+vi.mock("@/components/auth/presence-heartbeat", () => ({
+  PresenceHeartbeat: () => null,
+}));
+
 vi.mock("@/providers/user-directory-provider", () => ({
   UserDirectoryProvider: ({ children }: { children: ReactNode }) => children,
 }));

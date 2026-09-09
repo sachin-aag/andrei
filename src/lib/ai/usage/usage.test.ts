@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { currentYearMonthUtc, monthCycleBoundsUtc } from "./cycle";
+import { currentYearMonthUtc, monthCycleBoundsUtc, utcDateKey } from "./cycle";
 import { estimateAiUsageCostUsd } from "./estimate-cost";
 import { resolveModelPricing } from "./pricing";
 import { normalizeTokenUsage } from "./token-usage";
@@ -15,6 +15,10 @@ describe("ai usage cycle", () => {
     const { cycleStart, cycleEnd } = monthCycleBoundsUtc("2026-08");
     expect(cycleStart.toISOString()).toBe("2026-08-01T00:00:00.000Z");
     expect(cycleEnd.toISOString()).toBe("2026-09-01T00:00:00.000Z");
+  });
+
+  it("formats UTC calendar dates", () => {
+    expect(utcDateKey(new Date("2026-09-09T15:00:00.000Z"))).toBe("2026-09-09");
   });
 });
 
