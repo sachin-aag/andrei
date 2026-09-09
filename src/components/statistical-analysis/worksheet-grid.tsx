@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { usePersistedScrollTop } from "@/components/report/canvas-tab-scroll";
 import { MIN_VISIBLE_ROWS } from "@/lib/statistical-analysis/types";
 import {
   clampSelection,
@@ -331,7 +332,7 @@ export function WorksheetGrid({
   readOnly = false,
   onColumnMenuAction,
 }: WorksheetGridProps) {
-  const gridRef = useRef<HTMLDivElement>(null);
+  const gridRef = usePersistedScrollTop("analytics");
   const inputRef = useRef<HTMLInputElement>(null);
   const headerInputRef = useRef<HTMLInputElement>(null);
   const rowMenuRangeRef = useRef({ start: 0, end: 0 });
