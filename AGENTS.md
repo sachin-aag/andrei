@@ -81,7 +81,10 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   show for one or more open suggestions).
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
-  are silently missing in Plan.
+  are silently missing in Plan. Internal `unsupported_tool` is the exception
+  — keep it out of the allowlist and `activeTools`; `repairChatToolCall`
+  remaps a hallucinated name such as `edit_table` onto it so
+  `AI_NoSuchToolError` cannot fail the chat.
 - Chat/workspace changes walk the **full spectrum**, not just the control you
   clicked: Document **and** Agent chrome, Report chat **and** Analytics chat,
   then UI → request body → route parser → prompt → tools → Plan allowlist →

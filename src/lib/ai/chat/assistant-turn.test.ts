@@ -4,6 +4,7 @@ import {
   assistantPartsHaveVisibleContent,
   assistantPartsHaveVisibleText,
   assistantProgressSignature,
+  chatUiStreamErrorText,
   chatWatchdogPhase,
   formatChatLlmError,
   isChatClientDisconnectError,
@@ -402,5 +403,24 @@ describe("formatChatLlmError", () => {
     expect(formatChatLlmError(new TypeError("no content"))).toBe(
       "TypeError: no content"
     );
+  });
+});
+
+describe("chatUiStreamErrorText", () => {
+  it("does not fail the turn for the production edit_table NoSuchToolError", () => {
+    const error = new Error(
+      "Model tried to call unavailable tool 'edit_table'. Available tools: read_section, search_documents, document_outline, read_document_page, start_document_review, continue_document_review, finish_document_review, ask_user."
+    );
+    const formatted = chatUiStreamErrorText(error);
+    expect(formatted.recoverable).toBe(true);
+    expect(formatted.text).toContain("edit_table is not available this turn");
+    expect(formatted.text).not.toBe(CHAT_ASSISTANT_ERROR_MESSAGE);
+  });
+
+  it("keeps the generic copy for unrelated stream failures", () => {
+    expect(chatUiStreamErrorText(new TypeError("socket hang up"))).toEqual({
+      recoverable: false,
+      text: CHAT_ASSISTANT_ERROR_MESSAGE,
+    });
   });
 });

@@ -1,8 +1,29 @@
 import type { UIMessage } from "ai";
+import {
+  isUnavailableToolStreamError,
+  unavailableToolNameFromError,
+  unsupportedChatToolHint,
+} from "@/lib/ai/chat/unsupported-tool";
 
 /** User-facing copy when a chat turn fails or the model returns nothing visible. */
 export const CHAT_ASSISTANT_ERROR_MESSAGE =
   "The assistant hit an error. Please try again.";
+
+/**
+ * `toUIMessageStreamResponse({ onError })` formats both fatal stream errors
+ * *and* invalid-tool `errorText`. Treat a hallucinated tool name as recoverable
+ * so the turn continues with a hint instead of the generic failure copy.
+ */
+export function chatUiStreamErrorText(error: unknown): {
+  recoverable: boolean;
+  text: string;
+} {
+  if (isUnavailableToolStreamError(error)) {
+    const name = unavailableToolNameFromError(error) ?? "that tool";
+    return { recoverable: true, text: unsupportedChatToolHint(name) };
+  }
+  return { recoverable: false, text: CHAT_ASSISTANT_ERROR_MESSAGE };
+}
 
 /** User-facing copy when the stream is cancelled or hits the deadline. */
 export const CHAT_ASSISTANT_INTERRUPTED_MESSAGE =

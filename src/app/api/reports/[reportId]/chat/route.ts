@@ -125,6 +125,7 @@ import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import { captureChatAssistantFailure } from "@/lib/ai/chat/chat-failure-telemetry";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
+  chatUiStreamErrorText,
   consumeAssistantStreamWithBudget,
   formatChatLlmError,
   isChatTurnDeadlineReached,
@@ -134,6 +135,10 @@ import {
   scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
 import { tableEditLoopDirective } from "@/lib/ai/chat/table-edit-loop";
+import {
+  advertisedChatToolNames,
+  withUnsupportedChatToolFallback,
+} from "@/lib/ai/chat/unsupported-tool";
 import {
   buildMentionBlock,
   mentionedAttachmentIds,
@@ -456,11 +461,10 @@ async function handleChatPost(
     mode === "plan"
       ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
-  const tools: ToolSet = restrictToolsForIntent(
-    scopedTools,
-    userIntent.kind,
-    "document"
+  const tools: ToolSet = withUnsupportedChatToolFallback(
+    restrictToolsForIntent(scopedTools, userIntent.kind, "document")
   );
+  const advertisedTools = advertisedChatToolNames(tools);
 
   const stubSection =
     sectionScope === "all"
@@ -531,6 +535,7 @@ async function handleChatPost(
       system,
       messages: modelMessages,
       tools,
+      activeTools: advertisedTools,
       experimental_repairToolCall: repairChatToolCall,
       stopWhen: async () => {
         // Cancel or wall-clock deadline. No tool-step cap. Loop guards
@@ -577,7 +582,7 @@ async function handleChatPost(
         const prepared = prepareDocumentReviewStep({
           policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
-          availableTools: Object.keys(tools),
+          availableTools: advertisedTools,
         });
         if (!prepared) return undefined;
         let activeTools = alreadyDraftedActive
@@ -722,6 +727,15 @@ async function handleChatPost(
       void drainSseStream(stream);
     },
     onError: (error) => {
+      const formatted = chatUiStreamErrorText(error);
+      if (formatted.recoverable) {
+        console.warn("chat: unavailable tool in stream", {
+          reportId,
+          sessionId,
+          error: formatChatLlmError(error),
+        });
+        return formatted.text;
+      }
       console.error("chat: assistant stream error", {
         reportId,
         sessionId,
@@ -741,7 +755,7 @@ async function handleChatPost(
       } catch {
         void reportFailure();
       }
-      return CHAT_ASSISTANT_ERROR_MESSAGE;
+      return formatted.text;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
       stopTurnGuards();

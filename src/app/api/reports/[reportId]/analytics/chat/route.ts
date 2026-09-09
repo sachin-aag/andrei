@@ -69,6 +69,10 @@ import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
+  advertisedChatToolNames,
+  withUnsupportedChatToolFallback,
+} from "@/lib/ai/chat/unsupported-tool";
+import {
   messageHasChatImage,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
@@ -77,6 +81,7 @@ import { resolveChatUserIntent } from "@/lib/ai/chat/resolve-user-intent";
 import { captureChatAssistantFailure } from "@/lib/ai/chat/chat-failure-telemetry";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
+  chatUiStreamErrorText,
   consumeAssistantStreamWithBudget,
   formatChatLlmError,
   isChatTurnDeadlineReached,
@@ -219,20 +224,23 @@ async function handleAnalyticsChatPost(
     mentionBlock: buildAnalyticsMentionBlock(mentions),
     intent: userIntent.kind,
   });
-  const tools = restrictToolsForIntent(
-    buildAnalyticsChatTools({
-      reportId,
-      canEdit: canWrite,
-      documentType: report.documentType,
-      searchGate,
-      pinnedAttachmentIds,
-      focusedSheetId,
-      actor: auditActorFromUser(user),
-      turnStartedAtMs,
-    }),
-    userIntent.kind,
-    "analytics"
+  const tools = withUnsupportedChatToolFallback(
+    restrictToolsForIntent(
+      buildAnalyticsChatTools({
+        reportId,
+        canEdit: canWrite,
+        documentType: report.documentType,
+        searchGate,
+        pinnedAttachmentIds,
+        focusedSheetId,
+        actor: auditActorFromUser(user),
+        turnStartedAtMs,
+      }),
+      userIntent.kind,
+      "analytics"
+    )
   );
+  const advertisedTools = advertisedChatToolNames(tools);
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
   const model = isTestStubChat()
@@ -287,6 +295,7 @@ async function handleAnalyticsChatPost(
       system,
       messages: modelMessages,
       tools,
+      activeTools: advertisedTools,
       experimental_repairToolCall: repairChatToolCall,
       stopWhen: async () => {
         // Cancel or wall-clock deadline. No tool-step cap. Loop guards
@@ -412,6 +421,15 @@ async function handleAnalyticsChatPost(
       void drainSseStream(stream);
     },
     onError: (error) => {
+      const formatted = chatUiStreamErrorText(error);
+      if (formatted.recoverable) {
+        console.warn("analytics-chat: unavailable tool in stream", {
+          reportId,
+          sessionId,
+          error: formatChatLlmError(error),
+        });
+        return formatted.text;
+      }
       console.error("analytics-chat: assistant stream error", {
         reportId,
         sessionId,
@@ -431,7 +449,7 @@ async function handleAnalyticsChatPost(
       } catch {
         void reportFailure();
       }
-      return CHAT_ASSISTANT_ERROR_MESSAGE;
+      return formatted.text;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
       stopTurnGuards();

@@ -214,6 +214,33 @@ describe("buildChatActivityBlocks", () => {
 
     expect(blocks[0]?.kind).toBe("document-review");
   });
+
+  it("does not show a fatal error chip for a remapped unavailable tool", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart(
+        "unsupported_tool",
+        "output-available",
+        { requestedTool: "edit_table" },
+        {
+          status: "unavailable",
+          requestedTool: "edit_table",
+          hint: "edit_table is not available this turn.",
+        }
+      ),
+    ] as never);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind).toBe("activity");
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.label).toBe("edit_table isn't available this step");
+    expect(blocks[0].node.tone).toBe("muted");
+    expect(blocks[0].node.children[0]).toEqual(
+      expect.objectContaining({
+        kind: "detail",
+        label: "edit_table is not available this turn.",
+      })
+    );
+  });
 });
 
 describe("readChatToolPart", () => {
