@@ -136,6 +136,40 @@ describe("citation highlight decorations", () => {
     expect(source?.openRaw).toBe("[protocol.pdf, p. 3]");
   });
 
+  it("keeps commas inside a filename as one clickable citation", () => {
+    const schema = schemaWithTable();
+    const cite =
+      "[URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16]";
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text(`Citations: 1. ${cite}`)]),
+    ]);
+    const highlights = findCitationHighlightsInPmDoc(doc).filter(
+      (h) => h.kind === "source"
+    );
+    expect(highlights).toHaveLength(1);
+    expect(highlights[0]?.openRaw).toBe(cite);
+    expect(
+      doc.textBetween(highlights[0]!.fromPos, highlights[0]!.toPos)
+    ).toBe(cite);
+  });
+
+  it("keeps repeated p. N lists as one clickable citation", () => {
+    const schema = schemaWithTable();
+    const cite =
+      "[Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2]";
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text(`2. ${cite}`)]),
+    ]);
+    const highlights = findCitationHighlightsInPmDoc(doc).filter(
+      (h) => h.kind === "source"
+    );
+    expect(highlights).toHaveLength(1);
+    expect(highlights[0]?.openRaw).toBe(cite);
+    expect(
+      doc.textBetween(highlights[0]!.fromPos, highlights[0]!.toPos)
+    ).toBe(cite);
+  });
+
   it("splits two files in one bracket into two clickable spans", () => {
     const schema = schemaWithTable();
     const cite =

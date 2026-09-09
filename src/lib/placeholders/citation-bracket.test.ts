@@ -218,6 +218,29 @@ describe("parseSourceCitation", () => {
     });
   });
 
+  it("keeps commas inside the filename and parses a single page", () => {
+    expect(
+      parseSourceCitation(
+        "[URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16]"
+      )
+    ).toEqual({
+      filename:
+        "URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf",
+      pages: [16],
+    });
+  });
+
+  it("parses repeated p. N page lists as pages of the same file", () => {
+    expect(
+      parseSourceCitation(
+        "[Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2]"
+      )
+    ).toEqual({
+      filename: "Master PMC-PR-014-R03 Filling and Capping Machine.pdf",
+      pages: [1, 2],
+    });
+  });
+
   it("omits pages when the cite has no page suffix", () => {
     expect(parseSourceCitation("[protocol.pdf]")).toEqual({
       filename: "protocol.pdf",
@@ -261,6 +284,26 @@ describe("splitSourceCitationParts", () => {
     ]);
   });
 
+  it("does not split on commas inside a pdf filename", () => {
+    expect(
+      splitSourceCitationParts(
+        "URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16"
+      )
+    ).toEqual([
+      "URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16",
+    ]);
+  });
+
+  it("keeps repeated p. N lists on one file", () => {
+    expect(
+      splitSourceCitationParts(
+        "Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2"
+      )
+    ).toEqual([
+      "Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2",
+    ]);
+  });
+
   it("splits two filenames without pages", () => {
     expect(splitSourceCitationParts("fileA.pdf, fileB.pdf")).toEqual([
       "fileA.pdf",
@@ -279,6 +322,22 @@ describe("sourceCitationLinkSpans", () => {
   it("keeps a single file as one whole-bracket link", () => {
     expect(sourceCitationLinkSpans("[protocol.pdf, p. 3]")).toEqual([
       { from: 0, to: "[protocol.pdf, p. 3]".length, openRaw: "[protocol.pdf, p. 3]" },
+    ]);
+  });
+
+  it("keeps a comma-in-filename cite as one whole-bracket link", () => {
+    const match =
+      "[URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16]";
+    expect(sourceCitationLinkSpans(match)).toEqual([
+      { from: 0, to: match.length, openRaw: match },
+    ]);
+  });
+
+  it("keeps a repeated p. N cite as one whole-bracket link", () => {
+    const match =
+      "[Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2]";
+    expect(sourceCitationLinkSpans(match)).toEqual([
+      { from: 0, to: match.length, openRaw: match },
     ]);
   });
 

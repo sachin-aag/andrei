@@ -53,4 +53,28 @@ describe("linkifyCitationText", () => {
     await userEvent.click(links[1]!);
     expect(onOpen).toHaveBeenCalledWith("[CSV-RTM-PR-053.pdf, p. 5]");
   });
+
+  it("keeps commas inside a filename as one link", async () => {
+    const onOpen = vi.fn();
+    const cite =
+      "[URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16]";
+    render(<>{linkifyCitationText(`1. ${cite}`, onOpen)}</>);
+    const links = screen.getAllByTestId("citation-link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveTextContent(cite);
+    await userEvent.click(links[0]!);
+    expect(onOpen).toHaveBeenCalledWith(cite);
+  });
+
+  it("keeps repeated p. N lists as one link", async () => {
+    const onOpen = vi.fn();
+    const cite =
+      "[Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2]";
+    render(<>{linkifyCitationText(`2. ${cite}`, onOpen)}</>);
+    const links = screen.getAllByTestId("citation-link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveTextContent(cite);
+    await userEvent.click(links[0]!);
+    expect(onOpen).toHaveBeenCalledWith(cite);
+  });
 });
