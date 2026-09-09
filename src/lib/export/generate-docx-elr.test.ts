@@ -97,5 +97,12 @@ describe("ELR DOCX export", () => {
     expect(paragraphStyle(xml, "3.1 RESPONSIBILITY")).toBe("Heading2");
     expect(paragraphStyle(xml, "3.9.1 BREAKDOWN TREND SUMMARY")).toBe("Heading3");
     expect(paragraphStyle(xml, "9.0 APPROVAL PAGE")).toBe("Heading1");
+    expect(xml).toContain('w:orient="landscape"');
+    const qualificationAt = xml.indexOf("3.4 QUALIFICATION");
+    const landscapeBreaks = [...xml.matchAll(/w:orient="landscape"/g)];
+    expect(qualificationAt).toBeGreaterThan(-1);
+    expect(
+      landscapeBreaks.some((m) => (m.index ?? 0) > qualificationAt)
+    ).toBe(true);
   });
 });

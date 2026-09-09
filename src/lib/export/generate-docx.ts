@@ -102,6 +102,23 @@ const MECHANICAL_DV_RESULTS_TABLE_KEYS = new Set([
   "systemResultsTableXml",
 ]);
 
+/** MJ ELR observation grids are too wide for A4 portrait even at 7–10 columns. */
+const ELR_LANDSCAPE_TABLE_KEYS = new Set([
+  "qualificationTableXml",
+  "mediaFillTableXml",
+  "monitoringTableXml",
+  "calibrationTableXml",
+  "preventiveMaintenanceTableXml",
+  "breakdownTableXml",
+  "breakdownTrendXml",
+  "qmsTableXml",
+  "alarmTableXml",
+  "alarmTrendXml",
+  "accessControlTableXml",
+  "auditTrailTableXml",
+  "csvStatusTableXml",
+]);
+
 function stringifyDvTemplateValue(
   value: unknown,
   ctx: DocxExportContext,
@@ -686,6 +703,9 @@ async function generateDesignVerificationDocx({
     const isMechanicalResults =
       documentType === "mechanical_design_verification" &&
       MECHANICAL_DV_LANDSCAPE_TABLE_KEYS.has(key);
+    const isElrLandscapeTable =
+      documentType === "equipment_lifecycle_report" &&
+      ELR_LANDSCAPE_TABLE_KEYS.has(key);
     data[key] = stringifyDvTemplateValue(
       value,
       ctx,
@@ -694,7 +714,9 @@ async function generateDesignVerificationDocx({
             forceLandscapeTables: true,
             resultsColWidths: MECHANICAL_DV_RESULTS_TABLE_KEYS.has(key),
           }
-        : undefined
+        : isElrLandscapeTable
+          ? { forceLandscapeTables: true }
+          : undefined
     );
   }
 
