@@ -208,6 +208,29 @@ describe("findPlaceholders", () => {
     ]);
   });
 
+  it("flags angle placeholders that include a colon hint", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text:
+                "performance, maintenance, and quality data specific to the <container format: Vial / Cartridge> format over the review period from <start date> to <end date>.",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<container format: Vial / Cartridge>",
+      "<start date>",
+      "<end date>",
+    ]);
+  });
+
   it("does not treat MJ QMS ids wrapped as to-be-filled as placeholders", () => {
     const doc: JSONContent = {
       type: "doc",

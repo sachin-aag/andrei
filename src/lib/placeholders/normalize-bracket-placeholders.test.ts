@@ -191,4 +191,10 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
       "see <batch number>"
     );
   });
+
+  it("keeps angle placeholders that include a colon hint", () => {
+    const input =
+      "specific to the <container format: Vial / Cartridge> format from <start date>";
+    expect(normalizeBracketPlaceholdersInPlainText(input)).toBe(input);
+  });
 });

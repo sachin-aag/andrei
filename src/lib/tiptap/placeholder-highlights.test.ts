@@ -81,4 +81,26 @@ describe("buildPlaceholderDecorations", () => {
       "placeholder-todo-active"
     );
   });
+
+  it("decorates angle placeholders that include a colon hint", () => {
+    const schema = schemaWithSuggestionMarks();
+    const token = "<container format: Vial / Cartridge>";
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text(`specific to the ${token} format from `),
+        schema.text("<start date>"),
+      ]),
+    ]);
+
+    const placeholders = findPlaceholdersInPmDoc(doc, "define", "narrative");
+    expect(placeholders.map((p) => p.text)).toEqual([
+      token,
+      "<start date>",
+    ]);
+
+    const hinted = placeholders.find((p) => p.text === token)!;
+    const decos = buildPlaceholderDecorations(doc, placeholders);
+    expect(decos.find(hinted.fromPos, hinted.toPos)[0]).toBeDefined();
+    expect(doc.textBetween(hinted.fromPos, hinted.toPos)).toBe(token);
+  });
 });

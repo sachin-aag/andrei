@@ -176,8 +176,16 @@ export function isActionablePlaceholderBracket(match: string): boolean {
 }
 
 /**
- * True when `<...>` is a fill-in token (`<batch number>`, `<to be filled>`),
- * not an HTML tag and not the inner `<to be filled>` of a square bracket.
+ * Fill-in labels inside `<...>`, including a hint after a colon
+ * (`<container format: Vial / Cartridge>`). Square-bracket labels still
+ * treat `:` as the legacy `: <to be filled>` separator, not a hint.
+ */
+const ANGLE_PLACEHOLDER_LABEL = /^[\w\s./':,|-]+$/i;
+
+/**
+ * True when `<...>` is a fill-in token (`<batch number>`, `<to be filled>`,
+ * `<container format: Vial / Cartridge>`), not an HTML tag and not the
+ * inner `<to be filled>` of a square bracket.
  */
 export function isActionablePlaceholderAngle(match: string): boolean {
   if (!/^<[^<>]+>$/.test(match)) return false;
@@ -190,14 +198,10 @@ export function isActionablePlaceholderAngle(match: string): boolean {
   if (/\be\.g\./i.test(inner)) return true;
 
   const trimmed = inner.trim();
-  if (
-    !inner.includes(":") &&
+  return (
     trimmed.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
-    /^[\w\s./'()-]+$/i.test(trimmed)
-  ) {
-    return true;
-  }
-  return false;
+    ANGLE_PLACEHOLDER_LABEL.test(trimmed)
+  );
 }
 
 export function collectPlaceholderSpans(text: string): TextSpan[] {
