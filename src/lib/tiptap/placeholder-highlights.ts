@@ -66,8 +66,8 @@ export const placeholderRefreshMeta = "placeholderRefresh";
 
 /**
  * Tiptap extension that highlights actionable fill-in spans: `<label>`
- * tokens, legacy `[Label: <to be filled>]`, and other non-citation guidance
- * the model may emit.
+ * tokens (including colon hints) and leftover `[Label: <to be filled>]`.
+ * Square brackets without `to be filled` are citations or static copy.
  *
  * Clicking a placeholder selects its full text range so the user can
  * immediately type a replacement — ProseMirror's native selection-replace

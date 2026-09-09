@@ -99,7 +99,7 @@ describe("findPlaceholders", () => {
     expect(findPlaceholders(doc, "define", "narrative")).toEqual([]);
   });
 
-  it("treats bracket guidance without to be filled as placeholders but skips numeric citations", () => {
+  it("treats leftover square to-be-filled as placeholders and skips guidance squares and citations", () => {
     const doc: JSONContent = {
       type: "doc",
       content: [
@@ -117,14 +117,7 @@ describe("findPlaceholders", () => {
 
     const found = findPlaceholders(doc, "define", "narrative");
 
-    expect(found.map((p) => p.text).sort()).toEqual(
-      [
-        "[Personnel Name(s)]",
-        "[SOP No.: <to be filled>]",
-        "[description of particulate, e.g., fibers]",
-        "[number]",
-      ].sort()
-    );
+    expect(found.map((p) => p.text)).toEqual(["[SOP No.: <to be filled>]"]);
   });
 
   it("treats long AI guidance labels as placeholders only after compaction", () => {
@@ -208,6 +201,27 @@ describe("findPlaceholders", () => {
     ]);
   });
 
+  it("flags angle fill-ins that the square-bracket scanner used to skip", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Use <12> vials, then <formula>, not [formula]. Limit is [NMT 5.0%].",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<12>",
+      "<formula>",
+    ]);
+  });
+
   it("flags angle placeholders that include a colon hint", () => {
     const doc: JSONContent = {
       type: "doc",
@@ -228,6 +242,24 @@ describe("findPlaceholders", () => {
       "<container format: Vial / Cartridge>",
       "<start date>",
       "<end date>",
+    ]);
+  });
+
+  it("flags long angle labels that used to miss the scan length cap", () => {
+    const token = "<container format: Vial / Cartridge with extra hint text>";
+    expect(token.slice(1, -1).length).toBeGreaterThan(MAX_PLACEHOLDER_LABEL_LENGTH);
+
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: `Use ${token} over the review period.` }],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      token,
     ]);
   });
 

@@ -1,10 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { SectionType } from "@/db/schema";
-import {
-  isCitationShapedBracket,
-  NUMERIC_ONLY_BRACKET,
-} from "@/lib/placeholders/citation-bracket";
+import { isCitationShapedBracket } from "@/lib/placeholders/citation-bracket";
 import { clipBracketPlaceholderText } from "@/lib/text/bracket-span";
 
 export type Placeholder = {
@@ -49,12 +46,12 @@ export const BRACKET_SPAN_REGEX = /\[[^\]]+\]/g;
 export const ANGLE_SPAN_REGEX = /<[^<>]+>/g;
 
 /** Citation-style `[12]` — not treated as an editable placeholder. */
-export { NUMERIC_ONLY_BRACKET };
+export { NUMERIC_ONLY_BRACKET } from "@/lib/placeholders/citation-bracket";
 
 /**
- * Max length for a placeholder label (inner text of `<label>` / before
- * `: <to be filled>` on the legacy square form).
- * Shared by the scanner and the suggestion/document normalizer so they cannot drift.
+ * Max length for a placeholder label after insert compaction
+ * (`compactPlaceholderLabel`). Live scanning does not use this cap —
+ * `<container format: Vial / Cartridge>` and similar tokens still highlight.
  */
 export const MAX_PLACEHOLDER_LABEL_LENGTH = 40;
 
@@ -137,71 +134,26 @@ export function isLikelyHtmlTag(inner: string): boolean {
 type TextSpan = { fromRel: number; toRel: number; text: string };
 
 /**
- * True when `[...]` is guidance the author or AI should replace—not static prose
- * such as SOP acceptance criteria that happen to be wrapped in brackets on import.
+ * Legacy square `[Label: <to be filled>]` still highlights as a fill-in.
+ * Other `[...]` spans (citations, `[number]`, SOP limits, `[formula]`) are
+ * not live placeholders — insert still converts guidance squares to `<label>`.
  */
 export function isActionablePlaceholderBracket(match: string): boolean {
   if (!/^\[[^\]]+\]$/.test(match)) return false;
-  if (NUMERIC_ONLY_BRACKET.test(match)) return false;
-  // Document citations (`[file.pdf]`, `[name, p. N]`, `[Appendix B]`,
-  // `[Appendix B DV Report 790-00134R(RevU)]`, including mistaken
-  // `[cite: <to be filled>]`) are never Placeholders-panel tokens.
-  // CUID2 attachment ids the model copied from the document index are cites.
   if (isCitationShapedBracket(match)) return false;
-
-  const inner = match.slice(1, -1);
-
-  // Failed legacy equation import — not a fill-in field.
-  if (/^formula$/i.test(inner.trim())) return false;
-
-  if (/to\s+be\s+filled/i.test(inner)) return true;
-  if (/\be\.g\./i.test(inner)) return true;
-
-  // QC / SOP limit language in brackets is document copy, not a fill-in field.
-  if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
-
-  // Guidance-only labels without `: <to be filled>` — e.g. `[number]`,
-  // `[equipment ID]`, `[Personnel Name(s)]`. Legacy square form; new drafts
-  // use `<number>`. Cap length so long bracketed prose is not treated as a
-  // fill-in field. Parentheses cover plural markers like `(s)`.
-  if (
-    !inner.includes(":") &&
-    inner.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
-    /^[\w\s./'()-]+$/i.test(inner.trim())
-  ) {
-    return true;
-  }
-
-  return false;
+  return /to\s+be\s+filled/i.test(match.slice(1, -1));
 }
 
 /**
- * Fill-in labels inside `<...>`, including a hint after a colon
- * (`<container format: Vial / Cartridge>`). Square-bracket labels still
- * treat `:` as the legacy `: <to be filled>` separator, not a hint.
- */
-const ANGLE_PLACEHOLDER_LABEL = /^[\w\s./':,|-]+$/i;
-
-/**
  * True when `<...>` is a fill-in token (`<batch number>`, `<to be filled>`,
- * `<container format: Vial / Cartridge>`), not an HTML tag and not the
- * inner `<to be filled>` of a square bracket.
+ * `<container format: Vial / Cartridge>`, `<12>`). Citations use square
+ * brackets, so numeric / formula / SOP-limit exceptions do not apply here.
+ * Skip only structural HTML tags; nested `<to be filled>` inside `[...]` is
+ * skipped by the collector, not this predicate.
  */
 export function isActionablePlaceholderAngle(match: string): boolean {
   if (!/^<[^<>]+>$/.test(match)) return false;
-  const inner = match.slice(1, -1);
-  if (isLikelyHtmlTag(inner)) return false;
-  if (/^\s*\d+\s*$/.test(inner)) return false;
-  if (/^formula$/i.test(inner.trim())) return false;
-  if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
-  if (/to\s+be\s+filled/i.test(inner)) return true;
-  if (/\be\.g\./i.test(inner)) return true;
-
-  const trimmed = inner.trim();
-  return (
-    trimmed.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
-    ANGLE_PLACEHOLDER_LABEL.test(trimmed)
-  );
+  return !isLikelyHtmlTag(match.slice(1, -1));
 }
 
 export function collectPlaceholderSpans(text: string): TextSpan[] {

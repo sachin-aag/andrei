@@ -1,7 +1,6 @@
 import { isCitationShapedBracket, repairedCitationBracket } from "./citation-bracket";
 import {
   BRACKET_SPAN_REGEX,
-  isActionablePlaceholderAngle,
   isActionablePlaceholderBracket,
   isLikelyHtmlTag,
   MAX_PLACEHOLDER_LABEL_LENGTH,
@@ -14,7 +13,7 @@ const LABEL_THEN_TO_BE_FILLED =
   /^(.*?)\s*:\s*(?:<\s*)?to\s+be\s+filled(?:\s*>)?\s*$/i;
 const ANGLE_TO_BE_FILLED_LABEL = /^to\s+be\s+filled\s*:\s*(.*)$/i;
 
-/** Guidance-shaped `[...]` that may exceed the scanner length cap before compaction. */
+/** Guidance-shaped `[...]` converted to `<label>` on insert (not live-highlighted). */
 function isGuidanceShapedBracket(match: string): boolean {
   if (!/^\[[^\]]+\]$/.test(match)) return false;
   if (NUMERIC_ONLY_BRACKET.test(match)) return false;
@@ -68,7 +67,6 @@ function normalizeAnglePlaceholdersInPlainText(text: string): string {
     }
     const inner = match.slice(1, -1);
     if (isLikelyHtmlTag(inner)) return match;
-    if (/^\s*\d+\s*$/.test(inner)) return match;
 
     const labeled = ANGLE_TO_BE_FILLED_LABEL.exec(inner.trim());
     if (labeled) {
@@ -77,18 +75,6 @@ function normalizeAnglePlaceholdersInPlainText(text: string): string {
     }
 
     if (TO_BE_FILLED_ONLY.test(inner.trim())) return "<to be filled>";
-
-    if (!isActionablePlaceholderAngle(match)) {
-      const trimmed = inner.trim();
-      if (
-        trimmed.length > MAX_PLACEHOLDER_LABEL_LENGTH &&
-        /^[\w\s.,;/'()-]+$/i.test(trimmed) &&
-        !/not more than|not less than|\bNMT\b|\bNLT\b/i.test(trimmed)
-      ) {
-        return toCanonicalPlaceholder(trimmed);
-      }
-      return match;
-    }
 
     if (LABEL_THEN_TO_BE_FILLED.test(inner)) {
       const rawLabel = LABEL_THEN_TO_BE_FILLED.exec(inner)?.[1]?.trim() ?? "";
