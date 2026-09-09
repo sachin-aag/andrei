@@ -538,6 +538,10 @@ export async function generateReportDocx({
   applySignatureBlockToDocxZip(doc.getZip(), signatureSnapshot);
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
   applyInvestigationToolCheckboxes(doc.getZip(), investigationToolsUsed(report));
+  const headingSpecs = tocHeadingSpecsForDocumentType("investigation_report");
+  if (headingSpecs) {
+    applyTocHeadingStylesToDocxZip(doc.getZip(), headingSpecs);
+  }
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);
   applyWordCommentsToDocxZip(doc.getZip(), ctx);
@@ -695,7 +699,7 @@ async function generateDesignVerificationDocx({
   }
 
   doc.render(data);
-  const headingSpecs = tocHeadingSpecsForDocumentType(pack.id, documentType);
+  const headingSpecs = tocHeadingSpecsForDocumentType(documentType);
   if (headingSpecs) {
     applyTocHeadingStylesToDocxZip(doc.getZip(), headingSpecs);
   }

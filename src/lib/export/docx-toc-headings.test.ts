@@ -3,6 +3,9 @@ import {
   applyTocHeadingStylesToDocumentXml,
   CONVERGENT_MECHANICAL_DV_TOC_HEADINGS,
   CONVERGENT_SOFTWARE_DV_TOC_HEADINGS,
+  ELR_TOC_HEADINGS,
+  INVESTIGATION_TOC_HEADINGS,
+  QRA_TOC_HEADINGS,
   docxParagraphPlainText,
   tocHeadingSpecsForDocumentType,
 } from "./docx-toc-headings";
@@ -13,20 +16,23 @@ function paragraphFor(xml: string, text: string): string | undefined {
 }
 
 describe("tocHeadingSpecsForDocumentType", () => {
-  it("is gated to Convergent software and mechanical DV", () => {
-    expect(tocHeadingSpecsForDocumentType("convergent", "design_verification")).toBe(
+  it("returns heading specs by document type for every pack", () => {
+    expect(tocHeadingSpecsForDocumentType("design_verification")).toBe(
       CONVERGENT_SOFTWARE_DV_TOC_HEADINGS
     );
-    expect(
-      tocHeadingSpecsForDocumentType(
-        "convergent",
-        "mechanical_design_verification"
-      )
-    ).toBe(CONVERGENT_MECHANICAL_DV_TOC_HEADINGS);
-    expect(tocHeadingSpecsForDocumentType("demo", "design_verification")).toBeNull();
-    expect(
-      tocHeadingSpecsForDocumentType("convergent", "investigation_report")
-    ).toBeNull();
+    expect(tocHeadingSpecsForDocumentType("mechanical_design_verification")).toBe(
+      CONVERGENT_MECHANICAL_DV_TOC_HEADINGS
+    );
+    expect(tocHeadingSpecsForDocumentType("investigation_report")).toBe(
+      INVESTIGATION_TOC_HEADINGS
+    );
+    expect(tocHeadingSpecsForDocumentType("quality_risk_assessment")).toBe(
+      QRA_TOC_HEADINGS
+    );
+    expect(tocHeadingSpecsForDocumentType("equipment_lifecycle_report")).toBe(
+      ELR_TOC_HEADINGS
+    );
+    expect(tocHeadingSpecsForDocumentType("generic_document")).toBeNull();
   });
 });
 
@@ -89,5 +95,19 @@ describe("applyTocHeadingStylesToDocumentXml", () => {
     expect(paragraphFor(out, "2.3 Units Under Test (UUT's):")).toContain(
       "Heading2"
     );
+  });
+
+  it("marks ELR trend summaries as Heading3", () => {
+    const xml =
+      `<w:p><w:r><w:t>3.9 BREAKDOWNS AND TRENDS</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>3.9.1 BREAKDOWN TREND SUMMARY</w:t></w:r></w:p>`;
+
+    const out = applyTocHeadingStylesToDocumentXml(xml, ELR_TOC_HEADINGS);
+    expect(paragraphFor(out, "3.9 BREAKDOWNS AND TRENDS")).toContain(
+      '<w:pStyle w:val="Heading2"/>'
+    );
+    const summary = paragraphFor(out, "3.9.1 BREAKDOWN TREND SUMMARY");
+    expect(summary).toContain('<w:pStyle w:val="Heading3"/>');
+    expect(summary).toContain('<w:outlineLvl w:val="2"/>');
   });
 });

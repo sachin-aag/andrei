@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { reports } from "@/db/schema";
 import { reportExportDocxFileName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
+import { docxParagraphPlainText } from "@/lib/export/docx-toc-headings";
 import {
   EMPTY_QRA_CONTENT,
   QRA_FMEA_HEADERS,
@@ -134,6 +135,12 @@ function partText(zip: PizZip, name: string): string {
   );
 }
 
+function paragraphStyle(xml: string, text: string): string | null {
+  const paras = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? [];
+  const para = paras.find((p) => docxParagraphPlainText(p) === text);
+  return para?.match(/<w:pStyle w:val="([^"]+)"/)?.[1] ?? null;
+}
+
 describe("QRA DOCX template", () => {
   it("is a valid MJ F02 docx, not the Convergent mechanical clone", () => {
     const zip = new PizZip(fs.readFileSync(TEMPLATE));
@@ -168,7 +175,7 @@ describe("QRA DOCX template", () => {
     expect(footer).toContain("SOP/DP/QA/010/F02-R04");
     expect(body).toContain("FORMAT");
     expect(body).toContain("PRE-APPROVAL");
-    expect(body).toContain("TABLE OF CONTENTS");
+    expect(body).not.toContain("TABLE OF CONTENTS");
     expect(body).not.toMatch(/Convergent|Solea|731-00008/i);
     expect(header).not.toMatch(/Convergent|Solea/i);
 
@@ -219,7 +226,15 @@ describe("QRA DOCX export", () => {
     expect(xml).toContain("RA/DP/QA/26/001");
     expect(xml).toContain("FORMAT");
     expect(xml).toContain("PRE-APPROVAL");
-    expect(xml).toContain("TABLE OF CONTENTS");
+    expect(xml).not.toContain("TABLE OF CONTENTS");
+    expect(paragraphStyle(xml, "A. PRE-APPROVAL (Before Implementation):")).toBe(
+      "Heading1"
+    );
+    expect(paragraphStyle(xml, "1. DETAILS OF THE RISK ASSESSMENT")).toBe(
+      "Heading1"
+    );
+    expect(paragraphStyle(xml, "1.1 OBJECTIVE")).toBe("Heading2");
+    expect(paragraphStyle(xml, "B. REVISION HISTORY:")).toBe("Heading1");
     expect(xml).toContain('w:orient="landscape"');
     const fmeaAt = xml.indexOf("Underfill");
     const landscapeBreaks = [...xml.matchAll(/w:orient="landscape"/g)];

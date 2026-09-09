@@ -607,6 +607,13 @@ describe("ELR docx template contract", () => {
     const unused = templateDataKeys().filter((key) => !tags.includes(key));
     expect(unused).toEqual([]);
   });
+
+  it("does not bake in a static table of contents", () => {
+    const def = getDocumentType(TYPE);
+    const zip = new PizZip(fs.readFileSync(def.export.templatePath));
+    const xml = zip.file("word/document.xml")!.asText();
+    expect(xml).not.toContain("TABLE OF CONTENTS");
+  });
 });
 
 describe("ELR pack enablement", () => {
