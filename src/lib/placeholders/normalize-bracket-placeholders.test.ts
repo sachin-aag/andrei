@@ -191,4 +191,19 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
       "see <batch number>"
     );
   });
+
+  it("keeps angle placeholders that include a colon hint", () => {
+    const input =
+      "specific to the <container format: Vial / Cartridge> format from <start date>";
+    expect(normalizeBracketPlaceholdersInPlainText(input)).toBe(input);
+  });
+
+  it("canonicalizes numeric and formula angle tokens instead of skipping them", () => {
+    expect(normalizeBracketPlaceholdersInPlainText("use <12> vials")).toBe(
+      "use <12> vials"
+    );
+    expect(normalizeBracketPlaceholdersInPlainText("see <formula>")).toBe(
+      "see <formula>"
+    );
+  });
 });
