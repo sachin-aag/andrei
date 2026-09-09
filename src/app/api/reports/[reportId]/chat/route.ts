@@ -85,6 +85,7 @@ import { isTestStubChat } from "@/lib/test/ai-bypass";
 import {
   endActiveLangfuseObservation,
   flushLangfuseTraces,
+  getActiveTraceId,
   langfuseGenerateTextTelemetry,
   observeRouteHandler,
   setRouteObservationIO,
@@ -96,6 +97,11 @@ import {
   isAiBudgetExceededError,
   recordAiUsage,
 } from "@/lib/ai/usage";
+import { detectCourseCorrection } from "@/lib/ai/chat/course-correction";
+import {
+  recordUserCourseCorrectScore,
+  flushLangfuseScores,
+} from "@/lib/observability/langfuse-scores";
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
@@ -336,6 +342,29 @@ async function handleChatPost(
     userId: user.id,
   });
   const switchToAnalytics = userIntent.switchToAnalytics === true;
+
+  // Detect course correction — user contradicting or overriding prior LLM output.
+  const recentTexts = recentAssistantMessageTexts(messages);
+  const courseCorrection = detectCourseCorrection({
+    userText,
+    recentAssistantTexts: recentTexts,
+    hasPriorAssistantOutput: recentTexts.length > 0,
+  });
+  if (courseCorrection.detected) {
+    const courseCorrectionTraceId = getActiveTraceId() ?? undefined;
+    after(async () => {
+      await recordUserCourseCorrectScore({
+        traceId: courseCorrectionTraceId,
+        sessionId,
+        reportId,
+        reason: courseCorrection.reason,
+        previousAssistantText: recentTexts[0],
+        userText,
+      });
+      await flushLangfuseScores();
+    });
+  }
+
   const retrievalDecision = classifyRetrievalPolicy({
     userText,
     recentUserTexts: recentUserMessageTexts(messages),
@@ -523,6 +552,8 @@ async function handleChatPost(
           workspaceChrome,
           canEdit,
           sectionScope: sectionScope ?? "",
+          section_id: sectionScope ?? "",
+          user_course_corrected: courseCorrection.detected,
         },
       },
       () =>
@@ -640,6 +671,8 @@ async function handleChatPost(
           retrievalPolicyReason: retrieval.reason,
           userIntent: userIntent.kind,
           userIntentReason: userIntent.reason,
+          section_id: sectionScope ?? "",
+          user_course_corrected: courseCorrection.detected,
         },
       }),
     })
