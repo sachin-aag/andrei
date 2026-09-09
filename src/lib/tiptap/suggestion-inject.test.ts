@@ -3,10 +3,12 @@ import type { JSONContent } from "@tiptap/core";
 import {
   collectPendingSuggestionMarkIds,
   injectSuggestionMarks,
+  resolveSuggestionPreviewSyncDoc,
   richDocsMatchIgnoringAiPreview,
   shouldApplyExternalValueToEditor,
   shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
+  acceptSuggestionMarksById,
 } from "./suggestion-inject";
 
 describe("stripPendingSuggestionsExcept", () => {
@@ -287,5 +289,97 @@ describe("shouldApplyExternalValueToEditor", () => {
         docsMatchIgnoringPreview: false,
       })
     ).toBe(true);
+  });
+});
+
+describe("resolveSuggestionPreviewSyncDoc", () => {
+  const original: JSONContent = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "On 15/05/2025 at approximately 10:00 hrs.",
+          },
+        ],
+      },
+    ],
+  };
+  const previewAttrs = {
+    id: "suggestion-a",
+    authorId: "ai",
+    status: "pending" as const,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    kind: "fix" as const,
+  };
+
+  it("keeps applied wording instead of dismissing leftover preview marks", () => {
+    const editorWithPreview = injectSuggestionMarks(
+      original,
+      {
+        anchorText: "10:00 hrs",
+        deleteText: "10:00 hrs",
+        insertText: "11:00 hrs",
+      },
+      previewAttrs
+    ).doc;
+    const applied = acceptSuggestionMarksById(editorWithPreview, "suggestion-a");
+
+    const synced = resolveSuggestionPreviewSyncDoc({
+      editorDoc: editorWithPreview,
+      canonicalDoc: applied,
+      keepMarkId: null,
+    });
+
+    expect(JSON.stringify(synced)).toContain("11:00 hrs");
+    expect(JSON.stringify(synced)).not.toContain("10:00 hrs");
+    expect(synced).toEqual(applied);
+    expect(JSON.stringify(stripPendingSuggestionsExcept(editorWithPreview, null))).toContain(
+      "10:00 hrs"
+    );
+  });
+
+  it("still strips leftover preview when canonical is the original", () => {
+    const editorWithPreview = injectSuggestionMarks(
+      original,
+      {
+        anchorText: "10:00 hrs",
+        deleteText: "10:00 hrs",
+        insertText: "11:00 hrs",
+      },
+      previewAttrs
+    ).doc;
+
+    const synced = resolveSuggestionPreviewSyncDoc({
+      editorDoc: editorWithPreview,
+      canonicalDoc: original,
+      keepMarkId: null,
+    });
+
+    expect(JSON.stringify(synced)).toContain("10:00 hrs");
+    expect(JSON.stringify(synced)).not.toContain("11:00 hrs");
+  });
+
+  it("keeps the active preview when the persisted doc is still the original", () => {
+    const editorWithPreview = injectSuggestionMarks(
+      original,
+      {
+        anchorText: "On 15/05/2025",
+        deleteText: "",
+        insertText: " extra",
+      },
+      previewAttrs
+    ).doc;
+
+    const synced = resolveSuggestionPreviewSyncDoc({
+      editorDoc: editorWithPreview,
+      canonicalDoc: original,
+      keepMarkId: "suggestion-a",
+    });
+
+    expect(collectPendingSuggestionMarkIds(synced)).toEqual(["suggestion-a"]);
+    expect(JSON.stringify(synced)).toContain("extra");
   });
 });
