@@ -8,7 +8,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAutoSave, type SaveStatus } from "@/hooks/use-auto-save";
 import {
   collapseSelection,
-  rowRangeFromGridSelection,
   type GridSelection,
 } from "@/lib/statistical-analysis/grid-selection";
 import {
@@ -472,7 +471,6 @@ export function StatisticalWorkspace({
   const selectedColumn =
     worksheet.columns[selection.col] ?? worksheet.columns[0] ?? null;
   const selectedColumnId = selectedColumn?.id ?? "";
-  const selectedRowRange = rowRangeFromGridSelection(selection);
   const specsColumn =
     worksheet.columns.find((column) => column.id === specsColumnId) ?? null;
 
@@ -579,106 +577,84 @@ export function StatisticalWorkspace({
     if (editingSheetId !== null) sheetNameInputRef.current?.focus();
   }, [editingSheetId]);
 
-  const openAnalyzeForColumn = async (
-    columnId: string,
-    rows: { start: number; end: number } | null = null
-  ) => {
+  const openAnalyzeForColumn = async (columnId: string) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
     setEditingAnalysisId(null);
     setAnalyzeColumnId(columnId);
-    setAnalyzeRowStart(rows?.start ?? null);
-    setAnalyzeRowEnd(rows?.end ?? null);
+    setAnalyzeRowStart(null);
+    setAnalyzeRowEnd(null);
     setAnalyzeError(null);
     setAnalyzeOpen(true);
   };
 
-  const openSixpackForColumn = async (
-    columnId: string,
-    rows: { start: number; end: number } | null = null
-  ) => {
+  const openSixpackForColumn = async (columnId: string) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
     setEditingAnalysisId(null);
     setCapabilityColumnId(columnId);
-    setCapabilityRowStart(rows?.start ?? null);
-    setCapabilityRowEnd(rows?.end ?? null);
+    setCapabilityRowStart(null);
+    setCapabilityRowEnd(null);
     setCapabilityError(null);
     setCapabilityOpen(true);
   };
 
-  const openOneWayAnova = async (
-    columnId: string,
-    rows: { start: number; end: number } | null = null
-  ) => {
+  const openOneWayAnova = async (columnId: string) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
     setEditingAnalysisId(null);
     setAnovaResponseColumnId(columnId);
-    setAnovaRowStart(rows?.start ?? null);
-    setAnovaRowEnd(rows?.end ?? null);
+    setAnovaRowStart(null);
+    setAnovaRowEnd(null);
     setAnovaError(null);
     setAnovaOpen(true);
   };
 
-  const openXyScatter = async (
-    columnId: string,
-    rows: { start: number; end: number } | null = null
-  ) => {
+  const openXyScatter = async (columnId: string) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
     setEditingAnalysisId(null);
     setXyYColumnId(columnId);
-    setXyRowStart(rows?.start ?? null);
-    setXyRowEnd(rows?.end ?? null);
+    setXyRowStart(null);
+    setXyRowEnd(null);
     setXyError(null);
     setXyOpen(true);
   };
 
-  const openBoxplot = async (
-    columnId: string,
-    rows: { start: number; end: number } | null = null
-  ) => {
+  const openBoxplot = async (columnId: string) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
     setEditingAnalysisId(null);
     setBoxplotYColumnId(columnId);
-    setBoxplotRowStart(rows?.start ?? null);
-    setBoxplotRowEnd(rows?.end ?? null);
+    setBoxplotRowStart(null);
+    setBoxplotRowEnd(null);
     setBoxplotError(null);
     setBoxplotOpen(true);
   };
 
-  const openHistogram = async (
-    columnId: string,
-    rows: { start: number; end: number } | null = null
-  ) => {
+  const openHistogram = async (columnId: string) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
     setEditingAnalysisId(null);
     setHistogramColumnId(columnId);
-    setHistogramRowStart(rows?.start ?? null);
-    setHistogramRowEnd(rows?.end ?? null);
+    setHistogramRowStart(null);
+    setHistogramRowEnd(null);
     setHistogramError(null);
     setHistogramOpen(true);
   };
 
-  const openWorksheetPlot = (
-    kind: WorksheetPlotKind,
-    columnId: string,
-    rows: { start: number; end: number } | null = null
-  ) => {
+  const openWorksheetPlot = (kind: WorksheetPlotKind, columnId: string) => {
     switch (kind) {
       case CAPABILITY_SIXPACK_NORMAL:
-        return openSixpackForColumn(columnId, rows);
+        return openSixpackForColumn(columnId);
       case HISTOGRAM:
-        return openHistogram(columnId, rows);
+        return openHistogram(columnId);
       case ONE_WAY_ANOVA:
-        return openOneWayAnova(columnId, rows);
+        return openOneWayAnova(columnId);
       case BOXPLOT:
-        return openBoxplot(columnId, rows);
+        return openBoxplot(columnId);
       case XY_SCATTER:
-        return openXyScatter(columnId, rows);
+        return openXyScatter(columnId);
       default: {
         const exhaustive: never = kind;
         return exhaustive;
@@ -704,13 +680,10 @@ export function StatisticalWorkspace({
 
   const handleColumnMenuAction = (
     action: ColumnMenuAction,
-    colIndex: number,
-    analyzeRowRangeOverride?: { start: number; end: number } | null
+    colIndex: number
   ) => {
     const column = worksheet.columns[colIndex];
     if (!column) return;
-    const analyzeRowRange =
-      analyzeRowRangeOverride ?? rowRangeFromGridSelection(selection);
     if (action !== "analyze") {
       setSelection((sel) => collapseSelection(colIndex, sel.row));
     }
@@ -732,7 +705,7 @@ export function StatisticalWorkspace({
         return;
       case "analyze":
         window.setTimeout(() => {
-          void openAnalyzeForColumn(column.id, analyzeRowRange);
+          void openAnalyzeForColumn(column.id);
         }, 0);
         return;
       default: {
@@ -790,7 +763,7 @@ export function StatisticalWorkspace({
                 );
               }}
               onSelectPlot={(kind) =>
-                void openWorksheetPlot(kind, selectedColumnId, selectedRowRange)
+                void openWorksheetPlot(kind, selectedColumnId)
               }
               onAddDataSheet={() => {
                 setWorksheet((current) => addDataSheet(current));
@@ -976,10 +949,7 @@ export function StatisticalWorkspace({
                           className="h-6 px-1.5 text-[11px]"
                           data-testid="new-analysis"
                           onClick={() =>
-                            void openAnalyzeForColumn(
-                              selectedColumnId,
-                              selectedRowRange
-                            )
+                            void openAnalyzeForColumn(selectedColumnId)
                           }
                         >
                           New
@@ -1192,15 +1162,7 @@ export function StatisticalWorkspace({
         onOpenChange={setAnalyzeOpen}
         onHandoff={(kind) => {
           setAnalyzeOpen(false);
-          const rows =
-            analyzeRowStart != null && analyzeRowEnd != null
-              ? { start: analyzeRowStart, end: analyzeRowEnd }
-              : null;
-          void openWorksheetPlot(
-            kind,
-            analyzeColumnId || selectedColumnId,
-            rows
-          );
+          void openWorksheetPlot(kind, analyzeColumnId || selectedColumnId);
         }}
         onSubmit={async (payload) => {
           setAnalyzeSubmitting(true);

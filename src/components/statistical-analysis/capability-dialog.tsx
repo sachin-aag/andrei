@@ -22,6 +22,9 @@ import {
 import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import { WARN_VALUES_FOR_SIXPACK } from "@/lib/statistical-analysis/types";
 import {
+  ANALYSIS_ROW_RANGE_HELP,
+  analysisRowFieldDefaults,
+  collapseFilledAnalysisRows,
   columnNumericValues,
   dataSheets,
   defaultSixpackLimits,
@@ -125,6 +128,10 @@ export function CapabilityDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: CapabilityDialogValues) => void;
 }) {
+  const initialRows = analysisRowFieldDefaults(
+    findColumn(worksheet, defaultColumnId) ?? worksheet.columns[0],
+    { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
+  );
   const initialLimits = editMode
     ? {
         lsl: formatLimitInput(defaultLsl),
@@ -134,20 +141,16 @@ export function CapabilityDialog({
     : limitsForColumn(
         worksheet,
         defaultColumnId,
-        defaultRowStart != null ? String(defaultRowStart) : "",
-        defaultRowEnd != null ? String(defaultRowEnd) : ""
+        initialRows.rowStart,
+        initialRows.rowEnd
       );
   const [columnId, setColumnId] = useState(defaultColumnId);
   const [title, setTitle] = useState(defaultTitle);
   const [lsl, setLsl] = useState(initialLimits.lsl);
   const [usl, setUsl] = useState(initialLimits.usl);
   const [target, setTarget] = useState(initialLimits.target);
-  const [rowStart, setRowStart] = useState(
-    defaultRowStart != null ? String(defaultRowStart) : ""
-  );
-  const [rowEnd, setRowEnd] = useState(
-    defaultRowEnd != null ? String(defaultRowEnd) : ""
-  );
+  const [rowStart, setRowStart] = useState(initialRows.rowStart);
+  const [rowEnd, setRowEnd] = useState(initialRows.rowEnd);
 
   const applyColumnLimits = (
     nextColumnId: string,
@@ -167,10 +170,12 @@ export function CapabilityDialog({
 
   const selectedColumn = findColumn(worksheet, columnId) ?? worksheet.columns[0];
   const sheets = dataSheets(worksheet);
-  const rowSelection = normalizeRowSelection({
-    rowStart: parseOptionalRow(rowStart),
-    rowEnd: parseOptionalRow(rowEnd),
-  });
+  const submittedRows = collapseFilledAnalysisRows(
+    selectedColumn,
+    parseOptionalRow(rowStart),
+    parseOptionalRow(rowEnd)
+  );
+  const rowSelection = normalizeRowSelection(submittedRows);
   const numeric = selectedColumn
     ? columnNumericValues(selectedColumn, rowSelection)
     : { values: [], skipped: 0 };
@@ -195,7 +200,12 @@ export function CapabilityDialog({
               value={columnId}
               onValueChange={(value) => {
                 setColumnId(value);
-                applyColumnLimits(value, rowStart, rowEnd);
+                const nextRows = analysisRowFieldDefaults(
+                  findColumn(worksheet, value) ?? worksheet.columns[0]
+                );
+                setRowStart(nextRows.rowStart);
+                setRowEnd(nextRows.rowEnd);
+                applyColumnLimits(value, nextRows.rowStart, nextRows.rowEnd);
               }}
             >
               <SelectTrigger id="sixpack-column" data-testid="sixpack-column">
@@ -237,7 +247,7 @@ export function CapabilityDialog({
                 <FieldInfoIcon
                   label="Row range"
                   testId="sixpack-row-range-info"
-                  text="Rows are numbered from 1. Leave both blank to use the whole column."
+                  text={ANALYSIS_ROW_RANGE_HELP}
                 />
               </div>
               <Input
@@ -373,8 +383,8 @@ export function CapabilityDialog({
                 lsl: parseOptionalNumber(lsl),
                 usl: parseOptionalNumber(usl),
                 target: parseOptionalNumber(target),
-                rowStart: parseOptionalRow(rowStart),
-                rowEnd: parseOptionalRow(rowEnd),
+                rowStart: submittedRows.rowStart,
+                rowEnd: submittedRows.rowEnd,
               })
             }
           >

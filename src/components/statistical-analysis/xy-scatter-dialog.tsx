@@ -37,6 +37,9 @@ import {
   type ChartMark,
 } from "@/lib/charts/chart-marks";
 import {
+  ANALYSIS_ROW_RANGE_HELP,
+  analysisRowFieldDefaults,
+  collapseFilledAnalysisRows,
   dataSheets,
   findColumn,
 } from "@/lib/statistical-analysis/worksheet";
@@ -168,12 +171,12 @@ export function XyScatterDialog({
   const [showSpecLimits, setShowSpecLimits] = useState(defaultShowSpecLimits);
   const [showMeanLine, setShowMeanLine] = useState(defaultShowMeanLine);
   const [title, setTitle] = useState(defaultTitle);
-  const [rowStart, setRowStart] = useState(
-    defaultRowStart != null ? String(defaultRowStart) : ""
+  const initialRows = analysisRowFieldDefaults(
+    findColumn(worksheet, fallbackY) ?? worksheet.columns[0],
+    { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
   );
-  const [rowEnd, setRowEnd] = useState(
-    defaultRowEnd != null ? String(defaultRowEnd) : ""
-  );
+  const [rowStart, setRowStart] = useState(initialRows.rowStart);
+  const [rowEnd, setRowEnd] = useState(initialRows.rowEnd);
   const [xMin, setXMin] = useState(boundRaw(defaultXMin));
   const [xMax, setXMax] = useState(boundRaw(defaultXMax));
   const [yMin, setYMin] = useState(boundRaw(defaultYMin));
@@ -186,10 +189,12 @@ export function XyScatterDialog({
   const legendColumn = legendColumnId
     ? findColumn(worksheet, legendColumnId)
     : null;
-  const rowSelection = normalizeRowSelection({
-    rowStart: parseOptionalRow(rowStart),
-    rowEnd: parseOptionalRow(rowEnd),
-  });
+  const submittedRows = collapseFilledAnalysisRows(
+    yColumn,
+    parseOptionalRow(rowStart),
+    parseOptionalRow(rowEnd)
+  );
+  const rowSelection = normalizeRowSelection(submittedRows);
   const rowLabel = formatRowSelection(rowSelection);
   const placeholderTitle = yColumn
     ? xyScatterFallbackTitle(
@@ -239,6 +244,11 @@ export function XyScatterDialog({
               value={yColumnId}
               onValueChange={(value) => {
                 setYColumnId(value);
+                const nextRows = analysisRowFieldDefaults(
+                  findColumn(worksheet, value) ?? worksheet.columns[0]
+                );
+                setRowStart(nextRows.rowStart);
+                setRowEnd(nextRows.rowEnd);
                 if (value === xColumnId) {
                   setXColumnId(null);
                 }
@@ -431,7 +441,7 @@ export function XyScatterDialog({
                 <FieldInfoIcon
                   label="Row range"
                   testId="xy-row-range-info"
-                  text="Rows are numbered from 1. Leave both blank to use every filled cell."
+                  text={ANALYSIS_ROW_RANGE_HELP}
                 />
               </div>
               <Input
@@ -595,8 +605,8 @@ export function XyScatterDialog({
                 showSpecLimits,
                 showMeanLine,
                 title: title.trim(),
-                rowStart: parseOptionalRow(rowStart),
-                rowEnd: parseOptionalRow(rowEnd),
+                rowStart: submittedRows.rowStart,
+                rowEnd: submittedRows.rowEnd,
                 xMin: xMinValue,
                 xMax: xMaxValue,
                 yMin: yMinValue,

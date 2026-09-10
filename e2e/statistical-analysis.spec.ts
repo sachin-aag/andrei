@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
 import { WORKSHEET_PLOT_CATALOG } from "@/lib/statistical-analysis/plot-catalog";
-import { applySampleAssay } from "@/lib/statistical-analysis/sample-data";
+import { applySampleAssay, SAMPLE_ASSAY_VALUES } from "@/lib/statistical-analysis/sample-data";
 import { BOXPLOT, HISTOGRAM, XY_SCATTER } from "@/lib/statistical-analysis/types";
 import {
   createEmptyWorksheet,
@@ -288,7 +288,7 @@ test.describe("report analytics", () => {
     ).toBeVisible();
   });
 
-  test("shift+arrow selects rows and runs a sixpack on that range", async ({
+  test("Analyze first/last row follow filled cells, not the grid selection", async ({
     page,
   }) => {
     test.setTimeout(90_000);
@@ -320,7 +320,11 @@ test.describe("report analytics", () => {
 
     await openAnalyzeDialogForColumn(page, "c1");
     await expect(page.getByTestId("sixpack-row-start")).toHaveValue("1");
-    await expect(page.getByTestId("sixpack-row-end")).toHaveValue("10");
+    await expect(page.getByTestId("sixpack-row-end")).toHaveValue(
+      String(SAMPLE_ASSAY_VALUES.length)
+    );
+    await page.getByTestId("sixpack-row-start").fill("1");
+    await page.getByTestId("sixpack-row-end").fill("10");
     await page.getByTestId("sixpack-lsl").fill("90");
     await page.getByTestId("sixpack-usl").fill("110");
     await page.getByTestId("sixpack-target").fill("100");

@@ -24,6 +24,9 @@ import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import { histogramFallbackTitle } from "@/lib/statistical-analysis/types";
 import { histogramLimitsFromColumnSpecs } from "@/lib/statistical-analysis/histogram";
 import {
+  ANALYSIS_ROW_RANGE_HELP,
+  analysisRowFieldDefaults,
+  collapseFilledAnalysisRows,
   columnNumericValues,
   dataSheets,
   findColumn,
@@ -127,6 +130,10 @@ export function HistogramDialog({
         usl: formatLimitInput(defaultUsl),
       }
     : limitsForColumn(worksheet, defaultColumnId);
+  const initialRows = analysisRowFieldDefaults(
+    findColumn(worksheet, defaultColumnId) ?? worksheet.columns[0],
+    { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
+  );
   const [columnId, setColumnId] = useState(defaultColumnId);
   const [title, setTitle] = useState(defaultTitle);
   const [lsl, setLsl] = useState(initialLimits.lsl);
@@ -136,12 +143,8 @@ export function HistogramDialog({
   );
   const [showLsl, setShowLsl] = useState(defaultShowLsl);
   const [showUsl, setShowUsl] = useState(defaultShowUsl);
-  const [rowStart, setRowStart] = useState(
-    defaultRowStart != null ? String(defaultRowStart) : ""
-  );
-  const [rowEnd, setRowEnd] = useState(
-    defaultRowEnd != null ? String(defaultRowEnd) : ""
-  );
+  const [rowStart, setRowStart] = useState(initialRows.rowStart);
+  const [rowEnd, setRowEnd] = useState(initialRows.rowEnd);
 
   const applyColumnLimits = (nextColumnId: string) => {
     const next = limitsForColumn(worksheet, nextColumnId);
@@ -151,10 +154,12 @@ export function HistogramDialog({
 
   const selectedColumn = findColumn(worksheet, columnId) ?? worksheet.columns[0];
   const sheets = dataSheets(worksheet);
-  const rowSelection = normalizeRowSelection({
-    rowStart: parseOptionalRow(rowStart),
-    rowEnd: parseOptionalRow(rowEnd),
-  });
+  const submittedRows = collapseFilledAnalysisRows(
+    selectedColumn,
+    parseOptionalRow(rowStart),
+    parseOptionalRow(rowEnd)
+  );
+  const rowSelection = normalizeRowSelection(submittedRows);
   const numeric = selectedColumn
     ? columnNumericValues(selectedColumn, rowSelection)
     : { values: [], skipped: 0 };
@@ -183,6 +188,11 @@ export function HistogramDialog({
               onValueChange={(value) => {
                 setColumnId(value);
                 applyColumnLimits(value);
+                const nextRows = analysisRowFieldDefaults(
+                  findColumn(worksheet, value) ?? worksheet.columns[0]
+                );
+                setRowStart(nextRows.rowStart);
+                setRowEnd(nextRows.rowEnd);
               }}
             >
               <SelectTrigger id="histogram-column" data-testid="histogram-column">
@@ -217,7 +227,7 @@ export function HistogramDialog({
                 <FieldInfoIcon
                   label="Row range"
                   testId="histogram-row-range-info"
-                  text="Rows are numbered from 1. Leave both blank to use the whole column."
+                  text={ANALYSIS_ROW_RANGE_HELP}
                 />
               </div>
               <Input
@@ -382,8 +392,8 @@ export function HistogramDialog({
                 showDistributionLines,
                 showLsl,
                 showUsl,
-                rowStart: parseOptionalRow(rowStart),
-                rowEnd: parseOptionalRow(rowEnd),
+                rowStart: submittedRows.rowStart,
+                rowEnd: submittedRows.rowEnd,
               })
             }
           >

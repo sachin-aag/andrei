@@ -41,6 +41,9 @@ import {
   type WorksheetPlotKind,
 } from "@/lib/statistical-analysis/plot-catalog";
 import {
+  ANALYSIS_ROW_RANGE_HELP,
+  analysisRowFieldDefaults,
+  collapseFilledAnalysisRows,
   columnNumericValues,
   dataSheets,
   defaultSixpackLimits,
@@ -126,9 +129,12 @@ export function AnalyzeDialog({
   onSubmit: (payload: AnalyzeDialogSubmit) => void;
 }) {
   const fallbackColumnId = defaultColumnId || worksheet.columns[0]?.id || "";
-  const initialRowStart =
-    defaultRowStart != null ? String(defaultRowStart) : "";
-  const initialRowEnd = defaultRowEnd != null ? String(defaultRowEnd) : "";
+  const initialRows = analysisRowFieldDefaults(
+    findColumn(worksheet, fallbackColumnId) ?? worksheet.columns[0],
+    { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
+  );
+  const initialRowStart = initialRows.rowStart;
+  const initialRowEnd = initialRows.rowEnd;
   const initialLimits = limitsForColumn(
     worksheet,
     fallbackColumnId,
@@ -167,7 +173,12 @@ export function AnalyzeDialog({
 
   const changeColumn = (nextColumnId: string) => {
     setColumnId(nextColumnId);
-    applyColumnLimits(nextColumnId, rowStart, rowEnd);
+    const nextRows = analysisRowFieldDefaults(
+      findColumn(worksheet, nextColumnId) ?? worksheet.columns[0]
+    );
+    setRowStart(nextRows.rowStart);
+    setRowEnd(nextRows.rowEnd);
+    applyColumnLimits(nextColumnId, nextRows.rowStart, nextRows.rowEnd);
     if (nextColumnId === factorColumnId) {
       setFactorColumnId(suggestFactorColumn(worksheet, nextColumnId) ?? "");
     }
@@ -176,10 +187,12 @@ export function AnalyzeDialog({
   const selectedColumn = findColumn(worksheet, columnId) ?? worksheet.columns[0];
   const factorColumn = findColumn(worksheet, factorColumnId);
   const sheets = dataSheets(worksheet);
-  const rowSelection = normalizeRowSelection({
-    rowStart: parseOptionalRow(rowStart),
-    rowEnd: parseOptionalRow(rowEnd),
-  });
+  const submittedRows = collapseFilledAnalysisRows(
+    selectedColumn,
+    parseOptionalRow(rowStart),
+    parseOptionalRow(rowEnd)
+  );
+  const rowSelection = normalizeRowSelection(submittedRows);
   const numeric = selectedColumn
     ? columnNumericValues(selectedColumn, rowSelection)
     : { values: [], skipped: 0 };
@@ -213,8 +226,8 @@ export function AnalyzeDialog({
           responseColumnId: columnId,
           factorColumnId,
           title: title.trim(),
-          rowStart: parseOptionalRow(rowStart),
-          rowEnd: parseOptionalRow(rowEnd),
+          rowStart: submittedRows.rowStart,
+          rowEnd: submittedRows.rowEnd,
         },
       });
       return;
@@ -227,8 +240,8 @@ export function AnalyzeDialog({
         lsl: parseOptionalNumber(lsl),
         usl: parseOptionalNumber(usl),
         target: parseOptionalNumber(target),
-        rowStart: parseOptionalRow(rowStart),
-        rowEnd: parseOptionalRow(rowEnd),
+        rowStart: submittedRows.rowStart,
+        rowEnd: submittedRows.rowEnd,
       },
     });
   };
@@ -393,7 +406,7 @@ export function AnalyzeDialog({
                     <FieldInfoIcon
                       label="Row range"
                       testId="analyze-row-range-info"
-                      text="Rows are numbered from 1. Leave both blank to use the whole column."
+                      text={ANALYSIS_ROW_RANGE_HELP}
                     />
                   </div>
                   <Input
