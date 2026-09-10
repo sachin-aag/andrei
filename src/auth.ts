@@ -20,6 +20,10 @@ import {
   recordFailedLoginAttempt,
   recordLastLogin,
 } from "@/lib/auth/workspace-login";
+import {
+  shouldRefreshJwtWorkspaceState,
+  stampJwtWorkspaceStateCheckedAt,
+} from "@/lib/auth/jwt-workspace-state";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Required when the app is reached via 127.0.0.1, Docker, or CI (not only Vercel).
@@ -112,10 +116,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return false;
       }
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.productTourSessionId = crypto.randomUUID();
       }
+      if (
+        !shouldRefreshJwtWorkspaceState(token, {
+          hasUser: Boolean(user),
+          trigger,
+        })
+      ) {
+        return token;
+      }
+
       const email =
         user?.email ??
         (typeof token.email === "string" ? token.email : undefined);
@@ -151,6 +164,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       }
 
+      stampJwtWorkspaceStateCheckedAt(token);
       return token;
     },
     async session({ session, token }) {

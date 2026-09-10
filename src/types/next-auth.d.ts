@@ -18,5 +18,7 @@ declare module "next-auth/jwt" {
     mustChangePassword?: boolean;
     passwordExpired?: boolean;
     productTourSessionId?: string;
+    /** Epoch ms of the last workspace-user / password-policy JWT refresh. */
+    jwtStateCheckedAt?: number;
   }
 }

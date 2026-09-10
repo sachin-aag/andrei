@@ -237,6 +237,13 @@ process serving the request is missing one of them.
 `src/proxy.ts` does **not** enforce the site-access gate (`SITE_ACCESS_PASSWORD`
 + `/unlock`).
 
+The JWT callback caches `mustChangePassword` / `passwordExpired` for 60s
+(`jwtStateCheckedAt`) and `getPasswordPolicy()` is process-cached for 60s.
+A token that still requires `/change-password` always refreshes from the DB
+so a successful password replace can leave that page. Home-list Open links
+go straight to `/edit` or `/review` (`reportWorkspacePath`); `/reports/[id]`
+still redirects for old bookmarks.
+
 ## AI credentials (not interchangeable)
 
 | Feature | Needs | Local stub (never Vercel) |

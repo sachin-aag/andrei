@@ -18,6 +18,10 @@ alwaysApply: false
 - Proxy enforces session + `mustChangePassword` / `passwordExpired` →
   `/change-password`. It does **not** enforce `SITE_ACCESS_PASSWORD`
   (that is `/unlock` + `POST /api/site-access`).
+- JWT `mustChangePassword` / `passwordExpired` are reused for 60s
+  (`jwtStateCheckedAt`) so `auth()` in this proxy does not query Postgres on
+  every request. Tokens that still require a password change always refresh.
+  `getPasswordPolicy()` is process-cached for 60s.
 - `POST /api/test/login` and `POST /api/test/seed-auth-users` require
   **both** `ALLOW_TEST_LOGIN=true` **and** `TEST_AUTH_EMAIL`. A 404 on those
   routes usually means the process serving the request is missing one of them.
