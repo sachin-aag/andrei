@@ -70,8 +70,14 @@ export type ExcelNativeChart = {
   series: ExcelChartSeries[];
   /** Column chart gap. 0 fuses adjacent equal-height histogram bins. */
   gapWidth?: number;
+  /** Column overlap. 100 with gapWidth 0 makes histogram bars share edges. */
+  overlap?: number;
   /** Skip category tick labels on dense measurement axes. */
   tickLblSkip?: number;
+  /** Force a discrete category axis (numeric measurement labels stay categories). */
+  forceCategoryAxis?: boolean;
+  /** Emit category labels as text so Excel does not treat X as a value axis. */
+  categoryAsText?: boolean;
   /** 0-based worksheet row for the top-left of the drawing. */
   anchorRow: number;
   /** 0-based worksheet column. */
@@ -148,10 +154,12 @@ function cacheXml(
   return `<c:${kind}Ref><c:f>${formula}</c:f><c:${cacheName}>${format}<c:ptCount val="${range.cache.length}"/>${pts.join("")}</c:${cacheName}></c:${kind}Ref>`;
 }
 
-function catsXml(range: ExcelCellRange): string {
-  const numeric = range.cache.every(
-    (value) => value == null || value === "" || typeof value === "number"
-  );
+function catsXml(range: ExcelCellRange, asText = false): string {
+  const numeric =
+    !asText &&
+    range.cache.every(
+      (value) => value == null || value === "" || typeof value === "number"
+    );
   return `<c:cat>${cacheXml(range, numeric ? "num" : "str")}</c:cat>`;
 }
 
@@ -203,9 +211,10 @@ function scatterSerXml(series: ExcelChartSeries, idx: number): string {
 function catValSerXml(
   series: ExcelChartSeries,
   idx: number,
-  fill: "line" | "solid" | "none"
+  fill: "line" | "solid" | "none",
+  categoryAsText = false
 ): string {
-  const cats = series.cats ? catsXml(series.cats) : "";
+  const cats = series.cats ? catsXml(series.cats, categoryAsText) : "";
   const fillXml =
     fill === "solid"
       ? solidFill(series)
@@ -256,12 +265,20 @@ function catAxXml(opts: {
   crossAx: number;
   title?: string;
   tickLblSkip?: number;
+  auto?: boolean;
 }): string {
   const skip =
     opts.tickLblSkip != null && opts.tickLblSkip > 1
       ? `<c:tickLblSkip val="${Math.floor(opts.tickLblSkip)}"/><c:tickMarkSkip val="${Math.floor(opts.tickLblSkip)}"/>`
       : "";
-  return `<c:catAx><c:axId val="${opts.axId}"/>${scalingXml(null, null)}<c:delete val="0"/><c:axPos val="b"/><c:majorGridlines/>${titleXml(opts.title, "axis")}<c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${opts.crossAx}"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/>${skip}</c:catAx>`;
+  const auto = opts.auto === false ? "0" : "1";
+  return `<c:catAx><c:axId val="${opts.axId}"/>${scalingXml(null, null)}<c:delete val="0"/><c:axPos val="b"/><c:majorGridlines/>${titleXml(opts.title, "axis")}<c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="${opts.crossAx}"/><c:crosses val="autoZero"/><c:auto val="${auto}"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/>${skip}</c:catAx>`;
+}
+
+function gapAndOverlapXml(chart: ExcelNativeChart): string {
+  const gap = `<c:gapWidth val="${chart.gapWidth ?? 80}"/>`;
+  if (chart.overlap == null) return gap;
+  return `${gap}<c:overlap val="${Math.trunc(chart.overlap)}"/>`;
 }
 
 function scatterStyleVal(
@@ -297,37 +314,46 @@ export function buildChartXml(chart: ExcelNativeChart): string {
     }
     case "line": {
       const body = series
-        .map((item, idx) => catValSerXml(item, idx, "line"))
+        .map((item, idx) =>
+          catValSerXml(item, idx, "line", chart.categoryAsText === true)
+        )
         .join("");
-      plot = `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${body}<c:marker val="1"/><c:axId val="1"/><c:axId val="2"/></c:lineChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}`;
+      plot = `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${body}<c:marker val="1"/><c:axId val="1"/><c:axId val="2"/></c:lineChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle, tickLblSkip: chart.tickLblSkip, auto: !chart.forceCategoryAxis })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}`;
       break;
     }
     case "area": {
       const body = series
-        .map((item, idx) => catValSerXml(item, idx, "solid"))
+        .map((item, idx) =>
+          catValSerXml(item, idx, "solid", chart.categoryAsText === true)
+        )
         .join("");
-      plot = `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${body}<c:axId val="1"/><c:axId val="2"/></c:areaChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}`;
+      plot = `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${body}<c:axId val="1"/><c:axId val="2"/></c:areaChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle, tickLblSkip: chart.tickLblSkip, auto: !chart.forceCategoryAxis })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}`;
       break;
     }
     case "column":
     case "columnStacked": {
       const grouping = chart.kind === "columnStacked" ? "stacked" : "clustered";
       const body = series
-        .map((item, idx) => catValSerXml(item, idx, "solid"))
+        .map((item, idx) =>
+          catValSerXml(item, idx, "solid", chart.categoryAsText === true)
+        )
         .join("");
-      plot = `<c:barChart><c:barDir val="col"/><c:grouping val="${grouping}"/><c:varyColors val="0"/>${body}<c:gapWidth val="80"/><c:axId val="1"/><c:axId val="2"/></c:barChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}`;
+      plot = `<c:barChart><c:barDir val="col"/><c:grouping val="${grouping}"/><c:varyColors val="0"/>${body}${gapAndOverlapXml(chart)}<c:axId val="1"/><c:axId val="2"/></c:barChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle, tickLblSkip: chart.tickLblSkip, auto: !chart.forceCategoryAxis })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}`;
       break;
     }
     case "columnLine": {
       const columns = series.filter((item) => !item.asLine);
       const lines = series.filter((item) => item.asLine);
+      const asText = chart.categoryAsText === true;
       const colBody = columns
-        .map((item, idx) => catValSerXml(item, idx, "solid"))
+        .map((item, idx) => catValSerXml(item, idx, "solid", asText))
         .join("");
       const lineBody = lines
-        .map((item, idx) => catValSerXml(item, columns.length + idx, "line"))
+        .map((item, idx) =>
+          catValSerXml(item, columns.length + idx, "line", asText)
+        )
         .join("");
-      plot = `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${colBody}<c:gapWidth val="${chart.gapWidth ?? 80}"/><c:axId val="1"/><c:axId val="2"/></c:barChart><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${lineBody}<c:marker val="1"/><c:axId val="1"/><c:axId val="2"/></c:lineChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle, tickLblSkip: chart.tickLblSkip })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}`;
+      plot = `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${colBody}${gapAndOverlapXml(chart)}<c:axId val="1"/><c:axId val="2"/></c:barChart><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${lineBody}<c:marker val="1"/><c:axId val="1"/><c:axId val="2"/></c:lineChart>${catAxXml({ axId: 1, crossAx: 2, title: chart.xAxisTitle, tickLblSkip: chart.tickLblSkip, auto: !chart.forceCategoryAxis })}${valAxXml({ axId: 2, crossAx: 1, pos: "l", title: chart.yAxisTitle, min: yMin, max: yMax, grid: true })}`;
       break;
     }
     default: {

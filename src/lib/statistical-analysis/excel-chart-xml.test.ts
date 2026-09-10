@@ -95,7 +95,10 @@ describe("excel chart xml helpers", () => {
       yMin: 0,
       yMax: 4,
       gapWidth: 0,
+      overlap: 100,
       tickLblSkip: 3,
+      forceCategoryAxis: true,
+      categoryAsText: true,
       series: [
         {
           name: "Count",
@@ -122,6 +125,9 @@ describe("excel chart xml helpers", () => {
     expect(xml).toContain("c:barChart");
     expect(xml).toContain("c:lineChart");
     expect(xml).toContain('<c:gapWidth val="0"/>');
+    expect(xml).toContain('<c:overlap val="100"/>');
+    expect(xml).toContain('<c:auto val="0"/>');
+    expect(xml).toContain("c:strCache");
     expect(xml).toContain('<c:smooth val="1"/>');
     expect(xml).toContain('<c:tickLblSkip val="3"/>');
     expect(xml).toContain("'Assay sixpack'!$A$20:$A$39");

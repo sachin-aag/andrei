@@ -63,7 +63,10 @@ export type PlannedChart = {
   yMin?: number | null;
   yMax?: number | null;
   gapWidth?: number;
+  overlap?: number;
   tickLblSkip?: number;
+  forceCategoryAxis?: boolean;
+  categoryAsText?: boolean;
   series: SeriesRef[];
 };
 
@@ -158,7 +161,10 @@ export function resolvePlannedCharts(
         yMin: chart.yMin,
         yMax: chart.yMax,
         gapWidth: chart.gapWidth,
+        overlap: chart.overlap,
         tickLblSkip: chart.tickLblSkip,
+        forceCategoryAxis: chart.forceCategoryAxis,
+        categoryAsText: chart.categoryAsText,
         series,
         ...anchor,
       } satisfies ExcelNativeChart,
@@ -177,16 +183,58 @@ function padRows(
   });
 }
 
+function interpolateY(
+  curve: Array<{ x: number; y: number }>,
+  x: number
+): number | null {
+  if (curve.length === 0) return null;
+  const first = curve[0]!;
+  const last = curve[curve.length - 1]!;
+  if (x <= first.x) return first.y;
+  for (let i = 1; i < curve.length; i++) {
+    const b = curve[i]!;
+    if (x <= b.x) {
+      const a = curve[i - 1]!;
+      const span = b.x - a.x;
+      const t = span === 0 ? 0 : (x - a.x) / span;
+      return a.y + t * (b.y - a.y);
+    }
+  }
+  return last.y;
+}
+
 function countAtBin(
   x: number,
   bins: Array<{ x0: number; x1: number; count: number }>
-): number | null {
+): number {
   for (const bin of bins) {
     if (x >= bin.x0 && x < bin.x1) return bin.count;
   }
   const last = bins[bins.length - 1];
   if (last && x === last.x1) return last.count;
-  return null;
+  return 0;
+}
+
+function sortedUniqueXs(values: number[]): number[] {
+  return [...new Set(values.filter((value) => Number.isFinite(value)))].toSorted(
+    (a, b) => a - b
+  );
+}
+
+/** Two identical categories so a line series can stroke a vertical spec line. */
+function insertSpecPair(xs: number[], spec: number): number[] {
+  const next: number[] = [];
+  let inserted = false;
+  for (const x of xs) {
+    if (!inserted && x > spec) {
+      next.push(spec, spec);
+      inserted = true;
+    }
+    if (x === spec) continue;
+    next.push(x);
+  }
+  if (!inserted) next.push(spec, spec);
+  return next;
 }
 
 function specLimitSpike(
@@ -196,10 +244,22 @@ function specLimitSpike(
 ): Array<number | null> {
   const values: Array<number | null> = xs.map(() => null);
   if (xs.length === 0) return values;
-  let best = 0;
-  for (let i = 1; i < xs.length; i++) {
-    if (Math.abs(xs[i]! - spec) < Math.abs(xs[best]! - spec)) best = i;
+  const idxs: number[] = [];
+  for (let i = 0; i < xs.length; i++) {
+    if (xs[i] === spec) idxs.push(i);
   }
+  if (idxs.length >= 2) {
+    values[idxs[0]!] = 0;
+    values[idxs[1]!] = yMax;
+    return values;
+  }
+  const best =
+    idxs[0] ??
+    xs.reduce(
+      (bestIdx, x, i) =>
+        Math.abs(x - spec) < Math.abs(xs[bestIdx]! - spec) ? i : bestIdx,
+      0
+    );
   const next = best + 1 < xs.length ? best + 1 : Math.max(0, best - 1);
   values[best] = 0;
   values[next] = yMax;
@@ -645,34 +705,39 @@ function histogramTable(
     showLsl,
     showUsl,
   });
-  const xs =
-    showOverall
-      ? histogram.overallCurve.map((point) => point.x)
-      : showWithin
-        ? histogram.withinCurve.map((point) => point.x)
-        : histogram.bins.map((bin) => (bin.x0 + bin.x1) / 2);
-  const overallY = showOverall
-    ? histogram.overallCurve.map((point) => point.y)
-    : null;
-  const withinY = showWithin
-    ? histogram.withinCurve.map((point) => point.y)
-    : null;
-  const counts = xs.map((x, i) =>
-    overallY || withinY
-      ? countAtBin(x, histogram.bins)
-      : (histogram.bins[i]?.count ?? null)
-  );
   const drawLsl = showLsl && lsl != null;
   const drawUsl = showUsl && usl != null;
-  const lslY = drawLsl ? specLimitSpike(xs, lsl, scale.yMax) : null;
-  const uslY = drawUsl ? specLimitSpike(xs, usl, scale.yMax) : null;
+  const rawXs: number[] = [];
+  if (showOverall) {
+    rawXs.push(...histogram.overallCurve.map((point) => point.x));
+  } else if (showWithin) {
+    rawXs.push(...histogram.withinCurve.map((point) => point.x));
+  } else {
+    rawXs.push(...histogram.bins.map((bin) => (bin.x0 + bin.x1) / 2));
+  }
+  for (const bin of histogram.bins) {
+    rawXs.push(bin.x0, bin.x1);
+  }
+  rawXs.push(scale.xMin, scale.xMax);
+  let xs = sortedUniqueXs(rawXs);
+  if (drawLsl && lsl != null) xs = insertSpecPair(xs, lsl);
+  if (drawUsl && usl != null) xs = insertSpecPair(xs, usl);
+  const overallY = showOverall
+    ? xs.map((x) => interpolateY(histogram.overallCurve, x))
+    : null;
+  const withinY = showWithin
+    ? xs.map((x) => interpolateY(histogram.withinCurve, x))
+    : null;
+  const counts = xs.map((x) => countAtBin(x, histogram.bins));
+  const lslY = drawLsl && lsl != null ? specLimitSpike(xs, lsl, scale.yMax) : null;
+  const uslY = drawUsl && usl != null ? specLimitSpike(xs, usl, scale.yMax) : null;
   const headers = ["X", "Count"];
   if (overallY) headers.push("Overall");
   if (withinY) headers.push("Within");
   if (lslY) headers.push("LSL");
   if (uslY) headers.push("USL");
   const rows = xs.map((x, i) => {
-    const row: Array<string | number | null> = [x, counts[i] ?? null];
+    const row: Array<string | number | null> = [x, counts[i] ?? 0];
     if (overallY) row.push(overallY[i] ?? null);
     if (withinY) row.push(withinY[i] ?? null);
     if (lslY) row.push(lslY[i] ?? null);
@@ -752,8 +817,11 @@ function histogramTable(
         yAxisTitle: "Count",
         yMin: 0,
         yMax: scale.yMax,
-        gapWidth: hasLines ? 0 : 80,
+        gapWidth: 0,
+        overlap: 100,
         tickLblSkip: xs.length > 12 ? Math.ceil(xs.length / 8) : undefined,
+        forceCategoryAxis: true,
+        categoryAsText: true,
         series,
       },
     ],

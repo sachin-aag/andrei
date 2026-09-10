@@ -155,8 +155,9 @@ or the document name when the page is unavailable, on the column and chart
 spec for CSV download. Plot figures do not show `p. N`.
 Analytics **Export with Excel charts** writes native Excel charts bound to
 numeric source tables (editable in Excel), not PNG snapshots. Histogram
-overall/within fits share the dense measurement grid with the bars (not one
-vertex per bin) so Excel strokes a smooth bell.
+overall/within fits share a dense measurement grid with the bars (not one
+vertex per bin) so Excel strokes a smooth bell. Adjacent bars fuse
+(`gapWidth` 0, overlap 100); LSL/USL are vertical lines at the spec values.
 Editing a cell drops that citation. Attachment extract-and-plot is Analytics chat
 only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
 There is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA
