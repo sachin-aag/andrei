@@ -257,7 +257,10 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 - Ready docs (filename + sanitized `documentSummary`) are in the context map.
 - Each turn: focused skims may inject `buildAutoEvidence` (≤1.5s, fail-soft).
   Adaptive/comprehensive skip it so the model greps. Gap tools:
-  `search_documents` (multi-round grep), `document_outline`, `read_document_page`.
+  `list_attachments` (file-set: count/names/folders/status), `search_documents`
+  (multi-round grep), `document_outline`, `read_document_page`. File-set
+  questions must call `list_attachments` — do not recount the Documents index
+  or grep for an inventory. `searchLoopDirective` does not hide it.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   Identifier queries also match `document_pages.identifiers` (legacy rows fall
   back to `ILIKE` on `raw_text`) and skip the query embedding when exact hits

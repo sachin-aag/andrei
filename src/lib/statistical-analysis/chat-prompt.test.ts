@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v48-attachment-count"
+      "analytics-chat-v49-list-attachments"
     );
   });
 
@@ -155,7 +155,7 @@ describe("analytics chat prompt", () => {
     expect(prompt).not.toContain("The engineer can save the worksheet");
   });
 
-  it("puts an authoritative ready-document count in the index header", () => {
+  it("points file-set questions at list_attachments instead of a buried count", () => {
     const empty = buildAnalyticsChatSystemPrompt({
       documentNo: "DEV-1",
       status: "draft",
@@ -164,8 +164,9 @@ describe("analytics chat prompt", () => {
       canEdit: true,
       mode: "agent",
     });
-    expect(empty).toContain("Ready documents: 0");
-    expect(empty).toContain("How many attachments or documents");
+    expect(empty).toContain("Ready documents: none uploaded");
+    expect(empty).toContain("How many attachments, which files, folders, or file status");
+    expect(empty).toContain("call list_attachments");
 
     const two = buildAnalyticsChatSystemPrompt({
       documentNo: "DEV-1",
@@ -192,7 +193,8 @@ describe("analytics chat prompt", () => {
       canEdit: true,
       mode: "agent",
     });
-    expect(two).toContain("Ready documents: 2");
-    expect(two).toContain("do not recount the list or search to answer how many");
+    expect(two).toContain("Ready documents (index only");
+    expect(two).toContain("list_attachments");
+    expect(two).not.toContain("do not recount the list");
   });
 });

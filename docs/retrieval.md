@@ -10,6 +10,10 @@ standalone search product (Elasticsearch, a hosted vector DB, BM25-only).
 Hybrid retrieval already runs under that control plane. Latency is mostly
 tool rounds and query embeddings, not HNSW.
 
+File-set questions (how many files, names, folders, ready vs still ingesting)
+use `list_attachments`. That is a compact catalog walk of the Attachments tree,
+not grep. Do not stuff an authoritative count into the Documents index instead.
+
 Caps stay as they are (250 MB/file, 500 pages/file, 1 GB/report, 50
 files/report, 100k pages/month, outline/review 300 pages, search 16 hits /
 80 `excludePages`, 270s chat abort). This work does not raise them.

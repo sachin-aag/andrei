@@ -106,7 +106,11 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 - New tools: register in `buildChatTools` **and** add to the Plan allowlist in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
   Missing from the allowlist = silent Plan-mode gap. Analytics tools stay
-  off that list.
+  off that list. File-set questions (how many attachments, names, folders,
+  status) use `list_attachments` (`src/lib/attachments/list-catalog.ts`).
+  Copy it into `ANALYTICS_DOCUMENT_TOOL_NAMES`. Do not hide it in
+  `searchLoopDirective`. Do not stuff an authoritative count into the
+  Documents index instead.
 - A tool-input schema violation must never end the engineer's turn.
   `repairChatToolCall` clamps `InvalidToolInputError` input to the tool's own
   JSON Schema (`clampToolInputToSchema`: maxItems, maxLength, min/max, enum,
@@ -231,9 +235,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.
 - Tagged `@` documents are the complete attachment scope for that turn.
-  Search, scan, outline, page reads, and extracts must not drift to untagged
-  files. If the client drops a structured mention payload, recover an exact,
-  unique `@filename` against that report's ready-document index.
+  Search, scan, outline, page reads, extracts, and `list_attachments` must
+  not drift to untagged files. If the client drops a structured mention payload,
+  recover an exact, unique `@filename` against that report's ready-document index.
 - Report body is not in `document_chunks`. Use `read_section`.
 
 ## Ingest

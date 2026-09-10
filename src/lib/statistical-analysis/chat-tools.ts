@@ -94,6 +94,7 @@ import {
 } from "./page-number-ask";
 
 export const ANALYTICS_DOCUMENT_TOOL_NAMES = [
+  "list_attachments",
   "search_documents",
   "read_document_page",
   "document_outline",

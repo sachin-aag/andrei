@@ -196,6 +196,11 @@ import {
   toClientDocumentSearchResults,
 } from "@/lib/attachments/retrieval";
 import {
+  LIST_ATTACHMENTS_DEFAULT_LIMIT,
+  LIST_ATTACHMENTS_MAX_LIMIT,
+  listAttachmentCatalog,
+} from "@/lib/attachments/list-catalog";
+import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
 import { DocumentReviewSession ,
@@ -1313,6 +1318,60 @@ export function buildChatTools(opts: {
       pinnedAttachmentIds,
       citationRule,
       citationLedger,
+    }),
+
+    list_attachments: tool({
+      description:
+        pinnedAttachmentIds.length > 0
+          ? `List the ${pinnedAttachmentIds.length} file(s) the engineer tagged with @ (names, folders, processing status, page counts). Use for how many / which files / folder paths / still-ingesting vs ready. Not for facts inside a PDF — that is search_documents.`
+          : "List files in this report's Attachments tree (names, folders, processing status, page counts). Use for how many files, which files, folder paths, or still-ingesting vs ready. Includes uploading/queued/processing/failed as well as ready. Paginate with offset when nextOffset is set. search_documents greps page text and is the wrong tool for a file inventory. Do not guess counts from the Documents index.",
+      inputSchema: z.object({
+        query: z
+          .string()
+          .trim()
+          .max(120)
+          .optional()
+          .describe(
+            "Optional case-insensitive substring on filename or folder path."
+          ),
+        status: z
+          .enum(["all", "ready", "not_ready"])
+          .optional()
+          .describe(
+            "all (default) matches the Attachments tree including still-ingesting files. ready = searchable. not_ready = uploading/queued/processing/failed."
+          ),
+        offset: z.number().int().min(0).optional().default(0),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(LIST_ATTACHMENTS_MAX_LIMIT)
+          .optional()
+          .default(LIST_ATTACHMENTS_DEFAULT_LIMIT),
+      }),
+      execute: async ({ query, status, offset, limit }) => {
+        const catalog = await listAttachmentCatalog({
+          reportId,
+          pinnedAttachmentIds,
+          query,
+          status: status ?? "all",
+          offset,
+          limit,
+        });
+        return {
+          ...catalog,
+          files: catalog.files.map((row) => ({
+            ...row,
+            filename: sanitizePromptMetadata(row.filename, 180) || "unnamed",
+            folderPath: sanitizePromptMetadata(row.folderPath, 240),
+          })),
+          hint:
+            catalog.nextOffset != null
+              ? "Call again with offset=nextOffset to continue. Totals are the Attachments tree, not search hits."
+              : "These totals are the Attachments tree (including still-ingesting files unless status=ready). search_documents greps page text and is not a file inventory.",
+          trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+        };
+      },
     }),
 
     document_outline: tool({
