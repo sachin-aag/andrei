@@ -156,8 +156,9 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | shows on first login and resumes after skip | Welcome → next → skip; next session resumes mid-tour (email scoped per project + test so parallel workers do not share one user) |
 | dismiss forever stays closed | Don't show again, then resume login has no dialog |
 | replay from profile starts the tour again | Dismiss, wait for `GET /api/me/walkthrough` `dismissed`, then Profile **Replay product tour** |
+| Document or Agent waits until a report is open | Next on create-report hides the overlay on home; opening a report shows Document or Agent, then Write in the editor |
 
-Engineer steps include Document \| Agent chrome, Analytics, and the Document vault. Insights is demo-only.
+Engineer steps include Document \| Agent chrome, Analytics, and the Document vault. Insights is demo-only. Report-only cards stay hidden until a report is open.
 
 </details>
 

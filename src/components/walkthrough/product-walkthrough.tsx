@@ -15,7 +15,12 @@ import type { UserRole } from "@/lib/auth/roles";
 import { captureEvent } from "@/lib/analytics/events";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { listDocumentTypes } from "@/lib/document-types";
-import { resolveStepIndex, stepsForRole } from "@/lib/walkthrough/steps";
+import {
+  productTourStepIsOnPage,
+  resolveStepIndex,
+  resumeTourIndexForPathname,
+  stepsForRole,
+} from "@/lib/walkthrough/steps";
 import {
   isProductTourPausedForSession,
   PRODUCT_TOUR_SESSION_PAUSE_KEY,
@@ -61,6 +66,7 @@ export function ProductWalkthroughProvider({
   const [index, setIndex] = useState(0);
   const persistSeq = useRef(0);
   const startedRef = useRef(false);
+  const navigatedForStepRef = useRef<string | null>(null);
 
   const copy = useMemo(() => {
     const pack = getCustomerPack();
@@ -74,6 +80,7 @@ export function ProductWalkthroughProvider({
 
   const steps = useMemo(() => stepsForRole(role, copy), [role, copy]);
   const step: ProductTourStep | undefined = steps[index];
+  const stepOnPage = Boolean(step && productTourStepIsOnPage(step, pathname));
 
   useEffect(() => {
     let cancelled = false;
@@ -130,12 +137,13 @@ export function ProductWalkthroughProvider({
     }
   }, []);
 
-  const visible =
+  const tourActive =
     sessionPauseReady &&
     progress !== null &&
     shouldShowProductTour(progress.status) &&
     !pausedThisSession &&
     Boolean(step);
+  const visible = tourActive && stepOnPage;
 
   useEffect(() => {
     if (!visible || !step) return;
@@ -146,11 +154,24 @@ export function ProductWalkthroughProvider({
   }, [visible, step, progress?.status, persist, role]);
 
   useEffect(() => {
-    if (!visible || !step) return;
-    if (!step.href || !step.match) return;
-    if (step.match(pathname)) return;
+    if (!tourActive) return;
+    const nextIndex = resumeTourIndexForPathname(steps, index, pathname);
+    if (nextIndex !== index) {
+      const nextStep = steps[nextIndex];
+      if (!nextStep) return;
+      setIndex(nextIndex);
+      void persist({ status: "in_progress", stepId: nextStep.id });
+      return;
+    }
+    if (!step?.href || !step.match) return;
+    if (step.match(pathname)) {
+      navigatedForStepRef.current = null;
+      return;
+    }
+    if (navigatedForStepRef.current === step.id) return;
+    navigatedForStepRef.current = step.id;
     router.push(step.href);
-  }, [visible, step, pathname, router]);
+  }, [tourActive, steps, index, pathname, persist, router, step]);
 
   const goTo = useCallback(
     (nextIndex: number) => {

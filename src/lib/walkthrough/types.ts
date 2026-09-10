@@ -14,9 +14,13 @@ export type ProductTourStep = {
   body: string
   /** Getting-started path — shown first and badged in the card. */
   startHere?: boolean
-  /** Navigate here when the step becomes active. */
+  /** Navigate here when the step becomes active and the user is not already on `match`. */
   href?: string
-  /** True when the current pathname is the right page for this step. */
+  /**
+   * Right page for this card. If this returns false, hide the overlay until
+   * the user opens that page (or `href` takes them there). Report-only cards
+   * must wait for a report — never show them on the dashboard.
+   */
   match?: (pathname: string) => boolean
   /** Value of `data-walkthrough`. Omit for a centered card. */
   target?: string

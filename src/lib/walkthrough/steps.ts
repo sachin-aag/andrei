@@ -121,7 +121,7 @@ export function stepsForRole(
         {
           id: "create-report",
           title: "Start here: create a report",
-          body: `New Report opens a draft. Give it a document number and optionally assign reviewers. You can also import an existing Word file when that is enabled.`,
+          body: `New Report opens a draft. Give it a document number and optionally assign reviewers. You can also import an existing Word file when that is enabled. The next cards appear once you open the report.`,
           startHere: true,
           href: "/",
           match: (pathname) => pathname === "/",
@@ -166,7 +166,6 @@ export function stepsForRole(
           target: "documents",
           match: isReportWorkspace,
         },
-        vaultStep(role),
         {
           id: "submit",
           title: "Submit for review",
@@ -181,6 +180,7 @@ export function stepsForRole(
           target: "export-docx",
           match: isReportWorkspace,
         },
+        vaultStep(role),
         ...extras.insights,
         {
           id: "profile",
@@ -198,7 +198,7 @@ export function stepsForRole(
         {
           id: "reports",
           title: "Your review queue",
-          body: "Submitted and in-review reports appear here. Open one to comment, return it, or approve.",
+          body: "Submitted and in-review reports appear here. Open one to comment, return it, or approve. The next cards appear once you open a report.",
           startHere: true,
           href: "/",
           match: (pathname) => pathname === "/",
@@ -228,7 +228,6 @@ export function stepsForRole(
           match: isReportWorkspace,
         },
         ...extras.analytics,
-        vaultStep(role),
         {
           id: "export",
           title: "Export to Word",
@@ -236,6 +235,7 @@ export function stepsForRole(
           target: "export-docx",
           match: isReportWorkspace,
         },
+        vaultStep(role),
         ...extras.insights,
         {
           id: "profile",
@@ -253,7 +253,7 @@ export function stepsForRole(
         {
           id: "reports",
           title: "All reports",
-          body: "QA has a read-only view of every report. Open one to read it or follow the audit trail — you cannot edit or approve.",
+          body: "QA has a read-only view of every report. Open one to read it or follow the audit trail — you cannot edit or approve. The next cards appear once you open a report.",
           startHere: true,
           href: "/",
           match: (pathname) => pathname === "/",
@@ -356,4 +356,38 @@ export function resolveStepIndex(
   if (!stepId) return 0;
   const index = steps.findIndex((step) => step.id === stepId);
   return index >= 0 ? index : 0;
+}
+
+/** Unanchored cards (no `match`) can show on any page. */
+export function productTourStepIsOnPage(
+  step: ProductTourStep,
+  pathname: string
+): boolean {
+  return !step.match || step.match(pathname);
+}
+
+/**
+ * Keep the current card until its page is open. If the user already left for a
+ * later card's page (opened a report, vault, …), resume at that later card.
+ *
+ * Do not skip while still on the previous card's page — Next to vault would
+ * otherwise jump to the next report-only card before `/vault` loads.
+ */
+export function resumeTourIndexForPathname(
+  steps: ProductTourStep[],
+  currentIndex: number,
+  pathname: string
+): number {
+  const current = steps[currentIndex];
+  if (!current) return currentIndex;
+  if (productTourStepIsOnPage(current, pathname)) return currentIndex;
+
+  const previous = currentIndex > 0 ? steps[currentIndex - 1] : undefined;
+  if (previous?.match?.(pathname)) return currentIndex;
+
+  for (let i = currentIndex + 1; i < steps.length; i++) {
+    const candidate = steps[i];
+    if (candidate?.match?.(pathname)) return i;
+  }
+  return currentIndex;
 }

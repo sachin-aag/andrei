@@ -7,9 +7,10 @@ import type { ReactNode } from "react";
 import { ProductWalkthroughProvider } from "@/components/walkthrough/product-walkthrough";
 
 const push = vi.fn();
+let pathname = "/";
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/",
+  usePathname: () => pathname,
   useRouter: () => ({ push }),
 }));
 
@@ -41,6 +42,7 @@ describe("ProductWalkthroughProvider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    pathname = "/";
   });
 
   afterEach(() => {
@@ -213,6 +215,59 @@ describe("ProductWalkthroughProvider", () => {
 
     expect(
       await screen.findByRole("heading", { name: /your reports live here/i })
+    ).toBeInTheDocument();
+  });
+
+  it("hides Document or Agent on the dashboard until a report is open", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "in_progress",
+          stepId: "chrome",
+          sessionKey: "sess-1",
+        }),
+      })
+    );
+
+    const { rerender } = render(wrapper(<div>dashboard</div>));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    pathname = "/reports/abc/edit";
+    rerender(wrapper(<div>report</div>));
+
+    expect(
+      await screen.findByRole("heading", { name: /document or agent/i })
+    ).toBeInTheDocument();
+  });
+
+  it("opens Document or Agent when a report is created from the create-report card", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "in_progress",
+          stepId: "create-report",
+          sessionKey: "sess-1",
+        }),
+      })
+    );
+
+    const { rerender } = render(wrapper(<div>dashboard</div>));
+    expect(
+      await screen.findByRole("heading", { name: /start here: create a report/i })
+    ).toBeInTheDocument();
+
+    pathname = "/reports/abc/edit";
+    rerender(wrapper(<div>report</div>));
+
+    expect(
+      await screen.findByRole("heading", { name: /document or agent/i })
     ).toBeInTheDocument();
   });
 });

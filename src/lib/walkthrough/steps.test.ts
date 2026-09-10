@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveStepIndex, stepsForRole } from "@/lib/walkthrough/steps";
+import {
+  productTourStepIsOnPage,
+  resolveStepIndex,
+  resumeTourIndexForPathname,
+  stepsForRole,
+} from "@/lib/walkthrough/steps";
 import { shouldShowProductTour } from "@/lib/walkthrough/progress";
 
 const copy = {
@@ -40,6 +45,23 @@ describe("stepsForRole", () => {
       true
     );
     expect(steps.find((step) => step.id === "chrome")?.startHere).toBe(true);
+  });
+
+  it("keeps every report-workspace card together before leaving for vault", () => {
+    const ids = stepsForRole("engineer", copy).map((step) => step.id);
+    const chrome = ids.indexOf("chrome");
+    const vault = ids.indexOf("vault");
+    const inReport = ids.slice(chrome, vault);
+    expect(inReport).toEqual([
+      "chrome",
+      "editor",
+      "ai-check",
+      "assistant",
+      "analytics",
+      "attachments",
+      "submit",
+      "export",
+    ]);
   });
 
   it("omits Insights on packs that hide the nav", () => {
@@ -105,5 +127,52 @@ describe("shouldShowProductTour", () => {
     expect(shouldShowProductTour("in_progress")).toBe(true);
     expect(shouldShowProductTour("completed")).toBe(false);
     expect(shouldShowProductTour("dismissed")).toBe(false);
+  });
+});
+
+describe("productTourStepIsOnPage", () => {
+  const steps = stepsForRole("engineer", copy);
+  const chrome = steps.find((step) => step.id === "chrome")!;
+  const welcome = steps.find((step) => step.id === "welcome")!;
+
+  it("hides report-only cards on the dashboard", () => {
+    expect(productTourStepIsOnPage(chrome, "/")).toBe(false);
+    expect(productTourStepIsOnPage(welcome, "/")).toBe(true);
+  });
+
+  it("shows report-only cards once a report is open", () => {
+    expect(productTourStepIsOnPage(chrome, "/reports/abc/edit")).toBe(true);
+  });
+});
+
+describe("resumeTourIndexForPathname", () => {
+  const steps = stepsForRole("engineer", copy);
+  const createIndex = steps.findIndex((step) => step.id === "create-report");
+  const chromeIndex = steps.findIndex((step) => step.id === "chrome");
+  const vaultIndex = steps.findIndex((step) => step.id === "vault");
+
+  it("stays on Document or Agent until a report is open", () => {
+    expect(resumeTourIndexForPathname(steps, chromeIndex, "/")).toBe(chromeIndex);
+  });
+
+  it("resumes at Document or Agent when a report opens from create-report", () => {
+    expect(
+      resumeTourIndexForPathname(steps, createIndex, "/reports/abc/edit")
+    ).toBe(chromeIndex);
+  });
+
+  it("does not skip vault while the report is still on screen", () => {
+    expect(
+      resumeTourIndexForPathname(steps, vaultIndex, "/reports/abc/edit")
+    ).toBe(vaultIndex);
+  });
+
+  it("resumes manager review when a report opens from the queue", () => {
+    const managerSteps = stepsForRole("manager", copy);
+    const reportsIndex = managerSteps.findIndex((step) => step.id === "reports");
+    const reviewIndex = managerSteps.findIndex((step) => step.id === "review");
+    expect(
+      resumeTourIndexForPathname(managerSteps, reportsIndex, "/reports/abc/review")
+    ).toBe(reviewIndex);
   });
 });
