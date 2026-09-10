@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { TableOfContentsPanel } from "./table-of-contents-panel";
 import {
-  getConvergentTableOfContents,
+  getReportTableOfContents,
   type TableOfContentsEntry,
 } from "@/lib/document-types/convergent/table-of-contents";
 
@@ -47,25 +47,53 @@ describe("TableOfContentsPanel", () => {
   it("nests software Methods children and jumps Test Equipment to its own section", async () => {
     const user = userEvent.setup();
     const onJump = vi.fn();
-    const toc = getConvergentTableOfContents("design_verification");
-    expect(toc).not.toBeNull();
+    const toc = getReportTableOfContents("design_verification", "convergent");
 
-    render(<TableOfContentsPanel entries={toc!} onJumpToSection={onJump} />);
+    render(<TableOfContentsPanel entries={toc} onJumpToSection={onJump} />);
 
     expect(
-      screen.queryByRole("button", { name: "Methods of Measurement" })
+      screen.queryByRole("button", { name: "4. Methods of Measurement" })
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Methods of Measurement")).toBeInTheDocument();
+    expect(screen.getByText("4. Methods of Measurement")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Executed Protocol" }));
+    await user.click(screen.getByRole("button", { name: "4.1 Executed Protocol" }));
     expect(onJump).toHaveBeenCalledWith("methods_of_measurement");
 
-    await user.click(screen.getByRole("button", { name: "Test Equipment" }));
+    await user.click(screen.getByRole("button", { name: "4.4 Test Equipment" }));
     expect(onJump).toHaveBeenCalledWith("test_equipment");
 
     await user.click(
-      screen.getByRole("button", { name: "Requirements Verified" })
+      screen.getByRole("button", { name: "6.2 Requirements Verified" })
     );
     expect(onJump).toHaveBeenCalledWith("results_and_discussions");
+  });
+
+  it("jumps from a parent that also has nested children", async () => {
+    const user = userEvent.setup();
+    const onJump = vi.fn();
+    const toc = getReportTableOfContents("equipment_lifecycle_report", "mj");
+
+    render(<TableOfContentsPanel entries={toc} onJumpToSection={onJump} />);
+
+    await user.click(screen.getByRole("button", { name: "1. Purpose" }));
+    expect(onJump).toHaveBeenCalledWith("elr_objective");
+
+    await user.click(
+      screen.getByRole("button", { name: "3.9 Breakdowns and Trends" })
+    );
+    expect(onJump).toHaveBeenCalledWith("elr_breakdowns");
+
+    await user.click(
+      screen.getByRole("button", { name: "3.9.1 Breakdown Trend Summary" })
+    );
+    expect(onJump).toHaveBeenCalledWith("elr_breakdowns");
+
+    expect(
+      screen.queryByRole("button", { name: "3. Observations and Results" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("3. Observations and Results")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "9. Approval Page" })
+    ).not.toBeInTheDocument();
   });
 });
