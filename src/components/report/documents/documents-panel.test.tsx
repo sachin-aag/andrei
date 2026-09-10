@@ -121,3 +121,39 @@ describe("DocumentsPanel attachment actions", () => {
     expect(clickSpy).toHaveBeenCalled();
   });
 });
+
+describe("DocumentsPanel Contents tab", () => {
+  it("shows a Contents tab that jumps to an ELR section", async () => {
+    const user = userEvent.setup();
+    const onJump = vi.fn();
+    mockContext();
+    render(
+      <DocumentsPanel
+        collapsed={false}
+        onToggleCollapse={vi.fn()}
+        documentType="equipment_lifecycle_report"
+        onJumpToSection={onJump}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Contents" }));
+    await user.click(screen.getByRole("button", { name: "1.0 Purpose" }));
+    expect(onJump).toHaveBeenCalledWith("elr_objective");
+  });
+
+  it("hides Contents on generic documents", () => {
+    mockContext();
+    render(
+      <DocumentsPanel
+        collapsed={false}
+        onToggleCollapse={vi.fn()}
+        documentType="generic_document"
+        onJumpToSection={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Contents" })
+    ).not.toBeInTheDocument();
+  });
+});

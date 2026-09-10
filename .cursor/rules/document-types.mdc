@@ -57,3 +57,6 @@ const sections = getWorkspaceSections(report.documentType);
   (pending insert/delete marks persist and export as Word tracked changes).
   The editor is one TipTap field laid out as Letter pages (`PagedDocumentSurface`);
   do not persist page-break nodes.
+- Left-rail Contents tab: `getReportTableOfContents(documentType)` (Convergent
+  DV is pack-gated; investigation, QRA, and ELR follow the Word recipe).
+  Generic documents have no Contents tab.

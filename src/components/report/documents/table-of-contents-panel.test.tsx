@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TableOfContentsPanel } from "./table-of-contents-panel";
 import {
   getConvergentTableOfContents,
+  getReportTableOfContents,
   type TableOfContentsEntry,
 } from "@/lib/document-types/convergent/table-of-contents";
 
@@ -67,5 +68,35 @@ describe("TableOfContentsPanel", () => {
       screen.getByRole("button", { name: "Requirements Verified" })
     );
     expect(onJump).toHaveBeenCalledWith("results_and_discussions");
+  });
+
+  it("jumps from a parent that also has nested children", async () => {
+    const user = userEvent.setup();
+    const onJump = vi.fn();
+    const toc = getReportTableOfContents("equipment_lifecycle_report", "mj");
+    expect(toc).not.toBeNull();
+
+    render(<TableOfContentsPanel entries={toc!} onJumpToSection={onJump} />);
+
+    await user.click(screen.getByRole("button", { name: "1.0 Purpose" }));
+    expect(onJump).toHaveBeenCalledWith("elr_objective");
+
+    await user.click(
+      screen.getByRole("button", { name: "3.9 Breakdowns and Trends" })
+    );
+    expect(onJump).toHaveBeenCalledWith("elr_breakdowns");
+
+    await user.click(
+      screen.getByRole("button", { name: "3.9.1 Breakdown Trend Summary" })
+    );
+    expect(onJump).toHaveBeenCalledWith("elr_breakdowns");
+
+    expect(
+      screen.queryByRole("button", { name: "3.0 Observations and Results" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("3.0 Observations and Results")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "9.0 Approval Page" })
+    ).not.toBeInTheDocument();
   });
 });

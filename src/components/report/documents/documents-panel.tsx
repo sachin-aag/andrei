@@ -42,8 +42,8 @@ const LEFT_PANEL_TABS: {
 ];
 
 /**
- * Report-scoped left rail: attachments tree, and (Convergent DV only) a table of
- * contents that mirrors the Word export hierarchy.
+ * Report-scoped left rail: attachments tree, and a table of contents that
+ * mirrors the Word export hierarchy (Convergent DV, investigation, QRA, ELR).
  */
 export function DocumentsPanel({
   collapsed,

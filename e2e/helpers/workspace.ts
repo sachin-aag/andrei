@@ -52,7 +52,7 @@ export async function expandDocumentsPanel(page: Page): Promise<void> {
   ).toBeVisible();
 }
 
-/** Convergent DV reports expose a Contents tab in the left panel. */
+/** Reports with a Word-recipe outline expose a Contents tab in the left panel. */
 export async function openDocumentsContentsTab(page: Page): Promise<void> {
   await expandDocumentsPanel(page);
   const tab = documentsPanel(page).getByRole("button", { name: /^contents$/i });
