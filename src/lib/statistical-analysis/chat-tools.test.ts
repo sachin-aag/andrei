@@ -20,6 +20,7 @@ vi.mock("@/lib/ai/chat/tools", async (importOriginal) => {
   return {
     ...actual,
     buildChatTools: vi.fn(() => ({
+      list_attachments: { kind: "catalog" },
       search_documents: { kind: "search" },
       read_document_page: { kind: "page" },
       document_outline: { kind: "outline" },

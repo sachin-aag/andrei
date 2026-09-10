@@ -198,8 +198,10 @@ import {
 import {
   LIST_ATTACHMENTS_DEFAULT_LIMIT,
   LIST_ATTACHMENTS_MAX_LIMIT,
-  listAttachmentCatalog,
+  buildAttachmentCatalog,
 } from "@/lib/attachments/list-catalog";
+import { listAttachmentFolders } from "@/lib/attachments/folders";
+import { listActiveAttachments } from "@/lib/attachments/list-active";
 import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
@@ -1350,8 +1352,13 @@ export function buildChatTools(opts: {
           .default(LIST_ATTACHMENTS_DEFAULT_LIMIT),
       }),
       execute: async ({ query, status, offset, limit }) => {
-        const catalog = await listAttachmentCatalog({
-          reportId,
+        const [attachments, folders] = await Promise.all([
+          listActiveAttachments(reportId),
+          listAttachmentFolders(reportId),
+        ]);
+        const catalog = buildAttachmentCatalog({
+          attachments,
+          folders,
           pinnedAttachmentIds,
           query,
           status: status ?? "all",

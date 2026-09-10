@@ -104,7 +104,7 @@ describe("buildAttachmentCatalog", () => {
 
     expect(first.files.map((row) => ({ id: row.id, folderPath: row.folderPath }))).toEqual(
       [
-        { id: "jan", folderPath: "SOPs / 2026" },
+        { id: "root", folderPath: "" },
         { id: "sop", folderPath: "SOPs" },
       ]
     );
@@ -120,7 +120,8 @@ describe("buildAttachmentCatalog", () => {
       offset: first.nextOffset ?? 0,
       limit: 2,
     });
-    expect(second.files.map((row) => row.id)).toEqual(["root"]);
+    expect(second.files.map((row) => row.id)).toEqual(["jan"]);
+    expect(second.files[0]?.folderPath).toBe("SOPs / 2026");
     expect(second.nextOffset).toBeNull();
   });
 

@@ -1,6 +1,4 @@
 import { MAX_FOLDER_DEPTH } from "@/lib/attachments/folder-limits";
-import { listAttachmentFolders } from "@/lib/attachments/folders";
-import { listActiveAttachments } from "@/lib/attachments/list-active";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import type {
   ReportAttachmentFolderRecord,
@@ -222,27 +220,4 @@ export function buildAttachmentCatalog(
     pageCountUnknown,
     files: page,
   };
-}
-
-export async function listAttachmentCatalog(input: {
-  reportId: string;
-  pinnedAttachmentIds?: readonly string[];
-  query?: string;
-  status?: AttachmentCatalogStatusFilter;
-  offset?: number;
-  limit?: number;
-}): Promise<AttachmentCatalogResult> {
-  const [attachments, folders] = await Promise.all([
-    listActiveAttachments(input.reportId),
-    listAttachmentFolders(input.reportId),
-  ]);
-  return buildAttachmentCatalog({
-    attachments,
-    folders,
-    pinnedAttachmentIds: input.pinnedAttachmentIds,
-    query: input.query,
-    status: input.status,
-    offset: input.offset,
-    limit: input.limit,
-  });
 }
