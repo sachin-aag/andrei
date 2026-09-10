@@ -439,6 +439,7 @@ async function handleSuggestionsPost(
       metadata: {
         feature: "suggestion-generation",
         section,
+        section_id: section,
         documentNo: String(report.documentNo ?? ""),
         documentType: report.documentType,
       },
