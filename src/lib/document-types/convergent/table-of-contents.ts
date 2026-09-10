@@ -350,13 +350,45 @@ function pruneHiddenEntries(
 }
 
 /**
- * Left-rail Contents outline for every document type. The Attachments |
- * Contents chrome is the same on every pack; this returns the Word recipe
- * when the type has one, otherwise the editor section list.
+ * Word/form markers already in a label (`1.`, `1.0`, `3.9.1`, `A.`).
+ * Requires a trailing dot so titles like "6 M Method" are not stripped.
  */
-export function getReportTableOfContents(
+const EXISTING_OUTLINE_PREFIX_RE =
+  /^(?:[A-Z]\.|\d+\.\d+(?:\.\d+)*|\d+\.)\s+/;
+
+export function stripOutlinePrefix(label: string): string {
+  return label.replace(EXISTING_OUTLINE_PREFIX_RE, "");
+}
+
+/**
+ * Number a Contents tree: top-level `1. Title`, children `1.1 Title`,
+ * grandchildren `1.1.1 Title`. Existing Word numbers are replaced so every
+ * pack uses the same scheme.
+ */
+export function numberTableOfContents(
+  entries: readonly TableOfContentsEntry[],
+  parentNumber = ""
+): TableOfContentsEntry[] {
+  return entries.map((entry, index) => {
+    const ordinal = index + 1;
+    const number =
+      parentNumber === "" ? String(ordinal) : `${parentNumber}.${ordinal}`;
+    const title = stripOutlinePrefix(entry.label);
+    const label =
+      parentNumber === "" ? `${number}. ${title}` : `${number} ${title}`;
+    const children = entry.children?.length
+      ? numberTableOfContents(entry.children, number)
+      : undefined;
+    const numbered: TableOfContentsEntry = { label };
+    if (entry.sectionKey != null) numbered.sectionKey = entry.sectionKey;
+    if (children?.length) numbered.children = children;
+    return numbered;
+  });
+}
+
+function reportTableOfContentsRecipe(
   documentType: DocumentType,
-  customerId = resolveCustomerId()
+  customerId: CustomerId
 ): TableOfContentsEntry[] {
   switch (documentType) {
     case "design_verification":
@@ -378,6 +410,21 @@ export function getReportTableOfContents(
       return _exhaustive;
     }
   }
+}
+
+/**
+ * Left-rail Contents outline for every document type. The Attachments |
+ * Contents chrome is the same on every pack; this returns the Word recipe
+ * when the type has one, otherwise the editor section list, then numbers
+ * sections `1. 2. 3.` and subsections `1.1`.
+ */
+export function getReportTableOfContents(
+  documentType: DocumentType,
+  customerId = resolveCustomerId()
+): TableOfContentsEntry[] {
+  return numberTableOfContents(
+    reportTableOfContentsRecipe(documentType, customerId)
+  );
 }
 
 /** Flatten nested TOC entries (parent before children) for tests and scroll targets. */

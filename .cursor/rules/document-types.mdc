@@ -59,5 +59,6 @@ const sections = getWorkspaceSections(report.documentType);
   do not persist page-break nodes.
 - Left-rail chrome is Attachments | Contents on every pack (Convergent layout:
   tabs on the first row, folder/upload on a second row while Attachments is
-  selected). `getReportTableOfContents(documentType)` always returns an outline:
-  Word recipe when the type has one, otherwise the editor section list.
+  selected). `getReportTableOfContents(documentType)` always returns an outline
+  numbered `1. 2. 3.` / `1.1` (Word recipe when the type has one, otherwise the
+  editor section list).

@@ -3,6 +3,8 @@ import {
   flattenTableOfContents,
   getConvergentTableOfContents,
   getReportTableOfContents,
+  numberTableOfContents,
+  stripOutlinePrefix,
 } from "./table-of-contents";
 
 describe("getConvergentTableOfContents", () => {
@@ -74,27 +76,47 @@ describe("getConvergentTableOfContents", () => {
 });
 
 describe("getReportTableOfContents", () => {
-  it("uses the Convergent Word recipe on that pack and the demo DV outline elsewhere", () => {
+  it("numbers Convergent software DV and demo DV with 1. / 1.1", () => {
     expect(
       getReportTableOfContents("design_verification", "convergent").map(
         (e) => e.label
-      )[0]
-    ).toBe("Purpose");
+      )
+    ).toEqual([
+      "1. Purpose",
+      "2. Scope",
+      "3. Testers/Dates",
+      "4. Methods of Measurement",
+      "5. Deviations",
+      "6. Results and Discussion",
+      "7. Problem or Failure Resolution",
+      "8. Conclusion",
+      "9. Revision History",
+    ]);
+    expect(
+      getReportTableOfContents("design_verification", "convergent").find(
+        (e) => e.label === "4. Methods of Measurement"
+      )?.children?.map((c) => c.label)
+    ).toEqual([
+      "4.1 Executed Protocol",
+      "4.2 Protocol Modifications",
+      "4.3 Units Under Test",
+      "4.4 Test Equipment",
+    ]);
     expect(
       getReportTableOfContents("design_verification", "demo").map(
         (e) => e.label
       )
     ).toEqual([
-      "Cover Page",
-      "Purpose & Scope",
-      "References",
-      "Traceability",
-      "Test Methods / Protocol Summary",
-      "Test Results",
-      "Deviations & Nonconformances",
-      "Conclusion",
-      "Approval / Sign-off",
-      "Appendices",
+      "1. Cover Page",
+      "2. Purpose & Scope",
+      "3. References",
+      "4. Traceability",
+      "5. Test Methods / Protocol Summary",
+      "6. Test Results",
+      "7. Deviations & Nonconformances",
+      "8. Conclusion",
+      "9. Approval / Sign-off",
+      "10. Appendices",
     ]);
     expect(
       getReportTableOfContents("design_verification", "mj").map((e) => e.label)
@@ -103,47 +125,78 @@ describe("getReportTableOfContents", () => {
     );
   });
 
-  it("returns the investigation Word recipe and omits MJ Conclusion", () => {
+  it("numbers investigation sections 1. 2. 3. and subsections 1.1, and omits MJ Conclusion", () => {
     const demo = getReportTableOfContents("investigation_report", "demo");
     expect(demo.map((e) => e.label)).toEqual([
-      "Define",
-      "Measure",
-      "Analyze",
-      "Improve",
-      "Control",
-      "Conclusion",
-      "Document Reviewed",
+      "1. Define",
+      "2. Measure",
+      "3. Analyze",
+      "4. Improve",
+      "5. Control",
+      "6. Conclusion",
+      "7. Document Reviewed",
+    ]);
+    expect(demo[0]?.children?.map((c) => c.label)).toEqual([
+      "1.1 Details Investigation",
     ]);
     expect(
-      demo.find((e) => e.label === "Analyze")?.children?.map((c) => c.label)
+      demo.find((e) => e.label === "3. Analyze")?.children?.map((c) => c.label)
     ).toEqual([
-      "6 M Method",
-      "5 Why Approach",
-      "Brainstorming",
-      "Other Tool if Any",
-      "Investigation Outcome",
-      "Identified Root Cause / Probable Cause",
-      "Impact Assessment",
+      "3.1 6 M Method",
+      "3.2 5 Why Approach",
+      "3.3 Brainstorming",
+      "3.4 Other Tool if Any",
+      "3.5 Investigation Outcome",
+      "3.6 Identified Root Cause / Probable Cause",
+      "3.7 Impact Assessment",
     ]);
+    expect(
+      demo.find((e) => e.label === "4. Improve")?.children?.map((c) => c.label)
+    ).toEqual(["4.1 Corrective Action"]);
+    expect(
+      demo.find((e) => e.label === "5. Control")?.children?.map((c) => c.label)
+    ).toEqual(["5.1 Preventive Action"]);
+    expect(
+      demo.find((e) => e.label === "7. Document Reviewed")?.children?.map(
+        (c) => c.label
+      )
+    ).toEqual(["7.1 List of attachment"]);
 
     const mj = getReportTableOfContents("investigation_report", "mj");
-    expect(mj.map((e) => e.label)).not.toContain("Conclusion");
-    expect(mj.map((e) => e.label)).toContain("Analyze");
+    expect(mj.map((e) => e.label)).toEqual([
+      "1. Define",
+      "2. Measure",
+      "3. Analyze",
+      "4. Improve",
+      "5. Control",
+      "6. Document Reviewed",
+    ]);
+    expect(mj.map((e) => e.label)).not.toContain("6. Conclusion");
   });
 
-  it("nests QRA F02 headings onto editor sections", () => {
+  it("renumbers QRA F02 headings onto 1. / 1.1 and keeps editor section keys", () => {
     const toc = getReportTableOfContents("quality_risk_assessment", "mj");
     expect(toc.map((e) => e.label)).toEqual([
-      "A. Pre-approval (Before Implementation)",
-      "1. Details of the Risk Assessment",
-      "2. Risk Identification and Evaluation",
-      "3. Risk Communication",
-      "4. Mitigation Plan and Closure",
-      "B. Revision History",
-      "C. Post-approval (After Implementation)",
+      "1. Pre-approval (Before Implementation)",
+      "2. Details of the Risk Assessment",
+      "3. Risk Identification and Evaluation",
+      "4. Risk Communication",
+      "5. Mitigation Plan and Closure",
+      "6. Revision History",
+      "7. Post-approval (After Implementation)",
     ]);
-    const details = toc.find((e) => e.label === "1. Details of the Risk Assessment");
+    const details = toc.find((e) => e.label === "2. Details of the Risk Assessment");
     expect(details?.sectionKey).toBeUndefined();
+    expect(details?.children?.map((c) => c.label)).toEqual([
+      "2.1 Objective",
+      "2.2 Scope",
+      "2.3 System / Equipment / Instrument Overview",
+      "2.4 Procedure",
+      "2.5 Risk Assessment Team Members",
+      "2.6 Risk Identification",
+      "2.7 Risk Measurement by Failure Mode Effect Analysis",
+      "2.8 Risk Assessment Approach",
+    ]);
     expect(details?.children?.map((c) => c.sectionKey)).toEqual([
       "qra_objective",
       "qra_scope",
@@ -155,16 +208,16 @@ describe("getReportTableOfContents", () => {
       "qra_approach",
     ]);
     expect(
-      toc.find((e) => e.label === "A. Pre-approval (Before Implementation)")
+      toc.find((e) => e.label === "1. Pre-approval (Before Implementation)")
         ?.sectionKey
     ).toBeUndefined();
   });
 
-  it("nests ELR observations and maps recommendation onto the conclusion section", () => {
+  it("renumbers ELR 1.0 / 3.1 onto 1. / 3.1 and maps recommendation onto conclusion", () => {
     const toc = getReportTableOfContents("equipment_lifecycle_report", "mj");
-    expect(toc[0]).toEqual({ label: "1.0 Purpose", sectionKey: "elr_objective" });
+    expect(toc[0]).toEqual({ label: "1. Purpose", sectionKey: "elr_objective" });
 
-    const observations = toc.find((e) => e.label === "3.0 Observations and Results");
+    const observations = toc.find((e) => e.label === "3. Observations and Results");
     expect(observations?.sectionKey).toBeUndefined();
     expect(observations?.children?.map((c) => c.label)).toEqual([
       "3.1 Responsibility",
@@ -190,16 +243,30 @@ describe("getReportTableOfContents", () => {
       label: "3.9.1 Breakdown Trend Summary",
       sectionKey: "elr_breakdowns",
     });
-    expect(toc.find((e) => e.label === "6.0 Recommendation")?.sectionKey).toBe(
+    expect(toc.find((e) => e.label === "6. Recommendation")?.sectionKey).toBe(
       "elr_conclusion"
     );
-    expect(toc.find((e) => e.label === "9.0 Approval Page")?.sectionKey).toBeUndefined();
+    expect(toc.find((e) => e.label === "9. Approval Page")?.sectionKey).toBeUndefined();
   });
 
-  it("returns a single body row for generic documents", () => {
+  it("returns a numbered body row for generic documents", () => {
     expect(getReportTableOfContents("generic_document", "demo")).toEqual([
-      { label: "Document", sectionKey: "body" },
+      { label: "1. Document", sectionKey: "body" },
     ]);
+  });
+});
+
+describe("numberTableOfContents", () => {
+  it("does not treat 6 M Method as an outline number", () => {
+    expect(stripOutlinePrefix("6 M Method")).toBe("6 M Method");
+    expect(
+      numberTableOfContents([
+        {
+          label: "Analyze",
+          children: [{ label: "6 M Method", sectionKey: "analyze" }],
+        },
+      ])[0]?.children?.[0]?.label
+    ).toBe("1.1 6 M Method");
   });
 });
 

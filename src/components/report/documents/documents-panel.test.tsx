@@ -163,8 +163,28 @@ describe("DocumentsPanel Contents tab", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Contents" }));
-    await user.click(screen.getByRole("button", { name: "1.0 Purpose" }));
+    await user.click(screen.getByRole("button", { name: "1. Purpose" }));
     expect(onJump).toHaveBeenCalledWith("elr_objective");
+  });
+
+  it("numbers investigation subsections 1.1 / 3.2 and jumps to Analyze", async () => {
+    const user = userEvent.setup();
+    const onJump = vi.fn();
+    mockContext();
+    render(
+      <DocumentsPanel
+        collapsed={false}
+        onToggleCollapse={vi.fn()}
+        documentType="investigation_report"
+        onJumpToSection={onJump}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Contents" }));
+    expect(screen.getByRole("button", { name: "1. Define" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1.1 Details Investigation" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "3.2 5 Why Approach" }));
+    expect(onJump).toHaveBeenCalledWith("analyze");
   });
 
   it("shows Contents on generic documents and jumps to the body", async () => {
@@ -181,7 +201,7 @@ describe("DocumentsPanel Contents tab", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Contents" }));
-    await user.click(screen.getByRole("button", { name: "Document" }));
+    await user.click(screen.getByRole("button", { name: "1. Document" }));
     expect(onJump).toHaveBeenCalledWith("body");
   });
 });
