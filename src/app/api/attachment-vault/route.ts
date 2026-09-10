@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 export const runtime = "nodejs";
 
 const querySchema = z.object({
-  scope: z.enum(["mine", "shared", "all"]).optional(),
+  scope: z.enum(["mine", "shared", "accessible", "all"]).optional(),
 });
 
 export async function GET(req: Request) {

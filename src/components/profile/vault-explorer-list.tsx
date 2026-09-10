@@ -12,6 +12,7 @@ import type {
   AttachmentLibraryAssetRecord,
   AttachmentLibraryFolderRecord,
 } from "@/lib/attachments/library-dto";
+import { isSharedWithMeFolderId } from "@/lib/attachments/library-shared-tree";
 import { cn } from "@/lib/utils";
 
 const COLUMNS =
@@ -37,6 +38,8 @@ export function VaultExplorerList({
   onArchiveFolder,
   onArchiveAsset,
   onDropOnFolder,
+  canManageFolder,
+  canManageAsset,
   showHeader = false,
 }: {
   folderId: string | null;
@@ -61,6 +64,8 @@ export function VaultExplorerList({
   onArchiveFolder: (folderId: string) => void;
   onArchiveAsset: (assetId: string) => void;
   onDropOnFolder: (folderId: string | null, dataTransfer: DataTransfer) => void;
+  canManageFolder: (folder: AttachmentLibraryFolderRecord) => boolean;
+  canManageAsset: (asset: AttachmentLibraryAssetRecord) => boolean;
   showHeader?: boolean;
 }) {
   const childFolders = foldersByParent.get(folderId) ?? [];
@@ -95,6 +100,8 @@ export function VaultExplorerList({
           needle.length === 0 && collapsedFolderIds.has(folder.id);
         const checked = checkedFolderIds.has(folder.id);
         const indent = depth * 16;
+        const manageable = canManageFolder(folder);
+        const sharedRoot = isSharedWithMeFolderId(folder.id);
         return (
           <div key={folder.id}>
             <div
@@ -103,12 +110,15 @@ export function VaultExplorerList({
                 checked && "bg-[var(--secondary)]/40"
               )}
               style={{ gridTemplateColumns: COLUMNS }}
+              data-testid={sharedRoot ? "library-shared-with-me" : undefined}
               onDragOver={(event) => {
+                if (!manageable) return;
                 event.preventDefault();
                 event.stopPropagation();
                 event.dataTransfer.dropEffect = "copy";
               }}
               onDrop={(event) => {
+                if (!manageable) return;
                 event.preventDefault();
                 event.stopPropagation();
                 onDropOnFolder(folder.id, event.dataTransfer);
@@ -132,13 +142,17 @@ export function VaultExplorerList({
                     <ChevronDown className="size-3.5" aria-hidden="true" />
                   )}
                 </button>
-                <Checkbox
-                  checked={checked}
-                  onCheckedChange={(value) =>
-                    onToggleFolderCheck(folder.id, value === true)
-                  }
-                  aria-label={`Select folder ${folder.name}`}
-                />
+                {manageable ? (
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(value) =>
+                      onToggleFolderCheck(folder.id, value === true)
+                    }
+                    aria-label={`Select folder ${folder.name}`}
+                  />
+                ) : (
+                  <span className="size-4 shrink-0" aria-hidden="true" />
+                )}
                 <button
                   type="button"
                   onClick={() => onToggleFolderCollapsed(folder.id)}
@@ -152,18 +166,20 @@ export function VaultExplorerList({
                     {folder.name}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  aria-label={`Archive folder ${folder.name}`}
-                  title="Archive folder"
-                  onClick={() => onArchiveFolder(folder.id)}
-                  className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
-                >
-                  <Archive className="size-3.5" aria-hidden="true" />
-                </button>
+                {manageable ? (
+                  <button
+                    type="button"
+                    aria-label={`Archive folder ${folder.name}`}
+                    title="Archive folder"
+                    onClick={() => onArchiveFolder(folder.id)}
+                    className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
+                  >
+                    <Archive className="size-3.5" aria-hidden="true" />
+                  </button>
+                ) : null}
               </div>
               <span className="hidden truncate text-xs text-[var(--muted-foreground)] sm:block">
-                {formatLibraryUploadedAt(folder.createdAt)}
+                {sharedRoot ? "—" : formatLibraryUploadedAt(folder.createdAt)}
               </span>
               <span className="hidden text-xs text-[var(--muted-foreground)] md:block">
                 —
@@ -193,6 +209,8 @@ export function VaultExplorerList({
                 onArchiveFolder={onArchiveFolder}
                 onArchiveAsset={onArchiveAsset}
                 onDropOnFolder={onDropOnFolder}
+                canManageFolder={canManageFolder}
+                canManageAsset={canManageAsset}
               />
             )}
           </div>
@@ -208,6 +226,7 @@ export function VaultExplorerList({
         );
         const inspected = inspectedAssetId === asset.id;
         const indent = depth * 16;
+        const manageable = canManageAsset(asset);
         return (
           <div
             key={asset.id}
@@ -225,14 +244,18 @@ export function VaultExplorerList({
               className="flex min-w-0 items-center gap-1"
               style={{ paddingLeft: `${indent + 20}px` }}
             >
-              <Checkbox
-                checked={checked}
-                onCheckedChange={(value) =>
-                  onToggleAssetCheck(asset, value === true)
-                }
-                aria-label={`Select ${asset.filename}`}
-                onClick={(event) => event.stopPropagation()}
-              />
+              {manageable ? (
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={(value) =>
+                    onToggleAssetCheck(asset, value === true)
+                  }
+                  aria-label={`Select ${asset.filename}`}
+                  onClick={(event) => event.stopPropagation()}
+                />
+              ) : (
+                <span className="size-4 shrink-0" aria-hidden="true" />
+              )}
               <button
                 type="button"
                 onClick={() => onInspectAsset(asset.id)}
@@ -247,16 +270,23 @@ export function VaultExplorerList({
                 <span className="min-w-0 flex-1 truncate text-sm">
                   {asset.filename}
                 </span>
+                {manageable ? null : (
+                  <span className="shrink-0 text-[11px] text-[var(--muted-foreground)]">
+                    Shared
+                  </span>
+                )}
               </button>
-              <button
-                type="button"
-                aria-label={`Archive ${asset.filename}`}
-                title="Archive file"
-                onClick={() => onArchiveAsset(asset.id)}
-                className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
-              >
-                <Archive className="size-3.5" aria-hidden="true" />
-              </button>
+              {manageable ? (
+                <button
+                  type="button"
+                  aria-label={`Archive ${asset.filename}`}
+                  title="Archive file"
+                  onClick={() => onArchiveAsset(asset.id)}
+                  className="shrink-0 rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--secondary)] hover:text-[var(--destructive)] group-hover:opacity-100"
+                >
+                  <Archive className="size-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
             <span className="hidden truncate text-xs text-[var(--muted-foreground)] sm:block">
               {formatLibraryUploadedAt(asset.uploadedAt)}

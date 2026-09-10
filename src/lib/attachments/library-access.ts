@@ -90,57 +90,86 @@ export async function loadAccessibleAsset(
   return asset?.asset ?? null;
 }
 
-export type LibraryListScope = "mine" | "shared" | "all";
+export type LibraryListScope = "mine" | "shared" | "accessible" | "all";
 
 export function libraryScopeForUser(
   user: Pick<WorkspaceUser, "role">,
   requested?: LibraryListScope
 ): LibraryListScope {
   if (isWorkspaceAdmin(user)) {
-    return requested === "mine" || requested === "shared" ? requested : "all";
+    if (
+      requested === "mine" ||
+      requested === "shared" ||
+      requested === "accessible"
+    ) {
+      return requested;
+    }
+    return "all";
   }
-  return requested === "shared" ? "shared" : "mine";
+  if (requested === "shared" || requested === "accessible") {
+    return requested;
+  }
+  return "mine";
+}
+
+async function listOwnedAssetIds(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: attachmentAssets.id })
+    .from(attachmentAssets)
+    .where(
+      and(eq(attachmentAssets.ownerId, userId), isNull(attachmentAssets.deletedAt))
+    );
+  return rows.map((row) => row.id);
+}
+
+async function listGrantedAssetIds(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: attachmentAssets.id })
+    .from(attachmentAssets)
+    .innerJoin(
+      attachmentAccessGrants,
+      eq(attachmentAccessGrants.assetId, attachmentAssets.id)
+    )
+    .where(
+      and(
+        eq(attachmentAccessGrants.granteeUserId, userId),
+        isNull(attachmentAssets.deletedAt)
+      )
+    );
+  return rows.map((row) => row.id);
 }
 
 export async function listAccessibleAssetIds(
   user: Pick<WorkspaceUser, "id" | "role">,
   scope: LibraryListScope
 ): Promise<string[]> {
-  if (scope === "all" && isWorkspaceAdmin(user)) {
-    const rows = await db
-      .select({ id: attachmentAssets.id })
-      .from(attachmentAssets)
-      .where(isNull(attachmentAssets.deletedAt));
-    return rows.map((row) => row.id);
+  switch (scope) {
+    case "all": {
+      if (!isWorkspaceAdmin(user)) {
+        return listOwnedAssetIds(user.id);
+      }
+      const rows = await db
+        .select({ id: attachmentAssets.id })
+        .from(attachmentAssets)
+        .where(isNull(attachmentAssets.deletedAt));
+      return rows.map((row) => row.id);
+    }
+    case "shared":
+      return listGrantedAssetIds(user.id);
+    case "mine":
+      return listOwnedAssetIds(user.id);
+    case "accessible": {
+      const [owned, granted] = await Promise.all([
+        listOwnedAssetIds(user.id),
+        listGrantedAssetIds(user.id),
+      ]);
+      return [...new Set([...owned, ...granted])];
+    }
+    default: {
+      const exhaustive: never = scope;
+      return exhaustive;
+    }
   }
-
-  if (scope === "shared") {
-    const rows = await db
-      .select({ id: attachmentAssets.id })
-      .from(attachmentAssets)
-      .innerJoin(
-        attachmentAccessGrants,
-        eq(attachmentAccessGrants.assetId, attachmentAssets.id)
-      )
-      .where(
-        and(
-          eq(attachmentAccessGrants.granteeUserId, user.id),
-          isNull(attachmentAssets.deletedAt)
-        )
-      );
-    return rows.map((row) => row.id);
-  }
-
-  const rows = await db
-    .select({ id: attachmentAssets.id })
-    .from(attachmentAssets)
-    .where(
-      and(
-        eq(attachmentAssets.ownerId, user.id),
-        isNull(attachmentAssets.deletedAt)
-      )
-    );
-  return rows.map((row) => row.id);
 }
 
 export async function assertAssetAccessible(

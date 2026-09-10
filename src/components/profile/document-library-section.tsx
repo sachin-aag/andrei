@@ -67,6 +67,11 @@ import {
   toggleVaultAssetSelection,
   toggleVaultFolderSelection,
 } from "@/lib/attachments/add-from-vault-selection";
+import {
+  attachSharedWithMeRoot,
+  isSharedWithMeFolderId,
+  userOwnsVaultItem,
+} from "@/lib/attachments/library-shared-tree";
 import { cn } from "@/lib/utils";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
@@ -938,6 +943,8 @@ function LibraryAssetDetails({
   granteeIds,
   saving,
   archiving,
+  canManage,
+  sharedByName,
   onOpenPreview,
   onGranteeIdsChange,
   onSaveGrants,
@@ -950,6 +957,8 @@ function LibraryAssetDetails({
   granteeIds: string[];
   saving: boolean;
   archiving: boolean;
+  canManage: boolean;
+  sharedByName: string | null;
   onOpenPreview: () => void;
   onGranteeIdsChange: (ids: string[]) => void;
   onSaveGrants: () => void;
@@ -962,7 +971,9 @@ function LibraryAssetDetails({
       <div className="min-w-0">
         <h3 className="truncate text-sm font-medium">{asset.filename}</h3>
         <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-          {archived ? "Archived" : `Uploaded ${formatLibraryUploadedAt(asset.uploadedAt)}`}
+          {archived
+            ? "Archived"
+            : `Uploaded ${formatLibraryUploadedAt(asset.uploadedAt)}`}
         </p>
       </div>
 
@@ -978,12 +989,22 @@ function LibraryAssetDetails({
         Open preview
       </Button>
 
+      {canManage ? null : (
+        <p className="text-sm text-[var(--muted-foreground)]">
+          {sharedByName
+            ? `Shared with you by ${sharedByName}. `
+            : "Shared with you. "}
+          You can preview this file and add it to reports. Only the owner can
+          move, archive, or change who it is shared with.
+        </p>
+      )}
+
       {archived ? (
         <p className="text-sm text-[var(--muted-foreground)]">
           This file is in Archive. Restore it to add it to new reports. Reports
           that already use it still have it.
         </p>
-      ) : (
+      ) : canManage ? (
         <div className="space-y-2">
           <p className="text-sm font-medium">Location</p>
           <p className="text-sm text-[var(--muted-foreground)]">
@@ -1000,9 +1021,18 @@ function LibraryAssetDetails({
             Move this file to a folder…
           </Button>
         </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Location</p>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            {asset.libraryFolderId
+              ? locationLabel(asset.libraryFolderId, folderOptions)
+              : "Shared with me"}
+          </p>
+        </div>
       )}
 
-      {archived ? null : (
+      {archived || !canManage ? null : (
         <>
           <div>
             <h3 className="text-sm font-medium">Shared with</h3>
@@ -1020,33 +1050,35 @@ function LibraryAssetDetails({
           />
         </>
       )}
-      <div className="flex flex-wrap gap-2">
-        {archived ? null : (
-          <Button type="button" disabled={saving} onClick={onSaveGrants}>
-            {saving ? "Saving…" : "Save sharing"}
+      {canManage ? (
+        <div className="flex flex-wrap gap-2">
+          {archived ? null : (
+            <Button type="button" disabled={saving} onClick={onSaveGrants}>
+              {saving ? "Saving…" : "Save sharing"}
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            disabled={archiving}
+            onClick={onArchiveOrRestore}
+            className={
+              archived
+                ? undefined
+                : "text-[var(--destructive)] hover:text-[var(--destructive)]"
+            }
+            data-testid="library-details-archive"
+          >
+            {archiving
+              ? archived
+                ? "Restoring…"
+                : "Archiving…"
+              : archived
+                ? "Unarchive"
+                : "Archive"}
           </Button>
-        )}
-        <Button
-          type="button"
-          variant="outline"
-          disabled={archiving}
-          onClick={onArchiveOrRestore}
-          className={
-            archived
-              ? undefined
-              : "text-[var(--destructive)] hover:text-[var(--destructive)]"
-          }
-          data-testid="library-details-archive"
-        >
-          {archiving
-            ? archived
-              ? "Restoring…"
-              : "Archiving…"
-            : archived
-              ? "Unarchive"
-              : "Archive"}
-        </Button>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1135,7 +1167,7 @@ export function DocumentLibrarySection({
       setLoading(true);
     }
     try {
-      const response = await fetch("/api/attachment-vault?scope=mine");
+      const response = await fetch("/api/attachment-vault?scope=accessible");
       const data = (await response.json().catch(() => ({}))) as LibraryResponse & {
         error?: string;
       };
@@ -1195,18 +1227,32 @@ export function DocumentLibrarySection({
     (assetId: string) => {
       setInspectedAssetId(assetId);
       setPreviewAssetId(null);
-      void loadGrants(assetId);
+      const row =
+        library?.assets.find((asset) => asset.id === assetId) ??
+        library?.archivedAssets.find((asset) => asset.id === assetId);
+      if (row && userOwnsVaultItem(currentUser.id, row.ownerId)) {
+        void loadGrants(assetId);
+        return;
+      }
+      setGranteeIds([]);
     },
-    [loadGrants]
+    [currentUser.id, library, loadGrants]
   );
 
   const openPreview = useCallback(
     (assetId: string) => {
       setInspectedAssetId(assetId);
       setPreviewAssetId(assetId);
-      void loadGrants(assetId);
+      const row =
+        library?.assets.find((asset) => asset.id === assetId) ??
+        library?.archivedAssets.find((asset) => asset.id === assetId);
+      if (row && userOwnsVaultItem(currentUser.id, row.ownerId)) {
+        void loadGrants(assetId);
+        return;
+      }
+      setGranteeIds([]);
     },
-    [loadGrants]
+    [currentUser.id, library, loadGrants]
   );
 
   const closePreview = useCallback(() => {
@@ -1225,12 +1271,6 @@ export function DocumentLibrarySection({
   const inspectedIsArchived =
     library?.archivedAssets.some((asset) => asset.id === inspectedAssetId) ??
     false;
-  const moveItemCount =
-    checkedCount > 0
-      ? checkedCount
-      : inspectedAssetId && !inspectedIsArchived
-        ? 1
-        : 0;
 
   const saveGrants = async () => {
     if (!inspectedAssetId) return;
@@ -1590,6 +1630,18 @@ export function DocumentLibrarySection({
     folderId: string | null,
     dataTransfer: DataTransfer
   ) => {
+    if (
+      folderId != null &&
+      (isSharedWithMeFolderId(folderId) ||
+        !library?.folders.some(
+          (folder) =>
+            folder.id === folderId &&
+            userOwnsVaultItem(currentUser.id, folder.ownerId)
+        ))
+    ) {
+      toast.error("You can only upload into folders you own");
+      return;
+    }
     const scanPromise = libraryUploadFilesFromDataTransfer(dataTransfer, {
       onProgress: (scanned) => {
         setUploadUi({ phase: "scanning", scanned, total: 0 });
@@ -1653,19 +1705,31 @@ export function DocumentLibrarySection({
     };
   }, [handlePickerCancel, loading]);
 
-  const tree = useMemo(() => {
+  const explorer = useMemo(() => {
     if (!library) {
-      return { foldersByParent: new Map(), assetsByFolder: new Map() };
+      return {
+        folders: [] as AttachmentLibraryFolderRecord[],
+        assets: [] as AttachmentLibraryAssetRecord[],
+      };
     }
-    return buildFolderChildren(library.folders, library.assets);
-  }, [library]);
+    return attachSharedWithMeRoot(
+      currentUser.id,
+      library.folders,
+      library.assets
+    );
+  }, [currentUser.id, library]);
+
+  const tree = useMemo(
+    () => buildFolderChildren(explorer.folders, explorer.assets),
+    [explorer]
+  );
 
   const parentById = useMemo(
     () =>
       new Map(
-        (library?.folders ?? []).map((folder) => [folder.id, folder.parentId])
+        explorer.folders.map((folder) => [folder.id, folder.parentId])
       ),
-    [library?.folders]
+    [explorer.folders]
   );
 
   const vaultSelectionPayload = !library
@@ -1701,10 +1765,20 @@ export function DocumentLibrarySection({
     (user) => user.id !== currentUser.id
   );
   const folderOptions = library?.folders ?? [];
+  const ownsInspectedAsset =
+    inspectedAsset != null &&
+    userOwnsVaultItem(currentUser.id, inspectedAsset.ownerId);
+  const manageItemCount =
+    checkedCount > 0
+      ? checkedCount
+      : ownsInspectedAsset && !inspectedIsArchived
+        ? 1
+        : 0;
 
   const moveTargetOptions = folderOptions.filter((folder) => {
     const selectedRoots = new Set(vaultSelectionPayload.libraryFolderIds);
     return (
+      userOwnsVaultItem(currentUser.id, folder.ownerId) &&
       !selectedRoots.has(folder.id) &&
       !isFolderUnderAny(folder.id, selectedRoots, folderOptions)
     );
@@ -1856,12 +1930,12 @@ export function DocumentLibrarySection({
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={moveItemCount === 0 || shareCandidates.length === 0}
+                  disabled={manageItemCount === 0 || shareCandidates.length === 0}
                   title={
                     shareCandidates.length === 0
                       ? "No other workspace users to share with"
-                      : moveItemCount === 0
-                        ? "Select a file or folder first"
+                      : manageItemCount === 0
+                        ? "Select a file or folder you own first"
                         : "Share the selected items"
                   }
                   onClick={() => setShareDialogOpen(true)}
@@ -1875,10 +1949,10 @@ export function DocumentLibrarySection({
                   variant="ghost"
                   size="sm"
                   className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={moveItemCount === 0 || uploadLocked}
+                  disabled={manageItemCount === 0 || uploadLocked}
                   title={
-                    moveItemCount === 0
-                      ? "Select a file or folder first"
+                    manageItemCount === 0
+                      ? "Select a file or folder you own first"
                       : checkedCount > 0
                         ? "Choose a destination folder for the checked items"
                         : `Choose a destination folder for ${inspectedAsset?.filename ?? "this file"}`
@@ -1899,14 +1973,14 @@ export function DocumentLibrarySection({
                   disabled={
                     uploadLocked ||
                     (checkedCount === 0 &&
-                      (!inspectedAssetId || inspectedIsArchived))
+                      (!ownsInspectedAsset || inspectedIsArchived))
                   }
                   title={
                     checkedCount > 0
                       ? "Archive the checked items"
-                      : inspectedAssetId && !inspectedIsArchived
+                      : ownsInspectedAsset && !inspectedIsArchived
                         ? `Archive ${inspectedAsset?.filename ?? "this file"}`
-                        : "Select a file or folder first"
+                        : "Select a file or folder you own first"
                   }
                   onClick={() => {
                     if (checkedCount > 0) {
@@ -2073,6 +2147,12 @@ export function DocumentLibrarySection({
                 onDropOnFolder={(folderId, dataTransfer) =>
                   void handleDropOnFolder(folderId, dataTransfer)
                 }
+                canManageFolder={(folder) =>
+                  userOwnsVaultItem(currentUser.id, folder.ownerId)
+                }
+                canManageAsset={(asset) =>
+                  userOwnsVaultItem(currentUser.id, asset.ownerId)
+                }
               />
               {(library?.archivedFolders.length ?? 0) +
                 (library?.archivedAssets.length ?? 0) >
@@ -2171,6 +2251,12 @@ export function DocumentLibrarySection({
                     granteeIds={granteeIds}
                     saving={saving}
                     archiving={archiving}
+                    canManage={ownsInspectedAsset}
+                    sharedByName={
+                      workspaceUsers.find(
+                        (user) => user.id === inspectedAsset.ownerId
+                      )?.name ?? null
+                    }
                     onOpenPreview={() => openPreview(inspectedAsset.id)}
                     onGranteeIdsChange={setGranteeIds}
                     onSaveGrants={() => void saveGrants()}
@@ -2203,7 +2289,7 @@ export function DocumentLibrarySection({
         open={moveDialogOpen}
         onOpenChange={setMoveDialogOpen}
         itemLabel={describeMoveSelection(movingAssets, movingFolders)}
-        itemCount={Math.max(moveItemCount, 1)}
+        itemCount={Math.max(manageItemCount, 1)}
         destination={moveDestination}
         onDestinationChange={setMoveDestination}
         destinationFolders={moveTargetOptions}
@@ -2222,7 +2308,7 @@ export function DocumentLibrarySection({
         open={shareDialogOpen}
         onOpenChange={setShareDialogOpen}
         itemLabel={describeMoveSelection(movingAssets, movingFolders)}
-        itemCount={Math.max(moveItemCount, 1)}
+        itemCount={Math.max(manageItemCount, 1)}
         shareCandidates={shareCandidates}
         sharing={sharing}
         onConfirm={(ids) => void confirmShare(ids)}
