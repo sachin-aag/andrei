@@ -57,8 +57,9 @@ describe("buildReportContextMap", () => {
     // analyze root cause is empty
     expect(map).toContain("Analyze [analyze] — empty");
     expect(map).toContain("analyze method: not chosen");
-    expect(map).toContain("Documents (ready evidence attachments");
-    expect(map).toContain("an index only");
+    expect(map).toContain("Documents: 1 ready evidence attachment");
+    expect(map).toContain("use this count; do not recount the list or search to answer how many");
+    expect(map).toContain("An index only");
     expect(map).toContain("UNTRUSTED");
     expect(map).toContain('filename="Lab Results.pdf"');
     expect(map).toContain("id=att_123");
@@ -114,6 +115,45 @@ describe("buildReportContextMap", () => {
     expect(injected).toContain("topics=");
     expect(injected).not.toMatch(/topics="# System/);
     expect(injected.toLowerCase()).not.toMatch(/topics="system:/);
+  });
+
+  it("puts an authoritative ready-document count in the Documents header", () => {
+    const empty = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+      documents: [],
+    });
+    expect(empty).toContain("Documents: 0 ready evidence attachments");
+    expect(empty).toContain("- none");
+
+    const two = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+      documents: [
+        {
+          attachmentId: "att_a",
+          filename: "a.pdf",
+          description: null,
+          pageCount: 1,
+          ingestRunId: "run_a",
+          documentSummary: null,
+        },
+        {
+          attachmentId: "att_b",
+          filename: "b.pdf",
+          description: null,
+          pageCount: 2,
+          ingestRunId: "run_b",
+          documentSummary: null,
+        },
+      ],
+    });
+    expect(two).toContain("Documents: 2 ready evidence attachments");
+    expect(two).not.toContain("Documents: 1 ready");
   });
 
   it("surfaces the analyze method from section content and header checkboxes", () => {

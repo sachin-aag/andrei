@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v86-citation-pdf-pages");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v87-attachment-count");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -55,6 +55,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Greeting, thanks, or small talk");
     expect(prompt).toContain("Do not call any tools");
     expect(prompt).toContain("Empty fields and ready documents are not a request to write");
+    expect(prompt).toContain("How many attachments or documents");
+    expect(prompt).toContain("use the ready count in the Documents header");
     expect(prompt).toContain("Only draft or edit when this turn is a write request");
     expect(prompt).toContain("Empty sections are not a request to draft");
     expect(prompt).not.toContain("Agent mode drafts; Ask mode does not");

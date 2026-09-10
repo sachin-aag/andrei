@@ -27,7 +27,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v47-trusted-extract-writes";
+  "analytics-chat-v48-attachment-count";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -37,6 +37,7 @@ const USER_INTENT_RULES = `## User intent (required)
 Follow the latest user message. Agent mode means you MAY fill the worksheet or run a plot when they asked — not because the sheet is empty or files are attached.
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not write columns or run plots.
 - A question, a plan, or an outline: answer it. Search only if the question needs evidence. Do not write or plot unless they also asked to.
+- How many attachments or documents: use the ready count in the Ready documents header. Do not recount the list and do not search for a count.
 - A write request (extract, fill, plot, run a sixpack/ANOVA, add a sheet/column, or a yes to your offer): then follow the tools below.
 - Never ask_user for a page number. Search or scan, then say whether you found the data sheet. If they skipped a page-number question, search/scan yourself — do not use a placeholder.
 An empty worksheet is not a request to fill it.`;
@@ -141,10 +142,10 @@ Fill the worksheet (including adding sheets, columns, and rows) when they asked.
 
 function documentIndex(documents: ReadyDocumentIndexItem[]): string {
   if (documents.length === 0) {
-    return "Ready documents: none uploaded (or still ingesting).";
+    return "Ready documents: 0 (none uploaded or still ingesting). Use this count; do not search to answer how many.";
   }
   return [
-    "Ready documents:",
+    `Ready documents: ${documents.length} (use this count; do not recount the list or search to answer how many):`,
     ...documents.map((doc) => {
       const filename =
         quotePromptMetadata(
