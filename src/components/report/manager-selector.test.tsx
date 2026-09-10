@@ -25,9 +25,7 @@ describe("ManagerSelector", () => {
       />
     );
 
-    await user.click(
-      screen.getByRole("combobox", { name: /add colleagues/i })
-    );
+    await user.click(screen.getByRole("combobox"));
 
     expect(
       screen.getByPlaceholderText("Search colleagues…")
