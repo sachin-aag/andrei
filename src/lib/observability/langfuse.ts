@@ -3,8 +3,11 @@ import {
   observe,
   propagateAttributes,
   updateActiveObservation,
+  getActiveTraceId,
   type PropagateAttributesParams,
 } from "@langfuse/tracing";
+
+export { getActiveTraceId };
 
 /** Langfuse correlating-attribute values must be strings of at most 200 chars. */
 export const LANGFUSE_ATTRIBUTE_MAX_CHARS = 200;

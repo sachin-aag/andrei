@@ -45,6 +45,7 @@ import { isTestStubChat } from "@/lib/test/ai-bypass";
 import {
   endActiveLangfuseObservation,
   flushLangfuseTraces,
+  getActiveTraceId,
   langfuseGenerateTextTelemetry,
   observeRouteHandler,
   setRouteObservationIO,
@@ -56,6 +57,11 @@ import {
   isAiBudgetExceededError,
   recordAiUsage,
 } from "@/lib/ai/usage";
+import { detectCourseCorrection } from "@/lib/ai/chat/course-correction";
+import {
+  recordUserCourseCorrectScore,
+  flushLangfuseScores,
+} from "@/lib/observability/langfuse-scores";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import {
   buildAnalyticsMentionBlock,
@@ -153,15 +159,38 @@ async function handleAnalyticsChatPost(
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const recentTexts = recentAssistantMessageTexts(messages);
   const userIntent = await resolveChatUserIntent({
     userText,
-    recentAssistantTexts: recentAssistantMessageTexts(messages),
+    recentAssistantTexts: recentTexts,
     hasChatImages: messageHasChatImage(userMsg?.parts),
     surface: "analytics",
     mode,
     reportId,
     userId: user.id,
   });
+
+  // Detect course correction — user contradicting or overriding prior LLM output.
+  const courseCorrection = detectCourseCorrection({
+    userText,
+    recentAssistantTexts: recentTexts,
+    hasPriorAssistantOutput: recentTexts.length > 0,
+  });
+  if (courseCorrection.detected) {
+    const courseCorrectionTraceId = getActiveTraceId() ?? undefined;
+    after(async () => {
+      await recordUserCourseCorrectScore({
+        traceId: courseCorrectionTraceId,
+        sessionId,
+        reportId,
+        reason: courseCorrection.reason,
+        previousAssistantText: recentTexts[0],
+        userText,
+      });
+      await flushLangfuseScores();
+    });
+  }
+
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -279,6 +308,7 @@ async function handleAnalyticsChatPost(
           mode,
           pace,
           canEdit: canWrite,
+          user_course_corrected: courseCorrection.detected,
         },
       },
       () =>
@@ -338,6 +368,7 @@ async function handleAnalyticsChatPost(
           taggedAnalyses: mentions.analyses.length,
           userIntent: userIntent.kind,
           userIntentReason: userIntent.reason,
+          user_course_corrected: courseCorrection.detected,
         },
       }),
     })
