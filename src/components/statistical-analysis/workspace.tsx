@@ -47,7 +47,11 @@ import {
 } from "@/lib/statistical-analysis/worksheet";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import {
+  BOXPLOT,
+  CAPABILITY_SIXPACK_NORMAL,
+  HISTOGRAM,
   ONE_WAY_ANOVA,
+  XY_SCATTER,
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
@@ -58,6 +62,10 @@ import {
   type StatisticalAnalysisSummary,
   type WorksheetData,
 } from "@/lib/statistical-analysis/types";
+import {
+  WORKSHEET_PLOT_CATALOG,
+  type WorksheetPlotKind,
+} from "@/lib/statistical-analysis/plot-catalog";
 import { analysisListSubtitle, withLocalStale } from "@/lib/statistical-analysis/stale";
 import { chatSheetOptionsFromWorksheet } from "@/lib/statistical-analysis/worksheet-sheet-options";
 import {
@@ -655,6 +663,29 @@ export function StatisticalWorkspace({
     setHistogramOpen(true);
   };
 
+  const openWorksheetPlot = (
+    kind: WorksheetPlotKind,
+    columnId: string,
+    rows: { start: number; end: number } | null = null
+  ) => {
+    switch (kind) {
+      case CAPABILITY_SIXPACK_NORMAL:
+        return openSixpackForColumn(columnId, rows);
+      case HISTOGRAM:
+        return openHistogram(columnId, rows);
+      case ONE_WAY_ANOVA:
+        return openOneWayAnova(columnId, rows);
+      case BOXPLOT:
+        return openBoxplot(columnId, rows);
+      case XY_SCATTER:
+        return openXyScatter(columnId, rows);
+      default: {
+        const exhaustive: never = kind;
+        return exhaustive;
+      }
+    }
+  };
+
   const insertColumnAt = (atIndex: number) => {
     setWorksheet((current) => insertColumn(current, atIndex));
     setSelection((sel) => collapseSelection(atIndex, sel.row));
@@ -758,20 +789,8 @@ export function StatisticalWorkspace({
                   "Loaded sample assay measurements and Lot labels into the selected columns."
                 );
               }}
-              onNormalSixpack={() =>
-                void openSixpackForColumn(selectedColumnId, selectedRowRange)
-              }
-              onHistogram={() =>
-                void openHistogram(selectedColumnId, selectedRowRange)
-              }
-              onOneWayAnova={() =>
-                void openOneWayAnova(selectedColumnId, selectedRowRange)
-              }
-              onBoxplot={() =>
-                void openBoxplot(selectedColumnId, selectedRowRange)
-              }
-              onXyScatter={() =>
-                void openXyScatter(selectedColumnId, selectedRowRange)
+              onSelectPlot={(kind) =>
+                void openWorksheetPlot(kind, selectedColumnId, selectedRowRange)
               }
               onAddDataSheet={() => {
                 setWorksheet((current) => addDataSheet(current));
@@ -900,11 +919,19 @@ export function StatisticalWorkspace({
             <div className="flex flex-1 items-center justify-center p-8 text-center">
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
                 Right-click a column and choose <strong>Analyze data…</strong>,
-                or use <strong>Plot → Normal Capability Sixpack</strong>,{" "}
-                <strong>Plot → Histogram</strong>,{" "}
-                <strong>Plot → One-Way ANOVA</strong>,{" "}
-                <strong>Plot → Boxplot</strong>, or{" "}
-                <strong>Plot → Plot measurements</strong> for a worksheet
+                or use{" "}
+                {WORKSHEET_PLOT_CATALOG.map((item, index) => {
+                  const last = index === WORKSHEET_PLOT_CATALOG.length - 1;
+                  const nextLast =
+                    index === WORKSHEET_PLOT_CATALOG.length - 2;
+                  return (
+                    <span key={item.kind}>
+                      <strong>Plot → {item.label}</strong>
+                      {last ? "" : nextLast ? ", or " : ", "}
+                    </span>
+                  );
+                })}{" "}
+                for a worksheet
                 column (1D vs index, or 2D if you pick X). To extract numbers
                 from a file and plot them, ask the assistant. Each run is saved
                 as its own result.
@@ -1163,6 +1190,18 @@ export function StatisticalWorkspace({
         submitting={analyzeSubmitting}
         error={analyzeError}
         onOpenChange={setAnalyzeOpen}
+        onHandoff={(kind) => {
+          setAnalyzeOpen(false);
+          const rows =
+            analyzeRowStart != null && analyzeRowEnd != null
+              ? { start: analyzeRowStart, end: analyzeRowEnd }
+              : null;
+          void openWorksheetPlot(
+            kind,
+            analyzeColumnId || selectedColumnId,
+            rows
+          );
+        }}
         onSubmit={async (payload) => {
           setAnalyzeSubmitting(true);
           setAnalyzeError(null);

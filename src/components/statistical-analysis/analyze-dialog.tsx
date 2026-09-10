@@ -34,6 +34,13 @@ import {
   type WorksheetData,
 } from "@/lib/statistical-analysis/types";
 import {
+  analyzePlotTypeHelpText,
+  isAnalyzeInlinePlotKind,
+  WORKSHEET_PLOT_CATALOG,
+  type AnalyzeInlinePlotKind,
+  type WorksheetPlotKind,
+} from "@/lib/statistical-analysis/plot-catalog";
+import {
   columnNumericValues,
   dataSheets,
   defaultSixpackLimits,
@@ -43,10 +50,6 @@ import {
 export type AnalyzeDialogSubmit =
   | { kind: typeof CAPABILITY_SIXPACK_NORMAL; values: CapabilityDialogValues }
   | { kind: typeof ONE_WAY_ANOVA; values: AnovaDialogValues };
-
-type AnalyzePlotKind =
-  | typeof CAPABILITY_SIXPACK_NORMAL
-  | typeof ONE_WAY_ANOVA;
 
 const fieldLabelClass =
   "normal-case tracking-normal text-sm font-medium text-[var(--foreground)]";
@@ -99,11 +102,6 @@ function limitsForColumn(
   };
 }
 
-const PLOT_TYPES: { value: AnalyzePlotKind; label: string }[] = [
-  { value: CAPABILITY_SIXPACK_NORMAL, label: "Normal Capability Sixpack" },
-  { value: ONE_WAY_ANOVA, label: "One-Way ANOVA" },
-];
-
 export function AnalyzeDialog({
   open,
   worksheet,
@@ -113,6 +111,7 @@ export function AnalyzeDialog({
   submitting,
   error,
   onOpenChange,
+  onHandoff,
   onSubmit,
 }: {
   open: boolean;
@@ -123,6 +122,7 @@ export function AnalyzeDialog({
   submitting: boolean;
   error: string | null;
   onOpenChange: (open: boolean) => void;
+  onHandoff: (kind: WorksheetPlotKind) => void;
   onSubmit: (payload: AnalyzeDialogSubmit) => void;
 }) {
   const fallbackColumnId = defaultColumnId || worksheet.columns[0]?.id || "";
@@ -135,7 +135,9 @@ export function AnalyzeDialog({
     initialRowStart,
     initialRowEnd
   );
-  const [kind, setKind] = useState<AnalyzePlotKind>(CAPABILITY_SIXPACK_NORMAL);
+  const [kind, setKind] = useState<AnalyzeInlinePlotKind>(
+    CAPABILITY_SIXPACK_NORMAL
+  );
   const [columnId, setColumnId] = useState(fallbackColumnId);
   const [factorColumnId, setFactorColumnId] = useState(
     () => suggestFactorColumn(worksheet, fallbackColumnId) ?? ""
@@ -248,12 +250,19 @@ export function AnalyzeDialog({
               <FieldInfoIcon
                 label="Plot type"
                 testId="analyze-plot-type-info"
-                text="Sixpack for capability. ANOVA to compare means by a factor."
+                text={analyzePlotTypeHelpText()}
               />
             </div>
             <Select
               value={kind}
-              onValueChange={(value) => setKind(value as AnalyzePlotKind)}
+              onValueChange={(value) => {
+                const next = value as WorksheetPlotKind;
+                if (isAnalyzeInlinePlotKind(next)) {
+                  setKind(next);
+                  return;
+                }
+                onHandoff(next);
+              }}
             >
               <SelectTrigger
                 id="analyze-plot-type"
@@ -262,8 +271,8 @@ export function AnalyzeDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PLOT_TYPES.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
+                {WORKSHEET_PLOT_CATALOG.map((item) => (
+                  <SelectItem key={item.kind} value={item.kind}>
                     {item.label}
                   </SelectItem>
                 ))}

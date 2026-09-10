@@ -77,6 +77,17 @@ export {
   formatSpecSummary,
 } from "./format";
 export {
+  WORKSHEET_PLOT_CATALOG,
+  analyzePlotTypeHelpText,
+  isAnalyzeInlinePlotKind,
+  worksheetPlotEntry,
+} from "./plot-catalog";
+export type {
+  AnalyzeInlinePlotKind,
+  WorksheetPlotCatalogEntry,
+  WorksheetPlotKind,
+} from "./plot-catalog";
+export {
   formatRowSelection,
   normalizeRowSelection,
 } from "./row-selection";
