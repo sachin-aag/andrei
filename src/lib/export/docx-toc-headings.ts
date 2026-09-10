@@ -17,7 +17,18 @@ export type TocHeadingSpec = {
 const SUPPRESS_NUMBERING =
   `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr>`;
 
+const BLACK_COLOR = `<w:color w:val="000000"/>`;
+const HEADING_STYLE_IDS = new Set([
+  "Heading1",
+  "Heading2",
+  "Heading3",
+  "Heading1Char",
+  "Heading2Char",
+  "Heading3Char",
+]);
+
 const PARAGRAPH_RE = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+const STYLE_RE = /<w:style\b[^>]*>[\s\S]*?<\/w:style>/g;
 const TEXT_RUN_RE = /<w:t\b[^>]*>([^<]*)<\/w:t>/g;
 
 function heading(
@@ -202,12 +213,30 @@ export function applyTocHeadingStylesToDocxZip(
   zip: PizZip,
   specs: readonly TocHeadingSpec[]
 ): void {
-  const file = zip.file("word/document.xml");
-  if (!file) return;
-  zip.file(
-    "word/document.xml",
-    applyTocHeadingStylesToDocumentXml(file.asText(), specs)
-  );
+  const document = zip.file("word/document.xml");
+  if (document) {
+    zip.file(
+      "word/document.xml",
+      applyTocHeadingStylesToDocumentXml(document.asText(), specs)
+    );
+  }
+  const styles = zip.file("word/styles.xml");
+  if (styles) {
+    zip.file(
+      "word/styles.xml",
+      forceBlackHeadingStyleColors(styles.asText())
+    );
+  }
+}
+
+/** Word Heading2/3 in MJ/demo templates use Office blue. Keep the styles for
+ *  Insert → TOC, but force titles to black. */
+export function forceBlackHeadingStyleColors(stylesXml: string): string {
+  return stylesXml.replace(STYLE_RE, (style) => {
+    const id = style.match(/\bw:styleId="([^"]+)"/)?.[1];
+    if (!id || !HEADING_STYLE_IDS.has(id)) return style;
+    return forceBlackColorOnStyleXml(style);
+  });
 }
 
 function outlineLevel(style: TocHeadingSpec["style"]): "0" | "1" | "2" {
@@ -250,12 +279,41 @@ function applyHeadingStyleToParagraph(
     next = next.replace(styleTag, `${styleTag}${outlineTag}`);
   }
 
-  if (!spec.suppressNumbering) return next;
+  if (!spec.suppressNumbering) {
+    return forceBlackColorOnParagraphRuns(next);
+  }
 
   if (/<w:numPr[\s>]/.test(next)) {
-    return next.replace(/<w:numPr\b[\s\S]*?<\/w:numPr>/, SUPPRESS_NUMBERING);
+    next = next.replace(/<w:numPr\b[\s\S]*?<\/w:numPr>/, SUPPRESS_NUMBERING);
+  } else {
+    next = next.replace(styleTag, `${styleTag}${SUPPRESS_NUMBERING}`);
   }
-  return next.replace(styleTag, `${styleTag}${SUPPRESS_NUMBERING}`);
+  return forceBlackColorOnParagraphRuns(next);
+}
+
+function forceBlackColorOnStyleXml(style: string): string {
+  if (/<w:color\b/.test(style)) {
+    return replaceColorTags(style);
+  }
+  if (/<w:rPr[\s>]/.test(style)) {
+    return style.replace(/<w:rPr([^>]*)>/, `<w:rPr$1>${BLACK_COLOR}`);
+  }
+  return style.replace(/<\/w:style>/, `<w:rPr>${BLACK_COLOR}</w:rPr></w:style>`);
+}
+
+function forceBlackColorOnParagraphRuns(paragraph: string): string {
+  let next = paragraph.replace(/<w:rPr\b[^>]*>[\s\S]*?<\/w:rPr>/g, (rPr) => {
+    if (/<w:color\b/.test(rPr)) return replaceColorTags(rPr);
+    return rPr.replace(/<w:rPr([^>]*)>/, `<w:rPr$1>${BLACK_COLOR}`);
+  });
+  next = next.replace(/<w:r(\b[^>]*)>(?!<w:rPr)/g, `<w:r$1><w:rPr>${BLACK_COLOR}</w:rPr>`);
+  return next;
+}
+
+function replaceColorTags(xml: string): string {
+  return xml
+    .replace(/<w:color\b[^/]*\/>/g, BLACK_COLOR)
+    .replace(/<w:color\b[^>]*>\s*<\/w:color>/g, BLACK_COLOR);
 }
 
 function decodeXmlEntities(value: string): string {

@@ -126,19 +126,40 @@ describe("investigation-report-template.docx label formatting", () => {
     };
 
     const buf = await generateReportDocx({ report, sections });
-    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+    const zip = new PizZip(buf);
+    const xml = zip.file("word/document.xml")?.asText() ?? "";
+    const styles = zip.file("word/styles.xml")?.asText() ?? "";
     const paras = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? [];
     const styleOf = (text: string) =>
       paras
         .find((p) => docxParagraphPlainText(p) === text)
         ?.match(/<w:pStyle w:val="([^"]+)"/)?.[1] ?? null;
+    const headingPara = (text: string) =>
+      paras.find((p) => docxParagraphPlainText(p) === text) ?? "";
 
     expect(styleOf("Define:")).toBe("Heading1");
     expect(styleOf("Analyze:")).toBe("Heading1");
     expect(styleOf("Measure:")).toBe("Heading1");
+    expect(styleOf("Details Investigation:")).toBe("Heading2");
     expect(styleOf("6 M Method (If Applicable):")).toBe("Heading2");
     expect(styleOf("Conclusion:")).toBe("Heading1");
     expect(xml).not.toContain("TABLE OF CONTENTS");
+    expect(headingPara("Details Investigation:")).toContain(
+      '<w:color w:val="000000"/>'
+    );
+    expect(headingPara("Details Investigation:")).not.toContain("2E74B5");
+    for (const id of ["Heading1", "Heading2", "Heading3"] as const) {
+      const block =
+        styles.match(
+          new RegExp(
+            `<w:style\\b[^>]*w:styleId="${id}"[^>]*>[\\s\\S]*?</w:style>`
+          )
+        )?.[0] ?? "";
+      expect(block, id).toContain('<w:color w:val="000000"/>');
+      expect(block, id).not.toContain("2E74B5");
+      expect(block, id).not.toContain("1F4D78");
+      expect(block, id).not.toContain('themeColor="accent1"');
+    }
   });
 
   it("places improve and control checkpoints in the row above corrective/preventive action", async () => {

@@ -7,6 +7,7 @@ import {
   INVESTIGATION_TOC_HEADINGS,
   QRA_TOC_HEADINGS,
   docxParagraphPlainText,
+  forceBlackHeadingStyleColors,
   tocHeadingSpecsForDocumentType,
 } from "./docx-toc-headings";
 
@@ -109,5 +110,51 @@ describe("applyTocHeadingStylesToDocumentXml", () => {
     const summary = paragraphFor(out, "3.9.1 BREAKDOWN TREND SUMMARY");
     expect(summary).toContain('<w:pStyle w:val="Heading3"/>');
     expect(summary).toContain('<w:outlineLvl w:val="2"/>');
+  });
+
+  it("paints investigation subsection titles black instead of Heading2 blue", () => {
+    const xml =
+      `<w:p><w:pPr><w:rPr><w:b/></w:rPr></w:pPr>` +
+      `<w:r><w:rPr><w:b/><w:color w:val="2E74B5" w:themeColor="accent1" w:themeShade="BF"/>` +
+      `</w:rPr><w:t>Details Investigation:</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>Measure:</w:t></w:r></w:p>`;
+
+    const out = applyTocHeadingStylesToDocumentXml(xml, INVESTIGATION_TOC_HEADINGS);
+    const details = paragraphFor(out, "Details Investigation:");
+    expect(details).toContain('<w:pStyle w:val="Heading2"/>');
+    expect(details).toContain('<w:color w:val="000000"/>');
+    expect(details).not.toContain("2E74B5");
+    expect(details).not.toContain('themeColor="accent1"');
+    expect(paragraphFor(out, "Measure:")).toContain('<w:color w:val="000000"/>');
+  });
+});
+
+describe("forceBlackHeadingStyleColors", () => {
+  it("strips Office blue from Heading2/3 and linked character styles", () => {
+    const xml =
+      `<w:styles>` +
+      `<w:style w:type="paragraph" w:styleId="Heading1"><w:rPr><w:b/></w:rPr></w:style>` +
+      `<w:style w:type="paragraph" w:styleId="Heading2">` +
+      `<w:rPr><w:color w:val="2E74B5" w:themeColor="accent1" w:themeShade="BF"/>` +
+      `<w:sz w:val="26"/></w:rPr></w:style>` +
+      `<w:style w:type="paragraph" w:styleId="Heading3">` +
+      `<w:rPr><w:color w:val="1F4D78" w:themeColor="accent1" w:themeShade="7F"/>` +
+      `</w:rPr></w:style>` +
+      `<w:style w:type="character" w:styleId="Heading2Char">` +
+      `<w:rPr><w:color w:val="2E74B5" w:themeColor="accent1" w:themeShade="BF"/>` +
+      `</w:rPr></w:style>` +
+      `<w:style w:type="paragraph" w:styleId="Normal">` +
+      `<w:rPr><w:color w:val="FF0000"/></w:rPr></w:style>` +
+      `</w:styles>`;
+
+    const out = forceBlackHeadingStyleColors(xml);
+    expect(out).toContain('w:styleId="Heading1"');
+    expect(out).toMatch(
+      /w:styleId="Heading1"[^>]*>[\s\S]*?<w:color w:val="000000"\/>/
+    );
+    expect(out).not.toContain("2E74B5");
+    expect(out).not.toContain("1F4D78");
+    expect(out).not.toContain('themeColor="accent1"');
+    expect(out).toContain('<w:color w:val="FF0000"/>');
   });
 });
