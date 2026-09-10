@@ -94,7 +94,7 @@ export function stepsForRole(
 
   const welcome: ProductTourStep = {
     id: "welcome",
-    title: `Welcome to ${name}`,
+    title: "Welcome to Andrei",
     body: welcomeBody(role, name, noun, copy),
     startHere: true,
   };

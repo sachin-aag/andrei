@@ -15,6 +15,14 @@ const mjCopy = {
 };
 
 describe("stepsForRole", () => {
+  it("always welcomes users to Andrei regardless of customer pack", () => {
+    const welcome = stepsForRole("engineer", {
+      ...copy,
+      productName: "Convergent",
+    }).find((step) => step.id === "welcome");
+    expect(welcome?.title).toBe("Welcome to Andrei");
+  });
+
   it("puts create-report and AI Check on the engineer getting-started path", () => {
     const steps = stepsForRole("engineer", copy);
     const ids = steps.map((step) => step.id);
