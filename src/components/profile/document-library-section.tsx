@@ -68,10 +68,10 @@ import {
   toggleVaultFolderSelection,
 } from "@/lib/attachments/add-from-vault-selection";
 import {
-  attachSharedWithMeRoot,
   isSharedWithMeFolderId,
   userOwnsVaultItem,
 } from "@/lib/attachments/library-shared-tree";
+import type { LibraryListScope } from "@/lib/attachments/library-access";
 import { cn } from "@/lib/utils";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
@@ -80,6 +80,21 @@ const FILE_PANE_STORAGE_KEY = "vaultExplorerSplit:v1";
 const DEFAULT_FILE_PANE_RATIO = 0.68;
 const MIN_FILE_PANE_RATIO = 0.36;
 const MAX_FILE_PANE_RATIO = 0.82;
+
+type VaultPageScope = Extract<LibraryListScope, "mine" | "shared">;
+
+const VAULT_SCOPE_TABS: {
+  value: VaultPageScope;
+  label: string;
+  testId: string;
+}[] = [
+  { value: "mine", label: "My uploads", testId: "library-vault-tab-mine" },
+  {
+    value: "shared",
+    label: "Shared with me",
+    testId: "library-vault-tab-shared",
+  },
+];
 
 type Props = {
   currentUser: Pick<WorkspaceUser, "id" | "role">;
@@ -1091,6 +1106,7 @@ export function DocumentLibrarySection({
   hideIntro = false,
 }: Props) {
   const [library, setLibrary] = useState<LibraryResponse | null>(null);
+  const [vaultScope, setVaultScope] = useState<VaultPageScope>("mine");
   const [loading, setLoading] = useState(true);
   const [inspectedAssetId, setInspectedAssetId] = useState<string | null>(null);
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
@@ -1169,7 +1185,9 @@ export function DocumentLibrarySection({
       setLoading(true);
     }
     try {
-      const response = await fetch("/api/attachment-vault?scope=accessible");
+      const response = await fetch(
+        `/api/attachment-vault?scope=${vaultScope}`
+      );
       const data = (await response.json().catch(() => ({}))) as LibraryResponse & {
         error?: string;
       };
@@ -1190,7 +1208,19 @@ export function DocumentLibrarySection({
         setLoading(false);
       }
     }
-  }, []);
+  }, [vaultScope]);
+
+  const switchVaultScope = useCallback((next: VaultPageScope) => {
+    if (next === vaultScope) return;
+    setVaultScope(next);
+    setInspectedAssetId(null);
+    setPreviewAssetId(null);
+    setCheckedAssetIds(new Set());
+    setCheckedFolderIds(new Set());
+    setExcludedAssetIds(new Set());
+    setGranteeIds([]);
+    setSearchQuery("");
+  }, [vaultScope]);
 
   useEffect(() => {
     void loadLibrary();
@@ -1714,12 +1744,13 @@ export function DocumentLibrarySection({
         assets: [] as AttachmentLibraryAssetRecord[],
       };
     }
-    return attachSharedWithMeRoot(
-      currentUser.id,
-      library.folders,
-      library.assets
-    );
-  }, [currentUser.id, library]);
+    return {
+      folders: library.folders,
+      assets: library.assets,
+    };
+  }, [library]);
+
+  const managingVault = vaultScope === "mine";
 
   const tree = useMemo(
     () => buildFolderChildren(explorer.folders, explorer.assets),
@@ -1803,6 +1834,21 @@ export function DocumentLibrarySection({
   const isEmpty =
     !library || (library.assets.length === 0 && library.folders.length === 0);
   const previewOpen = previewAsset != null;
+  const statusHint = managingVault
+    ? checkedCount > 0
+      ? `${checkedCount} selected`
+      : inspectedAsset && !previewOpen
+        ? `${inspectedAsset.filename} is selected`
+        : isEmpty
+          ? "Drop PDF or Word files, or upload a folder"
+          : "Click a file to see its details"
+    : checkedCount > 0
+      ? `${checkedCount} selected`
+      : inspectedAsset && !previewOpen
+        ? `${inspectedAsset.filename} is selected`
+        : isEmpty
+          ? "Nothing has been shared with you yet"
+          : "Click a file to see its details";
 
   useEffect(() => {
     if (!library) return;
@@ -1883,124 +1929,120 @@ export function DocumentLibrarySection({
                     data-testid="library-upload-tab-spinner"
                   />
                 ) : null}
-                {checkedCount > 0
-                  ? `${checkedCount} selected`
-                  : inspectedAsset && !previewOpen
-                    ? `${inspectedAsset.filename} is selected`
-                    : isEmpty
-                      ? "Drop PDF or Word files, or upload a folder"
-                      : "Click a file to see its details"}
+                {statusHint}
               </p>
               <div className="flex flex-wrap items-center justify-end gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={uploadLocked}
-                  onClick={() => openLibraryFilePicker("files")}
-                  data-testid="library-upload-files"
-                >
-                  <Upload className="size-3.5" aria-hidden="true" />
-                  Upload
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={uploadLocked}
-                  onClick={handleUploadFolderClick}
-                  data-testid="library-upload-folder"
-                >
-                  <FolderUp className="size-3.5" aria-hidden="true" />
-                  Upload folder
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={uploadLocked}
-                  onClick={() => setCreatingFolder(true)}
-                >
-                  <FolderPlus className="size-3.5" aria-hidden="true" />
-                  New folder
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={manageItemCount === 0 || shareCandidates.length === 0}
-                  title={
-                    shareCandidates.length === 0
-                      ? "No other workspace users to share with"
-                      : manageItemCount === 0
-                        ? "Select a file or folder you own first"
-                        : "Share the selected items"
-                  }
-                  onClick={() => setShareDialogOpen(true)}
-                  data-testid="library-share-selected"
-                >
-                  <Share2 className="size-3.5" aria-hidden="true" />
-                  {checkedCount > 0 ? `Share ${checkedCount}` : "Share"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={manageItemCount === 0 || uploadLocked}
-                  title={
-                    manageItemCount === 0
-                      ? "Select a file or folder you own first"
-                      : checkedCount > 0
-                        ? "Choose a destination folder for the checked items"
-                        : `Choose a destination folder for ${inspectedAsset?.filename ?? "this file"}`
-                  }
-                  onClick={() => openMoveDialog("checked")}
-                  data-testid="library-move-to-folder"
-                >
-                  <FolderInput className="size-3.5" aria-hidden="true" />
-                  {checkedCount > 0
-                    ? `Move ${checkedCount}`
-                    : "Move"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 gap-1 px-2 text-xs"
-                  disabled={
-                    uploadLocked ||
-                    (checkedCount === 0 &&
-                      (!ownsInspectedAsset || inspectedIsArchived))
-                  }
-                  title={
-                    checkedCount > 0
-                      ? "Archive the checked items"
-                      : ownsInspectedAsset && !inspectedIsArchived
-                        ? `Archive ${inspectedAsset?.filename ?? "this file"}`
-                        : "Select a file or folder you own first"
-                  }
-                  onClick={() => {
-                    if (checkedCount > 0) {
-                      void archiveItems(
-                        vaultSelectionPayload.assetIds,
-                        vaultSelectionPayload.libraryFolderIds
-                      );
-                      return;
-                    }
-                    if (inspectedAssetId && !inspectedIsArchived) {
-                      void archiveItems([inspectedAssetId], []);
-                    }
-                  }}
-                  data-testid="library-archive-selected"
-                >
-                  <Archive className="size-3.5" aria-hidden="true" />
-                  {checkedCount > 0 ? `Archive ${checkedCount}` : "Archive"}
-                </Button>
+                {managingVault ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 px-2 text-xs"
+                      disabled={uploadLocked}
+                      onClick={() => openLibraryFilePicker("files")}
+                      data-testid="library-upload-files"
+                    >
+                      <Upload className="size-3.5" aria-hidden="true" />
+                      Upload
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 px-2 text-xs"
+                      disabled={uploadLocked}
+                      onClick={handleUploadFolderClick}
+                      data-testid="library-upload-folder"
+                    >
+                      <FolderUp className="size-3.5" aria-hidden="true" />
+                      Upload folder
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 px-2 text-xs"
+                      disabled={uploadLocked}
+                      onClick={() => setCreatingFolder(true)}
+                    >
+                      <FolderPlus className="size-3.5" aria-hidden="true" />
+                      New folder
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 px-2 text-xs"
+                      disabled={manageItemCount === 0 || shareCandidates.length === 0}
+                      title={
+                        shareCandidates.length === 0
+                          ? "No other workspace users to share with"
+                          : manageItemCount === 0
+                            ? "Select a file or folder you own first"
+                            : "Share the selected items"
+                      }
+                      onClick={() => setShareDialogOpen(true)}
+                      data-testid="library-share-selected"
+                    >
+                      <Share2 className="size-3.5" aria-hidden="true" />
+                      {checkedCount > 0 ? `Share ${checkedCount}` : "Share"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 px-2 text-xs"
+                      disabled={manageItemCount === 0 || uploadLocked}
+                      title={
+                        manageItemCount === 0
+                          ? "Select a file or folder you own first"
+                          : checkedCount > 0
+                            ? "Choose a destination folder for the checked items"
+                            : `Choose a destination folder for ${inspectedAsset?.filename ?? "this file"}`
+                      }
+                      onClick={() => openMoveDialog("checked")}
+                      data-testid="library-move-to-folder"
+                    >
+                      <FolderInput className="size-3.5" aria-hidden="true" />
+                      {checkedCount > 0 ? `Move ${checkedCount}` : "Move"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 px-2 text-xs"
+                      disabled={
+                        uploadLocked ||
+                        (checkedCount === 0 &&
+                          (!ownsInspectedAsset || inspectedIsArchived))
+                      }
+                      title={
+                        checkedCount > 0
+                          ? "Archive the checked items"
+                          : ownsInspectedAsset && !inspectedIsArchived
+                            ? `Archive ${inspectedAsset?.filename ?? "this file"}`
+                            : "Select a file or folder you own first"
+                      }
+                      onClick={() => {
+                        if (checkedCount > 0) {
+                          void archiveItems(
+                            vaultSelectionPayload.assetIds,
+                            vaultSelectionPayload.libraryFolderIds
+                          );
+                          return;
+                        }
+                        if (inspectedAssetId && !inspectedIsArchived) {
+                          void archiveItems([inspectedAssetId], []);
+                        }
+                      }}
+                      data-testid="library-archive-selected"
+                    >
+                      <Archive className="size-3.5" aria-hidden="true" />
+                      {checkedCount > 0 ? `Archive ${checkedCount}` : "Archive"}
+                    </Button>
+                  </>
+                ) : null}
                 <label className="relative ml-1">
                   <Search
                     className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-[var(--muted-foreground)]"
@@ -2019,12 +2061,36 @@ export function DocumentLibrarySection({
             </div>
 
             <div
+              className="flex shrink-0 flex-wrap gap-1 border-b border-[var(--border)] px-3 py-2"
+              data-testid="library-vault-scope-tabs"
+            >
+              {VAULT_SCOPE_TABS.map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  data-testid={tab.testId}
+                  onClick={() => switchVaultScope(tab.value)}
+                  className={cn(
+                    "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                    vaultScope === tab.value
+                      ? "border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                      : "border-transparent text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50"
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div
               className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
               onDragOver={(event) => {
+                if (!managingVault) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "copy";
               }}
               onDrop={(event) => {
+                if (!managingVault) return;
                 event.preventDefault();
                 void handleDropOnFolder(null, event.dataTransfer);
               }}
@@ -2064,7 +2130,7 @@ export function DocumentLibrarySection({
                   void handleSelectedFiles(files, null);
                 }}
               />
-              {creatingFolder ? (
+              {managingVault && creatingFolder ? (
                 <input
                   autoFocus
                   aria-label="New folder name"
@@ -2156,9 +2222,10 @@ export function DocumentLibrarySection({
                   userOwnsVaultItem(currentUser.id, asset.ownerId)
                 }
               />
-              {(library?.archivedFolders.length ?? 0) +
+              {managingVault &&
+              (library?.archivedFolders.length ?? 0) +
                 (library?.archivedAssets.length ?? 0) >
-              0 ? (
+                0 ? (
                 <LibraryArchiveSection
                   folders={library?.archivedFolders ?? []}
                   assets={library?.archivedAssets ?? []}

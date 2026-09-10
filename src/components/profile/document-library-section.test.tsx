@@ -114,8 +114,11 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/api/attachment-vault?scope=accessible")) {
+      if (url.includes("/api/attachment-vault?scope=mine")) {
         return jsonResponse({ folders: [folder, nestedFolder], assets: [asset] });
+      }
+      if (url.includes("/api/attachment-vault?scope=shared")) {
+        return jsonResponse({ folders: [], assets: [] });
       }
       if (url.includes("/access")) {
         return jsonResponse({ grants: [] });
@@ -219,7 +222,7 @@ describe("DocumentLibrarySection explorer", () => {
     };
     vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/api/attachment-vault?scope=accessible")) {
+      if (url.includes("/api/attachment-vault?scope=mine")) {
         return jsonResponse({
           folders: [folder, nestedFolder],
           assets: [asset, nestedAsset],
@@ -278,7 +281,7 @@ describe("DocumentLibrarySection explorer", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/api/attachment-vault?scope=accessible")) {
+      if (url.includes("/api/attachment-vault?scope=mine")) {
         return jsonResponse({ folders: [folder, nestedFolder], assets: [asset] });
       }
       if (url.includes("/access")) {
@@ -390,7 +393,7 @@ describe("DocumentLibrarySection explorer", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/api/attachment-vault?scope=accessible")) {
+      if (url.includes("/api/attachment-vault?scope=mine")) {
         return jsonResponse({
           folders: [folder, nestedFolder],
           assets: [asset, nestedAsset],
@@ -437,7 +440,7 @@ describe("DocumentLibrarySection explorer", () => {
     });
   });
 
-  it("shows files shared with the current user under Shared with me", async () => {
+  it("shows files shared with the current user on the Shared with me tab", async () => {
     const user = userEvent.setup();
     const owner = {
       id: "user-2",
@@ -465,10 +468,13 @@ describe("DocumentLibrarySection explorer", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/api/attachment-vault?scope=accessible")) {
+      if (url.includes("/api/attachment-vault?scope=mine")) {
+        return jsonResponse({ folders: [folder, nestedFolder], assets: [asset] });
+      }
+      if (url.includes("/api/attachment-vault?scope=shared")) {
         return jsonResponse({
-          folders: [folder, nestedFolder, sharedFolder],
-          assets: [asset, sharedAsset],
+          folders: [sharedFolder],
+          assets: [sharedAsset],
         });
       }
       if (url.includes("/access")) {
@@ -484,9 +490,14 @@ describe("DocumentLibrarySection explorer", () => {
       />
     );
 
-    expect(await screen.findByTestId("library-shared-with-me")).toBeInTheDocument();
-    expect(screen.getByText("Shared with me")).toBeInTheDocument();
-    expect(screen.getByText("Protocols")).toBeInTheDocument();
+    await screen.findByTestId("library-explorer");
+    expect(screen.getByTestId("library-vault-tab-mine")).toBeInTheDocument();
+    expect(screen.getByTestId("library-vault-tab-shared")).toBeInTheDocument();
+    expect(screen.queryByText("Protocols")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("library-vault-tab-shared"));
+
+    expect(await screen.findByText("Protocols")).toBeInTheDocument();
     expect(screen.getByText("protocol.pdf")).toBeInTheDocument();
     expect(
       screen.queryByRole("checkbox", { name: "Select folder Protocols" })
@@ -494,6 +505,7 @@ describe("DocumentLibrarySection explorer", () => {
     expect(
       screen.queryByRole("button", { name: "Archive protocol.pdf" })
     ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("library-upload-files")).not.toBeInTheDocument();
 
     await user.click(screen.getByText("protocol.pdf"));
     expect(await screen.findByTestId("library-details-pane")).toBeInTheDocument();
@@ -736,7 +748,7 @@ describe("DocumentLibrarySection explorer", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/api/attachment-vault?scope=accessible")) {
+      if (url.includes("/api/attachment-vault?scope=mine")) {
         return jsonResponse({ folders, assets, archivedFolders, archivedAssets });
       }
       if (url.includes("/access")) {
@@ -796,7 +808,7 @@ describe("DocumentLibrarySection explorer", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/api/attachment-vault?scope=accessible")) {
+      if (url.includes("/api/attachment-vault?scope=mine")) {
         return jsonResponse({ folders, assets, archivedFolders, archivedAssets });
       }
       if (url.includes("/access")) {
