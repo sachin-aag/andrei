@@ -54,47 +54,46 @@ describe("buildAnalysisChartSource", () => {
     const iTable = source.tables.find((table) => table.id === "i-chart");
     expect(typeof iTable?.rows[0]?.[1]).toBe("number");
     const hist = source.tables.find((table) => table.id === "capability-hist");
-    expect(hist?.headers).toEqual([
-      "X",
-      "Count",
-      "Overall",
-      "Within",
-      "LSL",
-      "USL",
-    ]);
-    expect(hist?.rows.length).toBeGreaterThan(
+    expect(hist?.headers).toEqual(["Midpoint", "Count"]);
+    expect(hist?.rows.length).toBeGreaterThanOrEqual(
+      outcome.result.histogram.bins.length
+    );
+    expect(hist?.rows.length).toBeLessThan(
       outcome.result.histogram.overallCurve.length
     );
     const counts = hist?.rows.map((row) => row[1]) ?? [];
     expect(counts.every((value) => typeof value === "number")).toBe(true);
-    const xs = hist?.rows.map((row) => row[0]) ?? [];
-    expect(xs.filter((value) => value === 8)).toEqual([8, 8]);
-    expect(xs.filter((value) => value === 16)).toEqual([16, 16]);
-    const lslCol = hist?.rows.map((row) => row[4]) ?? [];
-    const uslCol = hist?.rows.map((row) => row[5]) ?? [];
-    const lslAtSpec = lslCol.filter(
-      (_, i) => xs[i] === 8 && typeof lslCol[i] === "number"
-    );
-    const uslAtSpec = uslCol.filter(
-      (_, i) => xs[i] === 16 && typeof uslCol[i] === "number"
-    );
-    expect(lslAtSpec).toEqual([0, expect.any(Number)]);
-    expect(uslAtSpec).toEqual([0, expect.any(Number)]);
-    expect(lslAtSpec[1]).toBeGreaterThan(0);
-    expect(uslAtSpec[1]).toBeGreaterThan(0);
-    const overallCol = hist?.rows.map((row) => row[2]) ?? [];
-    expect(overallCol.every((value) => typeof value === "number")).toBe(true);
+    const binCounts = outcome.result.histogram.bins.map((bin) => bin.count);
+    expect(counts.filter((value) => value !== 0)).toEqual(binCounts);
+    const fit = source.tables.find((table) => table.id === "capability-hist-fit");
+    expect(fit?.rows.length).toBe(outcome.result.histogram.overallCurve.length);
+    const lsl = source.tables.find((table) => table.id === "capability-hist-lsl");
+    const usl = source.tables.find((table) => table.id === "capability-hist-usl");
+    expect(lsl?.rows).toEqual([
+      [8, 0],
+      [8, source.charts.find((chart) => chart.title.includes("Histogram"))?.yMax],
+    ]);
+    expect(usl?.rows[0]?.[0]).toBe(16);
+    expect(usl?.rows[1]?.[0]).toBe(16);
+    expect(usl?.rows[0]?.[1]).toBe(0);
+    expect(usl?.rows[1]?.[1]).toBe(lsl?.rows[1]?.[1]);
     const histogramChart = source.charts.find((chart) =>
       chart.title.includes("Capability Histogram")
     );
-    expect(histogramChart?.kind).toBe("columnLine");
+    expect(histogramChart?.kind).toBe("columnScatter");
     expect(histogramChart?.gapWidth).toBe(0);
     expect(histogramChart?.overlap).toBe(100);
-    expect(histogramChart?.forceCategoryAxis).toBe(true);
-    expect(histogramChart?.categoryAsText).toBe(true);
+    expect(histogramChart?.xMin).toBeLessThan(8);
+    expect(histogramChart?.xMax).toBeGreaterThan(16);
     expect(
       histogramChart?.series.some(
-        (series) => series.name === "Overall" && series.asLine && series.smooth
+        (series) =>
+          series.name === "Overall" && series.asScatter && series.smooth
+      )
+    ).toBe(true);
+    expect(
+      histogramChart?.series.some(
+        (series) => series.name === "LSL" && series.asScatter
       )
     ).toBe(true);
   });
@@ -163,35 +162,23 @@ describe("buildAnalysisChartSource", () => {
       previewImage: null,
     };
     const source = buildAnalysisChartSource(analysis);
-    const table = source.tables[0];
-    expect(table?.headers).toEqual([
-      "X",
-      "Count",
-      "Overall",
-      "Within",
-      "LSL",
-      "USL",
-    ]);
-    const xs = table?.rows.map((row) => row[0] as number) ?? [];
-    const counts = table?.rows.map((row) => row[1] as number) ?? [];
-    expect(counts.every((value) => Number.isFinite(value))).toBe(true);
-    const bins = outcome.result.histogram.bins;
-    for (const bin of bins) {
-      const last = bins[bins.length - 1];
-      for (let i = 0; i < xs.length; i++) {
-        const x = xs[i]!;
-        const inside =
-          x >= bin.x0 && (x < bin.x1 || (bin === last && x === bin.x1));
-        if (inside) expect(counts[i]).toBe(bin.count);
-      }
-    }
+    const bars = source.tables.find((table) => table.id === "histogram");
+    const fit = source.tables.find((table) => table.id === "histogram-fit");
+    const lsl = source.tables.find((table) => table.id === "histogram-lsl");
+    const usl = source.tables.find((table) => table.id === "histogram-usl");
+    expect(bars?.headers).toEqual(["Midpoint", "Count"]);
+    expect(bars?.rows.length).toBeGreaterThanOrEqual(
+      outcome.result.histogram.bins.length
+    );
+    expect(fit?.rows.length).toBe(outcome.result.histogram.overallCurve.length);
+    expect(lsl?.rows.map((row) => row[0])).toEqual([8, 8]);
+    expect(usl?.rows.map((row) => row[0])).toEqual([16, 16]);
     const chart = source.charts[0];
+    expect(chart?.kind).toBe("columnScatter");
     expect(chart?.gapWidth).toBe(0);
     expect(chart?.overlap).toBe(100);
-    const lslIdx = xs.flatMap((x, i) => (x === 8 ? [i] : []));
-    expect(lslIdx).toHaveLength(2);
-    expect(lslIdx[1]).toBe((lslIdx[0] ?? 0) + 1);
-    expect(table?.rows[lslIdx[0]!]![4]).toBe(0);
-    expect(table?.rows[lslIdx[1]!]![4]).toBe(chart?.yMax);
+    expect(chart?.series.filter((item) => item.asScatter).map((item) => item.name)).toEqual(
+      ["Overall", "Within", "LSL", "USL"]
+    );
   });
 });

@@ -73,7 +73,7 @@ describe("excel chart xml helpers", () => {
     expect(xml).toContain("001838");
   });
 
-  it("emits a dense smoothed histogram fit as column+line", () => {
+  it("emits a column+scatter histogram with one bar per bin", () => {
     const range = (
       col0: number,
       rowStart: number,
@@ -86,35 +86,45 @@ describe("excel chart xml helpers", () => {
       rowEnd,
       cache,
     });
-    const xs = Array.from({ length: 20 }, (_, i) => 8 + i * 0.4);
     const xml = buildChartXml({
       title: "Capability Histogram",
-      kind: "columnLine",
+      kind: "columnScatter",
       xAxisTitle: "Measurement",
       yAxisTitle: "Count",
+      xMin: 8,
+      xMax: 16,
       yMin: 0,
       yMax: 4,
       gapWidth: 0,
       overlap: 100,
-      tickLblSkip: 3,
       forceCategoryAxis: true,
-      categoryAsText: true,
       series: [
         {
           name: "Count",
           color: "#001838",
-          cats: range(0, 20, 39, xs),
-          vals: range(1, 20, 39, xs.map((_, i) => (i > 4 && i < 14 ? 2 : 0))),
+          cats: range(0, 20, 24, [9, 10, 11, 12, 13]),
+          vals: range(1, 20, 24, [1, 2, 3, 2, 1]),
         },
         {
           name: "Overall",
           color: "#5b8ad0",
           marker: false,
           dash: true,
-          asLine: true,
+          asScatter: true,
           smooth: true,
-          cats: range(0, 20, 39, xs),
-          vals: range(1, 20, 39, xs.map((x) => Math.exp(-((x - 12) ** 2) / 4))),
+          scatterStyle: "line",
+          x: range(0, 30, 39, Array.from({ length: 10 }, (_, i) => 8 + i)),
+          vals: range(1, 30, 39, Array.from({ length: 10 }, (_, i) => i)),
+        },
+        {
+          name: "LSL",
+          color: "#dc2626",
+          marker: false,
+          dash: true,
+          asScatter: true,
+          scatterStyle: "line",
+          x: range(0, 42, 43, [8, 8]),
+          vals: range(1, 42, 43, [0, 4]),
         },
       ],
       anchorRow: 1,
@@ -123,14 +133,15 @@ describe("excel chart xml helpers", () => {
       heightEmu: 1,
     });
     expect(xml).toContain("c:barChart");
-    expect(xml).toContain("c:lineChart");
+    expect(xml).toContain("c:scatterChart");
+    expect(xml).not.toContain("c:lineChart");
     expect(xml).toContain('<c:gapWidth val="0"/>');
     expect(xml).toContain('<c:overlap val="100"/>');
-    expect(xml).toContain('<c:auto val="0"/>');
-    expect(xml).toContain("c:strCache");
+    expect(xml).toContain('<c:delete val="0"/>');
+    expect(xml).toContain('<c:axPos val="t"/>');
     expect(xml).toContain('<c:smooth val="1"/>');
-    expect(xml).toContain('<c:tickLblSkip val="3"/>');
-    expect(xml).toContain("'Assay sixpack'!$A$20:$A$39");
+    expect(xml).toContain("'Assay sixpack'!$A$20:$A$24");
+    expect(xml).toContain("'Assay sixpack'!$A$42:$A$43");
   });
 });
 
