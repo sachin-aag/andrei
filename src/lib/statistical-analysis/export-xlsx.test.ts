@@ -7,6 +7,7 @@ import {
   analyticsExportFilename,
   buildAnalyticsXlsx,
   formatWorksheetSourceLine,
+  worksheetCellValue,
 } from "./export-xlsx";
 import { listZipPaths, zipText } from "./excel-chart-xml";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
@@ -164,7 +165,7 @@ describe("buildAnalyticsXlsx", () => {
     expect(data?.getCell("A1").font?.bold).toBe(true);
     expect(data?.getCell("A1").font?.size).toBe(14);
     expect(data?.getCell("A2").value).toBe("Assay");
-    expect(data?.getCell("A3").value).toBe("10");
+    expect(data?.getCell("A3").value).toBe(10);
 
     const sixpack = workbook.getWorksheet("Assay sixpack");
     expect(sixpack?.getCell("A1").value).toBe("Assay sixpack");
@@ -306,5 +307,81 @@ describe("buildAnalyticsXlsx", () => {
     expect(
       listZipPaths(buffer).some((path) => path.startsWith("xl/charts/chart"))
     ).toBe(true);
+  });
+});
+
+describe("worksheetCellValue", () => {
+  it("exports numeric text as numbers", () => {
+    expect(worksheetCellValue("101.84")).toBe(101.84);
+    expect(worksheetCellValue("3")).toBe(3);
+    expect(worksheetCellValue("-2.5")).toBe(-2.5);
+    expect(worksheetCellValue(" 4.25 ")).toBe(4.25);
+  });
+
+  it("keeps text that would not round-trip", () => {
+    expect(worksheetCellValue("0012")).toBe("0012");
+    expect(worksheetCellValue("1.50")).toBe("1.50");
+    expect(worksheetCellValue("1-2")).toBe("1-2");
+    expect(worksheetCellValue("A")).toBe("A");
+    expect(worksheetCellValue("")).toBe("");
+    expect(worksheetCellValue("  ")).toBe("  ");
+  });
+});
+
+describe("worksheet and stat cells", () => {
+  it("writes worksheet values as numbers and labels as text", async () => {
+    const analytics = sampleAnalytics();
+    analytics.worksheet.sheets[0]!.columns[1]!.name = "Lot";
+    analytics.worksheet.sheets[0]!.columns[1]!.values = ["A", "B", "0012"];
+    analytics.worksheet.specs = [
+      { columnName: "Assay", lsl: "8", usl: "16", target: "12" },
+    ];
+    const buffer = await buildAnalyticsXlsx(analytics);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    const data = workbook.getWorksheet("Data");
+    expect(data?.getCell("A3").value).toBe(10);
+    expect(data?.getCell("A4").value).toBe(12);
+    expect(data?.getCell("B3").value).toBe("A");
+    expect(data?.getCell("B5").value).toBe("0012");
+
+    const specs = workbook.getWorksheet("Specs");
+    expect(specs?.getCell("B3").value).toBe(8);
+    expect(specs?.getCell("C3").value).toBe(16);
+  });
+
+  it("puts the capability panel in the free chart slot as numbers", async () => {
+    const buffer = await buildAnalyticsXlsx(sampleAnalytics(), {
+      includePlots: true,
+    });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+    const sixpack = workbook.getWorksheet("Assay sixpack");
+
+    let titleRow = 0;
+    let titleCol = 0;
+    sixpack?.eachRow((row, number) => {
+      row.eachCell((cell, column) => {
+        if (cell.value === "Process Capability") {
+          titleRow = number;
+          titleCol = column;
+        }
+      });
+    });
+    // Slot 6 of the 3x2 grid — the panel the app draws without a chart.
+    expect(titleRow).toBe(38);
+    expect(titleCol).toBe(9);
+    expect(sixpack?.getCell(titleRow + 1, titleCol).value).toBe("PROCESS DATA");
+    expect(sixpack?.getCell(titleRow + 1, titleCol + 2).value).toBe(
+      "POTENTIAL (WITHIN)"
+    );
+    expect(sixpack?.getCell(titleRow + 2, titleCol).value).toBe("Sample N");
+    expect(sixpack?.getCell(titleRow + 2, titleCol + 1).value).toBe(8);
+    expect(sixpack?.getCell(titleRow + 3, titleCol).value).toBe("Mean");
+    expect(typeof sixpack?.getCell(titleRow + 3, titleCol + 1).value).toBe(
+      "number"
+    );
+    expect(sixpack?.getCell(titleRow + 3, titleCol + 1).numFmt).toBe("0.000");
   });
 });

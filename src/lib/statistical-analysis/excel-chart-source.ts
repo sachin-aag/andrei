@@ -1,11 +1,24 @@
+import {
+  ANOVA_AXIS_PAD,
+  CONTROL_CHART_AXIS_PAD,
+  PROBABILITY_PLOT_AXIS_PAD,
+  midpointMajorUnit,
+  paddedDomain,
+} from "@/lib/charts/axis-domain";
+import { axisMajorUnit } from "@/lib/charts/axis-ticks";
 import { chartBrandColors, seriesFill } from "@/lib/charts/brand-colors";
 import { parseChartMark, seriesPolylines } from "@/lib/charts/chart-marks";
 import {
   chartShowsSpecLimits,
   layoutPoints,
+  resolveXRange,
+  resolveYRange,
   type ChartSpec,
 } from "@/lib/charts/chart-spec";
-import { meanLineGroups } from "@/lib/charts/mean-line";
+import {
+  MEAN_LINE_INDIVIDUAL_FILL,
+  meanLineGroups,
+} from "@/lib/charts/mean-line";
 import { resolveCustomerId } from "@/lib/customers/resolve";
 import {
   EMU_PER_CM,
@@ -13,6 +26,11 @@ import {
   type ExcelChartSeries,
   type ExcelNativeChart,
 } from "./excel-chart-xml";
+import {
+  boxplotTickStep,
+  boxplotYExtent,
+} from "./boxplot-chart-layout";
+import { formatLimit, formatPValue, formatStat } from "./format";
 import { histogramChartScale } from "./histogram-chart-scale";
 import {
   histogramOverlays,
@@ -27,6 +45,16 @@ import {
 
 export const CHART_SLOT_ROW_HEIGHT = 18;
 export const CHARTS_PER_ROW = 2;
+/** Marker diameter in points — the SVG panels scale their dots with the plot. */
+const TWO_UP_MARKER_PT = 5;
+const SINGLE_MARKER_PT = 7;
+const OUT_OF_CONTROL_MARKER_PT = 7;
+/** Boxplot: the SVG box is ~55% of its category slot at 45% fill opacity. */
+const BOX_GAP_WIDTH = 80;
+const BOX_FILL_OPACITY = 0.45;
+const MAX_PLOTTED_OUTLIERS = 8;
+/** Matches the 0.18 fill alpha the SVG and PNG renderers use for area marks. */
+const AREA_FILL_OPACITY = 0.18;
 
 export type ChartSourceTable = {
   id: string;
@@ -37,6 +65,18 @@ export type ChartSourceTable = {
 
 export type SeriesRef = {
   name: string;
+  markerSymbol?: ExcelChartSeries["markerSymbol"];
+  errColor?: string;
+  pointOverrides?: Array<{ index: number; color: string; markerSize?: number }>;
+  valueLabel?: {
+    index: number;
+    text: string;
+    color?: string;
+    position?: "t" | "b" | "l" | "r" | "ctr";
+  };
+  borderColor?: string;
+  lineColor?: string;
+  fillOpacity?: number;
   tableId: string;
   valCol: number;
   xCol?: number;
@@ -64,11 +104,16 @@ export type PlannedChart = {
   xMax?: number | null;
   yMin?: number | null;
   yMax?: number | null;
+  xMajorUnit?: number | null;
+  yMajorUnit?: number | null;
+  subtitle?: string;
   gapWidth?: number;
   overlap?: number;
   tickLblSkip?: number;
   forceCategoryAxis?: boolean;
   categoryAsText?: boolean;
+  /** Bottom legend. Off where the app labels values inline instead. */
+  showLegend?: boolean;
   series: SeriesRef[];
 };
 
@@ -120,7 +165,9 @@ export function resolvePlannedCharts(
   charts: PlannedChart[],
   written: Map<string, WrittenChartTable>
 ): ExcelNativeChart[] {
-  return charts.flatMap((chart, index) => {
+  const colors = chartBrandColors(resolveCustomerId());
+  const twoUp = charts.length > 1;
+  const live = charts.flatMap((chart) => {
     const series: ExcelChartSeries[] = chart.series.flatMap((ref) => {
       const table = written.get(ref.tableId);
       if (!table || table.dataEnd < table.dataStart) return [];
@@ -140,6 +187,14 @@ export function resolvePlannedCharts(
           cats: ref.catCol != null ? range(ref.catCol) : undefined,
           errPlus: ref.errPlusCol != null ? range(ref.errPlusCol) : undefined,
           errMinus: ref.errMinusCol != null ? range(ref.errMinusCol) : undefined,
+          markerSymbol: ref.markerSymbol,
+          errColor: ref.errColor,
+          pointOverrides: ref.pointOverrides,
+          valueLabel: ref.valueLabel,
+          borderColor: ref.borderColor,
+          lineColor: ref.lineColor,
+          fillOpacity: ref.fillOpacity,
+          markerSize: twoUp ? TWO_UP_MARKER_PT : SINGLE_MARKER_PT,
           scatterStyle: ref.scatterStyle,
           dash: ref.dash,
           marker: ref.marker,
@@ -152,26 +207,34 @@ export function resolvePlannedCharts(
       ];
     });
     if (series.length === 0) return [];
-    const anchor = chartAnchor(index, charts.length);
-    return [
-      {
-        title: chart.title,
-        kind: chart.kind,
-        xAxisTitle: chart.xAxisTitle,
-        yAxisTitle: chart.yAxisTitle,
-        xMin: chart.xMin,
-        xMax: chart.xMax,
-        yMin: chart.yMin,
-        yMax: chart.yMax,
-        gapWidth: chart.gapWidth,
-        overlap: chart.overlap,
-        tickLblSkip: chart.tickLblSkip,
-        forceCategoryAxis: chart.forceCategoryAxis,
-        categoryAsText: chart.categoryAsText,
-        series,
-        ...anchor,
-      } satisfies ExcelNativeChart,
-    ];
+    return [{ chart, series }];
+  });
+  return live.map(({ chart, series }, index) => {
+    const anchor = chartAnchor(index, live.length);
+    return {
+      title: chart.title,
+      kind: chart.kind,
+      xAxisTitle: chart.xAxisTitle,
+      yAxisTitle: chart.yAxisTitle,
+      xMin: chart.xMin,
+      xMax: chart.xMax,
+      yMin: chart.yMin,
+      yMax: chart.yMax,
+      xMajorUnit: chart.xMajorUnit,
+      yMajorUnit: chart.yMajorUnit,
+      subtitle: chart.subtitle,
+      gapWidth: chart.gapWidth,
+      overlap: chart.overlap,
+      tickLblSkip: chart.tickLblSkip,
+      forceCategoryAxis: chart.forceCategoryAxis,
+      categoryAsText: chart.categoryAsText,
+      showLegend: chart.showLegend,
+      axisColor: colors.axis,
+      gridColor: colors.grid,
+      titleColor: colors.foreground,
+      series,
+      ...anchor,
+    } satisfies ExcelNativeChart;
   });
 }
 
@@ -246,8 +309,14 @@ function specCharts(
   const useLegend =
     spec.layout.seriesBy === "unit" &&
     groups.some((group) => (group.series ?? "").length > 0);
+  // The SVG views colour by sorted series name; keep the mapping identical.
   const seriesGroups = useLegend
-    ? groups
+    ? groups.toSorted((a, b) =>
+        (a.series ?? "").localeCompare(b.series ?? "", undefined, {
+          numeric: true,
+          sensitivity: "base",
+        })
+      )
     : [{ series: spec.yLabel || "Y", points }];
 
   const tables: ChartSourceTable[] = [];
@@ -298,6 +367,7 @@ function specCharts(
         catCol: 0,
         valCol: index + 1,
         color: seriesFill(colors, index),
+        fillOpacity: mapped.kind === "area" ? AREA_FILL_OPACITY : undefined,
         asLine: false,
       }));
       let nextCol = localGroups.length + 1;
@@ -311,7 +381,7 @@ function specCharts(
           dash: true,
           noLine: false,
           marker: false,
-          asLine: mapped.kind === "column",
+          asLine: mapped.kind === "column" || mapped.kind === "area",
         });
         nextCol += 1;
       }
@@ -325,22 +395,26 @@ function specCharts(
           dash: true,
           noLine: false,
           marker: false,
-          asLine: mapped.kind === "column",
+          asLine: mapped.kind === "column" || mapped.kind === "area",
         });
       }
       const hasLimitLines = series.some((item) => item.asLine);
+      const columnY = resolveYRange({ ...spec, points });
       charts.push({
         title: spec.title,
         kind:
           mapped.kind === "column" && hasLimitLines
             ? "columnLine"
-            : spec.layout.seriesBy === "unit" && mapped.kind === "column"
-              ? "columnStacked"
-              : mapped.kind,
+            : mapped.kind === "area" && hasLimitLines
+              ? "areaLine"
+              : spec.layout.seriesBy === "unit" && mapped.kind === "column"
+                ? "columnStacked"
+                : mapped.kind,
         xAxisTitle: spec.xLabel,
         yAxisTitle: spec.yLabel,
-        yMin: spec.layout.yRange?.min,
-        yMax: spec.layout.yRange?.max,
+        yMin: columnY.min,
+        yMax: columnY.max,
+        yMajorUnit: axisMajorUnit(columnY.min, columnY.max),
         series,
       });
       continue;
@@ -397,13 +471,16 @@ function specCharts(
 
     const series: SeriesRef[] = [];
     let col = 0;
+    const dimIndividuals = showMean && !useLegend;
     for (const [index, group] of localGroups.entries()) {
       series.push({
         name: group.series || spec.yLabel || `Series ${index + 1}`,
         tableId,
         xCol: col,
         valCol: col + 1,
-        color: seriesFill(colors, index),
+        color: dimIndividuals
+          ? MEAN_LINE_INDIVIDUAL_FILL
+          : seriesFill(colors, index),
         scatterStyle: mapped.scatterStyle,
         marker: mapped.scatterStyle !== "line",
       });
@@ -435,32 +512,65 @@ function specCharts(
       });
       col += 2;
     }
+    const seriesOrder = new Map(
+      seriesGroups.map((group, index) => [group.series ?? "", index])
+    );
     for (const group of meanGroups) {
       series.push({
         name: group.series ? `${group.series} mean` : "Mean",
         tableId,
         xCol: col,
         valCol: col + 1,
-        color: colors.axis,
+        color: useLegend
+          ? seriesFill(colors, seriesOrder.get(group.series ?? "") ?? 0)
+          : colors.brand600,
         scatterStyle: "lineMarker",
         marker: true,
       });
       col += 2;
     }
+    const scatterX = resolveXRange({ ...spec, points });
+    const scatterY = resolveYRange({ ...spec, points });
     charts.push({
       title: spec.title,
       kind: "scatter",
       xAxisTitle: spec.xLabel,
       yAxisTitle: spec.yLabel,
-      xMin: spec.layout.xRange?.min,
-      xMax: spec.layout.xRange?.max,
-      yMin: spec.layout.yRange?.min,
-      yMax: spec.layout.yRange?.max,
+      xMin: scatterX.min,
+      xMax: scatterX.max,
+      yMin: scatterY.min,
+      yMax: scatterY.max,
+      xMajorUnit: axisMajorUnit(scatterX.min, scatterX.max),
+      yMajorUnit: axisMajorUnit(scatterY.min, scatterY.max),
       series,
     });
   }
 
   return { tables, charts };
+}
+
+/**
+ * The SVG panels print each limit's value at the end of its line instead of
+ * carrying a legend. Excel needs a literal label because a spec line's Y value
+ * is the plot ceiling, not the limit.
+ */
+function limitLabel(
+  value: number,
+  lastIndex: number,
+  position: "t" | "b",
+  color: string
+): SeriesRef["valueLabel"] {
+  return { index: lastIndex, text: formatLimit(value), color, position };
+}
+
+/** Same window the SVG panel frames, so the exported twin is not auto-scaled. */
+function controlChartAxis(values: number[]): {
+  yMin: number;
+  yMax: number;
+  yMajorUnit: number;
+} {
+  const [yMin, yMax] = paddedDomain(values, CONTROL_CHART_AXIS_PAD);
+  return { yMin, yMax, yMajorUnit: midpointMajorUnit(yMin, yMax) };
 }
 
 function sixpackCharts(
@@ -488,44 +598,96 @@ function sixpackCharts(
   if (config.lsl != null) iHeaders.push("LSL");
   if (config.usl != null) iHeaders.push("USL");
   tables.push({ id: "i-chart", title: "I Chart data", headers: iHeaders, rows: iRows });
+  const lastIndex = Math.max(0, results.individuals.values.length - 1);
   const iSeries: SeriesRef[] = [
-    { name: "Value", tableId: "i-chart", catCol: 0, valCol: 1, color: colors.brand600, marker: true },
-    { name: "UCL", tableId: "i-chart", catCol: 0, valCol: 2, color: colors.brand400, dash: true, noLine: false, marker: false },
+    {
+      name: "Value",
+      tableId: "i-chart",
+      catCol: 0,
+      valCol: 1,
+      color: colors.brand600,
+      lineColor: colors.foreground,
+      marker: true,
+      pointOverrides: results.individuals.outOfControl.map((index) => ({
+        index,
+        color: colors.limit,
+        markerSize: OUT_OF_CONTROL_MARKER_PT,
+      })),
+    },
+    { name: "UCL", tableId: "i-chart", catCol: 0, valCol: 2, color: colors.brand400, dash: true, noLine: false, marker: false, valueLabel: limitLabel(results.individuals.ucl, lastIndex, "t", colors.limit) },
     { name: "CL", tableId: "i-chart", catCol: 0, valCol: 3, color: colors.axis, dash: true, noLine: false, marker: false },
-    { name: "LCL", tableId: "i-chart", catCol: 0, valCol: 4, color: colors.brand400, dash: true, noLine: false, marker: false },
+    { name: "LCL", tableId: "i-chart", catCol: 0, valCol: 4, color: colors.brand400, dash: true, noLine: false, marker: false, valueLabel: limitLabel(results.individuals.lcl, lastIndex, "b", colors.limit) },
   ];
   let col = 5;
   if (config.lsl != null) {
-    iSeries.push({ name: "LSL", tableId: "i-chart", catCol: 0, valCol: col, color: colors.limit, dash: true, marker: false });
+    iSeries.push({ name: "LSL", tableId: "i-chart", catCol: 0, valCol: col, color: colors.limit, dash: true, marker: false, valueLabel: limitLabel(config.lsl, lastIndex, "b", colors.limit) });
     col += 1;
   }
   if (config.usl != null) {
-    iSeries.push({ name: "USL", tableId: "i-chart", catCol: 0, valCol: col, color: colors.limit, dash: true, marker: false });
+    iSeries.push({ name: "USL", tableId: "i-chart", catCol: 0, valCol: col, color: colors.limit, dash: true, marker: false, valueLabel: limitLabel(config.usl, lastIndex, "t", colors.limit) });
   }
+  const specValues = [config.lsl, config.usl].filter(
+    (value): value is number => value != null && Number.isFinite(value)
+  );
   charts.push({
     title: `${title} — I Chart`,
     kind: "line",
     xAxisTitle: "Observation",
     yAxisTitle: config.columnName,
+    ...controlChartAxis([
+      ...results.individuals.values,
+      results.individuals.center,
+      results.individuals.ucl,
+      results.individuals.lcl,
+      ...specValues,
+    ]),
+    showLegend: false,
     series: iSeries,
   });
 
   const last = results.lastObservations;
   if (last.length > 0) {
+    // Observation numbers continue the run, matching the panel's x offset.
+    const firstObservation = Math.max(1, results.n - last.length + 1);
+    const lastHeaders = ["Index", "Value", "CL"];
+    if (config.lsl != null) lastHeaders.push("LSL");
+    if (config.usl != null) lastHeaders.push("USL");
     tables.push({
       id: "last-25",
       title: "Last 25 observations",
-      headers: ["Index", "Value"],
-      rows: last.map((value, i) => [i + 1, value]),
+      headers: lastHeaders,
+      rows: last.map((value, i) => {
+        const row: Array<string | number | null> = [
+          firstObservation + i,
+          value,
+          results.mean,
+        ];
+        if (config.lsl != null) row.push(config.lsl);
+        if (config.usl != null) row.push(config.usl);
+        return row;
+      }),
     });
+    const lastSeries: SeriesRef[] = [
+      { name: "Value", tableId: "last-25", catCol: 0, valCol: 1, color: colors.brand600, lineColor: colors.foreground, marker: true },
+      { name: "CL", tableId: "last-25", catCol: 0, valCol: 2, color: colors.brand600, marker: false },
+    ];
+    const lastPoint = last.length - 1;
+    let lastCol = 3;
+    if (config.lsl != null) {
+      lastSeries.push({ name: "LSL", tableId: "last-25", catCol: 0, valCol: lastCol, color: colors.limit, dash: true, marker: false, valueLabel: limitLabel(config.lsl, lastPoint, "b", colors.limit) });
+      lastCol += 1;
+    }
+    if (config.usl != null) {
+      lastSeries.push({ name: "USL", tableId: "last-25", catCol: 0, valCol: lastCol, color: colors.limit, dash: true, marker: false, valueLabel: limitLabel(config.usl, lastPoint, "t", colors.limit) });
+    }
     charts.push({
       title: `${title} — Last 25 Observations`,
       kind: "line",
       xAxisTitle: "Observation",
       yAxisTitle: config.columnName,
-      series: [
-        { name: "Value", tableId: "last-25", catCol: 0, valCol: 1, color: colors.brand600, marker: true },
-      ],
+      ...controlChartAxis([...last, results.mean, ...specValues]),
+      showLegend: false,
+      series: lastSeries,
     });
   }
 
@@ -555,7 +717,8 @@ function sixpackCharts(
       title: "Moving Range data",
       headers: ["Index", "MR", "UCL", "CL", "LCL"],
       rows: mr.map((value, i) => [
-        i + 1,
+        // Each moving range belongs to the second of its pair.
+        i + 2,
         value,
         results.movingRange.ucl,
         results.movingRange.center,
@@ -567,11 +730,18 @@ function sixpackCharts(
       kind: "line",
       xAxisTitle: "Observation",
       yAxisTitle: "Moving range",
+      ...controlChartAxis([
+        ...mr,
+        results.movingRange.center,
+        results.movingRange.ucl,
+        results.movingRange.lcl,
+      ]),
+      showLegend: false,
       series: [
-        { name: "MR", tableId: "mr-chart", catCol: 0, valCol: 1, color: colors.brand600, marker: true },
-        { name: "UCL", tableId: "mr-chart", catCol: 0, valCol: 2, color: colors.brand400, dash: true, marker: false },
+        { name: "MR", tableId: "mr-chart", catCol: 0, valCol: 1, color: colors.brand600, lineColor: colors.foreground, marker: true },
+        { name: "UCL", tableId: "mr-chart", catCol: 0, valCol: 2, color: colors.brand400, dash: true, marker: false, valueLabel: limitLabel(results.movingRange.ucl, mr.length - 1, "t", colors.limit) },
         { name: "CL", tableId: "mr-chart", catCol: 0, valCol: 3, color: colors.axis, dash: true, marker: false },
-        { name: "LCL", tableId: "mr-chart", catCol: 0, valCol: 4, color: colors.brand400, dash: true, marker: false },
+        { name: "LCL", tableId: "mr-chart", catCol: 0, valCol: 4, color: colors.brand400, dash: true, marker: false, valueLabel: limitLabel(results.movingRange.lcl, mr.length - 1, "b", colors.limit) },
       ],
     });
   }
@@ -581,19 +751,48 @@ function sixpackCharts(
     tables.push({
       id: "normal-plot",
       title: "Normal probability data",
-      headers: ["Z", "Value", "Fit Z", "Fit"],
+      headers: ["Z", "Value", "Fit Z", "Fit", "CI Z", "CI low", "CI high"],
       rows: np.map((point, i) => [
         point.z,
         point.value,
         i === 0 ? results.normalPlot.lineStart.z : i === 1 ? results.normalPlot.lineEnd.z : null,
         i === 0 ? results.normalPlot.lineStart.value : i === 1 ? results.normalPlot.lineEnd.value : null,
+        results.normalPlot.lowerBand[i]?.z ?? null,
+        results.normalPlot.lowerBand[i]?.value ?? null,
+        results.normalPlot.upperBand[i]?.value ?? null,
       ]),
     });
+    const plot = results.normalPlot;
+    const [npXMin, npXMax] = paddedDomain(
+      [
+        ...np.map((point) => point.z),
+        plot.lineStart.z,
+        plot.lineEnd.z,
+        ...plot.lowerBand.map((point) => point.z),
+      ],
+      PROBABILITY_PLOT_AXIS_PAD
+    );
+    const [npYMin, npYMax] = paddedDomain(
+      [
+        ...np.map((point) => point.value),
+        plot.lineStart.value,
+        plot.lineEnd.value,
+        ...plot.lowerBand.map((point) => point.value),
+        ...plot.upperBand.map((point) => point.value),
+      ],
+      PROBABILITY_PLOT_AXIS_PAD
+    );
     charts.push({
       title: `${title} — Normal Probability Plot`,
       kind: "scatter",
       xAxisTitle: "Normal score",
       yAxisTitle: config.columnName,
+      xMin: npXMin,
+      xMax: npXMax,
+      yMin: npYMin,
+      yMax: npYMax,
+      xMajorUnit: midpointMajorUnit(npXMin, npXMax),
+      yMajorUnit: midpointMajorUnit(npYMin, npYMax),
       series: [
         {
           name: "Value",
@@ -609,11 +808,32 @@ function sixpackCharts(
           tableId: "normal-plot",
           xCol: 2,
           valCol: 3,
+          color: colors.brand600,
+          scatterStyle: "line",
+          marker: false,
+        },
+        // Excel cannot shade between two scatter series, so the band the panel
+        // fills becomes its two boundary lines.
+        {
+          name: "CI low",
+          tableId: "normal-plot",
+          xCol: 4,
+          valCol: 5,
+          color: colors.brand400,
+          scatterStyle: "line",
+          marker: false,
+        },
+        {
+          name: "CI high",
+          tableId: "normal-plot",
+          xCol: 4,
+          valCol: 6,
           color: colors.brand400,
           scatterStyle: "line",
           marker: false,
         },
       ],
+      subtitle: `AD: ${formatStat(plot.ad, 3)}   P: ${formatPValue(plot.pValue)}`,
     });
   }
 
@@ -674,7 +894,8 @@ function histogramTable(
       tableId: id,
       catCol: 0,
       valCol: 1,
-      color: colors.brand600,
+      color: colors.brand200,
+      borderColor: colors.brand500,
     },
   ];
   if (showOverall || showWithin) {
@@ -706,7 +927,7 @@ function histogramTable(
         tableId: `${id}-fit`,
         xCol: 0,
         valCol: col,
-        color: colors.brand400,
+        color: colors.axis,
         marker: false,
         dash: true,
         asScatter: true,
@@ -749,6 +970,7 @@ function histogramTable(
       marker: false,
       asScatter: true,
       scatterStyle: "line",
+      valueLabel: limitLabel(lsl, 1, "t", colors.limit),
     });
   }
   if (showUsl && usl != null) {
@@ -771,6 +993,7 @@ function histogramTable(
       marker: false,
       asScatter: true,
       scatterStyle: "line",
+      valueLabel: limitLabel(usl, 1, "t", colors.limit),
     });
   }
   const hasScatter = series.some((item) => item.asScatter);
@@ -786,9 +1009,14 @@ function histogramTable(
         xMax,
         yMin: 0,
         yMax: scale.yMax,
+        yMajorUnit:
+          scale.yTicks.length > 1
+            ? scale.yTicks[1]! - scale.yTicks[0]!
+            : undefined,
         gapWidth: 0,
         overlap: 100,
         forceCategoryAxis: true,
+        showLegend: false,
         series,
       },
     ],
@@ -807,6 +1035,10 @@ function anovaCharts(
     Math.max(0, group.ciHigh - group.mean),
     Math.max(0, group.mean - group.ciLow),
   ]);
+  const [yMin, yMax] = paddedDomain(
+    groups.flatMap((group) => [group.ciLow, group.ciHigh, group.mean]),
+    ANOVA_AXIS_PAD
+  );
   return {
     tables: [
       {
@@ -822,6 +1054,9 @@ function anovaCharts(
         kind: "line",
         xAxisTitle: analysis.config.factorColumnName,
         yAxisTitle: analysis.config.responseColumnName,
+        yMin,
+        yMax,
+        yMajorUnit: midpointMajorUnit(yMin, yMax),
         series: [
           {
             name: "Mean",
@@ -840,27 +1075,141 @@ function anovaCharts(
   };
 }
 
+/**
+ * Tukey boxes drawn the way Excel can: an invisible column up to Q1, then the
+ * Q1-median and median-Q3 segments stacked on top of it (their shared edge is
+ * the median line), whiskers as custom error bars off the hidden base and the
+ * top segment, and outliers as marker-only line series with star glyphs.
+ *
+ * Stacking works from the zero baseline, so a negative Q1 would flip a segment
+ * to the wrong side. Those fall back to plotting the five statistics as points.
+ */
 function boxplotCharts(
   analysis: Extract<StatisticalAnalysisSummary, { kind: "boxplot" }>,
   colors: ReturnType<typeof chartBrandColors>
 ): AnalysisChartSource {
   const groups = analysis.results.groups;
   if (groups.length === 0) return { tables: [], charts: [] };
-  const rows = groups.map((group) => [
-    group.labels.join(" / ") || "All",
-    group.whiskerLow,
+  const yWindow = boxplotYExtent(groups);
+  const axis = {
+    yMin: yWindow.min,
+    yMax: yWindow.max,
+    yMajorUnit: boxplotTickStep(yWindow.min, yWindow.max),
+  };
+  const xAxisTitle =
+    analysis.config.categoryColumnNames.join(", ") || undefined;
+  const label = (group: (typeof groups)[number]) =>
+    group.labels.join(" / ") || "All";
+
+  if (groups.some((group) => group.q1 < 0)) {
+    const rows = groups.map((group) => [
+      label(group),
+      group.whiskerLow,
+      group.q1,
+      group.median,
+      group.q3,
+      group.whiskerHigh,
+      group.mean,
+    ]);
+    const series: SeriesRef[] = [
+      { name: "Whisker low", tableId: "boxplot", catCol: 0, valCol: 1, color: colors.axis, marker: true, noLine: true },
+      { name: "Q1", tableId: "boxplot", catCol: 0, valCol: 2, color: colors.brand400, marker: true, noLine: true },
+      { name: "Median", tableId: "boxplot", catCol: 0, valCol: 3, color: colors.brand600, marker: true },
+      { name: "Q3", tableId: "boxplot", catCol: 0, valCol: 4, color: colors.brand400, marker: true, noLine: true },
+      { name: "Whisker high", tableId: "boxplot", catCol: 0, valCol: 5, color: colors.axis, marker: true, noLine: true },
+    ];
+    if (analysis.config.showMeanLine) {
+      series.push({
+        name: "Mean",
+        tableId: "boxplot",
+        catCol: 0,
+        valCol: 6,
+        color: colors.series[1] ?? colors.axis,
+        marker: true,
+      });
+    }
+    return {
+      tables: [
+        {
+          id: "boxplot",
+          title: "Boxplot data",
+          headers: ["Group", "Whisker low", "Q1", "Median", "Q3", "Whisker high", "Mean"],
+          rows,
+        },
+      ],
+      charts: [
+        {
+          title: analysis.title,
+          kind: "line",
+          xAxisTitle,
+          yAxisTitle: analysis.config.yColumnName,
+          ...axis,
+          series,
+        },
+      ],
+    };
+  }
+
+  const outlierSlots = Math.min(
+    MAX_PLOTTED_OUTLIERS,
+    Math.max(0, ...groups.map((group) => group.outliers.length))
+  );
+  const headers = [
+    "Group",
+    "Q1",
+    "Q1 to median",
+    "Median to Q3",
+    "Lower whisker",
+    "Upper whisker",
+    "Mean",
+    ...Array.from({ length: outlierSlots }, (_, i) => `Outlier ${i + 1}`),
+  ];
+  const rows: Array<Array<string | number | null>> = groups.map((group) => [
+    label(group),
     group.q1,
-    group.median,
-    group.q3,
-    group.whiskerHigh,
+    Math.max(0, group.median - group.q1),
+    Math.max(0, group.q3 - group.median),
+    Math.max(0, group.q1 - group.whiskerLow),
+    Math.max(0, group.whiskerHigh - group.q3),
     group.mean,
+    ...Array.from(
+      { length: outlierSlots },
+      (_, i) => group.outliers[i] ?? null
+    ),
   ]);
+
+  const boxFill = colors.brand400;
   const series: SeriesRef[] = [
-    { name: "Whisker low", tableId: "boxplot", catCol: 0, valCol: 1, color: colors.axis, marker: true, noLine: true },
-    { name: "Q1", tableId: "boxplot", catCol: 0, valCol: 2, color: colors.brand400, marker: true, noLine: true },
-    { name: "Median", tableId: "boxplot", catCol: 0, valCol: 3, color: colors.brand600, marker: true },
-    { name: "Q3", tableId: "boxplot", catCol: 0, valCol: 4, color: colors.brand400, marker: true, noLine: true },
-    { name: "Whisker high", tableId: "boxplot", catCol: 0, valCol: 5, color: colors.axis, marker: true, noLine: true },
+    {
+      name: "Q1",
+      tableId: "boxplot",
+      catCol: 0,
+      valCol: 1,
+      color: boxFill,
+      hiddenFill: true,
+      errMinusCol: 4,
+      errColor: colors.brand800,
+    },
+    {
+      name: "Q1 to median",
+      tableId: "boxplot",
+      catCol: 0,
+      valCol: 2,
+      color: boxFill,
+      fillOpacity: BOX_FILL_OPACITY,
+      borderColor: colors.brand600,
+    },
+    {
+      name: "Median to Q3",
+      tableId: "boxplot",
+      catCol: 0,
+      valCol: 3,
+      color: boxFill,
+      fillOpacity: BOX_FILL_OPACITY,
+      borderColor: colors.brand600,
+      errPlusCol: 5,
+      errColor: colors.brand800,
+    },
   ];
   if (analysis.config.showMeanLine) {
     series.push({
@@ -868,37 +1217,39 @@ function boxplotCharts(
       tableId: "boxplot",
       catCol: 0,
       valCol: 6,
-      color: colors.series[1] ?? colors.axis,
+      color: colors.brand600,
       marker: true,
+      asLine: true,
     });
   }
-  const outlierRows = groups.flatMap((group) =>
-    group.outliers.map((value) => [group.labels.join(" / ") || "All", value])
-  );
-  const tables: ChartSourceTable[] = [
-    {
-      id: "boxplot",
-      title: "Boxplot data",
-      headers: ["Group", "Whisker low", "Q1", "Median", "Q3", "Whisker high", "Mean"],
-      rows,
-    },
-  ];
-  if (outlierRows.length > 0) {
-    tables.push({
-      id: "outliers",
-      title: "Outliers",
-      headers: ["Group", "Value"],
-      rows: outlierRows,
+  for (let i = 0; i < outlierSlots; i += 1) {
+    series.push({
+      name: `Outlier ${i + 1}`,
+      tableId: "boxplot",
+      catCol: 0,
+      valCol: 7 + i,
+      color: colors.brand800,
+      marker: true,
+      markerSymbol: "star",
+      noLine: true,
+      asLine: true,
     });
   }
+
   return {
-    tables,
+    tables: [
+      { id: "boxplot", title: "Boxplot data", headers, rows },
+    ],
     charts: [
       {
         title: analysis.title,
-        kind: "line",
-        xAxisTitle: analysis.config.categoryColumnNames.join(", ") || undefined,
+        kind: "columnStackedLine",
+        xAxisTitle,
         yAxisTitle: analysis.config.yColumnName,
+        ...axis,
+        gapWidth: BOX_GAP_WIDTH,
+        overlap: 100,
+        showLegend: false,
         series,
       },
     ],

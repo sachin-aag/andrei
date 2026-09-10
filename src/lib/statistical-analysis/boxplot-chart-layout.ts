@@ -1,3 +1,4 @@
+import { niceStep } from "@/lib/charts/axis-domain";
 import type { BoxplotGroupStats } from "./types";
 
 export const BOXPLOT_CHART_WIDTH = 960;
@@ -114,4 +115,38 @@ export function boxplotXAxisTitleY(
   categoryCount: number
 ): number {
   return layout.height - BOTTOM_PADDING + (categoryCount > 0 ? 14 : 8);
+}
+
+/** Y window: whiskers plus outliers, padded 8%. Shared with the Excel export. */
+export function boxplotYExtent(
+  groups: Pick<BoxplotGroupStats, "whiskerLow" | "whiskerHigh" | "outliers">[]
+): { min: number; max: number } {
+  const ys = groups.flatMap((group) => [
+    group.whiskerLow,
+    group.whiskerHigh,
+    ...group.outliers,
+  ]);
+  let min = Math.min(...ys);
+  let max = Math.max(...ys);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
+    min = (Number.isFinite(min) ? min : 0) - 1;
+    max = (Number.isFinite(max) ? max : 0) + 1;
+  }
+  const pad = (max - min) * 0.08;
+  return { min: min - pad, max: max + pad };
+}
+
+/** Roughly four intervals across the window, on a nice 1-2-5 step. */
+export function boxplotTickStep(min: number, max: number): number {
+  return niceStep((max - min || 1) / 4);
+}
+
+export function boxplotYTicks(min: number, max: number): number[] {
+  const step = boxplotTickStep(min, max);
+  const start = Math.ceil(min / step) * step;
+  const ticks: number[] = [];
+  for (let value = start; value <= max + step * 0.01; value += step) {
+    ticks.push(Number(value.toPrecision(8)));
+  }
+  return ticks.length > 0 ? ticks : [min, max];
 }

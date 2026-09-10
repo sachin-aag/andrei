@@ -6,7 +6,9 @@ import {
 } from "@/lib/charts/chart-spec";
 import {
   buildAnalysisChartSource,
+  chartAnchor,
   chartSlotRows,
+  CHARTS_PER_ROW,
   resolvePlannedCharts,
   type WrittenChartTable,
 } from "./excel-chart-source";
@@ -164,8 +166,54 @@ function citationsForAnalysis(
   ]);
 }
 
-type SheetCell = string | number | null | undefined;
+/** A number plus the display format the app uses for it. */
+type NumericSheetCell = { value: number; numFmt: string };
+type SheetCell = string | number | null | undefined | NumericSheetCell;
 type SheetSection = SheetCell[][];
+
+function isNumericSheetCell(cell: SheetCell): cell is NumericSheetCell {
+  return typeof cell === "object" && cell != null && "numFmt" in cell;
+}
+
+/**
+ * Store the number, display it exactly as the app formats it. Renderings that
+ * are not a plain decimal (`*`, `<0.001`, exponential) stay text.
+ */
+function numericCell(
+  value: number | null | undefined,
+  text: string
+): SheetCell {
+  if (value == null || !Number.isFinite(value)) return text;
+  const match = /^-?\d+(?:\.(\d+))?$/.exec(text);
+  if (!match) return text;
+  const decimals = match[1]?.length ?? 0;
+  return { value, numFmt: decimals > 0 ? `0.${"0".repeat(decimals)}` : "0" };
+}
+
+function statCell(value: number | null | undefined, digits = 4): SheetCell {
+  return numericCell(value, formatStat(value, digits));
+}
+
+function ppmCell(value: number | null | undefined): SheetCell {
+  return numericCell(value, formatPpm(value));
+}
+
+function pValueCell(value: number | null | undefined): SheetCell {
+  return numericCell(value, formatPValue(value));
+}
+
+/**
+ * Worksheet values are stored as raw text (`WorksheetColumn.values`). Export a
+ * number only when the text round-trips exactly, so `0012`, `1-2` and `1.50`
+ * stay text and lot codes survive.
+ */
+export function worksheetCellValue(raw: string): string | number {
+  const trimmed = raw.trim();
+  if (trimmed === "") return raw;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) return raw;
+  return String(parsed) === trimmed ? parsed : raw;
+}
 
 function maxSectionColumnCount(sections: SheetSection[]): number {
   let max = 2;
@@ -200,7 +248,14 @@ function addRows(
   rows: SheetSection
 ): void {
   for (const row of rows) {
-    sheet.addRow(row.map((cell) => cell ?? ""));
+    const added = sheet.addRow(
+      row.map((cell) => (isNumericSheetCell(cell) ? cell.value : (cell ?? "")))
+    );
+    for (const [index, cell] of row.entries()) {
+      if (isNumericSheetCell(cell)) {
+        added.getCell(index + 1).numFmt = cell.numFmt;
+      }
+    }
   }
 }
 
@@ -222,7 +277,9 @@ function addWorksheetSheet(
   sheet.addRow(sheetData.columns.map((column) => column.name));
   for (let row = 0; row < maxRows; row += 1) {
     sheet.addRow(
-      sheetData.columns.map((column) => column.values[row] ?? "")
+      sheetData.columns.map((column) =>
+        worksheetCellValue(column.values[row] ?? "")
+      )
     );
   }
 }
@@ -242,7 +299,89 @@ function addSpecsSheet(
   });
   sheet.addRow(["Column", "LSL", "USL", "Target"]);
   for (const spec of worksheet.specs) {
-    sheet.addRow([spec.columnName, spec.lsl, spec.usl, spec.target]);
+    sheet.addRow([
+      spec.columnName,
+      worksheetCellValue(spec.lsl),
+      worksheetCellValue(spec.usl),
+      worksheetCellValue(spec.target),
+    ]);
+  }
+}
+
+/**
+ * The sixpack's sixth panel. Laid out as two label/value columns so the sheet
+ * reads like the app's grid instead of a stack of metric rows.
+ */
+function sixpackCapabilityBlock(
+  analysis: StatisticalAnalysisSummary
+): SheetSection | null {
+  if (!isSixpackAnalysis(analysis)) return null;
+  const { results } = analysis;
+  const cap = results.capability;
+  const left: Array<[string, SheetCell]> = [
+    ["Sample N", results.n],
+    ...(results.skipped > 0
+      ? ([["Skipped", results.skipped]] as Array<[string, SheetCell]>)
+      : []),
+    ["Mean", statCell(results.mean, 3)],
+    ["StDev (overall)", statCell(results.overallStdev, 3)],
+    ["StDev (within)", statCell(results.withinStdev, 3)],
+    ["MR-bar", statCell(results.mrBar, 3)],
+    ["LSL", statCell(cap.lsl, 3)],
+    ["Target", statCell(cap.target, 3)],
+    ["USL", statCell(cap.usl, 3)],
+    ["AD p-value", pValueCell(results.normalPlot.pValue)],
+  ];
+  const right: Array<[string, SheetCell]> = [
+    ["Cp", statCell(cap.cp, 3)],
+    ["CPL", statCell(cap.cpl, 3)],
+    ["CPU", statCell(cap.cpu, 3)],
+    ["Cpk", statCell(cap.cpk, 3)],
+    ["PPM (exp.)", ppmCell(cap.ppmWithin)],
+    ["", ""],
+    ["OVERALL", ""],
+    ["Pp", statCell(cap.pp, 3)],
+    ["PPL", statCell(cap.ppl, 3)],
+    ["PPU", statCell(cap.ppu, 3)],
+    ["Ppk", statCell(cap.ppk, 3)],
+    ["PPM (exp.)", ppmCell(cap.ppmOverall)],
+    ["PPM (obs.)", ppmCell(cap.ppmObserved)],
+  ];
+  const rows: SheetSection = [
+    ["Process Capability", "", "", ""],
+    ["PROCESS DATA", "", "POTENTIAL (WITHIN)", ""],
+  ];
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    rows.push([
+      left[i]?.[0] ?? "",
+      left[i]?.[1] ?? "",
+      right[i]?.[0] ?? "",
+      right[i]?.[1] ?? "",
+    ]);
+  }
+  return rows;
+}
+
+/** Write a block at a fixed anchor — used for the panel that has no chart. */
+function writeBlockAt(
+  sheet: ExcelJS.Worksheet,
+  rows: SheetSection,
+  anchorRow: number,
+  anchorCol: number
+): void {
+  for (const [rowIndex, row] of rows.entries()) {
+    for (const [colIndex, value] of row.entries()) {
+      const cell = sheet.getCell(anchorRow + rowIndex + 1, anchorCol + colIndex + 1);
+      if (isNumericSheetCell(value)) {
+        cell.value = value.value;
+        cell.numFmt = value.numFmt;
+      } else {
+        cell.value = value ?? "";
+      }
+      if (rowIndex === 0) cell.font = { bold: true, size: 12 };
+      else if (rowIndex === 1) cell.font = { bold: true, size: 9 };
+      else if (String(value) === "OVERALL") cell.font = { bold: true, size: 9 };
+    }
   }
 }
 
@@ -258,27 +397,10 @@ function sixpackRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
       ["Column", config.columnName],
       ["Rows", rows],
       ["Kind", "Normal Capability Sixpack (I-MR)"],
-      ["LSL", formatStat(config.lsl)],
-      ["Target", formatStat(config.target)],
-      ["USL", formatStat(config.usl)],
+      ["LSL", statCell(config.lsl)],
+      ["Target", statCell(config.target)],
+      ["USL", statCell(config.usl)],
       ["Created", analysis.createdAt],
-    ],
-    [
-      ["Metric", "Value"],
-      ["Sample N", String(results.n)],
-      ["Skipped", String(results.skipped)],
-      ["Mean", formatStat(results.mean)],
-      ["StDev (overall)", formatStat(results.overallStdev)],
-      ["StDev (within)", formatStat(results.withinStdev)],
-      ["MR-bar", formatStat(results.mrBar)],
-      ["Cp", formatStat(cap.cp)],
-      ["Cpk", formatStat(cap.cpk)],
-      ["Pp", formatStat(cap.pp)],
-      ["Ppk", formatStat(cap.ppk)],
-      ["AD p-value", formatPValue(results.normalPlot.pValue)],
-      ["PPM (within)", formatPpm(cap.ppmWithin)],
-      ["PPM (overall)", formatPpm(cap.ppmOverall)],
-      ["PPM (observed)", formatPpm(cap.ppmObserved)],
     ],
     [
       ["Index", "Value"],
@@ -303,43 +425,36 @@ function anovaRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
       ["Factor", config.factorColumnName],
       ["Rows", rows],
       ["Kind", "One-way ANOVA"],
-      ["Alpha", formatStat(results.alpha)],
+      ["Alpha", statCell(results.alpha)],
       ["Created", analysis.createdAt],
     ],
     [
       ["Source", "DF", "SS", "MS", "F", "P"],
       [
         config.factorColumnName,
-        String(factor.df),
-        formatStat(factor.ss),
-        formatStat(factor.ms),
-        formatStat(factor.f),
-        formatPValue(factor.p),
+        factor.df,
+        statCell(factor.ss),
+        statCell(factor.ms),
+        statCell(factor.f),
+        pValueCell(factor.p),
       ],
-      [
-        "Error",
-        String(error.df),
-        formatStat(error.ss),
-        formatStat(error.ms),
-        "",
-        "",
-      ],
-      ["Total", String(total.df), formatStat(total.ss), "", "", ""],
-      ["R-sq", formatStat(results.rSquared)],
-      ["N", String(results.n)],
-      ["Skipped", String(results.skipped)],
-      ["Grand mean", formatStat(results.grandMean)],
+      ["Error", error.df, statCell(error.ss), statCell(error.ms), "", ""],
+      ["Total", total.df, statCell(total.ss), "", "", ""],
+      ["R-sq", statCell(results.rSquared)],
+      ["N", results.n],
+      ["Skipped", results.skipped],
+      ["Grand mean", statCell(results.grandMean)],
     ],
     [
       ["Factor", "N", "Mean", "StDev", "SE", "CI low", "CI high"],
       ...results.groups.map((group) => [
         group.label,
-        String(group.n),
-        formatStat(group.mean),
-        formatStat(group.stdev),
-        formatStat(group.se),
-        formatStat(group.ciLow),
-        formatStat(group.ciHigh),
+        group.n,
+        statCell(group.mean),
+        statCell(group.stdev),
+        statCell(group.se),
+        statCell(group.ciLow),
+        statCell(group.ciHigh),
       ]),
     ],
     [
@@ -354,11 +469,11 @@ function anovaRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
       ],
       ...results.pairwise.map((pair) => [
         `${pair.groupA} - ${pair.groupB}`,
-        formatStat(pair.diff),
-        formatStat(pair.se),
-        formatStat(pair.t),
-        formatPValue(pair.pUnadjusted),
-        formatPValue(pair.pBonferroni),
+        statCell(pair.diff),
+        statCell(pair.se),
+        statCell(pair.t),
+        pValueCell(pair.pUnadjusted),
+        pValueCell(pair.pBonferroni),
         pair.significant ? "yes" : "no",
       ]),
     ],
@@ -374,10 +489,10 @@ function scatterRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
       ["Title", analysis.title],
       ["Query", analysis.config.query],
       ["Kind", "Measurement scatter"],
-      ["N", String(analysis.results.n)],
+      ["N", analysis.results.n],
       ["UOM", analysis.results.uom],
-      ["LSL", formatStat(spec?.limits.lower ?? null)],
-      ["USL", formatStat(spec?.limits.upper ?? null)],
+      ["LSL", statCell(spec?.limits.lower ?? null)],
+      ["USL", statCell(spec?.limits.upper ?? null)],
       ["Created", analysis.createdAt],
     ],
     [
@@ -419,11 +534,11 @@ function xyScatterRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
       ["Kind", isObservationXyScatter(analysis.config) ? "1D scatter" : "XY scatter"],
       ["Legend", analysis.config.legendColumnName ?? ""],
       ["Chart type", CHART_MARK_LABELS[parseChartMark(analysis.config.mark ?? spec?.layout.mark)]],
-      ["N", String(analysis.results.n)],
-      ["Skipped", String(analysis.results.skipped)],
-      ["Pearson r", formatStat(analysis.results.pearsonR, 4)],
-      ["LSL (Y)", formatStat(spec?.limits.lower ?? null)],
-      ["USL (Y)", formatStat(spec?.limits.upper ?? null)],
+      ["N", analysis.results.n],
+      ["Skipped", analysis.results.skipped],
+      ["Pearson r", statCell(analysis.results.pearsonR, 4)],
+      ["LSL (Y)", statCell(spec?.limits.lower ?? null)],
+      ["USL (Y)", statCell(spec?.limits.upper ?? null)],
       ["Created", analysis.createdAt],
     ],
     [
@@ -466,8 +581,8 @@ function boxplotRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
       ["Categories", config.categoryColumnNames.join(", ") || "(none)"],
       ["Rows", rows],
       ["Kind", "Boxplot (Tukey)"],
-      ["N", String(results.n)],
-      ["Skipped", String(results.skipped)],
+      ["N", results.n],
+      ["Skipped", results.skipped],
       ["Created", analysis.createdAt],
     ],
     [
@@ -510,13 +625,13 @@ function histogramRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
       ["Column", config.columnName],
       ["Rows", rows],
       ["Kind", "Histogram"],
-      ["N", String(results.n)],
-      ["Skipped", String(results.skipped)],
-      ["Mean", formatStat(results.mean)],
-      ["Overall StDev", formatStat(results.overallStdev)],
-      ["Within StDev", formatStat(results.withinStdev)],
-      ["LSL", config.lsl == null ? "" : formatStat(config.lsl)],
-      ["USL", config.usl == null ? "" : formatStat(config.usl)],
+      ["N", results.n],
+      ["Skipped", results.skipped],
+      ["Mean", statCell(results.mean)],
+      ["Overall StDev", statCell(results.overallStdev)],
+      ["Within StDev", statCell(results.withinStdev)],
+      ["LSL", config.lsl == null ? "" : statCell(config.lsl)],
+      ["USL", config.usl == null ? "" : statCell(config.usl)],
       [
         "Show distribution lines",
         config.showDistributionLines === false ? "No" : "Yes",
@@ -621,8 +736,22 @@ function addAnalysisSheet(
     }
   }
 
+  // The sixpack's stats panel has no chart; drop it into the empty grid slot.
+  const block = sixpackCapabilityBlock(analysis);
+  const blockSlot = source.charts.length;
+  const blockFits =
+    block != null && blockSlot > 0 && blockSlot % CHARTS_PER_ROW !== 0;
+  if (block && blockFits) {
+    const anchor = chartAnchor(blockSlot, source.charts.length);
+    writeBlockAt(sheet, block, anchor.anchorRow, anchor.anchorCol);
+  }
+
   for (const section of sections) {
     addRows(sheet, section);
+    sheet.addRow([]);
+  }
+  if (block && !blockFits) {
+    addRows(sheet, block);
     sheet.addRow([]);
   }
   return plan;

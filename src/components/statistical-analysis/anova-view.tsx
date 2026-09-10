@@ -15,6 +15,7 @@ import {
   analysisToCsv,
   downloadTextFile,
 } from "@/lib/statistical-analysis/download";
+import { ANOVA_AXIS_PAD, paddedDomain } from "@/lib/charts/axis-domain";
 import { chartBrandColors, seriesFill } from "@/lib/charts/brand-colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,16 +41,10 @@ function IntervalPlot({ analysis }: { analysis: AnovaAnalysisSummary }) {
   const plotBottom = HEIGHT - 72;
   const plotWidth = plotRight - plotLeft;
   const plotHeight = plotBottom - plotTop;
-  const ys = groups.flatMap((group) => [group.ciLow, group.ciHigh, group.mean]);
-  let yMin = Math.min(...ys);
-  let yMax = Math.max(...ys);
-  if (yMin === yMax) {
-    yMin -= 1;
-    yMax += 1;
-  }
-  const pad = (yMax - yMin) * 0.12;
-  yMin -= pad;
-  yMax += pad;
+  const [yMin, yMax] = paddedDomain(
+    groups.flatMap((group) => [group.ciLow, group.ciHigh, group.mean]),
+    ANOVA_AXIS_PAD
+  );
   const ySpan = yMax - yMin || 1;
   const xToPx = (index: number) =>
     plotLeft + ((index + 0.5) / groups.length) * plotWidth;
