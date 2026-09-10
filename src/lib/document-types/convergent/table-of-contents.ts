@@ -1,6 +1,8 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
+import { DV_SECTION_LABELS } from "@/lib/document-types/design-verification/sections";
+import { GENERIC_DOCUMENT_SECTION_LABEL } from "@/lib/document-types/generic/sections";
 
 /** One row in the left-rail table of contents (Word-recipe hierarchy). */
 export type TableOfContentsEntry = {
@@ -284,6 +286,24 @@ const ELR_TOC: TableOfContentsEntry[] = [
   { label: "9.0 Approval Page" },
 ];
 
+/** Demo / MJ software DV (cover page + 10-section template). */
+const DEMO_SOFTWARE_DV_TOC: TableOfContentsEntry[] = [
+  { label: DV_SECTION_LABELS.cover_page, sectionKey: "cover_page" },
+  { label: DV_SECTION_LABELS.purpose_scope, sectionKey: "purpose_scope" },
+  { label: DV_SECTION_LABELS.references, sectionKey: "references" },
+  { label: DV_SECTION_LABELS.traceability, sectionKey: "traceability" },
+  { label: DV_SECTION_LABELS.test_methods, sectionKey: "test_methods" },
+  { label: DV_SECTION_LABELS.test_results, sectionKey: "test_results" },
+  { label: DV_SECTION_LABELS.deviations, sectionKey: "deviations" },
+  { label: DV_SECTION_LABELS.conclusion, sectionKey: "conclusion" },
+  { label: DV_SECTION_LABELS.approval_signoff, sectionKey: "approval_signoff" },
+  { label: DV_SECTION_LABELS.appendices, sectionKey: "appendices" },
+];
+
+const GENERIC_DOCUMENT_TOC: TableOfContentsEntry[] = [
+  { label: GENERIC_DOCUMENT_SECTION_LABEL, sectionKey: "body" },
+];
+
 export function getConvergentTableOfContents(
   documentType: DocumentType
 ): TableOfContentsEntry[] | null {
@@ -330,21 +350,21 @@ function pruneHiddenEntries(
 }
 
 /**
- * Left-rail Contents tab. Convergent DV is pack-gated (demo DV uses a
- * different shape). Investigation, QRA, and ELR follow the Word recipe on
- * every pack that enables the type.
+ * Left-rail Contents outline for every document type. The Attachments |
+ * Contents chrome is the same on every pack; this returns the Word recipe
+ * when the type has one, otherwise the editor section list.
  */
 export function getReportTableOfContents(
   documentType: DocumentType,
   customerId = resolveCustomerId()
-): TableOfContentsEntry[] | null {
+): TableOfContentsEntry[] {
   switch (documentType) {
     case "design_verification":
       return customerId === "convergent"
-        ? getConvergentTableOfContents(documentType)
-        : null;
+        ? CONVERGENT_SOFTWARE_DV_TOC
+        : DEMO_SOFTWARE_DV_TOC;
     case "mechanical_design_verification":
-      return getConvergentTableOfContents(documentType);
+      return CONVERGENT_MECHANICAL_DV_TOC;
     case "investigation_report":
       return investigationTableOfContents(customerId);
     case "quality_risk_assessment":
@@ -352,7 +372,7 @@ export function getReportTableOfContents(
     case "equipment_lifecycle_report":
       return ELR_TOC;
     case "generic_document":
-      return null;
+      return GENERIC_DOCUMENT_TOC;
     default: {
       const _exhaustive: never = documentType;
       return _exhaustive;

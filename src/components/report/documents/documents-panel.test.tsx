@@ -123,6 +123,32 @@ describe("DocumentsPanel attachment actions", () => {
 });
 
 describe("DocumentsPanel Contents tab", () => {
+  it("always shows Attachments | Contents with folder and upload on a second row", () => {
+    mockContext();
+    renderPanel();
+
+    const attachments = screen.getByRole("button", { name: "Attachments" });
+    const contents = screen.getByRole("button", { name: "Contents" });
+    const folder = screen.getByRole("button", { name: "New folder" });
+    expect(attachments).toHaveAttribute("aria-pressed", "true");
+    expect(contents).toHaveAttribute("aria-pressed", "false");
+    expect(contents.closest("div")).not.toContainElement(folder);
+  });
+
+  it("hides folder and upload while Contents is selected", async () => {
+    const user = userEvent.setup();
+    mockContext();
+    renderPanel();
+
+    await user.click(screen.getByRole("button", { name: "Contents" }));
+    expect(
+      screen.queryByRole("button", { name: "New folder" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add attachment" })
+    ).not.toBeInTheDocument();
+  });
+
   it("shows a Contents tab that jumps to an ELR section", async () => {
     const user = userEvent.setup();
     const onJump = vi.fn();
@@ -141,19 +167,21 @@ describe("DocumentsPanel Contents tab", () => {
     expect(onJump).toHaveBeenCalledWith("elr_objective");
   });
 
-  it("hides Contents on generic documents", () => {
+  it("shows Contents on generic documents and jumps to the body", async () => {
+    const user = userEvent.setup();
+    const onJump = vi.fn();
     mockContext();
     render(
       <DocumentsPanel
         collapsed={false}
         onToggleCollapse={vi.fn()}
         documentType="generic_document"
-        onJumpToSection={vi.fn()}
+        onJumpToSection={onJump}
       />
     );
 
-    expect(
-      screen.queryByRole("button", { name: "Contents" })
-    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Contents" }));
+    await user.click(screen.getByRole("button", { name: "Document" }));
+    expect(onJump).toHaveBeenCalledWith("body");
   });
 });

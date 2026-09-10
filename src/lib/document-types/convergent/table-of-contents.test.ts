@@ -74,18 +74,38 @@ describe("getConvergentTableOfContents", () => {
 });
 
 describe("getReportTableOfContents", () => {
-  it("keeps Convergent software DV pack-gated", () => {
+  it("uses the Convergent Word recipe on that pack and the demo DV outline elsewhere", () => {
     expect(
-      getReportTableOfContents("design_verification", "convergent")
-    ).not.toBeNull();
-    expect(getReportTableOfContents("design_verification", "demo")).toBeNull();
-    expect(getReportTableOfContents("design_verification", "mj")).toBeNull();
+      getReportTableOfContents("design_verification", "convergent").map(
+        (e) => e.label
+      )[0]
+    ).toBe("Purpose");
+    expect(
+      getReportTableOfContents("design_verification", "demo").map(
+        (e) => e.label
+      )
+    ).toEqual([
+      "Cover Page",
+      "Purpose & Scope",
+      "References",
+      "Traceability",
+      "Test Methods / Protocol Summary",
+      "Test Results",
+      "Deviations & Nonconformances",
+      "Conclusion",
+      "Approval / Sign-off",
+      "Appendices",
+    ]);
+    expect(
+      getReportTableOfContents("design_verification", "mj").map((e) => e.label)
+    ).toEqual(
+      getReportTableOfContents("design_verification", "demo").map((e) => e.label)
+    );
   });
 
   it("returns the investigation Word recipe and omits MJ Conclusion", () => {
     const demo = getReportTableOfContents("investigation_report", "demo");
-    expect(demo).not.toBeNull();
-    expect(demo!.map((e) => e.label)).toEqual([
+    expect(demo.map((e) => e.label)).toEqual([
       "Define",
       "Measure",
       "Analyze",
@@ -95,7 +115,7 @@ describe("getReportTableOfContents", () => {
       "Document Reviewed",
     ]);
     expect(
-      demo!.find((e) => e.label === "Analyze")?.children?.map((c) => c.label)
+      demo.find((e) => e.label === "Analyze")?.children?.map((c) => c.label)
     ).toEqual([
       "6 M Method",
       "5 Why Approach",
@@ -107,14 +127,13 @@ describe("getReportTableOfContents", () => {
     ]);
 
     const mj = getReportTableOfContents("investigation_report", "mj");
-    expect(mj!.map((e) => e.label)).not.toContain("Conclusion");
-    expect(mj!.map((e) => e.label)).toContain("Analyze");
+    expect(mj.map((e) => e.label)).not.toContain("Conclusion");
+    expect(mj.map((e) => e.label)).toContain("Analyze");
   });
 
   it("nests QRA F02 headings onto editor sections", () => {
     const toc = getReportTableOfContents("quality_risk_assessment", "mj");
-    expect(toc).not.toBeNull();
-    expect(toc!.map((e) => e.label)).toEqual([
+    expect(toc.map((e) => e.label)).toEqual([
       "A. Pre-approval (Before Implementation)",
       "1. Details of the Risk Assessment",
       "2. Risk Identification and Evaluation",
@@ -123,7 +142,7 @@ describe("getReportTableOfContents", () => {
       "B. Revision History",
       "C. Post-approval (After Implementation)",
     ]);
-    const details = toc!.find((e) => e.label === "1. Details of the Risk Assessment");
+    const details = toc.find((e) => e.label === "1. Details of the Risk Assessment");
     expect(details?.sectionKey).toBeUndefined();
     expect(details?.children?.map((c) => c.sectionKey)).toEqual([
       "qra_objective",
@@ -136,17 +155,16 @@ describe("getReportTableOfContents", () => {
       "qra_approach",
     ]);
     expect(
-      toc!.find((e) => e.label === "A. Pre-approval (Before Implementation)")
+      toc.find((e) => e.label === "A. Pre-approval (Before Implementation)")
         ?.sectionKey
     ).toBeUndefined();
   });
 
   it("nests ELR observations and maps recommendation onto the conclusion section", () => {
     const toc = getReportTableOfContents("equipment_lifecycle_report", "mj");
-    expect(toc).not.toBeNull();
-    expect(toc![0]).toEqual({ label: "1.0 Purpose", sectionKey: "elr_objective" });
+    expect(toc[0]).toEqual({ label: "1.0 Purpose", sectionKey: "elr_objective" });
 
-    const observations = toc!.find((e) => e.label === "3.0 Observations and Results");
+    const observations = toc.find((e) => e.label === "3.0 Observations and Results");
     expect(observations?.sectionKey).toBeUndefined();
     expect(observations?.children?.map((c) => c.label)).toEqual([
       "3.1 Responsibility",
@@ -172,14 +190,16 @@ describe("getReportTableOfContents", () => {
       label: "3.9.1 Breakdown Trend Summary",
       sectionKey: "elr_breakdowns",
     });
-    expect(toc!.find((e) => e.label === "6.0 Recommendation")?.sectionKey).toBe(
+    expect(toc.find((e) => e.label === "6.0 Recommendation")?.sectionKey).toBe(
       "elr_conclusion"
     );
-    expect(toc!.find((e) => e.label === "9.0 Approval Page")?.sectionKey).toBeUndefined();
+    expect(toc.find((e) => e.label === "9.0 Approval Page")?.sectionKey).toBeUndefined();
   });
 
-  it("returns null for generic documents", () => {
-    expect(getReportTableOfContents("generic_document", "demo")).toBeNull();
+  it("returns a single body row for generic documents", () => {
+    expect(getReportTableOfContents("generic_document", "demo")).toEqual([
+      { label: "Document", sectionKey: "body" },
+    ]);
   });
 });
 
