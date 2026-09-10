@@ -19,6 +19,19 @@ export function chatUserMessage(
     .filter({ hasText: text });
 }
 
+/** Assistant turn header — not the sidebar Assistant tab button. */
+export function chatAssistantMessage(page: Page) {
+  return reportSidebar(page).getByLabel("Assistant message");
+}
+
+/** Per-turn Report | Analytics tag in the transcript. */
+export function chatMessageTargetTag(
+  page: Page,
+  target: "report" | "analytics"
+) {
+  return reportSidebar(page).getByTestId(`chat-message-target-${target}`);
+}
+
 export function reviewMargin(page: Page) {
   return page.getByRole("complementary", { name: "Review margin" });
 }
@@ -90,6 +103,10 @@ export async function openReportSidebarTab(
  * Expand the report sidebar and wait until Assistant has finished loading
  * sessions. The tab is already selected on a fresh editor load — clicking it
  * during hydration remounts the button (CI flake on reload).
+ *
+ * Composer Report | Analytics is persisted per user + report. After reload the
+ * textarea may be Analytics (`analytics-chat-input`) with worksheet placeholder
+ * copy — do not require the Document-chat placeholder.
  */
 export async function openReportAssistant(page: Page): Promise<void> {
   await openReportSidebarTab(page, "assistant");
@@ -97,9 +114,7 @@ export async function openReportAssistant(page: Page): Promise<void> {
   await expect(sidebar.getByLabel("Assistant mode")).toBeVisible({
     timeout: 15_000,
   });
-  await expect(
-    sidebar.getByPlaceholder(/ask about the report or attachments|ask the assistant/i)
-  ).toBeEnabled({ timeout: 15_000 });
+  await expect(sidebar.locator("textarea")).toBeEnabled({ timeout: 15_000 });
 }
 
 export async function openReportAnalytics(page: Page): Promise<void> {
@@ -109,6 +124,31 @@ export async function openReportAnalytics(page: Page): Promise<void> {
   await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
     timeout: 30_000,
   });
+}
+
+/** Composer Report | Analytics — independent of the focused canvas pane. */
+export async function setChatWorkProductTarget(
+  page: Page,
+  target: "report" | "analytics"
+): Promise<void> {
+  const sidebar = reportSidebar(page);
+  const control = sidebar.getByTestId("chat-work-product-target");
+  await expect(control).toBeVisible({ timeout: 15_000 });
+  const current = (await control.innerText()).trim().toLowerCase();
+  if (current === target) {
+    if (target === "analytics") {
+      await expect(sidebar.getByTestId("analytics-chat-input")).toBeVisible();
+    }
+    return;
+  }
+  await control.click();
+  const optionName = target === "analytics" ? /^analytics$/i : /^report$/i;
+  await page.getByRole("option", { name: optionName }).click();
+  if (target === "analytics") {
+    await expect(sidebar.getByTestId("analytics-chat-input")).toBeVisible();
+  } else {
+    await expect(sidebar.getByTestId("analytics-chat-input")).toHaveCount(0);
+  }
 }
 
 /** Report workspace shell + Define section are mounted in Document chrome. */
@@ -141,6 +181,9 @@ export async function openReportEditor(
   await waitForReportEditor(page);
 }
 
+/** Matches `PREVIEW_ABS_MIN_PX` in workspace-layout — expanded preview is never this narrow. */
+const EXPANDED_WORK_PRODUCT_MIN_PX = 320;
+
 export async function expandWorkProductPanel(page: Page): Promise<void> {
   const panel = page.getByTestId("report-work-product");
   const expand = panel.getByRole("button", { name: /expand document panel/i });
@@ -150,10 +193,13 @@ export async function expandWorkProductPanel(page: Page): Promise<void> {
   await expect(
     panel.getByRole("button", { name: /collapse document panel/i })
   ).toBeVisible();
-  // report-workspace animates width for 200ms when the Agent rail expands.
-  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBeGreaterThan(
-    52
-  );
+  await expect(page.getByTestId("work-product-tab-strip")).toBeVisible();
+  // Width animates 200ms from COLLAPSED_RAIL_PX (48). Waiting only for >52
+  // succeeds on the first transition frame, so later geometry checks flake on
+  // WebKit (collapse control vs Report tab).
+  await expect
+    .poll(async () => (await panel.boundingBox())?.width ?? 0)
+    .toBeGreaterThanOrEqual(EXPANDED_WORK_PRODUCT_MIN_PX);
 }
 
 /** Resize handle is absolutely positioned on the work-product column's left edge. */
@@ -194,13 +240,20 @@ export async function setReportChrome(
 ): Promise<void> {
   const switchBtn = page.getByTestId("report-chrome-switch");
   await expect(switchBtn).toBeVisible({ timeout: 30_000 });
-  if ((await switchBtn.getAttribute("data-current-chrome")) === chrome) {
-    return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if ((await switchBtn.getAttribute("data-current-chrome")) === chrome) {
+      break;
+    }
+    await switchBtn.click({ force: attempt > 0 });
+    try {
+      await expect(switchBtn).toHaveAttribute("data-current-chrome", chrome, {
+        timeout: 5_000,
+      });
+      break;
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
   }
-  await switchBtn.click();
-  await expect(switchBtn).toHaveAttribute("data-current-chrome", chrome, {
-    timeout: 15_000,
-  });
   if (chrome === "document") {
     await expect(page.getByTestId("report-work-product")).toBeVisible({
       timeout: 30_000,
@@ -208,7 +261,7 @@ export async function setReportChrome(
   }
 }
 
-/** Collapse the assistant so the review margin (suggestions/comments) can show. */
+/** Collapse the assistant sidebar. */
 export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const collapse = sidebar.getByRole("button", { name: /collapse sidebar/i });
@@ -229,10 +282,9 @@ export async function enableCommentsGutter(page: Page): Promise<void> {
   }
 }
 
-/** Collapse assistant and enable the Comments gutter toggle. */
+/** Turn on the Comments switch so the review margin mounts. */
 export async function showReviewMargin(page: Page): Promise<void> {
   await enableCommentsGutter(page);
-  await collapseReportSidebar(page);
 }
 
 export function defineSection(page: Page) {

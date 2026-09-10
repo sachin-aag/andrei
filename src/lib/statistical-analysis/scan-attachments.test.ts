@@ -12,6 +12,7 @@ import {
   readDocumentPage,
 } from "@/lib/attachments/retrieval";
 import {
+  isRequirementIndexText,
   matchDocumentsByFilename,
   runScanAttachments,
   scanQueryTokens,
@@ -69,6 +70,57 @@ describe("scanQueryTokens / scorePageContext", () => {
     );
     expect(transcriptOnly).toBeGreaterThan(contextOnly);
     expect(transcriptOnly).toBeGreaterThan(0);
+  });
+
+  it("keeps a requirement ID as one token", () => {
+    expect(scanQueryTokens("extract M3-SYS-FN-037")).toEqual([
+      "m3-sys-fn-037",
+      "extract",
+    ]);
+  });
+
+  it("treats a running header of many requirement IDs as an index page", () => {
+    expect(
+      isRequirementIndexText(
+        "M3-SYS-FN-037 M3-SYS-FN-039 M3-SYS-FN-041 M3-SYS-FN-044 M3-SYS-FN-046"
+      )
+    ).toBe(true);
+    expect(isRequirementIndexText("Mist volume M3-SYS-FN-037")).toBe(false);
+  });
+
+  it("demotes TOC/header pageContext when scoring a requirement-ID scan", () => {
+    const tokens = scanQueryTokens("M3-SYS-FN-037");
+    const header = scorePageForScan(
+      {
+        pageContext:
+          "M3-SYS-FN-037 M3-SYS-FN-039 M3-SYS-FN-041 M3-SYS-FN-044 M3-SYS-FN-046",
+        transcript: "TABLE OF CONTENTS BACKGROUND",
+      },
+      tokens
+    );
+    const data = scorePageForScan(
+      {
+        pageContext: "Mist volume data sheet",
+        transcript:
+          "M3-SYS-FN-037 Aim the handpiece nozzle. Volume collected 5.2 6.1 7.0 mL/min",
+      },
+      tokens
+    );
+    expect(data).toBeGreaterThan(header);
+  });
+
+  it("does not score a transcript that is only a requirement-ID list", () => {
+    const tokens = scanQueryTokens("M3-SYS-FN-037");
+    expect(
+      scorePageForScan(
+        {
+          pageContext: "cover",
+          transcript:
+            "M3-SYS-FN-037 M3-SYS-FN-039 M3-SYS-FN-041 M3-SYS-FN-044 M3-SYS-FN-046",
+        },
+        tokens
+      )
+    ).toBe(0);
   });
 });
 

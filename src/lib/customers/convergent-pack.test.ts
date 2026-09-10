@@ -6,7 +6,6 @@ import {
   CONVERGENT_PROMPT_VERSION,
   DEMO_PACK,
   MJ_PACK,
-  isDocumentChatPlotMeasurementsEnabled,
   isDocumentTypeEnabled,
 } from "./packs";
 import { buildDesignVerificationDefinition } from "@/lib/document-types/design-verification";
@@ -48,9 +47,12 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.statisticalAnalysisEnabled).toBe(true);
     expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
     expect(MJ_PACK.statisticalAnalysisEnabled).toBe(true);
-    expect(isDocumentChatPlotMeasurementsEnabled(CONVERGENT_PACK)).toBe(false);
-    expect(isDocumentChatPlotMeasurementsEnabled(DEMO_PACK)).toBe(true);
-    expect(isDocumentChatPlotMeasurementsEnabled(MJ_PACK)).toBe(true);
+    expect(CONVERGENT_PACK.insightsEnabled).toBe(false);
+    expect(DEMO_PACK.insightsEnabled).toBe(true);
+    expect(MJ_PACK.insightsEnabled).toBe(false);
+    expect(CONVERGENT_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
+    expect(DEMO_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
+    expect(MJ_PACK.voiceInputLanguageCodes).toEqual(["en-IN", "hi-IN", "mr-IN"]);
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."
     );
@@ -115,6 +117,8 @@ describe("Convergent customer pack", () => {
     expect(def.chat.draftingGuidance).toContain(
       "SAMPLE inventory is not a quota"
     );
+    expect(def.chat.draftingGuidance).toContain("How to draft this report");
+    expect(def.chat.draftingGuidance).toContain("Never call this a recipe");
     expect(def.chat.draftingGuidance).not.toMatch(/~\d+ words/);
     expect(def.chat.draftingGuidance).toContain(
       "There are no separate start/end date fields"

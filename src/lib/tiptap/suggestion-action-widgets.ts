@@ -101,25 +101,29 @@ function widgetEl(evaluationId: string, state: SuggestionActionWidgetState) {
   return wrap;
 }
 
-/** Widget anchors after insert marks when present; delete-only suggestions use delete marks. */
+export type SuggestionActionWidgetAnchor = {
+  evaluationId: string;
+  pos: number;
+};
+
+/**
+ * One widget per suggestion. Prefer the last insert mark; delete-only
+ * suggestions use the last delete mark. A split body edit plus citation still
+ * gets a single pair, after the last marked span.
+ */
 export function collectSuggestionActionWidgetPositions(
   doc: PMNode,
   actionableEvaluationIds: Set<string>
-): Map<string, number> {
+): SuggestionActionWidgetAnchor[] {
   const insertEnds = new Map<string, number>();
   const deleteEnds = new Map<string, number>();
   const insertType = doc.type.schema.marks[suggestionInsertMarkName];
   const deleteType = doc.type.schema.marks[suggestionDeleteMarkName];
 
-  if (!insertType && !deleteType) return new Map();
-
   doc.descendants((node, pos) => {
     if (node.type.name === "imageInline") {
       const suggestionId = node.attrs.suggestionId as string | null | undefined;
-      if (
-        suggestionId &&
-        actionableEvaluationIds.has(suggestionId)
-      ) {
+      if (suggestionId && actionableEvaluationIds.has(suggestionId)) {
         insertEnds.set(
           suggestionId,
           Math.max(insertEnds.get(suggestionId) ?? 0, pos + node.nodeSize)
@@ -144,19 +148,18 @@ export function collectSuggestionActionWidgetPositions(
     return true;
   });
 
-  const byEvaluationId = new Map<string, number>();
+  const anchors: SuggestionActionWidgetAnchor[] = [];
   for (const id of actionableEvaluationIds) {
-    const insertEnd = insertEnds.get(id);
-    if (insertEnd != null) {
-      byEvaluationId.set(id, extendPosPastOpenBracketClose(doc, insertEnd));
-      continue;
-    }
-    const deleteEnd = deleteEnds.get(id);
-    if (deleteEnd != null) {
-      byEvaluationId.set(id, extendPosPastOpenBracketClose(doc, deleteEnd));
-    }
+    const raw = insertEnds.get(id) ?? deleteEnds.get(id);
+    if (raw == null) continue;
+    anchors.push({
+      evaluationId: id,
+      pos: extendPosPastOpenBracketClose(doc, raw),
+    });
   }
-  return byEvaluationId;
+  return anchors.sort(
+    (a, b) => a.pos - b.pos || a.evaluationId.localeCompare(b.evaluationId)
+  );
 }
 
 function collectActionPositions(
@@ -171,7 +174,7 @@ function buildSet(doc: PMNode, state: SuggestionActionWidgetState) {
 
   const decos: Decoration[] = [];
   const positions = collectActionPositions(doc, state);
-  for (const [evaluationId, pos] of positions) {
+  for (const { evaluationId, pos } of positions) {
       decos.push(
       Decoration.widget(pos, () => widgetEl(evaluationId, state), {
         key: `suggestion-action-${evaluationId}-${state.pendingId ?? "idle"}`,

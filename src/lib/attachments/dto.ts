@@ -1,37 +1,48 @@
-import type { reportAttachmentFolders, reportAttachments } from "@/db/schema";
+import type {
+  attachmentAssets,
+  reportAttachmentFolders,
+  reportAttachments,
+} from "@/db/schema";
 import type {
   ReportAttachmentFolderRecord,
   ReportAttachmentRecord,
 } from "@/types/report";
+import { resolveAttachmentFields } from "@/lib/attachments/resolve-attachment";
 
 type AttachmentRow = typeof reportAttachments.$inferSelect;
+type AssetRow = typeof attachmentAssets.$inferSelect;
 type FolderRow = typeof reportAttachmentFolders.$inferSelect;
 
 /** Public DTO — never expose object keys, hashes, CRC, or uploader IDs. */
-export function toAttachmentDto(row: AttachmentRow): ReportAttachmentRecord {
+export function toAttachmentDto(
+  row: AttachmentRow,
+  asset?: AssetRow | null
+): ReportAttachmentRecord {
+  const resolved = resolveAttachmentFields(row, asset);
   return {
     id: row.id,
     reportId: row.reportId,
     folderId: row.folderId,
-    filename: row.filename,
-    description: row.description ?? null,
-    mimeType: row.mimeType,
-    sizeBytes: row.sizeBytes,
-    pageCount: row.pageCount,
-    processingStatus: row.processingStatus,
-    processingProgress: row.processingProgress,
-    processingPage: row.processingPage ?? null,
-    processingError: row.processingError,
+    assetId: row.assetId ?? null,
+    filename: resolved.filename,
+    description: resolved.description ?? null,
+    mimeType: resolved.mimeType,
+    sizeBytes: resolved.sizeBytes,
+    pageCount: resolved.pageCount,
+    processingStatus: resolved.processingStatus,
+    processingProgress: resolved.processingProgress,
+    processingPage: resolved.processingPage ?? null,
+    processingError: resolved.processingError,
     uploadedAt:
-      row.uploadedAt instanceof Date
-        ? row.uploadedAt.toISOString()
-        : String(row.uploadedAt),
+      resolved.uploadedAt instanceof Date
+        ? resolved.uploadedAt.toISOString()
+        : String(resolved.uploadedAt),
     deletedAt:
-      row.deletedAt == null
+      resolved.deletedAt == null
         ? null
-        : row.deletedAt instanceof Date
-          ? row.deletedAt.toISOString()
-          : String(row.deletedAt),
+        : resolved.deletedAt instanceof Date
+          ? resolved.deletedAt.toISOString()
+          : String(resolved.deletedAt),
   };
 }
 

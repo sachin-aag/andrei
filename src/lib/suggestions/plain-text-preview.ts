@@ -98,6 +98,64 @@ export type SplitPlainTextPreview = {
   after: PlainTextPreviewSegment[];
 };
 
+export type PlainTextRange = { from: number; to: number };
+
+/**
+ * Offsets in the stored field value that correspond to preview delete runs.
+ * Insert overlay text is not in the value, so it cannot be locked here.
+ */
+export function lockedValueRangesFromPreviewSegments(
+  segments: PlainTextPreviewSegment[]
+): PlainTextRange[] {
+  let valueOffset = 0;
+  const ranges: PlainTextRange[] = [];
+  for (const seg of segments) {
+    if (seg.kind === "insert") continue;
+    const from = valueOffset;
+    const to = valueOffset + seg.text.length;
+    if (seg.kind === "delete" && from < to) {
+      ranges.push({ from, to });
+    }
+    valueOffset = to;
+  }
+  return ranges;
+}
+
+export function selectionTouchesLockedPlainText(
+  from: number,
+  to: number,
+  ranges: readonly PlainTextRange[]
+): boolean {
+  for (const range of ranges) {
+    if (from === to) {
+      if (from > range.from && from < range.to) return true;
+      continue;
+    }
+    if (from < range.to && to > range.from) return true;
+  }
+  return false;
+}
+
+export function skipLockedPlainTextOnBackspace(
+  pos: number,
+  ranges: readonly PlainTextRange[]
+): number | null {
+  const ending = ranges.find((range) => range.to === pos);
+  if (ending) return ending.from;
+  const containing = ranges.find((range) => pos > range.from && pos < range.to);
+  return containing ? containing.from : null;
+}
+
+export function skipLockedPlainTextOnDelete(
+  pos: number,
+  ranges: readonly PlainTextRange[]
+): number | null {
+  const starting = ranges.find((range) => range.from === pos);
+  if (starting) return starting.to;
+  const containing = ranges.find((range) => pos > range.from && pos < range.to);
+  return containing ? containing.to : null;
+}
+
 /** Split segments so action widgets can sit immediately after delete/insert marks. */
 export function splitPlainTextPreviewSegments(
   segments: PlainTextPreviewSegment[]

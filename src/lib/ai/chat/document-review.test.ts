@@ -8,14 +8,14 @@ vi.mock("@/lib/ai/usage", () => ({
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
 import {
   buildReviewBatches,
-  chatStepBudget,
   DocumentReviewSession,
   extractReviewFindingsFromPages,
   pickPlanModeChatTools,
   PLAN_MODE_CHAT_TOOL_NAMES,
   prepareDocumentReviewStep,
   REVIEW_EXTRACT_CONCURRENCY,
-  shouldStopChatSteps,
+  REVIEW_FINISH_FINDINGS_CAP,
+  capFindingsForFinish,
   type ReviewPageSource,
 } from "./document-review";
 
@@ -212,6 +212,28 @@ describe("DocumentReviewSession", () => {
     expect(maxInflight).toBe(REVIEW_EXTRACT_CONCURRENCY);
   });
 
+  it("stops draining when the turn abort fires and leaves remaining batches", async () => {
+    const abort = new AbortController();
+    let calls = 0;
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => {
+        calls += 1;
+        if (calls === 2) abort.abort();
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        return extractReviewFindingsFromPages(pages);
+      },
+    });
+    const manyPages = Array.from({ length: 24 }, (_, index) =>
+      page(index + 1, `${"x".repeat(7_000)} SW-SST-${index + 1} Pass`)
+    );
+    session.start({ objective: "ids", pages: manyPages });
+    const first = await session.continue({ abortSignal: abort.signal });
+    expect(first.status).toBe("in_progress");
+    expect(first.remainingBatches).toBeGreaterThan(0);
+    expect(first.reviewedPages).toBeLessThan(24);
+    expect(calls).toBeLessThan(24);
+  });
+
   it("recommends the 14-row Requirements Verified inventory, not protocol mentions", async () => {
     const session = new DocumentReviewSession({
       extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
@@ -337,57 +359,6 @@ describe("prepareDocumentReviewStep", () => {
   });
 });
 
-describe("chatStepBudget", () => {
-  it("keeps focused turns on the existing small budget", () => {
-    expect(
-      chatStepBudget({ mode: "plan", policy: "focused", totalPages: 62 })
-    ).toBe(8);
-    expect(
-      chatStepBudget({ mode: "agent", policy: "focused", totalPages: 62 })
-    ).toBe(24);
-  });
-
-  it("gives adaptive turns room for complementary search", () => {
-    expect(
-      chatStepBudget({ mode: "plan", policy: "adaptive", totalPages: 62 })
-    ).toBe(16);
-    expect(
-      chatStepBudget({ mode: "agent", policy: "adaptive", totalPages: 62 })
-    ).toBe(40);
-  });
-
-  it("raises the comprehensive budget from page count", () => {
-    const budget = chatStepBudget({
-      mode: "agent",
-      policy: "comprehensive",
-      totalPages: 62,
-    });
-    expect(budget).toBeGreaterThan(24);
-    expect(budget).toBeLessThanOrEqual(96);
-  });
-
-  it("raises the budget once a page walk is in progress", () => {
-    expect(
-      shouldStopChatSteps({
-        stepsTaken: 16,
-        mode: "plan",
-        policy: "adaptive",
-        reviewPhase: "idle",
-        totalPages: 62,
-      })
-    ).toBe(true);
-    expect(
-      shouldStopChatSteps({
-        stepsTaken: 16,
-        mode: "plan",
-        policy: "adaptive",
-        reviewPhase: "in_progress",
-        totalPages: 62,
-      })
-    ).toBe(false);
-  });
-});
-
 describe("pickPlanModeChatTools", () => {
   it("keeps document-review tools on the Plan-mode allowlist", () => {
     const allTools = {
@@ -427,5 +398,45 @@ describe("pickPlanModeChatTools", () => {
     expect(planTools).not.toHaveProperty("plot_measurements");
     expect(planTools).not.toHaveProperty("remove_image");
     expect(planTools).not.toHaveProperty("edit_table");
+  });
+});
+
+describe("capFindingsForFinish", () => {
+  it("keeps a short list unchanged", () => {
+    const findings = [
+      {
+        id: "d1",
+        attachmentId: "att_b",
+        filename: "Appendix-B.pdf",
+        pageNumber: 1,
+        identifiers: ["SW-SST-1"],
+        heading: null,
+        summary: "pass",
+        configuration: null,
+        result: "Pass",
+      },
+    ];
+    expect(capFindingsForFinish(findings)).toEqual({
+      findings,
+      omitted: 0,
+    });
+  });
+
+  it("caps a long catalog sample and reports omitted count", () => {
+    const findings = Array.from({ length: REVIEW_FINISH_FINDINGS_CAP + 17 }, (_, i) => ({
+      id: `d${i + 1}`,
+      attachmentId: "att_b",
+      filename: "Appendix-B.pdf",
+      pageNumber: i + 1,
+      identifiers: [`ID-${i + 1}`],
+      heading: null,
+      summary: "row",
+      configuration: null,
+      result: null,
+    }));
+    const capped = capFindingsForFinish(findings);
+    expect(capped.findings).toHaveLength(REVIEW_FINISH_FINDINGS_CAP);
+    expect(capped.omitted).toBe(17);
+    expect(capped.findings[0]?.id).toBe("d1");
   });
 });

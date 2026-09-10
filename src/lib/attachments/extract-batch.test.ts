@@ -499,12 +499,47 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.pages.map((page) => page.pageNumber)).toEqual([1, 2]);
     expect(result.pages[0]?.transcript).toContain("slice 0 line 0");
     expect(result.pages[0]?.visualInterpretation).toBe("visual-1");
+    expect(result.pages[0]?.hasTable).toBe(false);
+    expect(result.pages[0]?.hasFigure).toBe(false);
     expect(generateTextMock).toHaveBeenCalledTimes(1);
 
     const [call] = generateTextMock.mock.calls.at(0) as [
       { maxOutputTokens: number },
     ];
     expect(call.maxOutputTokens).toBe(6_000);
+  });
+
+  it("records table presence when the insight pass names a table", async () => {
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(
+        {
+          pages: [
+            {
+              ...insightPayload(1),
+              tables: ["FMEA grid"],
+              figures: [],
+            },
+            insightPayload(2),
+          ],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      )
+    );
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithTextPages(2),
+      pageStart: 1,
+      pageEnd: 2,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.pages[0]?.hasTable).toBe(true);
+    expect(result.pages[0]?.hasFigure).toBe(false);
+    expect(result.pages[1]?.hasTable).toBe(false);
   });
 
   it("keeps the parsed transcript when the context pass fails", async () => {
@@ -524,6 +559,8 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.pages.map((page) => page.pageNumber)).toEqual([4, 5]);
     expect(result.pages[0]?.transcript).toContain("slice 0 line 0");
     expect(result.pages[0]?.visualInterpretation).toBe("");
+    expect(result.pages[0]?.hasTable).toBeNull();
+    expect(result.pages[0]?.hasFigure).toBeNull();
   });
 
   it("never retries per page, because the parser already covered every page", async () => {
@@ -559,6 +596,7 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.recovery).toBe("text-layer-only");
     expect(result.pages).toHaveLength(6);
     expect(result.pages[0]?.transcript).toContain("slice 0 line 0");
+    expect(result.pages[0]?.hasTable).toBeNull();
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 

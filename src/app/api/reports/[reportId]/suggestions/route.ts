@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { after } from "next/server";
-import { propagateAttributes } from "@langfuse/tracing";
 import { and, eq, inArray } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod";
@@ -39,10 +38,14 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import {
+  buildSuggestionRecord,
+  withSuggestionRecord,
+} from "@/lib/suggestions/suggestion-record";
+import {
   flushLangfuseTraces,
-  isLangfuseEnabled,
   observeRouteHandler,
   setRouteObservationIO,
+  withPropagatedAttributes,
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
@@ -155,10 +158,6 @@ async function handleSuggestionsPost(
     documentType: report.documentType,
     allSections,
   });
-  // Suggestion staleness is section-local (validateSuggestionLocate has no allSections).
-  const suggestionContentHash = sectionContentHash(section, sectionContent, {
-    documentType: report.documentType,
-  });
   const stale = gap.some((g) => g.evaluatedContentHash && g.evaluatedContentHash !== hash);
   const blockedReason =
     gap.length === 0 ? "no_gap_criteria" : stale ? "stale_evaluation" : null;
@@ -250,15 +249,32 @@ async function handleSuggestionsPost(
         }
       : undefined;
 
-    const payload: ParsedAiFixPayload = {
-      deleteText: s.deleteText,
-      insertText,
-      reasoning: s.reasoning,
-      scope: s.scope,
-      second,
-      contentHashAtSuggestion: suggestionContentHash,
-      evidenceSources: s.evidenceSources,
-    };
+    const payload: ParsedAiFixPayload = withSuggestionRecord(
+      {
+        deleteText: s.deleteText,
+        insertText,
+        reasoning: s.reasoning,
+        scope: s.scope,
+        second,
+        evidenceSources: s.evidenceSources,
+      },
+      buildSuggestionRecord({
+        sectionContent: workingContent,
+        section,
+        targetField: s.targetField,
+        documentType: report.documentType,
+        input: {
+          kind: "located",
+          edit: {
+            anchorText: s.anchorText,
+            deleteText: s.deleteText,
+            insertText,
+            scope: s.scope,
+            second,
+          },
+        },
+      })
+    );
 
     await db.insert(comments).values({
       id: suggestionId,
@@ -309,14 +325,30 @@ async function handleSuggestionsPost(
     }
 
     const suggestionId = createId();
-    const payload: ParsedAiFixPayload = {
-      deleteText: s.deleteText,
-      insertText,
-      reasoning: s.reasoning,
-      second,
-      contentHashAtSuggestion: suggestionContentHash,
-      evidenceSources: s.evidenceSources,
-    };
+    const payload: ParsedAiFixPayload = withSuggestionRecord(
+      {
+        deleteText: s.deleteText,
+        insertText,
+        reasoning: s.reasoning,
+        second,
+        evidenceSources: s.evidenceSources,
+      },
+      buildSuggestionRecord({
+        sectionContent: workingContent,
+        section,
+        targetField: s.targetField,
+        documentType: report.documentType,
+        input: {
+          kind: "located",
+          edit: {
+            anchorText: s.anchorText,
+            deleteText: s.deleteText,
+            insertText,
+            second,
+          },
+        },
+      })
+    );
 
     await db.insert(comments).values({
       id: suggestionId,
@@ -396,20 +428,9 @@ async function handleSuggestionsPost(
   });
   };
 
-  if (!isLangfuseEnabled()) return runSuggestions();
-
-  setRouteObservationIO({
-    input: {
-      reportId,
-      section,
-      documentNo: report.documentNo,
-      gapCriterionCount: gap.length,
-      gapCriteria: gap.map((g) => g.criterionKey),
-    },
-  });
   after(flushLangfuseTraces);
 
-  return propagateAttributes(
+  return withPropagatedAttributes(
     {
       sessionId: reportId,
       userId: user.id,
@@ -418,9 +439,22 @@ async function handleSuggestionsPost(
       metadata: {
         feature: "suggestion-generation",
         section,
-        documentNo: report.documentNo,
+        section_id: section,
+        documentNo: String(report.documentNo ?? ""),
+        documentType: report.documentType,
       },
     },
-    runSuggestions
+    async () => {
+      setRouteObservationIO({
+        input: {
+          reportId,
+          section,
+          documentNo: report.documentNo,
+          gapCriterionCount: gap.length,
+          gapCriteria: gap.map((g) => g.criterionKey),
+        },
+      });
+      return runSuggestions();
+    }
   );
 }

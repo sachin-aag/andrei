@@ -16,7 +16,6 @@ import {
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import {
-  activeSuggestionForSection,
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
@@ -25,16 +24,20 @@ import {
   suggestionApplyModeFor,
 } from "@/lib/document-types";
 import { redraftPlainTextValue } from "@/lib/suggestions/apply-redraft";
+import { readSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  PLACEHOLDER_CONFLICT_MESSAGE,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 import {
   buildPlainTextSuggestionPreview,
+  lockedValueRangesFromPreviewSegments,
   splitPlainTextPreviewSegments,
   type PlainTextPreviewSegment,
+  type PlainTextRange,
 } from "@/lib/suggestions/plain-text-preview";
 import { trackChangesOverlaySegments } from "@/lib/suggestions/plain-text-track-changes";
 import {
@@ -42,6 +45,7 @@ import {
   suggestionTargetsField,
 } from "@/lib/suggestions/resolve-suggestion-field-path";
 import {
+  firstPreviewableOpenSuggestion,
   suggestionStaleMessage,
   validateSuggestionLocate,
 } from "@/lib/suggestions/validate-suggestion";
@@ -197,7 +201,12 @@ export function PlainTextSuggestionField({
         ? locked
         : null;
     }
-    const active = activeSuggestionForSection(section, comments, evaluations);
+    const active = firstPreviewableOpenSuggestion(
+      section,
+      comments,
+      evaluations,
+      sections[section]
+    );
     if (!active) return null;
 
     return suggestionTargetsField(section, active.contentPath, contentPath)
@@ -208,6 +217,7 @@ export function PlainTextSuggestionField({
     evaluations,
     contentPath,
     section,
+    sections,
     isSuggestionPreviewHeld,
     suggestionApplyTransition,
   ]);
@@ -236,13 +246,25 @@ export function PlainTextSuggestionField({
     }
 
     const payload = parseAiFixCommentContent(activeComment.content);
-    return buildPlainTextSuggestionPreview(
+    const located = buildPlainTextSuggestionPreview(
       value,
       payload.deleteText,
       normalizeSuggestionInsertText(payload.insertText),
       activeComment.anchorText,
       payload.second
     );
+    if (located) return located;
+    const record = readSuggestionRecord(activeComment.content);
+    if (typeof record?.intent === "string" && record.intent !== value) {
+      const segments: PlainTextPreviewSegment[] = [];
+      if (value) segments.push({ kind: "delete", text: value });
+      segments.push({
+        kind: "insert",
+        text: value ? ` ${record.intent}` : record.intent,
+      });
+      return segments;
+    }
+    return null;
   }, [activeComment, activeValidation, value]);
 
   const showInlineSuggestion = Boolean(
@@ -257,6 +279,11 @@ export function PlainTextSuggestionField({
       contentPath
     );
   }, [focusedPanelPlaceholderId, section, contentPath]);
+
+  const suggestionLockRanges = useMemo((): PlainTextRange[] => {
+    if (!showInlineSuggestion || !previewSegments) return [];
+    return lockedValueRangesFromPreviewSegments(previewSegments);
+  }, [showInlineSuggestion, previewSegments]);
 
   const trackChangeSegments = useMemo(() => {
     if (showInlineSuggestion || !trackChangesMode || tcBaseline === null) {
@@ -354,6 +381,9 @@ export function PlainTextSuggestionField({
           applyMode: suggestionApplyModeFor(
             getDocumentType(report.documentType)
           ),
+          openComments: comments.filter(
+            (c) => c.status === "open" && !c.parentId
+          ),
         }),
         delay(SUGGESTION_DIFF_FADE_MS),
       ]);
@@ -372,6 +402,9 @@ export function PlainTextSuggestionField({
               : new SectionPersistError(0, "Failed to save section")
           );
         }
+        if (result.reason === "placeholder_conflict") {
+          throw new Error(PLACEHOLDER_CONFLICT_MESSAGE);
+        }
         throw new Error("Suggestion could not be located");
       }
       const nextSection = result.nextSection as unknown;
@@ -389,9 +422,13 @@ export function PlainTextSuggestionField({
       }
       replaceSection(section, nextSection);
       setComments((prev) =>
-        prev.map((c) =>
-          c.id === activeComment.id ? { ...c, status: "resolved" as const } : c
-        )
+        prev.map((c) => {
+          if (c.id === activeComment.id) {
+            return { ...c, status: "resolved" as const };
+          }
+          const dismissed = result.dismissed.find((row) => row.id === c.id);
+          return dismissed ?? c;
+        })
       );
       // Only hide the diff preview once the real value has landed — hiding it
       // earlier would reveal the stale original text underneath while the
@@ -408,7 +445,9 @@ export function PlainTextSuggestionField({
           ? err.message
           : err instanceof CommentPersistError
             ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-            : "Could not apply suggestion"
+            : err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE
+              ? err.message
+              : "Could not apply suggestion"
       );
       await refresh();
     } finally {
@@ -429,6 +468,7 @@ export function PlainTextSuggestionField({
     replaceSection,
     setComments,
     refresh,
+    comments,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
     trackChangesMode,
@@ -527,6 +567,7 @@ export function PlainTextSuggestionField({
         className={className}
         mirrorContent={mirrorContent}
         suggestionActive={showInlineSuggestion}
+        lockRanges={suggestionLockRanges}
         suggestionWidgetAnchorRef={suggestionWidgetAnchorRef}
         inlineSuggestionWidget={
           showInlineSuggestion && activeComment ? (

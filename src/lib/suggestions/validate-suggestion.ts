@@ -6,19 +6,21 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { hashContent } from "@/lib/ai/content-hash";
 import {
   parseAiFixCommentContent,
-  parseAiRedraftCommentContent,
-  sectionContentHash,
 } from "@/lib/ai/suggestion-gating";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import {
+  flattenForAnchor,
   isApplyableStatus,
   probePlainEdit,
   probeRichEdit,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
+import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { effectivePlainTextContentPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
+import { resolveSuggestionMerge } from "@/lib/suggestions/resolve-merge";
 
 export type SuggestionLocateStatus =
   | "locatable"
@@ -28,10 +30,12 @@ export type SuggestionLocateStatus =
 
 export type SuggestionValidation = {
   locateStatus: SuggestionLocateStatus;
-  /** Section content hash differs from when this suggestion was generated. */
+  /** Field moved relative to stored base, or a merge conflict remains. */
   documentChanged: boolean;
   canApply: boolean;
   canPreview: boolean;
+  mergeStatus?: "clean" | "conflict" | "noop" | "legacy";
+  wholeField?: boolean;
 };
 
 export function suggestionEditFromComment(
@@ -46,6 +50,7 @@ export function suggestionEditFromComment(
     removeImage: payload.removeImage,
     scope: payload.scope,
     second: payload.second,
+    placeBeforePairedBlock: payload.placeBeforePairedBlock,
   };
 }
 
@@ -81,6 +86,45 @@ export function fieldContentHash(
   );
 }
 
+/**
+ * Merge can report noop when canonicalField collapses a still-pending
+ * delete/insert (whitespace, parked citations, identity intent snapshot).
+ * If the frozen payload still locates and its insert is not already in the
+ * live field, preview and apply that span instead of hiding the card.
+ */
+export function frozenPayloadStillPending(
+  comment: CommentRecord,
+  section: SectionType,
+  sectionContent: unknown,
+  fieldContentPath?: string
+): boolean {
+  if (comment.kind === "ai_redraft") return false;
+  const payload = parseAiFixCommentContent(comment.content);
+  if (payload.tableOperation || payload.tableOperationInvalid) return false;
+  const record = sectionContent as Record<string, unknown>;
+  const path = effectivePlainTextContentPath(
+    section,
+    comment.contentPath,
+    fieldContentPath
+  );
+  const edit = suggestionEditFromComment(comment);
+  const insert = collapseWhitespace(
+    normalizeSuggestionInsertText(edit.insertText ?? "")
+  );
+  if (isRichTargetField(section, path)) {
+    const doc = getRichFieldValue(record, path);
+    if (!isApplyableStatus(probeRichEdit(doc, edit))) return false;
+    const live = collapseWhitespace(flattenForAnchor(doc).text);
+    if (insert.length > 0 && live.includes(insert)) return false;
+    return true;
+  }
+  const plain = getPlainTextFieldValue(record, path);
+  if (!isApplyableStatus(probePlainEdit(plain, edit))) return false;
+  const live = collapseWhitespace(plain);
+  if (insert.length > 0 && live.includes(insert)) return false;
+  return true;
+}
+
 /** Check whether an open AI suggestion still applies to the current section content. */
 export function validateSuggestionLocate(
   comment: CommentRecord,
@@ -90,25 +134,65 @@ export function validateSuggestionLocate(
   fieldContentPath?: string,
   documentType: DocumentType = "investigation_report"
 ): SuggestionValidation {
-  const currentHash = sectionContentHash(section, sectionContent, {
-    documentType,
+  void documentType;
+  const record = sectionContent as Record<string, unknown>;
+  const resolved = resolveSuggestionMerge({
+    section,
+    comment,
+    sectionContent: record,
+    fieldContentPath,
   });
+  if (resolved.merge) {
+    if (resolved.merge.status === "noop") {
+      if (
+        !frozenPayloadStillPending(
+          comment,
+          section,
+          sectionContent,
+          fieldContentPath
+        )
+      ) {
+        return {
+          locateStatus: "locatable",
+          documentChanged: false,
+          canApply: false,
+          canPreview: false,
+          mergeStatus: "noop",
+          wholeField: resolved.wholeField,
+        };
+      }
+      // Frozen delete/insert still changes the live field. Skip merge identity
+      // so the editor locates that span.
+    } else if (resolved.merge.status === "conflict") {
+      return {
+        locateStatus: "locatable",
+        documentChanged: true,
+        canApply: true,
+        canPreview: true,
+        mergeStatus: "conflict",
+        wholeField: resolved.wholeField,
+      };
+    } else {
+      return {
+        locateStatus: "locatable",
+        documentChanged: false,
+        canApply: true,
+        canPreview: true,
+        mergeStatus: "clean",
+        wholeField: resolved.wholeField,
+      };
+    }
+  }
 
-  // Redrafts replace the whole field — always applicable. Staleness compares
-  // the TARGET FIELD's hash only, so accepting other drafts never flags them.
+  // Legacy rows without base/intent: locate the frozen span. Hashes are not read.
   if (comment.kind === "ai_redraft") {
-    const redraft = parseAiRedraftCommentContent(comment.content);
-    const atGen = redraft.fieldHashAtSuggestion;
-    const fieldHash = fieldContentHash(
-      section,
-      sectionContent,
-      comment.contentPath ?? "narrative"
-    );
     return {
       locateStatus: "locatable",
-      documentChanged: Boolean(atGen && atGen !== fieldHash),
+      documentChanged: false,
       canApply: true,
       canPreview: true,
+      mergeStatus: "legacy",
+      wholeField: true,
     };
   }
 
@@ -118,9 +202,6 @@ export function validateSuggestionLocate(
     fieldContentPath
   );
   const payload = parseAiFixCommentContent(comment.content);
-  const record = sectionContent as Record<string, unknown>;
-  const atGen = payload.contentHashAtSuggestion;
-  const hashChanged = Boolean(atGen && atGen !== currentHash);
 
   if (payload.tableOperationInvalid) {
     return {
@@ -128,6 +209,7 @@ export function validateSuggestionLocate(
       documentChanged: true,
       canApply: false,
       canPreview: false,
+      mergeStatus: "legacy",
     };
   }
 
@@ -137,9 +219,10 @@ export function validateSuggestionLocate(
   ) {
     return {
       locateStatus: "not_found",
-      documentChanged: hashChanged,
+      documentChanged: true,
       canApply: false,
       canPreview: false,
+      mergeStatus: "legacy",
     };
   }
 
@@ -147,9 +230,10 @@ export function validateSuggestionLocate(
     if (!isRichTargetField(section, path)) {
       return {
         locateStatus: "not_found",
-        documentChanged: hashChanged,
+        documentChanged: true,
         canApply: false,
         canPreview: false,
+        mergeStatus: "legacy",
       };
     }
     const doc = getRichFieldValue(record, path);
@@ -160,9 +244,10 @@ export function validateSuggestionLocate(
     if (!result.ok) {
       return {
         locateStatus: "not_found",
-        documentChanged: result.status === "stale" || hashChanged,
+        documentChanged: true,
         canApply: false,
         canPreview: false,
+        mergeStatus: "legacy",
       };
     }
     if (payload.second) {
@@ -175,17 +260,19 @@ export function validateSuggestionLocate(
       if (!isApplyableStatus(secondStatus)) {
         return {
           locateStatus: mapProbeStatus(secondStatus),
-          documentChanged: hashChanged,
+          documentChanged: true,
           canApply: false,
           canPreview: false,
+          mergeStatus: "legacy",
         };
       }
     }
     return {
       locateStatus: "locatable",
-      documentChanged: hashChanged,
+      documentChanged: false,
       canApply: true,
       canPreview: true,
+      mergeStatus: "legacy",
     };
   }
 
@@ -204,9 +291,10 @@ export function validateSuggestionLocate(
 
   return {
     locateStatus,
-    documentChanged: hashChanged,
+    documentChanged: locateStatus !== "locatable",
     canApply: locateStatus === "locatable",
     canPreview: locateStatus === "locatable",
+    mergeStatus: "legacy",
   };
 }
 
@@ -217,6 +305,81 @@ function mapProbeStatus(
   if (status === "ambiguous") return "ambiguous";
   if (status === "cross_cell") return "cross_cell";
   return "not_found";
+}
+
+/**
+ * Review queue: locatable cards first (so a new edit is not hidden behind a
+ * stale sibling), then cards that no longer locate. Severity order is kept
+ * inside each group.
+ */
+export function reviewOrderOpenSuggestions(
+  section: SectionType,
+  comments: CommentRecord[],
+  evaluations: EvaluationRecord[],
+  sectionContent: unknown
+): CommentRecord[] {
+  const open = sortedOpenSuggestionsForSection(section, comments, evaluations);
+  const locatable: CommentRecord[] = [];
+  const stale: CommentRecord[] = [];
+  for (const comment of open) {
+    if (validateSuggestionLocate(comment, section, sectionContent).canPreview) {
+      locatable.push(comment);
+    } else {
+      stale.push(comment);
+    }
+  }
+  return [...locatable, ...stale];
+}
+
+/** Card/preview target: first locatable in the review queue, else the stale head. */
+export function firstPreviewableOpenSuggestion(
+  section: SectionType,
+  comments: CommentRecord[],
+  evaluations: EvaluationRecord[],
+  sectionContent: unknown
+): CommentRecord | null {
+  return (
+    reviewOrderOpenSuggestions(
+      section,
+      comments,
+      evaluations,
+      sectionContent
+    )[0] ?? null
+  );
+}
+
+/**
+ * Review queue plus which card to show. `preferredCommentId` wins when that
+ * comment is still open in this section (newly generated chat edit, or a
+ * focused mark). Otherwise the locatable head.
+ */
+export function preferredOpenSuggestion(args: {
+  section: SectionType;
+  comments: CommentRecord[];
+  evaluations: EvaluationRecord[];
+  sectionContent: unknown;
+  preferredCommentId?: string | null;
+}): {
+  ordered: CommentRecord[];
+  active: CommentRecord | null;
+  index: number;
+} {
+  const ordered = reviewOrderOpenSuggestions(
+    args.section,
+    args.comments,
+    args.evaluations,
+    args.sectionContent
+  );
+  if (ordered.length === 0) {
+    return { ordered, active: null, index: 0 };
+  }
+  if (args.preferredCommentId) {
+    const index = ordered.findIndex((c) => c.id === args.preferredCommentId);
+    if (index >= 0) {
+      return { ordered, active: ordered[index]!, index };
+    }
+  }
+  return { ordered, active: ordered[0]!, index: 0 };
 }
 
 export function countStaleOpenSuggestions(
@@ -235,6 +398,12 @@ export function countStaleOpenSuggestions(
 
 /** User-facing explanation when a suggestion cannot be applied. */
 export function suggestionStaleMessage(validation: SuggestionValidation): string {
+  if (validation.mergeStatus === "noop") {
+    return "This change is already in the document.";
+  }
+  if (validation.mergeStatus === "conflict") {
+    return "Part of this suggestion overlaps text you already changed. Apply keeps your wording there and applies the rest.";
+  }
   if (validation.locateStatus === "ambiguous") {
     return "This suggestion matches multiple places in the text. Dismiss it and use Suggest fixes again, or edit manually.";
   }

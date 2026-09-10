@@ -24,6 +24,7 @@ import {
 } from "@/lib/ai/chat/document-review-ui";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
+import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 
 export { DOCUMENT_REVIEW_TOOL_NAMES, type DocumentReviewToolName };
 
@@ -32,20 +33,51 @@ export const REVIEW_MAX_PAGES_PER_BATCH = 6;
 export const REVIEW_DENSE_PAGE_CHARS = 6_000;
 export const REVIEW_PAGE_TEXT_LIMIT = 12_000;
 export const REVIEW_PAGE_CAP = 300;
-export const FOCUSED_CHAT_STEP_BUDGET_PLAN = 8;
-export const FOCUSED_CHAT_STEP_BUDGET_AGENT = 24;
-export const ADAPTIVE_CHAT_STEP_BUDGET_PLAN = 16;
-export const ADAPTIVE_CHAT_STEP_BUDGET_AGENT = 40;
-export const COMPREHENSIVE_CHAT_STEP_BUDGET_CAP = 96;
 /** In-flight extract calls inside one continue_document_review. */
 export const REVIEW_EXTRACT_CONCURRENCY = 8;
 const REVIEW_DRAIN_MAX_EXTRACTS = 800;
+/**
+ * `finish_document_review` must stay small enough to persist in chat history.
+ * Inventory drafting uses `recommendedInventory` / `allIdentifiers`, not this
+ * sample. A 273-page catalog produced ~1.3k findings / 530KB and the next
+ * user turn failed before Gemini started.
+ */
+export const REVIEW_FINISH_FINDINGS_CAP = 60;
 
 export type DocumentReviewPhase =
   | "idle"
   | "in_progress"
   | "ready_to_finish"
   | "complete";
+
+/** Stable coverage identity for a finished review (attachment + ingest + pages). */
+export type DocumentReviewCoverageKey = string;
+
+export type DocumentReviewCoverageSource = {
+  attachmentId: string;
+  pageCount: number;
+  ingestRunId?: string | null;
+};
+
+export function documentReviewCoverageKey(
+  sources: readonly DocumentReviewCoverageSource[]
+): DocumentReviewCoverageKey {
+  return sources
+    .map((source) => {
+      const ingest = source.ingestRunId?.trim() || "unknown";
+      return `${source.attachmentId}:${source.pageCount}:${ingest}`;
+    })
+    .sort()
+    .join("|");
+}
+
+export function coverageKeysMatch(
+  left: DocumentReviewCoverageKey | null | undefined,
+  right: DocumentReviewCoverageKey | null | undefined
+): boolean {
+  if (!left || !right) return false;
+  return left === right;
+}
 
 export type ReviewPageSource = {
   attachmentId: string;
@@ -84,6 +116,7 @@ export type DocumentReviewBatch = {
 export type ExtractReviewBatchFn = (input: {
   objective: string;
   pages: ReviewPageSource[];
+  abortSignal?: AbortSignal;
 }) => Promise<DocumentReviewFinding[]>;
 
 export type DocumentReviewProgressSnapshot = {
@@ -111,9 +144,30 @@ const llmFindingSchema = z.object({
   truncated: z.boolean().default(false),
 });
 
+
+function coverageSourcesFromReviewPages(
+  pages: readonly ReviewPageSource[]
+): DocumentReviewCoverageSource[] {
+  const byAttachment = new Map<string, DocumentReviewCoverageSource>();
+  for (const page of pages) {
+    const existing = byAttachment.get(page.attachmentId);
+    if (existing) {
+      existing.pageCount += 1;
+      continue;
+    }
+    byAttachment.set(page.attachmentId, {
+      attachmentId: page.attachmentId,
+      pageCount: 1,
+      ingestRunId: null,
+    });
+  }
+  return [...byAttachment.values()];
+}
+
 export class DocumentReviewSession {
   private phaseState: DocumentReviewPhase = "idle";
   private objective = "";
+  private coverageKey: DocumentReviewCoverageKey | null = null;
   private queue: DocumentReviewBatch[] = [];
   private findings: DocumentReviewFinding[] = [];
   private seenKeys = new Set<string>();
@@ -135,6 +189,32 @@ export class DocumentReviewSession {
   isFinished(): boolean {
     return this.phaseState === "complete";
   }
+
+  finishedCoverageKey(): DocumentReviewCoverageKey | null {
+    return this.phaseState === "complete" ? this.coverageKey : null;
+  }
+
+  /**
+   * Rehydrate a prior finished review for this request so draft gates and
+   * prepareStep treat coverage as complete when attachments have not changed.
+   */
+  restoreFromFinishedReview(input: {
+    coverageKey: DocumentReviewCoverageKey;
+    recommendedInventory?: RecommendedResultsInventory | null;
+  }): void {
+    this.phaseState = "complete";
+    this.coverageKey = input.coverageKey;
+    this.queue = [];
+    this.findings = [];
+    this.seenKeys = new Set();
+    this.failedPages = [];
+    this.reviewedPageKeys = new Set();
+    this.totalPages = 0;
+    this.objective = "";
+    this.lastRecommended =
+      input.recommendedInventory ?? this.lastRecommended;
+  }
+
 
   recommendedInventory(): RecommendedResultsInventory | null {
     return this.lastRecommended;
@@ -195,6 +275,9 @@ export class DocumentReviewSession {
     this.failedPages = [];
     this.reviewedPageKeys = new Set();
     this.totalPages = pages.length;
+    this.coverageKey = documentReviewCoverageKey(
+      coverageSourcesFromReviewPages(pages)
+    );
     this.findingSeq = 0;
     this.lastRecommended = null;
     this.phaseState = this.queue.length === 0 ? "ready_to_finish" : "in_progress";
@@ -209,7 +292,7 @@ export class DocumentReviewSession {
     };
   }
 
-  async continue(): Promise<{
+  async continue(options?: { abortSignal?: AbortSignal }): Promise<{
     status: "in_progress" | "ready_to_finish" | "not_started";
     reviewedPages: number;
     totalPages: number;
@@ -234,7 +317,7 @@ export class DocumentReviewSession {
       return this.progressPayload("ready_to_finish", "finish_document_review");
     }
 
-    await this.drainQueue();
+    await this.drainQueue(options?.abortSignal);
 
     if (this.queue.length === 0) {
       this.phaseState = "ready_to_finish";
@@ -244,10 +327,11 @@ export class DocumentReviewSession {
     return this.progressPayload("in_progress", "continue_document_review");
   }
 
-  private async drainQueue() {
+  private async drainQueue(abortSignal?: AbortSignal) {
     let started = 0;
     const worker = async () => {
       while (started < REVIEW_DRAIN_MAX_EXTRACTS) {
+        if (abortSignal?.aborted) return;
         const batch = this.queue.shift();
         if (!batch) return;
         started += 1;
@@ -255,10 +339,19 @@ export class DocumentReviewSession {
           const extracted = await this.extractBatch({
             objective: this.objective,
             pages: batch.pages,
+            abortSignal,
           });
+          if (abortSignal?.aborted) {
+            this.queue.unshift(batch);
+            return;
+          }
           this.absorbFindings(extracted);
           this.markReviewed(batch.pages);
         } catch {
+          if (abortSignal?.aborted) {
+            this.queue.unshift(batch);
+            return;
+          }
           this.retryOrFailBatch(batch);
         }
       }
@@ -294,8 +387,10 @@ export class DocumentReviewSession {
     status: "complete" | "incomplete";
     reviewedPages: number;
     totalPages: number;
+    coverageKey: DocumentReviewCoverageKey | null;
     coverageComplete: boolean;
     findings: DocumentReviewFinding[];
+    findingsOmitted: number;
     identifiers: string[];
     allIdentifiers: string[];
     recommendedInventory: RecommendedResultsInventory;
@@ -310,8 +405,10 @@ export class DocumentReviewSession {
         status: "incomplete",
         reviewedPages: this.reviewedPageKeys.size,
         totalPages: this.totalPages,
+        coverageKey: this.coverageKey,
         coverageComplete: false,
         findings: [],
+        findingsOmitted: 0,
         identifiers: [],
         allIdentifiers: [],
         recommendedInventory: empty,
@@ -328,6 +425,7 @@ export class DocumentReviewSession {
     const recommendedInventory = selectRecommendedInventory(this.findings);
     this.lastRecommended = recommendedInventory;
     const coverageComplete = this.failedPages.length === 0;
+    const capped = capFindingsForFinish(compactFindings(this.findings));
     const inventoryNote =
       recommendedInventory.ids.length > 0
         ? ` recommendedInventory ${recommendedInventory.ids.length} (${recommendedInventory.sourceKind}).`
@@ -336,8 +434,10 @@ export class DocumentReviewSession {
       status: "complete",
       reviewedPages: this.reviewedPageKeys.size,
       totalPages: this.totalPages,
+      coverageKey: this.coverageKey,
       coverageComplete,
-      findings: compactFindings(this.findings),
+      findings: capped.findings,
+      findingsOmitted: capped.omitted,
       identifiers,
       allIdentifiers: identifiers,
       recommendedInventory,
@@ -346,7 +446,7 @@ export class DocumentReviewSession {
       ),
       failedPages: [...this.failedPages],
       coverageSummary: coverageComplete
-        ? `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages; ${this.findings.length} findings; ${identifiers.length} identifiers.${inventoryNote}`
+        ? `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages; ${this.findings.length} findings (${capped.findings.length} in sample${capped.omitted > 0 ? `, ${capped.omitted} omitted` : ""}); ${identifiers.length} identifiers.${inventoryNote}`
         : `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages with ${this.failedPages.length} failed page(s); do not claim completeness.${inventoryNote}`,
     };
   }
@@ -480,14 +580,19 @@ export function extractReviewFindingsFromPages(
 export async function extractReviewBatch(input: {
   objective: string;
   pages: ReviewPageSource[];
+  abortSignal?: AbortSignal;
 }): Promise<DocumentReviewFinding[]> {
   const deterministic = extractReviewFindingsFromPages(input.pages);
   if (isTestStubChat() || input.pages.length === 0) return deterministic;
+  if (input.abortSignal?.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
 
   try {
     const llmFindings = await extractReviewBatchWithLlm(input);
     return mergeFindings(deterministic, llmFindings);
-  } catch {
+  } catch (error) {
+    if (input.abortSignal?.aborted) throw error;
     return deterministic;
   }
 }
@@ -516,60 +621,10 @@ export function pickPlanModeChatTools<T extends Record<string, unknown>>(
   return picked;
 }
 
-export function chatStepBudget(input: {
-  mode: "plan" | "agent";
-  policy: RetrievalPolicy;
-  totalPages: number;
-}): number {
-  switch (input.policy) {
-    case "focused":
-      return input.mode === "plan"
-        ? FOCUSED_CHAT_STEP_BUDGET_PLAN
-        : FOCUSED_CHAT_STEP_BUDGET_AGENT;
-    case "adaptive":
-      return input.mode === "plan"
-        ? ADAPTIVE_CHAT_STEP_BUDGET_PLAN
-        : ADAPTIVE_CHAT_STEP_BUDGET_AGENT;
-    case "comprehensive": {
-      const focused =
-        input.mode === "plan"
-          ? FOCUSED_CHAT_STEP_BUDGET_PLAN
-          : FOCUSED_CHAT_STEP_BUDGET_AGENT;
-      const continueSteps = Math.ceil(Math.max(input.totalPages, 1) / 2) + 12;
-      return Math.min(
-        COMPREHENSIVE_CHAT_STEP_BUDGET_CAP,
-        Math.max(focused, continueSteps)
-      );
-    }
-    default: {
-      const _exhaustive: never = input.policy;
-      throw new Error(`Unhandled retrieval policy: ${String(_exhaustive)}`);
-    }
-  }
-}
-
 export type DocumentReviewToolChoice = {
   activeTools: DocumentReviewToolName[] | string[];
   toolChoice?: { type: "tool"; toolName: DocumentReviewToolName };
 };
-
-export function shouldStopChatSteps(input: {
-  stepsTaken: number;
-  mode: "plan" | "agent";
-  policy: RetrievalPolicy;
-  reviewPhase: DocumentReviewPhase;
-  totalPages: number;
-}): boolean {
-  const reviewing =
-    input.reviewPhase === "in_progress" ||
-    input.reviewPhase === "ready_to_finish";
-  const budget = chatStepBudget({
-    mode: input.mode,
-    policy: reviewing ? "comprehensive" : input.policy,
-    totalPages: input.totalPages,
-  });
-  return input.stepsTaken >= budget;
-}
 
 export function prepareDocumentReviewStep(input: {
   policy: RetrievalPolicy;
@@ -633,6 +688,7 @@ function splitBatch(batch: DocumentReviewBatch): DocumentReviewBatch[] {
 async function extractReviewBatchWithLlm(input: {
   objective: string;
   pages: ReviewPageSource[];
+  abortSignal?: AbortSignal;
 }): Promise<DocumentReviewFinding[]> {
   const pageBlock = input.pages
     .map((page) => {
@@ -645,6 +701,7 @@ async function extractReviewBatchWithLlm(input: {
   const result = await generateText({
     model: resolveChatExtractLanguageModel(),
     output: Output.object({ schema: llmFindingSchema }),
+    abortSignal: input.abortSignal,
     providerOptions: buildGeminiThoughtSummaryProviderOptions({
       thinkingLevel: "minimal",
       includeThoughts: false,
@@ -656,6 +713,13 @@ async function extractReviewBatchWithLlm(input: {
       `Objective: ${input.objective || "inventory requirements, configurations, and results"}`,
       pageBlock,
     ].join("\n\n"),
+    ...langfuseGenerateTextTelemetry({
+      functionId: "document-review-extract",
+      metadata: {
+        feature: "document_review_extract",
+        pageCount: input.pages.length,
+      },
+    }),
   });
 
   await recordAiUsage({
@@ -723,6 +787,19 @@ function compactFindings(
       finding.identifiers.map((id) => sanitizePromptMetadata(id, 40))
     ),
   }));
+}
+
+export function capFindingsForFinish(
+  findings: DocumentReviewFinding[],
+  cap = REVIEW_FINISH_FINDINGS_CAP
+): { findings: DocumentReviewFinding[]; omitted: number } {
+  if (findings.length <= cap) {
+    return { findings, omitted: 0 };
+  }
+  return {
+    findings: findings.slice(0, cap),
+    omitted: findings.length - cap,
+  };
 }
 
 function normalizeFinding(

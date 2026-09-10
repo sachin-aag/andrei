@@ -7,9 +7,14 @@ import {
   bindWorkspaceLayoutToReport,
   CHAT_DEFAULT_PX,
   chatWidthBounds,
+  clamp,
   COLLAPSED_RAIL_PX,
   DOCS_DEFAULT_PX,
   docsWidthBounds,
+  DOCUMENT_WIDTH_DEFAULT_PX,
+  DOCUMENT_WIDTH_MAX_PX,
+  DOCUMENT_WIDTH_MIN_PX,
+  documentWidthBounds,
   getViewportWidthServerSnapshot,
   getViewportWidthSnapshot,
   getWorkspaceLayoutServerSnapshot,
@@ -95,6 +100,12 @@ export function useWorkspaceLayout({
   const chatBounds = chatWidthBounds(viewportWidth);
   const docsBounds = docsWidthBounds(viewportWidth);
   const previewBounds = previewWidthBounds(viewportWidth);
+  const documentBounds = documentWidthBounds();
+  const documentWidth = clamp(
+    desired.documentWidth,
+    documentBounds.min,
+    documentBounds.max
+  );
 
   const setChatWidth = useCallback((width: number) => {
     setProtect("chat");
@@ -123,11 +134,29 @@ export function useWorkspaceLayout({
     setPreviewWidth(PREVIEW_DEFAULT_PX);
   }, [setPreviewWidth]);
 
-  const beginResize = useCallback((panel: "chat" | "docs" | "preview") => {
-    isResizingRef.current = true;
-    setIsResizing(true);
-    setProtect(panel);
+  const setDocumentWidth = useCallback((width: number) => {
+    updateWorkspaceLayout((prev) => ({
+      ...prev,
+      documentWidth: clamp(
+        Math.round(width),
+        DOCUMENT_WIDTH_MIN_PX,
+        DOCUMENT_WIDTH_MAX_PX
+      ),
+    }));
   }, []);
+
+  const resetDocumentWidth = useCallback(() => {
+    setDocumentWidth(DOCUMENT_WIDTH_DEFAULT_PX);
+  }, [setDocumentWidth]);
+
+  const beginResize = useCallback(
+    (panel: "chat" | "docs" | "preview" | "document") => {
+      isResizingRef.current = true;
+      setIsResizing(true);
+      if (panel !== "document") setProtect(panel);
+    },
+    []
+  );
 
   const endResize = useCallback(() => {
     isResizingRef.current = false;
@@ -141,15 +170,19 @@ export function useWorkspaceLayout({
     chatWidth: chatCollapsed ? COLLAPSED_RAIL_PX : allocated.chatWidth,
     docsWidth: docsCollapsed ? COLLAPSED_RAIL_PX : allocated.docsWidth,
     previewWidth: allocated.previewWidth,
+    documentWidth,
     chatBounds,
     docsBounds,
     previewBounds,
+    documentBounds,
     setChatWidth,
     setDocsWidth,
     setPreviewWidth,
+    setDocumentWidth,
     resetChatWidth,
     resetDocsWidth,
     resetPreviewWidth,
+    resetDocumentWidth,
     beginResize,
     endResize,
   };

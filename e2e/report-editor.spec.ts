@@ -10,6 +10,7 @@ import {
   createReport,
   deleteReport,
   seedDefineForEvaluation,
+  seedDefineWithTwoColumnTable,
 } from "./helpers/reports";
 import {
   collapseReportSidebar,
@@ -24,6 +25,7 @@ import {
   openReportAnalytics,
   openReportEditor,
   reportSidebar,
+  waitForReportEditor,
   reviewMargin,
   setReportChrome,
 } from "./helpers/workspace";
@@ -69,6 +71,54 @@ test.describe("report editor", () => {
     ).toHaveCount(0);
   });
 
+  test("wraps prose and 2-column table cells instead of growing the editor", async ({
+    page,
+  }) => {
+    await seedDefineWithTwoColumnTable(page, reportId!);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const editor = defineEditor(page);
+    await expect(editor).toBeVisible({ timeout: 30_000 });
+    await expect(
+      editor.getByText(/this test report applies to solea model 3/i)
+    ).toBeVisible();
+
+    const metrics = await editor.evaluate((root) => {
+      const field = root.closest("[data-field-anchor]");
+      const paragraph = root.querySelector("p");
+      const firstCol = root.querySelector("th:first-child, td:first-child");
+      const secondCol = root.querySelector("td:nth-child(2)");
+      if (!field || !paragraph || !firstCol || !secondCol) {
+        return null;
+      }
+      return {
+        fieldWidth: field.getBoundingClientRect().width,
+        editorWidth: root.getBoundingClientRect().width,
+        paragraphWidth: paragraph.getBoundingClientRect().width,
+        paragraphScrollWidth: paragraph.scrollWidth,
+        firstColWidth: firstCol.getBoundingClientRect().width,
+        secondColWidth: secondCol.getBoundingClientRect().width,
+        secondColScrollWidth: (secondCol as HTMLElement).scrollWidth,
+        secondColClientWidth: (secondCol as HTMLElement).clientWidth,
+      };
+    });
+
+    expect(metrics).toBeTruthy();
+    expect(metrics!.editorWidth).toBeLessThan(metrics!.fieldWidth + 24);
+    expect(metrics!.paragraphWidth).toBeLessThan(metrics!.fieldWidth + 24);
+    expect(metrics!.paragraphScrollWidth).toBeLessThanOrEqual(
+      metrics!.paragraphWidth + 4
+    );
+    // Was a 4.5rem (72px) cap that stacked every word in column 1.
+    expect(metrics!.firstColWidth).toBeGreaterThan(80);
+    expect(metrics!.secondColScrollWidth).toBeLessThanOrEqual(
+      metrics!.secondColClientWidth + 4
+    );
+  });
+
   test("typing triggers auto-save status", async ({ page }) => {
     const editor = defineEditor(page);
     await expect(editor).toBeVisible({ timeout: 30_000 });
@@ -110,17 +160,14 @@ test.describe("report editor", () => {
     await expect(sidebar.getByRole("button", { name: /collapse sidebar/i })).toBeVisible();
   });
 
-  test("hides the review margin until Comments is enabled and the assistant is collapsed", async ({
+  test("shows the review margin when Comments is on and keeps it with the assistant open", async ({
     page,
   }) => {
-    // Wide enough that the main canvas would otherwise show both surfaces.
+    // Wide enough that the main canvas can show the gutter beside the sheet.
     await page.setViewportSize({ width: 1920, height: 900 });
     await expect(
       reportSidebar(page).getByRole("button", { name: /collapse sidebar/i })
     ).toBeVisible();
-    await expect(reviewMargin(page)).toHaveCount(0);
-
-    await collapseReportSidebar(page);
     await expect(reviewMargin(page)).toHaveCount(0);
 
     await page.getByRole("switch", { name: /comments/i }).click();
@@ -133,7 +180,10 @@ test.describe("report editor", () => {
     await expect(reviewMargin(page)).toBeVisible();
 
     await expandReportSidebar(page);
-    await expect(reviewMargin(page)).toHaveCount(0);
+    await expect(reviewMargin(page)).toBeVisible();
+
+    await collapseReportSidebar(page);
+    await expect(reviewMargin(page)).toBeVisible();
   });
 
   test("resizes the assistant and documents panels from the keyboard", async ({
@@ -196,9 +246,7 @@ test.describe("report editor", () => {
       await gotoWithNavigationRetry(page, `/reports/${other.id}/edit`, {
         waitUntil: "domcontentloaded",
       });
-      await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-        timeout: 30_000,
-      });
+      await waitForReportEditor(page);
       await expect
         .poll(async () => {
           const width = await sidebar.evaluate(
@@ -209,19 +257,23 @@ test.describe("report editor", () => {
         .toBeLessThan(12);
 
       await expect(chatHandle).toBeVisible();
-      await chatHandle.press("ArrowLeft");
+      // Firefox often drops locator.press() on the separator after a
+      // client-side navigation. Focus + page.keyboard matches the first
+      // half of this test (and Chromium).
+      await chatHandle.focus();
+      await expect(chatHandle).toBeFocused();
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft");
       await expect
         .poll(
           async () =>
             sidebar.evaluate((el) => el.getBoundingClientRect().width),
           { timeout: 10_000 }
         )
-        .toBeGreaterThan(defaultWidth + 4);
+        .toBeGreaterThan(defaultWidth + 8);
 
       await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-        timeout: 30_000,
-      });
+      await waitForReportEditor(page);
       await expect
         .poll(async () => {
           const width = await reportSidebar(page).evaluate(
@@ -268,13 +320,14 @@ test.describe("report editor", () => {
     await expandReportSidebar(page);
     await setReportChrome(page, "agent");
 
-    const collapsedPanel = page.getByTestId("report-work-product");
+    const workProductPanel = page.getByTestId("report-work-product");
     await expect(
-      collapsedPanel.getByRole("button", { name: /expand document panel/i })
+      workProductPanel.getByRole("button", { name: /collapse document panel/i })
     ).toBeVisible();
-    const collapsedBox = await collapsedPanel.boundingBox();
-    expect(collapsedBox).toBeTruthy();
-    expect(collapsedBox!.width).toBeLessThanOrEqual(52);
+    await expect(page.getByTestId("work-product-tab-strip")).toBeVisible();
+    const expandedBox = await workProductPanel.boundingBox();
+    expect(expandedBox).toBeTruthy();
+    expect(expandedBox!.width).toBeGreaterThan(52);
 
     const previewHandle = page.getByRole("separator", {
       name: /resize document panel/i,
@@ -282,6 +335,24 @@ test.describe("report editor", () => {
     await expectDocumentPanelResizeHandleAligned(page);
 
     await expandWorkProductPanel(page);
+    const collapse = page.getByRole("button", {
+      name: /collapse document panel/i,
+    });
+    const reportTab = page.getByTestId("report-surface-document");
+    await expect(collapse).toBeVisible();
+    await expect(reportTab).toBeVisible();
+    // Collapse sits left of Report in the expanded header (gap-2). Poll until
+    // the width transition settles; allow 1px for WebKit sub-pixel boxes.
+    await expect
+      .poll(async () => {
+        const [collapseBox, reportBox] = await Promise.all([
+          collapse.boundingBox(),
+          reportTab.boundingBox(),
+        ]);
+        if (!collapseBox || !reportBox) return Number.POSITIVE_INFINITY;
+        return collapseBox.x + collapseBox.width - reportBox.x;
+      })
+      .toBeLessThan(1);
     await expect(page.getByRole("switch", { name: /comments/i })).toHaveCount(0);
 
     const docsBox = await documentsPanel(page).boundingBox();
@@ -340,7 +411,9 @@ test.describe("report editor", () => {
     await page.getByTestId("report-surface-analytics").click();
     await expect(page.getByTestId("report-analytics-workspace")).toBeVisible();
     await collapseWorkProductPanel(page);
-    await expect(collapsedPanel.getByRole("button", { name: /expand document panel/i })).toBeVisible();
+    await expect(workProductPanel.getByRole("button", { name: /expand document panel/i })).toBeVisible();
+    // Collapsed Agent rail only shows the active tab. Expand to reach Analytics.
+    await expandWorkProductPanel(page);
     await page.getByTestId("report-surface-analytics").click();
     await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
       timeout: 30_000,

@@ -20,29 +20,39 @@ import { formatDistanceToNow } from "date-fns";
 import {
   ArrowUp,
   Sparkles,
-  PencilLine,
   Table2,
-  BookOpen,
   FileText,
   Loader2,
   Plus,
   History,
   ClipboardList,
-  Wrench,
-  Check,
-  ImagePlus,
-  ImageMinus,
   LineChart,
   Square,
   X,
+  Check,
+  ImagePlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ChatVoiceButton } from "@/components/report/chat-voice-button";
+import { useVoiceDictation } from "@/hooks/use-voice-dictation";
 import { ChatMarkdown } from "@/components/report/chat-markdown";
+import { openCitedDocumentOrToast } from "@/lib/citations/open-cited-document";
+import { ChatMessageTargetTag } from "@/components/report/chat-message-target-tag";
+import {
+  assistantOffersAnalyticsSwitch,
+  chatMessageTargetLabel,
+  tagChatMessages,
+  type ChatMessageTarget,
+} from "@/lib/ai/chat/message-target";
+import {
+  isRedundantInsertImageChip,
+} from "@/components/report/chat-insert-image-chips";
 import {
   AskUserForm,
   type AskUserQuestionInput,
 } from "@/components/report/chat-ask-user-form";
+import { SwitchToAnalyticsCard } from "@/components/report/chat-switch-to-analytics";
 import {
   ANALYTICS_CHAT_MODE_OPTIONS,
   CHAT_PACE_OPTIONS,
@@ -69,6 +79,7 @@ import {
   chatEditableSections,
   sectionLabel as chatSectionLabel,
 } from "@/lib/ai/chat/fields";
+import { engineerFacingChangeLines } from "@/lib/ai/chat/change-summary";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
   DEFAULT_CHAT_COMPOSER_PREFS,
@@ -90,6 +101,7 @@ import {
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   chatWatchdogPhase,
+  shouldShowChatClientError,
   shouldShowEmptyAssistantError,
 } from "@/lib/ai/chat/assistant-turn";
 import {
@@ -109,6 +121,16 @@ import {
   sessionTabSnapshotsEqual,
   type SessionTabSnapshot,
 } from "@/lib/ai/chat/session-tab";
+import { ChatMentionMenu } from "@/components/report/chat-mention-menu";
+import { useMentionMenuPosition } from "@/hooks/use-mention-menu-position";
+import {
+  MENTIONS_ATTACHMENTS_GROUP,
+  buildChatMentionMenu,
+  mentionMenuAtPath,
+  mentionMenuGroupLabel,
+  mentionMenuLeaves,
+  type MentionMenuGroup,
+} from "@/lib/ai/chat/mention-menu";
 import {
   applyMentionToInput,
   filterMentionCandidates,
@@ -125,21 +147,33 @@ import {
   type ChatSessionRuntime,
 } from "@/components/report/chat-session-host";
 import { ChatSessionTabs } from "@/components/report/chat-session-tabs";
-import { DocumentReviewProgress } from "@/components/report/document-review-progress";
+import { ChatActivityLine } from "@/components/report/chat-activity-line";
+import {
+  buildChatActivityBlocks,
+  documentReviewActivityNode,
+  readChatToolPart,
+  type AttachmentFilenameLookup,
+  type ChatToolPartInfo,
+} from "@/lib/ai/chat/chat-activity-ui";
 import {
   DocumentUploadingNotice,
   useDocumentUploadingNotice,
 } from "@/components/report/document-uploading-notice";
-import {
-  isDocumentReviewToolName,
-  type DocumentReviewToolPart,
-} from "@/lib/ai/chat/document-review-ui";
 import {
   CHAT_VISIBLE_TAIL,
   nextVisibleCount,
   shouldLoadOlderMessages,
   visibleMessageStartIndex,
 } from "@/components/report/chat-visible-messages";
+import {
+  captureChatScrollPosition,
+  isChatScrollerLaidOut,
+  pinChatScrollerToBottom,
+  restoreChatScrollPosition,
+  shouldReapplyChatScroll,
+  shouldStickChatToBottom,
+  type ChatScrollPosition,
+} from "@/components/report/chat-scroll-position";
 import { getDocumentType } from "@/lib/document-types";
 import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
 import {
@@ -151,16 +185,14 @@ import {
   shouldShowAgentDonePendingHint,
   unlockAgentDoneAudio,
 } from "@/lib/notifications/notify-agent-done";
-import {
-  AnalyticsChatToolChip,
-  isAnalyticsWorksheetMutationTool,
-} from "@/components/statistical-analysis/analytics-chat-tool-chip";
+import { isAnalyticsWorksheetMutationTool } from "@/components/statistical-analysis/analytics-chat-tool-chip";
 import { getReportAnalytics } from "@/lib/statistical-analysis/client";
 import {
   analyticsSheetMentionCandidates,
   type AnalyticsMentionSheet,
 } from "@/lib/statistical-analysis/mentions";
 import { analysisListSubtitle } from "@/lib/statistical-analysis/stale";
+import { listGraphAnalyses } from "@/lib/statistical-analysis/insertable-graphs";
 import type { ReportAnalyticsView } from "@/lib/statistical-analysis/types";
 import { dataSheets } from "@/lib/statistical-analysis/worksheet";
 
@@ -189,76 +221,22 @@ function announceCompletedAssistantTurn(
   );
 }
 
-type ToolPartInfo = {
-  toolName: string;
-  state: string;
-  toolCallId: string | undefined;
-  input: Record<string, unknown> | undefined;
-  output: Record<string, unknown> | undefined;
-  errorText: string | undefined;
-};
-
-function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
-  if (typeof part.type !== "string" || !part.type.startsWith("tool-")) return null;
-  const p = part as unknown as {
-    type: string;
-    state?: string;
-    toolCallId?: string;
-    input?: Record<string, unknown>;
-    output?: Record<string, unknown>;
-    errorText?: string;
-  };
-  return {
-    toolName: p.type.slice("tool-".length),
-    state: p.state ?? "",
-    toolCallId: typeof p.toolCallId === "string" ? p.toolCallId : undefined,
-    input: p.input,
-    output: p.output,
-    errorText: p.errorText,
-  };
-}
-
-type AssistantPartGroup =
-  | { kind: "text"; text: string }
-  | { kind: "document-review"; parts: DocumentReviewToolPart[] }
-  | { kind: "other"; part: UIMessagePart<never, never> };
-
-function groupAssistantParts(
-  parts: UIMessage["parts"]
-): AssistantPartGroup[] {
-  const groups: AssistantPartGroup[] = [];
-  for (const part of parts) {
-    if (part.type === "text") {
-      groups.push({ kind: "text", text: (part as { text: string }).text });
-      continue;
-    }
-    const tool = readToolPart(part as UIMessagePart<never, never>);
-    if (tool && isDocumentReviewToolName(tool.toolName)) {
-      const reviewPart: DocumentReviewToolPart = {
-        toolName: tool.toolName,
-        state: tool.state,
-        input: tool.input,
-        output: tool.output,
-      };
-      const existing = groups.find(
-        (group): group is Extract<AssistantPartGroup, { kind: "document-review" }> =>
-          group.kind === "document-review"
-      );
-      if (existing) {
-        existing.parts.push(reviewPart);
-      } else {
-        groups.push({ kind: "document-review", parts: [reviewPart] });
-      }
-      continue;
-    }
-    groups.push({ kind: "other", part: part as UIMessagePart<never, never> });
-  }
-  return groups;
-}
-
 function sectionLabel(section: unknown): string {
   if (typeof section === "string") return chatSectionLabel(section as SectionType);
   return "section";
+}
+
+function filterPartsForActivityDisplay(
+  parts: UIMessage["parts"]
+): UIMessage["parts"] {
+  const shown: ChatToolPartInfo[] = [];
+  return parts.filter((part) => {
+    const tool = readChatToolPart(part);
+    if (!tool || tool.toolName !== "insert_image") return true;
+    if (isRedundantInsertImageChip(shown, tool)) return false;
+    shown.push(tool);
+    return true;
+  });
 }
 
 function parseAskUserQuestions(input: Record<string, unknown> | undefined): AskUserQuestionInput[] {
@@ -278,7 +256,7 @@ function appliedEditsFromParts(
   const items: Array<{ section: string; targetField: string; reasoning: string }> =
     [];
   for (const part of parts ?? []) {
-    const tool = readToolPart(part as UIMessagePart<never, never>);
+    const tool = readChatToolPart(part);
     if (!tool?.output) continue;
     const status = tool.output.status;
     if (status !== "applied") continue;
@@ -294,276 +272,20 @@ function appliedEditsFromParts(
   return items;
 }
 
-function ToolChip({
-  info,
-  askUserActive,
-  onAnswerQuestions,
-}: {
-  info: ToolPartInfo;
-  askUserActive?: boolean;
-  onAnswerQuestions?: (message: string) => void;
-}) {
-  const pending = info.state === "input-streaming" || info.state === "input-available";
-
-  if (isDocumentReviewToolName(info.toolName)) return null;
-
-  if (info.toolName === "read_section") {
-    const section = sectionLabel(info.input?.section);
-    return (
-      <ToolLine icon={<BookOpen className="size-3.5" />}>
-        {pending ? "Reading" : "Read"} {section || "section"}
-      </ToolLine>
-    );
+/** Document proposals and Agent commits — refresh report state as soon as a card exists. */
+function persistedEditCountFromParts(
+  parts: UIMessage["parts"] | undefined
+): number {
+  let count = 0;
+  for (const part of parts ?? []) {
+    const tool = readChatToolPart(part);
+    if (!tool?.output) continue;
+    const status = tool.output.status;
+    if (status === "applied" || status === "proposed" || status === "drafted") {
+      count += 1;
+    }
   }
-
-  if (info.toolName === "propose_edit") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<PencilLine className="size-3.5" />}>
-          Proposing edit to {section}…
-        </ToolLine>
-      );
-    }
-    const status = info.output?.status;
-    if (status === "applied") {
-      return (
-        <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
-          Applied to {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (status === "proposed") {
-      return (
-        <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
-          Proposed edit to {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
-        </ToolLine>
-      );
-    }
-    const hint =
-      typeof info.output?.hint === "string"
-        ? info.output.hint
-        : typeof info.output?.message === "string"
-          ? info.output.message
-          : info.errorText
-            ? info.errorText
-            : "Could not place this edit.";
-    return (
-      <ToolLine icon={<PencilLine className="size-3.5 text-amber-500" />} tone="warn">
-        Edit not applied: {hint}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "insert_image") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<ImagePlus className="size-3.5" />}>
-          Inserting image in {section}…
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "applied") {
-      return (
-        <ToolLine icon={<ImagePlus className="size-3.5 text-emerald-500" />} tone="success">
-          Applied image in {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "proposed") {
-      return (
-        <ToolLine icon={<ImagePlus className="size-3.5 text-emerald-500" />} tone="success">
-          Proposed image in {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
-        </ToolLine>
-      );
-    }
-    const hint =
-      typeof info.output?.hint === "string"
-        ? info.output.hint
-        : typeof info.output?.message === "string"
-          ? info.output.message
-          : info.errorText
-            ? info.errorText
-            : "Could not place this image.";
-    return (
-      <ToolLine icon={<ImagePlus className="size-3.5 text-amber-500" />} tone="warn">
-        Image not inserted: {hint}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "remove_image") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<ImageMinus className="size-3.5" />}>
-          Removing image in {section}…
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "applied") {
-      return (
-        <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
-          Removed figure in {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "proposed") {
-      return (
-        <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
-          Proposed figure removal in {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
-        </ToolLine>
-      );
-    }
-    const hint =
-      typeof info.output?.hint === "string"
-        ? info.output.hint
-        : typeof info.output?.message === "string"
-          ? info.output.message
-          : info.errorText
-            ? info.errorText
-            : "Could not remove this image.";
-    return (
-      <ToolLine icon={<ImageMinus className="size-3.5 text-amber-500" />} tone="warn">
-        Image not removed: {hint}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "edit_table") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<Table2 className="size-3.5" />}>
-          Editing table in {section}…
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "applied") {
-      return (
-        <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
-          Applied table edit to {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "proposed") {
-      return (
-        <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
-          Proposed table edit to {section}
-          {field ? ` · ${field}` : ""} — review it in the document.
-        </ToolLine>
-      );
-    }
-    const hint =
-      typeof info.output?.hint === "string"
-        ? info.output.hint
-        : typeof info.output?.message === "string"
-          ? info.output.message
-          : info.errorText
-            ? info.errorText
-            : "Could not place this table edit.";
-    return (
-      <ToolLine icon={<Table2 className="size-3.5 text-amber-500" />} tone="warn">
-        Table edit not applied: {hint}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "draft_field") {
-    const section = sectionLabel(info.input?.section);
-    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
-    if (pending) {
-      return (
-        <ToolLine icon={<FileText className="size-3.5" />}>
-          Drafting {section}
-          {field ? ` · ${field}` : ""}…
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "applied") {
-      return (
-        <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
-          Applied draft to {section}
-          {field ? ` · ${field}` : ""}
-        </ToolLine>
-      );
-    }
-    if (info.output?.status === "drafted") {
-      return (
-        <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
-          Drafted {section}
-          {field ? ` · ${field}` : ""} — review the full draft in the document.
-        </ToolLine>
-      );
-    }
-    const message =
-      typeof info.output?.message === "string"
-        ? info.output.message
-        : info.errorText
-          ? info.errorText
-          : "Could not create this draft.";
-    return (
-      <ToolLine icon={<FileText className="size-3.5 text-amber-500" />} tone="warn">
-        Draft not created: {message}
-      </ToolLine>
-    );
-  }
-
-  if (info.toolName === "ask_user") {
-    const questions = parseAskUserQuestions(info.input);
-    if (questions.length === 0) return null;
-    return (
-      <AskUserForm
-        questions={questions}
-        disabled={!askUserActive || !onAnswerQuestions}
-        onSubmit={(message) => onAnswerQuestions?.(message)}
-      />
-    );
-  }
-
-  const analyticsChip = AnalyticsChatToolChip({ info });
-  if (analyticsChip) return analyticsChip;
-
-  return <ToolLine icon={<Wrench className="size-3.5" />}>{info.toolName}</ToolLine>;
-}
-
-function ToolLine({
-  icon,
-  tone = "muted",
-  children,
-}: {
-  icon: React.ReactNode;
-  tone?: "muted" | "success" | "warn";
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]",
-        tone === "success" &&
-          "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-        tone === "warn" &&
-          "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-        tone === "muted" &&
-          "border-[var(--border)] bg-[var(--secondary)]/40 text-[var(--muted-foreground)]"
-      )}
-    >
-      {icon}
-      <span className="min-w-0 break-words">{children}</span>
-    </div>
-  );
+  return count;
 }
 
 function mentionIcon(type: MentionCandidate["type"]) {
@@ -621,75 +343,41 @@ function MentionChips({
   );
 }
 
-function MentionMenu({
-  matches,
-  activeIndex,
-  onSelect,
-}: {
-  matches: MentionCandidate[];
-  activeIndex: number;
-  onSelect: (candidate: MentionCandidate) => void;
-}) {
-  return (
-    <div
-      id="chat-mention-menu"
-      role="listbox"
-      aria-label="Tag a document or section"
-      className="absolute bottom-full left-0 z-50 mb-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-xl"
-    >
-      {matches.map((candidate, index) => {
-        const Icon = mentionIcon(candidate.type);
-        return (
-          <button
-            key={mentionKey(candidate.type, candidate.id)}
-            id={`chat-mention-option-${index}`}
-            type="button"
-            role="option"
-            aria-selected={index === activeIndex}
-            // Keep focus in the textarea so the caret position stays valid.
-            onMouseDown={(event) => {
-              event.preventDefault();
-              onSelect(candidate);
-            }}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--secondary)]",
-              index === activeIndex && "bg-[var(--secondary)]"
-            )}
-          >
-            <Icon
-              className="size-3.5 shrink-0 text-[var(--primary)]"
-              aria-hidden="true"
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium">{candidate.label}</span>
-              {candidate.sublabel ? (
-                <span className="block truncate text-[11px] text-[var(--muted-foreground)]">
-                  {candidate.sublabel}
-                </span>
-              ) : null}
-            </span>
-            <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
-              {candidate.type}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
+
+function textFromChatMessage(message: UIMessage | undefined): string {
+  if (!message) return "";
+  return (message.parts ?? [])
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("\n")
+    .trim();
 }
 
 const MessageTurn = memo(function MessageTurn({
   message,
+  chatTarget,
   askUserActive,
   onAnswerQuestions,
   streaming = false,
+  filenameByAttachmentId,
+  onOpenCitation,
+  showAnalyticsSwitch = false,
+  onSwitchToAnalytics,
+  composerOnAnalytics = false,
 }: {
   message: UIMessage;
+  chatTarget: ChatMessageTarget | null;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
+  filenameByAttachmentId?: AttachmentFilenameLookup;
+  onOpenCitation?: (raw: string) => void;
+  showAnalyticsSwitch?: boolean;
+  onSwitchToAnalytics?: () => void;
+  composerOnAnalytics?: boolean;
 }) {
   const isUser = message.role === "user";
+  const targetLabel = chatTarget ? chatMessageTargetLabel(chatTarget) : null;
 
   if (isUser) {
     const parts = message.parts ?? [];
@@ -703,25 +391,30 @@ const MessageTurn = memo(function MessageTurn({
     );
     if (!text && images.length === 0) return null;
     return (
-      <div className="flex justify-end">
-        <div
-          className="max-w-[92%] space-y-2 rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]"
-          aria-label="Your message"
-        >
-          {images.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {images.map((image, i) => (
-                // eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews
-                <img
-                  key={`${image.filename ?? "image"}-${i}`}
-                  src={image.url}
-                  alt={image.filename ?? "Attached image"}
-                  className="max-h-40 max-w-full rounded-md border border-white/20 object-contain"
-                />
-              ))}
-            </div>
-          ) : null}
-          {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
+      <div
+        className="flex justify-end"
+        aria-label={
+          targetLabel ? `Your message · ${targetLabel}` : "Your message"
+        }
+      >
+        <div className="flex max-w-[92%] flex-col items-end gap-1">
+          <ChatMessageTargetTag target={chatTarget} />
+          <div className="space-y-2 rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]">
+            {images.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {images.map((image, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews
+                  <img
+                    key={`${image.filename ?? "image"}-${i}`}
+                    src={image.url}
+                    alt={image.filename ?? "Attached image"}
+                    className="max-h-40 max-w-full rounded-md border border-white/20 object-contain"
+                  />
+                ))}
+              </div>
+            ) : null}
+            {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
+          </div>
         </div>
       </div>
     );
@@ -734,36 +427,65 @@ const MessageTurn = memo(function MessageTurn({
     streaming,
   });
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      className="flex flex-col gap-2"
+      aria-label={
+        targetLabel ? `Assistant message · ${targetLabel}` : "Assistant message"
+      }
+    >
       <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]">
         <Sparkles className="size-3 text-[var(--primary)]" />
         Assistant
+        {targetLabel ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <ChatMessageTargetTag target={chatTarget} />
+          </>
+        ) : null}
       </div>
       {showEmptyError ? (
         <p className="text-sm text-red-600">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
       ) : (
-        groupAssistantParts(parts).map((group, i) => {
-          if (group.kind === "text") {
-            if (!group.text.trim()) return null;
-            return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
+        buildChatActivityBlocks(
+          filterPartsForActivityDisplay(parts),
+          filenameByAttachmentId
+        ).map(
+          (block, i) => {
+            if (block.kind === "text") {
+              if (!block.text.trim()) return null;
+              return (
+                <ChatMarkdown key={i} onOpenCitation={onOpenCitation}>
+                  {block.text}
+                </ChatMarkdown>
+              );
+            }
+            if (block.kind === "document-review") {
+              const node = documentReviewActivityNode(block.parts);
+              if (!node) return null;
+              return <ChatActivityLine key={i} node={node} />;
+            }
+            if (block.kind === "ask-user") {
+              const questions = parseAskUserQuestions(block.tool.input);
+              if (questions.length === 0) return null;
+              return (
+                <AskUserForm
+                  key={i}
+                  questions={questions}
+                  disabled={!askUserActive || !onAnswerQuestions}
+                  onSubmit={(message) => onAnswerQuestions?.(message)}
+                />
+              );
+            }
+            return <ChatActivityLine key={i} node={block.node} />;
           }
-          if (group.kind === "document-review") {
-            return <DocumentReviewProgress key={i} parts={group.parts} />;
-          }
-          const tool = readToolPart(group.part as UIMessagePart<never, never>);
-          if (tool) {
-            return (
-              <ToolChip
-                key={i}
-                info={tool}
-                askUserActive={askUserActive}
-                onAnswerQuestions={onAnswerQuestions}
-              />
-            );
-          }
-          return null;
-        })
+        )
       )}
+      {showAnalyticsSwitch && onSwitchToAnalytics ? (
+        <SwitchToAnalyticsCard
+          onSwitch={onSwitchToAnalytics}
+          composerOnAnalytics={composerOnAnalytics}
+        />
+      ) : null}
       <TurnChangeSummary
         parts={parts}
         metadata={
@@ -783,7 +505,7 @@ function TurnChangeSummary({
   parts: UIMessage["parts"];
   metadata: unknown;
 }) {
-  const items = appliedEditsFromParts(parts);
+  const items = engineerFacingChangeLines(appliedEditsFromParts(parts));
   if (items.length === 0) return null;
   const revisionNo =
     metadata &&
@@ -805,9 +527,8 @@ function TurnChangeSummary({
       </p>
       <ul className="mt-1 space-y-0.5 text-xs text-[var(--muted-foreground)]">
         {items.map((item, i) => (
-          <li key={`${item.section}-${item.targetField}-${i}`}>
-            {sectionLabel(item.section)}
-            {item.targetField ? ` · ${item.targetField}` : ""}
+          <li key={`${item.section}-${i}`}>
+            {item.label}
             {item.reasoning ? ` — ${item.reasoning}` : ""}
           </li>
         ))}
@@ -831,7 +552,7 @@ function emptyChatIntro(args: {
     if (args.mode === "plan") {
       return "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document. Type @ to tag a sheet, plot, or file.";
     }
-    return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document. Type @ to tag a sheet, plot, or file.";
+    return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot a worksheet scatter (Y required, X optional, optional legend to color by group) or a measurement scatter from attachments (one series vs index). Serial numbers cannot be X — use them as the legend. I don't draft the document. Type @ to tag a sheet, plot, or file.";
   }
   return documentEmptyChatIntro({
     mode: args.mode,
@@ -843,16 +564,20 @@ function emptyChatIntro(args: {
 function composerPlaceholder(args: {
   targetingAnalytics: boolean;
   mode: ChatMode;
+  statsEnabled: boolean;
 }): string {
   if (args.targetingAnalytics) {
     return args.mode === "plan"
       ? "Ask about measurements in the attachments… type @ to tag a sheet or plot"
       : "Extract numbers, run a sixpack or ANOVA, or plot… type @ to tag a sheet or plot";
   }
+  const tags = args.statsEnabled
+    ? "a document, section, or plot"
+    : "a document or section";
   if (args.mode === "plan") {
-    return "Ask about the report or attachments… type @ to tag a document or section";
+    return `Ask about the report or attachments… type @ to tag ${tags}`;
   }
-  return "Ask the assistant to draft or improve a section… type @ to tag a document or section";
+  return `Ask the assistant to draft or improve a section… type @ to tag ${tags}`;
 }
 
 function subscribeNoop() {
@@ -860,9 +585,9 @@ function subscribeNoop() {
 }
 
 export function ChatPanel({
-  workspaceChrome = "document",
-  workProductView = "report",
+  workspaceChrome = "agent",
   statsEnabled = false,
+  visible = true,
   onWorksheetChanged,
   onAgentBusyChange,
   onAnalyticsFocusSheet,
@@ -871,8 +596,9 @@ export function ChatPanel({
   mentionSheets = [],
 }: {
   workspaceChrome?: WorkspaceChrome;
-  workProductView?: WorkProductView;
   statsEnabled?: boolean;
+  /** False while the sidebar is collapsed or another tab is showing. */
+  visible?: boolean;
   onWorksheetChanged?: () => void;
   onAgentBusyChange?: (busy: boolean) => void;
   onAnalyticsFocusSheet?: (sheetId: string) => void;
@@ -901,12 +627,28 @@ export function ChatPanel({
     accessUser != null
       ? aiSuggestionLockReason(accessUser, report)
       : "You can't propose edits on this report right now.";
-  const { attachments } = useReportAttachments();
+  const { attachments, folders, openDocument } = useReportAttachments();
+  const onOpenCitation = useCallback(
+    (raw: string) => {
+      openCitedDocumentOrToast({ raw, attachments, openDocument });
+    },
+    [attachments, openDocument]
+  );
+  const filenameByAttachmentId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const attachment of attachments) {
+      const name = attachment.filename.trim();
+      if (name) map.set(attachment.id, name);
+    }
+    return map;
+  }, [attachments]);
   const [input, setInput] = useState("");
   const showUploadingNotice = useDocumentUploadingNotice(input);
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
   const [mentionRange, setMentionRange] = useState<MentionQuery | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionPath, setMentionPath] = useState<string[]>([]);
+  const [mentionMenuToken, setMentionMenuToken] = useState(-1);
   const [analyticsSnapshot, setAnalyticsSnapshot] =
     useState<ReportAnalyticsView | null>(null);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
@@ -921,12 +663,10 @@ export function ChatPanel({
   );
   const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
   const composerPrefsReady = isClient && currentUserId != null;
-  const agentChatTarget =
-    storedComposerPrefs.chatTarget ?? workProductView;
+  const composerChatTarget: WorkProductView =
+    storedComposerPrefs.chatTarget ?? "report";
   const chatTarget = chatWorkProductTarget({
-    chrome: workspaceChrome,
-    workProductView,
-    agentTarget: agentChatTarget,
+    agentTarget: composerChatTarget,
     statsEnabled,
   });
   const targetingAnalytics = chatTarget === "analytics";
@@ -996,12 +736,25 @@ export function ChatPanel({
   const olderScrollRestoreRef = useRef<{ height: number; top: number } | null>(
     null
   );
+  const savedScrollRef = useRef<ChatScrollPosition | null>(null);
+  const savedScrollSessionKeyRef = useRef(sessionWindowKey);
+  const visibleRef = useRef(visible);
+  const restoringScrollRef = useRef(false);
+  visibleRef.current = visible;
+  if (savedScrollSessionKeyRef.current !== sessionWindowKey) {
+    savedScrollSessionKeyRef.current = sessionWindowKey;
+    savedScrollRef.current = null;
+  }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionAnchorRef = useRef<HTMLDivElement>(null);
+  const mentionBoundaryRef = useRef<HTMLDivElement>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
   const lastSendTargetRef = useRef<WorkProductView>("report");
+  const [lastSendTarget, setLastSendTarget] = useState<WorkProductView>("report");
   const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
@@ -1017,6 +770,15 @@ export function ChatPanel({
     silentMs,
   } = runtime;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
+  const voice = useVoiceDictation({
+    reportId: report.id,
+    getPrefix: () => input,
+    onComposerValue: setInput,
+    disabled: busy || initializing || attaching || !hostReady,
+  });
+  const voiceLock = voice.locked;
+  const voiceLockRef = useRef(voiceLock);
+  voiceLockRef.current = voiceLock;
   const watchdog = chatWatchdogPhase({
     busy: streamBusy,
     elapsedMs,
@@ -1028,16 +790,15 @@ export function ChatPanel({
     busy
   );
 
-  const appliedEditCount = useMemo(
+  const persistedEditCount = useMemo(
     () =>
       messages.reduce(
-        (sum, message) =>
-          sum + appliedEditsFromParts(message.parts).length,
+        (sum, message) => sum + persistedEditCountFromParts(message.parts),
         0
       ),
     [messages]
   );
-  const appliedEditCountRef = useRef(0);
+  const persistedEditCountRef = useRef(0);
   useEffect(() => {
     if (!busy) {
       setAgentCommitInFlight(false);
@@ -1054,7 +815,7 @@ export function ChatPanel({
     let found = false;
     for (const message of messages) {
       for (const part of message.parts ?? []) {
-        const info = readToolPart(part as UIMessagePart<never, never>);
+        const info = readChatToolPart(part);
         if (!info || info.state !== "output-available") continue;
         if (!isAnalyticsWorksheetMutationTool(info.toolName)) continue;
         const id = info.toolCallId ?? `${info.toolName}:${JSON.stringify(info.output)}`;
@@ -1066,66 +827,70 @@ export function ChatPanel({
     if (found) onWorksheetChanged();
   }, [messages, onWorksheetChanged]);
   useEffect(() => {
-    if (appliedEditCount <= appliedEditCountRef.current) {
-      appliedEditCountRef.current = appliedEditCount;
+    if (persistedEditCount <= persistedEditCountRef.current) {
+      persistedEditCountRef.current = persistedEditCount;
       return;
     }
-    appliedEditCountRef.current = appliedEditCount;
+    persistedEditCountRef.current = persistedEditCount;
     void refresh();
-  }, [appliedEditCount, refresh]);
+  }, [persistedEditCount, refresh]);
 
-  // Only ready documents are taggable — an attachment still being ingested has
-  // no chunks, so scoping search to it would return nothing.
-  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
-    const documents = attachments
-      .filter((attachment) => attachment.processingStatus === "ready")
-      .map((attachment) => {
-        const description = attachment.description?.trim();
-        const pages =
-          typeof attachment.pageCount === "number" && attachment.pageCount > 0
-            ? `${attachment.pageCount} page${attachment.pageCount === 1 ? "" : "s"}`
-            : undefined;
-        return {
-          type: "document" as const,
-          id: attachment.id,
-          label: attachment.filename,
-          sublabel: description || pages,
-        };
-      });
-    if (targetingAnalytics) {
-      const sheets =
-        mentionSheets.length > 0
-          ? analyticsSheetMentionCandidates(mentionSheets)
-          : analyticsSnapshot
-            ? analyticsSheetMentionCandidates(
-                dataSheets(analyticsSnapshot.worksheet).map((sheet) => ({
-                  sheetId: sheet.id,
-                  name: sheet.name,
-                  columnCount: sheet.columns.length,
-                }))
-              )
-            : [];
-      const analyses = (analyticsSnapshot?.analyses ?? []).map((item) => ({
-        type: "analysis" as const,
-        id: item.id,
-        label: item.title,
-        sublabel: analysisListSubtitle(item),
-      }));
-      return [...sheets, ...analyses, ...documents];
-    }
-    const sections = chatEditableSections(report.documentType).map((section) => ({
-      type: "section" as const,
-      id: section,
-      label: sectionLabel(section),
-    }));
-    return [...documents, ...sections];
-  }, [
-    analyticsSnapshot,
-    attachments,
-    mentionSheets,
-    report.documentType,
-    targetingAnalytics,
-  ]);
+  const mentionMenu = useMemo(
+    () =>
+      buildChatMentionMenu({
+        targetingAnalytics,
+        attachments,
+        folders,
+        sections: targetingAnalytics
+          ? []
+          : chatEditableSections(report.documentType).map((section) => ({
+              type: "section" as const,
+              id: section,
+              label: sectionLabel(section),
+            })),
+        sheets: targetingAnalytics
+          ? mentionSheets.length > 0
+            ? analyticsSheetMentionCandidates(mentionSheets)
+            : analyticsSnapshot
+              ? analyticsSheetMentionCandidates(
+                  dataSheets(analyticsSnapshot.worksheet).map((sheet) => ({
+                    sheetId: sheet.id,
+                    name: sheet.name,
+                    columnCount: sheet.columns.length,
+                  }))
+                )
+              : []
+          : [],
+        analyses: targetingAnalytics
+          ? (analyticsSnapshot?.analyses ?? []).map((item) => ({
+              type: "analysis" as const,
+              id: item.id,
+              label: item.title,
+              sublabel: analysisListSubtitle(item),
+            }))
+          : statsEnabled
+            ? listGraphAnalyses(analyticsSnapshot?.analyses ?? []).map((item) => ({
+                type: "analysis" as const,
+                id: item.id,
+                label: item.title,
+                sublabel: analysisListSubtitle(item),
+              }))
+            : [],
+      }),
+    [
+      analyticsSnapshot,
+      attachments,
+      folders,
+      mentionSheets,
+      report.documentType,
+      statsEnabled,
+      targetingAnalytics,
+    ]
+  );
+  const mentionCandidates = useMemo(
+    () => mentionMenuLeaves(mentionMenu),
+    [mentionMenu]
+  );
   const labeledMentions = syncMentionCandidateLabels(
     mentions,
     mentionCandidates
@@ -1134,14 +899,41 @@ export function ChatPanel({
     setMentions(labeledMentions);
   }
 
-  const mentionMatches = mentionRange
-    ? filterMentionCandidates(mentionCandidates, mentionRange.query)
+  const mentionTokenStart = mentionRange?.start ?? -1;
+  if (mentionTokenStart !== mentionMenuToken) {
+    setMentionMenuToken(mentionTokenStart);
+    setMentionPath([]);
+    setMentionIndex(0);
+  }
+
+  const mentionQuery = mentionRange?.query.trim() ?? "";
+  const mentionEntries = mentionRange
+    ? mentionQuery
+      ? filterMentionCandidates(mentionCandidates, mentionRange.query).map(
+          (candidate) => ({ kind: "item" as const, candidate })
+        )
+      : mentionMenuAtPath(mentionMenu, mentionPath)
     : [];
-  const mentionMenuOpen = mentionMatches.length > 0;
+  const mentionMenuOpen = mentionRange != null;
   const activeMentionIndex = Math.min(
     mentionIndex,
-    Math.max(mentionMatches.length - 1, 0)
+    Math.max(mentionEntries.length - 1, 0)
   );
+  const mentionGroupLabel = mentionMenuGroupLabel(mentionMenu, mentionPath);
+  const mentionEmptyLabel = mentionQuery
+    ? "No matching tags"
+    : mentionPath[0] === MENTIONS_ATTACHMENTS_GROUP
+      ? "No files ready"
+      : "Nothing to tag";
+  const mentionMenuPosition = useMentionMenuPosition({
+    open: mentionMenuOpen,
+    atIndex: mentionRange?.start ?? 0,
+    textareaRef,
+    anchorRef: mentionAnchorRef,
+    boundaryRef: mentionBoundaryRef,
+    menuRef: mentionMenuRef,
+    deps: [mentionEntries.length, mentionPath, input],
+  });
 
   const persistComposerPrefs = useCallback(
     (next: {
@@ -1179,7 +971,7 @@ export function ChatPanel({
     [persistComposerPrefs, storedComposerPrefs.mode]
   );
 
-  const setAgentChatTarget = useCallback(
+  const setComposerChatTarget = useCallback(
     (next: WorkProductView) => {
       if (!isWorkProductView(next)) return;
       persistComposerPrefs({
@@ -1211,8 +1003,10 @@ export function ChatPanel({
   }, [input]);
 
   const updateMentionQuery = useCallback((value: string, caret: number) => {
-    setMentionRange(findMentionQuery(value, caret));
+    const next = findMentionQuery(value, caret);
+    setMentionRange(next);
     setMentionIndex(0);
+    if (next?.query.trim()) setMentionPath([]);
   }, []);
 
   const selectMention = useCallback(
@@ -1234,10 +1028,21 @@ export function ChatPanel({
           : [...prev, candidate]
       );
       setMentionRange(null);
+      setMentionPath([]);
       setMentionIndex(0);
     },
     [applyMentionFocus, mentionRange]
   );
+
+  const drillMentionGroup = useCallback((group: MentionMenuGroup) => {
+    setMentionPath(group.path);
+    setMentionIndex(0);
+  }, []);
+
+  const backMentionMenu = useCallback(() => {
+    setMentionPath((path) => path.slice(0, -1));
+    setMentionIndex(0);
+  }, []);
 
   const removeMention = useCallback((candidate: MentionCandidate) => {
     setMentions((prev) =>
@@ -1264,8 +1069,8 @@ export function ChatPanel({
 
   const onFinishTurn = useCallback(() => {
     setAgentCommitInFlight(false);
-    // Pull newly-proposed ai_fix comments (document chrome) or committed
-    // section content (agent chrome) into report state.
+    // Pull newly-proposed ai_fix comments (Document and Agent chrome)
+    // into report state so red/green marks appear without a reload.
     void refresh();
     void loadSessions();
     if (lastSendTargetRef.current === "analytics") {
@@ -1407,7 +1212,14 @@ export function ChatPanel({
     messages.length,
     visibleCount
   );
-  const visibleMessages = messages.slice(visibleStartIndex);
+  const taggedMessages = useMemo(
+    () =>
+      tagChatMessages(messages, {
+        inFlightTarget: busy ? lastSendTarget : null,
+      }),
+    [busy, lastSendTarget, messages]
+  );
+  const visibleMessages = taggedMessages.slice(visibleStartIndex);
   const hiddenCount = visibleStartIndex;
 
   const loadOlderMessages = useCallback(() => {
@@ -1430,19 +1242,31 @@ export function ChatPanel({
     if (el && restore != null) {
       olderScrollRestoreRef.current = null;
       el.scrollTop = el.scrollHeight - restore.height + restore.top;
+      const captured = captureChatScrollPosition(el);
+      if (captured != null) savedScrollRef.current = captured;
     }
     loadingOlderRef.current = false;
   }, [visibleCount]);
 
+  const captureVisibleScroll = useCallback(() => {
+    if (!visibleRef.current || restoringScrollRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const captured = captureChatScrollPosition(el);
+    if (captured != null) savedScrollRef.current = captured;
+  }, []);
+
   const onMessagesScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (!visibleRef.current || restoringScrollRef.current) return;
+    captureVisibleScroll();
     if (
       shouldLoadOlderMessages(el.scrollTop, visibleCount, messages.length)
     ) {
       loadOlderMessages();
     }
-  }, [loadOlderMessages, messages.length, visibleCount]);
+  }, [captureVisibleScroll, loadOlderMessages, messages.length, visibleCount]);
 
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
@@ -1473,9 +1297,67 @@ export function ChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report.id]);
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!visible) {
+      restoringScrollRef.current = true;
+      return;
+    }
+    if (!el) return;
+    restoringScrollRef.current = true;
+    restoreChatScrollPosition(el, savedScrollRef.current);
+    // Cover the sidebar width transition so intermediate reflows cannot
+    // overwrite the saved offset as "bottom".
+    const timeout = window.setTimeout(() => {
+      restoringScrollRef.current = false;
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [visible]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!visibleRef.current || !el || !isChatScrollerLaidOut(el)) return;
+    if (!shouldStickChatToBottom(savedScrollRef.current)) return;
+    pinChatScrollerToBottom(el);
+    savedScrollRef.current = { kind: "bottom" };
   }, [messages, status]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let wasLaidOut = isChatScrollerLaidOut(el);
+    let previousWidth = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (!visibleRef.current) {
+        wasLaidOut = false;
+        previousWidth = 0;
+        return;
+      }
+      const nowLaidOut = isChatScrollerLaidOut(el);
+      const currentWidth = el.clientWidth;
+      if (
+        shouldReapplyChatScroll({
+          wasLaidOut,
+          nowLaidOut,
+          previousWidth,
+          currentWidth,
+        })
+      ) {
+        restoringScrollRef.current = true;
+        restoreChatScrollPosition(el, savedScrollRef.current);
+        restoringScrollRef.current = false;
+      } else if (
+        nowLaidOut &&
+        shouldStickChatToBottom(savedScrollRef.current)
+      ) {
+        pinChatScrollerToBottom(el);
+      }
+      wasLaidOut = nowLaidOut;
+      previousWidth = currentWidth;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Close history dropdown on outside click.
   useEffect(() => {
@@ -1553,11 +1435,22 @@ export function ChatPanel({
   }, []);
 
   const send = useCallback(
-    async (text: string, images?: PendingChatImage[]) => {
+    async (
+      text: string,
+      images?: PendingChatImage[],
+      target?: WorkProductView
+    ) => {
       const attached = images ?? pendingImages;
       const trimmed = text.trim();
       const files = attached.map((image) => image.part);
-      if ((!trimmed && files.length === 0) || busy || initializing || attaching) {
+      const sendTarget = target ?? chatTarget;
+      if (
+        (!trimmed && files.length === 0) ||
+        busy ||
+        initializing ||
+        attaching ||
+        voiceLockRef.current
+      ) {
         return;
       }
       const agentDonePrefs = readAgentDonePrefs(currentUserId);
@@ -1586,11 +1479,13 @@ export function ChatPanel({
         return;
       }
       if (sessionRuntime.busy) return;
-      lastSendTargetRef.current = chatTarget;
+      lastSendTargetRef.current = sendTarget;
+      setLastSendTarget(sendTarget);
+      savedScrollRef.current = { kind: "bottom" };
       if (
         workspaceChrome === "agent" &&
         mode === "agent" &&
-        chatTarget !== "analytics"
+        sendTarget !== "analytics"
       ) {
         try {
           await flushPendingSectionSaves();
@@ -1615,7 +1510,7 @@ export function ChatPanel({
         mode,
         pace,
         workspaceChrome,
-        chatTarget,
+        chatTarget: sendTarget,
       };
       if (tagsForRequest.length > 0) {
         body.mentions = tagsForRequest.map((mention) => ({
@@ -1623,12 +1518,16 @@ export function ChatPanel({
           id: mention.id,
         }));
       }
+      const metadata = { chatTarget: sendTarget };
       if (trimmed && files.length > 0) {
-        void sessionRuntime.sendMessage({ text: trimmed, files }, { body });
+        void sessionRuntime.sendMessage(
+          { text: trimmed, files, metadata },
+          { body }
+        );
       } else if (files.length > 0) {
-        void sessionRuntime.sendMessage({ files }, { body });
+        void sessionRuntime.sendMessage({ files, metadata }, { body });
       } else {
-        void sessionRuntime.sendMessage({ text: trimmed }, { body });
+        void sessionRuntime.sendMessage({ text: trimmed, metadata }, { body });
       }
     },
     [
@@ -1665,7 +1564,7 @@ export function ChatPanel({
   );
 
   return (
-    <div className="flex h-full flex-col" aria-busy={initializing}>
+    <div ref={mentionBoundaryRef} className="flex h-full flex-col" aria-busy={initializing}>
       {mountedSessions.map((session) => (
         <ChatSessionHost
           key={session.id}
@@ -1772,6 +1671,7 @@ export function ChatPanel({
       {/* Messages */}
       <div
         ref={scrollRef}
+        data-testid="chat-message-scroller"
         className="flex-1 space-y-5 overflow-y-auto p-4"
         onScroll={onMessagesScroll}
       >
@@ -1804,7 +1704,8 @@ export function ChatPanel({
                 <button
                   key={p}
                   type="button"
-                  disabled={busy || initializing || !hostReady}
+                  disabled={busy || initializing || voiceLock || !hostReady}
+                  title={voiceLock ? "Stop voice input to send" : undefined}
                   onClick={() => void send(p, [])}
                   className="w-full rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 text-left text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] disabled:opacity-50"
                 >
@@ -1818,10 +1719,14 @@ export function ChatPanel({
             <MessageTurn
               key={m.id}
               message={m}
+              chatTarget={m.chatTarget}
+              filenameByAttachmentId={filenameByAttachmentId}
+              onOpenCitation={onOpenCitation}
               askUserActive={
                 visibleStartIndex + i === messages.length - 1 &&
                 !busy &&
-                !initializing
+                !initializing &&
+                !voiceLock
               }
               onAnswerQuestions={(answerText) => void send(answerText, [])}
               streaming={
@@ -1829,6 +1734,21 @@ export function ChatPanel({
                 visibleStartIndex + i === messages.length - 1 &&
                 m.role === "assistant"
               }
+              showAnalyticsSwitch={
+                statsEnabled &&
+                m.role === "assistant" &&
+                assistantOffersAnalyticsSwitch(
+                  "metadata" in m
+                    ? (m as { metadata?: unknown }).metadata
+                    : undefined
+                )
+              }
+              onSwitchToAnalytics={() => {
+                const replay = textFromChatMessage(visibleMessages[i - 1]);
+                setComposerChatTarget("analytics");
+                if (replay) void send(replay, [], "analytics");
+              }}
+              composerOnAnalytics={targetingAnalytics}
             />
           ))
         )}
@@ -1844,9 +1764,11 @@ export function ChatPanel({
             onCancel={stopTurn}
           />
         ) : null}
-        {error && (
-          <p className="text-xs text-red-500">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
-        )}
+        {shouldShowChatClientError({ error, busy }) ? (
+          <p className="text-xs text-red-500" data-testid="chat-client-error">
+            {CHAT_ASSISTANT_ERROR_MESSAGE}
+          </p>
+        ) : null}
       </div>
 
       {/* Composer */}
@@ -1854,15 +1776,16 @@ export function ChatPanel({
         className="border-t border-[var(--border)] p-3"
         onSubmit={(e) => {
           e.preventDefault();
+          if (voiceLockRef.current) return;
           void send(input);
         }}
       >
-        {workspaceChrome === "agent" && statsEnabled ? (
+        {statsEnabled ? (
           <div className="mb-2 flex items-center gap-1.5">
             <ComposerSelect
-              value={agentChatTarget}
+              value={composerChatTarget}
               options={CHAT_WORK_PRODUCT_OPTIONS}
-              onChange={setAgentChatTarget}
+              onChange={setComposerChatTarget}
               disabled={busy}
               ariaLabel="Work product"
               className="w-[7.5rem]"
@@ -1922,32 +1845,49 @@ export function ChatPanel({
               ))}
             </div>
           ) : null}
-          <div className="relative">
+          <div ref={mentionAnchorRef} className="relative">
             {mentionMenuOpen ? (
-              <MentionMenu
-                matches={mentionMatches}
+              <ChatMentionMenu
+                entries={mentionEntries}
                 activeIndex={activeMentionIndex}
-                onSelect={selectMention}
+                groupLabel={mentionGroupLabel}
+                canGoBack={mentionPath.length > 0 && !mentionQuery}
+                emptyLabel={mentionEmptyLabel}
+                position={mentionMenuPosition}
+                menuRef={mentionMenuRef}
+                onSelectItem={selectMention}
+                onSelectGroup={drillMentionGroup}
+                onBack={backMentionMenu}
               />
             ) : null}
             <textarea
               ref={textareaRef}
               value={input}
-              data-testid={targetingAnalytics ? "analytics-chat-input" : undefined}
+              data-testid={targetingAnalytics ? "analytics-chat-input" : "chat-input"}
               role="combobox"
               aria-expanded={mentionMenuOpen}
               aria-controls={mentionMenuOpen ? "chat-mention-menu" : undefined}
               aria-activedescendant={
-                mentionMenuOpen
+                mentionMenuOpen && mentionEntries.length > 0
                   ? `chat-mention-option-${activeMentionIndex}`
                   : undefined
               }
               onChange={(e) => {
+                if (voiceLock) return;
                 const value = e.target.value;
                 setInput(value);
                 updateMentionQuery(value, e.target.selectionStart ?? value.length);
               }}
+              onSelect={(e) => {
+                if (voiceLock || !mentionMenuOpen) return;
+                const target = e.currentTarget;
+                updateMentionQuery(target.value, target.selectionStart ?? target.value.length);
+              }}
               onPaste={(event) => {
+                if (voiceLock) {
+                  event.preventDefault();
+                  return;
+                }
                 const items = Array.from(event.clipboardData?.items ?? []);
                 const imageFiles = items
                   .filter(
@@ -1960,29 +1900,58 @@ export function ChatPanel({
                 void addImageFiles(imageFiles);
               }}
               onKeyDown={(e) => {
+                if (voiceLock) {
+                  e.preventDefault();
+                  return;
+                }
                 if (mentionMenuOpen) {
+                  const entryCount = mentionEntries.length;
+                  const activeEntry = mentionEntries[activeMentionIndex];
                   if (e.key === "ArrowDown") {
                     e.preventDefault();
-                    setMentionIndex((index) => (index + 1) % mentionMatches.length);
+                    if (entryCount === 0) return;
+                    setMentionIndex((index) => (index + 1) % entryCount);
                     return;
                   }
                   if (e.key === "ArrowUp") {
                     e.preventDefault();
+                    if (entryCount === 0) return;
                     setMentionIndex(
-                      (index) =>
-                        (index - 1 + mentionMatches.length) % mentionMatches.length
+                      (index) => (index - 1 + entryCount) % entryCount
                     );
+                    return;
+                  }
+                  if (e.key === "ArrowRight" && activeEntry?.kind === "group") {
+                    e.preventDefault();
+                    drillMentionGroup(activeEntry);
+                    return;
+                  }
+                  if (
+                    e.key === "ArrowLeft" &&
+                    mentionPath.length > 0 &&
+                    !mentionQuery
+                  ) {
+                    e.preventDefault();
+                    backMentionMenu();
                     return;
                   }
                   if (e.key === "Enter" || e.key === "Tab") {
                     e.preventDefault();
-                    const candidate = mentionMatches[activeMentionIndex];
-                    if (candidate) selectMention(candidate);
+                    if (activeEntry?.kind === "group") {
+                      drillMentionGroup(activeEntry);
+                    } else if (activeEntry?.kind === "item") {
+                      selectMention(activeEntry.candidate);
+                    }
                     return;
                   }
                   if (e.key === "Escape") {
                     e.preventDefault();
-                    setMentionRange(null);
+                    if (mentionPath.length > 0 && !mentionQuery) {
+                      backMentionMenu();
+                    } else {
+                      setMentionRange(null);
+                      setMentionPath([]);
+                    }
                     return;
                   }
                 }
@@ -1993,9 +1962,11 @@ export function ChatPanel({
               }}
               rows={3}
               disabled={initializing}
+              readOnly={voiceLock}
               placeholder={composerPlaceholder({
                 targetingAnalytics,
                 mode,
+                statsEnabled,
               })}
               className="min-h-[4.5rem] max-h-40 w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm outline-none placeholder:text-[var(--muted-foreground)] disabled:opacity-50"
             />
@@ -2029,7 +2000,7 @@ export function ChatPanel({
             <div className="flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                disabled={busy || initializing || attaching || !hostReady}
+                disabled={busy || initializing || attaching || voiceLock || !hostReady}
                 aria-label="Attach image"
                 title="Attach image"
                 data-testid={targetingAnalytics ? "analytics-chat-attach-image" : undefined}
@@ -2042,6 +2013,15 @@ export function ChatPanel({
                   <ImagePlus className="size-3.5" aria-hidden="true" />
                 )}
               </button>
+              <ChatVoiceButton
+                recording={voice.recording}
+                requesting={voice.status === "requesting"}
+                transcribing={voice.status === "stopping"}
+                level={voice.level}
+                disabled={busy || initializing || attaching || !hostReady}
+                targetingAnalytics={targetingAnalytics}
+                onToggle={voice.toggle}
+              />
               {busy ? (
                 <button
                   type="button"
@@ -2058,11 +2038,13 @@ export function ChatPanel({
                   disabled={
                     initializing ||
                     attaching ||
+                    voiceLock ||
                     !hostReady ||
                     (!input.trim() && pendingImages.length === 0)
                   }
                   aria-label="Send message"
-                  className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  title={voiceLock ? "Stop voice input to send" : "Send message"}
+                  className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
                 >
                   <ArrowUp className="size-3.5" strokeWidth={2.5} />
                 </button>

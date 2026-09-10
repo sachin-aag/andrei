@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
-import { db } from "@/db";
-import { reportAttachments } from "@/db/schema";
 import { docxBufferToPreviewHtml } from "@/lib/attachments/docx-preview";
 import { kindFromMime } from "@/lib/attachments/file-types";
+import { loadResolvedReportAttachment } from "@/lib/attachments/sync-asset-processing";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
@@ -31,19 +29,11 @@ export async function GET(
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const [attachment] = await db
-    .select()
-    .from(reportAttachments)
-    .where(
-      and(
-        eq(reportAttachments.id, attachmentId),
-        eq(reportAttachments.reportId, reportId),
-        isNull(reportAttachments.deletedAt)
-      )
-    );
-  if (!attachment || !attachment.gcsGeneration || !attachment.permanentObjectKey) {
+  const loaded = await loadResolvedReportAttachment(reportId, attachmentId);
+  if (!loaded || !loaded.resolved.gcsGeneration || !loaded.resolved.permanentObjectKey) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const { resolved: attachment } = loaded;
   if (kindFromMime(attachment.mimeType) !== "docx") {
     return NextResponse.json(
       { error: "Preview is only available for Word documents" },

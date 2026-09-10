@@ -18,15 +18,17 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  const record = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
   const previewImage =
-    body && typeof body === "object" && "previewImage" in body
-      ? (body as { previewImage: unknown }).previewImage
-      : body;
+    record && "previewImage" in record ? record.previewImage : body;
+  const matchKey =
+    record && typeof record.matchKey === "string" ? record.matchKey : undefined;
 
   const result = await saveAnalysisPreviewForReport(
     reportId,
     analysisId,
-    previewImage as never
+    previewImage as never,
+    matchKey
   );
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });

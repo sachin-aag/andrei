@@ -10,7 +10,7 @@ import {
   useReportData,
 } from "@/providers/report-provider";
 import { cn } from "@/lib/utils";
-import { SECTION_LABELS } from "@/types/sections";
+import { displaySectionLabel } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
 import { captureEvent } from "@/lib/analytics/events";
 
@@ -65,7 +65,7 @@ export function SectionCommentComposer({ section }: { section: SectionType }) {
         className="w-full text-left rounded-md border border-dashed border-[var(--border)] bg-[var(--card)]/40 hover:bg-[var(--secondary)]/30 hover:border-[var(--brand-500)]/60 px-3 py-2 text-[11px] text-[var(--muted-foreground)] flex items-center gap-2 cursor-pointer"
       >
         <MessageSquarePlus className="size-3.5 shrink-0" />
-        Add note on {SECTION_LABELS[section] ?? section}
+        Add note on {displaySectionLabel(section)}
       </button>
     );
   }
@@ -73,7 +73,7 @@ export function SectionCommentComposer({ section }: { section: SectionType }) {
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--card)] shadow-sm p-2 space-y-2">
       <div className="text-[10px] uppercase tracking-wide font-medium text-[var(--muted-foreground)]">
-        New note on {SECTION_LABELS[section] ?? section}
+        New note on {displaySectionLabel(section)}
       </div>
       <Textarea
         value={draft}

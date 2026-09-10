@@ -104,6 +104,9 @@ export function AgentWorkProductRail({
       <button
         type="button"
         data-testid={testId}
+        data-walkthrough={
+          testId === "report-surface-analytics" ? "analytics" : undefined
+        }
         onClick={onClick}
         aria-label={label}
         aria-pressed

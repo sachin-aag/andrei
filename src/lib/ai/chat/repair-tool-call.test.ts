@@ -79,7 +79,38 @@ describe("repairChatToolCall", () => {
     expect(repaired?.toolCallId).toBe("call_1");
   });
 
-  it("does not rewrite schema errors or unknown names", async () => {
+  it("clamps out-of-bounds tool input to the advertised schema", async () => {
+    const input = JSON.stringify({ limit: 20, queries: ["a", "b", "c", "d", "e"] });
+    const repaired = await repairChatToolCall({
+      ...base,
+      inputSchema: async () => ({
+        type: "object" as const,
+        properties: {
+          limit: { type: "integer", minimum: 1, maximum: 16 },
+          queries: { type: "array", maxItems: 4, items: { type: "string" } },
+        },
+      }),
+      toolCall: {
+        type: "tool-call",
+        toolCallId: "call_4",
+        toolName: "search_documents",
+        input,
+      },
+      tools: TOOLS,
+      error: new InvalidToolInputError({
+        toolName: "search_documents",
+        toolInput: input,
+        cause: new Error("too_big"),
+      }),
+    });
+    expect(repaired?.toolName).toBe("search_documents");
+    expect(JSON.parse(repaired?.input as string)).toEqual({
+      limit: 16,
+      queries: ["a", "b", "c", "d"],
+    });
+  });
+
+  it("does not rewrite malformed JSON or unknown names", async () => {
     await expect(
       repairChatToolCall({
         ...base,

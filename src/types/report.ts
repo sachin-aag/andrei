@@ -141,6 +141,8 @@ export type ReportAttachmentRecord = {
   reportId: string;
   /** Null = top level of the report's document tree. */
   folderId: string | null;
+  /** Library asset this link reuses; null on legacy rows. */
+  assetId: string | null;
   filename: string;
   /** Optional user note (2–3 lines) used as AI document context. */
   description: string | null;

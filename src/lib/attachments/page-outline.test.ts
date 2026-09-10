@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildOutlineFromStoredPages,
+  derivePageMetadata,
   derivePageOutlineDigest,
   detectRecurringBoilerplate,
   groupOutlineSpans,
@@ -35,6 +36,15 @@ describe("derivePageOutlineDigest", () => {
     expect(digest).toContain("SW-IN-1.1");
     expect(digest).toContain("SW-SST-5.1.1");
     expect(digest).toContain("SW-EH-1.2");
+  });
+
+  it("exposes heading and stored identifiers separately from the digest", () => {
+    const meta = derivePageMetadata(
+      "TABLE 4 SOFTWARE REQUIREMENTS\nSW-LWB-4 Laser wavelength bandwidth Pass"
+    );
+    expect(meta.outlineTitle).toBe("TABLE 4 SOFTWARE REQUIREMENTS");
+    expect(meta.identifiers).toEqual(["SW-LWB-4"]);
+    expect(meta.digest).toContain("SW-LWB-4");
   });
 
   it("returns empty for boilerplate-only pages", () => {

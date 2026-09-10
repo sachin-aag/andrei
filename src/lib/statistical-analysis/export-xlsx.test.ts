@@ -3,11 +3,16 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_CHART_LAYOUT } from "@/lib/charts/chart-spec";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import { analyticsExportHref } from "./analytics-export-href";
-import { analyticsExportFilename, buildAnalyticsXlsx } from "./export-xlsx";
+import {
+  analyticsExportFilename,
+  buildAnalyticsXlsx,
+  formatWorksheetSourceLine,
+} from "./export-xlsx";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
 import {
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
+  isScatterAnalysis,
   type ReportAnalyticsView,
 } from "./types";
 import { createEmptyWorksheet } from "./worksheet";
@@ -91,6 +96,40 @@ function sampleAnalytics(): ReportAnalyticsView {
   };
 }
 
+describe("formatWorksheetSourceLine", () => {
+  it("returns null when there are no citations", () => {
+    expect(formatWorksheetSourceLine([])).toBeNull();
+  });
+
+  it("formats a single page", () => {
+    expect(
+      formatWorksheetSourceLine([{ attachmentId: "att_1", page: 98 }])
+    ).toBe("Source : Attachment on pg (98)");
+  });
+
+  it("formats a min-max page range with a hyphen", () => {
+    expect(
+      formatWorksheetSourceLine([
+        { attachmentId: "att_1", page: 101 },
+        { attachmentId: "att_1", page: 98 },
+        { attachmentId: "att_1", page: 99 },
+      ])
+    ).toBe("Source : Attachment on pg (98-101)");
+  });
+
+  it("uses the document name when no page is available", () => {
+    expect(
+      formatWorksheetSourceLine([
+        {
+          attachmentId: "att_1",
+          page: null,
+          filename: "Mechanical Test Report.pdf",
+        },
+      ])
+    ).toBe("Source : Mechanical Test Report.pdf");
+  });
+});
+
 describe("analyticsExportHref", () => {
   it("builds export URLs with optional plots flag", () => {
     expect(analyticsExportHref("r1", false)).toBe(
@@ -123,10 +162,61 @@ describe("buildAnalyticsXlsx", () => {
       "Torque scatter",
     ]);
 
+    const data = workbook.getWorksheet("Data");
+    expect(data?.getCell("A1").value).toBe("Data");
+    expect(data?.getCell("A1").font?.bold).toBe(true);
+    expect(data?.getCell("A1").font?.size).toBe(14);
+    expect(data?.getCell("A2").value).toBe("Assay");
+    expect(data?.getCell("A3").value).toBe("10");
+
     const sixpack = workbook.getWorksheet("Assay sixpack");
-    expect(sixpack?.getCell("A1").value).toBe("Field");
-    expect(sixpack?.getCell("B2").value).toBe("Assay sixpack");
+    expect(sixpack?.getCell("A1").value).toBe("Assay sixpack");
+    expect(sixpack?.getCell("A2").value).toBe("Field");
+    expect(sixpack?.getCell("B3").value).toBe("Assay sixpack");
     expect(String(sixpack?.getCell("A1").value)).toBeTruthy();
+  });
+
+  it("puts the sheet title and attachment source on the banner row", async () => {
+    const analytics = sampleAnalytics();
+    const sourceLine = "Source : Attachment on pg (98-101)";
+    analytics.worksheet.columns[0]!.citations = [
+      { attachmentId: "att_1", page: 98 },
+      { attachmentId: "att_1", page: 101 },
+    ];
+    analytics.worksheet.sheets[0]!.name = "Separation Force";
+    const scatterAnalysis = analytics.analyses.find(isScatterAnalysis);
+    if (!scatterAnalysis) throw new Error("expected measurement scatter");
+    scatterAnalysis.results = {
+      ...scatterAnalysis.results,
+      specs: [
+        {
+          ...TORQUE_MOCK_SPEC,
+          citations: [
+            { attachmentId: "att_1", page: 98 },
+            { attachmentId: "att_1", page: 101 },
+          ],
+        },
+      ],
+    };
+
+    const buffer = await buildAnalyticsXlsx(analytics);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    const data = workbook.getWorksheet("Separation Force");
+    expect(data?.getCell("A1").value).toBe("Separation Force");
+    expect(data?.getCell("H1").value).toBe(sourceLine);
+    expect(data?.getCell("H1").alignment?.horizontal).toBe("right");
+    expect(data?.getCell("H1").font?.bold).toBe(true);
+    expect(data?.getCell("A2").value).toBe("Assay");
+
+    const sixpack = workbook.getWorksheet("Assay sixpack");
+    expect(sixpack?.getCell("A1").value).toBe("Assay sixpack");
+    expect(sixpack?.getCell("B1").value).toBe(sourceLine);
+
+    const scatter = workbook.getWorksheet("Torque scatter");
+    expect(scatter?.getCell("A1").value).toBe("Torque scatter");
+    expect(scatter?.getCell("F1").value).toBe(sourceLine);
   });
 
   it("embeds plot images when includePlots is true", async () => {
@@ -140,7 +230,8 @@ describe("buildAnalyticsXlsx", () => {
     const scatter = workbook.getWorksheet("Torque scatter");
     expect(sixpack?.getImages().length).toBeGreaterThan(0);
     expect(scatter?.getImages().length).toBeGreaterThan(0);
-    expect(sixpack?.getImages()[0]?.range.tl.nativeRow).toBe(0);
+    expect(sixpack?.getImages()[0]?.range.tl.nativeRow).toBe(1);
+    expect(sixpack?.getCell("A1").value).toBe("Assay sixpack");
     expect(sixpack?.getCell("A1").value).not.toBe("Plots");
 
     const imageId = sixpack?.getImages()[0]?.imageId;
@@ -173,8 +264,9 @@ describe("buildAnalyticsXlsx", () => {
     const sixpack = workbook.getWorksheet("Assay sixpack");
     const images = sixpack?.getImages() ?? [];
     expect(images).toHaveLength(1);
-    expect(images[0]?.range.tl.nativeRow).toBe(0);
+    expect(images[0]?.range.tl.nativeRow).toBe(1);
     expect(images[0]?.range.tl.nativeCol).toBe(0);
+    expect(sixpack?.getCell("A1").value).toBe("Assay sixpack");
     expect(sixpack?.getCell("A1").value).not.toBe("Plots");
     expect(sixpack?.getCell("A1").value).not.toBe("Field");
 

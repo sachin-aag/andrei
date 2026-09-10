@@ -20,6 +20,8 @@ vi.mock("@/lib/analytics/events", () => ({
 vi.mock("@/lib/customers/packs", () => ({
   getCustomerPack: () => ({
     branding: { productNameShort: "Andrei" },
+    insightsEnabled: true,
+    statisticalAnalysisEnabled: true,
   }),
 }));
 

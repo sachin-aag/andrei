@@ -143,6 +143,7 @@ describe("suggestion vs eval section context isolation", () => {
     );
     expect(suggestPrompt).toContain("[0,0] Requirement ID");
     expect(suggestPrompt).toContain("[1,0] DI-1");
+    expect(suggestPrompt).toContain("This field has 1 table (tableIndex 0)");
     expect(suggestPrompt).not.toContain('"type": "table"');
   });
 
@@ -242,6 +243,8 @@ describe("suggestion vs eval section context isolation", () => {
     expect(prompt).toContain("tableIndex=0");
     expect(prompt).toContain("tableIndex=1");
     expect(prompt).toContain("[0,0] Three");
+    expect(prompt).toContain("This field has 2 tables (tableIndex 0, 1)");
+    expect(prompt).toContain("Do not rewrite a table as bullets");
   });
 
   it("serializes testers_dates as testers narrative only", () => {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { reportAttachmentFolders, reportAttachments } from "@/db/schema";
@@ -10,6 +10,8 @@ import {
   normalizeFolderName,
   validateFolderPlacement,
 } from "@/lib/attachments/folders";
+import { collectFolderSubtreeIds } from "@/lib/attachments/folder-subtree";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 
@@ -85,10 +87,7 @@ export async function PATCH(
   return NextResponse.json({ folder: toAttachmentFolderDto(updated) });
 }
 
-/**
- * Deleting a folder never deletes documents: direct children (subfolders and
- * attachments) are reparented to the deleted folder's parent first.
- */
+/** Deletes the folder and every nested subfolder and attachment inside it. */
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ reportId: string; folderId: string }> }
@@ -108,34 +107,74 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await db.transaction(async (tx) => {
-    await tx
-      .update(reportAttachmentFolders)
-      .set({ parentId: folder.parentId, updatedAt: new Date() })
-      .where(
-        and(
-          eq(reportAttachmentFolders.reportId, reportId),
-          eq(reportAttachmentFolders.parentId, folderId)
-        )
-      );
-    await tx
-      .update(reportAttachments)
-      .set({ folderId: folder.parentId })
+  const allFolders = await db
+    .select({
+      id: reportAttachmentFolders.id,
+      parentId: reportAttachmentFolders.parentId,
+    })
+    .from(reportAttachmentFolders)
+    .where(eq(reportAttachmentFolders.reportId, reportId));
+
+  const subtreeFolderIds = [
+    ...collectFolderSubtreeIds(folderId, allFolders),
+  ];
+
+  const deletedAttachments = await db.transaction(async (tx) => {
+    const attachments = await tx
+      .select()
+      .from(reportAttachments)
       .where(
         and(
           eq(reportAttachments.reportId, reportId),
-          eq(reportAttachments.folderId, folderId)
+          inArray(reportAttachments.folderId, subtreeFolderIds),
+          isNull(reportAttachments.deletedAt)
         )
       );
+
+    if (attachments.length > 0) {
+      await tx
+        .update(reportAttachments)
+        .set({
+          deletedAt: new Date(),
+          deletedById: access.user.id,
+        })
+        .where(
+          and(
+            eq(reportAttachments.reportId, reportId),
+            inArray(reportAttachments.id, attachments.map((row) => row.id)),
+            isNull(reportAttachments.deletedAt)
+          )
+        );
+    }
+
     await tx
       .delete(reportAttachmentFolders)
       .where(
         and(
-          eq(reportAttachmentFolders.id, folderId),
-          eq(reportAttachmentFolders.reportId, reportId)
+          eq(reportAttachmentFolders.reportId, reportId),
+          inArray(reportAttachmentFolders.id, subtreeFolderIds)
         )
       );
+
+    return attachments;
   });
+
+  for (const attachment of deletedAttachments) {
+    await recordAuditEvent({
+      actor: auditActorFromUser(access.user),
+      action: "attachment_deleted",
+      entityType: "attachment",
+      entityId: attachment.id,
+      reportId,
+      summary: `Attachment deleted: ${attachment.filename}`,
+      oldValue: {
+        filename: attachment.filename,
+        sizeBytes: attachment.sizeBytes,
+        pageCount: attachment.pageCount,
+        processingStatus: attachment.processingStatus,
+      },
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }

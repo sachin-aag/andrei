@@ -8,7 +8,9 @@ import {
   AlertTriangle,
   BarChart3,
   FileText,
+  Folder,
   Gauge,
+  ScrollText,
   Users,
   PanelLeftClose,
   PanelLeftOpen,
@@ -22,6 +24,22 @@ import { InactivityLogout } from "@/components/auth/inactivity-logout";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { ProductWalkthroughProvider } from "@/components/walkthrough/product-walkthrough";
 import { getCustomerPack } from "@/lib/customers/packs";
+
+function navWalkthroughTarget(href: string): string | undefined {
+  switch (href) {
+    case "/":
+    case "/admin/reports":
+      return "nav-reports";
+    case "/vault":
+      return "nav-vault";
+    case "/insights":
+      return "nav-insights";
+    case "/admin/users":
+      return "nav-users";
+    default:
+      return undefined;
+  }
+}
 
 export function AppShell({
   user,
@@ -42,20 +60,29 @@ export function AppShell({
     !!passwordStatus?.warning
   );
   const mainId = useId();
-  const { branding } = getCustomerPack();
+  const { branding, insightsEnabled } = getCustomerPack();
+  const documentVaultItem = {
+    href: "/vault",
+    label: "Document vault",
+    icon: Folder,
+  };
 
-  const navItems = [
-    ...(user.role === "admin"
+  const navItems =
+    user.role === "admin"
       ? [
           { href: "/admin/reports", label: "Reports", icon: FileText },
+          documentVaultItem,
           { href: "/admin/users", label: "Users", icon: Users },
           { href: "/admin/limits", label: "Limits", icon: Gauge },
+          { href: "/admin/prompts", label: "Prompts", icon: ScrollText },
         ]
       : [
           { href: "/", label: "Reports", icon: FileText },
-          { href: "/insights/dashboard", label: "Insights", icon: BarChart3 },
-        ]),
-  ];
+          documentVaultItem,
+          ...(insightsEnabled
+            ? [{ href: "/insights", label: "Insights", icon: BarChart3 }]
+            : []),
+        ];
 
   const isProfileActive =
     pathname === "/profile" || pathname.startsWith("/profile/");
@@ -149,35 +176,32 @@ export function AppShell({
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-1">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-label={collapsed ? item.label : undefined}
-              aria-current={pathname === item.href ? "page" : undefined}
-              title={collapsed ? item.label : undefined}
-              data-walkthrough={
-                item.href === "/" || item.href === "/admin/reports"
-                  ? "nav-reports"
-                  : item.href === "/insights/dashboard"
-                    ? "nav-insights"
-                    : item.href === "/admin/users"
-                      ? "nav-users"
-                      : undefined
-              }
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
-                collapsed && "justify-center px-0",
-                pathname === item.href ||
-                (item.href !== "/" && pathname.startsWith(item.href))
-                  ? "bg-[var(--brand-700)] text-white"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
-              )}
-            >
-              <item.icon className="size-4 shrink-0" aria-hidden="true" />
-              {!collapsed && item.label}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const isActive =
+              item.href === "/"
+                ? pathname === "/"
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-label={collapsed ? item.label : undefined}
+                aria-current={isActive ? "page" : undefined}
+                title={collapsed ? item.label : undefined}
+                data-walkthrough={navWalkthroughTarget(item.href)}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
+                  collapsed && "justify-center px-0",
+                  isActive
+                    ? "bg-[var(--brand-700)] text-white"
+                    : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+                )}
+              >
+                <item.icon className="size-4 shrink-0" aria-hidden="true" />
+                {!collapsed && item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="border-t border-[var(--border)] p-3">

@@ -29,6 +29,7 @@ export function WorkProductTabs({
             key={tab.id}
             role="tab"
             data-testid={tab.testId}
+            data-walkthrough={tab.id === "analytics" ? "analytics" : undefined}
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             title={tab.label}

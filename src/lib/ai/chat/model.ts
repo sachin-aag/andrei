@@ -1,5 +1,6 @@
 import type { LanguageModel } from "ai";
 import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
+import type { ChatMessageTarget } from "@/lib/ai/chat/message-target";
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 import { DEFAULT_CHAT_PACE, type ChatPace } from "@/lib/ai/chat/pace";
 import type { EvalEffort } from "@/lib/eval/eval-generation-options";
@@ -73,27 +74,33 @@ export type ChatTurnChangeSummary = {
  * Stored on every assistant row in `chat_messages.metadata`. Users pick a
  * pace, not a model, so this is the only place a past reply can be traced
  * back to what wrote it — which matters when someone asks why the assistant
- * answered differently two months ago.
+ * answered differently two months ago. `chatTarget` is which work-product
+ * the turn was sent to (Report vs Analytics) so mixed threads stay readable.
  */
 export type ChatAssistantTurnMetadata = ChatPaceConfig & {
   pace: ChatPace;
   mode: ChatMode;
   promptVersion: string;
+  chatTarget: ChatMessageTarget;
   changeSummary?: ChatTurnChangeSummary;
+  switchToAnalytics?: true;
 };
 
 export function chatAssistantTurnMetadata(input: {
   pace: ChatPace;
   mode: ChatMode;
   promptVersion: string;
+  chatTarget: ChatMessageTarget;
   changeSummary?: ChatTurnChangeSummary;
+  switchToAnalytics?: boolean;
 }): ChatAssistantTurnMetadata {
-  const { changeSummary, ...rest } = input;
+  const { changeSummary, switchToAnalytics, ...rest } = input;
   return {
     ...chatPaceConfig(input.pace),
     ...rest,
     ...(changeSummary && changeSummary.items.length > 0
       ? { changeSummary }
       : {}),
+    ...(switchToAnalytics ? { switchToAnalytics: true as const } : {}),
   };
 }

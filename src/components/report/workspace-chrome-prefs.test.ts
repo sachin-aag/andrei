@@ -27,11 +27,17 @@ describe("workspace chrome prefs store", () => {
     resetWorkspaceChromePrefsStore();
   });
 
-  it("defaults to Document when nothing is stored", () => {
+  it("defaults to Agent when nothing is stored", () => {
     expect(readWorkspaceChrome("user-a", "report-a")).toBe(
       DEFAULT_WORKSPACE_CHROME
     );
-    expect(DEFAULT_WORKSPACE_CHROME).toBe("document");
+    expect(DEFAULT_WORKSPACE_CHROME).toBe("agent");
+  });
+
+  it("round-trips Document for the same user and report after a store reset", () => {
+    writeWorkspaceChrome("user-a", "report-a", "document");
+    resetWorkspaceChromePrefsStore();
+    expect(readWorkspaceChrome("user-a", "report-a")).toBe("document");
   });
 
   it("round-trips Agent for the same user and report after a store reset", () => {
@@ -53,7 +59,7 @@ describe("workspace chrome prefs store", () => {
     ).toBe("agent");
   });
 
-  it("falls back to Document when stored value is unknown", () => {
+  it("falls back to Agent when stored value is unknown", () => {
     localStorage.setItem(
       workspaceChromeStorageKey("user-a", "report-a"),
       "analytics"

@@ -48,7 +48,8 @@ const openObjectReadStream = vi.fn();
 const getObjectMetadata = vi.fn();
 
 function mockSelectOnce(rows: unknown[]) {
-  const where = vi.fn().mockResolvedValueOnce(rows);
+  const limit = vi.fn().mockResolvedValueOnce(rows);
+  const where = vi.fn().mockReturnValue({ limit });
   const from = vi.fn().mockReturnValue({ where });
   vi.mocked(db.select).mockReturnValueOnce({ from } as never);
 }

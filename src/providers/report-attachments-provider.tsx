@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { AttachmentQuotaDialog } from "@/components/report/documents/attachment-quota-dialog";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
+import { collectFolderSubtreeIds } from "@/lib/attachments/folder-subtree";
 import {
   formatAttachmentCountLimitMessage,
   formatAttachmentWouldExceedMessage,
@@ -27,6 +28,10 @@ import {
   isSupportedAttachmentFile,
   reserveAttachmentUpload,
 } from "@/lib/attachments/upload-pdf";
+import {
+  omitDocumentPreviewPage,
+  resolveDocumentPreviewOpen,
+} from "@/lib/attachments/document-preview-page";
 import type {
   ReportAttachmentFolderRecord,
   ReportAttachmentRecord,
@@ -75,10 +80,20 @@ type ReportAttachmentsContextValue = {
   activeAttachmentId: string | null;
   activeAttachment: ReportAttachmentRecord | null;
   activePage: number;
+  previewPageFor: (id: string) => number;
   openDocument: (id: string, page?: number) => void;
+  rememberDocumentPage: (id: string, page: number) => void;
+  forgetDocumentPreview: (id: string) => void;
   closeDocument: () => void;
   documentOpenEpoch: number;
   uploadFiles: (files: FileList, folderId?: FolderId) => Promise<void>;
+  linkFromLibrary: (selection: {
+    assetIds: string[];
+    libraryFolderIds: string[];
+    excludedAssetIds?: string[];
+    targetFolderId?: FolderId;
+  }) => Promise<void>;
+  isWorkspaceAdmin: boolean;
   removeAttachment: (id: string) => Promise<void>;
   retryAttachment: (id: string) => Promise<void>;
   moveAttachment: (id: string, folderId: FolderId) => Promise<void>;
@@ -108,12 +123,14 @@ export function ReportAttachmentsProvider({
   initialAttachments,
   initialFolders,
   canMutateAttachments,
+  isWorkspaceAdmin,
   children,
 }: {
   reportId: string;
   initialAttachments: ReportAttachmentRecord[];
   initialFolders: ReportAttachmentFolderRecord[];
   canMutateAttachments: boolean;
+  isWorkspaceAdmin: boolean;
   children: ReactNode;
 }) {
   const [attachments, setAttachments] =
@@ -125,6 +142,11 @@ export function ReportAttachmentsProvider({
   >({});
   const [activeAttachment, setActiveAttachment] =
     useState<ActiveAttachment | null>(null);
+  const [previewPageById, setPreviewPageById] = useState<
+    Record<string, number>
+  >({});
+  const previewPageByIdRef = useRef<Record<string, number>>({});
+  const lastViewedPageByIdRef = useRef<Record<string, number>>({});
   const [documentOpenEpoch, setDocumentOpenEpoch] = useState(0);
   const [quotaWarning, setQuotaWarning] = useState<string | null>(null);
   const quotaWarningShownRef = useRef(false);
@@ -179,10 +201,40 @@ export function ReportAttachmentsProvider({
     return () => window.clearInterval(interval);
   }, [attachments, refreshAttachments]);
 
-  const openDocument = useCallback((id: string, page = 1) => {
-    setActiveAttachment({ id, page: Math.max(1, page) });
+  const openDocument = useCallback((id: string, page?: number) => {
+    const resolved = resolveDocumentPreviewOpen({
+      previewPageById: previewPageByIdRef.current,
+      lastViewedPage: lastViewedPageByIdRef.current[id],
+      attachmentId: id,
+      requestedPage: page,
+    });
+    if (page !== undefined) {
+      lastViewedPageByIdRef.current[id] = resolved.page;
+    }
+    previewPageByIdRef.current = resolved.previewPageById;
+    setPreviewPageById(resolved.previewPageById);
+    setActiveAttachment((prev) => {
+      if (resolved.skipJump && prev?.id === id) return prev;
+      if (prev?.id === id && prev.page === resolved.page) return prev;
+      return { id, page: resolved.page };
+    });
     setDocumentOpenEpoch((epoch) => epoch + 1);
   }, []);
+
+  const rememberDocumentPage = useCallback((id: string, page: number) => {
+    lastViewedPageByIdRef.current[id] = Math.max(1, page);
+  }, []);
+
+  const forgetDocumentPreview = useCallback((id: string) => {
+    const next = omitDocumentPreviewPage(previewPageByIdRef.current, id);
+    previewPageByIdRef.current = next;
+    setPreviewPageById(next);
+  }, []);
+
+  const previewPageFor = useCallback(
+    (id: string) => previewPageById[id] ?? 1,
+    [previewPageById]
+  );
 
   const closeDocument = useCallback(() => {
     setActiveAttachment(null);
@@ -220,6 +272,7 @@ export function ReportAttachmentsProvider({
         id: attachmentId,
         reportId,
         folderId,
+        assetId: null,
         filename: file.name,
         description: null,
         mimeType: attachmentUploadMime(file),
@@ -390,6 +443,13 @@ export function ReportAttachmentsProvider({
         return;
       }
       setAttachments((prev) => prev.filter((item) => item.id !== id));
+      delete lastViewedPageByIdRef.current[id];
+      const nextPreview = omitDocumentPreviewPage(
+        previewPageByIdRef.current,
+        id
+      );
+      previewPageByIdRef.current = nextPreview;
+      setPreviewPageById(nextPreview);
       rateSamplesRef.current.delete(id);
       setUploadProgress((prev) => {
         const next = { ...prev };
@@ -627,19 +687,93 @@ export function ReportAttachmentsProvider({
         return;
       }
 
-      // The server reparents children to the deleted folder's parent.
-      const removed = folders.find((item) => item.id === id);
-      const parentId = removed?.parentId ?? null;
-      setFolders((prev) =>
-        prev
-          .filter((item) => item.id !== id)
-          .map((item) => (item.parentId === id ? { ...item, parentId } : item))
+      // The server deletes the folder subtree and every attachment inside it.
+      const subtreeFolderIds = collectFolderSubtreeIds(
+        id,
+        folders.map((item) => ({ id: item.id, parentId: item.parentId }))
       );
+      const removedAttachmentIds = attachments
+        .filter(
+          (item) => item.folderId != null && subtreeFolderIds.has(item.folderId)
+        )
+        .map((item) => item.id);
+      if (removedAttachmentIds.length > 0) {
+        let previewPages = previewPageByIdRef.current;
+        for (const attachmentId of removedAttachmentIds) {
+          delete lastViewedPageByIdRef.current[attachmentId];
+          previewPages = omitDocumentPreviewPage(previewPages, attachmentId);
+        }
+        previewPageByIdRef.current = previewPages;
+        setPreviewPageById(previewPages);
+      }
+      setFolders((prev) => prev.filter((item) => !subtreeFolderIds.has(item.id)));
       setAttachments((prev) =>
-        prev.map((item) => (item.folderId === id ? { ...item, folderId: parentId } : item))
+        prev.filter(
+          (item) => item.folderId == null || !subtreeFolderIds.has(item.folderId)
+        )
       );
     },
-    [canMutateAttachments, folders, reportId]
+    [attachments, canMutateAttachments, folders, reportId]
+  );
+
+  const linkFromLibrary = useCallback(
+    async (selection: {
+      assetIds: string[];
+      libraryFolderIds: string[];
+      excludedAssetIds?: string[];
+      targetFolderId?: FolderId;
+    }) => {
+      if (!canMutateAttachments) {
+        toast.error("You cannot add attachments to this report.");
+        return;
+      }
+      const response = await fetch(`/api/reports/${reportId}/attachments/link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetIds: selection.assetIds,
+          libraryFolderIds: selection.libraryFolderIds,
+          excludedAssetIds: selection.excludedAssetIds,
+          targetFolderId: selection.targetFolderId ?? null,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        attachments?: ReportAttachmentRecord[];
+        folders?: ReportAttachmentFolderRecord[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not add from vault");
+      }
+      if (Array.isArray(data.folders)) {
+        setFolders((prev) => {
+          const existing = new Set(prev.map((folder) => folder.id));
+          const merged = [...prev];
+          for (const folder of data.folders!) {
+            if (!existing.has(folder.id)) {
+              merged.push({
+                id: folder.id,
+                reportId,
+                parentId: folder.parentId,
+                name: folder.name,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          }
+          return merged;
+        });
+      }
+      if (Array.isArray(data.attachments)) {
+        for (const attachment of data.attachments) {
+          upsertAttachment(attachment);
+        }
+      }
+      const count = data.attachments?.length ?? 0;
+      toast.success(
+        count === 1 ? "Added 1 document from vault" : `Added ${count} documents from vault`
+      );
+    },
+    [canMutateAttachments, reportId, upsertAttachment]
   );
 
   const activeAttachmentRecord = activeAttachment
@@ -656,10 +790,15 @@ export function ReportAttachmentsProvider({
       activeAttachmentId: activeAttachment?.id ?? null,
       activeAttachment: activeAttachmentRecord,
       activePage: activeAttachment?.page ?? 1,
+      previewPageFor,
       openDocument,
+      rememberDocumentPage,
+      forgetDocumentPreview,
       closeDocument,
       documentOpenEpoch,
       uploadFiles,
+      linkFromLibrary,
+      isWorkspaceAdmin,
       removeAttachment,
       retryAttachment,
       moveAttachment,
@@ -678,10 +817,15 @@ export function ReportAttachmentsProvider({
       canMutateAttachments,
       activeAttachment,
       activeAttachmentRecord,
+      previewPageFor,
       openDocument,
+      rememberDocumentPage,
+      forgetDocumentPreview,
       closeDocument,
       documentOpenEpoch,
       uploadFiles,
+      linkFromLibrary,
+      isWorkspaceAdmin,
       removeAttachment,
       retryAttachment,
       moveAttachment,

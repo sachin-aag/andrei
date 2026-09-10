@@ -157,6 +157,8 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | dismiss forever stays closed | Don't show again, then resume login has no dialog |
 | replay from profile starts the tour again | Dismiss, wait for `GET /api/me/walkthrough` `dismissed`, then Profile **Replay product tour** |
 
+Engineer steps include Document \| Agent chrome, Analytics, and the Document vault. Insights is demo-only.
+
 </details>
 
 <details>
@@ -182,14 +184,15 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | Test | What it verifies |
 |------|------------------|
 | shows all DMAIC and structural sections | Define–Control + Documents / Attachments / Approvals |
+| wraps prose and 2-column table cells instead of growing the editor | Mixed paragraph + label/description table stays within the field; col 1 is not a 4.5rem strip |
 | typing triggers auto-save status | Saving… → Saved |
 | sidebar tabs switch panels | Placeholders, Criteria (stub eval), Comments |
 | collapses and expands sidebar | Collapse / expand controls |
-| hides the review margin while the assistant is expanded | Gutter XOR expanded Assistant (1920px) |
+| shows the review margin when Comments is on and keeps it with the assistant open | Comments switch only; gutter stays with expanded Assistant (1920px) |
 | resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |
 | opens the assistant at the default width on a new report and after reload | Width is not kept across reports or reloads |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
-| Agent chrome puts chat in the center and work product on the right | Column order `docs.x < chat.x < canvas.x`; Analytics stays on the right; History on Report and Analytics (pane-scoped) |
+| Agent chrome puts chat in the center and work product on the right | Column order `docs.x < chat.x < canvas.x`; Analytics stays on the right; Collapse sits left of Report; History on Report and Analytics (pane-scoped) |
 
 </details>
 
@@ -208,8 +211,10 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 
 | Test | What it verifies |
 |------|------------------|
-| streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, collapse/expand keeps the thread, reload still shows it |
+| streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, collapse/expand keeps the thread, reload still shows it; the turn is tagged **Report** |
+| tags Report and Analytics turns in the same thread | Send on Report, switch the composer to Analytics, send again — each pair keeps its tag after reload |
 | starting a new chat while a turn is in flight leaves the composer usable | Hold the first `/chat` POST (do not forward it), click +, type and send in the empty thread; open-chat tabs show the parked turn as still working. Abort the held POST on teardown so `next start` is not left waiting on a half-open body. |
+| fills the composer with stub dictation after stop | Fake mic + `ALLOW_TEST_STUB_SPEECH`; transcribe `GET` 204; while recording the composer stays at the typed prefix, the wave + “Transcript appears when you stop” hint show, and Send stays disabled; after stop a unary PCM `POST` returns the canned phrase (no SSE session) and fills `chat-input`; Agent chrome still shows the mic; Analytics counterpart uses `analytics-chat-voice-input`. Chromium only (AudioWorklet). |
 
 </details>
 
@@ -276,7 +281,7 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 </details>
 
 <details>
-<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet, sixpack, scatter, ANOVA</summary>
+<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet, sixpack, scatter, ANOVA, boxplot</summary>
 
 | Test | What it verifies |
 |------|------------------|
@@ -287,10 +292,10 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 | shift+arrow selects rows and runs a sixpack on that range | Range highlight, Analyze label, Sample N matches the span |
 | saves a sixpack for specific row numbers | POST `rows` list; Results shows that subset; Download saves a CSV |
 | marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
-| streams a stats-assistant reply | Stub chat streams and persists; Ask/Agent + Quick/Deep + attach image are present (cannot assert tools) |
-| shows Data sheets and column specs from the header menu | Data tab only; insert/delete row/column are not in Data; right-click column Specs dialog filled from sample assay; Plot measurements dialog has optional LSL/USL and errors without attachments |
+| streams a stats-assistant reply | Opening Analytics does not retarget chat; composer Report \| Analytics does; stub chat streams and persists with an **Analytics** tag; Ask/Agent + Quick/Deep + attach image are present (cannot assert tools) |
+| shows Data sheets and column specs from the header menu | Data tab only; insert/delete row/column are not in Data; right-click column Specs dialog filled from sample assay; Plot menu is Sixpack, ANOVA, Boxplot, and worksheet Plot measurements (no attachment extract); Boxplot Y is required with optional nested categories (innermost first); Plot measurements Show LSL, USL values is off by default; Advanced is collapsed and sets min/max X and Y plus optional axis titles (blank = auto); Agent Analytics chat can edit an existing worksheet plot (Y, chart type, spec lines, axis window) or boxplot (Y, categories) without adding a Results row; attachment plots are Analytics chat |
 | row headers select the whole row and the row menu inserts, clears, and deletes | Click row number to select all columns; right-click Insert above/below, Clear, Delete |
-| column context menu inserts, clears, and opens Analyze with prefilled plot values | Insert left/right, clear data, delete; Analyze data popup switches plot type with column values pre-filled |
+| column context menu inserts, clears, and opens Analyze with prefilled plot values | Insert left/right, clear data, delete; Analyze data popup is sixpack or ANOVA with column values pre-filled |
 | loads sample assay and runs one-way ANOVA of Assay by Lot | Data menu sample fills Assay + Lot; Stat → One-Way ANOVA; Results table + interval plot |
 
 </details>
@@ -326,12 +331,12 @@ File: `src/app/api/reports/route.test.ts`
 </details>
 
 <details>
-<summary><strong>/api/reports/[reportId]/analytics</strong> — worksheet + sixpack + scatter + ANOVA</summary>
+<summary><strong>/api/reports/[reportId]/analytics</strong> — worksheet + sixpack + scatter + ANOVA + boxplot</summary>
 
 - Pack/auth failures pass through `requireAnalyticsAccess` (404/401/403)
 - GET loads or creates the per-report worksheet
 - PATCH/POST persist worksheet JSON (POST is the autosave beacon alias)
-- POST analyses creates a sixpack, `kind: "measurement_scatter"`, or `kind: "one_way_anova"`; POST analyses/[id] recomputes
+- POST analyses creates a sixpack, `kind: "measurement_scatter"`, `kind: "xy_scatter"`, `kind: "one_way_anova"`, or `kind: "boxplot"`; POST analyses/[id] recomputes
 
 File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 
@@ -508,6 +513,7 @@ Grouped by subsystem. Run a folder with `pnpm test -- src/lib/import`.
 | DOCX signatures | `docx/signature-block.test.ts` |
 | Plain text | `plain-text/placeholder-at-offset.test.ts`, `text/bracket-span.test.ts` |
 | Bulk eval tooling | `sample-eval/bulk-eval-aggregates.test.ts` |
+| Retrieval eval harness | `scripts/eval/retrieval-cases.test.ts`, `retrieval-corpus.test.ts`, `retrieval-judge.test.ts`, `retrieval-gcs.test.ts`, `retrieval-eval.test.ts`; metrics in `src/lib/attachments/retrieval-metrics.test.ts` |
 
 </details>
 
@@ -527,12 +533,13 @@ Spot-check **live Gemini** evaluation periodically — E2E stubs AI via `ALLOW_T
 
 | Job | Command | Notes |
 |-----|---------|-------|
-| Unit | `pnpm test` | All Vitest |
+| Unit | `pnpm test` | All Vitest. Retrieval eval unit tests are also gated in CI to run only when the harness / search files change. |
 | E2E | `pnpm test:e2e` | Postgres service container, `drizzle-kit push`, Chromium + Firefox + WebKit |
+| Retrieval eval | `pnpm retrieval-eval -- --from-gcs` | Path-gated. Downloads synthetic PDFs from `RETRIEVAL_EVAL_GCS_BUCKET`, Vertex-ingests, searches, LLM-judges. Does not upload. Skips if Vertex/GCS secrets are missing. |
 
 Workflow: `.github/workflows/ci.yml`
 
-**GitHub Actions secrets:** E2E does **not** need production secrets. It uses an ephemeral Postgres service, a fixed `AUTH_SECRET`, test-login bypass (`ALLOW_TEST_LOGIN` in `playwright.config.ts`), and stubbed AI (`ALLOW_TEST_SKIP_EVALUATION` / `ALLOW_TEST_SKIP_SUGGESTIONS`). Do **not** point CI E2E at `secrets.DATABASE_URL` (Neon) — that would share real data and drift from schema. Optional repo secrets (`DATABASE_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `LANGFUSE_*`) are for Vercel/deploy only; the build job may read `DATABASE_URL` as a parseable stub but never connects. `CredentialsSignin` in E2E logs is expected when the “wrong password” auth test runs.
+**GitHub Actions secrets:** E2E does **not** need production secrets. It uses an ephemeral Postgres service, a fixed `AUTH_SECRET`, test-login bypass (`ALLOW_TEST_LOGIN` in `playwright.config.ts`), and stubbed AI (`ALLOW_TEST_SKIP_EVALUATION` / `ALLOW_TEST_SKIP_SUGGESTIONS`). Do **not** point CI E2E at `secrets.DATABASE_URL` (Neon) — that would share real data and drift from schema. Optional repo secrets (`DATABASE_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `LANGFUSE_*`) are for Vercel/deploy only; the build job may read `DATABASE_URL` as a parseable stub but never connects. `CredentialsSignin` in E2E logs is expected when the “wrong password” auth test runs. Live retrieval eval and the PDF ingest soak authenticate with GitHub OIDC WIF (`GOOGLE_VERTEX_PROJECT`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT_EMAIL`, plus `RETRIEVAL_EVAL_GCS_BUCKET` for eval). Do **not** add `GCP_SERVICE_ACCOUNT_KEY`. Jobs skip if those secrets are unset.
 
 ---
 

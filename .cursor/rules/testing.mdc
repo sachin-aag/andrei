@@ -28,8 +28,8 @@ alwaysApply: false
   `vi.mock("@/lib/attachments/retrieval")` **without** `importOriginal` if the
   original pulls `@/db`.
 - Never set `ALLOW_TEST_*` on Vercel. Playwright `webServer.env` sets login,
-  skip-eval/suggest, stub math, stub ingest, stub chat, and local attachment
-  storage. `isTestLoginEnabled()` also needs `TEST_AUTH_EMAIL`.
+  skip-eval/suggest, stub math, stub ingest, stub chat, stub speech, and local
+  attachment storage. `isTestLoginEnabled()` also needs `TEST_AUTH_EMAIL`.
 - E2E helpers: `loginAsEngineer` / `loginAsManager`, `createReport` /
   `deleteReport`, `uniqueDeviationNo`. Clean up reports in `afterEach`.
 - Port 3000: `reuseExistingServer` is on locally. If another process owns 3000,

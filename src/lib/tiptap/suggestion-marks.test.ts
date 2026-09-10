@@ -247,7 +247,7 @@ describe("trackChangesTextInputTransaction", () => {
     expect(next.selection.from).toBe(caret + 1);
   });
 
-  it("inserts at a collapsed caret instead of inheriting an enclosing AI mark", () => {
+  it("does not type into a pending AI insert mark", () => {
     const doc = schema.node("doc", null, [
       schema.node("paragraph", null, [
         schema.text("AAA"),
@@ -261,20 +261,15 @@ describe("trackChangesTextInputTransaction", () => {
       selection: TextSelection.create(doc, caretInsideSuggestion),
     });
 
-    const next = typedDoc(state, caretInsideSuggestion, caretInsideSuggestion, "x");
-    expect(next.doc.textBetween(0, next.doc.content.size, "")).toBe(
-      "AAASUGGxESTIONBBB"
-    );
-    const rows = textMarkNames(next.doc.firstChild!);
-    const typed = rows.find((row) => row.text === "x");
-    expect(typed).toBeDefined();
-    expect(typed?.insertId).not.toBe("ai-span");
-    expect(typed?.marks).toContain(suggestionInsertMarkName);
     expect(
-      rows.some(
-        (row) => row.text.includes("SUGG") && row.insertId === "ai-span"
+      trackChangesTextInputTransaction(
+        state,
+        caretInsideSuggestion,
+        caretInsideSuggestion,
+        "x",
+        "user-1"
       )
-    ).toBe(true);
+    ).toBeNull();
   });
 
   it("inserts at a collapsed caret when there is no AI span", () => {
@@ -295,7 +290,7 @@ describe("trackChangesTextInputTransaction", () => {
     );
   });
 
-  it("does not put new letters on an AI delete mark", () => {
+  it("does not type into an AI delete mark", () => {
     const deleteMark = schema.marks[suggestionDeleteMarkName]!.create({
       id: "ai-span",
       authorId: "ai",
@@ -314,12 +309,9 @@ describe("trackChangesTextInputTransaction", () => {
       selection: TextSelection.create(doc, caret),
     });
 
-    const next = typedDoc(state, caret, caret, "x");
-    expect(next.doc.textBetween(0, next.doc.content.size, "")).toBe("OLxDNEW");
-    const rows = textMarkNames(next.doc.firstChild!);
-    const typed = rows.find((row) => row.text === "x");
-    expect(typed?.insertId).not.toBe("ai-span");
-    expect(typed?.marks).not.toContain(suggestionDeleteMarkName);
+    expect(
+      trackChangesTextInputTransaction(state, caret, caret, "x", "user-1")
+    ).toBeNull();
   });
 
   it("inserts at a collapsed caret next to an AI span without joining that mark", () => {

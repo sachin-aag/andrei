@@ -1,11 +1,21 @@
+import { formatAxisTick, xTickAnchor } from "@/lib/charts/axis-ticks";
 import { chartBrandColors } from "@/lib/charts/brand-colors";
 import type { ChartBrandColors } from "@/lib/charts/brand-colors";
 import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
 import { resolveCustomerId } from "@/lib/customers/resolve";
-import { formatLimit, formatPpm, formatPValue, formatStat } from "./format";
+import {
+  formatCapabilityStat,
+  formatLimit,
+  formatPpm,
+  formatPValue,
+  formatStat,
+} from "./format";
+import { histogramChartScale } from "./histogram-chart-scale";
 import {
   layoutControlLimitLabels,
+  layoutHorizontalSpecLabels,
   layoutSpecLimitLabels,
+  type HorizontalLimitEdge,
 } from "./spec-limit-labels";
 import type {
   CapabilitySixpackResult,
@@ -129,10 +139,18 @@ function drawAxis(
   yMax: number,
   xLabel: string,
   yLabel: string,
-  colors: ChartBrandColors
+  colors: ChartBrandColors,
+  ticks?: {
+    xTicks?: number[];
+    yTicks?: number[];
+    formatTick?: (value: number) => string;
+  }
 ): void {
   const y = scale(yMin, yMax, plot.bottom, plot.top);
   const x = scale(xMin, xMax, plot.left, plot.right);
+  const formatTick = ticks?.formatTick ?? formatLimit;
+  const yTicks = ticks?.yTicks ?? [yMin, (yMin + yMax) / 2, yMax];
+  const xTicks = ticks?.xTicks ?? [xMin, (xMin + xMax) / 2, xMax];
   ctx.strokeStyle = colors.grid;
   ctx.lineWidth = 1;
   ctx.strokeRect(plot.left, plot.top, plot.right - plot.left, plot.bottom - plot.top);
@@ -141,7 +159,7 @@ function drawAxis(
   ctx.font = font(9);
   ctx.textAlign = "end";
   ctx.textBaseline = "middle";
-  for (const tick of [yMin, (yMin + yMax) / 2, yMax]) {
+  for (const tick of yTicks) {
     ctx.setLineDash([2, 3]);
     ctx.strokeStyle = colors.grid;
     ctx.beginPath();
@@ -150,15 +168,15 @@ function drawAxis(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = colors.axis;
-    ctx.fillText(formatLimit(tick), plot.left - 4, y(tick));
+    ctx.fillText(formatTick(tick), plot.left - 4, y(tick));
   }
 
-  ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  const xTicks = [xMin, (xMin + xMax) / 2, xMax];
-  for (const tick of xTicks) {
-    ctx.fillText(formatLimit(tick), x(tick), plot.bottom + 4);
+  for (const [index, tick] of xTicks.entries()) {
+    ctx.textAlign = canvasTextAlign(xTickAnchor(index, xTicks.length));
+    ctx.fillText(formatTick(tick), x(tick), plot.bottom + 4);
   }
+  ctx.textAlign = "center";
   ctx.font = font(10);
   ctx.fillText(xLabel, (plot.left + plot.right) / 2, plot.bottom + 16);
 
@@ -179,7 +197,12 @@ function drawControlChart(
   colors: ChartBrandColors,
   xOffset = 1,
   xLabel = "Observation",
-  yLabel = "Value"
+  yLabel = "Value",
+  spec?: {
+    lsl: number | null;
+    usl: number | null;
+    showControlLimits?: boolean;
+  }
 ): void {
   const plot = {
     left: ox + PLOT.left,
@@ -187,9 +210,18 @@ function drawControlChart(
     top: oy + PLOT.top,
     bottom: oy + PLOT.bottom,
   };
+  const showControlLimits = spec?.showControlLimits ?? true;
+  const specValues = [spec?.lsl, spec?.usl].filter(
+    (value): value is number => value != null && Number.isFinite(value)
+  );
   const xs = series.values.map((_, i) => i + xOffset);
   const [yMin, yMax] = domain(
-    [...series.values, series.ucl, series.lcl, series.center],
+    [
+      ...series.values,
+      series.center,
+      ...(showControlLimits ? [series.ucl, series.lcl] : []),
+      ...specValues,
+    ],
     0.12
   );
   const xMin = (xs[0] ?? 1) - 0.5;
@@ -200,14 +232,23 @@ function drawControlChart(
 
   drawAxis(ctx, plot, xMin, xMax, yMin, yMax, xLabel, yLabel, colors);
 
-  ctx.setLineDash([4, 3]);
   ctx.strokeStyle = colors.limit;
   ctx.lineWidth = 1;
-  for (const limit of [series.ucl, series.lcl]) {
+  ctx.setLineDash([3, 2]);
+  for (const limit of specValues) {
     ctx.beginPath();
     ctx.moveTo(plot.left, y(limit));
     ctx.lineTo(plot.right, y(limit));
     ctx.stroke();
+  }
+  if (showControlLimits) {
+    ctx.setLineDash([4, 3]);
+    for (const limit of [series.ucl, series.lcl]) {
+      ctx.beginPath();
+      ctx.moveTo(plot.left, y(limit));
+      ctx.lineTo(plot.right, y(limit));
+      ctx.stroke();
+    }
   }
   ctx.setLineDash([]);
   ctx.strokeStyle = colors.brand600;
@@ -235,17 +276,45 @@ function drawControlChart(
     ctx.fill();
   }
 
-  const labels = layoutControlLimitLabels(
+  const controlLabels = showControlLimits
+    ? layoutControlLimitLabels(
+        [
+          { kind: "ucl", value: series.ucl, lineY: y(series.ucl) },
+          { kind: "lcl", value: series.lcl, lineY: y(series.lcl) },
+        ],
+        plot
+      )
+    : [];
+  const specEdge: HorizontalLimitEdge = showControlLimits ? "left" : "right";
+  const specLabels = layoutHorizontalSpecLabels(
     [
-      { kind: "ucl", value: series.ucl, lineY: y(series.ucl) },
-      { kind: "lcl", value: series.lcl, lineY: y(series.lcl) },
+      ...(spec?.lsl != null
+        ? [
+            {
+              kind: "lsl" as const,
+              value: spec.lsl,
+              lineY: y(spec.lsl),
+              edge: specEdge,
+            },
+          ]
+        : []),
+      ...(spec?.usl != null
+        ? [
+            {
+              kind: "usl" as const,
+              value: spec.usl,
+              lineY: y(spec.usl),
+              edge: specEdge,
+            },
+          ]
+        : []),
     ],
     plot
   );
   ctx.font = font(9, "bold");
   ctx.fillStyle = colors.limit;
   ctx.textBaseline = "alphabetic";
-  for (const label of labels) {
+  for (const label of [...controlLabels, ...specLabels]) {
     ctx.textAlign = canvasTextAlign(label.textAnchor);
     ctx.fillText(label.text, label.x, label.y);
   }
@@ -268,20 +337,32 @@ function drawHistogram(
     top: oy + PLOT.top,
     bottom: oy + PLOT.bottom,
   };
-  const counts = bins.map((bin) => bin.count);
-  const curveYs = [...overallCurve, ...withinCurve].map((point) => point.y);
-  const xValues = [
-    ...bins.flatMap((bin) => [bin.x0, bin.x1]),
-    ...overallCurve.map((point) => point.x),
-    ...(lsl != null ? [lsl] : []),
-    ...(usl != null ? [usl] : []),
-  ];
-  const [xMin, xMax] = domain(xValues, 0.02);
-  const yMax = Math.max(1, ...counts, ...curveYs) * 1.12;
-  const x = scale(xMin, xMax, plot.left, plot.right);
-  const y = scale(0, yMax, plot.bottom, plot.top);
+  const scaleBox = histogramChartScale({
+    bins,
+    overallCurve,
+    withinCurve,
+    lsl,
+    usl,
+  });
+  const x = scale(scaleBox.xMin, scaleBox.xMax, plot.left, plot.right);
+  const y = scale(scaleBox.yMin, scaleBox.yMax, plot.bottom, plot.top);
 
-  drawAxis(ctx, plot, xMin, xMax, 0, yMax, "Measurement", "Frequency", colors);
+  drawAxis(
+    ctx,
+    plot,
+    scaleBox.xMin,
+    scaleBox.xMax,
+    scaleBox.yMin,
+    scaleBox.yMax,
+    "Measurement",
+    "Frequency",
+    colors,
+    {
+      xTicks: scaleBox.xTicks,
+      yTicks: scaleBox.yTicks,
+      formatTick: formatAxisTick,
+    }
+  );
 
   for (const bin of bins) {
     const w = Math.max(1, x(bin.x1) - x(bin.x0) - 1);
@@ -472,13 +553,13 @@ function drawCapabilityText(
     ...(result.skipped > 0
       ? ([["Skipped", String(result.skipped)]] as Array<[string, string]>)
       : []),
-    ["Mean", formatStat(result.mean)],
-    ["StDev (overall)", formatStat(result.overallStdev)],
-    ["StDev (within)", formatStat(result.withinStdev)],
-    ["MR̄", formatStat(result.mrBar)],
-    ["LSL", formatStat(cap.lsl)],
-    ["Target", formatStat(cap.target)],
-    ["USL", formatStat(cap.usl)],
+    ["Mean", formatCapabilityStat(result.mean)],
+    ["StDev (overall)", formatCapabilityStat(result.overallStdev)],
+    ["StDev (within)", formatCapabilityStat(result.withinStdev)],
+    ["MR̄", formatCapabilityStat(result.mrBar)],
+    ["LSL", formatCapabilityStat(cap.lsl)],
+    ["Target", formatCapabilityStat(cap.target)],
+    ["USL", formatCapabilityStat(cap.usl)],
   ];
   drawStatColumn(ctx, leftX, top, "Process data", processRows, colors, colW - 8);
   const afterPotential = drawStatColumn(
@@ -487,10 +568,10 @@ function drawCapabilityText(
     top,
     "Potential (within)",
     [
-      ["Cp", formatStat(cap.cp)],
-      ["CPL", formatStat(cap.cpl)],
-      ["CPU", formatStat(cap.cpu)],
-      ["Cpk", formatStat(cap.cpk)],
+      ["Cp", formatCapabilityStat(cap.cp)],
+      ["CPL", formatCapabilityStat(cap.cpl)],
+      ["CPU", formatCapabilityStat(cap.cpu)],
+      ["Cpk", formatCapabilityStat(cap.cpk)],
       ["PPM (exp.)", formatPpm(cap.ppmWithin)],
     ],
     colors,
@@ -502,10 +583,10 @@ function drawCapabilityText(
     afterPotential + 8,
     "Overall",
     [
-      ["Pp", formatStat(cap.pp)],
-      ["PPL", formatStat(cap.ppl)],
-      ["PPU", formatStat(cap.ppu)],
-      ["Ppk", formatStat(cap.ppk)],
+      ["Pp", formatCapabilityStat(cap.pp)],
+      ["PPL", formatCapabilityStat(cap.ppl)],
+      ["PPU", formatCapabilityStat(cap.ppu)],
+      ["Ppk", formatCapabilityStat(cap.ppk)],
       ["PPM (exp.)", formatPpm(cap.ppmOverall)],
       ["PPM (obs.)", formatPpm(cap.ppmObserved)],
     ],
@@ -560,7 +641,11 @@ export function renderSixpackPng(
             colors,
             1,
             "Observation",
-            "Individual"
+            "Individual",
+            {
+              lsl: results.capability.lsl,
+              usl: results.capability.usl,
+            }
           ),
       },
       {
@@ -580,7 +665,12 @@ export function renderSixpackPng(
             colors,
             Math.max(1, results.n - results.lastObservations.length + 1),
             "Observation",
-            "Value"
+            "Value",
+            {
+              lsl: results.capability.lsl,
+              usl: results.capability.usl,
+              showControlLimits: false,
+            }
           ),
       },
       {

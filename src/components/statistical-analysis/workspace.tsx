@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,6 +15,8 @@ import {
   createCapabilitySixpack,
   createMeasurementScatter,
   createOneWayAnova,
+  createBoxplot,
+  createHistogram,
   createXyScatter,
   deleteCapabilitySixpack,
   getReportAnalytics,
@@ -31,9 +34,11 @@ import {
   deleteDataSheet,
   dropSpecRow,
   insertColumn,
+  isStaleAnalyticsVersion,
   mergeDirtyWorksheet,
   normalizeWorksheet,
   renameDataSheet,
+  restoreActiveSheet,
   specRowForColumn,
   switchWorksheetTab,
   upsertSpecRow,
@@ -42,9 +47,10 @@ import {
 } from "@/lib/statistical-analysis/worksheet";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import {
-  MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   isAnovaAnalysis,
+  isBoxplotAnalysis,
+  isHistogramAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -61,10 +67,14 @@ import {
 import { AnalyzeDialog } from "@/components/statistical-analysis/analyze-dialog";
 import { CapabilityDialog } from "@/components/statistical-analysis/capability-dialog";
 import { AnovaDialog } from "@/components/statistical-analysis/anova-dialog";
+import { BoxplotDialog } from "@/components/statistical-analysis/boxplot-dialog";
+import { HistogramDialog } from "@/components/statistical-analysis/histogram-dialog";
+import { HistogramView } from "@/components/statistical-analysis/histogram-view";
 import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-measurements-dialog";
 import { XyScatterDialog } from "@/components/statistical-analysis/xy-scatter-dialog";
 import { ScatterView } from "@/components/statistical-analysis/scatter-view";
 import { AnovaView } from "@/components/statistical-analysis/anova-view";
+import { BoxplotView } from "@/components/statistical-analysis/boxplot-view";
 import { SixpackView } from "@/components/statistical-analysis/sixpack-view";
 import { ColumnSpecsDialog } from "@/components/statistical-analysis/column-specs-dialog";
 import {
@@ -72,6 +82,9 @@ import {
   type ColumnMenuAction,
 } from "@/components/statistical-analysis/worksheet-grid";
 import { WorkspaceMenubar } from "@/components/statistical-analysis/workspace-menubar";
+
+/** Coalesce mid-turn grid reloads so parallel column writes paint once. */
+const AGENT_WORKSHEET_RELOAD_DEBOUNCE_MS = 200;
 
 export type AnalyticsFocusApi = {
   focusSheet: (sheetId: string) => void;
@@ -118,6 +131,7 @@ export function StatisticalWorkspace({
   );
   const [tab, setTab] = useState("worksheet");
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
+  const [analysisListCollapsed, setAnalysisListCollapsed] = useState(false);
 
   useEffect(() => {
     if (!focusApiRef) return;
@@ -165,6 +179,18 @@ export function StatisticalWorkspace({
   const [xyRowEnd, setXyRowEnd] = useState<number | null>(null);
   const [xySubmitting, setXySubmitting] = useState(false);
   const [xyError, setXyError] = useState<string | null>(null);
+  const [boxplotOpen, setBoxplotOpen] = useState(false);
+  const [boxplotYColumnId, setBoxplotYColumnId] = useState("");
+  const [boxplotRowStart, setBoxplotRowStart] = useState<number | null>(null);
+  const [boxplotRowEnd, setBoxplotRowEnd] = useState<number | null>(null);
+  const [boxplotSubmitting, setBoxplotSubmitting] = useState(false);
+  const [boxplotError, setBoxplotError] = useState<string | null>(null);
+  const [histogramOpen, setHistogramOpen] = useState(false);
+  const [histogramColumnId, setHistogramColumnId] = useState("");
+  const [histogramRowStart, setHistogramRowStart] = useState<number | null>(null);
+  const [histogramRowEnd, setHistogramRowEnd] = useState<number | null>(null);
+  const [histogramSubmitting, setHistogramSubmitting] = useState(false);
+  const [histogramError, setHistogramError] = useState<string | null>(null);
   const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetNameDraft, setSheetNameDraft] = useState("");
@@ -208,6 +234,7 @@ export function StatisticalWorkspace({
     next: ReportAnalyticsView,
     opts?: { selectAnalysisId?: string }
   ) => {
+    if (isStaleAnalyticsVersion(next.version, versionRef.current)) return;
     setWorksheet(next.worksheet);
     setPersistedWorksheet(next.worksheet);
     versionRef.current = next.version;
@@ -231,17 +258,19 @@ export function StatisticalWorkspace({
 
   const ingestRemote = useCallback(
     (next: ReportAnalyticsView) => {
-      const merged = mergeDirtyWorksheet(
-        worksheetRef.current,
-        persistedRef.current,
-        next.worksheet
+      if (isStaleAnalyticsVersion(next.version, versionRef.current)) return;
+      const local = worksheetRef.current;
+      const incoming = restoreActiveSheet(next.worksheet, local.activeSheetId);
+      const merged = restoreActiveSheet(
+        mergeDirtyWorksheet(local, persistedRef.current, incoming),
+        local.activeSheetId
       );
-      if (worksheetsEqual(merged, next.worksheet)) {
-        applyAnalytics(next);
+      if (worksheetsEqual(merged, incoming)) {
+        applyAnalytics({ ...next, worksheet: incoming });
         return;
       }
       setWorksheet(merged);
-      setPersistedWorksheet(next.worksheet);
+      setPersistedWorksheet(incoming);
       versionRef.current = next.version;
       setVersion(next.version);
       setAnalyses(next.analyses);
@@ -281,23 +310,27 @@ export function StatisticalWorkspace({
   useEffect(() => {
     if (reloadEpoch === 0) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        const next = await getReportAnalytics(reportId);
-        if (cancelled) return;
-        ingestRemote(next);
-        setLoadError(null);
-      } catch (error) {
-        if (cancelled) return;
-        setLoadError(
-          error instanceof Error ? error.message : "Could not load analytics."
-        );
-      }
-    })();
+    const delay = agentBusy ? AGENT_WORKSHEET_RELOAD_DEBOUNCE_MS : 0;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const next = await getReportAnalytics(reportId);
+          if (cancelled) return;
+          ingestRemote(next);
+          setLoadError(null);
+        } catch (error) {
+          if (cancelled) return;
+          setLoadError(
+            error instanceof Error ? error.message : "Could not load analytics."
+          );
+        }
+      })();
+    }, delay);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [ingestRemote, reloadEpoch, reportId]);
+  }, [agentBusy, ingestRemote, reloadEpoch, reportId]);
 
   useEffect(() => {
     if (analyses.length > analysisCountRef.current) {
@@ -308,6 +341,9 @@ export function StatisticalWorkspace({
 
   const applySavedWorksheet = useCallback(
     (saved: ReportAnalyticsView, sent: WorksheetData): WorksheetData => {
+      if (isStaleAnalyticsVersion(saved.version, versionRef.current)) {
+        return worksheetRef.current;
+      }
       versionRef.current = saved.version;
       setVersion(saved.version);
       setAnalyses(saved.analyses);
@@ -481,6 +517,22 @@ export function StatisticalWorkspace({
         setXyOpen(true);
         return;
       }
+      if (isBoxplotAnalysis(analysis)) {
+        setBoxplotYColumnId(analysis.config.yColumnId);
+        setBoxplotRowStart(analysis.config.rowStart ?? null);
+        setBoxplotRowEnd(analysis.config.rowEnd ?? null);
+        setBoxplotError(null);
+        setBoxplotOpen(true);
+        return;
+      }
+      if (isHistogramAnalysis(analysis)) {
+        setHistogramColumnId(analysis.config.columnId);
+        setHistogramRowStart(analysis.config.rowStart ?? null);
+        setHistogramRowEnd(analysis.config.rowEnd ?? null);
+        setHistogramError(null);
+        setHistogramOpen(true);
+        return;
+      }
       if (isScatterAnalysis(analysis)) {
         setPlotError(null);
         setPlotOpen(true);
@@ -547,14 +599,6 @@ export function StatisticalWorkspace({
     setCapabilityOpen(true);
   };
 
-  const openPlotMeasurements = async () => {
-    if (readOnly) return;
-    await flush().catch(() => undefined);
-    setEditingAnalysisId(null);
-    setPlotError(null);
-    setPlotOpen(true);
-  };
-
   const openOneWayAnova = async (
     columnId: string,
     rows: { start: number; end: number } | null = null
@@ -581,6 +625,34 @@ export function StatisticalWorkspace({
     setXyRowEnd(rows?.end ?? null);
     setXyError(null);
     setXyOpen(true);
+  };
+
+  const openBoxplot = async (
+    columnId: string,
+    rows: { start: number; end: number } | null = null
+  ) => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
+    setBoxplotYColumnId(columnId);
+    setBoxplotRowStart(rows?.start ?? null);
+    setBoxplotRowEnd(rows?.end ?? null);
+    setBoxplotError(null);
+    setBoxplotOpen(true);
+  };
+
+  const openHistogram = async (
+    columnId: string,
+    rows: { start: number; end: number } | null = null
+  ) => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
+    setHistogramColumnId(columnId);
+    setHistogramRowStart(rows?.start ?? null);
+    setHistogramRowEnd(rows?.end ?? null);
+    setHistogramError(null);
+    setHistogramOpen(true);
   };
 
   const insertColumnAt = (atIndex: number) => {
@@ -689,13 +761,18 @@ export function StatisticalWorkspace({
               onNormalSixpack={() =>
                 void openSixpackForColumn(selectedColumnId, selectedRowRange)
               }
+              onHistogram={() =>
+                void openHistogram(selectedColumnId, selectedRowRange)
+              }
               onOneWayAnova={() =>
                 void openOneWayAnova(selectedColumnId, selectedRowRange)
+              }
+              onBoxplot={() =>
+                void openBoxplot(selectedColumnId, selectedRowRange)
               }
               onXyScatter={() =>
                 void openXyScatter(selectedColumnId, selectedRowRange)
               }
-              onPlotMeasurements={() => void openPlotMeasurements()}
               onAddDataSheet={() => {
                 setWorksheet((current) => addDataSheet(current));
                 setSelection(collapseSelection(0, 0));
@@ -824,83 +901,120 @@ export function StatisticalWorkspace({
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
                 Right-click a column and choose <strong>Analyze data…</strong>,
                 or use <strong>Plot → Normal Capability Sixpack</strong>,{" "}
+                <strong>Plot → Histogram</strong>,{" "}
                 <strong>Plot → One-Way ANOVA</strong>,{" "}
-                <strong>Plot → Scatter</strong> for two worksheet columns, or{" "}
-                <strong>Plot → Plot measurements</strong> for an attachment
-                scatter. Each run is saved as its own result.
+                <strong>Plot → Boxplot</strong>, or{" "}
+                <strong>Plot → Plot measurements</strong> for a worksheet
+                column (1D vs index, or 2D if you pick X). To extract numbers
+                from a file and plot them, ask the assistant. Each run is saved
+                as its own result.
               </p>
             </div>
           ) : (
             <div className="flex min-h-0 min-w-0 flex-1">
-              <aside
-                data-testid="analysis-list"
-                className="w-56 shrink-0 overflow-y-auto border-r border-[var(--border)] p-2"
-              >
-                <div className="flex items-center justify-between gap-2 px-2 pb-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-                    Analyses
-                  </p>
-                  {readOnly ? null : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-1.5 text-[11px]"
-                      data-testid="new-analysis"
-                      onClick={() =>
-                        void openAnalyzeForColumn(
-                          selectedColumnId,
-                          selectedRowRange
-                        )
-                      }
-                    >
-                      New
-                    </Button>
-                  )}
-                </div>
-                <ul className="space-y-1">
-                  {displayedAnalyses.map((analysis) => {
-                    const active = selectedAnalysis?.id === analysis.id;
-                    const subtitle = analysisListSubtitle(analysis);
-                    return (
-                      <li key={analysis.id}>
-                        <button
+              {analysisListCollapsed ? (
+                <aside
+                  data-testid="analysis-list"
+                  data-collapsed="true"
+                  className="flex w-10 shrink-0 flex-col border-r border-[var(--border)]"
+                >
+                  <button
+                    type="button"
+                    data-testid="analysis-list-expand"
+                    aria-label="Show analyses list"
+                    aria-expanded={false}
+                    title="Show analyses list"
+                    onClick={() => setAnalysisListCollapsed(false)}
+                    className="mx-auto mt-2 flex size-8 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                  >
+                    <PanelLeftOpen className="size-4" aria-hidden="true" />
+                  </button>
+                </aside>
+              ) : (
+                <aside
+                  data-testid="analysis-list"
+                  data-collapsed="false"
+                  className="w-56 shrink-0 overflow-y-auto border-r border-[var(--border)] p-2"
+                >
+                  <div className="flex items-center justify-between gap-2 px-2 pb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+                      Analyses
+                    </p>
+                    <div className="flex items-center gap-0.5">
+                      {readOnly ? null : (
+                        <Button
                           type="button"
-                          data-testid={`analysis-item-${analysis.id}`}
-                          data-analysis-title={analysis.title}
-                          onClick={() => setSelectedAnalysisId(analysis.id)}
-                          className={`w-full rounded-md px-2 py-2 text-left text-xs transition-colors ${
-                            active
-                              ? "bg-[var(--brand-700)] text-white"
-                              : "hover:bg-[var(--secondary)]"
-                          }`}
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[11px]"
+                          data-testid="new-analysis"
+                          onClick={() =>
+                            void openAnalyzeForColumn(
+                              selectedColumnId,
+                              selectedRowRange
+                            )
+                          }
                         >
-                          <span className="block font-medium">{analysis.title}</span>
-                          <span
-                            className={`block ${
+                          New
+                        </Button>
+                      )}
+                      <button
+                        type="button"
+                        data-testid="analysis-list-collapse"
+                        aria-label="Hide analyses list"
+                        aria-expanded
+                        title="Hide analyses list"
+                        onClick={() => setAnalysisListCollapsed(true)}
+                        className="flex size-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                      >
+                        <PanelLeftClose className="size-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                  <ul className="space-y-1">
+                    {displayedAnalyses.map((analysis) => {
+                      const active = selectedAnalysis?.id === analysis.id;
+                      const subtitle = analysisListSubtitle(analysis);
+                      return (
+                        <li key={analysis.id}>
+                          <button
+                            type="button"
+                            data-testid={`analysis-item-${analysis.id}`}
+                            data-analysis-title={analysis.title}
+                            onClick={() => setSelectedAnalysisId(analysis.id)}
+                            className={`w-full rounded-md px-2 py-2 text-left text-xs transition-colors ${
                               active
-                                ? "text-white/80"
-                                : "text-[var(--muted-foreground)]"
+                                ? "bg-[var(--brand-700)] text-white"
+                                : "hover:bg-[var(--secondary)]"
                             }`}
                           >
-                            {subtitle}
-                          </span>
-                          <span
-                            className={`block ${
-                              active
-                                ? "text-white/80"
-                                : "text-[var(--muted-foreground)]"
-                            }`}
-                          >
-                            {analysis.stale ? "Stale · " : ""}
-                            {new Date(analysis.createdAt).toLocaleString()}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </aside>
+                            <span className="block font-medium">{analysis.title}</span>
+                            <span
+                              className={`block ${
+                                active
+                                  ? "text-white/80"
+                                  : "text-[var(--muted-foreground)]"
+                              }`}
+                            >
+                              {subtitle}
+                            </span>
+                            <span
+                              className={`block ${
+                                active
+                                  ? "text-white/80"
+                                  : "text-[var(--muted-foreground)]"
+                              }`}
+                            >
+                              {analysis.stale ? "Stale · " : ""}
+                              {new Date(analysis.createdAt).toLocaleString()}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </aside>
+              )}
               <div className="min-w-0 flex-1 overflow-hidden">
                 {selectedAnalysis &&
                 (isScatterAnalysis(selectedAnalysis) ||
@@ -933,6 +1047,58 @@ export function StatisticalWorkspace({
                 ) : selectedAnalysis && isAnovaAnalysis(selectedAnalysis) ? (
                   <AnovaView
                     analysis={selectedAnalysis}
+                    readOnly={readOnly}
+                    editing={Boolean(editingAnalysisId)}
+                    recomputing={recomputingAnalysisId === selectedAnalysis.id}
+                    onRecompute={() => void recomputeSelectedAnalysis(selectedAnalysis)}
+                    onEdit={() => openAnalysisEdit(selectedAnalysis)}
+                    onDelete={async () => {
+                      try {
+                        const next = await deleteCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not delete the analysis."
+                        );
+                      }
+                    }}
+                  />
+                ) : selectedAnalysis && isHistogramAnalysis(selectedAnalysis) ? (
+                  <HistogramView
+                    analysis={selectedAnalysis}
+                    reportId={reportId}
+                    onPreviewUploaded={applyAnalytics}
+                    readOnly={readOnly}
+                    editing={Boolean(editingAnalysisId)}
+                    recomputing={recomputingAnalysisId === selectedAnalysis.id}
+                    onRecompute={() => void recomputeSelectedAnalysis(selectedAnalysis)}
+                    onEdit={() => openAnalysisEdit(selectedAnalysis)}
+                    onDelete={async () => {
+                      try {
+                        const next = await deleteCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not delete the analysis."
+                        );
+                      }
+                    }}
+                  />
+                ) : selectedAnalysis && isBoxplotAnalysis(selectedAnalysis) ? (
+                  <BoxplotView
+                    analysis={selectedAnalysis}
+                    reportId={reportId}
+                    onPreviewUploaded={applyAnalytics}
                     readOnly={readOnly}
                     editing={Boolean(editingAnalysisId)}
                     recomputing={recomputingAnalysisId === selectedAnalysis.id}
@@ -1009,19 +1175,6 @@ export function StatisticalWorkspace({
                 title: payload.values.title || undefined,
                 rowStart: payload.values.rowStart,
                 rowEnd: payload.values.rowEnd,
-              });
-              applyAnalytics(created.analytics, {
-                selectAnalysisId: created.analysisId,
-              });
-            } else if (payload.kind === MEASUREMENT_SCATTER) {
-              const created = await createMeasurementScatter(reportId, {
-                query: payload.values.query,
-                title: payload.values.title || undefined,
-                xLabel: payload.values.xLabel || undefined,
-                yLabel: payload.values.yLabel || undefined,
-                layout: { mode: payload.values.mode },
-                lsl: payload.values.lsl,
-                usl: payload.values.usl,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,
@@ -1239,6 +1392,199 @@ export function StatisticalWorkspace({
         }}
       />
 
+      <BoxplotDialog
+        key={
+          boxplotOpen
+            ? `boxplot-${editingAnalysisId ?? "new"}`
+            : "boxplot-closed"
+        }
+        open={boxplotOpen}
+        worksheet={worksheet}
+        defaultYColumnId={boxplotYColumnId || selectedColumnId}
+        defaultCategoryColumnIds={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? editingAnalysis.config.categoryColumnIds
+            : undefined
+        }
+        defaultRowStart={boxplotRowStart}
+        defaultRowEnd={boxplotRowEnd}
+        defaultTitle={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        defaultXAxisLabel={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xAxisLabel ?? "")
+            : ""
+        }
+        defaultYAxisLabel={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yAxisLabel ?? "")
+            : ""
+        }
+        defaultShowMeanLine={
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showMeanLine === true
+            : false
+        }
+        editMode={Boolean(
+          editingAnalysis && isBoxplotAnalysis(editingAnalysis)
+        )}
+        submitting={boxplotSubmitting}
+        error={boxplotError}
+        onOpenChange={(open) => {
+          setBoxplotOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
+        onSubmit={async (values) => {
+          setBoxplotSubmitting(true);
+          setBoxplotError(null);
+          try {
+            await flush().catch(() => undefined);
+            if (editingAnalysisId && isBoxplotAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(reportId, editingAnalysisId, {
+                yColumnId: values.yColumnId,
+                categoryColumnIds: values.categoryColumnIds,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
+                showMeanLine: values.showMeanLine,
+              });
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("Boxplot updated.");
+            } else {
+              const created = await createBoxplot(reportId, {
+                yColumnId: values.yColumnId,
+                categoryColumnIds: values.categoryColumnIds,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
+                showMeanLine: values.showMeanLine,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
+            setBoxplotOpen(false);
+            clearAnalysisEdit();
+            setTab("results");
+          } catch (error) {
+            setBoxplotError(
+              error instanceof Error
+                ? error.message
+                : "Could not run the boxplot."
+            );
+          } finally {
+            setBoxplotSubmitting(false);
+          }
+        }}
+      />
+
+      <HistogramDialog
+        key={
+          histogramOpen
+            ? `histogram-${editingAnalysisId ?? "new"}`
+            : "histogram-closed"
+        }
+        open={histogramOpen}
+        worksheet={worksheet}
+        defaultColumnId={histogramColumnId || selectedColumnId}
+        defaultRowStart={histogramRowStart}
+        defaultRowEnd={histogramRowEnd}
+        defaultTitle={
+          editingAnalysis && isHistogramAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        defaultLsl={
+          editingAnalysis && isHistogramAnalysis(editingAnalysis)
+            ? editingAnalysis.config.lsl
+            : null
+        }
+        defaultUsl={
+          editingAnalysis && isHistogramAnalysis(editingAnalysis)
+            ? editingAnalysis.config.usl
+            : null
+        }
+        defaultShowDistributionLines={
+          editingAnalysis && isHistogramAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showDistributionLines !== false
+            : true
+        }
+        defaultShowLsl={
+          editingAnalysis && isHistogramAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showLsl !== false
+            : true
+        }
+        defaultShowUsl={
+          editingAnalysis && isHistogramAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showUsl !== false
+            : true
+        }
+        editMode={Boolean(
+          editingAnalysis && isHistogramAnalysis(editingAnalysis)
+        )}
+        submitting={histogramSubmitting}
+        error={histogramError}
+        onOpenChange={(open) => {
+          setHistogramOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
+        onSubmit={async (values) => {
+          setHistogramSubmitting(true);
+          setHistogramError(null);
+          try {
+            await flush().catch(() => undefined);
+            if (editingAnalysisId && isHistogramAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(reportId, editingAnalysisId, {
+                columnId: values.columnId,
+                title: values.title || undefined,
+                lsl: values.lsl,
+                usl: values.usl,
+                showDistributionLines: values.showDistributionLines,
+                showLsl: values.showLsl,
+                showUsl: values.showUsl,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("Histogram updated.");
+            } else {
+              const created = await createHistogram(reportId, {
+                columnId: values.columnId,
+                title: values.title || undefined,
+                lsl: values.lsl,
+                usl: values.usl,
+                showDistributionLines: values.showDistributionLines,
+                showLsl: values.showLsl,
+                showUsl: values.showUsl,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
+            setHistogramOpen(false);
+            clearAnalysisEdit();
+            setTab("results");
+          } catch (error) {
+            setHistogramError(
+              error instanceof Error
+                ? error.message
+                : "Could not run the histogram."
+            );
+          } finally {
+            setHistogramSubmitting(false);
+          }
+        }}
+      />
+
       <XyScatterDialog
         key={xyOpen ? `xy-${editingAnalysisId ?? "new"}` : "xy-closed"}
         open={xyOpen}
@@ -1247,13 +1593,63 @@ export function StatisticalWorkspace({
         defaultXColumnId={
           editingAnalysis && isXyScatterAnalysis(editingAnalysis)
             ? editingAnalysis.config.xColumnId
-            : undefined
+            : null
+        }
+        defaultLegendColumnId={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.legendColumnId
+            : null
+        }
+        defaultMark={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.mark
+            : "scatter"
+        }
+        defaultShowSpecLimits={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showSpecLimits === true
+            : false
+        }
+        defaultShowMeanLine={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showMeanLine === true
+            : false
         }
         defaultRowStart={xyRowStart}
         defaultRowEnd={xyRowEnd}
         defaultTitle={
           editingAnalysis && isXyScatterAnalysis(editingAnalysis)
             ? editingAnalysis.config.title
+            : ""
+        }
+        defaultXMin={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xMin ?? null)
+            : null
+        }
+        defaultXMax={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xMax ?? null)
+            : null
+        }
+        defaultYMin={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yMin ?? null)
+            : null
+        }
+        defaultYMax={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yMax ?? null)
+            : null
+        }
+        defaultXAxisLabel={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.xAxisLabel ?? "")
+            : ""
+        }
+        defaultYAxisLabel={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? (editingAnalysis.config.yAxisLabel ?? "")
             : ""
         }
         editMode={Boolean(
@@ -1274,19 +1670,39 @@ export function StatisticalWorkspace({
               const next = await updateAnalysis(reportId, editingAnalysisId, {
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
+                legendColumnId: values.legendColumnId,
+                mark: values.mark,
+                showSpecLimits: values.showSpecLimits,
+                showMeanLine: values.showMeanLine,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xMin: values.xMin,
+                xMax: values.xMax,
+                yMin: values.yMin,
+                yMax: values.yMax,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
-              toast.success("Scatter updated.");
+              toast.success("Plot updated.");
             } else {
               const created = await createXyScatter(reportId, {
                 xColumnId: values.xColumnId,
                 yColumnId: values.yColumnId,
+                legendColumnId: values.legendColumnId,
+                mark: values.mark,
+                showSpecLimits: values.showSpecLimits,
+                showMeanLine: values.showMeanLine,
                 title: values.title || undefined,
                 rowStart: values.rowStart,
                 rowEnd: values.rowEnd,
+                xMin: values.xMin,
+                xMax: values.xMax,
+                yMin: values.yMin,
+                yMax: values.yMax,
+                xAxisLabel: values.xAxisLabel,
+                yAxisLabel: values.yAxisLabel,
               });
               applyAnalytics(created.analytics, {
                 selectAnalysisId: created.analysisId,
@@ -1299,7 +1715,7 @@ export function StatisticalWorkspace({
             setXyError(
               error instanceof Error
                 ? error.message
-                : "Could not plot the scatter."
+                : "Could not create the plot."
             );
           } finally {
             setXySubmitting(false);

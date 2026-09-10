@@ -1,4 +1,5 @@
 import type { ReportAnalyticsView } from "./types";
+import type { ChartMark } from "@/lib/charts/chart-marks";
 
 export class AnalyticsConflictError extends Error {
   readonly analytics: ReportAnalyticsView;
@@ -134,8 +135,18 @@ export async function createOneWayAnova(
 export async function createXyScatter(
   reportId: string,
   input: {
-    xColumnId: string;
+    xColumnId?: string | null;
     yColumnId: string;
+    legendColumnId?: string | null;
+    mark?: ChartMark;
+    showSpecLimits?: boolean;
+    showMeanLine?: boolean;
+    xMin?: number | null;
+    xMax?: number | null;
+    yMin?: number | null;
+    yMax?: number | null;
+    xAxisLabel?: string | null;
+    yAxisLabel?: string | null;
     title?: string;
     rowStart?: number | null;
     rowEnd?: number | null;
@@ -144,6 +155,47 @@ export async function createXyScatter(
 ): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   return postAnalysis(reportId, {
     kind: "xy_scatter",
+    ...input,
+  });
+}
+
+export async function createBoxplot(
+  reportId: string,
+  input: {
+    yColumnId: string;
+    categoryColumnIds?: string[];
+    title?: string;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+    xAxisLabel?: string | null;
+    yAxisLabel?: string | null;
+    showMeanLine?: boolean;
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "boxplot",
+    ...input,
+  });
+}
+
+export async function createHistogram(
+  reportId: string,
+  input: {
+    columnId: string;
+    title?: string;
+    lsl?: number | null;
+    usl?: number | null;
+    showDistributionLines?: boolean;
+    showLsl?: boolean;
+    showUsl?: boolean;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "histogram",
     ...input,
   });
 }
@@ -240,8 +292,9 @@ export async function fetchAnalysisImage(
 export async function saveAnalysisPreview(
   reportId: string,
   analysisId: string,
-  previewImage: AnalysisImageExport
-): Promise<ReportAnalyticsView> {
+  previewImage: AnalysisImageExport,
+  matchKey?: string
+): Promise<ReportAnalyticsView | null> {
   const response = await fetch(
     analyticsUrl(
       reportId,
@@ -250,9 +303,10 @@ export async function saveAnalysisPreview(
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ previewImage }),
+      body: JSON.stringify({ previewImage, matchKey }),
     }
   );
+  if (response.status === 409) return null;
   if (!response.ok) throw new Error(await readError(response));
   const body = (await response.json()) as { analytics: ReportAnalyticsView };
   return body.analytics;

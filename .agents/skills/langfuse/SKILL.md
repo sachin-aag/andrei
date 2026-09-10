@@ -35,6 +35,7 @@ Follow these principles for ALL Langfuse work:
 - capturing user feedback (thumbs, ratings, implicit signals) as scores on traces: references/user-feedback.md
 - further tips on using the Langfuse CLI: references/cli.md
 - upgrading or migrating Langfuse SDKs to the latest version: references/sdk-upgrade.md
+- migrating a Langfuse project to v4 (ingestion, evaluators, deprecated APIs, exports): references/v4-project-migration.md
 - systematic error analysis — reading traces, building failure taxonomy, deciding what to fix: references/error-analysis.md
 - submitting feedback about this skill: references/skill-feedback.md
 
@@ -62,7 +63,7 @@ Set environment variables before making calls:
 ```bash
 export LANGFUSE_PUBLIC_KEY=pk-lf-...
 export LANGFUSE_SECRET_KEY=sk-lf-...
-export LANGFUSE_HOST=https://cloud.langfuse.com # example for EU cloud. For US cloud it's us.cloud.langfuse.com, and can also be a self-hosted URL. The server must always be specified in order to access Langfuse.
+export LANGFUSE_HOST={LANGFUSE_HOST} # example for EU cloud. For US cloud it's us.cloud.langfuse.com, and can also be a self-hosted URL. The server must always be specified in order to access Langfuse.
 ```
 
 If not set, ask the user to set them in their shell or a `.env` file (do not ask them to paste keys into chat for security reasons). Keys are found in Langfuse UI → Settings → API Keys.

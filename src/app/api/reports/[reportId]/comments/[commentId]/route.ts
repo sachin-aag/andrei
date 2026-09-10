@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -6,10 +6,23 @@ import { comments, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
+import {
+  recordSuggestionDecisionScore,
+  flushLangfuseScores,
+} from "@/lib/observability/langfuse-scores";
 
 const patchSchema = z.object({
   status: z.enum(["open", "resolved", "dismissed"]).optional(),
   content: z.string().optional(),
+  operations: z
+    .array(
+      z.object({
+        opIndex: z.number(),
+        coverage: z.number(),
+        classification: z.enum(["edit", "rewrite"]),
+      })
+    )
+    .optional(),
 });
 
 function canResolveThread(user: { id: string; role: string }, report: { authorId: string }) {
@@ -69,7 +82,9 @@ export async function PATCH(
         { status: 403 }
       );
     }
-    if (!canEditCommentContent(user, row)) {
+    const mayEditAiPayload =
+      isAiSuggestionKind(row.kind) && canResolveThread(user, report);
+    if (!canEditCommentContent(user, row) && !mayEditAiPayload) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const [updated] = await db
@@ -119,6 +134,57 @@ export async function PATCH(
           contentPath: row.contentPath,
           aiContent: row.content,
         },
+      });
+      for (const op of parse.data.operations ?? []) {
+        await recordAuditEvent({
+          actor: auditActorFromUser(user),
+          action: "suggestion_operation_applied",
+          entityType: "suggestion",
+          entityId: threadRootId,
+          reportId,
+          summary: `Suggestion operation ${op.opIndex} (${op.classification}, coverage ${op.coverage.toFixed(2)}) applied`,
+          newValue: {
+            commentId: threadRootId,
+            opIndex: op.opIndex,
+            coverage: op.coverage,
+            classification: op.classification,
+          },
+        });
+      }
+      // Record Langfuse score for suggestion acceptance
+      after(async () => {
+        await recordSuggestionDecisionScore({
+          reportId,
+          decision: "accepted",
+          suggestionId: threadRootId,
+          section: row.section ?? undefined,
+          contentPath: row.contentPath ?? undefined,
+          reason: `${row.kind} accepted by ${user.name}`,
+        });
+        await flushLangfuseScores();
+      });
+    } else if (isAiSuggestionKind(row.kind) && parse.data.status === "dismissed") {
+      // Record Langfuse score for suggestion dismissal
+      after(async () => {
+        await recordSuggestionDecisionScore({
+          reportId,
+          decision: "dismissed",
+          suggestionId: threadRootId,
+          section: row.section ?? undefined,
+          contentPath: row.contentPath ?? undefined,
+          reason: `${row.kind} dismissed by ${user.name}`,
+        });
+        await flushLangfuseScores();
+      });
+      await recordAuditEvent({
+        actor: auditActorFromUser(user),
+        action: "comment_status_changed",
+        entityType: "comment",
+        entityId: threadRootId,
+        reportId,
+        summary: `Comment thread marked ${parse.data.status}`,
+        oldValue: { status: row.status },
+        newValue: { status: parse.data.status },
       });
     } else {
       await recordAuditEvent({
@@ -185,6 +251,19 @@ export async function DELETE(
       summary: "AI suggestion dismissed",
       oldValue: { status: row.status },
       newValue: { status: "dismissed" },
+    });
+
+    // Record Langfuse score for suggestion dismissal via delete
+    after(async () => {
+      await recordSuggestionDecisionScore({
+        reportId,
+        decision: "dismissed",
+        suggestionId: commentId,
+        section: row.section ?? undefined,
+        contentPath: row.contentPath ?? undefined,
+        reason: `${row.kind} deleted/dismissed by ${user.name}`,
+      });
+      await flushLangfuseScores();
     });
 
     return NextResponse.json({ ok: true });

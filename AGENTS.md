@@ -71,8 +71,14 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 - **Untrusted PDF/DOCX text** (`documentSummary`, `pageContext`, filenames,
   descriptions) goes through `sanitizePromptMetadata` before any prompt.
 - **Bump versions** when prompts change: `PROMPT_VERSION` (eval),
-  `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`,
-  `ANALYTICS_CHAT_PROMPT_VERSION`.
+ `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`,
+ `ANALYTICS_CHAT_PROMPT_VERSION`. Chat suggestions persist `suggestionBase`
+ + `suggestionIntent` and merge at apply (`mergeField`); do not restore a
+ frozen-diff hash or a `too_large` → `draft_field` funnel. Same-turn
+  `propose_edit` cards in Document and Agent chrome fold when locatable
+  spans sit within 20 characters (no per-field card budget). Both chromes
+  propose; nothing lands until Apply / Dismiss (Apply all / Dismiss all
+  show for one or more open suggestions).
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
   are silently missing in Plan.
@@ -116,22 +122,93 @@ NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 ```
 
 They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
-`docs/whitelabel-vercel-deploy.md`. Report workspace chrome is Document | Agent. Switching to Agent seeds the composer Report | Analytics target from the focused pane. Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. History is on Report and Analytics (pane-scoped compare). Report compare diffs prose, every table, and added/removed figures; Analytics compare is a cell/plot list. Worksheet versions are `analyticsRevisions`, not `documentRevisions`. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent).
-Statistical Analysis lives on the work-product **Analytics** pane (worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + one-way ANOVA) and is on for demo, MJ,
+`docs/whitelabel-vercel-deploy.md`. Primary sidebar is Reports, then Document
+Document vault (`/vault`), then Insights on demo only (`insightsEnabled`; MJ and
+Convergent hide the link and `/insights` redirects home). Vault Archive (bottom
+of the file list) hides files and folders without removing them from reports. The vault explorer is a Finder-style Name / Date / Size / Kind list; the file pane starts wide and a drag handle shrinks it so the document viewer can grow. Check files or folders and Share to grant other workspace users access (a folder shares every file inside it). A vault scan or upload shows a spinner in the explorer toolbar and in the browser tab. Report workspace
+chrome is Document | Agent.
+New reports open in Agent; returning to a report restores that user's last
+chrome for it. Report | Analytics in the composer is independent of the focused canvas pane in both Document and Agent chrome (locked while a turn is running). Mixed Report + Analytics turns can share a thread; each message is tagged Report or Analytics (`chat_messages.metadata.chatTarget`, stamped by the route). Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. Closing an attachment (header Close or the tab X) restores the canvas tab that was active immediately before that file — not always Report, and not the tab to the left. History is on Report and Analytics (pane-scoped compare). Report compare diffs prose, every table, and added/removed figures; Analytics compare is a cell/plot list. Worksheet versions are `analyticsRevisions`, not `documentRevisions`. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent).
+Statistical Analysis lives on the work-product **Analytics** pane (worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + Tukey boxplot + one-way ANOVA) and is on for demo, MJ,
 and Convergent (`statisticalAnalysisEnabled`). Analytics chat uses the same
 shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep; Ask
 searches/extracts only; Agent fills the worksheet and runs plots when the
 report is writable). `@` tags set scope (sections in Document chat; sheets,
-plots, and files in Analytics) — there is no section/sheet dropdown.
-Scatters are one series, one color (`plot_xy_scatter` needs two numeric
-columns; `plot_measurements` is vs observation index). Do not substitute
-sixpack/ANOVA for a scatter, and do not color by group.
+plots, and files in Analytics; Document chat can also tag saved plots) — there is no section/sheet dropdown.
+Scatters: worksheet Plot → Plot measurements (`plot_xy_scatter`) has required
+numeric Y, optional X (omit = vs observation index), optional
+`legendColumnId` to color-code by a grouping column (labels/lots/serials
+are OK for legend, not for X), and a Chart type (scatter, line, line +
+markers, area, column). Column charts stack when a legend is on. **Advanced**
+(collapsed) sets min/max X and Y (blank = auto) and optional axis titles.
+Those display limits are not part of `sourceHash`. Agent
+Analytics chat can create a plot or edit an existing worksheet plot
+(`analysisId` from Results or an `@` tag): replace Y/X, set or clear the
+legend, change chart type, toggle Show LSL/USL, Show mean line, or set the axis window. Ask mode cannot. New plots default to scatter with
+spec lines off. **Show LSL, USL values** under Y is off by default (no spec
+lines until checked or the assistant turns them on). **Show mean line** is
+off by default (not in `sourceHash`): on a scatter it connects mean Y at
+each X (gray individuals when there is no legend; one line per legend
+series); on a boxplot it connects each box’s mean (the median line inside
+the box stays). Columns written from a
+file (`write_column` after extract/scan/read) keep page citations when known,
+or the document name when the page is unavailable, on the column and chart
+spec for CSV download. Plot figures do not show `p. N`.
+Editing a cell drops that citation. Attachment extract-and-plot is Analytics chat
+only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
+There is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA
+for a scatter, boxplot, or histogram.
+Plot → Histogram (`plot_histogram`) is the same frequency chart as the
+sixpack histogram (bars plus optional overall/within normal curves and
+LSL/USL lines). LSL/USL are optional. Overlay checkboxes
+`showDistributionLines`, `showLsl`, and `showUsl` default on; a spec line
+draws only when the value is set and the checkbox is on. Overlay flags
+are display-only (`sourceHash` is column + row selection). Agent Analytics
+chat can create a histogram or edit an existing one with `analysisId`.
+Ask mode cannot.
+Plot → Boxplot (`plot_boxplot`) is a Tukey box-and-whisker of numeric Y.
+Optional category columns (innermost first, closest to the boxes; last is
+the outermost nested axis label) group observed combinations only — not a
+full factorial. Zero categories is one box of all Y. Empty category cells
+are labeled `(blank)`. Agent Analytics chat can create a boxplot or edit
+an existing one with `analysisId` (including `showMeanLine`). Ask mode cannot. Time series is not
+supported.
 Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
-assistant write; Agent `write_column` / `manage_worksheet` refresh the grid
-mid-turn. Analytics `search_documents` is keyword-first and stops after a cited page —
-it does not reuse Document chat's grep-loop copy.
-Convergent Document chat does not propose measurement plots; use Analytics
-instead.
+assistant write; Agent `write_column` / `manage_worksheet` run one at a time
+per report and re-apply onto the latest sheet on 409 (parallel column dumps
+must not wipe each other). The grid ignores older snapshots and coalesces
+mid-turn reloads so extraction does not flash empty. New extract columns
+claim empty C1–C8 from the left (`write_column`
+and `add_column` without `at`) instead of appending on the right. Pass
+`sheetId` on `write_column` when the destination is not the engineer's
+focused tab (agent writes do not steal focus; `add_sheet` reuses a
+same-named tab). Report and
+Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
+abort still apply). Do not tell the engineer they ran out of steps or to
+re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
+on write turns whose in-scope section already has a table, and Analytics
+hiding `write_column` after a cited-page grep until a page is read, while
+any file still has extract `morePages` or scan `truncated` (a finished
+extract of file B does not unlock a partial write of file A), after two
+consecutive empty dumps — not after a dump with blank cells, hiding
+`ask_user` on lookups / Skip / after any grep until a page is read (never
+ask which page — search/scan and say found or not), and hiding
+`manage_worksheet` after the first structure call). One complete
+`write_column` per destination sheet — separate extracts per sheet are
+correct; always pass `sheetId`. `write_column` `mode append` adds rows onto
+an existing named column. `delete_row` accepts `rowEnd` for a range. Agent
+Analytics plans multi-table dumps and calls `extract_sheet` once per sheet
+in the same step (parallel workers create or reuse the tab and write; the
+grid stays on the engineer's current tab). Add or remove rows on an
+already-filled sheet with `extract_sheet` `mode edit` (worker appends or
+deletes; it does not replace the whole table unless asked). `write_column`
+trusts and atomically persists the extractor's complete batch without
+per-cell source-token verification. Live matrix
+headers come from the section (`read_section` / context map) — demo
+Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
+it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages.
+Document chat copies a saved Analytics plot with `insert_image` (`source=analytics`)
+and can propose attachment `plot_measurements` figures on every pack.
 
 - `pnpm db:ensure-workspace-users` is Neon HTTP — **skip on local Docker**
   (`127.0.0.1` → `https://api.0.0.1/sql`). Create users with
@@ -166,6 +243,7 @@ process serving the request is missing one of them.
 |---------|--------|---------------------------|
 | AI Check / suggestions | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | `ALLOW_TEST_SKIP_EVALUATION`, `ALLOW_TEST_SKIP_SUGGESTIONS` |
 | Report chat | Same resolver; Vertex `global` if `GOOGLE_VERTEX_PROJECT` is set | `ALLOW_TEST_STUB_CHAT` |
+| Composer voice dictation | Same Gemini resolver as chat (Vertex WIF when `GOOGLE_VERTEX_PROJECT` is set). Native-script transcripts; assistant replies in English. Not Cloud Speech-to-Text | `ALLOW_TEST_STUB_SPEECH` |
 | PDF/DOCX ingest + embeddings | **Vertex only** (`GOOGLE_VERTEX_PROJECT` + WIF or ADC). Gateway key is not enough | `ALLOW_TEST_STUB_DOCUMENT_INGEST` |
 
 CRUD, editor, review, and DOCX export work without AI keys.
@@ -181,13 +259,28 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
   Adaptive/comprehensive skip it so the model greps. Gap tools:
   `search_documents` (multi-round grep), `document_outline`, `read_document_page`.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
-  The report body is **not** chunk-indexed; use `read_section`.
-- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
+  Identifier queries also match `document_pages.identifiers` (legacy rows fall
+  back to `ILIKE` on `raw_text`) and skip the query embedding when exact hits
+  already fill `limit`. Hits collapse to one chunk per page. The report body is
+  **not** chunk-indexed; use `read_section`. Living plan: `docs/retrieval.md`.
+- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. A sentence/paragraph rewrite is adaptive even on a large catalog, and an earlier “draft the report” turn must not force another full page walk. Comprehensive shape, inventory-section escalation, and all-scope section intent score the latest user turn only (an earlier equipment/UUT draft must not keep “draft the remaining sections” on the adaptive path). Header-only seeded tables (blank data cells) are empty, not partial. Search hits include a ready `citation` bracket (`[filename, p. N]` when the page is known; `[filename]` only if missing or ambiguous). Do not reject or rewrite a draft that omitted a known page. Shared `searchLoopDirective` hides `search_documents` after a cited hit, locate/read, or two empty greps (not during an active document review). Finished review coverage is rehydrated when the attachment coverage key is unchanged so a zero delta does not force another walk, except explicit pushback (“you missed SST”, “look again”, “re-check”) which skips rehydrate so a second pass can start. `finish_document_review` returns a capped findings sample; follow-up turns keep a slim `citationDigest` of `[filename, p. N]` plus a short summary (not the full findings array) so a 273-page review cannot 500 the next message. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
+- Clicking a citation in the document, chat, or suggestion Sources opens or reuses that file's canvas tab and scrolls the PDF to the cited page (Word preview cannot jump to a page). Combined `[file A, p. N, file B, p. M]` is two links (brackets and the comma stay plain); extra pages of one file stay one link. Missing or ambiguous filenames toast instead of opening a tab. This is an in-app tab, not a browser tab. Open attachment tabs stay mounted while you switch to Report or another file (no “Loading preview…” on return; the PDF stays on the page you left). Closing the tab (header Close or the tab X) restores the last canvas tab you had open and drops the document; a later open may load again, restored to that last page.
+- Follow the latest user message. Agent mode may edit when they asked to write; empty sections and ready attachments are not a request to draft. A greeting (“hi”) must not search or write — `classifyChatUserIntent` strips tools (Document and Analytics). Ambiguous Agent-mode text (“plan the first 3 sections”) is classified by a gated Flash-Lite call (`resolveChatUserIntent`); greetings and explicit draft/write verbs stay on rules. Document chat also reuses that call when the text looks like a worksheet dump; if Lite is ≥0.75 sure the destination is the Analytics grid, Report chat shows a Switch to Analytics button (clicking it sets Analytics and resends the original request) and does not paste a markdown table. A “go for it” / yes after that switch copy is a write, not small talk. Retrieval maps those turns to focused (`no_task`) and skips kickoff evidence. A confirmation that carries its own instruction (“yes put it in the data worksheet”) is a **write**: the affirmation prefix is stripped and the remainder classified, and an Analytics worksheet/sheet/column destination counts as a write even when the verb is not in `WRITE_RE`. When intent strips the write tools, the prompt says so (`intentToolAvailabilityRule`) so the model cannot call a tool that is no longer loaded and fall back to pasting a markdown table.
 - Composer scope is `@` tags (`sectionScopeFromMentions` / analytics mentions),
-  not dropdowns. Document and Analytics share `ChatPanel`; a composer or tool
+  not dropdowns. Bare `@` opens a hierarchy: Attachments first (folder tree of
+  ready files), then Document sections or Data sheets depending on Report vs
+  Analytics. Typing filters every leaf with no 8-item cap. Document and
+  Analytics share `ChatPanel`; a composer or tool
   change must land on both surfaces and both chromes (Hard rules spectrum).
   Empty-state Document chips are `chat.examplePrompts` on the document type
   (not DMAIC-hardcoded). Analytics chips stay worksheet/plot copy.
+  Voice dictation is the shared mic (right of the image icon): click to start,
+  click to stop. PCM is buffered while recording (bigger wave + “Transcript
+  appears when you stop”); one Vertex Gemini transcribe (Flash-Lite) runs after
+  stop and fills the composer. No live interim text, no SSE. MJ transcribes English/Hindi/Marathi
+  in native script (Devanagari preferred); other packs are English. The LLM
+  still replies in English. Stub: `ALLOW_TEST_STUB_SPEECH`
+  (`e2e/report-chat.spec.ts`).
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 

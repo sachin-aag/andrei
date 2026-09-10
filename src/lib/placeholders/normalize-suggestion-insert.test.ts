@@ -105,6 +105,14 @@ describe("normalizeSuggestionInsertText", () => {
         "[790-00134R_Rev_U_Solea_Model_3_Software_: <to be filled>]"
       )
     ).toBe("[790-00134R_Rev_U_Solea_Model_3_Software_]");
+    expect(
+      normalizeSuggestionInsertText(
+        "defined as TOP-00051 [me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]."
+      )
+    ).toBe("defined as TOP-00051 [me1q4zzhb1me0wwskpmqfw7i].");
+    expect(
+      normalizeSuggestionInsertText("[swja2t3b3dif1ua8id1zkyz2]")
+    ).toBe("[swja2t3b3dif1ua8id1zkyz2]");
   });
 
   it("compacts long comma-containing instructional brackets", () => {

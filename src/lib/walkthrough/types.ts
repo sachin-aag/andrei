@@ -2,7 +2,7 @@ import type { ProductTourStatus } from "@/db/schema";
 import type { UserRole } from "@/lib/auth/roles";
 
 /** Bump when step ids change so older saved ids can be remapped. */
-export const PRODUCT_TOUR_VERSION = 1;
+export const PRODUCT_TOUR_VERSION = 2;
 
 export const WALKTHROUGH_ATTR = "data-walkthrough";
 
@@ -30,6 +30,8 @@ export type ProductTourProgress = {
 export type ProductTourCopyContext = {
   productName: string
   documentTypeLabels: string[]
+  insightsEnabled: boolean
+  statisticalAnalysisEnabled: boolean
 };
 
 export type WalkthroughRole = UserRole;

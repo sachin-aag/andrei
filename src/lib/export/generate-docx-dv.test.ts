@@ -18,6 +18,7 @@ import {
   reportExportDocxFileName,
 } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
+import { docxParagraphPlainText } from "@/lib/export/docx-toc-headings";
 import { readPngDimensions } from "@/lib/export/raster-dimensions";
 import type { ReportSectionRecord } from "@/types/report";
 
@@ -32,6 +33,12 @@ const DV_TEMPLATE = path.join(
   "design-verification-report-template.docx"
 );
 const hasDemoDvTemplate = fs.existsSync(DV_TEMPLATE);
+
+function paragraphStyle(xml: string, text: string): string | null {
+  const paras = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? [];
+  const para = paras.find((p) => docxParagraphPlainText(p) === text);
+  return para?.match(/<w:pStyle w:val="([^"]+)"/)?.[1] ?? null;
+}
 
 function narrativeDoc(text: string): JSONContent {
   return {
@@ -352,6 +359,17 @@ describe("convergent design-verification DOCX export", () => {
     expect(xml).toContain('<w:vAlign w:val="center"/>');
     expect(xml).toContain('<w:sz w:val="18"/>');
     expect(xml).toContain('<w:color w:val="000000"/>');
+
+    expect(paragraphStyle(xml, "PURPOSE:")).toBe("Heading1");
+    expect(paragraphStyle(xml, "SCOPE:")).toBe("Heading1");
+    expect(paragraphStyle(xml, "Testers/Dates:")).toBe("Heading1");
+    expect(paragraphStyle(xml, "Methods of Measurement")).toBe("Heading1");
+    expect(paragraphStyle(xml, "Revision History")).toBe("Heading1");
+    const purpose = (xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? []).find(
+      (p) => docxParagraphPlainText(p) === "PURPOSE:"
+    );
+    expect(purpose).toContain('<w:numId w:val="0"/>');
+    expect(purpose).toContain('<w:outlineLvl w:val="0"/>');
   });
 
   it("omits the trailing Citations block when requested", async () => {

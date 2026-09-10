@@ -6,6 +6,7 @@ import {
   defineEditor,
   openReportEditor,
   reviewMargin,
+  setReportChrome,
   showReviewMargin,
 } from "./helpers/workspace";
 
@@ -165,6 +166,95 @@ test.describe("suggestion accept keeps text visible", () => {
     await expect(editor.locator(".suggestion-insert")).toHaveCount(0);
 
     expectInsertNeverDropped(await stopSamplingDefine(page));
+  });
+
+  test("shows Apply all and Dismiss all for a single pending suggestion", async ({
+    page,
+  }) => {
+    const editor = await openDefineWithPreview(page, reportId!);
+    const applyAll = bulkApplyAll(page);
+    await expect(applyAll).toBeVisible({ timeout: 15_000 });
+    await expect(applyAll).toHaveText(/apply all 1/i);
+    await expect(bulkDismissAll(page)).toBeVisible();
+    await expect(editor.locator(".suggestion-insert")).toBeVisible();
+  });
+
+  test("Agent chrome proposes insert preview and Apply all for one suggestion", async ({
+    page,
+  }) => {
+    await openReportEditor(page, reportId!);
+    await setReportChrome(page, "agent");
+    const editor = defineEditor(page);
+    await expect(
+      editor.locator(".suggestion-insert").filter({ hasText: INSERT.trim() })
+    ).toBeVisible({ timeout: 30_000 });
+    // Insert-only seeds anchor after the match — no delete span.
+    await expect(editor.locator(".suggestion-delete")).toHaveCount(0);
+    await expect(
+      editor.getByRole("button", { name: "Accept suggestion" })
+    ).toBeVisible();
+
+    const applyAll = bulkApplyAll(page);
+    await expect(applyAll).toBeVisible({ timeout: 15_000 });
+    await expect(applyAll).toHaveText(/apply all 1/i);
+    await expect(bulkDismissAll(page)).toBeVisible();
+    await applyAll.click();
+
+    await expect(editor).toContainText("filling line FL-02", { timeout: 15_000 });
+    await expect(editor.locator(".suggestion-insert")).toHaveCount(0);
+    await expect(bulkApplyAll(page)).toHaveCount(0, { timeout: 15_000 });
+  });
+});
+
+test.describe("suggestion dismiss clears preview", () => {
+  let reportId: string | null = null;
+
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAsEngineer(page);
+    const created = await createReport(page);
+    reportId = created.id;
+    await seedDefineSuggestion(page, reportId);
+  });
+
+  test.afterEach(async ({ page }) => {
+    if (reportId) {
+      await deleteReport(page, reportId);
+      reportId = null;
+    }
+  });
+
+  test("inline Ignore removes red/green markup without a reload", async ({
+    page,
+  }) => {
+    const editor = await openDefineWithPreview(page, reportId!);
+    const ignore = editor.getByRole("button", { name: "Ignore suggestion" });
+    await expect(ignore).toBeVisible({ timeout: 15_000 });
+    await ignore.click();
+
+    await expect(editor.locator(".suggestion-insert")).toHaveCount(0);
+    await expect(editor.locator(".suggestion-delete")).toHaveCount(0);
+    await expect(editor.getByRole("button", { name: "Accept suggestion" })).toHaveCount(
+      0
+    );
+    await expect(editor).not.toContainText("filling line FL-02");
+    await expect(editor).toContainText(ANCHOR);
+  });
+
+  test("gutter Dismiss removes red/green markup while the field is focused", async ({
+    page,
+  }) => {
+    const editor = await openDefineWithPreview(page, reportId!);
+    await editor.click();
+    await showReviewMargin(page);
+    const dismiss = reviewMargin(page).getByRole("button", { name: /^dismiss$/i });
+    await expect(dismiss).toBeVisible({ timeout: 15_000 });
+    await dismiss.click();
+
+    await expect(editor.locator(".suggestion-insert")).toHaveCount(0);
+    await expect(editor.locator(".suggestion-delete")).toHaveCount(0);
+    await expect(editor).not.toContainText("filling line FL-02");
+    await expect(editor).toContainText(ANCHOR);
   });
 });
 

@@ -6,7 +6,7 @@ import {
 } from "./table-of-contents";
 
 describe("getConvergentTableOfContents", () => {
-  it("returns flat software DV headings in export order", () => {
+  it("nests software DV Methods and Results like the Word recipe", () => {
     const toc = getConvergentTableOfContents("design_verification");
     expect(toc).not.toBeNull();
     expect(toc!.map((e) => e.label)).toEqual([
@@ -14,13 +14,35 @@ describe("getConvergentTableOfContents", () => {
       "Scope",
       "Testers/Dates",
       "Methods of Measurement",
-      "Test Equipment",
       "Deviations",
       "Results and Discussion",
       "Problem or Failure Resolution",
       "Conclusion",
       "Revision History",
     ]);
+
+    const methods = toc!.find((e) => e.label === "Methods of Measurement");
+    expect(methods?.sectionKey).toBeUndefined();
+    expect(methods?.children?.map((c) => c.label)).toEqual([
+      "Executed Protocol",
+      "Protocol Modifications",
+      "Units Under Test",
+      "Test Equipment",
+    ]);
+    expect(methods?.children?.map((c) => c.sectionKey)).toEqual([
+      "methods_of_measurement",
+      "methods_of_measurement",
+      "methods_of_measurement",
+      "test_equipment",
+    ]);
+
+    const results = toc!.find((e) => e.label === "Results and Discussion");
+    expect(results?.children?.map((c) => c.sectionKey)).toEqual([
+      "results_and_discussions",
+      "results_and_discussions",
+      "results_and_discussions",
+    ]);
+
     expect(toc!.find((e) => e.label === "Revision History")?.sectionKey).toBeUndefined();
     expect(toc!.find((e) => e.label === "Purpose")?.sectionKey).toBe("purpose");
   });
@@ -73,5 +95,18 @@ describe("flattenTableOfContents", () => {
     );
     expect(methodsIdx).toBeGreaterThanOrEqual(0);
     expect(executedIdx).toBeGreaterThan(methodsIdx);
+  });
+
+  it("puts software Test Equipment under Methods of Measurement", () => {
+    const flat = flattenTableOfContents(
+      getConvergentTableOfContents("design_verification")!
+    );
+    const methodsIdx = flat.findIndex(
+      (e) => e.label === "Methods of Measurement"
+    );
+    const equipmentIdx = flat.findIndex((e) => e.label === "Test Equipment");
+    expect(methodsIdx).toBeGreaterThanOrEqual(0);
+    expect(equipmentIdx).toBeGreaterThan(methodsIdx);
+    expect(flat[equipmentIdx]?.sectionKey).toBe("test_equipment");
   });
 });

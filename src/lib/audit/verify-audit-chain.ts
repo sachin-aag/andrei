@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { asc } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { auditEvents } from "@/db/schema";
 
@@ -60,11 +60,23 @@ function jsonbText(value: unknown): string {
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
     return `{${Object.keys(record)
-      .sort()
+      .sort(compareJsonbKeys)
       .map((key) => `${JSON.stringify(key)}: ${jsonbText(record[key])}`)
       .join(", ")}}`;
   }
   return JSON.stringify(value);
+}
+
+/**
+ * Postgres stores `jsonb` object keys sorted by length first, then bytewise —
+ * not alphabetically. The canonical payload is built from `jsonb::text`, so the
+ * recomputed hash only matches if we reproduce that ordering exactly.
+ */
+function compareJsonbKeys(a: string, b: string): number {
+  const left = Buffer.from(a, "utf8");
+  const right = Buffer.from(b, "utf8");
+  if (left.length !== right.length) return left.length - right.length;
+  return Buffer.compare(left, right);
 }
 
 export function auditEventsCanonicalPayloadV1(
@@ -128,10 +140,19 @@ function normalizePayloadVersion(version: number): AuditPayloadVersion | null {
 
 /** Verifies monotonic seq, prev_hash linkage, and hash payload recomputation. */
 export async function verifyAuditChain(): Promise<AuditChainVerification> {
+  // `created_at` must come back as Postgres renders it. The insert trigger hashes
+  // `p_created_at::text` at microsecond precision; a JS Date only carries milliseconds,
+  // so letting the driver coerce it silently drops digits and every hash mismatches.
   const rows = await db
-    .select()
+    .select({
+      row: auditEvents,
+      createdAtText: sql<string>`${auditEvents.createdAt}::text`,
+    })
     .from(auditEvents)
-    .orderBy(asc(auditEvents.seq));
+    .orderBy(asc(auditEvents.seq))
+    .then((records) =>
+      records.map((record) => ({ ...record.row, createdAtText: record.createdAtText }))
+    );
 
   if (rows.length === 0) {
     return {
@@ -197,7 +218,7 @@ export async function verifyAuditChain(): Promise<AuditChainVerification> {
       oldValue: row.oldValue,
       newValue: row.newValue,
       metadata: row.metadata,
-      createdAt: row.createdAt,
+      createdAt: row.createdAtText,
     });
     if (row.hash !== expectedHash) {
       return {

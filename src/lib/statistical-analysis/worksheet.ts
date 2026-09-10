@@ -1,4 +1,8 @@
 import {
+  uniqueChartCitations,
+  type ChartCitation,
+} from "@/lib/charts/chart-spec";
+import {
   MAX_CELL_LENGTH,
   MAX_COLUMN_NAME_LENGTH,
   MAX_DATA_SHEETS,
@@ -14,8 +18,27 @@ import {
 } from "./types";
 import type { AnalysisRowSelection } from "./row-selection";
 
+const PLACEHOLDER_COLUMN_NAME = /^C\d+$/i;
+
 export function defaultColumnName(index: number): string {
   return `C${index + 1}`;
+}
+
+/** Empty starter columns (C1, C2, …) the grid shows so a new sheet is not blank. */
+export function isPlaceholderColumn(column: WorksheetColumn): boolean {
+  return (
+    trimTrailingEmpty(column.values).length === 0 &&
+    PLACEHOLDER_COLUMN_NAME.test(column.name.trim())
+  );
+}
+
+export function findPlaceholderColumnIndex(
+  data: WorksheetData,
+  occupied?: ReadonlySet<number>
+): number {
+  return data.columns.findIndex(
+    (column, index) => !occupied?.has(index) && isPlaceholderColumn(column)
+  );
 }
 
 export function defaultColumnId(index: number): string {
@@ -214,12 +237,32 @@ export function findSheet(
   return workbook.sheets.find((sheet) => sheet.name.toLowerCase() === lower);
 }
 
+/**
+ * Keep the engineer's current tab after an agent write. If that sheet was
+ * deleted, leave the workbook on whatever tab the mutation selected.
+ */
+export function restoreActiveSheet(
+  next: WorksheetData,
+  previousActiveId: string | undefined
+): WorksheetData {
+  const key = previousActiveId?.trim() ?? "";
+  if (!key) return next;
+  const workbook = normalizeWorksheet(next);
+  if (workbook.activeSheetId === key) return workbook;
+  if (!findSheet(workbook, key)) return workbook;
+  return switchWorksheetTab(workbook, key);
+}
+
 export function addDataSheet(data: WorksheetData, name?: string): WorksheetData {
   const workbook = normalizeWorksheet(data);
+  const requested = name?.trim().slice(0, 40) ?? "";
+  if (requested) {
+    const existing = findSheet(workbook, requested);
+    if (existing) return switchWorksheetTab(workbook, existing.id);
+  }
   if (workbook.sheets.length >= MAX_DATA_SHEETS) return workbook;
   const id = nextSheetId(workbook);
   const columns = emptyColumnsForWorkbook(workbook);
-  const requested = name?.trim().slice(0, 40) ?? "";
   const sheet: WorksheetSheet = {
     id,
     name: requested || nextSheetName(workbook),
@@ -468,11 +511,30 @@ function mergeColumnValues(
     const persistedCell = cellAt(persisted.values, i);
     values.push(localCell !== persistedCell ? localCell : cellAt(remote.values, i));
   }
-  return {
+  const valuesChanged =
+    JSON.stringify(trimTrailingEmpty(local.values)) !==
+    JSON.stringify(trimTrailingEmpty(persisted.values));
+  const merged: WorksheetColumn = {
     ...remote,
     name: local.name !== persisted.name ? local.name : remote.name,
     values: trimTrailingEmpty(values),
   };
+  if (valuesChanged) {
+    delete merged.citations;
+  }
+  return merged;
+}
+
+/**
+ * True when `incomingVersion` is from an older snapshot than the grid already
+ * applied. Equal versions still apply (plot create does not bump worksheet
+ * version). A stale GET of an empty sheet must not wipe a newer fill.
+ */
+export function isStaleAnalyticsVersion(
+  incomingVersion: number,
+  appliedVersion: number
+): boolean {
+  return incomingVersion < appliedVersion;
 }
 
 /**
@@ -527,10 +589,11 @@ export function mergeDirtyWorksheet(
       ? localWb.specs
       : remoteWb.specs;
 
-  const preferredActiveId =
-    localWb.activeSheetId !== persistedWb.activeSheetId
-      ? localWb.activeSheetId
-      : remoteWb.activeSheetId;
+  const preferredActiveId = sheets.some(
+    (sheet) => sheet.id === localWb.activeSheetId
+  )
+    ? localWb.activeSheetId
+    : remoteWb.activeSheetId;
   const active =
     sheets.find((sheet) => sheet.id === preferredActiveId) ??
     sheets.find((sheet) => sheet.id === remoteWb.activeSheetId) ??
@@ -576,10 +639,17 @@ export function setCell(
   const column = columns[colIndex];
   if (!column) return data;
 
+  const previous = column.values[rowIndex] ?? "";
+  const nextValue = sanitizeCell(value);
+  if (previous === nextValue && rowIndex < column.values.length) {
+    return data;
+  }
+
   const nextValues = [...column.values];
   while (nextValues.length <= rowIndex) nextValues.push("");
-  nextValues[rowIndex] = sanitizeCell(value);
+  nextValues[rowIndex] = nextValue;
   column.values = trimTrailingEmpty(nextValues);
+  delete column.citations;
 
   return withWorkbook(data, columns);
 }
@@ -870,13 +940,33 @@ export function anovaSourceKey(
 
 /** Client-safe XY scatter source key — do not import `hash.ts` from the browser. */
 export function xyScatterSourceKey(
-  xColumn: WorksheetColumn,
+  xColumn: WorksheetColumn | null,
   yColumn: WorksheetColumn,
+  selection: AnalysisRowSelection = { mode: "all" },
+  legendColumn: WorksheetColumn | null = null
+): string {
+  return JSON.stringify({
+    x: xColumn
+      ? cellsForRowSelection(xColumn, selection)
+      : "observation-index",
+    y: cellsForRowSelection(yColumn, selection),
+    legend: legendColumn
+      ? cellsForRowSelection(legendColumn, selection)
+      : null,
+  });
+}
+
+/** Client-safe boxplot source key — do not import `hash.ts` from the browser. */
+export function boxplotSourceKey(
+  yColumn: WorksheetColumn,
+  categoryColumns: WorksheetColumn[],
   selection: AnalysisRowSelection = { mode: "all" }
 ): string {
   return JSON.stringify({
-    x: cellsForRowSelection(xColumn, selection),
     y: cellsForRowSelection(yColumn, selection),
+    categories: categoryColumns.map((column) =>
+      cellsForRowSelection(column, selection)
+    ),
   });
 }
 
@@ -884,17 +974,31 @@ export function columnSourceKey(column: WorksheetColumn): string {
   return analysisSourceKey(column, { mode: "all" });
 }
 
-export function replaceColumnValues(
+function citationsForColumn(
+  citations: ChartCitation[] | null | undefined
+): ChartCitation[] | undefined {
+  if (!citations || citations.length === 0) return undefined;
+  const unique = uniqueChartCitations(citations);
+  return unique.length > 0 ? unique : undefined;
+}
+
+export function appendColumnValues(
   data: WorksheetData,
   colIndex: number,
   values: string[],
-  name?: string
+  name?: string,
+  citations?: ChartCitation[] | null
 ): WorksheetData {
   const column = data.columns[colIndex];
   if (!column) return data;
-  const nextValues = trimTrailingEmpty(
-    values.slice(0, MAX_WORKSHEET_ROWS).map(sanitizeCell)
-  );
+  const existing = [...column.values];
+  const room = Math.max(0, MAX_WORKSHEET_ROWS - existing.length);
+  const added = values.slice(0, room).map(sanitizeCell);
+  const nextValues = trimTrailingEmpty([...existing, ...added]);
+  const incoming = citationsForColumn(citations);
+  const nextCitations = incoming
+    ? uniqueChartCitations([...(column.citations ?? []), ...incoming])
+    : column.citations;
   return withWorkbook(
     data,
     data.columns.map((item, index) =>
@@ -903,6 +1007,35 @@ export function replaceColumnValues(
             ...item,
             name: name !== undefined ? sanitizeColumnName(name) : item.name,
             values: nextValues,
+            citations: nextCitations,
+          }
+        : item
+    )
+  );
+}
+
+export function replaceColumnValues(
+  data: WorksheetData,
+  colIndex: number,
+  values: string[],
+  name?: string,
+  citations?: ChartCitation[] | null
+): WorksheetData {
+  const column = data.columns[colIndex];
+  if (!column) return data;
+  const nextValues = trimTrailingEmpty(
+    values.slice(0, MAX_WORKSHEET_ROWS).map(sanitizeCell)
+  );
+  const nextCitations = citationsForColumn(citations);
+  return withWorkbook(
+    data,
+    data.columns.map((item, index) =>
+      index === colIndex
+        ? {
+            ...item,
+            name: name !== undefined ? sanitizeColumnName(name) : item.name,
+            values: nextValues,
+            citations: nextCitations,
           }
         : item
     )

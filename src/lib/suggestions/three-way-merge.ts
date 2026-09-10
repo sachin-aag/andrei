@@ -58,6 +58,19 @@ function parkCitations(field: FieldContent): FieldContent {
   return normalizeTrailingCitationBlockInDoc(field);
 }
 
+function fullMergeBlock(
+  block: MergeBlock,
+  byId: ReadonlyMap<string, MergeBlock>
+): MergeBlock {
+  return byId.get(block.id) ?? block;
+}
+
+function mergeBlockMaps(
+  blocks: readonly MergeBlock[]
+): Map<string, MergeBlock> {
+  return new Map(blocks.map((block) => [block.id, block]));
+}
+
 function matchBlocks(
   ancestor: MergeBlock[],
   side: MergeBlock[]
@@ -165,9 +178,41 @@ function mergePlainText(base: string, current: string, intent: string): string |
   return out;
 }
 
+function rebuildDocWithTableCells(
+  template: JSONContent,
+  blocks: MergeBlock[]
+): JSONContent {
+  const doc = cloneJson(template);
+  const cells = blocks.filter((b) => b.kind === "table_cell");
+  let i = 0;
+  const walk = (node: JSONContent) => {
+    if (node.type === "table") {
+      for (const row of node.content ?? []) {
+        if (row.type !== "tableRow" || !row.content) continue;
+        for (let c = 0; c < row.content.length; c++) {
+          const next = cells[i++];
+          if (next && typeof next.node !== "string") {
+            row.content[c] = cloneJson(next.node) as JSONContent;
+          }
+        }
+      }
+      return;
+    }
+    for (const child of node.content ?? []) walk(child);
+  };
+  walk(doc);
+  return doc;
+}
+
 function rebuildFromBlocks(template: FieldContent, blocks: MergeBlock[]): FieldContent {
   if (typeof template === "string") {
     return blocks.map((b) => (typeof b.node === "string" ? b.node : b.text)).join("\n");
+  }
+  // Table cells are not top-level nodes. Flattening them into a fake doc makes
+  // extractMergeBlocks treat inner paragraphs as prose, then applyFieldPlan
+  // removes columns and spills header/body text after the table.
+  if (blocks.some((b) => b.kind === "table_cell")) {
+    return rebuildDocWithTableCells(template, blocks);
   }
   const ops = planFieldDiff(
     template,
@@ -210,13 +255,41 @@ export function mergeField(
   const intentN = normalizeFieldForPlan(intent, planOpts);
 
   if (canonicalField(currentN, planOpts) === canonicalField(intentN, planOpts)) {
-    const parked = parkCitations(currentN);
-    return { status: "noop", operations: [], merged: parked };
+    const parkedCurrent = parkCitations(current);
+    const parkedIntent = parkCitations(intent);
+    const citationAwareOpts: PlanOptions = { excludeCitations: false };
+    if (
+      canonicalField(parkedCurrent, citationAwareOpts) ===
+      canonicalField(parkedIntent, citationAwareOpts)
+    ) {
+      return { status: "noop", operations: [], merged: parkedCurrent };
+    }
+    const operations = planFieldDiff(currentN, parkedIntent, planOpts);
+    if (operations.length === 0) {
+      return { status: "noop", operations: [], merged: parkedIntent };
+    }
+    return { status: "clean", operations, merged: parkedIntent };
+  }
+
+  // Agent commit always passes current === base (FOR UPDATE snapshot). Rebuilding
+  // table cells through a flattened doc collapses a 5-col DV matrix to leftover
+  // prose. If the live field has not diverged, take intent as-is.
+  if (canonicalField(currentN, planOpts) === canonicalField(baseN, planOpts)) {
+    const parked = parkCitations(intent);
+    const operations = planFieldDiff(currentN, parked, planOpts);
+    if (operations.length === 0) {
+      return { status: "noop", operations: [], merged: parked };
+    }
+    return { status: "clean", operations, merged: parked };
   }
 
   const baseBlocks = extractMergeBlocks(baseN, planOpts);
   const currentBlocks = extractMergeBlocks(currentN, planOpts);
   const intentBlocks = extractMergeBlocks(intentN, planOpts);
+  const currentBlocksFull = extractMergeBlocks(current, { excludeCitations: false });
+  const intentBlocksFull = extractMergeBlocks(intent, { excludeCitations: false });
+  const currentFullById = mergeBlockMaps(currentBlocksFull);
+  const intentFullById = mergeBlockMaps(intentBlocksFull);
 
   const currentMatch = matchBlocks(baseBlocks, currentBlocks);
   const intentMatch = matchBlocks(baseBlocks, intentBlocks);
@@ -238,24 +311,24 @@ export function mergeField(
 
     if (!cur && !inn) continue;
     if (!cur && inn) {
-      mergedBlocks.push(inn);
+      mergedBlocks.push(fullMergeBlock(inn, intentFullById));
       continue;
     }
     if (cur && !inn) {
-      mergedBlocks.push(cur);
+      mergedBlocks.push(fullMergeBlock(cur, currentFullById));
       continue;
     }
     if (cur && inn) {
       if (curText === innText) {
-        mergedBlocks.push(cur);
+        mergedBlocks.push(fullMergeBlock(cur, currentFullById));
         continue;
       }
       if (curText === baseText) {
-        mergedBlocks.push(inn);
+        mergedBlocks.push(fullMergeBlock(inn, intentFullById));
         continue;
       }
       if (innText === baseText) {
-        mergedBlocks.push(cur);
+        mergedBlocks.push(fullMergeBlock(cur, currentFullById));
         continue;
       }
       if (cur.kind === "plain_line" || typeof cur.node === "string") {
@@ -267,7 +340,7 @@ export function mergeField(
             currentText: curText,
             intentText: innText,
           });
-          mergedBlocks.push(cur);
+          mergedBlocks.push(fullMergeBlock(cur, currentFullById));
           continue;
         }
         mergedBlocks.push({ ...cur, text: mergedText, node: mergedText });
@@ -281,7 +354,7 @@ export function mergeField(
           currentText: curText,
           intentText: innText,
         });
-        mergedBlocks.push(cur);
+        mergedBlocks.push(fullMergeBlock(cur, currentFullById));
         continue;
       }
       const nextNode =
@@ -301,10 +374,12 @@ export function mergeField(
     }
   }
 
-  for (const block of currentBlocks) {
-    if (!usedCurrent.has(block.id)) mergedBlocks.push(block);
+  for (const block of currentBlocksFull) {
+    if (!usedCurrent.has(block.id)) {
+      mergedBlocks.push(block);
+    }
   }
-  for (const block of intentBlocks) {
+  for (const block of intentBlocksFull) {
     if (!usedIntent.has(block.id)) {
       const duplicate = mergedBlocks.some(
         (b) => b.kind === block.kind && b.text === block.text
@@ -313,7 +388,7 @@ export function mergeField(
     }
   }
 
-  const merged = parkCitations(rebuildFromBlocks(currentN, mergedBlocks));
+  const merged = parkCitations(rebuildFromBlocks(current, mergedBlocks));
   const operations = planFieldDiff(currentN, merged, planOpts);
 
   if (conflicts.length > 0) {

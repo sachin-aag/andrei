@@ -13,6 +13,7 @@ import {
   assertAiBudgetAvailable,
   recordAiUsage,
 } from "@/lib/ai/usage";
+import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 
 const TEMPERATURE = 0;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -137,6 +138,14 @@ async function describeBatch(input: {
       messages: [{ role: "user", content }],
       temperature: TEMPERATURE,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
+      ...langfuseGenerateTextTelemetry({
+        functionId: "document-describe-docx-images",
+        metadata: {
+          feature: "docx_image_description",
+          filename: input.filename,
+          imageCount: input.images.length,
+        },
+      }),
     });
 
     await recordAiUsage({

@@ -68,6 +68,7 @@ export function isActionablePlaceholderBracket(match: string): boolean {
   // Document citations (`[file.pdf]`, `[name, p. N]`, `[Appendix B]`,
   // `[Appendix B DV Report 790-00134R(RevU)]`, including mistaken
   // `[cite: <to be filled>]`) are never Placeholders-panel tokens.
+  // CUID2 attachment ids the model copied from the document index are cites.
   if (isCitationShapedBracket(match)) return false;
 
   const inner = match.slice(1, -1);

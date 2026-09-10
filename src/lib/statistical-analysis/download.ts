@@ -1,14 +1,23 @@
 import { formatPValue, formatPpm, formatStat } from "./format";
 import {
+  CHART_MARK_LABELS,
+  parseChartMark,
+} from "@/lib/charts/chart-marks";
+import {
   formatRowSelection,
   normalizeRowSelection,
 } from "./row-selection";
 import {
   isAnovaAnalysis,
+  isBoxplotAnalysis,
+  isHistogramAnalysis,
+  isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
   type AnovaAnalysisSummary,
+  type BoxplotAnalysisSummary,
+  type HistogramAnalysisSummary,
   type StatisticalAnalysisSummary,
   type XyScatterAnalysisSummary,
 } from "./types";
@@ -44,6 +53,12 @@ export function analysisDownloadFilename(
   if (isAnovaAnalysis(analysis)) {
     return `${safeFilenameBase(analysis.title, "anova")}-one-way-anova.csv`;
   }
+  if (isBoxplotAnalysis(analysis)) {
+    return `${safeFilenameBase(analysis.title, "boxplot")}-boxplot.csv`;
+  }
+  if (isHistogramAnalysis(analysis)) {
+    return `${safeFilenameBase(analysis.title, "histogram")}-histogram.csv`;
+  }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
     return exhaustive;
@@ -66,6 +81,12 @@ export function analysisToCsv(analysis: StatisticalAnalysisSummary): string {
   }
   if (isAnovaAnalysis(analysis)) {
     return anovaToCsv(analysis);
+  }
+  if (isBoxplotAnalysis(analysis)) {
+    return boxplotToCsv(analysis);
+  }
+  if (isHistogramAnalysis(analysis)) {
+    return histogramToCsv(analysis);
   }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
@@ -211,6 +232,95 @@ function anovaToCsv(analysis: AnovaAnalysisSummary): string {
   return `\uFEFF${lines.join("\n")}\n`;
 }
 
+function boxplotToCsv(analysis: BoxplotAnalysisSummary): string {
+  const { config, results } = analysis;
+  const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
+  const categoryHeaders =
+    config.categoryColumnNames.length > 0
+      ? config.categoryColumnNames
+      : ["Group"];
+  const summary: Array<[string, string]> = [
+    ["Title", analysis.title],
+    ["Y", config.yColumnName],
+    ["Categories", config.categoryColumnNames.join(", ") || "(none)"],
+    ["Rows", rows],
+    ["Kind", "Boxplot (Tukey)"],
+    ["N", String(results.n)],
+    ["Skipped", String(results.skipped)],
+    ["Created", analysis.createdAt],
+  ];
+  const groupRows = results.groups.map((group) =>
+    csvRow([
+      ...(group.labels.length > 0 ? group.labels : ["All"]),
+      String(group.n),
+      csvNumber(group.min),
+      csvNumber(group.q1),
+      csvNumber(group.median),
+      csvNumber(group.q3),
+      csvNumber(group.max),
+      csvNumber(group.whiskerLow),
+      csvNumber(group.whiskerHigh),
+      String(group.outliers.length),
+    ])
+  );
+  const lines = [
+    "Summary",
+    csvRow(["Field", "Value"]),
+    ...summary.map(([field, value]) => csvRow([field, value])),
+    "",
+    "Groups",
+    csvRow([
+      ...categoryHeaders,
+      "N",
+      "Min",
+      "Q1",
+      "Median",
+      "Q3",
+      "Max",
+      "Whisker low",
+      "Whisker high",
+      "Outliers",
+    ]),
+    ...groupRows,
+  ];
+  return `\uFEFF${lines.join("\n")}\n`;
+}
+
+function histogramToCsv(analysis: HistogramAnalysisSummary): string {
+  const { config, results } = analysis;
+  const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
+  const summary: Array<[string, string]> = [
+    ["Title", analysis.title],
+    ["Column", config.columnName],
+    ["Rows", rows],
+    ["Kind", "Histogram"],
+    ["N", String(results.n)],
+    ["Skipped", String(results.skipped)],
+    ["Mean", csvNumber(results.mean)],
+    ["Overall StDev", csvNumber(results.overallStdev)],
+    ["Within StDev", csvNumber(results.withinStdev)],
+    ["LSL", config.lsl == null ? "" : csvNumber(config.lsl)],
+    ["USL", config.usl == null ? "" : csvNumber(config.usl)],
+    ["Show distribution lines", config.showDistributionLines === false ? "No" : "Yes"],
+    ["Show LSL", config.showLsl === false ? "No" : "Yes"],
+    ["Show USL", config.showUsl === false ? "No" : "Yes"],
+    ["Created", analysis.createdAt],
+  ];
+  const binRows = results.histogram.bins.map((bin) =>
+    csvRow([csvNumber(bin.x0), csvNumber(bin.x1), String(bin.count)])
+  );
+  const lines = [
+    "Summary",
+    csvRow(["Field", "Value"]),
+    ...summary.map(([field, value]) => csvRow([field, value])),
+    "",
+    "Bins",
+    csvRow(["x0", "x1", "Count"]),
+    ...binRows,
+  ];
+  return `\uFEFF${lines.join("\n")}\n`;
+}
+
 function scatterToCsv(
   analysis: Extract<StatisticalAnalysisSummary, { kind: "measurement_scatter" }>
 ): string {
@@ -239,7 +349,10 @@ function scatterToCsv(
   );
   const citationRows = analysis.results.specs.flatMap((item) =>
     item.citations.map((citation) =>
-      csvRow([citation.attachmentId, String(citation.page)])
+      csvRow([
+        citation.filename ?? citation.attachmentId,
+        citation.page == null ? "" : String(citation.page),
+      ])
     )
   );
   const lines = [
@@ -266,7 +379,9 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
     ["Y", analysis.config.yColumnName],
     ["X", analysis.config.xColumnName],
     ["Rows", rows],
-    ["Kind", "XY scatter"],
+    ["Kind", isObservationXyScatter(analysis.config) ? "1D scatter" : "XY scatter"],
+    ["Legend", analysis.config.legendColumnName ?? ""],
+    ["Chart type", CHART_MARK_LABELS[parseChartMark(analysis.config.mark ?? spec?.layout.mark)]],
     ["N", String(analysis.results.n)],
     ["Skipped", String(analysis.results.skipped)],
     ["Pearson r", formatStat(analysis.results.pearsonR, 4)],
@@ -276,7 +391,21 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
   ];
   const pointRows = analysis.results.specs.flatMap((item) =>
     item.points.map((point) =>
-      csvRow([item.title, point.label, String(point.x), String(point.y)])
+      csvRow([
+        item.title,
+        point.series ?? "",
+        point.label,
+        String(point.x),
+        String(point.y),
+      ])
+    )
+  );
+  const citationRows = analysis.results.specs.flatMap((item) =>
+    item.citations.map((citation) =>
+      csvRow([
+        citation.filename ?? citation.attachmentId,
+        citation.page == null ? "" : String(citation.page),
+      ])
     )
   );
   const lines = [
@@ -285,8 +414,12 @@ function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
     ...summary.map(([field, value]) => csvRow([field, value])),
     "",
     "Points",
-    csvRow(["Chart", "Label", "X", "Y"]),
+    csvRow(["Chart", "Series", "Label", "X", "Y"]),
     ...pointRows,
+    "",
+    "Citations",
+    csvRow(["Attachment", "Page"]),
+    ...citationRows,
   ];
   return `\uFEFF${lines.join("\n")}\n`;
 }

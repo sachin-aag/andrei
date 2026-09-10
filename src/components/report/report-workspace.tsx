@@ -23,7 +23,6 @@ import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
 import {
-  agentChatTargetOnEnter,
   shouldCollapseAssistantOnSuggestionFocus,
   shouldRevealCriteriaTab,
   type WorkspaceChrome,
@@ -48,14 +47,15 @@ import {
   canvasTabKind,
   ensureAttachmentOpen,
   pruneOpenAttachments,
+  rememberCanvasTabVisit,
   removeAttachmentOpen,
-  tabIdAfterClose,
+  tabIdAfterClosing,
   type CanvasTabId,
 } from "./work-product-canvas";
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { DocumentsPanel } from "./documents/documents-panel";
-import { AttachmentViewer } from "./attachment-viewer";
+import { AttachmentCanvasStack } from "./attachment-canvas-stack";
 import { StatisticalWorkspace, type AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -79,10 +79,6 @@ import {
   visibleManagerNames,
 } from "@/lib/reports/hidden-expert-reviewer";
 import { canSaveReportSection } from "@/lib/reports/access";
-import {
-  readChatComposerPrefs,
-  writeChatComposerPrefs,
-} from "@/lib/ai/chat/composer-prefs";
 import { cn } from "@/lib/utils";
 import { PanelRightClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -91,7 +87,10 @@ import { AgentWorkProductRail } from "./agent-work-product-rail";
 import { WorkspaceResizeHandle } from "./workspace-resize-handle";
 import {
   COLLAPSED_RAIL_PX,
+  documentCanvasWidthClass,
+  documentColumnStyle,
   isReviewGutterVisible,
+  REVIEW_GUTTER_ASIDE_CLASS,
   REVIEW_GUTTER_GRID_COLS,
   WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
 } from "./workspace-layout";
@@ -268,8 +267,14 @@ export function ReportWorkspace({
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
     useReportEvaluations();
-  const { activeAttachmentId, attachments, openDocument, closeDocument, documentOpenEpoch } =
-    useReportAttachments();
+  const {
+    activeAttachmentId,
+    attachments,
+    openDocument,
+    closeDocument,
+    forgetDocumentPreview,
+    documentOpenEpoch,
+  } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
     SectionType | undefined
   >();
@@ -282,7 +287,7 @@ export function ReportWorkspace({
   const [expertReviewOpen, setExpertReviewOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
-  const [previewCollapsed, setPreviewCollapsed] = useState(true);
+  const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const chrome = useSyncExternalStore(
     subscribeWorkspaceChromePrefs,
     () => readWorkspaceChrome(currentUserId, report.id),
@@ -293,6 +298,9 @@ export function ReportWorkspace({
   const [activeTabId, setActiveTabId] = useState<CanvasTabId>("report");
   const [openAttachmentIds, setOpenAttachmentIds] = useState<string[]>([]);
   const [seenOpenEpoch, setSeenOpenEpoch] = useState(-1);
+  const [canvasTabRecents, setCanvasTabRecents] = useState<CanvasTabId[]>([
+    "report",
+  ]);
   const [compare, setCompare] = useState<{
     from: number;
     to: number;
@@ -306,15 +314,19 @@ export function ReportWorkspace({
     chatWidth,
     docsWidth,
     previewWidth,
+    documentWidth,
     chatBounds,
     docsBounds,
     previewBounds,
+    documentBounds,
     setChatWidth,
     setDocsWidth,
     setPreviewWidth,
+    setDocumentWidth,
     resetChatWidth,
     resetDocsWidth,
     resetPreviewWidth,
+    resetDocumentWidth,
     beginResize,
     endResize,
   } = useWorkspaceLayout({
@@ -377,6 +389,11 @@ export function ReportWorkspace({
     if (id && !liveAttachmentIds.has(id)) return "report";
     return activeTabId;
   })();
+  if (canvasTabRecents[canvasTabRecents.length - 1] !== liveActiveTabId) {
+    setCanvasTabRecents((recents) =>
+      rememberCanvasTabVisit(recents, liveActiveTabId)
+    );
+  }
   const reportSurface = liveActiveTabId === "report";
   const analyticsSurface = liveActiveTabId === "analytics";
   const comparing = liveActiveTabId === "history" && compare != null;
@@ -430,11 +447,7 @@ export function ReportWorkspace({
 
   const showReviewGutter =
     reportSurface &&
-    isReviewGutterVisible(
-      commentsGutterVisible,
-      sidebarCollapsed,
-      false
-    );
+    isReviewGutterVisible(commentsGutterVisible, false);
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -601,8 +614,8 @@ export function ReportWorkspace({
       setCriteriaFocusSection(section);
       // Leave the assistant as the engineer left it. Collapsing it after
       // Suggest fixes or a document-chrome chat proposal hid the thread as
-      // soon as the edit landed. Review margin stays opt-in (Comments switch
-      // + collapsed chat); inline suggestion marks remain in the document.
+      // soon as the edit landed. Review margin stays opt-in via the Comments
+      // switch; inline suggestion marks remain in the document.
       if (shouldCollapseAssistantOnSuggestionFocus()) {
         setSidebarCollapsed(true);
       }
@@ -684,13 +697,11 @@ export function ReportWorkspace({
 
       const gutterAlreadyVisible = isReviewGutterVisible(
         commentsGutterVisible,
-        sidebarCollapsed,
         false
       );
       setWorkProductView("report");
       setActiveTabId("report");
       setCommentsGutterVisible(true);
-      setSidebarCollapsed(true);
       if (gutterScrollTimeoutRef.current != null) {
         clearTimeout(gutterScrollTimeoutRef.current);
         gutterScrollTimeoutRef.current = null;
@@ -699,13 +710,13 @@ export function ReportWorkspace({
         scrollToCard();
         return;
       }
-      // Wait for the assistant to collapse and the gutter to mount/measure.
+      // Wait for the gutter to mount/measure.
       gutterScrollTimeoutRef.current = setTimeout(() => {
         gutterScrollTimeoutRef.current = null;
         scrollToCard();
       }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
     },
-    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed, commentsGutterVisible]
+    [comments, jumpToSection, requestCommentFocus, commentsGutterVisible]
   );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
@@ -789,6 +800,58 @@ export function ReportWorkspace({
     [agentChrome, openDocument, previewCollapsed]
   );
 
+  // Header Close and the tab-strip X both restore the last canvas tab.
+  const closeAttachmentTab = useCallback(
+    (attachmentId: string) => {
+      forgetDocumentPreview(attachmentId);
+      const remainingIds = removeAttachmentOpen(
+        liveOpenAttachmentIds,
+        attachmentId
+      );
+      setOpenAttachmentIds(remainingIds);
+
+      const closedTabId = attachmentTabId(attachmentId);
+      const remainingTabIds = buildCanvasTabs({
+        statsEnabled,
+        openAttachmentIds: remainingIds,
+        attachmentLabels,
+        compare,
+      }).map((tab) => tab.id);
+
+      const next = tabIdAfterClosing({
+        closedId: closedTabId,
+        currentlyActive: liveActiveTabId,
+        recents: canvasTabRecents,
+        remainingTabIds,
+      });
+      setCanvasTabRecents((recents) =>
+        recents.filter((id) => id !== closedTabId)
+      );
+
+      if (
+        activeAttachmentId === attachmentId &&
+        canvasTabKind(next) !== "attachment"
+      ) {
+        closeDocument();
+      }
+      if (next !== liveActiveTabId) {
+        selectCanvasTab(next);
+      }
+    },
+    [
+      activeAttachmentId,
+      attachmentLabels,
+      canvasTabRecents,
+      closeDocument,
+      compare,
+      forgetDocumentPreview,
+      liveActiveTabId,
+      liveOpenAttachmentIds,
+      selectCanvasTab,
+      statsEnabled,
+    ]
+  );
+
   const closeCanvasTab = useCallback(
     (id: CanvasTabId) => {
       const kind = canvasTabKind(id);
@@ -810,37 +873,7 @@ export function ReportWorkspace({
         case "attachment": {
           const attachmentId = attachmentIdFromTab(id);
           if (!attachmentId) return;
-          const nextActive = tabIdAfterClose(canvasTabs, id, liveActiveTabId);
-          setOpenAttachmentIds((ids) =>
-            removeAttachmentOpen(ids, attachmentId)
-          );
-          const nextKind = canvasTabKind(nextActive);
-          switch (nextKind) {
-            case "report":
-            case "analytics":
-              if (nextKind === "analytics") {
-                setAnalyticsOpen(true);
-                setSidebarTab("assistant");
-              }
-              setWorkProductView(nextKind);
-              setActiveTabId(nextKind);
-              break;
-            case "history":
-              setActiveTabId("history");
-              break;
-            case "attachment": {
-              const nextAttachment = attachmentIdFromTab(nextActive);
-              if (nextAttachment) openDocument(nextAttachment);
-              break;
-            }
-            default: {
-              const _exhaustive: never = nextKind;
-              return _exhaustive;
-            }
-          }
-          if (nextKind !== "attachment" && activeAttachmentId === attachmentId) {
-            closeDocument();
-          }
+          closeAttachmentTab(attachmentId);
           return;
         }
         default: {
@@ -849,31 +882,20 @@ export function ReportWorkspace({
         }
       }
     },
-    [activeAttachmentId, liveActiveTabId, canvasTabs, closeDocument, openDocument, compare]
+    [closeAttachmentTab, compare]
   );
 
   const handleChromeChange = useCallback(
     (next: WorkspaceChrome) => {
       if (next === "agent") {
         setCommentsGutterVisible(false);
-        if (currentUserId) {
-          const stored = readChatComposerPrefs(currentUserId, report.id);
-          writeChatComposerPrefs(currentUserId, report.id, {
-            mode: stored.mode,
-            pace: stored.pace,
-            chatTarget: agentChatTargetOnEnter({
-              workProductView,
-              statsEnabled,
-            }),
-          });
-        }
         if (workProductView === "analytics") {
           setAnalyticsOpen(true);
         }
       }
       writeWorkspaceChrome(currentUserId, report.id, next);
     },
-    [currentUserId, report.id, statsEnabled, workProductView]
+    [currentUserId, report.id, workProductView]
   );
 
   return (
@@ -1001,6 +1023,20 @@ export function ReportWorkspace({
           ) : (
             <>
               <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
+                {agentChrome ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 shrink-0"
+                    aria-label="Collapse document panel"
+                    aria-expanded
+                    title="Collapse"
+                    onClick={() => setPreviewCollapsed(true)}
+                  >
+                    <PanelRightClose className="size-4" aria-hidden="true" />
+                  </Button>
+                ) : null}
                 <WorkProductTabs
                   tabs={canvasTabs}
                   value={liveActiveTabId}
@@ -1041,20 +1077,6 @@ export function ReportWorkspace({
                       onCheckedChange={setCommentsGutterVisible}
                     />
                   ) : null}
-                  {agentChrome ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 shrink-0"
-                      aria-label="Collapse document panel"
-                      aria-expanded
-                      title="Collapse"
-                      onClick={() => setPreviewCollapsed(true)}
-                    >
-                      <PanelRightClose className="size-4" aria-hidden="true" />
-                    </Button>
-                  ) : null}
                 </div>
               </div>
               <div
@@ -1091,21 +1113,57 @@ export function ReportWorkspace({
                 <div
                   hidden={hideReportEditors}
                   inert={hideReportEditors}
+                  data-testid="report-document-canvas"
                   className={cn(
                     "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
                     hideReportEditors && "hidden",
-                    continuousDocument
-                      ? "max-w-none px-4 py-6"
-                      : "max-w-[1180px] px-6 py-8",
+                    documentCanvasWidthClass({
+                      continuousDocument,
+                      reviewGutterVisible: showReviewGutter,
+                    }),
                     showReviewGutter && REVIEW_GUTTER_GRID_COLS
                   )}
+                  style={
+                    continuousDocument
+                      ? undefined
+                      : documentColumnStyle(documentWidth)
+                  }
                 >
                   <div
+                    id="report-document-sheet"
                     className={cn(
-                      "space-y-10 min-w-0",
+                      "relative space-y-10 min-w-0",
                       documentType === "quality_risk_assessment" && "qra-document"
                     )}
                   >
+                    {continuousDocument ? null : (
+                      <>
+                        <WorkspaceResizeHandle
+                          label="Resize document from the left"
+                          controlsId="report-document-sheet"
+                          edge="start"
+                          value={documentWidth}
+                          min={documentBounds.min}
+                          max={documentBounds.max}
+                          onChange={setDocumentWidth}
+                          onDragStart={() => beginResize("document")}
+                          onDragEnd={endResize}
+                          onReset={resetDocumentWidth}
+                        />
+                        <WorkspaceResizeHandle
+                          label="Resize document from the right"
+                          controlsId="report-document-sheet"
+                          edge="end"
+                          value={documentWidth}
+                          min={documentBounds.min}
+                          max={documentBounds.max}
+                          onChange={setDocumentWidth}
+                          onDragStart={() => beginResize("document")}
+                          onDragEnd={endResize}
+                          onReset={resetDocumentWidth}
+                        />
+                      </>
+                    )}
                     <ReportHeader />
                     <div
                       className={cn(
@@ -1139,7 +1197,7 @@ export function ReportWorkspace({
                   </div>
                   {showReviewGutter ? (
                     <aside
-                      className="relative hidden min-w-0 @[800px]:block"
+                      className={REVIEW_GUTTER_ASIDE_CLASS}
                       aria-label="Review margin"
                     >
                       <MarginGutter
@@ -1167,20 +1225,15 @@ export function ReportWorkspace({
                     />
                   </div>
                 ) : null}
-                {viewingDocument ? (
-                  <AttachmentCanvas
-                    onClose={() => {
-                      const attachmentId = attachmentIdFromTab(liveActiveTabId);
-                      if (attachmentId) {
-                        setOpenAttachmentIds((ids) =>
-                          removeAttachmentOpen(ids, attachmentId)
-                        );
-                      }
-                      selectWorkProductView("report");
-                      closeDocument();
-                    }}
-                  />
-                ) : null}
+                <AttachmentCanvasStack
+                  openAttachmentIds={liveOpenAttachmentIds}
+                  activeAttachmentId={
+                    viewingDocument
+                      ? attachmentIdFromTab(liveActiveTabId)
+                      : null
+                  }
+                  onCloseTab={closeAttachmentTab}
+                />
               </div>
             </>
           )}
@@ -1266,14 +1319,6 @@ export function ReportWorkspace({
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function AttachmentCanvas({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <AttachmentViewer onClose={onClose} />
     </div>
   );
 }

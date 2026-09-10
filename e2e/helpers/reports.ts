@@ -87,6 +87,77 @@ const DEFINE_EVAL_NARRATIVE = {
   ],
 };
 
+function richParagraph(text: string) {
+  return {
+    type: "paragraph",
+    content: [{ type: "text", text }],
+  };
+}
+
+function richTableCell(
+  text: string,
+  kind: "tableHeader" | "tableCell"
+) {
+  return {
+    type: kind,
+    attrs: { colspan: 1, rowspan: 1, colwidth: null },
+    content: [richParagraph(text)],
+  };
+}
+
+/** Long prose + a 2-column label/description table (Convergent Scope layout). */
+export const DEFINE_TWO_COLUMN_TABLE_NARRATIVE = {
+  type: "doc",
+  content: [
+    richParagraph(
+      "This test report applies to Solea Model 3 and is used as a verification activity for system requirements covering software, hardware, and configuration."
+    ),
+    richParagraph("Testing was executed on both TOP-00017 and TOP-00051 system configurations."),
+    richParagraph("Table 1: Software Under Test"),
+    {
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            richTableCell("Solea Model 3.0 SW Application Version", "tableHeader"),
+            richTableCell("Description", "tableHeader"),
+          ],
+        },
+        {
+          type: "tableRow",
+          content: [
+            richTableCell("Testing per 825-00024 Rev. F", "tableCell"),
+            richTableCell(
+              "Original software build for the full execution of the Solea Model 3 System",
+              "tableCell"
+            ),
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+/** Seeds Define with mixed prose + a 2-column table so wrapping can be asserted. */
+export async function seedDefineWithTwoColumnTable(
+  page: Page,
+  reportId: string
+): Promise<void> {
+  const res = await page.request.patch(
+    `/api/reports/${reportId}/sections/define`,
+    {
+      data: {
+        content: {
+          narrative: DEFINE_TWO_COLUMN_TABLE_NARRATIVE,
+        },
+      },
+      headers: await browserCookieHeaders(page),
+    }
+  );
+  expect(res.ok(), `seed define table failed (${res.status()})`).toBeTruthy();
+}
+
 /** Ensures Define has enough sentences for AI evaluation endpoints. */
 export async function seedDefineForEvaluation(
   page: Page,

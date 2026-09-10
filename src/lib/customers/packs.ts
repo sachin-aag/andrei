@@ -67,8 +67,23 @@ export type CustomerPack = {
    * On for demo, MJ, and Convergent.
    */
   statisticalAnalysisEnabled: boolean;
+  /**
+   * Primary-nav Insights dashboards (`/insights`). Demo only for now;
+   * MJ and Convergent hide the link and redirect the routes home.
+   */
+  insightsEnabled: boolean;
+  /**
+   * Spoken locales for composer voice dictation (Vertex Gemini, same
+   * resolver as chat). MJ includes Hindi and Marathi; other packs are
+   * English-only. Transcripts stay in the spoken script (Devanagari is
+   * fine). The assistant still replies in English.
+   */
+  voiceInputLanguageCodes: readonly string[];
   branding: CustomerBranding;
 };
+
+export const VOICE_INPUT_ENGLISH_CODES = ["en-US"] as const;
+export const VOICE_INPUT_MJ_CODES = ["en-IN", "hi-IN", "mr-IN"] as const;
 
 const ANDREI_BRANDING: CustomerBranding = {
   productName: "Andrei",
@@ -160,11 +175,13 @@ export const DEMO_PACK: CustomerPack = {
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
+  insightsEnabled: true,
+  voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
   branding: ANDREI_BRANDING,
 };
 
 export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v7";
-export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v1";
+export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v2";
 export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
@@ -180,6 +197,8 @@ export const CONVERGENT_PACK: CustomerPack = {
   citationsAtEndOfSection: true,
   expertReviewEnabled: true,
   statisticalAnalysisEnabled: true,
+  insightsEnabled: false,
+  voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
   branding: CONVERGENT_BRANDING,
 };
 
@@ -196,6 +215,8 @@ export const MJ_PACK: CustomerPack = {
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
+  insightsEnabled: false,
+  voiceInputLanguageCodes: VOICE_INPUT_MJ_CODES,
   branding: MJ_BRANDING,
 };
 
@@ -227,12 +248,14 @@ export function isStatisticalAnalysisEnabled(
   return pack.statisticalAnalysisEnabled;
 }
 
-/**
- * Document (report-body) chat may propose a measurement scatter as a
- * reviewable figure. Convergent plots live in Analytics instead.
- */
-export function isDocumentChatPlotMeasurementsEnabled(
+export function isInsightsEnabled(
   pack: CustomerPack = getCustomerPack()
 ): boolean {
-  return pack.id !== "convergent";
+  return pack.insightsEnabled;
+}
+
+export function voiceInputLanguageCodes(
+  pack: CustomerPack = getCustomerPack()
+): readonly string[] {
+  return pack.voiceInputLanguageCodes;
 }

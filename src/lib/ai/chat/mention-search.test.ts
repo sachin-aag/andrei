@@ -67,8 +67,31 @@ describe("filterMentionCandidates", () => {
     ]);
   });
 
-  it("respects the limit", () => {
+  it("respects an explicit limit", () => {
     expect(filterMentionCandidates(candidates, "", 2)).toHaveLength(2);
+  });
+
+  it("does not cap matches when no limit is passed", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      type: "section" as const,
+      id: `s${i}`,
+      label: `Section ${i}`,
+    }));
+    expect(filterMentionCandidates(many, "section")).toHaveLength(12);
+  });
+
+  it("matches folder-path keywords so nested files stay searchable", () => {
+    const nested: MentionCandidate[] = [
+      {
+        type: "document",
+        id: "att_3",
+        label: "jan.pdf",
+        keywords: "SOPs / 2026",
+      },
+    ];
+    expect(filterMentionCandidates(nested, "sops").map((c) => c.id)).toEqual([
+      "att_3",
+    ]);
   });
 });
 

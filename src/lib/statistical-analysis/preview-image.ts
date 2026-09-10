@@ -43,6 +43,21 @@ export function asPreviewImage(value: unknown): AnalysisPreviewImage | null {
   };
 }
 
+/**
+ * Identity of the plot a preview was captured from. Rejects in-flight
+ * preview uploads after an edit/recompute so Download/insert cannot keep
+ * the old PNG.
+ */
+export function analysisPreviewMatchKey(analysis: {
+  sourceHash: string;
+  config: unknown;
+}): string {
+  return JSON.stringify({
+    sourceHash: analysis.sourceHash,
+    config: analysis.config,
+  });
+}
+
 /** Decode a stored preview PNG so Excel export and downloads can reuse it. */
 export function pngBufferFromDataUrl(dataUrl: string): Buffer | null {
   const trimmed = dataUrl.trim();

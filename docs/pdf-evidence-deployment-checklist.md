@@ -86,8 +86,9 @@ Requires `GOOGLE_VERTEX_PROJECT` plus WIF (`GCP_WIF_AUDIENCE`,
 Credentials (`gcloud auth application-default login`).
 
 Gated CI: [`.github/workflows/pdf-ingest-soak.yml`](../.github/workflows/pdf-ingest-soak.yml)
-(`workflow_dispatch` + nightly). Needs Actions secrets `GOOGLE_VERTEX_PROJECT`
-and `GCP_SERVICE_ACCOUNT_KEY`. Not a required PR check.
+(`workflow_dispatch` + nightly). Needs Actions secrets `GOOGLE_VERTEX_PROJECT`,
+`GCP_WORKLOAD_IDENTITY_PROVIDER`, and `GCP_SERVICE_ACCOUNT_EMAIL` (GitHub OIDC
+WIF — not a JSON key). Not a required PR check.
 
 Deterministic coverage in normal CI (`pnpm test`):
 

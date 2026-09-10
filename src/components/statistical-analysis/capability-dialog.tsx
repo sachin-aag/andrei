@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePlotTitle } from "@/components/statistical-analysis/use-plot-title";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import { WARN_VALUES_FOR_SIXPACK } from "@/lib/statistical-analysis/types";
 import {
   columnNumericValues,
@@ -137,7 +139,6 @@ export function CapabilityDialog({
         defaultRowEnd != null ? String(defaultRowEnd) : ""
       );
   const [columnId, setColumnId] = useState(defaultColumnId);
-  const [title, setTitle] = useState(defaultTitle);
   const [lsl, setLsl] = useState(initialLimits.lsl);
   const [usl, setUsl] = useState(initialLimits.usl);
   const [target, setTarget] = useState(initialLimits.target);
@@ -174,6 +175,13 @@ export function CapabilityDialog({
     ? columnNumericValues(selectedColumn, rowSelection)
     : { values: [], skipped: 0 };
   const rowLabel = formatRowSelection(rowSelection);
+  const suggestedTitle = rowLabel
+    ? `${selectedColumn?.name ?? "Analysis"} (${rowLabel})`
+    : (selectedColumn?.name ?? "Analysis title");
+  const { title, setTitle, resolvedTitle } = usePlotTitle(
+    suggestedTitle,
+    defaultTitle
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -181,9 +189,7 @@ export function CapabilityDialog({
         <DialogHeader>
           <DialogTitle>Normal Capability Sixpack</DialogTitle>
           <DialogDescription>
-            Individuals / moving range (I-MR). Choose a numeric column and at
-            least one specification limit. Optionally limit the sixpack to a
-            row range.
+            I-MR capability for a numeric column.
           </DialogDescription>
         </DialogHeader>
 
@@ -231,9 +237,16 @@ export function CapabilityDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="sixpack-row-start" className={fieldLabelClass}>
-                First row
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="sixpack-row-start" className={fieldLabelClass}>
+                  First row
+                </Label>
+                <FieldInfoIcon
+                  label="Row range"
+                  testId="sixpack-row-range-info"
+                  text="Rows are numbered from 1. Leave both blank to use the whole column."
+                />
+              </div>
               <Input
                 id="sixpack-row-start"
                 data-testid="sixpack-row-start"
@@ -265,10 +278,6 @@ export function CapabilityDialog({
               />
             </div>
           </div>
-          <p className="-mt-2 text-xs text-[var(--muted-foreground)]">
-            Worksheet rows are numbered from 1. Leave both blank to use the
-            whole column.
-          </p>
 
           <div className="grid gap-1.5">
             <Label htmlFor="sixpack-title" className={fieldLabelClass}>
@@ -276,21 +285,24 @@ export function CapabilityDialog({
             </Label>
             <Input
               id="sixpack-title"
+              data-testid="sixpack-title"
               value={title}
-              placeholder={
-                rowLabel
-                  ? `${selectedColumn?.name ?? "Analysis"} (${rowLabel})`
-                  : (selectedColumn?.name ?? "Analysis title")
-              }
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="sixpack-lsl" className={fieldLabelClass}>
-                LSL
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="sixpack-lsl" className={fieldLabelClass}>
+                  LSL
+                </Label>
+                <FieldInfoIcon
+                  label="LSL"
+                  testId="sixpack-lsl-info"
+                  text="Lower spec limit. At least one of LSL or USL is required."
+                />
+              </div>
               <Input
                 id="sixpack-lsl"
                 data-testid="sixpack-lsl"
@@ -300,9 +312,16 @@ export function CapabilityDialog({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="sixpack-target" className={fieldLabelClass}>
-                Target
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="sixpack-target" className={fieldLabelClass}>
+                  Target
+                </Label>
+                <FieldInfoIcon
+                  label="Target"
+                  testId="sixpack-target-info"
+                  text="Nominal target; optional."
+                />
+              </div>
               <Input
                 id="sixpack-target"
                 data-testid="sixpack-target"
@@ -312,9 +331,16 @@ export function CapabilityDialog({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="sixpack-usl" className={fieldLabelClass}>
-                USL
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="sixpack-usl" className={fieldLabelClass}>
+                  USL
+                </Label>
+                <FieldInfoIcon
+                  label="USL"
+                  testId="sixpack-usl-info"
+                  text="Upper spec limit. At least one of LSL or USL is required."
+                />
+              </div>
               <Input
                 id="sixpack-usl"
                 data-testid="sixpack-usl"
@@ -346,7 +372,7 @@ export function CapabilityDialog({
             onClick={() =>
               onSubmit({
                 columnId,
-                title: title.trim(),
+                title: resolvedTitle,
                 lsl: parseOptionalNumber(lsl),
                 usl: parseOptionalNumber(usl),
                 target: parseOptionalNumber(target),

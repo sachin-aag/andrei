@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CHAT_EXTRACT_GOOGLE_MODEL_ID, chatPaceConfig } from "./model";
+import {
+  CHAT_EXTRACT_GOOGLE_MODEL_ID,
+  chatAssistantTurnMetadata,
+  chatPaceConfig,
+} from "./model";
 import { DEFAULT_CHAT_PACE, isChatPace } from "./pace";
 
 describe("chat pace config", () => {
@@ -24,6 +28,47 @@ describe("chat pace config", () => {
 
   it("keeps Gemini 3.5 Flash-Lite on parallel page extracts", () => {
     expect(CHAT_EXTRACT_GOOGLE_MODEL_ID).toBe("gemini-3.5-flash-lite");
+  });
+});
+
+describe("chatAssistantTurnMetadata", () => {
+  it("stamps pace config plus the work-product target", () => {
+    expect(
+      chatAssistantTurnMetadata({
+        pace: "quick",
+        mode: "plan",
+        promptVersion: "chat-v67-plot-confirm",
+        chatTarget: "report",
+      })
+    ).toEqual({
+      modelId: "gemini-3.5-flash-lite",
+      thinkingLevel: "minimal",
+      pace: "quick",
+      mode: "plan",
+      promptVersion: "chat-v67-plot-confirm",
+      chatTarget: "report",
+    });
+  });
+
+  it("stamps a Switch-to-Analytics offer only when asked", () => {
+    expect(
+      chatAssistantTurnMetadata({
+        pace: "quick",
+        mode: "agent",
+        promptVersion: "chat-v85-worksheet-switch-send",
+        chatTarget: "report",
+        switchToAnalytics: true,
+      }).switchToAnalytics
+    ).toBe(true);
+    expect(
+      chatAssistantTurnMetadata({
+        pace: "quick",
+        mode: "agent",
+        promptVersion: "chat-v85-worksheet-switch-send",
+        chatTarget: "report",
+        switchToAnalytics: false,
+      }).switchToAnalytics
+    ).toBeUndefined();
   });
 });
 

@@ -146,6 +146,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "comment_deleted",
   "suggestion_generated",
   "suggestion_applied",
+  "suggestion_operation_applied",
   "evaluation_run",
   "evaluation_bypassed",
   "signature_submission",
@@ -482,9 +483,117 @@ export const reportSourceDocxRelations = relations(reportSourceDocx, ({ one }) =
 }));
 
 /**
- * User-defined folders for organising a report's PDF evidence. Purely
- * organisational: deleting a folder never deletes attachments (see the folder
- * DELETE route, which reparents children first).
+ * Library-side folders for organising reusable attachment assets. Distinct
+ * from report-scoped folders — linking a folder to a report snapshots its
+ * hierarchy into report_attachment_folders.
+ */
+export const attachmentLibraryFolders = pgTable(
+  "attachment_library_folders",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    ownerId: text("owner_id").notNull(),
+    parentId: text("parent_id").references(
+      (): AnyPgColumn => attachmentLibraryFolders.id,
+      { onDelete: "cascade" }
+    ),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (t) => ({
+    ownerIdx: index("attachment_library_folders_owner_idx").on(t.ownerId),
+    parentIdx: index("attachment_library_folders_parent_idx").on(t.parentId),
+    ownerArchivedIdx: index("attachment_library_folders_owner_archived_idx").on(
+      t.ownerId,
+      t.archivedAt
+    ),
+  })
+);
+
+/**
+ * Canonical attachment bytes and ingest state. One asset may be linked into
+ * many reports via report_attachments.asset_id.
+ */
+export const attachmentAssets = pgTable(
+  "attachment_assets",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    ownerId: text("owner_id").notNull(),
+    libraryFolderId: text("library_folder_id").references(
+      () => attachmentLibraryFolders.id,
+      { onDelete: "set null" }
+    ),
+    filename: text("filename").notNull(),
+    description: text("description"),
+    mimeType: text("mime_type").notNull().default("application/pdf"),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    sha256: text("sha256").notNull().default(""),
+    stagingObjectKey: text("staging_object_key").notNull(),
+    permanentObjectKey: text("permanent_object_key").notNull(),
+    gcsGeneration: text("gcs_generation"),
+    crc32c: text("crc32c"),
+    pageCount: integer("page_count"),
+    processingStatus: attachmentProcessingStatusEnum("processing_status")
+      .notNull()
+      .default("uploading"),
+    processingProgress: integer("processing_progress").notNull().default(0),
+    processingPage: integer("processing_page"),
+    processingError: text("processing_error"),
+    activeIngestRunId: text("active_ingest_run_id"),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => ({
+    ownerIdx: index("attachment_assets_owner_idx").on(t.ownerId),
+    folderIdx: index("attachment_assets_folder_idx").on(t.libraryFolderId),
+    ownerActiveIdx: index("attachment_assets_owner_active_idx").on(
+      t.ownerId,
+      t.deletedAt
+    ),
+  })
+);
+
+/** Grants another workspace user read/link access to a library asset. */
+export const attachmentAccessGrants = pgTable(
+  "attachment_access_grants",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => attachmentAssets.id, { onDelete: "cascade" }),
+    granteeUserId: text("grantee_user_id").notNull(),
+    grantedById: text("granted_by_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    assetGranteeUnique: uniqueIndex(
+      "attachment_access_grants_asset_grantee_unique"
+    ).on(t.assetId, t.granteeUserId),
+    granteeIdx: index("attachment_access_grants_grantee_idx").on(
+      t.granteeUserId
+    ),
+  })
+);
+
+/**
+ * User-defined folders for organising a report's PDF evidence. Deleting a
+ * folder removes the folder and every nested subfolder and attachment inside
+ * it (see the folder DELETE route).
  */
 export const reportAttachmentFolders = pgTable(
   "report_attachment_folders",
@@ -528,6 +637,13 @@ export const reportAttachments = pgTable(
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
+    /**
+     * When set, bytes and ingest state are owned by the library asset. Null on
+     * legacy rows until backfill completes.
+     */
+    assetId: text("asset_id").references(() => attachmentAssets.id, {
+      onDelete: "restrict",
+    }),
     /** Null = top level of the report's document tree. */
     folderId: text("folder_id").references(() => reportAttachmentFolders.id, {
       onDelete: "set null",
@@ -572,6 +688,10 @@ export const reportAttachments = pgTable(
       t.deletedAt
     ),
     folderIdx: index("report_attachments_folder_idx").on(t.folderId),
+    assetIdx: index("report_attachments_asset_idx").on(t.assetId),
+    reportAssetUnique: uniqueIndex(
+      "report_attachments_report_asset_unique"
+    ).on(t.reportId, t.assetId),
   })
 );
 
@@ -584,6 +704,9 @@ export const attachmentIngestRuns = pgTable(
     attachmentId: text("attachment_id")
       .notNull()
       .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    assetId: text("asset_id").references(() => attachmentAssets.id, {
+      onDelete: "cascade",
+    }),
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
@@ -609,6 +732,7 @@ export const attachmentIngestRuns = pgTable(
     attachmentIdx: index("attachment_ingest_runs_attachment_idx").on(
       t.attachmentId
     ),
+    assetIdx: index("attachment_ingest_runs_asset_idx").on(t.assetId),
     reportIdx: index("attachment_ingest_runs_report_idx").on(t.reportId),
   })
 );
@@ -666,6 +790,9 @@ export const documentPages = pgTable(
     attachmentId: text("attachment_id")
       .notNull()
       .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    assetId: text("asset_id").references(() => attachmentAssets.id, {
+      onDelete: "cascade",
+    }),
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
@@ -675,6 +802,19 @@ export const documentPages = pgTable(
     visualInterpretation: text("visual_interpretation").notNull().default(""),
     pageContext: text("page_context"),
     confidence: real("confidence"),
+    /** Deterministic heading from the transcript; null when none detected. */
+    outlineTitle: text("outline_title"),
+    /** Requirement-like IDs on this page (`requirementIds()`), cap 40. */
+    identifiers: text("identifiers")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /**
+     * Null = not classified (OCR wave / text-layer-only / gap). true/false
+     * only when Gemini insight or vision actually ran.
+     */
+    hasTable: boolean("has_table"),
+    hasFigure: boolean("has_figure"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -685,6 +825,48 @@ export const documentPages = pgTable(
       t.pageNumber
     ),
     reportIdx: index("document_pages_report_idx").on(t.reportId),
+    identifiersGinIdx: index("document_pages_identifiers_gin_idx").using(
+      "gin",
+      t.identifiers
+    ),
+  })
+);
+
+export const documentOutlineSpans = pgTable(
+  "document_outline_spans",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    ingestRunId: text("ingest_run_id")
+      .notNull()
+      .references(() => attachmentIngestRuns.id, { onDelete: "cascade" }),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    title: text("title").notNull(),
+    pageStart: integer("page_start").notNull(),
+    pageEnd: integer("page_end").notNull(),
+    identifiers: text("identifiers")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+  },
+  (t) => ({
+    runOrdinalUnique: uniqueIndex(
+      "document_outline_spans_run_ordinal_unique"
+    ).on(t.ingestRunId, t.ordinal),
+    reportAttachmentRunIdx: index(
+      "document_outline_spans_report_attachment_run_idx"
+    ).on(t.reportId, t.attachmentId, t.ingestRunId),
+    identifiersGinIdx: index("document_outline_spans_identifiers_gin_idx").using(
+      "gin",
+      t.identifiers
+    ),
   })
 );
 
@@ -700,6 +882,9 @@ export const documentChunks = pgTable(
     attachmentId: text("attachment_id")
       .notNull()
       .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    assetId: text("asset_id").references(() => attachmentAssets.id, {
+      onDelete: "cascade",
+    }),
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
@@ -856,9 +1041,11 @@ export const chatMessages = pgTable(
     parts: jsonb("parts").notNull().default([]),
     /**
      * Which config produced an assistant turn — `ChatAssistantTurnMetadata`
-     * (pace, model id, thinking level, prompt version). The composer shows the
-     * user "Quick"/"Deep" and never a model name, so this is the only record
-     * of what actually answered. Empty for user turns and legacy rows.
+     * (pace, model id, thinking level, prompt version, chatTarget). The
+     * composer shows the user "Quick"/"Deep" and never a model name, so this
+     * is the only record of what actually answered. User turns store
+     * `{ chatTarget }` so mixed Report + Analytics threads stay readable.
+     * Empty for legacy rows.
      */
     metadata: jsonb("metadata").notNull().default({}),
     /** workspace_users.id for user turns; null for assistant turns. */
@@ -995,6 +1182,7 @@ export const aiUsageFeatureEnum = pgEnum("ai_usage_feature", [
   "math_extraction",
   "chart_extraction",
   "docx_image_description",
+  "voice_transcribe",
 ]);
 
 export const aiBudgetSettings = pgTable("ai_budget_settings", {
@@ -1084,6 +1272,58 @@ export const attachmentPageUsageEvents = pgTable(
   })
 );
 
+export const voiceBudgetSettings = pgTable("voice_budget_settings", {
+  id: text("id").primaryKey().default("default"),
+  monthlyMinuteLimit: integer("monthly_minute_limit").notNull().default(100_000),
+  enforceHardLimit: boolean("enforce_hard_limit").notNull().default(true),
+  warningThresholdPercent: integer("warning_threshold_percent")
+    .notNull()
+    .default(80),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Workspace-wide stored-attachment cap (not a monthly cycle). Default 100 GiB. */
+export const attachmentStorageBudgetSettings = pgTable(
+  "attachment_storage_budget_settings",
+  {
+    id: text("id").primaryKey().default("default"),
+    byteLimit: bigint("byte_limit", { mode: "number" })
+      .notNull()
+      .default(107_374_182_400),
+    enforceHardLimit: boolean("enforce_hard_limit").notNull().default(true),
+    warningThresholdPercent: integer("warning_threshold_percent")
+      .notNull()
+      .default(80),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }
+);
+
+export const voiceUsageEvents = pgTable(
+  "voice_usage_events",
+  {
+    id: text("id").primaryKey(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    yearMonth: text("year_month").notNull(),
+    audioSeconds: integer("audio_seconds").notNull(),
+    reportId: text("report_id").references(() => reports.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id").references(() => workspaceUsers.id, {
+      onDelete: "set null",
+    }),
+    metadata: jsonb("metadata").notNull().default({}),
+  },
+  (t) => ({
+    yearMonthIdx: index("voice_usage_events_year_month_idx").on(t.yearMonth),
+  })
+);
+
 export const auditEventsRelations = relations(auditEvents, ({ one, many }) => ({
   report: one(reports, {
     fields: [auditEvents.reportId],
@@ -1128,7 +1368,49 @@ export const reportAttachmentsRelations = relations(
       fields: [reportAttachments.reportId],
       references: [reports.id],
     }),
+    asset: one(attachmentAssets, {
+      fields: [reportAttachments.assetId],
+      references: [attachmentAssets.id],
+    }),
     ingestRuns: many(attachmentIngestRuns),
+  })
+);
+
+export const attachmentLibraryFoldersRelations = relations(
+  attachmentLibraryFolders,
+  ({ one, many }) => ({
+    parent: one(attachmentLibraryFolders, {
+      fields: [attachmentLibraryFolders.parentId],
+      references: [attachmentLibraryFolders.id],
+      relationName: "libraryFolderChildren",
+    }),
+    children: many(attachmentLibraryFolders, {
+      relationName: "libraryFolderChildren",
+    }),
+    assets: many(attachmentAssets),
+  })
+);
+
+export const attachmentAssetsRelations = relations(
+  attachmentAssets,
+  ({ one, many }) => ({
+    libraryFolder: one(attachmentLibraryFolders, {
+      fields: [attachmentAssets.libraryFolderId],
+      references: [attachmentLibraryFolders.id],
+    }),
+    accessGrants: many(attachmentAccessGrants),
+    reportLinks: many(reportAttachments),
+    ingestRuns: many(attachmentIngestRuns),
+  })
+);
+
+export const attachmentAccessGrantsRelations = relations(
+  attachmentAccessGrants,
+  ({ one }) => ({
+    asset: one(attachmentAssets, {
+      fields: [attachmentAccessGrants.assetId],
+      references: [attachmentAssets.id],
+    }),
   })
 );
 
@@ -1139,6 +1421,10 @@ export const attachmentIngestRunsRelations = relations(
       fields: [attachmentIngestRuns.attachmentId],
       references: [reportAttachments.id],
     }),
+    asset: one(attachmentAssets, {
+      fields: [attachmentIngestRuns.assetId],
+      references: [attachmentAssets.id],
+    }),
     report: one(reports, {
       fields: [attachmentIngestRuns.reportId],
       references: [reports.id],
@@ -1146,6 +1432,7 @@ export const attachmentIngestRunsRelations = relations(
     batches: many(documentIngestBatches),
     pages: many(documentPages),
     chunks: many(documentChunks),
+    outlineSpans: many(documentOutlineSpans),
   })
 );
 
@@ -1167,6 +1454,24 @@ export const documentPagesRelations = relations(
       references: [attachmentIngestRuns.id],
     }),
     chunks: many(documentChunks),
+  })
+);
+
+export const documentOutlineSpansRelations = relations(
+  documentOutlineSpans,
+  ({ one }) => ({
+    ingestRun: one(attachmentIngestRuns, {
+      fields: [documentOutlineSpans.ingestRunId],
+      references: [attachmentIngestRuns.id],
+    }),
+    attachment: one(reportAttachments, {
+      fields: [documentOutlineSpans.attachmentId],
+      references: [reportAttachments.id],
+    }),
+    report: one(reports, {
+      fields: [documentOutlineSpans.reportId],
+      references: [reports.id],
+    }),
   })
 );
 

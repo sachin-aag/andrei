@@ -13,21 +13,39 @@ jobs:
       github.event.pull_request.head.ref != 'main' &&
       github.event.pull_request.head.ref != 'master'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - neon_project_id: ${{ vars.NEON_PROJECT_ID_MJ }}
+            label: mj
+          - neon_project_id: ${{ vars.NEON_PROJECT_ID_DEMO }}
+            label: demo
+          - neon_project_id: ${{ vars.NEON_PROJECT_ID_CONVERGENT }}
+            label: convergent
+          # Back-compat: older repos only set NEON_PROJECT_ID (MJ / Andrei V2).
+          - neon_project_id: ${{ vars.NEON_PROJECT_ID }}
+            label: mj-legacy
     steps:
+      - name: Skip when project id is unset
+        if: matrix.neon_project_id == ''
+        run: echo "NEON project id not configured for ${{ matrix.label }}; skipping."
+
       - name: Delete preview branch (preview/<git-branch>)
         id: delete-by-ref
+        if: matrix.neon_project_id != ''
         continue-on-error: true
         uses: neondatabase/delete-branch-action@v3
         with:
-          project_id: ${{ vars.NEON_PROJECT_ID }}
+          project_id: ${{ matrix.neon_project_id }}
           branch: preview/${{ github.event.pull_request.head.ref }}
           api_key: ${{ secrets.NEON_API_KEY }}
 
       - name: Delete preview branch (preview/pr-<n>-<git-branch>)
-        if: steps.delete-by-ref.outcome == 'failure'
+        if: matrix.neon_project_id != '' && steps.delete-by-ref.outcome == 'failure'
         continue-on-error: true
         uses: neondatabase/delete-branch-action@v3
         with:
-          project_id: ${{ vars.NEON_PROJECT_ID }}
+          project_id: ${{ matrix.neon_project_id }}
           branch: preview/pr-${{ github.event.number }}-${{ github.event.pull_request.head.ref }}
           api_key: ${{ secrets.NEON_API_KEY }}

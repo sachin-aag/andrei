@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   estimateLabelWidth,
   layoutControlLimitLabels,
+  layoutHorizontalLimitLabels,
   layoutHorizontalSpecLabels,
   layoutSpecLimitLabels,
 } from "./spec-limit-labels";
@@ -157,5 +158,25 @@ describe("layoutControlLimitLabels", () => {
     expect(lsl?.text).toBe("1.00");
     expect(usl?.y).toBeLessThan(28);
     expect(lsl?.y).toBeGreaterThan(150);
+  });
+
+  it("places left-edge spec labels on the left without colliding with right-edge control labels", () => {
+    const labels = layoutHorizontalLimitLabels(
+      [
+        { kind: "usl", value: 10, lineY: 28, edge: "left" },
+        { kind: "lsl", value: -10, lineY: 150, edge: "left" },
+        { kind: "ucl", value: 7.2, lineY: 40 },
+        { kind: "lcl", value: -7.07, lineY: 140 },
+      ],
+      PLOT
+    );
+
+    const usl = labels.find((label) => label.kind === "usl");
+    const ucl = labels.find((label) => label.kind === "ucl");
+    expect(usl?.edge).toBe("left");
+    expect(usl?.textAnchor).toBe("start");
+    expect(usl?.x).toBe(PLOT.left + 3);
+    expect(ucl?.edge).toBe("right");
+    expect(ucl?.x).toBe(PLOT.right - 3);
   });
 });

@@ -16,6 +16,7 @@ export type AnalyticsEvent =
   | "comment_dismissed"
   | "sidebar_tab_changed"
   | "expert_review_requested"
+  | "ai_chat_failed"
   | "product_tour_started"
   | "product_tour_step_viewed"
   | "product_tour_completed"
@@ -28,5 +29,21 @@ export function captureEvent(
   props?: Record<string, unknown>
 ) {
   if (typeof window === "undefined") return;
-  posthog.capture(event, props);
+  try {
+    posthog.capture(event, props);
+  } catch {
+    // Analytics must never break the product.
+  }
+}
+
+export function captureClientException(
+  error: unknown,
+  props?: Record<string, unknown>
+) {
+  if (typeof window === "undefined") return;
+  try {
+    posthog.captureException(error, props);
+  } catch {
+    // Analytics must never break the product.
+  }
 }

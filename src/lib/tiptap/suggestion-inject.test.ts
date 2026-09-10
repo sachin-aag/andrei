@@ -216,6 +216,18 @@ describe("shouldSkipSuggestionDocSync", () => {
       })
     ).toBe(false);
   });
+
+  it("strips a dismissed preview even when the editor is focused", () => {
+    expect(
+      shouldSkipSuggestionDocSync({
+        hasFocus: true,
+        previewHeld: false,
+        needsInject: false,
+        hasLocalEdits: false,
+        needsStrip: true,
+      })
+    ).toBe(false);
+  });
 });
 
 describe("shouldApplyExternalValueToEditor", () => {

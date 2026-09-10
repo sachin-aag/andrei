@@ -11,6 +11,8 @@ export type MentionCandidate = {
   label: string;
   /** Short secondary line (page count, user description). */
   sublabel?: string;
+  /** Extra search tokens (folder path) that are not inserted into the text. */
+  keywords?: string;
 };
 
 export type MentionQuery = {
@@ -41,23 +43,40 @@ export function findMentionQuery(text: string, caret: number): MentionQuery | nu
   return { query, start, end: position };
 }
 
-/** Prefix matches first, then substring matches; both case-insensitive. */
+function candidateSearchText(candidate: MentionCandidate): {
+  label: string;
+  extra: string;
+} {
+  return {
+    label: candidate.label.toLowerCase(),
+    extra: (candidate.keywords ?? "").toLowerCase(),
+  };
+}
+
+/**
+ * Prefix matches first, then substring matches; both case-insensitive.
+ * No default cap — the @ menu must list every section/sheet, not a slice.
+ */
 export function filterMentionCandidates(
   candidates: MentionCandidate[],
   query: string,
-  limit = 8
+  limit?: number
 ): MentionCandidate[] {
   const needle = query.trim().toLowerCase();
-  if (!needle) return candidates.slice(0, limit);
-
-  const prefix: MentionCandidate[] = [];
-  const contains: MentionCandidate[] = [];
-  for (const candidate of candidates) {
-    const haystack = candidate.label.toLowerCase();
-    if (haystack.startsWith(needle)) prefix.push(candidate);
-    else if (haystack.includes(needle)) contains.push(candidate);
-  }
-  return [...prefix, ...contains].slice(0, limit);
+  const ranked = (() => {
+    if (!needle) return candidates;
+    const prefix: MentionCandidate[] = [];
+    const contains: MentionCandidate[] = [];
+    for (const candidate of candidates) {
+      const { label, extra } = candidateSearchText(candidate);
+      if (label.startsWith(needle)) prefix.push(candidate);
+      else if (label.includes(needle) || extra.includes(needle)) {
+        contains.push(candidate);
+      }
+    }
+    return [...prefix, ...contains];
+  })();
+  return typeof limit === "number" ? ranked.slice(0, limit) : ranked;
 }
 
 /**

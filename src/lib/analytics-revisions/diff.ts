@@ -83,6 +83,10 @@ export function analyticsPlotKindLabel(kind: AnalysisKind): string {
       return "scatter";
     case "one_way_anova":
       return "ANOVA";
+    case "boxplot":
+      return "boxplot";
+    case "histogram":
+      return "histogram";
     default: {
       const exhaustive: never = kind;
       return exhaustive;

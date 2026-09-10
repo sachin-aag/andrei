@@ -6,16 +6,16 @@ import {
   type EditScope,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
-import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
+import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
+import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 import type {
   SuggestionImageInsert,
   SuggestionImageRemove,
 } from "@/lib/suggestions/image-insert";
 
 /**
- * Fraction of a field a single `propose_edit` may delete before it should be
- * routed to a block-level redraft instead of an inline word-diff. Tunable
- * safety valve — not a UX toggle (see Tier-2 `draft_section`).
+ * Fraction of a field `draft_field` must change to count as a rewrite
+ * (`not_a_rewrite` below this). `propose_edit` no longer refuses large spans.
  */
 export const REDRAFT_COVERAGE_THRESHOLD = 0.5;
 
@@ -35,19 +35,12 @@ export type ProposedEditCheck =
   | { status: "ambiguous" }
   | { status: "cross_cell" }
   | { status: "bad_scope" }
-  | { status: "too_large"; coverage: number };
+  | { status: "table_as_list" };
 
 /**
- * Validate a proposed targeted edit against the current field:
- * 1. It must locate uniquely (delegates to the shared suggestion locator).
- * 2. A delete must not cover more than {@link REDRAFT_COVERAGE_THRESHOLD} of
- *    the field — larger changes are rewrites and belong to a block redraft.
- *
- * When `fieldDoc` is supplied (rich fields), validation runs against the doc so
- * a structural `scope` resolves and cross-cell / bad-coordinate edits are caught
- * at propose time rather than silently failing at accept time.
- *
- * Pure + DB-free so it is unit-testable in isolation.
+ * Validate a proposed targeted edit against the current field.
+ * Coverage classifies later (edit vs rewrite); this check never rejects
+ * a uniquely located span for size.
  */
 export function checkProposedEdit(
   fieldPlainText: string,
@@ -64,6 +57,14 @@ export function checkProposedEdit(
     second: edit.second,
   };
 
+  if (
+    markdownHasTable(edit.insertText) ||
+    markdownHasTable(edit.anchorText) ||
+    markdownHasTable(edit.second?.insertText ?? "")
+  ) {
+    return { status: "not_found" };
+  }
+
   const status = fieldDoc
     ? probeRichEdit(fieldDoc, suggestionEdit)
     : probePlainEdit(fieldPlainText, suggestionEdit);
@@ -74,27 +75,56 @@ export function checkProposedEdit(
     return { status: "not_found" };
   }
 
-  // A scoped edit replaces at most one cell / list item, which is a small part
-  // of the whole field even when it rewrites that cell — skip the coverage
-  // guard (it exists to catch whole-field rewrites masquerading as edits).
-  const del = collapseWhitespace(edit.deleteText ?? "");
-  if (!edit.scope && del.length > 0) {
-    const fieldLen = Math.max(1, collapseWhitespace(fieldPlainText).length);
-    const coverage = del.length / fieldLen;
-    if (coverage > REDRAFT_COVERAGE_THRESHOLD) {
-      return { status: "too_large", coverage };
-    }
+  if (
+    insertRestatesTableAsList(edit.insertText, fieldDoc) ||
+    replacesTableLeadInWithList(edit.deleteText, edit.insertText)
+  ) {
+    return { status: "table_as_list" };
   }
 
   return { status: "ok" };
 }
 
+function looksLikeMarkdownList(text: string): boolean {
+  const items = text
+    .split(/\n+/)
+    .filter((line) => /^\s*(?:[-*]|\d+[.)])\s+\S/.test(line));
+  return items.length >= 2;
+}
+
+function insertRestatesTableAsList(
+  insertText: string,
+  fieldDoc?: JSONContent | null
+): boolean {
+  if (!fieldDoc || !looksLikeMarkdownList(insertText)) return false;
+  const cells = summarizeTablesInDoc(fieldDoc)
+    .flatMap((table) => table.cells)
+    .filter((cell) => cell.row > 0)
+    .map((cell) => cell.text.trim())
+    .filter((text) => text.length >= 4 && text !== "(empty)");
+  if (cells.length === 0) return false;
+  const haystack = insertText.toLowerCase();
+  const hits = cells.filter((text) => haystack.includes(text.toLowerCase())).length;
+  return hits >= 3 || hits / cells.length >= 0.5;
+}
+
+function replacesTableLeadInWithList(deleteText: string, insertText: string): boolean {
+  if (!looksLikeMarkdownList(insertText)) return false;
+  return /table below|in the table|as detailed in the table|vcs table/i.test(
+    deleteText
+  );
+}
+
 /** Agent-facing repair hint for a non-ok check result. */
 export function looksLikeTableEdit(
   anchorText: string,
-  fieldDoc?: JSONContent | null
+  fieldDoc?: JSONContent | null,
+  insertText?: string
 ): boolean {
-  if (/\|.+\|/.test(anchorText)) return true;
+  if (markdownHasTable(anchorText) || markdownHasTable(insertText ?? "")) {
+    return true;
+  }
+  if (/\|.+\|/.test(anchorText) || /\|.+\|/.test(insertText ?? "")) return true;
   if (!fieldDoc) return false;
   const walk = (node: JSONContent): boolean =>
     node.type === "table" || Boolean(node.content?.some(walk));
@@ -103,24 +133,34 @@ export function looksLikeTableEdit(
 
 export function proposedEditHint(
   check: ProposedEditCheck,
-  opts?: { anchorText?: string; fieldDoc?: JSONContent | null }
+  opts?: {
+    anchorText?: string;
+    insertText?: string;
+    fieldDoc?: JSONContent | null;
+  }
 ): string {
   switch (check.status) {
     case "ok":
       return "";
     case "not_found":
-      if (looksLikeTableEdit(opts?.anchorText ?? "", opts?.fieldDoc)) {
-        return "That looks like a table change. Do not use a markdown pipe table as anchorText — propose_edit cannot match it. Call read_section, then edit_table with tableIndex and [row,col] from structuredText. Do not fall through to draft_field.";
+      if (
+        looksLikeTableEdit(
+          opts?.anchorText ?? "",
+          opts?.fieldDoc,
+          opts?.insertText
+        )
+      ) {
+        return "That looks like a table change. Do not use a markdown pipe table as anchorText or insertText — propose_edit cannot create or match it. Call read_section, then edit_table: create_table (headers plus rows) to add a table, edit_cells / insert_rows for an existing one, or delete_table to remove one. Do not fall through to draft_field.";
       }
-      return "The anchorText was not found in the current field. Call read_section to get the exact current text, then quote a verbatim span.";
+      return "The anchorText was not found in the current field. Call read_section to get the exact current text, then quote a verbatim longer unique span.";
     case "ambiguous":
       return "The anchorText matches more than once. Include more surrounding words so it is unique, or set `scope` to the exact list item. For tables, use edit_table instead of propose_edit.";
     case "cross_cell":
       return "The edit spans more than one table cell. Use edit_table (edit_cells) instead of propose_edit.";
     case "bad_scope":
       return "The `scope` coordinate does not exist in this field. For tables, call read_section then edit_table. For lists, re-read and use a valid item index.";
-    case "too_large":
-      return "This change rewrites most of the field. Make a smaller, targeted edit, or use draft_field for an explicit full replacement.";
+    case "table_as_list":
+      return "This restates an existing table as a bulleted list. Call read_section, copy tableIndex and [row,col] from tables[] / structuredText, then edit_table (edit_cells to add an example in a cell, or insert_column for a new Example column). Do not convert the table into prose.";
     default: {
       const _exhaustive: never = check;
       return _exhaustive;

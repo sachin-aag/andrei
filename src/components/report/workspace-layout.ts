@@ -9,17 +9,84 @@
  * ranges). Collapsed rails stay a fixed icon strip.
  */
 
+import type { CSSProperties } from "react";
 import type { WorkspaceChrome } from "./workspace-chrome";
 
 export const COLLAPSED_RAIL_PX = 48;
 
-/** Review margin beside the document canvas (container ≥800px). */
-export const REVIEW_GUTTER_MIN_PX = 168;
+/**
+ * Review margin beside the document canvas. Floor is a middle ground: wide
+ * enough for compact Apply / Dismiss on one row, still well below the old
+ * 360px ceiling that stole sheet space on 13" screens.
+ */
+export const REVIEW_GUTTER_MIN_PX = 208;
 export const REVIEW_GUTTER_MAX_PX = 280;
 
-/** Tailwind container-query grid when the review margin is visible. */
+/**
+ * Container-query floor for the review-margin column. Must stay a complete
+ * Tailwind class in `REVIEW_GUTTER_GRID_COLS` / `REVIEW_GUTTER_ASIDE_CLASS`.
+ *
+ * 480px (not 800px) is required on a 1280px laptop: default chat (400) +
+ * attachments (300) + collapsed app nav (~56) leave ~520px of canvas. An
+ * 800px floor hid the gutter on Playwright’s viewport and on 13" screens
+ * even with Comments turned on.
+ */
+export const REVIEW_GUTTER_CONTAINER_MIN_PX = 480;
+
+/**
+ * Review margin beside the document sheet. The sheet keeps `--doc-col`; the
+ * margin takes what is left, so widening the sheet shrinks the margin to
+ * `REVIEW_GUTTER_MIN_PX` before the sheet itself gives way.
+ */
 export const REVIEW_GUTTER_GRID_COLS =
-  "@[800px]:grid-cols-[minmax(0,1fr)_minmax(168px,280px)]" as const;
+  "@[480px]:grid-cols-[minmax(0,var(--doc-col))_minmax(208px,1fr)]" as const;
+
+export const REVIEW_GUTTER_ASIDE_CLASS =
+  "relative hidden min-w-0 @[480px]:block" as const;
+
+/**
+ * Readable measure for sectioned reports (investigation, DV, QRA).
+ * Typographic practice is 45–75 characters per line (WCAG 1.4.8 caps at 80).
+ * The default sheet is 880px: wide enough for the two-column 6M grid and
+ * wide tables, still far short of an ultrawide canvas. Engineers can drag the
+ * sheet edge between these bounds; leftover canvas width becomes side padding.
+ */
+export const DOCUMENT_WIDTH_DEFAULT_PX = 880;
+export const DOCUMENT_WIDTH_MIN_PX = 640;
+export const DOCUMENT_WIDTH_MAX_PX = 1280;
+
+/**
+ * Fixed bounds — the sheet is centered inside the canvas and CSS clamps it to
+ * `min(100%, …)`, so a narrow canvas needs no separate viewport ceiling.
+ */
+export function documentWidthBounds(): PanelWidthBounds {
+  return { min: DOCUMENT_WIDTH_MIN_PX, max: DOCUMENT_WIDTH_MAX_PX };
+}
+
+/** Feeds `--doc-col` to the canvas max-width and the review-margin grid. */
+export function documentColumnStyle(width: number): CSSProperties {
+  const clamped = clamp(
+    Math.round(width),
+    DOCUMENT_WIDTH_MIN_PX,
+    DOCUMENT_WIDTH_MAX_PX
+  );
+  return { "--doc-col": `${clamped}px` } as CSSProperties;
+}
+
+/**
+ * Generic documents already lay themselves out as 8.5in pages, so they keep
+ * `max-w-none`. Keep these as complete class strings so Tailwind sees them.
+ */
+export function documentCanvasWidthClass(input: {
+  continuousDocument: boolean;
+  reviewGutterVisible: boolean;
+}): string {
+  if (input.continuousDocument) return "max-w-none px-4 py-6";
+  if (input.reviewGutterVisible) {
+    return "max-w-[min(100%,calc(var(--doc-col)+2rem+280px))] px-6 py-8";
+  }
+  return "max-w-[min(100%,var(--doc-col))] px-6 py-8";
+}
 
 export const CHAT_DEFAULT_PX = 400;
 export const DOCS_DEFAULT_PX = 300;
@@ -60,16 +127,14 @@ export const WORKSPACE_PANEL_WIDTH_TRANSITION_MS = 200;
 
 /**
  * Inline suggestions and comments live in the review margin. The gutter is
- * opt-in (`commentsGutterEnabled`) and only mounts while the assistant is
- * collapsed so the two surfaces never compete. Hidden while a PDF/Word preview
- * fills the canvas.
+ * opt-in via the Comments switch on the Report tab. Hidden while a PDF/Word
+ * preview fills the canvas.
  */
 export function isReviewGutterVisible(
   commentsGutterEnabled: boolean,
-  chatCollapsed: boolean,
   viewingDocument = false
 ): boolean {
-  return commentsGutterEnabled && chatCollapsed && !viewingDocument;
+  return commentsGutterEnabled && !viewingDocument;
 }
 
 export type PanelWidthBounds = {
@@ -81,6 +146,7 @@ export type StoredWorkspaceLayout = {
   chatWidth: number;
   docsWidth: number;
   previewWidth: number;
+  documentWidth: number;
 };
 
 export type WorkspaceColumnIntent = {
@@ -314,6 +380,7 @@ export function parseStoredWorkspaceLayout(
       return null;
     }
     const previewWidth = (parsed as { previewWidth?: unknown }).previewWidth;
+    const documentWidth = (parsed as { documentWidth?: unknown }).documentWidth;
     return {
       chatWidth,
       docsWidth,
@@ -321,6 +388,10 @@ export function parseStoredWorkspaceLayout(
         typeof previewWidth === "number" && Number.isFinite(previewWidth)
           ? previewWidth
           : PREVIEW_DEFAULT_PX,
+      documentWidth:
+        typeof documentWidth === "number" && Number.isFinite(documentWidth)
+          ? documentWidth
+          : DOCUMENT_WIDTH_DEFAULT_PX,
     };
   } catch {
     return null;
@@ -334,6 +405,7 @@ export function serializeStoredWorkspaceLayout(
     chatWidth: Math.round(layout.chatWidth),
     docsWidth: Math.round(layout.docsWidth),
     previewWidth: Math.round(layout.previewWidth),
+    documentWidth: Math.round(layout.documentWidth),
   });
 }
 
@@ -346,6 +418,7 @@ const DEFAULT_WORKSPACE_LAYOUT: StoredWorkspaceLayout = Object.freeze({
   chatWidth: CHAT_DEFAULT_PX,
   docsWidth: DOCS_DEFAULT_PX,
   previewWidth: PREVIEW_DEFAULT_PX,
+  documentWidth: DOCUMENT_WIDTH_DEFAULT_PX,
 });
 
 export function defaultWorkspaceLayout(): StoredWorkspaceLayout {

@@ -23,7 +23,7 @@ import {
 import { canSuggestFixes } from "@/lib/ai/suggestion-gating";
 import { canSaveReportSection } from "@/lib/reports/access";
 import { useUserDirectory } from "@/providers/user-directory-provider";
-import { SECTION_LABELS } from "@/types/sections";
+import { displaySectionLabel } from "@/types/sections";
 import { captureEvent } from "@/lib/analytics/events";
 import { getDocumentType } from "@/lib/document-types";
 import { getCustomerPack } from "@/lib/customers/packs";
@@ -188,7 +188,7 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
               isRunning && "opacity-60"
             )}
           >
-            {SECTION_LABELS[section] ?? section} · {met}/{total} met
+            {displaySectionLabel(section)} · {met}/{total} met
           </span>
           {isRunning ? (
             <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-[var(--muted-foreground)] truncate">

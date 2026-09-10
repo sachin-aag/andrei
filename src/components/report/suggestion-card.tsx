@@ -16,6 +16,7 @@ import {
   useReportEvaluations,
   useReportSections,
 } from "@/providers/report-provider";
+import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -30,7 +31,6 @@ import {
   nextOpenSuggestionAfterResolve,
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
-  sortedOpenSuggestionsForSection,
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
@@ -40,9 +40,6 @@ import {
   suggestionApplyModeFor,
 } from "@/lib/document-types";
 import { formatChartProvenance } from "@/lib/charts/chart-spec";
-import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
-import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
-import { inlineMarkdownToTextNodes } from "@/lib/tiptap/markdown-to-doc";
 import {
   afterPaint,
   delay,
@@ -57,8 +54,14 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  PLACEHOLDER_CONFLICT_MESSAGE,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import {
+  formatSupersedesBadge,
+  supersededSuggestionIdsFromContent,
+  suggestionsSupersededBy,
+} from "@/lib/suggestions/supersession";
 import {
   isSuggestionTargetInViewport,
   measureSuggestionGutterParkCenterY,
@@ -66,16 +69,15 @@ import {
 } from "@/lib/suggestions/navigate-suggestion";
 import {
   countStaleOpenSuggestions,
+  preferredOpenSuggestion,
   suggestionStaleMessage,
   validateSuggestionLocate,
   type SuggestionValidation,
 } from "@/lib/suggestions/validate-suggestion";
-import {
-  summarizeTableOperation,
-  tableOperationDetailLines,
-} from "@/lib/suggestions/table-operation";
+import { summarizeTableOperation } from "@/lib/suggestions/table-operation";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
+
 type CardPhase =
   | "steady"
   | "applying"
@@ -98,11 +100,17 @@ type FrozenCardBase = {
   queueTotal: number;
 };
 
-type FrozenCard = FrozenCardBase &
+export type FrozenCard = FrozenCardBase &
   (
-    | { kind: "fix"; payload: ParsedAiFixPayload; normalizedInsert: string }
+    | { kind: "fix"; payload: ParsedAiFixPayload }
     | { kind: "redraft"; redraft: ParsedAiRedraftPayload }
   );
+
+/** Compact enough that Apply + Dismiss stay on one row at REVIEW_GUTTER_MIN_PX. */
+const SUGGESTION_ACTION_ROW_CLASS =
+  "flex flex-nowrap items-center gap-1.5 pt-1";
+const SUGGESTION_ACTION_BUTTON_CLASS =
+  "h-6 min-w-0 shrink-0 px-2 text-[11px] gap-1 [&_svg]:size-3";
 
 function buildFrozenCard(
   comment: CommentRecord,
@@ -126,59 +134,30 @@ function buildFrozenCard(
     ...base,
     kind: "fix",
     payload,
-    normalizedInsert: normalizeSuggestionInsertText(payload.insertText),
   };
 }
 
-function InlineMarkdownSpan({ text }: { text: string }) {
-  return (
-    <>
-      {inlineMarkdownToTextNodes(text).map((node, i) => {
-        const marks = node.marks ?? [];
-        const italic = marks.some((m) => m.type === "italic");
-        const bold = marks.some((m) => m.type === "bold");
-        return (
-          <span
-            key={i}
-            className={
-              italic && bold
-                ? "italic font-semibold"
-                : italic
-                  ? "italic"
-                  : bold
-                    ? "font-semibold"
-                    : undefined
-            }
-          >
-            {node.text}
-          </span>
-        );
-      })}
-    </>
-  );
-}
-
-/** Text with actionable `[placeholder]` spans highlighted (citations stay plain). */
-function PlaceholderHighlightedText({ text }: { text: string }) {
-  return (
-    <>
-      {splitPlainTextWithPlaceholders(text).map((part, i) =>
-        part.kind === "placeholder" ? (
-          <span key={i} className="suggestion-preview-placeholder">
-            {part.text}
-          </span>
-        ) : (
-          <InlineMarkdownSpan key={i} text={part.text} />
-        )
-      )}
-    </>
-  );
+function figureChangeSummary(payload: ParsedAiFixPayload): string | null {
+  const insert = payload.insertImage;
+  const remove = payload.removeImage;
+  if (!insert && !remove) return null;
+  if (insert && remove && insert.src === remove.src) {
+    return insert.alt?.trim() || null;
+  }
+  if (insert) {
+    const bits = [
+      insert.alt?.trim() || null,
+      insert.chartSpec ? formatChartProvenance(insert.chartSpec) : null,
+    ].filter((bit): bit is string => Boolean(bit));
+    return bits.length > 0 ? bits.join(". ") : null;
+  }
+  return remove?.alt?.trim() || null;
 }
 
 const RESOLVE_HINT =
   "Only the report author or a manager can act on suggestions.";
 
-function SuggestionCardFace({
+export function SuggestionCardFace({
   card,
   phase,
   showActions,
@@ -186,6 +165,7 @@ function SuggestionCardFace({
   validation,
   queueStaleHint,
   canResolve,
+  supersedesBadge,
   onAccept,
   onDismiss,
 }: {
@@ -196,14 +176,18 @@ function SuggestionCardFace({
   validation: SuggestionValidation;
   queueStaleHint: string | null;
   canResolve: boolean;
+  supersedesBadge?: string;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
+  const { openDocument } = useReportAttachments();
   const { linkedEval, queueIndex, queueTotal } = card;
   const eff = linkedEval ? effectiveStatus(linkedEval) : "not_evaluated";
   const reasoning = card.kind === "fix" ? card.payload.reasoning : card.redraft.reasoning;
   const evidenceSources =
     card.kind === "fix" ? (card.payload.evidenceSources ?? []) : [];
+  const figureSummary =
+    card.kind === "fix" ? figureChangeSummary(card.payload) : null;
 
   const statusLine =
     phase === "applying"
@@ -219,7 +203,7 @@ function SuggestionCardFace({
   return (
     <div
       className={cn(
-        "rounded-md border border-violet-500/30 bg-[var(--card)] p-3 space-y-2",
+        "rounded-md border border-violet-500/30 bg-[var(--card)] p-2.5 space-y-2",
         phase === "applied" && "suggestion-card-applied-glow"
       )}
     >
@@ -234,7 +218,12 @@ function SuggestionCardFace({
             ? "Full draft"
             : card.kind === "fix" && card.payload.tableOperation
               ? "Table edit"
-              : card.kind === "fix" && card.payload.removeImage
+            : card.kind === "fix" &&
+                card.payload.insertImage &&
+                card.payload.removeImage &&
+                card.payload.insertImage.src === card.payload.removeImage.src
+              ? "Move figure"
+              : card.kind === "fix" && card.payload.removeImage && !card.payload.insertImage
               ? "Remove figure"
               : card.kind === "fix" && card.payload.insertImage
                 ? "Figure"
@@ -271,6 +260,12 @@ function SuggestionCardFace({
         </p>
       ) : null}
 
+      {phase === "steady" && validation.mergeStatus === "conflict" ? (
+        <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200/80 rounded px-2 py-1.5 leading-snug">
+          {suggestionStaleMessage(validation)}
+        </p>
+      ) : null}
+
       {phase === "steady" && queueStaleHint ? (
         <p className="text-[10px] text-[var(--muted-foreground)]">{queueStaleHint}</p>
       ) : null}
@@ -280,108 +275,25 @@ function SuggestionCardFace({
       ) : null}
 
       {card.kind === "fix" && card.payload.tableOperation ? (
-        <div
+        <p
           className={cn(
-            "text-xs leading-relaxed space-y-1 transition-opacity duration-300",
+            "text-xs leading-snug suggestion-preview-insert font-medium transition-opacity duration-300",
             phase !== "steady" && "opacity-70"
           )}
         >
-          <p className="suggestion-preview-insert font-medium">
-            {summarizeTableOperation(card.payload.tableOperation)}
-          </p>
-          {tableOperationDetailLines(card.payload.tableOperation).map((line) => (
-            <p key={line} className="text-[11px] text-[var(--muted-foreground)]">
-              {line}
-            </p>
-          ))}
-          {card.payload.second?.insertText.trim() ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              Citation at end of section:{" "}
-              <span className="suggestion-preview-insert font-medium">
-                {card.payload.second.insertText.trim()}
-              </span>
-            </p>
-          ) : null}
-        </div>
+          {summarizeTableOperation(card.payload.tableOperation)}
+        </p>
       ) : null}
 
-      {card.kind === "fix" && card.payload.insertImage ? (
-        <div
+      {figureSummary ? (
+        <p
           className={cn(
-            "space-y-1.5 transition-opacity duration-300",
+            "text-[11px] leading-snug text-[var(--muted-foreground)] transition-opacity duration-300",
             phase !== "steady" && "opacity-70"
           )}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element -- suggestion preview of a data URL */}
-          <img
-            src={card.payload.insertImage.src}
-            alt={card.payload.insertImage.alt ?? ""}
-            className="max-h-32 w-auto max-w-full rounded-sm border border-emerald-700/30"
-          />
-          {card.payload.insertImage.alt ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              {card.payload.insertImage.alt}
-            </p>
-          ) : null}
-          {card.payload.insertImage.chartSpec ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              {formatChartProvenance(card.payload.insertImage.chartSpec)}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {card.kind === "fix" && card.payload.removeImage ? (
-        <div
-          className={cn(
-            "space-y-1.5 transition-opacity duration-300",
-            phase !== "steady" && "opacity-70"
-          )}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element -- suggestion preview of a data URL */}
-          <img
-            src={card.payload.removeImage.src}
-            alt={card.payload.removeImage.alt ?? ""}
-            className="max-h-32 w-auto max-w-full rounded-sm border border-rose-700/30 opacity-60"
-          />
-          {card.payload.removeImage.alt ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              {card.payload.removeImage.alt}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {card.kind === "fix" &&
-      !card.payload.tableOperation &&
-      !card.payload.insertImage &&
-      !card.payload.removeImage &&
-      (card.payload.deleteText ||
-        card.payload.insertText ||
-        card.payload.second?.insertText) ? (
-        <div
-          className={cn(
-            "text-xs leading-relaxed space-y-1 transition-opacity duration-300",
-            phase !== "steady" && "opacity-70"
-          )}
-        >
-          {card.payload.deleteText ? (
-            <p className="suggestion-preview-delete">{card.payload.deleteText}</p>
-          ) : null}
-          {card.normalizedInsert ? (
-            <p className="suggestion-preview-insert">
-              <PlaceholderHighlightedText text={card.normalizedInsert} />
-            </p>
-          ) : null}
-          {card.payload.second?.insertText.trim() ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">
-              Citation at end of section:{" "}
-              <span className="suggestion-preview-insert font-medium">
-                {card.payload.second.insertText.trim()}
-              </span>
-            </p>
-          ) : null}
-        </div>
+          {figureSummary}
+        </p>
       ) : null}
 
       {card.kind === "redraft" ? (
@@ -401,20 +313,17 @@ function SuggestionCardFace({
               current content.
             </p>
           ) : null}
-          <div className="suggestion-preview-insert max-h-56 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed">
-            <PlaceholderHighlightedText text={card.redraft.markdown} />
-          </div>
         </div>
       ) : null}
 
       {showActions ? (
         <>
           {reasoning ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">{reasoning}</p>
-          ) : null}
-          {linkedEval?.reasoning ? (
-            <p className="text-[11px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2">
-              {linkedEval.reasoning}
+            <p
+              className="text-[11px] text-[var(--muted-foreground)]"
+              data-testid="suggestion-change-summary"
+            >
+              {reasoning}
             </p>
           ) : null}
 
@@ -424,30 +333,53 @@ function SuggestionCardFace({
               <ul className="space-y-1">
                 {evidenceSources.map((source) => (
                   <li key={source.citationId}>
-                    {source.filename}, p. {source.pageNumber}
+                    <button
+                      type="button"
+                      data-testid="citation-link"
+                      className="citation-source text-left"
+                      title={`Open ${source.filename}, p. ${source.pageNumber}`}
+                      onClick={() =>
+                        openDocument(
+                          source.attachmentId,
+                          source.pageNumber >= 1 ? source.pageNumber : 1
+                        )
+                      }
+                    >
+                      {source.filename}, p. {source.pageNumber}
+                    </button>
                   </li>
                 ))}
               </ul>
             </div>
           ) : null}
 
-          <div className="flex flex-wrap gap-2 pt-1">
+          {supersedesBadge ? (
+            <p
+              className="text-[11px] text-[var(--muted-foreground)]"
+              data-testid="suggestion-supersedes-badge"
+            >
+              {supersedesBadge}
+            </p>
+          ) : null}
+
+          <div className={SUGGESTION_ACTION_ROW_CLASS} data-testid="suggestion-action-row">
             <Button
               type="button"
               size="sm"
-              className="h-7 text-xs"
+              className={SUGGESTION_ACTION_BUTTON_CLASS}
               disabled={pending || !canResolve || !validation.canApply}
               title={!canResolve ? RESOLVE_HINT : undefined}
               onClick={onAccept}
             >
               {pending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
               Apply
+              {validation.mergeStatus === "conflict" ? " compatible changes" : ""}
             </Button>
             <Button
               type="button"
               size="sm"
               variant="ghost"
-              className="h-7 text-xs"
+              className={SUGGESTION_ACTION_BUTTON_CLASS}
               disabled={pending || !canResolve}
               title={!canResolve ? RESOLVE_HINT : undefined}
               onClick={onDismiss}
@@ -544,7 +476,7 @@ export function SuggestionQueueBridgeCard({
   }, []);
 
   return (
-    <div className="sticky top-3 z-20 rounded-md border border-violet-500/30 bg-[var(--card)] p-3 space-y-2 shadow-md">
+    <div className="sticky top-3 z-20 rounded-md border border-violet-500/30 bg-[var(--card)] p-2.5 space-y-2 shadow-md">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-medium text-[var(--muted-foreground)] uppercase tracking-wide">
           Next suggestion
@@ -558,12 +490,12 @@ export function SuggestionQueueBridgeCard({
       <p className="text-xs leading-snug text-[var(--foreground)]">
         {suggestionQueueBridgeCopy(remainingTotal, nextSectionLabel)}
       </p>
-      <div className="flex flex-wrap gap-2 pt-1">
+      <div className={SUGGESTION_ACTION_ROW_CLASS}>
         <Button
           ref={goRef}
           type="button"
           size="sm"
-          className="h-7 text-xs"
+          className={SUGGESTION_ACTION_BUTTON_CLASS}
           disabled={pending}
           onClick={onGo}
         >
@@ -574,7 +506,7 @@ export function SuggestionQueueBridgeCard({
           type="button"
           size="sm"
           variant="ghost"
-          className="h-7 text-xs"
+          className={SUGGESTION_ACTION_BUTTON_CLASS}
           disabled={pending}
           onClick={onDismiss}
         >
@@ -595,6 +527,7 @@ function EnteringSuggestionLayer({
   validation,
   queueStaleHint,
   canResolve,
+  supersedesBadge,
   onAccept,
   onDismiss,
 }: {
@@ -605,6 +538,7 @@ function EnteringSuggestionLayer({
   validation: SuggestionValidation;
   queueStaleHint: string | null;
   canResolve: boolean;
+  supersedesBadge?: string;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
@@ -633,6 +567,7 @@ function EnteringSuggestionLayer({
         validation={validation}
         queueStaleHint={queueStaleHint}
         canResolve={canResolve}
+        supersedesBadge={supersedesBadge}
         onAccept={onAccept}
         onDismiss={onDismiss}
       />
@@ -654,7 +589,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     endSuggestionApplyTransition,
     suggestionApplyTransition,
   } = useReportEvaluations();
-  const { comments, setComments } = useReportComments();
+  const { comments, setComments, activeCommentId } = useReportComments();
   const { sections, replaceSection } = useReportSections();
   const [pending, setPending] = useState(false);
   const [phase, setPhase] = useState<CardPhase>("steady");
@@ -669,18 +604,44 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     [report.documentType]
   );
 
-  const openSorted = useMemo(
-    () => sortedOpenSuggestionsForSection(section, comments, evaluations),
-    [section, comments, evaluations]
+  const queue = useMemo(
+    () =>
+      preferredOpenSuggestion({
+        section,
+        comments,
+        evaluations,
+        sectionContent: sections[section],
+        preferredCommentId: activeCommentId,
+      }),
+    [section, comments, evaluations, sections, activeCommentId]
   );
 
-  const active = openSorted[0] ?? null;
-  const total = openSorted.length;
+  const active = queue.active;
+  const total = queue.ordered.length;
 
   const liveCard = useMemo(
     () =>
-      active ? buildFrozenCard(active, evaluations, 1, total) : null,
-    [active, evaluations, total]
+      active
+        ? buildFrozenCard(active, evaluations, queue.index + 1, total)
+        : null,
+    [active, evaluations, queue.index, total]
+  );
+
+  const supersededByActive = useMemo(() => {
+    if (!liveCard) return [];
+    const content = sections[section];
+    if (!content) return [];
+    return suggestionsSupersededBy(liveCard.comment, {
+      section,
+      comments: comments.filter((c) => c.status === "open" && !c.parentId),
+      sectionContent: content as Record<string, unknown>,
+    });
+  }, [liveCard, section, comments, sections]);
+  const persistedReplacedCount = liveCard
+    ? supersededSuggestionIdsFromContent(liveCard.comment.content).length
+    : 0;
+  const supersedesBadge = formatSupersedesBadge(
+    persistedReplacedCount > 0 ? persistedReplacedCount : supersededByActive.length
   );
 
   const sectionContent = sections[section];
@@ -860,6 +821,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         comment: snapshot.comment,
         sectionContent: sections[section] as Record<string, unknown>,
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
+        openComments: comments.filter((c) => c.status === "open" && !c.parentId),
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -876,14 +838,21 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
               : new SectionPersistError(0, "Failed to save section")
           );
         }
+        if (result.reason === "placeholder_conflict") {
+          throw new Error(PLACEHOLDER_CONFLICT_MESSAGE);
+        }
         throw new Error("Suggestion could not be located");
       }
       replaceSection(section, result.nextSection as unknown);
 
       setComments((prev) =>
-        prev.map((c) =>
-          c.id === commentId ? { ...c, status: "resolved" as const } : c
-        )
+        prev
+          .map((c) => {
+            if (c.id === commentId) return { ...c, status: "resolved" as const };
+            const dismissed = result.dismissed.find((row) => row.id === c.id);
+            return dismissed ?? c;
+          })
+          .filter((c) => c.status !== "dismissed")
       );
       setPhase("applied");
       await delay(SUGGESTION_APPLY_SETTLE_MS);
@@ -905,7 +874,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
           ? err.message
           : err instanceof CommentPersistError
             ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-            : "Could not apply suggestion"
+            : err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE
+              ? err.message
+              : "Could not apply suggestion"
       );
       await refresh();
       setFrozenCard(null);
@@ -1095,6 +1066,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         validation={activeValidation}
         queueStaleHint={queueStaleHint}
         canResolve={canResolve}
+        supersedesBadge={supersedesBadge}
         onAccept={handleAccept}
         onDismiss={handleDismiss}
       />
@@ -1117,6 +1089,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       }
       queueStaleHint={phase === "steady" ? queueStaleHint : null}
       canResolve={canResolve}
+      supersedesBadge={phase === "steady" ? supersedesBadge : undefined}
       onAccept={handleAccept}
       onDismiss={handleDismiss}
     />

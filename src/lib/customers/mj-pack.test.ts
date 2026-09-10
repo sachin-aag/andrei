@@ -86,6 +86,11 @@ describe("MJ customer pack content", () => {
     expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
   });
 
+  it("hides Insights on MJ", () => {
+    expect(MJ_PACK.insightsEnabled).toBe(false);
+    expect(DEMO_PACK.insightsEnabled).toBe(true);
+  });
+
   it("disables design verification and enables quality risk assessment", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",
@@ -123,5 +128,9 @@ describe("MJ customer pack content", () => {
     expect(DEMO_PACK.branding.logoLayout).toBe("icon");
     expect(DEMO_PACK.branding.productName).toBe("Andrei");
     expect(fs.existsSync("public/logo-mj.png")).toBe(true);
+  });
+
+  it("dictates Indian English, Hindi, and Marathi", () => {
+    expect(MJ_PACK.voiceInputLanguageCodes).toEqual(["en-IN", "hi-IN", "mr-IN"]);
   });
 });

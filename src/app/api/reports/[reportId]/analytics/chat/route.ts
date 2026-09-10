@@ -12,7 +12,6 @@ import { ANALYTICS_CHAT_PROMPT_VERSION } from "@/lib/statistical-analysis/chat-p
 import { buildAnalyticsChatTools } from "@/lib/statistical-analysis/chat-tools";
 import { auditActorFromUser } from "@/lib/audit";
 import {
-  ANALYTICS_CHAT_STEP_BUDGET,
   createAnalyticsSearchGate,
   prepareAnalyticsChatStep,
 } from "@/lib/statistical-analysis/search-loop";
@@ -24,6 +23,7 @@ import {
   chatPaceConfig,
   resolveChatLanguageModel,
 } from "@/lib/ai/chat/model";
+import { chatUserTurnMetadata } from "@/lib/ai/chat/message-target";
 import { DEFAULT_CHAT_PACE, isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
   isChatMode,
@@ -43,8 +43,13 @@ import {
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import {
+  endActiveLangfuseObservation,
   flushLangfuseTraces,
+  getActiveTraceId,
   langfuseGenerateTextTelemetry,
+  observeRouteHandler,
+  setRouteObservationIO,
+  withPropagatedAttributes,
 } from "@/lib/observability/langfuse";
 import {
   aiBudgetExceededResponse,
@@ -52,6 +57,11 @@ import {
   isAiBudgetExceededError,
   recordAiUsage,
 } from "@/lib/ai/usage";
+import { detectCourseCorrection } from "@/lib/ai/chat/course-correction";
+import {
+  recordUserCourseCorrectScore,
+  flushLangfuseScores,
+} from "@/lib/observability/langfuse-scores";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import {
   buildAnalyticsMentionBlock,
@@ -60,15 +70,26 @@ import {
   primaryTaggedSheetId,
   resolveAnalyticsChatMentions,
 } from "@/lib/statistical-analysis/mentions";
+import { recoverDocumentMentionIds } from "@/lib/ai/chat/mentions";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
+  messageHasChatImage,
+  recentAssistantMessageTexts,
+  restrictToolsForIntent,
+} from "@/lib/ai/chat/user-intent";
+import { resolveChatUserIntent } from "@/lib/ai/chat/resolve-user-intent";
+import { captureChatAssistantFailure } from "@/lib/ai/chat/chat-failure-telemetry";
+import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  CHAT_SERVER_ABORT_MS,
   consumeAssistantStreamWithBudget,
   formatChatLlmError,
+  isChatTurnDeadlineReached,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
+  remainingChatAbortMs,
+  scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
 
 export const maxDuration = 300;
@@ -89,10 +110,11 @@ function messageText(message: UIMessage | null): string {
     .trim();
 }
 
-export async function POST(
+async function handleAnalyticsChatPost(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
+  const turnStartedAtMs = Date.now();
   const { reportId } = await params;
   const access = await requireAnalyticsAccess(reportId, "view");
   if (!access.ok) return access.response;
@@ -105,8 +127,10 @@ export async function POST(
     mode?: unknown;
     mentions?: unknown;
   };
-  const messages = sanitizeChatMessagesForModel(
-    Array.isArray(body.messages) ? body.messages : []
+  const messages = compactChatToolHistoryForModel(
+    sanitizeChatMessagesForModel(
+      Array.isArray(body.messages) ? body.messages : []
+    )
   );
   if (messages.length === 0) {
     return NextResponse.json({ error: "No messages" }, { status: 400 });
@@ -132,8 +156,41 @@ export async function POST(
     );
   }
 
+  const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const recentTexts = recentAssistantMessageTexts(messages);
+  const userIntent = await resolveChatUserIntent({
+    userText,
+    recentAssistantTexts: recentTexts,
+    hasChatImages: messageHasChatImage(userMsg?.parts),
+    surface: "analytics",
+    mode,
+    reportId,
+    userId: user.id,
+  });
+
+  // Detect course correction — user contradicting or overriding prior LLM output.
+  const courseCorrection = detectCourseCorrection({
+    userText,
+    recentAssistantTexts: recentTexts,
+    hasPriorAssistantOutput: recentTexts.length > 0,
+  });
+  if (courseCorrection.detected) {
+    const courseCorrectionTraceId = getActiveTraceId() ?? undefined;
+    after(async () => {
+      await recordUserCourseCorrectScore({
+        traceId: courseCorrectionTraceId,
+        sessionId,
+        reportId,
+        reason: courseCorrection.reason,
+        previousAssistantText: recentTexts[0],
+        userText,
+      });
+      await flushLangfuseScores();
+    });
+  }
+
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -141,6 +198,7 @@ export async function POST(
         sessionId,
         role: "user",
         parts: userMsg.parts ?? [],
+        metadata: chatUserTurnMetadata("analytics"),
         authorId: user.id,
       });
       await touchChatSession(sessionId, userText || null);
@@ -160,14 +218,24 @@ export async function POST(
   ]);
 
   const requestedMentions = parseAnalyticsChatMentions(body.mentions);
+  const requestedDocumentIds = new Set(
+    requestedMentions
+      .filter((mention) => mention.type === "document")
+      .map((mention) => mention.id)
+  );
+  const recoveredDocumentIds = recoverDocumentMentionIds(userText, documents).filter(
+    (id) => !requestedDocumentIds.has(id)
+  );
   const mentions = resolveAnalyticsChatMentions(
-    requestedMentions,
+    [
+      ...requestedMentions,
+      ...recoveredDocumentIds.map((id) => ({ type: "document" as const, id })),
+    ],
     documents,
     analytics
   );
   const pinnedAttachmentIds = mentionedAnalyticsAttachmentIds(mentions);
   const focusedSheetId = primaryTaggedSheetId(mentions);
-  const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const canWrite = mode === "agent" && canEdit;
   const searchGate = createAnalyticsSearchGate();
   const system = buildAnalyticsChatSystemPrompt({
@@ -178,16 +246,22 @@ export async function POST(
     canEdit,
     mode,
     mentionBlock: buildAnalyticsMentionBlock(mentions),
+    intent: userIntent.kind,
   });
-  const tools = buildAnalyticsChatTools({
-    reportId,
-    canEdit: canWrite,
-    documentType: report.documentType,
-    searchGate,
-    pinnedAttachmentIds,
-    focusedSheetId,
-    actor: auditActorFromUser(user),
-  });
+  const tools = restrictToolsForIntent(
+    buildAnalyticsChatTools({
+      reportId,
+      canEdit: canWrite,
+      documentType: report.documentType,
+      searchGate,
+      pinnedAttachmentIds,
+      focusedSheetId,
+      actor: auditActorFromUser(user),
+      turnStartedAtMs,
+    }),
+    userIntent.kind,
+    "analytics"
+  );
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
   const model = isTestStubChat()
@@ -195,37 +269,77 @@ export async function POST(
     : resolveChatLanguageModel(pace);
 
   const turnAbort = new AbortController();
+  const stopDeadline = scheduleChatTurnDeadline(turnAbort, turnStartedAtMs);
   const cancelPoll = setInterval(() => {
     void isAssistantTurnCancelRequested(sessionId).then((requested) => {
       if (requested) turnAbort.abort();
     });
   }, 1_000);
-  const stopCancelPoll = () => clearInterval(cancelPoll);
-  let stoppedForStepBudget = false;
+  const stopTurnGuards = () => {
+    stopDeadline();
+    clearInterval(cancelPoll);
+  };
 
   let result;
   try {
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    result = streamText({
+    const modelMessages = await convertToModelMessages(messages);
+    setRouteObservationIO({
+      input: {
+        reportId,
+        sessionId,
+        mode,
+        pace,
+        userText: userText.slice(0, 500),
+      },
+    });
+    result = withPropagatedAttributes(
+      {
+        sessionId,
+        userId: user.id,
+        traceName: "analytics-chat",
+        tags: ["analytics-chat", mode, pace],
+        metadata: {
+          reportId,
+          documentNo: String(report.documentNo ?? ""),
+          documentType: report.documentType,
+          mode,
+          pace,
+          canEdit: canWrite,
+          user_course_corrected: courseCorrection.detected,
+        },
+      },
+      () =>
+        streamText({
       model,
       system,
-      messages: await convertToModelMessages(messages),
+      messages: modelMessages,
       tools,
       experimental_repairToolCall: repairChatToolCall,
-      stopWhen: async ({ steps }) => {
-        if (await isAssistantTurnCancelRequested(sessionId)) return true;
-        if (steps.length >= ANALYTICS_CHAT_STEP_BUDGET) {
-          stoppedForStepBudget = true;
-          return true;
-        }
-        return false;
+      stopWhen: async () => {
+        // Cancel or wall-clock deadline. No tool-step cap. Loop guards
+        // live in prepareStep.
+        if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
+        return isAssistantTurnCancelRequested(sessionId);
       },
-      prepareStep: ({ steps }) =>
-        prepareAnalyticsChatStep({ steps, canEdit: canWrite, searchGate }),
+      prepareStep: ({ steps }) => {
+        const prepared = prepareAnalyticsChatStep({
+          steps,
+          canEdit: canWrite,
+          searchGate,
+          intent: userIntent.kind,
+          intentReason: userIntent.reason,
+        });
+        if (!prepared) return undefined;
+        return {
+          activeTools: prepared.activeTools,
+          ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+        };
+      },
       abortSignal: turnAbort.signal,
-      timeout: { totalMs: CHAT_SERVER_ABORT_MS },
+      timeout: { totalMs: Math.max(1, remainingChatAbortMs(turnStartedAtMs)) },
       providerOptions: buildGeminiThoughtSummaryProviderOptions({
         thinkingLevel: paceConfig.thinkingLevel,
       }),
@@ -249,13 +363,19 @@ export async function POST(
           chatThinkingLevel: paceConfig.thinkingLevel,
           chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
           taggedDocuments: mentions.documents.length,
+          recoveredDocumentTags: recoveredDocumentIds.length,
           taggedSheets: mentions.sheets.length,
           taggedAnalyses: mentions.analyses.length,
+          userIntent: userIntent.kind,
+          userIntentReason: userIntent.reason,
+          user_course_corrected: courseCorrection.detected,
         },
       }),
-    });
+    })
+    );
   } catch (err) {
-    stopCancelPoll();
+    stopTurnGuards();
+    endActiveLangfuseObservation();
     await clearAssistantTurn(sessionId);
     if (isAiBudgetExceededError(err)) {
       return aiBudgetExceededResponse(err);
@@ -264,6 +384,14 @@ export async function POST(
       reportId,
       sessionId,
       error: formatChatLlmError(err),
+    });
+    await captureChatAssistantFailure({
+      error: err,
+      userId: user.id,
+      reportId,
+      sessionId,
+      surface: "analytics",
+      site: "stream_start",
     });
     return NextResponse.json(
       { error: CHAT_ASSISTANT_ERROR_MESSAGE },
@@ -281,6 +409,14 @@ export async function POST(
           reportId,
           sessionId,
         });
+        await captureChatAssistantFailure({
+          error: new Error("consumeStream exceeded budget"),
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "analytics",
+          site: "consume_timeout",
+        });
       } else if (!isTestStubChat()) {
         const usage = await result.totalUsage;
         await recordAiUsage({
@@ -292,15 +428,17 @@ export async function POST(
         });
       }
       await flushLangfuseTraces();
+      endActiveLangfuseObservation();
     } finally {
-      stopCancelPoll();
+      stopTurnGuards();
       await clearAssistantTurn(sessionId);
     }
   });
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
-    sendReasoning: false,
+    sendReasoning: true,
+    messageMetadata: () => ({ chatTarget: "analytics" as const }),
     consumeSseStream: ({ stream }) => {
       void drainSseStream(stream);
     },
@@ -310,14 +448,27 @@ export async function POST(
         sessionId,
         error: formatChatLlmError(error),
       });
+      const reportFailure = () =>
+        captureChatAssistantFailure({
+          error,
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "analytics",
+          site: "stream_error",
+        });
+      try {
+        after(reportFailure);
+      } catch {
+        void reportFailure();
+      }
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
-      stopCancelPoll();
+      stopTurnGuards();
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,
-        stepBudgetExhausted: stoppedForStepBudget,
         finishReason,
       });
       if (persisted.interrupted) {
@@ -326,12 +477,6 @@ export async function POST(
           sessionId,
           finishReason: finishReason ?? "unknown",
           isAborted,
-        });
-      } else if (persisted.stepBudgetExhausted) {
-        console.warn("analytics-chat: step budget exhausted", {
-          reportId,
-          sessionId,
-          finishReason: finishReason ?? "unknown",
         });
       } else if (persisted.incomplete) {
         console.warn("analytics-chat: incomplete assistant turn", {
@@ -349,6 +494,18 @@ export async function POST(
           finishReason: finishReason ?? "unknown",
           emptyFailure: persisted.emptyFailure,
         });
+        await captureChatAssistantFailure({
+          error: new Error("empty or failed assistant turn"),
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "analytics",
+          site: "empty_turn",
+          extra: {
+            finishReason: finishReason ?? "unknown",
+            emptyFailure: persisted.emptyFailure,
+          },
+        });
       }
       try {
         await db.insert(chatMessages).values({
@@ -360,6 +517,7 @@ export async function POST(
             pace,
             mode,
             promptVersion: ANALYTICS_CHAT_PROMPT_VERSION,
+            chatTarget: "analytics",
           }),
           authorId: null,
         });
@@ -367,8 +525,23 @@ export async function POST(
       } catch (err) {
         console.error("analytics-chat: failed to persist assistant message", err);
       } finally {
+        setRouteObservationIO({
+          output: {
+            reportId,
+            sessionId,
+            finishReason: finishReason ?? null,
+            isAborted,
+          },
+        });
+        endActiveLangfuseObservation();
         await clearAssistantTurn(sessionId);
       }
     },
   });
 }
+
+export const POST = observeRouteHandler(
+  "analytics-chat",
+  handleAnalyticsChatPost,
+  { endOnExit: false }
+);

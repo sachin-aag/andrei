@@ -141,6 +141,16 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
         "[Appendix B DV Report 790-00134R(RevU): <to be filled>]"
       )
     ).toBe("[Appendix B DV Report 790-00134R(RevU)]");
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "TOP-00051 [me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]."
+      )
+    ).toBe("TOP-00051 [me1q4zzhb1me0wwskpmqfw7i].");
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "[swja2t3b3dif1ua8id1zkyz2] and [me1q4zzhb1me0wwskpmqfw7i: <to be filled>]"
+      )
+    ).toBe("[swja2t3b3dif1ua8id1zkyz2] and [me1q4zzhb1me0wwskpmqfw7i]");
   });
 
   it("does not wrap appendix or document-number citations as placeholders", () => {

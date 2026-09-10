@@ -19,17 +19,49 @@ function messageForStatus(status: number, serverMessage?: string): string {
   return "Could not update suggestion. Please try again.";
 }
 
+export type SuggestionOperationAudit = {
+  opIndex: number;
+  coverage: number;
+  classification: "edit" | "rewrite";
+};
+
+export type PatchCommentStatusExtra =
+  | string
+  | {
+      content?: string;
+      operations?: readonly SuggestionOperationAudit[];
+    };
+
+function extraContent(extra?: PatchCommentStatusExtra): string | undefined {
+  if (typeof extra === "string") return extra;
+  return extra?.content;
+}
+
+function extraOperations(
+  extra?: PatchCommentStatusExtra,
+): readonly SuggestionOperationAudit[] | undefined {
+  if (!extra || typeof extra === "string") return undefined;
+  return extra.operations;
+}
+
 export async function patchCommentStatus(
   reportId: string,
   commentId: string,
-  status: "resolved" | "dismissed"
+  status: "open" | "resolved" | "dismissed",
+  extra?: PatchCommentStatusExtra,
 ): Promise<void> {
+  const content = extraContent(extra);
+  const operations = extraOperations(extra);
   let res: Response;
   try {
     res = await fetch(`/api/reports/${reportId}/comments/${commentId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        ...(content != null ? { content } : {}),
+        ...(operations ? { operations } : {}),
+      }),
     });
   } catch {
     throw new CommentPersistError(0, "Could not update suggestion. Please try again.");
@@ -53,12 +85,13 @@ export async function patchCommentStatus(
 export async function patchCommentStatuses(
   reportId: string,
   commentIds: readonly string[],
-  status: "resolved" | "dismissed"
+  status: "open" | "resolved" | "dismissed",
+  contentById?: Record<string, string>
 ): Promise<{ failedIds: string[] }> {
   const results = await Promise.all(
     commentIds.map(async (id) => {
       try {
-        await patchCommentStatus(reportId, id, status);
+        await patchCommentStatus(reportId, id, status, contentById?.[id]);
         return { id, ok: true as const };
       } catch {
         return { id, ok: false as const };

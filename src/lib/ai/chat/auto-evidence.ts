@@ -174,6 +174,7 @@ export async function buildAutoEvidence(
           query,
           limit: AUTO_EVIDENCE_PER_QUERY_LIMIT,
           attachmentIds: pinned,
+          backfill: pinned === undefined,
         })
       )
     );

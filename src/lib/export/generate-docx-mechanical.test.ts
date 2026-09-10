@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { reports } from "@/db/schema";
 import { reportExportDocxFileName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
+import { docxParagraphPlainText } from "@/lib/export/docx-toc-headings";
 import {
   EMPTY_MECHANICAL_DV_CONTENT,
   MECHANICAL_DV_SECTION_KEYS,
   MECHANICAL_RESULTS_HEADERS,
+  MECHANICAL_UUT_HEADERS,
 } from "@/lib/document-types/mechanical/sections";
 import type { ReportSectionRecord } from "@/types/report";
 
@@ -183,6 +185,111 @@ function mechanicalSections(): ReportSectionRecord[] {
   });
 }
 
+function carolynStyleSections(): ReportSectionRecord[] {
+  return mechanicalSections().map((row) => {
+    if (row.section === "requirements_verified") {
+      return {
+        ...row,
+        content: {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "All requirements detailed in the Solea M3 Perioguide System & Hardware Test Plan (825-00104 Rev. B) were verified during the partial executions of test protocols 825-00024 Rev. G and 825-00025 Rev F, respectively. See the tables below for a summary of results.",
+                  },
+                ],
+              },
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "i",
+                    marks: [{ type: "italic" }],
+                  },
+                ],
+              },
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "See Deviation #02, deemed Not Applicable to the current testing execution",
+                    marks: [{ type: "italic" }],
+                  },
+                ],
+              },
+            ],
+          },
+          hardwareTable: tableDoc([
+            [...MECHANICAL_RESULTS_HEADERS],
+            [
+              "M3-HRS-BD-011",
+              "Power shall not drop 20%.",
+              "Not Applicable / Refer to Deviation #2",
+              "Pass*",
+            ],
+          ]),
+          systemTable: tableDoc([
+            [...MECHANICAL_RESULTS_HEADERS],
+            [
+              "M3-SYS-FN-037",
+              "Tip detach torque.",
+              "See data sheets in Appendix A.",
+              "Pass",
+            ],
+          ]),
+        },
+      };
+    }
+    if (row.section === "units_under_test") {
+      return {
+        ...row,
+        content: {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "Six (6) Solea systems made up a total of eight (8) unique UUT's.",
+                  },
+                ],
+              },
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "*The adapter was a prototype that was functionally equivalent to SUB-00450 Rev. 6*",
+                  },
+                ],
+              },
+            ],
+          },
+          table: tableDoc([
+            [...MECHANICAL_UUT_HEADERS],
+            [
+              "CO2 Sensor Handpiece Adapter",
+              "Convergent Dental",
+              "SUB-00468",
+              "N/A",
+              "2*",
+            ],
+          ]),
+        },
+      };
+    }
+    return row;
+  });
+}
+
 describe("mechanical DV DOCX template", () => {
   it("is a valid docx with the numbered-section placeholders", () => {
     const zip = new PizZip(fs.readFileSync(TEMPLATE));
@@ -309,6 +416,25 @@ describe("mechanical DV DOCX export", () => {
     expect(systemAt).toBeGreaterThan(-1);
     expect(hardwareAt).toBeLessThan(systemAt);
 
+    // Req ID / Notes/Results tables match the Convergent source report (landscape).
+    const landscapeBreaks = [...xml.matchAll(/w:orient="landscape"/g)];
+    expect(landscapeBreaks.length).toBeGreaterThanOrEqual(2);
+    expect(
+      landscapeBreaks.some(
+        (m) => (m.index ?? 0) > hardwareAt && (m.index ?? 0) < systemAt
+      )
+    ).toBe(true);
+    expect(landscapeBreaks.some((m) => (m.index ?? 0) > systemAt)).toBe(true);
+
+    // Other 4-column content (revision history) stays portrait — only the
+    // hardware/system results tables force landscape.
+    const revisionAt = xml.indexOf("W. Harrington / D. Burke");
+    expect(revisionAt).toBeGreaterThan(systemAt);
+    const landscapeAfterRevision = landscapeBreaks.some(
+      (m) => (m.index ?? 0) > revisionAt
+    );
+    expect(landscapeAfterRevision).toBe(false);
+
     expect(xml).toContain("W. Harrington / D. Burke");
     expect(xml).toContain(
       "has been deemed acceptable for release on the Solea Model 3"
@@ -319,6 +445,75 @@ describe("mechanical DV DOCX export", () => {
     const failuresAt = xml.indexOf("3. Failure/Out of Specification Forms");
     expect(deviationsAt).toBeGreaterThan(-1);
     expect(failuresAt).toBeGreaterThan(deviationsAt);
+
+    const paras = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? [];
+    const styleOf = (text: string) =>
+      paras.find((p) => docxParagraphPlainText(p) === text)?.match(
+        /<w:pStyle w:val="([^"]+)"/
+      )?.[1] ?? null;
+    expect(styleOf("PURPOSE:")).toBe("Heading1");
+    expect(styleOf("1. Testers/Dates:")).toBe("Heading1");
+    expect(styleOf("2. Methods of Measurement")).toBe("Heading1");
+    expect(styleOf("2.1 Executed Protocol:")).toBe("Heading2");
+    expect(styleOf("2.4 Test Equipment:")).toBe("Heading2");
+    expect(styleOf("4.2 Requirements Verified:")).toBe("Heading2");
+    expect(styleOf("6. Conclusion:")).toBe("Heading1");
+    expect(styleOf("Revision History")).toBe("Heading1");
+  });
+
+  it("places table footnotes under the table on the landscape page", async () => {
+    const buf = await generateReportDocx({
+      report: mechanicalReport(),
+      sections: carolynStyleSections(),
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+
+    const hardwareAt = xml.indexOf("M3-HRS-BD-011");
+    const systemAt = xml.indexOf("M3-SYS-FN-037");
+    const footnoteAt = xml.indexOf(
+      "deemed Not Applicable to the current testing execution"
+    );
+    const headingAt = xml.indexOf("4.2 Requirements Verified");
+    expect(hardwareAt).toBeGreaterThan(headingAt);
+    expect(systemAt).toBeGreaterThan(hardwareAt);
+    expect(footnoteAt).toBeGreaterThan(hardwareAt);
+    expect(footnoteAt).toBeLessThan(systemAt);
+
+    const leadIn = xml.slice(headingAt, hardwareAt);
+    expect(leadIn).toContain("See the tables below");
+    expect(leadIn).not.toContain("Deviation #02");
+    expect(leadIn).not.toMatch(/<w:t[^>]*>i<\/w:t>/);
+
+    const landscapeAfterHardware = [...xml.matchAll(/w:orient="landscape"/g)].find(
+      (m) => (m.index ?? 0) > hardwareAt
+    );
+    expect(landscapeAfterHardware?.index).toBeGreaterThan(footnoteAt);
+
+    const innerTables =
+      xml.match(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g) ?? [];
+    const hardwareInner =
+      innerTables.find((table) => table.includes("M3-HRS-BD-011")) ?? "";
+    const systemInner =
+      innerTables.find((table) => table.includes("M3-SYS-FN-037")) ?? "";
+    expect(hardwareInner).toContain("Pass/Fail");
+    expect(hardwareInner).toContain("M3-HRS-BD-011");
+    expect(systemInner).not.toContain("Deviation #02");
+
+    const cols = [...hardwareInner.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+      parseInt(m[1]!, 10)
+    );
+    expect(cols).toHaveLength(4);
+    const sum = cols.reduce((a, b) => a + b, 0);
+    expect(cols[0]! / sum).toBeCloseTo(0.16, 2);
+    expect(cols[3]! / sum).toBeCloseTo(0.14, 2);
+    expect(cols[3]!).toBeGreaterThan(1500);
+
+    const uutAt = xml.indexOf("SUB-00468");
+    const uniqueUutAt = xml.indexOf("unique UUT");
+    const prototypeAt = xml.indexOf("functionally equivalent");
+    expect(uutAt).toBeGreaterThan(uniqueUutAt);
+    expect(prototypeAt).toBeGreaterThan(uutAt);
+    expect(xml.slice(uniqueUutAt, uutAt)).not.toContain("functionally equivalent");
   });
 
   it("names the exported file for the mechanical type", () => {

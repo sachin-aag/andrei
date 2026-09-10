@@ -87,8 +87,9 @@ flowchart TD
   H --> I{"Any usable pages?"}
   I -->|no / all gaps| J["Throw: no extract output"]
   I -->|yes| K["documentSummary =<br/>join batch summaries"]
-  K --> L["chunkAndEmbedRun"]
-  L --> M["Cleanup temp batch objects"]
+  K --> L["persistOutlineSpansForRun"]
+  L --> M["chunkAndEmbedRun"]
+  M --> N["Cleanup temp batch objects"]
 ```
 
 ### Extract modes and recovery
@@ -137,7 +138,8 @@ flowchart TD
   G --> I
   H --> I
   I --> J["documentSummary = raw text<br/>truncated to 12k chars"]
-  J --> K["chunkAndEmbedRun"]
+  J --> K["persistOutlineSpansForRun"]
+  K --> L["chunkAndEmbedRun"]
 ```
 
 ## Chunk and embed
@@ -168,7 +170,7 @@ The report body is **not** in `document_chunks`. Ready attachments are listed in
 flowchart TD
   A["Chat turn"] --> P{"Retrieval policy"}
   P -->|focused| C["buildAutoEvidence ≤1.5s"]
-  C --> D["searchReportDocuments"]
+  C --> D["searchReportDocuments<br/>exact-id then vector+FTS RRF"]
   D --> E["Vector: embedding <=>"]
   D --> F["Keyword: websearch_to_tsquery<br/>OR tokens on contextual_text"]
   E --> G["RRF merge"]
@@ -194,8 +196,11 @@ flowchart TD
 | `report_attachments` | File row, `processing_status`, `active_ingest_run_id`, generation |
 | `attachment_ingest_runs` | One extract/embed attempt; `document_summary` |
 | `document_ingest_batches` | PDF page slices + temp object keys (PDF only) |
-| `document_pages` | Transcript, visual interpretation, `page_context` |
+| `document_pages` | Transcript, visual interpretation, `page_context`, `outline_title`, `identifiers`, nullable `has_table` / `has_figure` |
+| `document_outline_spans` | Heading ranges + unioned identifiers for the ingest run |
 | `document_chunks` | Searchable spans + 768-d embedding |
+
+New ingest (`PARSER_VERSION` v4) writes page retrieval columns and outline spans before chunk/embed. Ready files are not force-reprocessed; outline reads fall back to `buildOutlineFromStoredPages`, and identifier search falls back to `ILIKE` on `raw_text`. See `docs/retrieval.md`.
 
 ## Safety rails
 

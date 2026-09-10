@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  agentChatTargetOnEnter,
   chatWorkProductTarget,
   shouldCollapseAssistantOnSuggestionFocus,
   shouldRevealCriteriaTab,
@@ -64,22 +63,15 @@ describe("shouldRevealCriteriaTab", () => {
 });
 
 describe("chatWorkProductTarget", () => {
-  it("follows the focused pane in Document chrome", () => {
+  it("uses the composer dropdown, not the focused pane", () => {
     expect(
       chatWorkProductTarget({
-        chrome: "document",
-        workProductView: "analytics",
         agentTarget: "report",
         statsEnabled: true,
       })
-    ).toBe("analytics");
-  });
-
-  it("uses the Agent dropdown, not the focused pane", () => {
+    ).toBe("report");
     expect(
       chatWorkProductTarget({
-        chrome: "agent",
-        workProductView: "report",
         agentTarget: "analytics",
         statsEnabled: true,
       })
@@ -89,35 +81,7 @@ describe("chatWorkProductTarget", () => {
   it("stays on report when Statistical Analysis is off", () => {
     expect(
       chatWorkProductTarget({
-        chrome: "agent",
-        workProductView: "analytics",
         agentTarget: "analytics",
-        statsEnabled: false,
-      })
-    ).toBe("report");
-  });
-});
-
-describe("agentChatTargetOnEnter", () => {
-  it("copies the focused Document pane into Agent", () => {
-    expect(
-      agentChatTargetOnEnter({
-        workProductView: "analytics",
-        statsEnabled: true,
-      })
-    ).toBe("analytics");
-    expect(
-      agentChatTargetOnEnter({
-        workProductView: "report",
-        statsEnabled: true,
-      })
-    ).toBe("report");
-  });
-
-  it("stays on report when Statistical Analysis is off", () => {
-    expect(
-      agentChatTargetOnEnter({
-        workProductView: "analytics",
         statsEnabled: false,
       })
     ).toBe("report");

@@ -116,6 +116,49 @@ describe("createWifAuthClient", () => {
     });
   });
 
+  it("returns gRPC-compatible headers with forEach for Speech metadata plugins", async () => {
+    vi.stubEnv("VERCEL_OIDC_TOKEN", "oidc-token");
+    readVercelOidcToken.mockRejectedValue(new Error("no oidc context"));
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "federated" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            accessToken: "ya29.access",
+            expireTime: new Date(Date.now() + 3_600_000).toISOString(),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWifAuthClient(config);
+    const headers = await client.getRequestHeaders();
+    expect(typeof headers.forEach).toBe("function");
+    const collected: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      collected[key] = value;
+    });
+    expect(collected.Authorization).toBe("Bearer ya29.access");
+    expect(headers.Authorization).toBe("Bearer ya29.access");
+    expect({ ...headers }.Authorization).toBe("Bearer ya29.access");
+
+    const viaCallback = await new Promise<typeof headers>((resolve, reject) => {
+      client.getRequestMetadata(undefined, (err, metadata) => {
+        if (err || !metadata) reject(err ?? new Error("missing metadata"));
+        else resolve(metadata);
+      });
+    });
+    expect(viaCallback.Authorization).toBe("Bearer ya29.access");
+  });
+
   it("implements sign via IAM signBlob for GCS signed URLs", async () => {
     vi.stubEnv("VERCEL_OIDC_TOKEN", "oidc-token");
     readVercelOidcToken.mockRejectedValue(new Error("no oidc context"));

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildReportContextMap } from "@/lib/ai/chat/context-map";
 import { chatEditableSections } from "@/lib/ai/chat/fields";
+import {
+  CONVERGENT_RESULTS_HEADERS,
+  DV_TRACEABILITY_HEADERS,
+  seededTableDoc,
+} from "@/lib/document-types/design-verification/sections";
 
 function docWith(text: string) {
   return {
@@ -162,6 +167,25 @@ describe("buildReportContextMap", () => {
     }
   });
 
+  it("lists live table headers from the section, not a pack recipe", () => {
+    const demo = buildReportContextMap({
+      documentType: "design_verification",
+      report: { documentNo: "DV-1", date: "2026-01-01", status: "draft" },
+      sections: {
+        traceability: { table: seededTableDoc(DV_TRACEABILITY_HEADERS) },
+      },
+      evaluations: [],
+      comments: [],
+    });
+    expect(demo).toContain("Live table N headers are this report's schema");
+    expect(demo).toContain(
+      `table 0 headers: ${DV_TRACEABILITY_HEADERS.join(" | ")} (1 data row)`
+    );
+    expect(demo).toContain("Traceability [traceability] — empty");
+    expect(demo).toContain("table: empty");
+    expect(demo).not.toContain(CONVERGENT_RESULTS_HEADERS.join(" | "));
+  });
+
   it("notes inline images so the model knows to call read_section for vision", () => {
     const tinyPng =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -197,6 +221,93 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("Test Methods / Protocol Summary [test_methods]");
     expect(map).toContain("1 image");
     expect(map).toContain("call read_section to view them as vision");
-    expect(map).toContain('narrative: "hello"');
+    expect(map).toContain('narrative:filled "hello"');
+  });
+
+  it("lists Analytics plots that document chat can insert", () => {
+    const map = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+      analyticsPlots: [
+        {
+          id: "anl_1",
+          workspaceId: "ws",
+          title: "Torque scatter",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl: "data:image/png;base64,AAAA",
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Torque",
+            chartSpec: null,
+          },
+          config: {
+            query: "torque",
+            title: "Torque scatter",
+            xLabel: "Unit",
+            yLabel: "Torque",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "Nm" },
+        },
+        {
+          id: "anl_2",
+          workspaceId: "ws",
+          title: "Assay sixpack",
+          kind: "capability_sixpack_normal",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: null,
+          config: {
+            columnId: "c1",
+            columnName: "Assay",
+            title: "Assay sixpack",
+            lsl: 90,
+            usl: 110,
+            target: 100,
+          },
+          results: {} as never,
+        },
+        {
+          id: "anl_3",
+          workspaceId: "ws",
+          title: "ANOVA",
+          kind: "one_way_anova",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: null,
+          config: {
+            responseColumnId: "r",
+            responseColumnName: "Response",
+            factorColumnId: "f",
+            factorColumnName: "Factor",
+            title: "ANOVA",
+          },
+          results: {} as never,
+        },
+      ],
+    });
+
+    expect(map).toContain("insert_image source=analytics");
+    expect(map).toContain("create additional ones in Analytics");
+    expect(map).toContain('"Torque scatter" [anl_1] kind=measurement_scatter');
+    expect(map).toContain(
+      '"Assay sixpack" [anl_2] kind=capability_sixpack_normal — no preview yet'
+    );
+    expect(map).not.toContain("anl_3");
   });
 });

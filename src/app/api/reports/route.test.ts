@@ -3,6 +3,16 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { DUPLICATE_DOCUMENT_NO_ERROR } from "@/lib/reports/document-no";
 import { GET, POST } from "@/app/api/reports/route";
 
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>();
+  return {
+    ...actual,
+    after: (task: unknown) => {
+      if (typeof task === "function") void (task as () => unknown)();
+    },
+  };
+});
+
 vi.mock("@/db", () => {
   const db = {
     select: vi.fn(),
@@ -69,6 +79,13 @@ vi.mock("@/lib/import/docx-to-generic-document", () => ({
     }
   },
   docxBufferToGenericDocument: vi.fn(),
+}));
+
+vi.mock("@/lib/observability/langfuse", () => ({
+  flushLangfuseTraces: vi.fn().mockResolvedValue(undefined),
+  observeWork: (_name: string, fn: () => unknown) => fn(),
+  setRouteObservationIO: vi.fn(),
+  withPropagatedAttributes: (_params: unknown, fn: () => unknown) => fn(),
 }));
 
 vi.mock("@/lib/reports/ensure-hidden-expert-reviewer", () => ({

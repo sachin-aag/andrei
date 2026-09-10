@@ -6,11 +6,13 @@ import {
 /**
  * Document | Agent chrome for a logged-in user on one report.
  * Survives refresh and later sessions in this browser so the layout
- * does not snap back to Document after a reload.
+ * does not snap back to Agent after a reload.
+ * New reports (no stored choice) open in Agent. Returning to a report
+ * restores that user's last chrome for it.
  */
 export const WORKSPACE_CHROME_STORAGE_PREFIX = "workspaceChrome:v1";
 
-export const DEFAULT_WORKSPACE_CHROME: WorkspaceChrome = "document";
+export const DEFAULT_WORKSPACE_CHROME: WorkspaceChrome = "agent";
 
 const memory = new Map<string, WorkspaceChrome>();
 const listeners = new Set<() => void>();

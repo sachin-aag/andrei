@@ -7,11 +7,13 @@ import {
   replaceColumnValues,
 } from "@/lib/statistical-analysis/worksheet";
 import {
+  chatMessageTargetTag,
   chatUserMessage,
   expandReportSidebar,
   openReportAnalytics,
   openReportEditor,
   reportSidebar,
+  setChatWorkProductTarget,
 } from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
@@ -147,10 +149,69 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("sixpack-spec-label-lsl")).toHaveText("90.00");
     await expect(page.getByTestId("sixpack-spec-label-usl")).toHaveText("110.00");
     await expect(page.getByTestId("sixpack-ichart-label-ucl")).toBeVisible();
-    await expect(page.getByTestId("sixpack-last25-label-ucl")).toBeVisible();
+    await expect(page.getByTestId("sixpack-ichart-label-lsl")).toHaveText("90.00");
+    await expect(page.getByTestId("sixpack-ichart-label-usl")).toHaveText("110.00");
+    await expect(page.getByTestId("sixpack-last25-label-lsl")).toHaveText("90.00");
+    await expect(page.getByTestId("sixpack-last25-label-usl")).toHaveText("110.00");
     await expect(page.getByTestId("sixpack-mr-label-ucl")).toBeVisible();
     await expect(page.getByText("Cpk")).toBeVisible();
     await expect(page.getByTestId("analysis-list")).toBeVisible();
+    await expect(page.getByTestId("analysis-list")).toHaveAttribute(
+      "data-collapsed",
+      "false"
+    );
+
+    await page.getByTestId("analysis-list-collapse").click();
+    await expect(page.getByTestId("analysis-list")).toHaveAttribute(
+      "data-collapsed",
+      "true"
+    );
+    await expect(page.getByTestId("analysis-list-expand")).toBeVisible();
+    await expect(page.locator("[data-analysis-title]")).toHaveCount(0);
+
+    await page.getByTestId("analysis-list-expand").click();
+    await expect(page.getByTestId("analysis-list")).toHaveAttribute(
+      "data-collapsed",
+      "false"
+    );
+    await expect(page.locator("[data-analysis-title]")).toHaveCount(1);
+  });
+
+  test("loads sample assay and runs a Histogram with overlay checkboxes", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-grid")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.getByTestId("worksheet-data-menu").click();
+    await page.getByTestId("load-sample-assay").click();
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("101.84");
+
+    await page.getByTestId("worksheet-plot-menu").click();
+    await page.getByTestId("stat-histogram").click();
+    await expect(page.getByTestId("histogram-dialog")).toBeVisible();
+    await expect(page.getByTestId("histogram-show-distribution")).toBeChecked();
+    await expect(page.getByTestId("histogram-show-lsl")).toBeChecked();
+    await expect(page.getByTestId("histogram-show-usl")).toBeChecked();
+    await page.getByTestId("histogram-show-usl").click();
+    await expect(page.getByTestId("histogram-show-usl")).not.toBeChecked();
+    await page.getByTestId("histogram-ok").click();
+
+    await expect(page.getByTestId("histogram")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("histogram-chart-title")).toHaveText(
+      /histogram of assay/i
+    );
+    await expect(
+      page.getByTestId("analysis-preview-figure").getByTestId("histogram-chart-title")
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /histogram of assay/i })
+    ).toHaveCount(0);
+    await expect(page.getByTestId("histogram-spec-label-lsl")).toBeVisible();
+    await expect(page.getByTestId("histogram-spec-label-usl")).toHaveCount(0);
   });
 
   test("saves a sixpack per column and switches between them", async ({
@@ -371,6 +432,9 @@ test.describe("report analytics", () => {
     await openReportAnalytics(page);
     await expandReportSidebar(page);
     const sidebar = reportSidebar(page);
+    await expect(sidebar.getByTestId("chat-work-product-target")).toBeVisible();
+    await expect(sidebar.getByTestId("analytics-chat-input")).toHaveCount(0);
+    await setChatWorkProductTarget(page, "analytics");
     const composer = sidebar.getByTestId("analytics-chat-input");
     await expect(composer).toBeEnabled({ timeout: 15_000 });
     await expect(sidebar.getByTestId("analytics-chat-mode")).toBeVisible();
@@ -381,6 +445,9 @@ test.describe("report analytics", () => {
     await expect(
       chatUserMessage(page, "extract assay numbers from the attachments")
     ).toBeVisible({ timeout: 15_000 });
+    await expect(chatMessageTargetTag(page, "analytics").first()).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(
       sidebar.getByText(/normal capability sixpack/i)
     ).toBeVisible({ timeout: 30_000 });
@@ -411,16 +478,28 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("column-specs-dialog")).toHaveCount(0);
 
     await page.getByTestId("worksheet-plot-menu").click();
-    await page.getByTestId("stat-plot-measurements").click();
-    await expect(page.getByTestId("plot-measurements-dialog")).toBeVisible();
-    await expect(page.getByTestId("plot-measurements-submit")).toBeDisabled();
-    await expect(page.getByTestId("plot-lsl")).toHaveValue("");
-    await expect(page.getByTestId("plot-usl")).toHaveValue("");
-    await page.getByTestId("plot-query").fill("M3-SYS-FN-037");
-    await page.getByTestId("plot-lsl").fill("1");
-    await page.getByTestId("plot-usl").fill("6");
-    await page.getByTestId("plot-measurements-submit").click();
-    await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("stat-normal-sixpack")).toBeVisible();
+    await expect(page.getByTestId("stat-histogram")).toBeVisible();
+    await expect(page.getByTestId("stat-histogram")).toHaveText(/histogram/i);
+    await expect(page.getByTestId("stat-one-way-anova")).toBeVisible();
+    await expect(page.getByTestId("stat-xy-scatter")).toBeVisible();
+    await expect(page.getByTestId("stat-xy-scatter")).toHaveText(
+      /plot measurements/i
+    );
+    await expect(page.getByTestId("stat-boxplot")).toBeVisible();
+    await expect(page.getByTestId("stat-boxplot")).toHaveText(/boxplot/i);
+    await page.getByTestId("stat-boxplot").click();
+    await expect(page.getByTestId("boxplot-dialog")).toBeVisible();
+    await expect(page.getByTestId("boxplot-add-category")).toBeVisible();
+    await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
+    await expect(page.getByTestId("boxplot-dialog")).toHaveCount(0);
+
+    await page.getByTestId("worksheet-plot-menu").click();
+    await page.getByTestId("stat-xy-scatter").click();
+    await expect(page.getByTestId("xy-scatter-dialog")).toBeVisible();
+    await expect(page.getByTestId("xy-show-spec-limits")).not.toBeChecked();
+    await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
+    await expect(page.getByTestId("xy-scatter-dialog")).toHaveCount(0);
   });
 
   test("renames the active data sheet from the tab and Data menu", async ({
@@ -552,10 +631,12 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("anova-factor")).toContainText("Lot");
 
     await page.getByTestId("analyze-plot-type").click();
-    await page.getByRole("option", { name: /plot measurements/i }).click();
-    await expect(page.getByTestId("plot-query")).toHaveValue("Assay");
-    await expect(page.getByTestId("plot-lsl")).toHaveValue("90");
-    await expect(page.getByTestId("plot-usl")).toHaveValue("110");
+    await expect(page.getByRole("option")).toHaveCount(2);
+    await expect(
+      page.getByRole("option", { name: /normal capability sixpack/i })
+    ).toBeVisible();
+    await expect(page.getByRole("option", { name: /one-way anova/i })).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
     await expect(page.getByTestId("analyze-dialog")).toHaveCount(0);
 

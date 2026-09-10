@@ -153,15 +153,20 @@ export function richDocsMatchIgnoringAiPreview(
  * suggestion" feels like.
  *
  * Still allow the first inject when the field is focused but unchanged, so the
- * preview can appear after comments load.
+ * preview can appear after comments load. Always allow a strip when pending
+ * preview marks are no longer the active suggestion — dismiss/accept from the
+ * inline widget keeps the editor focused, and skipping that rewrite leaves
+ * red/green markup after the buttons are gone.
  */
 export function shouldSkipSuggestionDocSync(opts: {
   hasFocus: boolean;
   previewHeld: boolean;
   needsInject: boolean;
   hasLocalEdits: boolean;
+  needsStrip?: boolean;
 }): boolean {
   if (opts.previewHeld) return false;
+  if (opts.needsStrip) return false;
   if (!opts.hasFocus) return false;
   if (opts.needsInject && !opts.hasLocalEdits) return false;
   return true;

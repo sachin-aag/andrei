@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getDocumentType } from "@/lib/document-types";
 import {
   classifyRetrievalPolicy,
+  isRetrievalPushback,
   recentUserMessageTexts,
 } from "./retrieval-policy";
 
@@ -35,6 +36,29 @@ describe("classifyRetrievalPolicy", () => {
       hasDocuments: true,
     });
     expect(decision.policy).toBe("comprehensive");
+  });
+
+  it("escalates look-again / re-check as a completeness follow-up", () => {
+    expect(
+      classifyRetrievalPolicy({
+        userText: "look again — you missed the figures",
+        hasDocuments: true,
+      })
+    ).toEqual({ policy: "comprehensive", reason: "completeness_follow_up" });
+    expect(
+      classifyRetrievalPolicy({
+        userText: "re-check the attachments",
+        hasDocuments: true,
+      }).policy
+    ).toBe("comprehensive");
+  });
+
+  it("treats missed-family language as pushback, not keep-going", () => {
+    expect(isRetrievalPushback("you missed SST")).toBe(true);
+    expect(isRetrievalPushback("look again")).toBe(true);
+    expect(isRetrievalPushback("re-check")).toBe(true);
+    expect(isRetrievalPushback("keep going")).toBe(false);
+    expect(isRetrievalPushback("what about the conclusion")).toBe(false);
   });
 
   it("keeps a single requirement-id lookup on the agentic path, not a page walk", () => {
@@ -195,14 +219,14 @@ describe("classifyRetrievalPolicy", () => {
     expect(decision.reason).toBe("matrix_section_inventory");
   });
 
-  it("escalates a scoped Results section without fill verbs", () => {
+  it("keeps a bare scoped Results ask adaptive without inventory language", () => {
     const decision = classifyRetrievalPolicy({
       userText: "do this section",
       sectionScope: "results_and_discussions",
       hasDocuments: true,
     });
-    expect(decision.policy).toBe("comprehensive");
-    expect(decision.reason).toBe("matrix_section_inventory");
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
   });
 
   it("keeps investigation draft-report adaptive even with a large attachment", () => {
@@ -229,16 +253,16 @@ describe("classifyRetrievalPolicy", () => {
     expect(decision.reason).toBe("bounded_locator");
   });
 
-  it("keeps a quick summary on an inventory section focused", () => {
+  it("keeps a greeting on the focused path so it cannot start a page walk", () => {
     const decision = classifyRetrievalPolicy({
-      userText: "quick summary of this section",
-      sectionScope: "traceability",
-      documentType: "design_verification",
+      userText: "hi",
+      sectionScope: "all",
+      documentType: "mechanical_design_verification",
       hasDocuments: true,
       totalReadyPages: 62,
     });
     expect(decision.policy).toBe("focused");
-    expect(decision.reason).toBe("explicit_quick_overview");
+    expect(decision.reason).toBe("no_task");
   });
 
   it("treats many outline siblings as distributed evidence", () => {
@@ -249,6 +273,98 @@ describe("classifyRetrievalPolicy", () => {
       hasDocuments: true,
       totalReadyPages: 3,
       outlineSiblingCount: 6,
+    });
+    expect(decision.policy).toBe("comprehensive");
+    expect(decision.reason).toBe("open_set_distributed");
+  });
+
+  it("keeps a sentence or paragraph rewrite adaptive on a large DV catalog", () => {
+    const sentence = classifyRetrievalPolicy({
+      userText:
+        "change the last sentence of the first paragraph to also explain what perioguide is",
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(sentence.policy).toBe("adaptive");
+    expect(sentence.reason).toBe("targeted_rewrite");
+
+    const paragraph = classifyRetrievalPolicy({
+      userText: "rewrite first paragraph in purpose section",
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(paragraph.policy).toBe("adaptive");
+    expect(paragraph.reason).toBe("targeted_rewrite");
+  });
+
+  it("does not let an earlier draft-report turn force another full page walk", () => {
+    const decision = classifyRetrievalPolicy({
+      userText:
+        "change the last sentence of the first paragraph to also explain what perioguide is",
+      recentUserTexts: ["draft report"],
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("targeted_rewrite");
+  });
+
+  it("keeps graph analysis on an @inventory section adaptive", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "analyse the graphs in Requirements Verified",
+      sectionScope: "requirements_verified",
+      documentType: "mechanical_design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("does not let an earlier write-this-in-the-report turn force a page walk for graph analysis", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "analyse the graphs in Requirements Verified",
+      recentUserTexts: ["write this in the report"],
+      sectionScope: "requirements_verified",
+      documentType: "mechanical_design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("still escalates an explicit inventory fill on Requirements Verified", () => {
+    const decision = classifyRetrievalPolicy({
+      userText:
+        "fill the Requirements Verified table from the attachments, don't miss any",
+      sectionScope: "requirements_verified",
+      documentType: "mechanical_design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
+    });
+    expect(decision.policy).toBe("comprehensive");
+    expect(
+      ["matrix_section_inventory", "exhaustive_output_shape", "open_set_distributed"]
+    ).toContain(decision.reason);
+  });
+
+  it("escalates draft remaining sections after an equipment turn on a large mechanical catalog", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "Draft the remaining sections",
+      recentUserTexts: [
+        "which equipment was used for testing? lets draft the relevant section for this",
+      ],
+      sectionScope: "all",
+      documentType: "mechanical_design_verification",
+      hasDocuments: true,
+      totalReadyPages: 273,
     });
     expect(decision.policy).toBe("comprehensive");
     expect(decision.reason).toBe("open_set_distributed");

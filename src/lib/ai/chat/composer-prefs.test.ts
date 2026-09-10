@@ -18,7 +18,7 @@ describe("parseChatComposerPrefs", () => {
     });
   });
 
-  it("keeps an Agent-chrome Report | Analytics target", () => {
+  it("keeps a Report | Analytics composer target", () => {
     expect(
       parseChatComposerPrefs({
         mode: "agent",

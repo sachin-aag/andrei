@@ -30,6 +30,7 @@ import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { deriveChatEditPolicy, isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
 import type { TurnEditItem } from "@/lib/ai/chat/commit-edit";
+import { engineerFacingHistorySummary } from "@/lib/ai/chat/change-summary";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 import { snapshotDocumentRevision } from "@/lib/document-revisions/snapshot";
 import {
@@ -38,19 +39,35 @@ import {
   chatPaceConfig,
   resolveChatLanguageModel,
 } from "@/lib/ai/chat/model";
+import { chatUserTurnMetadata } from "@/lib/ai/chat/message-target";
 import {
   DEFAULT_CHAT_PACE,
   isChatPace,
   type ChatPace,
 } from "@/lib/ai/chat/pace";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
-import { primaryFieldForSection } from "@/lib/ai/chat/fields";
+import {
+  chatSectionsInScope,
+  primaryFieldForSection,
+  sectionHasTable,
+} from "@/lib/ai/chat/fields";
+import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
+import {
+  messageHasChatImage,
+  recentAssistantMessageTexts,
+  restrictToolsForIntent,
+} from "@/lib/ai/chat/user-intent";
+import {
+  documentIntentFocus,
+  resolveChatUserIntent,
+} from "@/lib/ai/chat/resolve-user-intent";
 import {
   alreadyDraftedGapHints,
   detectAlreadyDraftedSection,
   alreadyDraftedReadStep,
+  withoutDraftFieldTools,
 } from "@/lib/ai/chat/already-drafted";
 import {
   createChatSession,
@@ -66,8 +83,13 @@ import {
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import {
+  endActiveLangfuseObservation,
   flushLangfuseTraces,
+  getActiveTraceId,
   langfuseGenerateTextTelemetry,
+  observeRouteHandler,
+  setRouteObservationIO,
+  withPropagatedAttributes,
 } from "@/lib/observability/langfuse";
 import {
   aiBudgetExceededResponse,
@@ -75,28 +97,47 @@ import {
   isAiBudgetExceededError,
   recordAiUsage,
 } from "@/lib/ai/usage";
+import { detectCourseCorrection } from "@/lib/ai/chat/course-correction";
+import {
+  recordUserCourseCorrectScore,
+  flushLangfuseScores,
+} from "@/lib/observability/langfuse-scores";
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
+import { isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
+import { getReportAnalytics } from "@/lib/statistical-analysis/store";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import {
   classifyRetrievalPolicy,
+  isRetrievalPushback,
   recentUserMessageTexts,
 } from "@/lib/ai/chat/retrieval-policy";
 import {
   DocumentReviewSession,
   pickPlanModeChatTools,
   prepareDocumentReviewStep,
-  shouldStopChatSteps,
 } from "@/lib/ai/chat/document-review";
+import {
+  rehydrateDocumentReviewIfCoverageUnchanged,
+  retrievalPolicyAfterCoverageDelta,
+} from "@/lib/ai/chat/document-review-rehydrate";
+import {
+  searchLoopDirective,
+  withoutSearchTool,
+} from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
+import { captureChatAssistantFailure } from "@/lib/ai/chat/chat-failure-telemetry";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  CHAT_SERVER_ABORT_MS,
   consumeAssistantStreamWithBudget,
   formatChatLlmError,
+  isChatTurnDeadlineReached,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
+  remainingChatAbortMs,
+  scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
 import { tableEditLoopDirective } from "@/lib/ai/chat/table-edit-loop";
 import {
@@ -104,6 +145,7 @@ import {
   mentionedAttachmentIds,
   mentionedSections,
   parseChatMentions,
+  recoverDocumentMentionIds,
   resolveChatMentions,
   sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
@@ -136,10 +178,13 @@ function pickStubSection(
   return detectSectionIntentFromText(text, documentType) ?? fallback;
 }
 
-export async function POST(
+async function handleChatPost(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
+  // Vercel maxDuration starts here. The SDK timeout used to start at
+  // streamText, so pre-stream work ate the persist margin.
+  const turnStartedAtMs = Date.now();
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -153,8 +198,10 @@ export async function POST(
     mentions?: unknown;
     workspaceChrome?: unknown;
   };
-  const messages = sanitizeChatMessagesForModel(
-    Array.isArray(body.messages) ? body.messages : []
+  const messages = compactChatToolHistoryForModel(
+    sanitizeChatMessagesForModel(
+      Array.isArray(body.messages) ? body.messages : []
+    )
   );
   if (messages.length === 0) {
     return NextResponse.json({ error: "No messages" }, { status: 400 });
@@ -214,6 +261,7 @@ export async function POST(
         sessionId,
         role: "user",
         parts: userMsg.parts ?? [],
+        metadata: chatUserTurnMetadata("report"),
         authorId: user.id,
       });
       await touchChatSession(sessionId, userText || null);
@@ -228,15 +276,19 @@ export async function POST(
   }
 
   // Build the compact context map from current report state.
-  const [sectionRows, evaluations, commentRows, documents] = await Promise.all([
-    db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
-    db
-      .select()
-      .from(criteriaEvaluations)
-      .where(eq(criteriaEvaluations.reportId, reportId)),
-    db.select().from(comments).where(eq(comments.reportId, reportId)),
-    listReadyDocumentsForReport(reportId),
-  ]);
+  const [sectionRows, evaluations, commentRows, documents, analytics] =
+    await Promise.all([
+      db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
+      db
+        .select()
+        .from(criteriaEvaluations)
+        .where(eq(criteriaEvaluations.reportId, reportId)),
+      db.select().from(comments).where(eq(comments.reportId, reportId)),
+      listReadyDocumentsForReport(reportId),
+      isStatisticalAnalysisEnabled()
+        ? getReportAnalytics(reportId)
+        : Promise.resolve(null),
+    ]);
   const mergedSections: Partial<Record<SectionType, Record<string, unknown>>> = {};
   for (const row of sectionRows) {
     mergedSections[row.section] = mergeSection(row.section, row.content) as Record<
@@ -244,9 +296,25 @@ export async function POST(
       unknown
     >;
   }
+  const requestedDocumentIds = new Set(
+    requestedMentions
+      .filter((mention) => mention.type === "document")
+      .map((mention) => mention.id)
+  );
+  const recoveredDocumentIds = recoverDocumentMentionIds(userText, documents).filter(
+    (id) => !requestedDocumentIds.has(id)
+  );
+  const mentionsForResolution = [
+    ...requestedMentions,
+    ...recoveredDocumentIds.map((id) => ({ type: "document" as const, id })),
+  ];
   // Resolved against this report's ready documents only, so a tagged
   // attachment id from another report cannot pull in its evidence.
-  const mentions = resolveChatMentions(requestedMentions, documents);
+  const mentions = resolveChatMentions(
+    mentionsForResolution,
+    documents,
+    analytics?.analyses ?? []
+  );
   const pinnedAttachmentIds = mentionedAttachmentIds(mentions);
   const mentionedPageCount = documents
     .filter((doc) => pinnedAttachmentIds.includes(doc.attachmentId))
@@ -255,7 +323,49 @@ export async function POST(
     (sum, doc) => sum + (doc.pageCount ?? 0),
     0
   );
-  const retrieval = classifyRetrievalPolicy({
+  const intentFocus = documentIntentFocus({
+    userText,
+    sectionScope,
+    documentType: report.documentType,
+    sections: mergedSections,
+  });
+  const userIntent = await resolveChatUserIntent({
+    userText,
+    recentAssistantTexts: recentAssistantMessageTexts(messages),
+    hasChatImages: messageHasChatImage(userMsg?.parts),
+    mode,
+    surface: "document",
+    workspaceChrome,
+    sectionLabel: intentFocus.sectionLabel,
+    fillState: intentFocus.fillState,
+    reportId,
+    userId: user.id,
+  });
+  const switchToAnalytics = userIntent.switchToAnalytics === true;
+
+  // Detect course correction — user contradicting or overriding prior LLM output.
+  const recentTexts = recentAssistantMessageTexts(messages);
+  const courseCorrection = detectCourseCorrection({
+    userText,
+    recentAssistantTexts: recentTexts,
+    hasPriorAssistantOutput: recentTexts.length > 0,
+  });
+  if (courseCorrection.detected) {
+    const courseCorrectionTraceId = getActiveTraceId() ?? undefined;
+    after(async () => {
+      await recordUserCourseCorrectScore({
+        traceId: courseCorrectionTraceId,
+        sessionId,
+        reportId,
+        reason: courseCorrection.reason,
+        previousAssistantText: recentTexts[0],
+        userText,
+      });
+      await flushLangfuseScores();
+    });
+  }
+
+  const retrievalDecision = classifyRetrievalPolicy({
     userText,
     recentUserTexts: recentUserMessageTexts(messages),
     sectionScope,
@@ -265,11 +375,31 @@ export async function POST(
     hasDocuments: documents.length > 0,
   });
   const documentReview = new DocumentReviewSession();
-  const reviewPageCount =
-    mentionedPageCount > 0 ? mentionedPageCount : totalReadyPages;
+  const pushback = isRetrievalPushback(userText);
+  const coverageRehydrate = rehydrateDocumentReviewIfCoverageUnchanged({
+    session: documentReview,
+    messages,
+    readyDocuments: documents.map((doc) => ({
+      attachmentId: doc.attachmentId,
+      pageCount: doc.pageCount ?? 0,
+      ingestRunId: doc.ingestRunId,
+    })),
+    skipRestore: pushback,
+  });
+  // Coverage growth or explicit pushback can start a fresh comprehensive walk.
+  const retrievalPolicy = retrievalPolicyAfterCoverageDelta({
+    policy: retrievalDecision.policy,
+    coverageUnchanged: coverageRehydrate.restored,
+    keepComprehensive: pushback,
+  });
+  const retrieval = {
+    ...retrievalDecision,
+    policy: retrievalPolicy,
+  };
 
   const alreadyDrafted = detectAlreadyDraftedSection({
     userText,
+    userIntentKind: userIntent.kind,
     sectionScope,
     documentType: report.documentType,
     sections: mergedSections,
@@ -297,10 +427,11 @@ export async function POST(
     })),
     documents,
     documentType: report.documentType,
+    analyticsPlots: analytics?.analyses ?? [],
   });
 
   const autoEvidenceBlock =
-    retrieval.policy === "focused"
+    retrieval.policy === "focused" && userIntent.kind !== "social"
       ? await buildAutoEvidence({
     reportId,
     userText,
@@ -332,6 +463,8 @@ export async function POST(
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
     editPolicy,
+    intent: userIntent.kind,
+    switchToAnalytics,
   });
 
   const allTools = buildChatTools({
@@ -348,10 +481,15 @@ export async function POST(
     editPolicy,
     turnEdits,
   });
-  const tools: ToolSet =
+  const scopedTools: ToolSet =
     mode === "plan"
       ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
+  const tools: ToolSet = restrictToolsForIntent(
+    scopedTools,
+    userIntent.kind,
+    "document"
+  );
 
   const stubSection =
     sectionScope === "all"
@@ -364,41 +502,77 @@ export async function POST(
         targetField: primaryFieldForSection(stubSection),
         insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
         reasoning: "Demo stub proposal.",
+        allowEdits: userIntent.kind === "write",
+        intent: userIntent.kind,
       })
     : resolveChatLanguageModel(pace);
 
   // Tab close / refresh abort the HTTP request. Keep generating anyway —
-  // only an explicit Cancel (DB flag) or the deadline stops the model.
+  // only an explicit Cancel (DB flag) or the wall-clock deadline stops it.
   const turnAbort = new AbortController();
+  const stopDeadline = scheduleChatTurnDeadline(turnAbort, turnStartedAtMs);
   const cancelPoll = setInterval(() => {
     void isAssistantTurnCancelRequested(sessionId).then((requested) => {
       if (requested) turnAbort.abort();
     });
   }, 1_000);
-  const stopCancelPoll = () => clearInterval(cancelPoll);
+  const stopTurnGuards = () => {
+    stopDeadline();
+    clearInterval(cancelPoll);
+  };
 
   let result;
   try {
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    result = streamText({
+    const modelMessages = await convertToModelMessages(messages);
+    setRouteObservationIO({
+      input: {
+        reportId,
+        sessionId,
+        mode,
+        pace,
+        sectionScope,
+        userText: userText.slice(0, 500),
+      },
+    });
+    result = withPropagatedAttributes(
+      {
+        sessionId,
+        userId: user.id,
+        traceName: "report-chat",
+        tags: ["document-chat", mode, pace],
+        metadata: {
+          reportId,
+          documentNo: String(report.documentNo ?? ""),
+          documentType: report.documentType,
+          mode,
+          pace,
+          workspaceChrome,
+          canEdit,
+          sectionScope: sectionScope ?? "",
+          section_id: sectionScope ?? "",
+          user_course_corrected: courseCorrection.detected,
+        },
+      },
+      () =>
+        streamText({
       model,
       system,
-      messages: await convertToModelMessages(messages),
+      messages: modelMessages,
       tools,
       experimental_repairToolCall: repairChatToolCall,
-      stopWhen: async ({ steps }) => {
-        if (await isAssistantTurnCancelRequested(sessionId)) return true;
-        return shouldStopChatSteps({
-          stepsTaken: steps.length,
-          mode,
-          policy: retrieval.policy,
-          reviewPhase: documentReview.phase(),
-          totalPages: documentReview.progress().totalPages || reviewPageCount,
-        });
+      stopWhen: async () => {
+        // Cancel or wall-clock deadline. No tool-step cap. Loop guards
+        // live in prepareStep.
+        if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
+        return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps }) => {
+        if (userIntent.kind === "social") {
+          return { activeTools: [] };
+        }
         const tableEditDirective = tableEditLoopDirective(steps);
         if (tableEditDirective === "finish") {
           // Force a plain-language explanation after the second failed table
@@ -420,20 +594,46 @@ export async function POST(
         });
         if (alreadyDraftedStep) return alreadyDraftedStep;
 
+        const schemaStep = tableSchemaReadStep({
+          stepsTaken: steps.length,
+          isWrite: userIntent.kind === "write",
+          hasReadSectionTool: Boolean(tools.read_section),
+          inScopeHasTable: chatSectionsInScope(
+            sectionScope ?? "all",
+            report.documentType
+          ).some((section) => sectionHasTable(mergedSections[section], section)),
+        });
+        if (schemaStep) return schemaStep;
+
         const prepared = prepareDocumentReviewStep({
           policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
           availableTools: Object.keys(tools),
         });
         if (!prepared) return undefined;
+        let activeTools = alreadyDraftedActive
+          ? withoutDraftFieldTools(prepared.activeTools)
+          : prepared.activeTools;
+        // Hide search after a cited page / locate / two empty greps — same
+        // latch as Analytics. Skip while a document review is actively
+        // walking pages (prepareDocumentReviewStep already scopes tools).
+        const reviewPhase = documentReview.phase();
+        const reviewActive =
+          reviewPhase === "in_progress" || reviewPhase === "ready_to_finish";
+        if (
+          !reviewActive &&
+          searchLoopDirective(steps) === "read"
+        ) {
+          activeTools = withoutSearchTool(activeTools);
+        }
         return {
-          activeTools: prepared.activeTools,
+          activeTools,
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
         };
       },
       abortSignal: turnAbort.signal,
-      // Leave time to persist an interrupted row before Vercel kills the isolate.
-      timeout: { totalMs: CHAT_SERVER_ABORT_MS },
+      // Remaining time from request start so persist still runs.
+      timeout: { totalMs: Math.max(1, remainingChatAbortMs(turnStartedAtMs)) },
       // Gemini 3.x: thinkingLevel only. Do not set temperature / topP / topK /
       // seed — Google warns that sampling overrides degrade reasoning.
       // includeThoughts stays on for Langfuse; UI does not stream them.
@@ -459,7 +659,9 @@ export async function POST(
           sectionScope,
           canEdit,
           taggedDocuments: mentions.documents.length,
+          recoveredDocumentTags: recoveredDocumentIds.length,
           taggedSections: mentions.sections.length,
+          taggedAnalyses: mentions.analyses.length,
           chatPromptVersion: CHAT_PROMPT_VERSION,
           pace,
           chatModelId: paceConfig.modelId,
@@ -467,11 +669,17 @@ export async function POST(
           chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
           retrievalPolicy: retrieval.policy,
           retrievalPolicyReason: retrieval.reason,
+          userIntent: userIntent.kind,
+          userIntentReason: userIntent.reason,
+          section_id: sectionScope ?? "",
+          user_course_corrected: courseCorrection.detected,
         },
       }),
-    });
+    })
+    );
   } catch (err) {
-    stopCancelPoll();
+    stopTurnGuards();
+    endActiveLangfuseObservation();
     await clearAssistantTurn(sessionId);
     if (isAiBudgetExceededError(err)) {
       return aiBudgetExceededResponse(err);
@@ -480,6 +688,14 @@ export async function POST(
       reportId,
       sessionId,
       error: formatChatLlmError(err),
+    });
+    await captureChatAssistantFailure({
+      error: err,
+      userId: user.id,
+      reportId,
+      sessionId,
+      surface: "report",
+      site: "stream_start",
     });
     return NextResponse.json(
       { error: CHAT_ASSISTANT_ERROR_MESSAGE },
@@ -497,6 +713,14 @@ export async function POST(
           reportId,
           sessionId,
         });
+        await captureChatAssistantFailure({
+          error: new Error("consumeStream exceeded budget"),
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "report",
+          site: "consume_timeout",
+        });
       } else if (!isTestStubChat()) {
         const usage = await result.totalUsage;
         await recordAiUsage({
@@ -508,17 +732,21 @@ export async function POST(
         });
       }
       await flushLangfuseTraces();
+      endActiveLangfuseObservation();
     } finally {
-      stopCancelPoll();
+      stopTurnGuards();
       await clearAssistantTurn(sessionId);
     }
   });
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
-    // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
-    // do not stream or persist them as chat message parts.
-    sendReasoning: false,
+    // Stream thought summaries to the chat activity UI (expandable Thought lines).
+    sendReasoning: true,
+    messageMetadata: () => ({
+      chatTarget: "report" as const,
+      ...(switchToAnalytics ? { switchToAnalytics: true as const } : {}),
+    }),
     // Drain the teed SSE now. Wrapping this in Next `after()` waits until the
     // HTTP response finishes — and the tee only finishes if this copy is
     // already being read. That deadlock wedged `next start` after a client
@@ -532,10 +760,24 @@ export async function POST(
         sessionId,
         error: formatChatLlmError(error),
       });
+      const reportFailure = () =>
+        captureChatAssistantFailure({
+          error,
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "report",
+          site: "stream_error",
+        });
+      try {
+        after(reportFailure);
+      } catch {
+        void reportFailure();
+      }
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
-      stopCancelPoll();
+      stopTurnGuards();
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,
@@ -568,6 +810,18 @@ export async function POST(
           emptyFailure: persisted.emptyFailure,
           partTypes: (responseMessage.parts ?? []).map((part) => part.type),
         });
+        await captureChatAssistantFailure({
+          error: new Error("empty or failed assistant turn"),
+          userId: user.id,
+          reportId,
+          sessionId,
+          surface: "report",
+          site: "empty_turn",
+          extra: {
+            finishReason: finishReason ?? "unknown",
+            emptyFailure: persisted.emptyFailure,
+          },
+        });
       }
       try {
         const changeItems = turnEdits.map((item) => ({
@@ -586,6 +840,8 @@ export async function POST(
               pace,
               mode,
               promptVersion: CHAT_PROMPT_VERSION,
+              chatTarget: "report",
+              switchToAnalytics,
               changeSummary:
                 changeItems.length > 0 ? { items: changeItems } : undefined,
             }),
@@ -598,10 +854,7 @@ export async function POST(
             const revision = await snapshotDocumentRevision({
               reportId,
               documentType: report.documentType,
-              summary: changeItems
-                .map((item) => item.reasoning.trim() || item.targetField)
-                .filter(Boolean)
-                .join("; "),
+              summary: engineerFacingHistorySummary(changeItems),
               createdBy: user.id,
               chatSessionId: sessionId,
               chatMessageId: inserted.id,
@@ -613,6 +866,8 @@ export async function POST(
                   pace,
                   mode,
                   promptVersion: CHAT_PROMPT_VERSION,
+                  chatTarget: "report",
+                  switchToAnalytics,
                   changeSummary: {
                     items: changeItems,
                     revisionNo: revision.revisionNo,
@@ -630,8 +885,21 @@ export async function POST(
         // a failure means it's missing from history on reload, nothing more.
         console.error("chat: failed to persist assistant message", err);
       } finally {
+        setRouteObservationIO({
+          output: {
+            reportId,
+            sessionId,
+            finishReason: finishReason ?? null,
+            isAborted,
+          },
+        });
+        endActiveLangfuseObservation();
         await clearAssistantTurn(sessionId);
       }
     },
   });
 }
+
+export const POST = observeRouteHandler("report-chat", handleChatPost, {
+  endOnExit: false,
+});

@@ -130,6 +130,10 @@ describe("renderSixpackPng", () => {
     expect(texts).toContain("PROCESS DATA");
     expect(texts).toContain("Sample N");
     expect(texts).toContain("Cpk");
+    expect(texts).toContain("102.442");
+    expect(texts).not.toContain("102.4424");
+    expect(texts).toContain("90.00");
+    expect(texts).toContain("110.00");
     expect(texts).toContain("Observation");
     expect(texts).toContain("Individual");
     expect(texts).toContain("Moving range");

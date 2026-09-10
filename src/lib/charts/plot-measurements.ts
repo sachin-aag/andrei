@@ -8,7 +8,7 @@ import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
   parseAiFixCommentContent,
   serializeAiFixCommentContent,
-  sectionContentHash,
+  type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
 import {
   isRichTargetField,
@@ -24,6 +24,10 @@ import {
   commitChatEdit,
   type TurnEditItem,
 } from "@/lib/ai/chat/commit-edit";
+import {
+  buildSuggestionRecord,
+  withSuggestionRecord,
+} from "@/lib/suggestions/suggestion-record";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 import type { AuditActorSnapshot } from "@/lib/audit";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
@@ -41,6 +45,14 @@ import {
   type SuggestionImageRemove,
 } from "@/lib/suggestions/image-insert";
 import {
+  isAppendBlock,
+  recordBlock,
+  takeUnusedLeadIn,
+  withPairedBlock,
+  withPlaceAfterLeadIn,
+  type SameTurnBlockPairing,
+} from "@/lib/suggestions/same-turn-block-pair";
+import {
   DEFAULT_CHART_LAYOUT,
   layoutPoints,
   mergeChartLayout,
@@ -55,7 +67,9 @@ import {
   type ExtractMeasurementsResult,
 } from "@/lib/charts/extract-measurements";
 import {
-  CHART_DISPLAY_WIDTH_PX,
+  documentInsertedPlotWidth,
+} from "@/lib/charts/chart-dimensions";
+import {
   renderChartPng,
   type RenderedChart,
   type RenderChartError,
@@ -106,6 +120,7 @@ export type PlotMeasurementsResult =
   | { status: "ambiguous"; hint: string }
   | { status: "cross_cell"; hint: string }
   | { status: "bad_scope"; hint: string }
+  | { status: "table_as_list"; hint: string }
   | { status: "review_incomplete"; message: string };
 
 type LoadedSection = { sectionId: string; content: Record<string, unknown> };
@@ -245,7 +260,10 @@ function insertFromRender(
   return {
     src: rendered.dataUrl,
     alt: spec.title,
-    width: CHART_DISPLAY_WIDTH_PX,
+    width: documentInsertedPlotWidth({
+      widthPx: rendered.widthPx,
+      heightPx: rendered.heightPx,
+    }),
     mediaId: null,
     chartSpec: spec,
   };
@@ -328,9 +346,6 @@ function checkStatusResult(
   anchorText: string
 ): PlotMeasurementsResult | null {
   if (check.status === "ok") return null;
-  if (check.status === "too_large") {
-    return { status: "too_large", message: "The proposed chart edit is too large for this field." };
-  }
   const hint = proposedEditHint(check, { anchorText, fieldDoc });
   if (check.status === "not_found") {
     return { status: "not_found_anchor", hint };
@@ -345,16 +360,21 @@ async function persistChartEdit(args: {
     editPolicy?: ChatEditPolicy;
     actor?: AuditActorSnapshot;
     turnEdits?: TurnEditItem[];
+    blockPairing?: SameTurnBlockPairing;
   };
   deps: PlotMeasurementsDeps;
   loaded: LoadedSection;
   input: PlotMeasurementsInput;
   resolvedField: string;
-  hash: string;
   insertImage?: SuggestionImageInsert;
   removeImage?: SuggestionImageRemove;
   anchorText: string;
 }): Promise<{ ok: true; id: string } | PlotMeasurementsResult> {
+  const appendImage = Boolean(
+    args.insertImage &&
+      !args.removeImage &&
+      isAppendBlock({ anchorText: args.anchorText })
+  );
   if (args.ctx.editPolicy === "commit") {
     if (!args.ctx.actor) {
       return {
@@ -387,6 +407,20 @@ async function persistChartEdit(args: {
         targetField: result.targetField,
         reasoning: args.input.reasoning,
       });
+      if (appendImage && args.ctx.blockPairing) {
+        recordBlock(args.ctx.blockPairing, {
+          suggestionId: "committed",
+          section: args.input.section,
+          targetField: args.resolvedField,
+          kind: "image",
+          payload: {
+            deleteText: "",
+            insertText: "",
+            insertImage: args.insertImage,
+            reasoning: args.input.reasoning,
+          },
+        });
+      }
       return { ok: true, id: "applied" };
     }
     if (result.status === "section_not_found") {
@@ -405,19 +439,63 @@ async function persistChartEdit(args: {
   }
 
   const id = args.deps.createId();
+  let payload: ParsedAiFixPayload = {
+    deleteText: "",
+    insertText: "",
+    insertImage: args.insertImage,
+    removeImage: args.removeImage,
+    reasoning: args.input.reasoning,
+  };
+  if (appendImage && args.ctx.blockPairing) {
+    const leadIn = takeUnusedLeadIn(
+      args.ctx.blockPairing,
+      args.input.section,
+      args.resolvedField
+    );
+    if (leadIn) {
+      payload = withPlaceAfterLeadIn(payload, leadIn.suggestionId);
+      await args.deps.updateComment({
+        id: leadIn.suggestionId,
+        content: serializeAiFixCommentContent(
+          withPairedBlock(leadIn.payload, id, "image")
+        ),
+      });
+    } else {
+      recordBlock(args.ctx.blockPairing, {
+        suggestionId: id,
+        section: args.input.section,
+        targetField: args.resolvedField,
+        kind: "image",
+        payload,
+      });
+    }
+  }
   await args.deps.insertComment({
     id,
     reportId: args.ctx.reportId,
     sectionId: args.loaded.sectionId,
     section: args.input.section,
-    content: serializeAiFixCommentContent({
-      deleteText: "",
-      insertText: "",
-      insertImage: args.insertImage,
-      removeImage: args.removeImage,
-      reasoning: args.input.reasoning,
-      contentHashAtSuggestion: args.hash,
-    }),
+    content: serializeAiFixCommentContent(
+      withSuggestionRecord(
+        payload,
+        buildSuggestionRecord({
+          sectionContent: args.loaded.content,
+          section: args.input.section,
+          targetField: args.resolvedField,
+          documentType: args.ctx.documentType,
+          input: {
+            kind: "located",
+            edit: {
+              anchorText: args.anchorText,
+              deleteText: "",
+              insertText: "",
+              insertImage: args.insertImage,
+              removeImage: args.removeImage,
+            },
+          },
+        })
+      )
+    ),
     anchorText: args.anchorText,
     contentPath: args.resolvedField,
   });
@@ -435,6 +513,7 @@ export async function executePlotMeasurements(
     editPolicy?: ChatEditPolicy;
     actor?: AuditActorSnapshot;
     turnEdits?: TurnEditItem[];
+    blockPairing?: SameTurnBlockPairing;
   },
   deps: PlotMeasurementsDeps = DEFAULT_DEPS
 ): Promise<PlotMeasurementsResult> {
@@ -535,9 +614,6 @@ export async function executePlotMeasurements(
   const rendered = await renderSpecs(specs, deps.renderChartPng);
   if (!rendered.ok) return renderErrorResult(rendered.error);
 
-  const hash = sectionContentHash(input.section, loaded.content, {
-    documentType: ctx.documentType,
-  });
   const anchorText = input.anchorText ?? "";
 
   if (mode === "pending-restyle") {
@@ -568,7 +644,6 @@ export async function executePlotMeasurements(
         insertImage,
         removeImage,
         reasoning: input.reasoning,
-        contentHashAtSuggestion: hash,
       });
       if (existing) {
         await deps.updateComment({ id: existing.comment.id, content });
@@ -634,7 +709,6 @@ export async function executePlotMeasurements(
         loaded,
         input,
         resolvedField,
-        hash,
         insertImage,
         removeImage,
         anchorText: removeImage ? "" : anchorText,
@@ -664,7 +738,6 @@ export async function executePlotMeasurements(
         loaded,
         input,
         resolvedField,
-        hash,
         removeImage,
         anchorText: "",
       });
@@ -702,7 +775,6 @@ export async function executePlotMeasurements(
       loaded,
       input,
       resolvedField,
-      hash,
       insertImage,
       anchorText,
     });

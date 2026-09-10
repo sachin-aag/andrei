@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { after } from "next/server";
-import { propagateAttributes } from "@langfuse/tracing";
 import { eq, inArray, and } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -21,9 +20,9 @@ import {
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import {
   flushLangfuseTraces,
-  isLangfuseEnabled,
   observeRouteHandler,
   setRouteObservationIO,
+  withPropagatedAttributes,
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
@@ -260,19 +259,9 @@ async function handleEvaluatePost(
     });
   };
 
-  if (!isLangfuseEnabled()) return runEvaluation();
-
-  setRouteObservationIO({
-    input: {
-      reportId,
-      sections: targetSections,
-      documentNo: report.documentNo,
-      reason: parsed.success ? parsed.data.reason ?? null : null,
-    },
-  });
   after(flushLangfuseTraces);
 
-  return propagateAttributes(
+  return withPropagatedAttributes(
     {
       sessionId: reportId,
       userId: user.id,
@@ -280,9 +269,20 @@ async function handleEvaluatePost(
       tags: ["criteria-evaluation"],
       metadata: {
         feature: "criteria-evaluation",
-        documentNo: report.documentNo,
+        documentNo: String(report.documentNo ?? ""),
+        documentType,
       },
     },
-    runEvaluation
+    async () => {
+      setRouteObservationIO({
+        input: {
+          reportId,
+          sections: targetSections,
+          documentNo: report.documentNo,
+          reason: parsed.success ? parsed.data.reason ?? null : null,
+        },
+      });
+      return runEvaluation();
+    }
   );
 }

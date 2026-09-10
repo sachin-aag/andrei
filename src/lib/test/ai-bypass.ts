@@ -35,6 +35,14 @@ export function isTestStubChat(): boolean {
   return process.env.ALLOW_TEST_STUB_CHAT === "true";
 }
 
+/**
+ * Returns a canned composer dictation phrase instead of Cloud Speech-to-Text.
+ * Never set ALLOW_TEST_STUB_SPEECH on Vercel production or preview.
+ */
+export function isTestStubSpeech(): boolean {
+  return process.env.ALLOW_TEST_STUB_SPEECH === "true";
+}
+
 export function isTestLoginEnabled(): boolean {
   return (
     process.env.ALLOW_TEST_LOGIN === "true" &&

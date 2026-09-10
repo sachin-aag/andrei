@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import type { WorksheetSpecRow } from "@/lib/statistical-analysis/types";
 
 const fieldLabelClass =
@@ -48,17 +49,22 @@ export function ColumnSpecsDialog({
         <DialogHeader>
           <DialogTitle>Specs for {columnName}</DialogTitle>
           <DialogDescription>
-            Lower and upper spec limits and the target for this column.
-            Extraction fills these when attachments name LSL/USL. The sixpack
-            form uses them first, then the min and max of the selected data.
+            Spec limits for this column.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-3 gap-3">
           <div className="grid gap-1.5">
-            <Label htmlFor="column-spec-lsl" className={fieldLabelClass}>
-              LSL
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="column-spec-lsl" className={fieldLabelClass}>
+                LSL
+              </Label>
+              <FieldInfoIcon
+                label="LSL"
+                testId="column-spec-lsl-info"
+                text="Extraction fills these when attachments name LSL/USL. Sixpack uses them first, then min and max of the selected data."
+              />
+            </div>
             <Input
               id="column-spec-lsl"
               data-testid="column-spec-lsl"

@@ -10,6 +10,7 @@ import {
   injectSuggestionMarks,
   stripPendingSuggestionsExcept,
 } from "@/lib/tiptap/suggestion-inject";
+import { flattenForAnchor } from "@/lib/suggestions/locator";
 
 const reportId = "report-1";
 const comment: CommentRecord = {
@@ -410,5 +411,218 @@ describe("acceptSuggestion split citation", () => {
     expect(text).toContain("The measured value was 9.8 W.");
     expect(text).toContain("Citations:");
     expect(text).toContain("[protocol.pdf, p. 3]");
+  });
+});
+
+describe("acceptSuggestion supersession", () => {
+  it("dismisses older contained siblings instead of applying them", async () => {
+    const fetches: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        fetches.push({
+          url: String(url),
+          body: init?.body ? JSON.parse(String(init.body)) : null,
+        });
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const narrative = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "On 01/01/2026 a deviation was observed. The result exceeded limits.",
+            },
+          ],
+        },
+      ],
+    };
+    const older: CommentRecord = {
+      ...comment,
+      id: "old",
+      content: JSON.stringify({
+        deleteText: "deviation was observed",
+        insertText: "issue was seen",
+        reasoning: "narrow",
+      }),
+      anchorText: "a deviation was observed",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const newer: CommentRecord = {
+      ...comment,
+      id: "new",
+      content: JSON.stringify({
+        deleteText: "a deviation was observed. The result",
+        insertText: "the issue was logged. The result",
+        reasoning: "cover",
+      }),
+      anchorText: "a deviation was observed. The result",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    };
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "define",
+      comment: newer,
+      sectionContent: { narrative },
+      openComments: [older, newer],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.dismissed.map((row) => row.id)).toEqual(["old"]);
+    expect(result.dismissed[0]?.status).toBe("dismissed");
+    expect(result.dismissed[0]?.content).toContain("superseded_by:new");
+    const dismissedPatch = fetches.find(
+      (call) => call.url.includes("/comments/old")
+    );
+    expect(dismissedPatch?.body).toMatchObject({
+      status: "dismissed",
+    });
+  });
+});
+
+describe("acceptSuggestion same-turn table pair", () => {
+  function labels(content: Record<string, unknown>): string[] {
+    const doc = content.narrative as JSONContent;
+    return (doc.content ?? []).map((block) => {
+      if (block.type === "table") {
+        const text = flattenForAnchor(block).text.replace(/\s+/g, " ").trim();
+        return text.startsWith("VCS") ? "new-table" : "existing-table";
+      }
+      const text = flattenForAnchor(block).text.replace(/\s+/g, " ").trim();
+      if (/^citations:?$/i.test(text)) return "citations";
+      return text || block.type || "";
+    });
+  }
+
+  const existingTable: JSONContent = {
+    type: "table",
+    content: [
+      {
+        type: "tableRow",
+        content: [
+          {
+            type: "tableCell",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "Req" }] },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const field = {
+    narrative: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Purpose of this verification." }],
+        },
+        existingTable,
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 1]" }],
+        },
+      ],
+    },
+  };
+
+  const leadIn: CommentRecord = {
+    ...comment,
+    id: "lead",
+    section: "purpose",
+    content: JSON.stringify({
+      deleteText: "",
+      insertText: "The VCS mapping follows.",
+      reasoning: "intro",
+      pairedBlockSuggestionId: "tbl",
+      placeBeforePairedBlock: "table",
+    }),
+    anchorText: "",
+    contentPath: "narrative",
+  };
+
+  const tableCard: CommentRecord = {
+    ...comment,
+    id: "tbl",
+    section: "purpose",
+    content: JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "table",
+      tableOperation: {
+        kind: "create_table",
+        headers: ["VCS", "Meaning"],
+        rows: [["1", "Design"]],
+      },
+      placeAfterSuggestionId: "lead",
+    }),
+    anchorText: "Create a 2-column table with 1 row",
+    contentPath: "narrative",
+  };
+
+  it("accepts the table card and still lands intro then table before Citations", async () => {
+    const fetches: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const body = init?.body ? JSON.parse(String(init.body)) : null;
+        fetches.push({ url: String(url), body });
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "purpose",
+      comment: tableCard,
+      sectionContent: field,
+      openComments: [leadIn, tableCard],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const order = labels(result.nextSection);
+    expect(order.indexOf("existing-table")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("The VCS mapping follows.")).toBeGreaterThan(
+      order.indexOf("existing-table")
+    );
+    expect(order.indexOf("new-table")).toBeGreaterThan(
+      order.indexOf("The VCS mapping follows.")
+    );
+    expect(order.indexOf("citations")).toBeGreaterThan(order.indexOf("new-table"));
+    const resolved = fetches.filter((call) =>
+      String(call.body && (call.body as { status?: string }).status) ===
+      "resolved"
+    );
+    expect(resolved).toHaveLength(2);
+  });
+
+  it("does not dismiss the sibling when one card is ignored", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+    const result = await dismissSuggestion({
+      reportId,
+      section: "purpose",
+      comment: tableCard,
+      sectionContent: field,
+    });
+    expect(result.ok).toBe(true);
+    expect(JSON.stringify(result.ok ? result.nextSection : null)).not.toContain(
+      "The VCS mapping follows."
+    );
   });
 });

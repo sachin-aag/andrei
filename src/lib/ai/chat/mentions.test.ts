@@ -3,12 +3,48 @@ import {
   CHAT_MAX_DOCUMENT_MENTIONS,
   buildMentionBlock,
   mentionedAttachmentIds,
+  mentionedAnalysisIds,
   mentionedSections,
   parseChatMentions,
+  recoverDocumentMentionIds,
   resolveChatMentions,
   sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
+import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
+
+function readyPlot(
+  id: string,
+  overrides: Partial<StatisticalAnalysisSummary> = {}
+): StatisticalAnalysisSummary {
+  return {
+    id,
+    workspaceId: "ws",
+    title: "Torque scatter",
+    kind: "measurement_scatter",
+    sourceHash: "h",
+    stale: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    previewImage: {
+      dataUrl: "data:image/png;base64,AAAA",
+      widthPx: 600,
+      heightPx: 400,
+      alt: "Torque scatter",
+      chartSpec: null,
+    },
+    config: {
+      query: "torque",
+      title: "Torque scatter",
+      xLabel: "Unit",
+      yLabel: "Torque",
+      layout: { mode: "combined", seriesBy: "none", xAxis: "sequential", yRange: null },
+      lsl: null,
+      usl: null,
+    },
+    results: { specs: [], n: 0, uom: "Nm" },
+    ...overrides,
+  } as StatisticalAnalysisSummary;
+}
 
 function readyDoc(
   attachmentId: string,
@@ -31,10 +67,12 @@ describe("parseChatMentions", () => {
       parseChatMentions([
         { type: "document", id: "att_1" },
         { type: "section", id: "analyze" },
+        { type: "analysis", id: "anl_1" },
       ])
     ).toEqual([
       { type: "document", id: "att_1" },
       { type: "section", id: "analyze" },
+      { type: "analysis", id: "anl_1" },
     ]);
   });
 
@@ -86,6 +124,44 @@ describe("parseChatMentions", () => {
   it("returns nothing for non-array input", () => {
     expect(parseChatMentions(undefined)).toEqual([]);
     expect(parseChatMentions({ type: "document", id: "att_1" })).toEqual([]);
+  });
+});
+
+describe("recoverDocumentMentionIds", () => {
+  it("recovers an exact visible @filename when the structured payload is lost", () => {
+    expect(
+      recoverDocumentMentionIds(
+        "Use @Mechanical Test Report Attachments only.pdf for FN-037",
+        [
+          readyDoc("att_mechanical", {
+            filename: "Mechanical Test Report Attachments only.pdf",
+          }),
+          readyDoc("att_other", { filename: "Other evidence.pdf" }),
+        ]
+      )
+    ).toEqual(["att_mechanical"]);
+  });
+
+  it("normalizes case and whitespace but does not guess between duplicate names", () => {
+    expect(
+      recoverDocumentMentionIds("Check @BATCH   COA.PDF", [
+        readyDoc("att_1", { filename: "Batch COA.pdf" }),
+      ])
+    ).toEqual(["att_1"]);
+    expect(
+      recoverDocumentMentionIds("Check @Batch COA.pdf", [
+        readyDoc("att_1", { filename: "Batch COA.pdf" }),
+        readyDoc("att_2", { filename: "Batch COA.pdf" }),
+      ])
+    ).toEqual([]);
+  });
+
+  it("does not treat an untagged filename as a mention", () => {
+    expect(
+      recoverDocumentMentionIds("Check Batch COA.pdf", [
+        readyDoc("att_1", { filename: "Batch COA.pdf" }),
+      ])
+    ).toEqual([]);
   });
 });
 
@@ -161,11 +237,45 @@ describe("resolveChatMentions", () => {
     expect(mentionedSections(resolved)).toEqual(["analyze"]);
     expect(resolved.sections[0]?.label).toBe("Analyze");
   });
+
+  it("resolves tagged Analytics plots and drops ANOVA or unknown ids", () => {
+    const resolved = resolveChatMentions(
+      [
+        { type: "analysis", id: "anl_1" },
+        { type: "analysis", id: "anl_anova" },
+        { type: "analysis", id: "anl_missing" },
+      ],
+      [],
+      [
+        readyPlot("anl_1"),
+        readyPlot("anl_anova", {
+          title: "ANOVA",
+          kind: "one_way_anova",
+          previewImage: null,
+          config: {
+            responseColumnId: "r",
+            responseColumnName: "Response",
+            factorColumnId: "f",
+            factorColumnName: "Factor",
+            title: "ANOVA",
+          },
+          results: {} as never,
+        }),
+      ]
+    );
+
+    expect(mentionedAnalysisIds(resolved)).toEqual(["anl_1"]);
+    expect(resolved.analyses[0]).toMatchObject({
+      analysisId: "anl_1",
+      insertable: true,
+    });
+    expect(resolved.droppedCount).toBe(2);
+  });
 });
 
 describe("buildMentionBlock", () => {
   it("is empty when nothing was tagged", () => {
-    expect(buildMentionBlock({ documents: [], sections: [], droppedCount: 0 })).toBe("");
+    expect(buildMentionBlock({ documents: [], sections: [], analyses: [], droppedCount: 0 })).toBe("");
   });
 
   it("lists tagged documents as an index without document text", () => {
@@ -190,7 +300,8 @@ describe("buildMentionBlock", () => {
     expect(block).toContain('user_context="Certificate of analysis for the failed batch"');
     expect(block).toContain('topics="COA for batch 24A with OOS dissolution."');
     expect(block).toContain("UNTRUSTED");
-    expect(block).toContain('scope="all"');
+    expect(block).toContain("complete attachment scope");
+    expect(block).toContain("restricted to these files");
   });
 
   it("neutralizes instruction-like newlines in attachment metadata", () => {
@@ -222,6 +333,22 @@ describe("buildMentionBlock", () => {
 
     expect(block).toContain("read_section");
     expect(block).toContain("Measure [measure]");
+  });
+
+  it("lists tagged Analytics plots with analysisId", () => {
+    const block = buildMentionBlock(
+      resolveChatMentions(
+        [{ type: "analysis", id: "anl_1" }],
+        [],
+        [readyPlot("anl_1")]
+      )
+    );
+
+    expect(block).toContain("insert_image source=analytics");
+    expect(block).toContain("create additional ones in Analytics");
+    expect(block).toContain("[anl_1]");
+    expect(block).toContain("kind=measurement_scatter");
+    expect(block).not.toContain("no preview yet");
   });
 
   it("surfaces dropped mentions so the model asks instead of guessing", () => {

@@ -12,6 +12,31 @@ import {
 import { MAX_DATA_SHEETS, PRIMARY_DATA_SHEET_ID } from "./types";
 
 describe("applyManageWorksheet", () => {
+  it("reuses an existing sheet when add_sheet uses the same name", () => {
+    const first = applyManageWorksheet(createEmptyWorksheet(), {
+      action: "add_sheet",
+      name: "Assay",
+    });
+    expect(first.result).toMatchObject({
+      status: "ok",
+      sheetName: "Assay",
+    });
+    const second = applyManageWorksheet(first.worksheet!, {
+      action: "add_sheet",
+      name: "assay",
+    });
+    expect(second.result).toMatchObject({
+      status: "ok",
+      action: "add_sheet",
+      sheetId: first.result.status === "ok" ? first.result.sheetId : "",
+      sheetName: "Assay",
+    });
+    expect(second.result.status === "ok" && second.result.message).toMatch(
+      /existing/i
+    );
+    expect(second.worksheet?.sheets).toHaveLength(2);
+  });
+
   it("adds a named data sheet and switches to it", () => {
     const { worksheet, result } = applyManageWorksheet(createEmptyWorksheet(), {
       action: "add_sheet",
@@ -69,7 +94,12 @@ describe("applyManageWorksheet", () => {
       status: "ok",
       columnName: "Assay %",
     });
-    expect(added.worksheet?.columns).toHaveLength(9);
+    expect(added.worksheet?.columns).toHaveLength(8);
+    expect(added.worksheet?.columns[0]).toMatchObject({
+      id: "c1",
+      name: "Assay %",
+    });
+    expect(added.worksheet?.columns[1]?.name).toBe("C2");
 
     const renamed = applyManageWorksheet(added.worksheet!, {
       action: "rename_column",
@@ -83,7 +113,32 @@ describe("applyManageWorksheet", () => {
       columnId: "Assay",
     });
     expect(deleted.result.status).toBe("ok");
-    expect(deleted.worksheet?.columns).toHaveLength(8);
+    expect(deleted.worksheet?.columns).toHaveLength(7);
+  });
+
+  it("appends add_column when no empty C# placeholders remain", () => {
+    let sheet = createEmptyWorksheet();
+    for (let i = 0; i < sheet.columns.length; i++) {
+      sheet = setCell(sheet, i, 0, String(i + 1));
+    }
+    const added = applyManageWorksheet(sheet, {
+      action: "add_column",
+      name: "Extra",
+    });
+    expect(added.result).toMatchObject({ status: "ok", columnName: "Extra" });
+    expect(added.worksheet?.columns).toHaveLength(9);
+    expect(added.worksheet?.columns.at(-1)?.name).toBe("Extra");
+  });
+
+  it("honors an explicit add_column insert position", () => {
+    const added = applyManageWorksheet(createEmptyWorksheet(), {
+      action: "add_column",
+      name: "Inserted",
+      at: 1,
+    });
+    expect(added.worksheet?.columns).toHaveLength(9);
+    expect(added.worksheet?.columns[0]?.name).toBe("Inserted");
+    expect(added.worksheet?.columns[1]?.name).toBe("C1");
   });
 
   it("inserts a row in the middle of filled cells and deletes it", () => {
@@ -102,6 +157,41 @@ describe("applyManageWorksheet", () => {
       row: 2,
     });
     expect(deleted.worksheet?.columns[0]?.values).toEqual(["10", "20"]);
+  });
+
+  it("deletes an inclusive row range", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = setCell(sheet, 0, 0, "a");
+    sheet = setCell(sheet, 0, 1, "b");
+    sheet = setCell(sheet, 0, 2, "c");
+    sheet = setCell(sheet, 0, 3, "d");
+    const deleted = applyManageWorksheet(sheet, {
+      action: "delete_row",
+      row: 2,
+      rowEnd: 3,
+    });
+    expect(deleted.result).toMatchObject({
+      status: "ok",
+      row: 2,
+      rowEnd: 3,
+    });
+    expect(deleted.result.status === "ok" && deleted.result.message).toMatch(
+      /Deleted rows 2–3/
+    );
+    expect(deleted.worksheet?.columns[0]?.values).toEqual(["a", "d"]);
+  });
+
+  it("inserts several blank rows at a position", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = setCell(sheet, 0, 0, "a");
+    sheet = setCell(sheet, 0, 1, "b");
+    const added = applyManageWorksheet(sheet, {
+      action: "add_row",
+      row: 2,
+      count: 2,
+    });
+    expect(added.result).toMatchObject({ status: "ok", row: 2, count: 2 });
+    expect(added.worksheet?.columns[0]?.values).toEqual(["a", "", "", "b"]);
   });
 
   it("sets a cell and reports the next empty row when append would trim", () => {
@@ -147,12 +237,11 @@ describe("applyManageWorksheet", () => {
       name: "Temp",
     });
     expect(second.result).toMatchObject({ status: "ok", columnName: "Temp" });
-    expect(second.worksheet?.columns.map((column) => column.name)).toContain(
-      "Time"
-    );
-    expect(second.worksheet?.columns.map((column) => column.name)).toContain(
-      "Temp"
-    );
+    expect(second.worksheet?.columns.map((column) => column.name).slice(0, 2)).toEqual([
+      "Time",
+      "Temp",
+    ]);
+    expect(second.worksheet?.columns).toHaveLength(8);
   });
 
   it("parses a batch of operations without a top-level action", () => {

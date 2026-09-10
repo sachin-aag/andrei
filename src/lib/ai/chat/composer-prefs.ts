@@ -15,8 +15,8 @@ export const CHAT_COMPOSER_PREFS_STORAGE_PREFIX = "chatComposerPrefs:v1";
 export type ChatComposerPrefs = {
   mode: ChatMode;
   pace: ChatPace;
-  /** Agent-chrome Report | Analytics target. Document chrome ignores this.
-   *  Seeded from the focused pane when switching Document → Agent. */
+  /** Report | Analytics composer target. Shared across Document and Agent
+   *  chrome. Independent of the focused canvas pane. */
   chatTarget?: WorkProductView;
 };
 

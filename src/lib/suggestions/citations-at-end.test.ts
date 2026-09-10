@@ -7,8 +7,11 @@ import {
   isCitationOnlyText,
   keepEmptyParagraphBeforeCitationHeading,
   moveCitationsToEndOfText,
+  normalizeTrailingCitationBlockInDoc,
   normalizeTrailingCitationBlockInText,
   prepareEditForCitationMode,
+  sourceCitationBracket,
+  sourceCitationForNumber,
   splitEditForCitationsAtEnd,
   stripCitationsFromTableOperation,
   stripCitationsFromText,
@@ -16,6 +19,7 @@ import {
   stripTrailingCitationBlockFromText,
   stripTrailingCitationsFromContent,
 } from "./citations-at-end";
+import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 
 describe("stripCitationsFromText", () => {
   it("pulls page and filename citations out of mid-sentence inserts", () => {
@@ -54,7 +58,52 @@ describe("stripCitationsFromText", () => {
   });
 });
 
+describe("sourceCitationForNumber", () => {
+  it("looks up a parked source from the trailing Citations list", () => {
+    const field = [
+      "Output met spec [1] for configuration A.",
+      "",
+      "Citations:",
+      "1. [protocol.pdf, p. 3]",
+    ].join("\n");
+    expect(sourceCitationForNumber(field, 1)).toBe("[protocol.pdf, p. 3]");
+    expect(sourceCitationForNumber(field, 2)).toBeNull();
+  });
+});
+
 describe("moveCitationsToEndOfText", () => {
+  it("parks attachment-id cites instead of leaving them inline", () => {
+    const markdown = [
+      "This test report applies to configurations defined as TOP-00017 and TOP-00051 [me1q4zzhb1me0wwskpmqfw7i].",
+      "Tested in accordance with the Perioguide Project Test Plan [swja2t3b3dif1ua8id1zkyz2, p. 1].",
+    ].join(" ");
+    expect(moveCitationsToEndOfText(markdown)).toBe(
+      [
+        "This test report applies to configurations defined as TOP-00017 and TOP-00051 [1]. Tested in accordance with the Perioguide Project Test Plan [2].",
+        "",
+        "Citations:",
+        "1. [me1q4zzhb1me0wwskpmqfw7i]",
+        "2. [swja2t3b3dif1ua8id1zkyz2, p. 1]",
+      ].join("\n")
+    );
+  });
+
+  it("repairs mistaken placeholder wrappers then parks attachment-id cites", () => {
+    const drafted =
+      "defined as TOP-00051 [me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]. " +
+      "Tested per the plan [swja2t3b3dif1ua8id1zkyz2,: <to be filled>].";
+    const normalized = normalizeSuggestionInsertText(drafted);
+    expect(moveCitationsToEndOfText(normalized)).toBe(
+      [
+        "defined as TOP-00051 [1]. Tested per the plan [2].",
+        "",
+        "Citations:",
+        "1. [me1q4zzhb1me0wwskpmqfw7i]",
+        "2. [swja2t3b3dif1ua8id1zkyz2]",
+      ].join("\n")
+    );
+  });
+
   it("moves inline citations after the prose and any table, leaving numbered markers", () => {
     const markdown = [
       "Power output met the acceptance limit [protocol.pdf, p. 2].",
@@ -336,6 +385,30 @@ describe("documentCitationRule", () => {
     expect(documentCitationRule(true)).toContain("end of the section field");
     expect(documentCitationRule(true)).toContain("Citations:");
     expect(documentCitationRule(true)).toContain("split edit");
+    expect(documentCitationRule(false)).toContain("missing or ambiguous");
+    expect(documentCitationRule(true)).toContain("missing or ambiguous");
+    expect(documentCitationRule(false)).toMatch(/absolute PDF page/i);
+    expect(documentCitationRule(true)).toMatch(/absolute PDF page/i);
+  });
+});
+
+describe("sourceCitationBracket", () => {
+  it("includes p. N when the page is a known integer", () => {
+    expect(sourceCitationBracket("Mechanical Test Report.pdf", 119)).toBe(
+      "[Mechanical Test Report.pdf, p. 119]"
+    );
+  });
+
+  it("omits the page when it is missing or invalid", () => {
+    expect(sourceCitationBracket("Mechanical Test Report.pdf")).toBe(
+      "[Mechanical Test Report.pdf]"
+    );
+    expect(sourceCitationBracket("Mechanical Test Report.pdf", null)).toBe(
+      "[Mechanical Test Report.pdf]"
+    );
+    expect(sourceCitationBracket("Mechanical Test Report.pdf", 0)).toBe(
+      "[Mechanical Test Report.pdf]"
+    );
   });
 });
 
@@ -378,6 +451,27 @@ describe("stripCitationsFromTableOperation", () => {
         ["Already listed", "", "Citations:", "[protocol.pdf, p. 3]"].join("\n")
       )
     ).toBeUndefined();
+  });
+
+  it("strips source cites from a new table's headers and rows", () => {
+    const { operation, citations } = stripCitationsFromTableOperation({
+      kind: "create_table",
+      headers: ["Req", "Result"],
+      rows: [["SW-1 [protocol.pdf, p. 3]", "Pass"]],
+    });
+    expect(citations).toEqual(["[protocol.pdf, p. 3]"]);
+    expect(operation.kind).toBe("create_table");
+    if (operation.kind !== "create_table") return;
+    expect(operation.rows?.[0]?.[0]).toBe("SW-1 [1]");
+  });
+
+  it("leaves delete_table operations unchanged", () => {
+    const { operation, citations } = stripCitationsFromTableOperation({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(citations).toEqual([]);
+    expect(operation).toEqual({ kind: "delete_table", tableIndex: 0 });
   });
 });
 
@@ -521,6 +615,33 @@ describe("stripTrailingCitationBlockFromDoc", () => {
     ]);
   });
 
+  it("keeps a table that was appended after Citations when stripping the list", () => {
+    const table: JSONContent = {
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            {
+              type: "tableCell",
+              content: [paragraph("REQ-101")],
+            },
+          ],
+        },
+      ],
+    };
+    const stripped = stripTrailingCitationBlockFromDoc({
+      type: "doc",
+      content: [
+        paragraph("Body."),
+        paragraph("Citations:"),
+        paragraph("1. [protocol.pdf, p. 3]"),
+        table,
+      ],
+    });
+    expect(stripped.content?.map((n) => n.type)).toEqual(["paragraph", "table"]);
+  });
+
   it("does not strip inline body text that is not a trailing block", () => {
     const doc: JSONContent = {
       type: "doc",
@@ -564,5 +685,49 @@ describe("stripTrailingCitationsFromContent", () => {
       type: "doc",
       content: [{ type: "paragraph" }],
     });
+  });
+});
+
+describe("normalizeTrailingCitationBlockInDoc", () => {
+  function paragraph(text?: string): JSONContent {
+    return text
+      ? { type: "paragraph", content: [{ type: "text", text }] }
+      : { type: "paragraph" };
+  }
+
+  it("moves a table that landed below Citations back above the list", () => {
+    const table: JSONContent = {
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            {
+              type: "tableCell",
+              content: [paragraph("SW version")],
+            },
+          ],
+        },
+      ],
+    };
+    const next = normalizeTrailingCitationBlockInDoc({
+      type: "doc",
+      content: [
+        paragraph("This report covers Solea Model 3."),
+        paragraph("Citations:"),
+        paragraph("1. [790-00134R_Rev_U.docx, p. 1]"),
+        table,
+      ],
+    });
+    const types = next.content?.map((n) => n.type) ?? [];
+    const citeAt = next.content?.findIndex(
+      (n) => n.content?.[0] && "text" in n.content[0] && n.content[0].text === "Citations:"
+    );
+    expect(citeAt).toBeGreaterThan(0);
+    expect(types[citeAt! - 1] === "table" || types.slice(0, citeAt).includes("table")).toBe(
+      true
+    );
+    expect(types.slice(citeAt).includes("table")).toBe(false);
+    expect(types.at(-1)).toBe("paragraph");
   });
 });

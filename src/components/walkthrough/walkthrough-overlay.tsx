@@ -18,16 +18,19 @@ type TargetRect = {
 
 function readTargetRect(target: string | undefined): TargetRect | null {
   if (!target || typeof document === "undefined") return null;
-  const el = document.querySelector(`[${WALKTHROUGH_ATTR}="${target}"]`);
-  if (!(el instanceof HTMLElement)) return null;
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 2 && rect.height < 2) return null;
-  return {
-    top: rect.top - SPOTLIGHT_PAD,
-    left: rect.left - SPOTLIGHT_PAD,
-    width: rect.width + SPOTLIGHT_PAD * 2,
-    height: rect.height + SPOTLIGHT_PAD * 2,
-  };
+  const els = document.querySelectorAll(`[${WALKTHROUGH_ATTR}="${target}"]`);
+  for (const el of els) {
+    if (!(el instanceof HTMLElement)) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 && rect.height < 2) continue;
+    return {
+      top: rect.top - SPOTLIGHT_PAD,
+      left: rect.left - SPOTLIGHT_PAD,
+      width: rect.width + SPOTLIGHT_PAD * 2,
+      height: rect.height + SPOTLIGHT_PAD * 2,
+    };
+  }
+  return null;
 }
 
 function cardPosition(target: TargetRect | null): { top: number; left: number } {

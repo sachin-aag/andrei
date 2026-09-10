@@ -25,11 +25,42 @@ export function isCitationsHeading(line: string): boolean {
   return /^#{0,6}\s*citations\s*:?\s*$/i.test(line.trim());
 }
 
+/**
+ * Ready-to-paste source bracket for a tool hit. Include `p. N` when the page
+ * is a known integer; omit it when the page is missing. Ambiguous pages are a
+ * model judgment — this helper does not detect ambiguity, and callers must
+ * not reject or rewrite a draft that omitted a known page.
+ */
+export function sourceCitationBracket(
+  filename: string,
+  pageNumber?: number | null
+): string {
+  const name = filename.trim();
+  if (!name) return "";
+  if (
+    typeof pageNumber === "number" &&
+    Number.isInteger(pageNumber) &&
+    pageNumber >= 1
+  ) {
+    return `[${name}, p. ${pageNumber}]`;
+  }
+  return `[${name}]`;
+}
+
+export function withSourceCitation<
+  T extends { filename: string; pageNumber?: number | null },
+>(hit: T): T & { citation: string } {
+  return { ...hit, citation: sourceCitationBracket(hit.filename, hit.pageNumber) };
+}
+
+const PDF_PAGE_CITATION_RULE =
+  "Page numbers are the absolute PDF page position (what Adobe/pdf.js uses), never a printed page number from a header or footer. Copy the citation field from a tool result instead of composing one.";
+
 export function documentCitationRule(citationsAtEndOfSection: boolean): string {
   if (citationsAtEndOfSection) {
-    return 'Cite evidence as [filename, p. N] when the page is known, or [filename] when it is not. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.';
+    return `Cite evidence as [filename, p. N] when a tool result has a page for that fact. ${PDF_PAGE_CITATION_RULE} Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.`;
   }
-  return "Cite evidence in prose as [filename, p. N] when the page is known, or [filename] when it is not. Never use <to be filled> in a citation.";
+  return `Cite evidence in prose as [filename, p. N] when a tool result has a page for that fact. ${PDF_PAGE_CITATION_RULE} Use [filename] only when the page is missing or ambiguous. Never use <to be filled> in a citation.`;
 }
 
 function uniquePreserveOrder(items: readonly string[]): string[] {
@@ -150,6 +181,29 @@ function numberingFromTrailingLines(lines: readonly string[]): FieldCitationNumb
 
 function parseFieldCitationNumbering(existingFieldText: string): FieldCitationNumbering {
   return numberingFromTrailingLines(splitTrailingCitationBlock(existingFieldText).lines);
+}
+
+/** Numbered `[n]` → parked source bracket from the trailing Citations: list. */
+export function sourceCitationForNumber(
+  fieldText: string,
+  n: number
+): string | null {
+  if (!Number.isInteger(n) || n < 1) return null;
+  for (const { number, source } of parseFieldCitationNumbering(fieldText).entries()) {
+    if (number === n) return source;
+  }
+  return null;
+}
+
+/** Every numbered marker in `fieldText` mapped to its parked source. */
+export function sourceCitationsByNumber(
+  fieldText: string
+): ReadonlyMap<number, string> {
+  return new Map(
+    parseFieldCitationNumbering(fieldText)
+      .entries()
+      .map(({ number, source }) => [number, source])
+  );
 }
 
 function replaceSourceCitationsWithMarkers(
@@ -386,57 +440,110 @@ function splitTrailingCitationBlock(text: string): TrailingCitationSplit {
   };
 }
 
+type BibliographyPartition = {
+  /** Body blocks, including tables/prose that had drifted below Citations. */
+  body: JSONContent[];
+  citationLines: string[];
+};
+
+/**
+ * First bibliography heading, or the last citation-only run even when a table
+ * or other body block was appended after it.
+ */
+function findBibliographyStart(blocks: JSONContent[]): number | null {
+  const heading = blocks.findIndex((block) => isCitationHeadingParagraph(block));
+  if (heading !== -1) return heading;
+
+  let i = blocks.length;
+  while (i > 0 && isEmptyParagraphBlock(blocks[i - 1]!)) i -= 1;
+  while (
+    i > 0 &&
+    !isCitationOnlyBlock(blocks[i - 1]!) &&
+    !isCitationHeadingParagraph(blocks[i - 1]!)
+  ) {
+    i -= 1;
+  }
+  let start = i;
+  while (start > 0 && isCitationOnlyBlock(blocks[start - 1]!)) start -= 1;
+  if (start === i) return null;
+  return start;
+}
+
+function citationLineFromBlock(block: JSONContent): string {
+  if (block.type === "paragraph" || block.type === "heading") {
+    return paragraphPlainText(block);
+  }
+  return nodePlainText(block);
+}
+
+function partitionBibliography(
+  blocks: JSONContent[]
+): BibliographyPartition | null {
+  const start = findBibliographyStart(blocks);
+  if (start === null) return null;
+
+  const body: JSONContent[] = [];
+  for (let i = 0; i < start; i++) body.push(blocks[i]!);
+  while (body.length > 0 && isEmptyParagraphBlock(body[body.length - 1]!)) {
+    body.pop();
+  }
+
+  const citationLines: string[] = [];
+  for (let i = start; i < blocks.length; i++) {
+    const block = blocks[i]!;
+    if (isCitationHeadingParagraph(block) || isEmptyParagraphBlock(block)) {
+      continue;
+    }
+    if (isCitationOnlyBlock(block)) {
+      citationLines.push(citationLineFromBlock(block));
+      continue;
+    }
+    body.push(block);
+  }
+  return { body, citationLines };
+}
+
 type TrailingDocRange = {
   cut: number;
-  headingStart: number;
-  end: number;
 };
 
 function findTrailingCitationRange(
   blocks: JSONContent[]
 ): TrailingDocRange | null {
-  let end = blocks.length;
-  while (end > 0 && isEmptyParagraphBlock(blocks[end - 1]!)) {
-    end -= 1;
-  }
-  let citeStart = end;
-  while (citeStart > 0 && isCitationOnlyBlock(blocks[citeStart - 1]!)) {
-    citeStart -= 1;
-  }
-  let headingStart = citeStart;
-  if (citeStart > 0 && isCitationHeadingParagraph(blocks[citeStart - 1]!)) {
-    headingStart = citeStart - 1;
-  }
-  if (headingStart === end) return null;
-
-  let cut = headingStart;
-  while (cut > 0 && isEmptyParagraphBlock(blocks[cut - 1]!)) {
-    cut -= 1;
-  }
-  return { cut, headingStart, end };
+  const start = findBibliographyStart(blocks);
+  if (start === null) return null;
+  let cut = start;
+  while (cut > 0 && isEmptyParagraphBlock(blocks[cut - 1]!)) cut -= 1;
+  return { cut };
 }
 
-function trailingLinesFromDoc(blocks: JSONContent[], range: TrailingDocRange): string[] {
-  const lines: string[] = [];
-  for (let i = range.headingStart; i < range.end; i++) {
-    const block = blocks[i]!;
-    if (isCitationHeadingParagraph(block) || isEmptyParagraphBlock(block)) continue;
-    if (block.type === "paragraph" || block.type === "heading") {
-      lines.push(paragraphPlainText(block));
-    } else {
-      lines.push(nodePlainText(block));
-    }
-  }
-  return lines;
+/**
+ * Index at which new body content (prose, tables, figures) should land.
+ * Citations:/References: stay after this index even when a table was already
+ * appended below them. Replaces a dangling empty paragraph when the field
+ * has no citation block.
+ */
+export function fieldBodyInsertIndex(doc: JSONContent): number {
+  const blocks = doc.content;
+  if (!Array.isArray(blocks) || blocks.length === 0) return 0;
+  const range = findTrailingCitationRange(blocks);
+  if (range) return range.cut;
+  const last = blocks[blocks.length - 1];
+  if (last && isEmptyParagraphBlock(last)) return blocks.length - 1;
+  return blocks.length;
+}
+
+export function hasTrailingCitationBlock(doc: JSONContent): boolean {
+  return Array.isArray(doc.content) && findBibliographyStart(doc.content) !== null;
 }
 
 function numberingFromDoc(doc: JSONContent): FieldCitationNumbering {
   if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
     return new FieldCitationNumbering();
   }
-  const range = findTrailingCitationRange(doc.content);
-  if (!range) return new FieldCitationNumbering();
-  return numberingFromTrailingLines(trailingLinesFromDoc(doc.content, range));
+  const part = partitionBibliography(doc.content);
+  if (!part) return new FieldCitationNumbering();
+  return numberingFromTrailingLines(part.citationLines);
 }
 
 /** Numbers assigned in the field's trailing Citations list. */
@@ -465,17 +572,13 @@ export function stripTrailingCitationBlockFromDoc(doc: JSONContent): JSONContent
   if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
     return doc;
   }
-  const blocks = doc.content;
-  const range = findTrailingCitationRange(blocks);
-  if (!range) return doc;
+  const part = partitionBibliography(doc.content);
+  if (!part) return doc;
 
-  const numbers = numberingFromTrailingLines(
-    trailingLinesFromDoc(blocks, range)
-  ).numbers();
-  const next = blocks.slice(0, range.cut);
+  const numbers = numberingFromTrailingLines(part.citationLines).numbers();
   const stripped: JSONContent = {
     ...doc,
-    content: next.length > 0 ? next : [{ type: "paragraph" }],
+    content: part.body.length > 0 ? part.body : [{ type: "paragraph" }],
   };
   if (numbers.size === 0) return stripped;
   return mapJsonTextNodes(stripped, (text) =>
@@ -622,32 +725,37 @@ export function normalizeTrailingCitationBlockInText(text: string): string {
   return bodyOut ? `${bodyOut}\n\n${block}` : block;
 }
 
-/** Rewrite a TipTap field's trailing citation list into numbered lines. */
+/** Rewrite a TipTap field's citation list into numbered lines at the end. */
 export function normalizeTrailingCitationBlockInDoc(doc: JSONContent): JSONContent {
   if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
     return doc;
   }
-  const range = findTrailingCitationRange(doc.content);
-  if (!range) return doc;
-  const numbering = numberingFromTrailingLines(
-    trailingLinesFromDoc(doc.content, range)
-  );
+  const part = partitionBibliography(doc.content);
+  if (!part) return doc;
+  const numbering = numberingFromTrailingLines(part.citationLines);
   const entries = numbering.entries();
-  if (entries.length === 0) return doc;
+  const start = findBibliographyStart(doc.content);
+  if (entries.length === 0 && (start === null || part.body.length === start)) {
+    return doc;
+  }
 
-  const prefix = doc.content.slice(0, range.cut);
-  const last = prefix[prefix.length - 1];
+  const last = part.body[part.body.length - 1];
   const withSpacer =
-    last && !isEmptyParagraphBlock(last) ? [...prefix, { type: "paragraph" }] : prefix;
+    last && !isEmptyParagraphBlock(last)
+      ? [...part.body, { type: "paragraph" }]
+      : part.body;
+  const citeNodes =
+    entries.length > 0
+      ? [
+          paragraphWithText(CITATIONS_HEADING),
+          ...entries.map(({ number, source }) =>
+            paragraphWithText(numberedCitationLine(number, source))
+          ),
+        ]
+      : [paragraphWithText(CITATIONS_HEADING)];
   return {
     ...doc,
-    content: [
-      ...withSpacer,
-      paragraphWithText(CITATIONS_HEADING),
-      ...entries.map(({ number, source }) =>
-        paragraphWithText(numberedCitationLine(number, source))
-      ),
-    ],
+    content: [...withSpacer, ...citeNodes],
   };
 }
 
@@ -802,7 +910,17 @@ export function stripCitationsFromTableOperation(
       };
     case "delete_rows":
     case "delete_column":
+    case "delete_table":
       return { operation, citations: [] };
+    case "create_table":
+      return {
+        operation: {
+          ...operation,
+          headers: operation.headers.map((header) => take(header)),
+          rows: operation.rows?.map((row) => row.map((cell) => take(cell))),
+        },
+        citations: uniquePreserveOrder(citations),
+      };
     default: {
       const _exhaustive: never = operation;
       return _exhaustive;

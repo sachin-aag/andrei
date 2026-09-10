@@ -95,7 +95,7 @@ function FolderNode({
 
   const handleDelete = async () => {
     const confirmed = window.confirm(
-      `Delete the folder "${folder.name}"? Its documents move up one level.`
+      `Delete the folder "${folder.name}" and everything inside it? This cannot be undone.`
     );
     if (!confirmed) return;
     await deleteFolder(folder.id);

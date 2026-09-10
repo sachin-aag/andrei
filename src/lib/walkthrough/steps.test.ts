@@ -5,6 +5,13 @@ import { shouldShowProductTour } from "@/lib/walkthrough/progress";
 const copy = {
   productName: "Andrei",
   documentTypeLabels: ["Investigation Report", "Design Verification Report"],
+  insightsEnabled: true,
+  statisticalAnalysisEnabled: true,
+};
+
+const mjCopy = {
+  ...copy,
+  insightsEnabled: false,
 };
 
 describe("stepsForRole", () => {
@@ -15,12 +22,23 @@ describe("stepsForRole", () => {
     expect(ids.at(-1)).toBe("done");
     expect(ids).toContain("create-report");
     expect(ids).toContain("ai-check");
+    expect(ids).toContain("chrome");
     expect(ids).toContain("assistant");
+    expect(ids).toContain("analytics");
+    expect(ids).toContain("vault");
     expect(ids).toContain("insights");
     expect(ids).not.toContain("improve-ai");
     expect(steps.find((step) => step.id === "create-report")?.startHere).toBe(
       true
     );
+    expect(steps.find((step) => step.id === "chrome")?.startHere).toBe(true);
+  });
+
+  it("omits Insights on packs that hide the nav", () => {
+    const ids = stepsForRole("engineer", mjCopy).map((step) => step.id);
+    expect(ids).toContain("vault");
+    expect(ids).toContain("analytics");
+    expect(ids).not.toContain("insights");
   });
 
   it("does not offer create-report to managers", () => {
@@ -28,21 +46,31 @@ describe("stepsForRole", () => {
     expect(ids).not.toContain("create-report");
     expect(ids).toContain("review-actions");
     expect(ids).toContain("reports");
+    expect(ids).toContain("vault");
+    expect(ids).toContain("analytics");
     expect(ids).not.toContain("improve-ai");
   });
 
   it("keeps QA read-only and skips approve/submit", () => {
     const ids = stepsForRole("qa", copy).map((step) => step.id);
     expect(ids).toContain("audit");
+    expect(ids).toContain("vault");
     expect(ids).not.toContain("submit");
     expect(ids).not.toContain("review-actions");
     expect(ids).not.toContain("create-report");
     expect(ids).not.toContain("improve-ai");
   });
 
-  it("limits admins to reports, users, and profile", () => {
+  it("limits admins to reports, vault, users, and profile", () => {
     const ids = stepsForRole("admin", copy).map((step) => step.id);
-    expect(ids).toEqual(["welcome", "reports", "users", "profile", "done"]);
+    expect(ids).toEqual([
+      "welcome",
+      "reports",
+      "vault",
+      "users",
+      "profile",
+      "done",
+    ]);
   });
 });
 

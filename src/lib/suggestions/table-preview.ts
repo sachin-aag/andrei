@@ -271,7 +271,11 @@ export function buildTableOperationPreviewDoc(
   attrs: RedraftPreviewAttrs,
   context?: TableOperationContext
 ): TableOperationResult {
-  if (operation.kind === "delete_rows" || operation.kind === "delete_column") {
+  if (
+    operation.kind === "delete_rows" ||
+    operation.kind === "delete_column" ||
+    operation.kind === "delete_table"
+  ) {
     const probe = applyTableOperation(doc, operation, context);
     if (!probe.ok) return probe;
     const preview = structuredClone(doc);
@@ -285,6 +289,13 @@ export function buildTableOperationPreviewDoc(
         suggestionDeleteMarkName,
         attrs
       );
+    } else if (operation.kind === "delete_table") {
+      markRows(
+        rows,
+        rows.map((_, i) => i),
+        suggestionDeleteMarkName,
+        attrs
+      );
     } else {
       markColumn(rows, operation.col, suggestionDeleteMarkName, attrs);
     }
@@ -293,6 +304,19 @@ export function buildTableOperationPreviewDoc(
 
   const applied = applyTableOperation(doc, operation, context);
   if (!applied.ok) return applied;
+
+  if (operation.kind === "create_table") {
+    const created = collectTables(applied.doc).at(-1);
+    if (!created) return applied;
+    const createdRows = tableRows(created);
+    markRows(
+      createdRows,
+      createdRows.map((_, i) => i),
+      suggestionInsertMarkName,
+      attrs
+    );
+    return applied;
+  }
 
   const table = collectTables(applied.doc)[operation.tableIndex];
   if (!table) return applied;
@@ -317,7 +341,7 @@ export function buildTableOperationPreviewDoc(
       return applied;
     }
     case "insert_column": {
-      const col = operation.afterCol + 1;
+      const col = (operation.afterCol ?? -1) + 1;
       markColumn(rows, col, suggestionInsertMarkName, attrs);
       return applied;
     }

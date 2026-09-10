@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePlotTitle } from "@/components/statistical-analysis/use-plot-title";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import {
   formatRowSelection,
   normalizeRowSelection,
@@ -86,7 +88,6 @@ export function AnovaDialog({
       suggestFactorColumn(worksheet, fallbackResponse) ??
       ""
   );
-  const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(
     defaultRowStart != null ? String(defaultRowStart) : ""
   );
@@ -102,12 +103,16 @@ export function AnovaDialog({
     rowEnd: parseOptionalRow(rowEnd),
   });
   const rowLabel = formatRowSelection(rowSelection);
-  const placeholderTitle =
+  const suggestedTitle =
     responseColumn && factorColumn
       ? rowLabel
         ? `${responseColumn.name} by ${factorColumn.name} (${rowLabel})`
         : `${responseColumn.name} by ${factorColumn.name}`
       : "Analysis title";
+  const { title, setTitle, resolvedTitle } = usePlotTitle(
+    suggestedTitle,
+    defaultTitle
+  );
   const canSubmit =
     Boolean(responseColumnId) &&
     Boolean(factorColumnId) &&
@@ -119,9 +124,7 @@ export function AnovaDialog({
         <DialogHeader>
           <DialogTitle>One-Way ANOVA</DialogTitle>
           <DialogDescription>
-            Compare means of a numeric response across factor levels on the
-            same data sheet. Pairwise tests use Bonferroni-adjusted t-tests
-            with the ANOVA MSE.
+            Compare a numeric response across groups.
           </DialogDescription>
         </DialogHeader>
 
@@ -157,9 +160,16 @@ export function AnovaDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="anova-factor" className={fieldLabelClass}>
-              Factor
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="anova-factor" className={fieldLabelClass}>
+                Factor
+              </Label>
+              <FieldInfoIcon
+                label="Factor"
+                testId="anova-factor-info"
+                text="Grouping column on the same sheet. Pairwise tests are Bonferroni t-tests using the ANOVA MSE."
+              />
+            </div>
             <Select
               value={factorColumnId}
               onValueChange={setFactorColumnId}
@@ -185,9 +195,16 @@ export function AnovaDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="anova-row-start" className={fieldLabelClass}>
-                First row
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="anova-row-start" className={fieldLabelClass}>
+                  First row
+                </Label>
+                <FieldInfoIcon
+                  label="Row range"
+                  testId="anova-row-range-info"
+                  text="Rows are numbered from 1. Leave both blank to use every filled pair of cells."
+                />
+              </div>
               <Input
                 id="anova-row-start"
                 data-testid="anova-row-start"
@@ -211,10 +228,6 @@ export function AnovaDialog({
               />
             </div>
           </div>
-          <p className="-mt-2 text-xs text-[var(--muted-foreground)]">
-            Worksheet rows are numbered from 1. Leave both blank to use every
-            filled pair of cells.
-          </p>
 
           <div className="grid gap-1.5">
             <Label htmlFor="anova-title" className={fieldLabelClass}>
@@ -222,8 +235,8 @@ export function AnovaDialog({
             </Label>
             <Input
               id="anova-title"
+              data-testid="anova-title"
               value={title}
-              placeholder={placeholderTitle}
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
@@ -251,7 +264,7 @@ export function AnovaDialog({
               onSubmit({
                 responseColumnId,
                 factorColumnId,
-                title: title.trim(),
+                title: resolvedTitle,
                 rowStart: parseOptionalRow(rowStart),
                 rowEnd: parseOptionalRow(rowEnd),
               })

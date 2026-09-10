@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
-import { buildChatTools, collectSearchQueries, mergeExcludePages } from "@/lib/ai/chat/tools";
+import { comments } from "@/db/schema";
+import {
+  buildChatTools,
+  coerceSearchDocumentsInput,
+  collectSearchQueries,
+  mergeExcludePages,
+  SEARCH_DOCUMENTS_MAX_LIMIT,
+  SEARCH_DOCUMENTS_MAX_QUERIES,
+  SEARCH_EXCLUDE_PAGES_MAX,
+} from "@/lib/ai/chat/tools";
+import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 import {
   DocumentReviewSession,
   extractReviewFindingsFromPages,
@@ -13,20 +23,25 @@ const {
   listDocumentPagesForReviewMock,
   dbSelectMock,
   dbInsertMock,
+  dbUpdateMock,
   commitChatEditMock,
+  getReportAnalyticsMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
   listReadyDocumentsForReportMock: vi.fn(),
   listDocumentPagesForReviewMock: vi.fn(),
   dbSelectMock: vi.fn(),
   dbInsertMock: vi.fn(),
+  dbUpdateMock: vi.fn(),
   commitChatEditMock: vi.fn(),
+  getReportAnalyticsMock: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
   db: {
     select: (...args: unknown[]) => dbSelectMock(...args),
     insert: (...args: unknown[]) => dbInsertMock(...args),
+    update: (...args: unknown[]) => dbUpdateMock(...args),
   },
 }));
 
@@ -50,6 +65,10 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
       listDocumentPagesForReviewMock(...(args as [])),
   };
 });
+
+vi.mock("@/lib/statistical-analysis/store", () => ({
+  getReportAnalytics: (...args: unknown[]) => getReportAnalyticsMock(...args),
+}));
 
 type ZodToolSchema = z.ZodType<Record<string, unknown>>;
 
@@ -82,14 +101,134 @@ async function executeDocumentOutline(
   return execute({ attachmentId }, TEST_TOOL_OPTIONS);
 }
 
+describe("coerceSearchDocumentsInput", () => {
+  it("clamps the Vercel incident payload (8 queries, limit 20) without dropping queries", () => {
+    const queries = [
+      '"M3-HRS-GN-001"',
+      '"M3-HRS-PS-003" OR "M3-HRS-PS-014"',
+      '"M3-HRS-WS-009" OR "M3-HRS-SM-013"',
+      '"M3-HRS-HP-001" OR "M3-HRS-HP-007" OR "M3-HRS-HP-008"',
+      '"M3-HRS-HP-009" OR "M3-HRS-HP-016" OR "M3-HRS-HP-018"',
+      '"M3-HRS-HP-020" OR "M3-HRS-HP-032" OR "M3-HRS-HP-033"',
+      '"M3-HRS-PM-004" OR "M3-HRS-BD-011"',
+      '"M3-HRS-AA-014" OR "M3-HRS-AA-015"',
+    ];
+    const coerced = coerceSearchDocumentsInput({
+      limit: 20,
+      queries,
+      mode: "keyword",
+    }) as { limit: number; queries: string[]; mode: string };
+    expect(coerced.limit).toBe(SEARCH_DOCUMENTS_MAX_LIMIT);
+    expect(coerced.queries).toEqual(queries);
+    expect(coerced.mode).toBe("keyword");
+  });
+
+  it("drops query strings beyond the per-call cap", () => {
+    const coerced = coerceSearchDocumentsInput({
+      queries: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+    }) as { queries: string[] };
+    expect(coerced.queries).toEqual(["a", "b", "c", "d", "e", "f", "g", "h"]);
+    expect(coerced.queries).toHaveLength(SEARCH_DOCUMENTS_MAX_QUERIES);
+  });
+
+  it("clamps a non-integer limit down into the allowed range", () => {
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      limit: 40.9,
+    }) as { limit: number };
+    expect(coerced.limit).toBe(SEARCH_DOCUMENTS_MAX_LIMIT);
+  });
+
+  it("accepts a numeric string limit and a bare-string queries value", () => {
+    const coerced = coerceSearchDocumentsInput({
+      queries: "UUT serial numbers",
+      limit: "20",
+    }) as { limit: number; queries: string[] };
+    expect(coerced.limit).toBe(SEARCH_DOCUMENTS_MAX_LIMIT);
+    expect(coerced.queries).toEqual(["UUT serial numbers"]);
+  });
+
+  it("drops unknown enum values so the schema default applies", () => {
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      mode: "lexical",
+      scope: "everything",
+    }) as Record<string, unknown>;
+    expect(coerced.mode).toBeUndefined();
+    expect(coerced.scope).toBeUndefined();
+    expect(coerced.query).toBe("UUT");
+  });
+
+  it("keeps the most recent pages when excludePages outgrows the cap", () => {
+    const pages = Array.from({ length: 120 }, (_, i) => ({
+      attachmentId: "att_1",
+      pageNumber: i + 1,
+    }));
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      excludePages: pages,
+    }) as { excludePages: Array<{ pageNumber: number }> };
+    expect(coerced.excludePages).toHaveLength(SEARCH_EXCLUDE_PAGES_MAX);
+    expect(coerced.excludePages.at(-1)?.pageNumber).toBe(120);
+  });
+
+  it("drops malformed excludePages entries instead of failing the call", () => {
+    const coerced = coerceSearchDocumentsInput({
+      query: "UUT",
+      excludePages: [
+        { attachmentId: "att_1", pageNumber: 3 },
+        { attachmentId: "att_1", pageNumber: 0 },
+        { attachmentId: "", pageNumber: 4 },
+        "nonsense",
+      ],
+    }) as { excludePages: Array<{ attachmentId: string; pageNumber: number }> };
+    expect(coerced.excludePages).toEqual([
+      { attachmentId: "att_1", pageNumber: 3 },
+    ]);
+  });
+});
+
+describe("mergeExcludePages cap", () => {
+  it("never returns more pages than the tool schema accepts", () => {
+    const hits = Array.from({ length: 200 }, (_, i) => ({
+      attachmentId: "att_1",
+      pageNumber: i + 1,
+    }));
+    const merged = mergeExcludePages(undefined, hits);
+    expect(merged).toHaveLength(SEARCH_EXCLUDE_PAGES_MAX);
+    // The model is told to pass nextExcludePages straight back, so the value we
+    // hand it must satisfy excludePages.max().
+    expect(merged.at(-1)?.pageNumber).toBe(200);
+  });
+});
+
 describe("collectSearchQueries", () => {
   it("dedupes and caps complementary queries", () => {
     expect(
       collectSearchQueries({
         query: "equipment",
-        queries: ["UUT", "equipment", "fixtures", "serials", "software"],
+        queries: [
+          "UUT",
+          "equipment",
+          "fixtures",
+          "serials",
+          "software",
+          "protocol",
+          "calibration",
+          "deviation",
+          "overflow",
+        ],
       })
-    ).toEqual(["UUT", "equipment", "fixtures", "serials"]);
+    ).toEqual([
+      "UUT",
+      "equipment",
+      "fixtures",
+      "serials",
+      "software",
+      "protocol",
+      "calibration",
+      "deviation",
+    ]);
   });
 
   it("accumulates excludePages across grep rounds", () => {
@@ -124,6 +263,22 @@ describe("buildChatTools search_documents scoping", () => {
     expect(
       accepts(tools, "search_documents", { queries: ["equipment", "UUT"] })
     ).toBe(true);
+    const oversized = inputSchemaOf(tools, "search_documents").parse({
+      limit: 20,
+      queries: [
+        '"M3-HRS-GN-001"',
+        '"M3-HRS-PS-003" OR "M3-HRS-PS-014"',
+        '"M3-HRS-WS-009" OR "M3-HRS-SM-013"',
+        '"M3-HRS-HP-001" OR "M3-HRS-HP-007" OR "M3-HRS-HP-008"',
+        '"M3-HRS-HP-009" OR "M3-HRS-HP-016" OR "M3-HRS-HP-018"',
+        '"M3-HRS-HP-020" OR "M3-HRS-HP-032" OR "M3-HRS-HP-033"',
+        '"M3-HRS-PM-004" OR "M3-HRS-BD-011"',
+        '"M3-HRS-AA-014" OR "M3-HRS-AA-015"',
+      ],
+      mode: "keyword",
+    }) as { limit: number; queries: string[] };
+    expect(oversized.limit).toBe(16);
+    expect(oversized.queries).toHaveLength(8);
     expect(
       accepts(tools, "search_documents", {
         query: "UUT",
@@ -134,7 +289,7 @@ describe("buildChatTools search_documents scoping", () => {
     expect(accepts(tools, "search_documents", {})).toBe(false);
   });
 
-  it("defaults to the tagged documents when some are tagged", () => {
+  it("restricts search to the tagged documents when some are tagged", () => {
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -144,14 +299,12 @@ describe("buildChatTools search_documents scoping", () => {
     const parsed = inputSchemaOf(tools, "search_documents").parse({
       query: "cleaning",
     }) as Record<string, unknown>;
-    expect(parsed.scope).toBe("tagged");
+    expect(parsed.scope).toBeUndefined();
     expect(tools.search_documents?.description).toContain("2 document(s)");
-    expect(
-      accepts(tools, "search_documents", { query: "cleaning", scope: "all" })
-    ).toBe(true);
-    expect(
-      accepts(tools, "search_documents", { query: "cleaning", scope: "everything" })
-    ).toBe(false);
+    expect(tools.search_documents?.description).toContain(
+      "missing or ambiguous"
+    );
+    expect(tools.search_documents?.description).toContain("Grep only");
   });
 });
 
@@ -174,6 +327,20 @@ describe("buildChatTools document_outline", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
     const result = await executeDocumentOutline(tools, "missing");
     expect(result).toEqual({ status: "not_found" });
+  });
+
+  it("refuses to outline an attachment outside the tagged scope", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      pinnedAttachmentIds: ["att_tagged"],
+    });
+    const result = await executeDocumentOutline(tools, "att_other");
+    expect(result).toMatchObject({
+      status: "attachment_out_of_scope",
+      attachmentId: "att_other",
+    });
+    expect(readDocumentOutlineMock).not.toHaveBeenCalled();
   });
 
   it("sanitizes page context before returning it to the model", async () => {
@@ -201,6 +368,7 @@ describe("buildChatTools document_outline", () => {
     expect(result.pages[0]?.pageContext).not.toMatch(/^# /);
     expect(result.pages[0]?.pageContext?.toLowerCase()).not.toMatch(/^system:/);
     expect(result.pages[0]).not.toHaveProperty("transcript");
+    expect(result.pages[0]).not.toHaveProperty("printedPageLabel");
     expect((result as { spans?: unknown[] }).spans).toEqual([]);
   });
 });
@@ -321,6 +489,14 @@ describe("buildChatTools insert_image", () => {
         },
       })
     ).toBe(true);
+    expect(
+      accepts(tools, "insert_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy the Analytics scatter",
+        image: { source: "analytics", analysisId: "anl_1" },
+      })
+    ).toBe(true);
   });
 });
 
@@ -350,7 +526,12 @@ describe("buildChatTools plot_measurements", () => {
     ).toBe(false);
   });
 
-  it("omits the document-chat plot tool when Analytics owns plots", () => {
+  it("includes plot_measurements by default", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(tools).toHaveProperty("plot_measurements");
+  });
+
+  it("omits plot_measurements when the flag is off", () => {
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -450,6 +631,29 @@ describe("buildChatTools edit_table", () => {
       accepts(tools, "edit_table", {
         section: "define",
         targetField: "narrative",
+        reasoning: "example",
+        operation: {
+          kind: "edit_cells",
+          cells: [{ row: 1, col: 2, insertText: "e.g., 04" }],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "example column",
+        operation: {
+          kind: "insert_column",
+          header: "Example",
+          values: ["04"],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
         reasoning: "rows",
         operation: {
           kind: "insert_rows",
@@ -484,10 +688,42 @@ describe("buildChatTools edit_table", () => {
       accepts(tools, "edit_table", {
         section: "define",
         targetField: "narrative",
+        reasoning: "new table",
+        operation: {
+          kind: "create_table",
+          headers: ["Req", "Result"],
+          rows: [["SW-1", "Pass"]],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "remove VCS table",
+        operation: { kind: "delete_table", tableIndex: 0 },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "remove VCS table",
+        operation: {
+          tableIndex: 0,
+          operation: "delete_rows",
+          toRow: 4,
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
         reasoning: "bad",
         operation: { kind: "rewrite_table" },
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
@@ -862,16 +1098,23 @@ const DEFINE_NARRATIVE = {
   ],
 };
 
-function mockDefineSectionSelect() {
-  const where = vi.fn().mockResolvedValue([
-    {
-      id: "sec-1",
-      reportId: "report-1",
-      section: "define",
-      content: { narrative: DEFINE_NARRATIVE },
-    },
-  ]);
-  dbSelectMock.mockReturnValue({ from: () => ({ where }) });
+function mockDefineSectionSelect(narrative: unknown = DEFINE_NARRATIVE) {
+  dbSelectMock.mockImplementation(() => ({
+    from: (table: unknown) => ({
+      where: vi.fn().mockResolvedValue(
+        table === comments
+          ? []
+          : [
+              {
+                id: "sec-1",
+                reportId: "report-1",
+                section: "define",
+                content: { narrative },
+              },
+            ]
+      ),
+    }),
+  }));
 }
 
 describe("buildChatTools propose vs commit", () => {
@@ -884,9 +1127,15 @@ describe("buildChatTools propose vs commit", () => {
   beforeEach(() => {
     dbSelectMock.mockReset();
     dbInsertMock.mockReset();
+    dbUpdateMock.mockReset();
     commitChatEditMock.mockReset();
+    getReportAnalyticsMock.mockReset();
+    getReportAnalyticsMock.mockResolvedValue(null);
     mockDefineSectionSelect();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+    dbUpdateMock.mockReturnValue({
+      set: () => ({ where: vi.fn().mockResolvedValue([]) }),
+    });
     commitChatEditMock.mockResolvedValue({
       status: "applied",
       section: "define",
@@ -949,5 +1198,1900 @@ describe("buildChatTools propose vs commit", () => {
         reasoning: "Name the actual cause.",
       },
     ]);
+  });
+
+  it("folds a second nearby propose_edit into the same card", async () => {
+    const nearbyNarrative =
+      "The assay failed due to temperature drift. The batch was released anyway. Operators later noted humidity on the log.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: nearbyNarrative }],
+        },
+      ],
+    });
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const patched: unknown[] = [];
+    dbUpdateMock.mockReturnValue({
+      set: (values: unknown) => {
+        patched.push(values);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const first = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    const second = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "batch was released",
+        deleteText: "batch was released",
+        insertText: "batch remained in quarantine",
+        reasoning: "Do not imply release.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    expect(second).toMatchObject({
+      status: "proposed",
+      suggestionId: (first as { suggestionId: string }).suggestionId,
+    });
+    expect(inserted).toHaveLength(1);
+    expect(patched.length).toBeGreaterThan(0);
+    const folded = parseAiFixCommentContent(
+      (patched[0] as { content: string }).content
+    );
+    expect(folded.deleteText).toContain("temperature drift");
+    expect(folded.deleteText).toContain("batch was released");
+    expect(folded.insertText).toContain("humidity excursion");
+    expect(folded.insertText).toContain("batch remained in quarantine");
+    expect(commitChatEditMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps distant propose_edit spans as separate cards", async () => {
+    const distantNarrative =
+      "The assay failed due to temperature drift. The batch was released anyway. Operators later noted humidity on the log.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: distantNarrative }],
+        },
+      ],
+    });
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const first = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    const second = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "humidity on the log",
+        deleteText: "humidity on the log",
+        insertText: "the humidity excursion on the log",
+        reasoning: "Name the log finding.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    expect(second).toMatchObject({ status: "proposed" });
+    expect((second as { suggestionId: string }).suggestionId).not.toBe(
+      (first as { suggestionId: string }).suggestionId
+    );
+    expect(inserted).toHaveLength(2);
+  });
+
+  it("does not fold an empty-anchor lead-in into a body edit", async () => {
+    mockDefineSectionSelect();
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const leadIn = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "The following table lists the affected lots.",
+        reasoning: "Lead-in for a table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    const body = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    expect(leadIn).toMatchObject({ status: "proposed" });
+    expect(body).toMatchObject({ status: "proposed" });
+    expect((body as { suggestionId: string }).suggestionId).not.toBe(
+      (leadIn as { suggestionId: string }).suggestionId
+    );
+    expect(inserted).toHaveLength(2);
+  });
+
+  it("strips a citation page that search never returned and still drafts", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: "scope" },
+              output: {
+                results: [
+                  {
+                    filename: "protocol.pdf",
+                    pageNumber: 12,
+                    attachmentId: "att-1",
+                    citation: "[protocol.pdf, p. 12]",
+                  },
+                ],
+                seenPages: [
+                  {
+                    filename: "protocol.pdf",
+                    pageNumber: 12,
+                    attachmentId: "att-1",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Objective [protocol.pdf, p. 104]",
+        reasoning: "Draft scope.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.content).toContain("[protocol.pdf]");
+    expect(inserted[0]?.content).not.toContain("p. 104");
+  });
+
+  it("refuses draft_field on a filled field unless replaceFilledField is true", async () => {
+    const filled =
+      "During routine testing the tablet batch failed dissolution at 68 percent, well below the 80 percent specification, triggering this deviation investigation.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: filled }],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Replacement that would wipe the field.",
+        reasoning: "Rewrite Define.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "field_filled" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+
+    const replaced = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Replacement that would wipe the field.",
+        reasoning: "Rewrite Define.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(replaced).toMatchObject({
+      status: "drafted",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("refuses a draft_field replacement that keeps most of a filled field", async () => {
+    const filled =
+      "During routine testing the tablet batch failed dissolution at 68 percent, well below the 80 percent specification, triggering this deviation investigation. The batch was quarantined pending review.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: filled }] }],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: filled.replace(" at 68 percent", ""),
+        reasoning: "Remove the measured percentage.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "not_a_rewrite" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(commitChatEditMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses draft_field that adds a table while keeping the surrounding prose", async () => {
+    const filled =
+      "The purpose of this revision is to present the testing results. Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, where:";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: filled }] }],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: `${filled}
+
+| Component | Description |
+| --- | --- |
+| mm | represents major release number (01, 02, etc.) |
+| nn | represents minor release number (01, 02, etc.) |`,
+        reasoning: "Rewrite the purpose section narrative to convert the VCS bullet list into a GFM table.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "not_a_rewrite" });
+    expect(String((refused as { hint?: string }).hint)).toMatch(/create_table/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a GFM table in propose_edit insertText", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "| Req | Result |\n| --- | --- |\n| SW-1 | Pass |",
+        reasoning: "Add a results table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "not_found" });
+    expect(String((result as { hint?: string }).hint)).toMatch(/create_table/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses propose_edit that restates a table as bullets", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, as detailed in the table below:",
+            },
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Component", "Designation", "Description"].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["mm", "Major", "Major release number (01, 02, etc.)"].map(
+                (text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+          ],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "as detailed in the table below:",
+        deleteText: "as detailed in the table below:",
+        insertText:
+          "- mm (Major): Major release number (e.g., 04)\n- nn (Minor): Minor release number (e.g., 07)",
+        reasoning: "Add an example to the VCS table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "table_as_list" });
+    expect(String((result as { hint?: string }).hint)).toMatch(/edit_table/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("proposes edit_table create_table on a rich narrative field", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add a results table.",
+        operation: {
+          kind: "create_table",
+          headers: ["Req", "Result"],
+          rows: [["SW-1", "Pass"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("coerces nested create_table payloads instead of falling through to draft_field", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Convert the VCS list into a table in the Purpose section.",
+        operation: {
+          create_table: {
+            headers: ["Component", "Description"],
+            rows: [
+              ["mm", "represents major release number (01, 02, etc.)"],
+              ["nn", "represents minor release number (01, 02, etc.)"],
+            ],
+          },
+        } as unknown as { kind: "create_table"; headers: string[]; rows: string[][] },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("coerces nested edit_cells plus extra reasoning instead of falling through to propose_edit", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Note that Convergent Dental's software version control system (VCS) has four components that uniquely identify the release: mm.nn.ff.bb, as detailed in the table below:",
+            },
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Component", "Designation", "Description"].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["mm", "Major", "Major release number (01, 02, etc.)"].map(
+                (text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+          ],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add an example to the VCS table.",
+        operation: {
+          edit_cells: {
+            cells: [
+              {
+                row: 1,
+                col: 2,
+                insertText: "Major release number (e.g., 04)",
+              },
+            ],
+          },
+          reasoning: "Add an example to the VCS table.",
+        } as never,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("appends an example column when afterCol is omitted", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Component", "Description"].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["mm", "Major release number (01, 02, etc.)"].map((text) => ({
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add an Example column.",
+        operation: {
+          kind: "insert_column",
+          header: "Example",
+          values: ["04"],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("returns tables[] from read_section so tableIndex is available before editing", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "VCS scheme:" }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Component", "Description"].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["mm", "Major"].map((text) => ({
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = (await tools.read_section!.execute!(
+      { section: "define" },
+      TEST_TOOL_OPTIONS
+    )) as {
+      fields: Array<{
+        tables?: Array<{ tableIndex: number; headers: string[]; dataRowCount: number }>;
+        structuredText?: string;
+      }>;
+    };
+    expect(result.fields[0]?.tables).toEqual([
+      { tableIndex: 0, headers: ["Component", "Description"], dataRowCount: 1 },
+    ]);
+    expect(result.fields[0]?.structuredText).toContain("tableIndex=0");
+  });
+
+  it("proposes delete_table without rewriting the field", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Purpose of this revision." }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "Component" }] },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "mm" }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (row: Record<string, unknown>) => {
+        inserted.push(row);
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Remove the version-control table.",
+        operation: { kind: "delete_table", tableIndex: 0 },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(inserted).toHaveLength(1);
+    const payload = parseAiFixCommentContent(String(inserted[0]!.content));
+    expect(payload.tableOperation).toEqual({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+  });
+
+  it("coerces a malformed delete-all-rows call into delete_table", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "VCS scheme:" }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "Component" }] },
+                  ],
+                },
+              ],
+            },
+            ...["mm", "nn", "ff", "bb"].map((cell) => ({
+              type: "tableRow" as const,
+              content: [
+                {
+                  type: "tableCell" as const,
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: cell }] },
+                  ],
+                },
+              ],
+            })),
+          ],
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (row: Record<string, unknown>) => {
+        inserted.push(row);
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Delete the table in purpose.",
+        operation: {
+          tableIndex: 0,
+          operation: "delete_rows",
+          toRow: 4,
+        } as never,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(inserted).toHaveLength(1);
+    const payload = parseAiFixCommentContent(String(inserted[0]!.content));
+    expect(payload.tableOperation).toEqual({
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+  });
+
+  it("returns an invalid hint instead of throwing on an unknown table kind", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "rewrite",
+        operation: { kind: "rewrite_table" } as never,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "invalid" });
+    expect(String((result as { hint?: string }).hint)).toMatch(/delete_table/);
+    expect(String((result as { hint?: string }).hint)).toMatch(/draft_field/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("returns section_changed when the field moved after read_section", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    await tools.read_section!.execute!(
+      { section: "define" },
+      TEST_TOOL_OPTIONS
+    );
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "The assay failed due to a different cause entirely.",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    expect(result).toMatchObject({ status: "section_changed" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("proposes insert_image from a saved Analytics plot", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_1",
+          workspaceId: "ws",
+          title: "Torque scatter",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Torque scatter",
+            chartSpec: null,
+          },
+          config: {
+            query: "torque",
+            title: "Torque scatter",
+            xLabel: "Unit",
+            yLabel: "Torque",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "Nm" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the torque scatter to Define.",
+        image: { source: "analytics", analysisId: "anl_1" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("refuses an Analytics plot with no captured preview", async () => {
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_1",
+          workspaceId: "ws",
+          title: "Torque scatter",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: null,
+          config: {
+            query: "torque",
+            title: "Torque scatter",
+            xLabel: "Unit",
+            yLabel: "Torque",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "Nm" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the torque scatter to Define.",
+        image: { source: "analytics", analysisId: "anl_1" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "image_not_found" });
+    expect((result as { message: string }).message).toContain("no captured preview");
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("lists available Analytics plots when they named a series that is not saved", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay sixpack",
+          kind: "capability_sixpack_normal",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay sixpack",
+            chartSpec: null,
+          },
+          config: {
+            columnId: "c1",
+            columnName: "Assay",
+            title: "Assay sixpack",
+            lsl: 90,
+            usl: 110,
+            target: 100,
+          },
+          results: {} as never,
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert the torque plot into the purpose section",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the torque plot to Purpose.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "available_plots" });
+    expect((result as { message: string }).message).toContain("Assay sixpack");
+    expect((result as { message: string }).message).toContain(
+      "create additional plots in Analytics"
+    );
+    expect((result as { message: string }).message).toContain("NOT INSERTED");
+    expect((result as { message: string }).message).toContain(
+      "have not proposed a figure"
+    );
+    expect((result as { message: string }).message).toContain(
+      "Do not call insert_image again this turn"
+    );
+    expect((result as { message: string }).message).toContain(
+      "Nothing was inserted"
+    );
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("proposes the only Analytics plot when they confirm insert that one", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "yes insert that one in",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "measure",
+        targetField: "narrative",
+        reasoning: "Add the Assay scatter to Measure.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "measure",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("proposes the only Analytics plot when they ask to insert the plot into Measure", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert the plot into the measure section",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "measure",
+        targetField: "narrative",
+        reasoning: "Add the Assay scatter to Measure.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "measure",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("proposes the only Analytics plot when they typo the Deviations destination", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert plot into the devaition section",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the Assay scatter.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses one card when insert_image is called in parallel for the same plot", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      return {
+        analyses: [
+          {
+            id: "anl_assay",
+            workspaceId: "ws",
+            title: "Assay",
+            kind: "measurement_scatter",
+            sourceHash: "h",
+            stale: false,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            previewImage: {
+              dataUrl,
+              widthPx: 600,
+              heightPx: 400,
+              alt: "Assay",
+              chartSpec: null,
+            },
+            config: {
+              query: "assay",
+              title: "Assay",
+              xLabel: "Unit",
+              yLabel: "Assay",
+              layout: {
+                mode: "combined",
+                seriesBy: "none",
+                xAxis: "sequential",
+                yRange: null,
+              },
+              lsl: null,
+              usl: null,
+            },
+            results: { specs: [], n: 3, uom: "%" },
+          },
+        ],
+      };
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert the plot into the measure section",
+            },
+          ],
+        },
+      ],
+    });
+    const input = {
+      section: "measure" as const,
+      targetField: "narrative",
+      reasoning: "Add the Assay scatter to Measure.",
+      image: { source: "analytics" as const, analysisId: "anl_assay" },
+      anchorText: "",
+    };
+    const [first, second] = await Promise.all([
+      tools.insert_image!.execute!(input, TEST_TOOL_OPTIONS),
+      tools.insert_image!.execute!(input, TEST_TOOL_OPTIONS),
+    ]);
+    expect(first).toMatchObject({ status: "proposed" });
+    expect(second).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists available plots only once when insert_image is called twice on a named miss", async () => {
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay sixpack",
+          kind: "capability_sixpack_normal",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl:
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay sixpack",
+            chartSpec: null,
+          },
+          config: {
+            columnId: "c1",
+            columnName: "Assay",
+            title: "Assay sixpack",
+            lsl: 90,
+            usl: 110,
+            target: 100,
+          },
+          results: {} as never,
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert the torque plot into the purpose section",
+            },
+          ],
+        },
+      ],
+    });
+    const input = {
+      section: "define" as const,
+      targetField: "narrative",
+      reasoning: "Add the torque plot to Purpose.",
+      image: { source: "analytics" as const, analysisId: "anl_assay" },
+      anchorText: "",
+    };
+    const first = await tools.insert_image!.execute!(input, TEST_TOOL_OPTIONS);
+    const second = await tools.insert_image!.execute!(input, TEST_TOOL_OPTIONS);
+    expect(first).toMatchObject({ status: "available_plots" });
+    expect((first as { message: string }).message).toContain("Assay sixpack");
+    expect(second).toMatchObject({ status: "available_plots" });
+    expect((second as { message: string }).message).toContain(
+      "already listed this turn"
+    );
+    expect((second as { message: string }).message).toContain("NOT INSERTED");
+    expect((second as { message: string }).message).not.toContain(
+      "have proposed"
+    );
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("inserts the Assay plot when they confirm with yes please do", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_assay",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert a plot into the purpose section for the assays thing",
+            },
+          ],
+        },
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [{ type: "text", text: "Available plots: Assay." }],
+        },
+        {
+          id: "u2",
+          role: "user",
+          parts: [{ type: "text", text: "yes please do" }],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Insert the Assay plot they confirmed.",
+        image: { source: "analytics", analysisId: "anl_assay" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("inserts Assay when they ask for the assays thing and it is the saved plot", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "ywfxhmcrfnlu6n1gn9k68vtb",
+          workspaceId: "ws",
+          title: "Assay",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Assay",
+            chartSpec: null,
+          },
+          config: {
+            query: "assay",
+            title: "Assay",
+            xLabel: "Unit",
+            yLabel: "Assay",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "%" },
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "insert a plot into the purpose section for the assays thing",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Insert the Assay plot.",
+        image: {
+          source: "analytics",
+          analysisId: "ywfxhmcrfnlu6n1gn9k68vtb",
+        },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("pairs an empty-anchor propose_edit lead-in with create_table", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "The VCS mapping follows.",
+        reasoning: "Introduce the table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the VCS table.",
+        operation: {
+          kind: "create_table",
+          headers: ["VCS", "Meaning"],
+          rows: [["1", "Design"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(inserted).toHaveLength(2);
+    const leadId = String(inserted[0]!.id);
+    const tableId = String(inserted[1]!.id);
+    const tablePayload = parseAiFixCommentContent(String(inserted[1]!.content));
+    expect(tablePayload.placeAfterSuggestionId).toBe(leadId);
+    expect(updates.length).toBeGreaterThan(0);
+    const patchedLead = parseAiFixCommentContent(String(updates[0]!.content));
+    expect(patchedLead.pairedBlockSuggestionId).toBe(tableId);
+    expect(patchedLead.placeBeforePairedBlock).toBe("table");
+  });
+
+  it("pairs create_table then the empty-anchor lead-in in reverse order", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the VCS table.",
+        operation: {
+          kind: "create_table",
+          headers: ["VCS", "Meaning"],
+          rows: [["1", "Design"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "The VCS mapping follows.",
+        reasoning: "Introduce the table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(inserted).toHaveLength(2);
+    const tableId = String(inserted[0]!.id);
+    const leadId = String(inserted[1]!.id);
+    const leadPayload = parseAiFixCommentContent(String(inserted[1]!.content));
+    expect(leadPayload.pairedBlockSuggestionId).toBe(tableId);
+    expect(leadPayload.placeBeforePairedBlock).toBe("table");
+    const patchedTable = parseAiFixCommentContent(String(updates[0]!.content));
+    expect(patchedTable.placeAfterSuggestionId).toBe(leadId);
+  });
+
+  it("pairs an empty-anchor propose_edit lead-in with insert_image", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    getReportAnalyticsMock.mockResolvedValue({
+      analyses: [
+        {
+          id: "anl_1",
+          workspaceId: "ws",
+          title: "Torque scatter",
+          kind: "measurement_scatter",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: {
+            dataUrl,
+            widthPx: 600,
+            heightPx: 400,
+            alt: "Torque scatter",
+            chartSpec: null,
+          },
+          config: {
+            query: "torque",
+            title: "Torque scatter",
+            xLabel: "Unit",
+            yLabel: "Torque",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: { specs: [], n: 3, uom: "Nm" },
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "The torque scatter follows.",
+        reasoning: "Introduce the figure.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the torque scatter to Define.",
+        image: { source: "analytics", analysisId: "anl_1" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(inserted).toHaveLength(2);
+    const leadId = String(inserted[0]!.id);
+    const imageId = String(inserted[1]!.id);
+    const imagePayload = parseAiFixCommentContent(String(inserted[1]!.content));
+    expect(imagePayload.placeAfterSuggestionId).toBe(leadId);
+    expect(imagePayload.insertImage).toBeDefined();
+    const patchedLead = parseAiFixCommentContent(String(updates[0]!.content));
+    expect(patchedLead.pairedBlockSuggestionId).toBe(imageId);
+    expect(patchedLead.placeBeforePairedBlock).toBe("image");
+  });
+
+  it("moves a same-field figure in one suggestion and ignores extra removes", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "First paragraph of purpose." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Second paragraph continues." }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: {
+                src: dataUrl,
+                alt: "Torque scatter",
+                width: 400,
+                mediaId: null,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+
+    const removeOnce = await tools.remove_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Pick the figure up from the end.",
+        image: { id: "narrative#1" },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    const insertMove = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Place the torque plot after the first paragraph.",
+        image: { source: "section", id: "narrative#1" },
+        anchorText: "First paragraph of purpose.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    const removeAgain = await tools.remove_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Remove the original after copying.",
+        image: { id: "narrative#1" },
+      },
+      TEST_TOOL_OPTIONS
+    );
+
+    expect(inserted).toHaveLength(1);
+    expect(removeOnce).toMatchObject({
+      status: "proposed",
+      suggestionId: inserted[0]!.id,
+    });
+    expect(insertMove).toMatchObject({
+      status: "proposed",
+      suggestionId: inserted[0]!.id,
+    });
+    expect(removeAgain).toMatchObject({
+      status: "proposed",
+      suggestionId: inserted[0]!.id,
+    });
+    expect(updates.length).toBeGreaterThan(0);
+    const moved = parseAiFixCommentContent(String(updates[0]!.content));
+    expect(moved.insertImage?.src).toBe(dataUrl);
+    expect(moved.removeImage?.index).toBe(1);
+    expect(moved.removeImage?.src).toBe(dataUrl);
+  });
+
+  it("same-field insert_image with afterAnchor includes the original removal", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "First paragraph of purpose." }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: {
+                src: dataUrl,
+                alt: "Torque scatter",
+                width: 400,
+                mediaId: null,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Move the torque plot after the first paragraph.",
+        image: { source: "section", id: "narrative#1" },
+        anchorText: "First paragraph of purpose.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(inserted).toHaveLength(1);
+    const payload = parseAiFixCommentContent(String(inserted[0]!.content));
+    expect(payload.insertImage?.src).toBe(dataUrl);
+    expect(payload.removeImage?.index).toBe(1);
+    expect(inserted[0]!.anchorText).toBe("First paragraph of purpose.");
   });
 });

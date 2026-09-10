@@ -6,20 +6,23 @@ import {
   assistantProgressSignature,
   chatWatchdogPhase,
   formatChatLlmError,
+  isChatClientDisconnectError,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
+  shouldShowChatClientError,
   shouldShowEmptyAssistantError,
-  writtenColumnNamesFromParts,
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE,
   CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
-  CHAT_ASSISTANT_STEP_BUDGET_MESSAGE,
   CHAT_CLIENT_GIVE_UP_MS,
   CHAT_CLIENT_STALE_MS,
   CHAT_CONSUME_STREAM_BUDGET_MS,
   CHAT_FUNCTION_MAX_DURATION_SEC,
+  CHAT_HOBBY_MAX_DURATION_SEC,
   CHAT_SERVER_ABORT_MS,
   consumeAssistantStreamWithBudget,
+  isChatTurnDeadlineReached,
+  remainingChatAbortMs,
+  scheduleChatTurnDeadline,
 } from "./assistant-turn";
 import { CHAT_TURN_STALE_MS } from "./background-turn-status";
 
@@ -32,7 +35,7 @@ describe("assistantPartsHaveVisibleContent", () => {
     );
     expect(
       assistantPartsHaveVisibleContent([{ type: "reasoning", text: "thoughts" }])
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("is true for visible text, files, or tool parts", () => {
@@ -93,9 +96,61 @@ describe("shouldShowEmptyAssistantError", () => {
   });
 });
 
+describe("isChatClientDisconnectError", () => {
+  it("matches the SDK TypeError disconnect heuristic and Safari drops", () => {
+    expect(
+      isChatClientDisconnectError(new TypeError("Failed to fetch"))
+    ).toBe(true);
+    expect(
+      isChatClientDisconnectError(new TypeError("NetworkError when attempting to fetch resource."))
+    ).toBe(true);
+    expect(isChatClientDisconnectError(new TypeError("Load failed"))).toBe(
+      true
+    );
+    expect(isChatClientDisconnectError(new TypeError("cancelled"))).toBe(
+      true
+    );
+    expect(
+      isChatClientDisconnectError(new Error("The network connection was lost."))
+    ).toBe(true);
+  });
+
+  it("does not treat abort or a server 500 body as a disconnect", () => {
+    const abort = new Error("The operation was aborted.");
+    abort.name = "AbortError";
+    expect(isChatClientDisconnectError(abort)).toBe(false);
+    expect(
+      isChatClientDisconnectError(new Error(CHAT_ASSISTANT_ERROR_MESSAGE))
+    ).toBe(false);
+    expect(isChatClientDisconnectError("Failed to fetch")).toBe(false);
+  });
+});
+
+describe("shouldShowChatClientError", () => {
+  it("hides a leftover stream error while the turn is still busy", () => {
+    expect(
+      shouldShowChatClientError({
+        error: new TypeError("Failed to fetch"),
+        busy: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldShowChatClientError({
+        error: new TypeError("Failed to fetch"),
+        busy: false,
+      })
+    ).toBe(true);
+    expect(shouldShowChatClientError({ error: undefined, busy: false })).toBe(
+      false
+    );
+  });
+});
+
 describe("deadline constants", () => {
   it("aborts the stream before Vercel can kill the isolate", () => {
     expect(CHAT_FUNCTION_MAX_DURATION_SEC).toBe(300);
+    expect(CHAT_HOBBY_MAX_DURATION_SEC).toBe(300);
+    expect(CHAT_SERVER_ABORT_MS).toBeLessThan(CHAT_HOBBY_MAX_DURATION_SEC * 1000);
     expect(CHAT_SERVER_ABORT_MS).toBeLessThan(CHAT_FUNCTION_MAX_DURATION_SEC * 1000);
     expect(CHAT_CONSUME_STREAM_BUDGET_MS).toBeGreaterThan(CHAT_SERVER_ABORT_MS);
     expect(CHAT_CONSUME_STREAM_BUDGET_MS).toBeLessThan(
@@ -103,12 +158,62 @@ describe("deadline constants", () => {
     );
     expect(CHAT_CLIENT_GIVE_UP_MS).toBeGreaterThan(CHAT_SERVER_ABORT_MS);
     expect(CHAT_CLIENT_GIVE_UP_MS).toBeLessThan(
-      CHAT_FUNCTION_MAX_DURATION_SEC * 1000
+      CHAT_HOBBY_MAX_DURATION_SEC * 1000
     );
     expect(CHAT_CLIENT_STALE_MS).toBeLessThan(CHAT_CLIENT_GIVE_UP_MS);
     expect(CHAT_TURN_STALE_MS).toBeGreaterThan(
       CHAT_FUNCTION_MAX_DURATION_SEC * 1000
     );
+  });
+});
+
+describe("wall-clock chat deadline", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("subtracts pre-stream elapsed time from the SDK timeout budget", () => {
+    const startedAtMs = 1_000;
+    expect(remainingChatAbortMs(startedAtMs, startedAtMs)).toBe(
+      CHAT_SERVER_ABORT_MS
+    );
+    expect(remainingChatAbortMs(startedAtMs, startedAtMs + 40_000)).toBe(
+      CHAT_SERVER_ABORT_MS - 40_000
+    );
+    expect(
+      remainingChatAbortMs(startedAtMs, startedAtMs + CHAT_SERVER_ABORT_MS)
+    ).toBe(0);
+    expect(
+      remainingChatAbortMs(startedAtMs, startedAtMs + CHAT_SERVER_ABORT_MS + 5_000)
+    ).toBe(0);
+    expect(isChatTurnDeadlineReached(startedAtMs, startedAtMs + 40_000)).toBe(
+      false
+    );
+    expect(
+      isChatTurnDeadlineReached(startedAtMs, startedAtMs + CHAT_SERVER_ABORT_MS)
+    ).toBe(true);
+  });
+
+  it("aborts immediately when the deadline has already elapsed", () => {
+    const controller = new AbortController();
+    const cancel = scheduleChatTurnDeadline(controller, 0, CHAT_SERVER_ABORT_MS);
+    expect(controller.signal.aborted).toBe(true);
+    cancel();
+  });
+
+  it("aborts when remaining wall-clock time elapses", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const startedAtMs = Date.now();
+    const cancel = scheduleChatTurnDeadline(
+      controller,
+      startedAtMs,
+      startedAtMs + 40_000
+    );
+    expect(controller.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(CHAT_SERVER_ABORT_MS - 40_000);
+    expect(controller.signal.aborted).toBe(true);
+    cancel();
   });
 });
 
@@ -184,7 +289,6 @@ describe("partsForPersistedAssistantTurn", () => {
       parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: false,
     });
   });
@@ -196,7 +300,6 @@ describe("partsForPersistedAssistantTurn", () => {
       parts: [{ type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE }],
       emptyFailure: true,
       interrupted: true,
-      stepBudgetExhausted: false,
       incomplete: true,
     });
   });
@@ -214,7 +317,6 @@ describe("partsForPersistedAssistantTurn", () => {
       ],
       emptyFailure: false,
       interrupted: true,
-      stepBudgetExhausted: false,
       incomplete: true,
     });
   });
@@ -227,7 +329,6 @@ describe("partsForPersistedAssistantTurn", () => {
       parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: false,
     });
   });
@@ -239,34 +340,11 @@ describe("partsForPersistedAssistantTurn", () => {
       parts: [{ type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE }],
       emptyFailure: true,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: false,
     });
   });
 
-  it("appends a step-budget notice when tools ran but there is no prose", () => {
-    const parts = [
-      { type: "tool-search_documents", toolCallId: "call_1" },
-    ] as unknown as UIMessage["parts"];
-    expect(
-      partsForPersistedAssistantTurn({
-        parts,
-        isAborted: false,
-        stepBudgetExhausted: true,
-      })
-    ).toEqual({
-      parts: [
-        parts[0],
-        { type: "text", text: CHAT_ASSISTANT_STEP_BUDGET_MESSAGE },
-      ],
-      emptyFailure: false,
-      interrupted: false,
-      stepBudgetExhausted: true,
-      incomplete: true,
-    });
-  });
-
-  it("appends an incomplete notice when the model stops on tool-calls with no prose", () => {
+  it("persists tool chips without a continue notice when the model stops on tool-calls", () => {
     const parts = [
       {
         type: "tool-write_column",
@@ -286,7 +364,6 @@ describe("partsForPersistedAssistantTurn", () => {
         },
       },
     ] as unknown as UIMessage["parts"];
-    expect(writtenColumnNamesFromParts(parts)).toEqual(["Temp", "pH"]);
     expect(
       partsForPersistedAssistantTurn({
         parts,
@@ -294,22 +371,14 @@ describe("partsForPersistedAssistantTurn", () => {
         finishReason: "tool-calls",
       })
     ).toEqual({
-      parts: [
-        parts[0],
-        parts[1],
-        {
-          type: "text",
-          text: "I stopped after writing Temp and pH and did not finish this turn. Ask me to continue if any columns are still empty.",
-        },
-      ],
+      parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: true,
     });
   });
 
-  it("uses the generic incomplete line when tool-calls stop with no writes", () => {
+  it("does not append wrap-up copy when tool-calls stop after a search chip", () => {
     const parts = [
       { type: "tool-search_documents", toolCallId: "call_1" },
     ] as unknown as UIMessage["parts"];
@@ -320,13 +389,9 @@ describe("partsForPersistedAssistantTurn", () => {
         finishReason: "tool-calls",
       })
     ).toEqual({
-      parts: [
-        parts[0],
-        { type: "text", text: CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE },
-      ],
+      parts,
       emptyFailure: false,
       interrupted: false,
-      stepBudgetExhausted: false,
       incomplete: true,
     });
   });

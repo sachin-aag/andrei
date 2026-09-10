@@ -88,12 +88,12 @@ describe("ReportWorkspaceHeader chrome", () => {
     expect(onChromeChange).toHaveBeenCalledWith("document");
   });
 
-  it("shows Run all in Agent chrome and hides it on Analytics", () => {
+  it("shows Run all and bulk suggestion actions in both chromes, hidden on Analytics", () => {
     const { rerender } = render(
       <ReportWorkspaceHeader {...baseProps} chrome="agent" />
     );
     expect(screen.getByTestId("run-all-evaluation")).toBeInTheDocument();
-    expect(screen.queryByTestId("bulk-suggestion-actions")).not.toBeInTheDocument();
+    expect(screen.getByTestId("bulk-suggestion-actions")).toBeInTheDocument();
 
     rerender(
       <ReportWorkspaceHeader
@@ -103,6 +103,7 @@ describe("ReportWorkspaceHeader chrome", () => {
       />
     );
     expect(screen.queryByTestId("run-all-evaluation")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bulk-suggestion-actions")).not.toBeInTheDocument();
 
     rerender(
       <ReportWorkspaceHeader
@@ -112,6 +113,7 @@ describe("ReportWorkspaceHeader chrome", () => {
       />
     );
     expect(screen.queryByTestId("run-all-evaluation")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bulk-suggestion-actions")).not.toBeInTheDocument();
 
     rerender(
       <ReportWorkspaceHeader

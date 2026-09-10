@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 import { loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
-import { documentsPanel, expandDocumentsPanel, openReportEditor, setReportChrome } from "./helpers/workspace";
+import { documentsPanel, expandDocumentsPanel, openReportAnalytics, openReportEditor, setReportChrome } from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
 
@@ -117,13 +117,37 @@ test.describe("report PDF documents", () => {
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeHidden();
   });
 
+  test("closing a PDF restores the last canvas tab", async ({ page }) => {
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("report-analytics-workspace")).toBeVisible();
+
+    const fileName = await uploadPdf(page);
+    const panel = documentsPanel(page);
+    await expect(
+      panel.locator('[data-document-file][data-status="ready"]')
+    ).toBeVisible({ timeout: 30_000 });
+    await panel.getByRole("button", { name: fileName, exact: true }).click();
+    await expect(page.getByTestId("attachment-viewer")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeHidden();
+
+    await page.getByRole("button", { name: "Close document" }).click();
+    await expect(page.getByTestId("report-analytics-workspace")).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeHidden();
+    await expect(page.getByTestId("attachment-viewer")).toHaveCount(0);
+    await expect(
+      page.getByTestId("work-product-tab-strip").getByText(fileName)
+    ).toHaveCount(0);
+  });
+
   test("agent chrome expands the work product panel when a PDF is opened", async ({
     page,
   }) => {
     await setReportChrome(page, "agent");
     const workProduct = page.getByTestId("report-work-product");
     await expect(
-      workProduct.getByRole("button", { name: /expand document panel/i })
+      workProduct.getByRole("button", { name: /collapse document panel/i })
     ).toBeVisible();
 
     const fileName = await uploadPdf(page);

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { SECTION_LABELS } from "@/types/sections";
+import { displaySectionLabel } from "@/types/sections";
 import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import type { SectionType } from "@/db/schema";
 
@@ -79,7 +79,7 @@ export function SectionAccordion({
               busy && "opacity-60",
             )}
           >
-            {SECTION_LABELS[section] ?? section}
+            {displaySectionLabel(section)}
           </span>
           {busyLabel && (
             <span className="inline-flex items-center gap-1 text-[10px] text-[var(--muted-foreground)] truncate">

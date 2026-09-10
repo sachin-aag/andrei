@@ -1,14 +1,16 @@
+import type { JSONContent } from "@tiptap/core";
 import type { DocumentType, SectionType } from "@/db/schema";
-import { SECTION_LABELS } from "@/types/sections";
+import { displaySectionLabel } from "@/types/sections";
 import {
   SUGGEST_TARGET_FIELD_PATTERNS,
   isRichTargetField,
 } from "@/lib/ai/suggest-target-fields";
-import { getDocumentType, listDocumentTypes } from "@/lib/document-types";
+import { getDocumentType } from "@/lib/document-types";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import { renderStructuredFieldView } from "@/lib/ai/suggestion-section-context";
+import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 import {
   countImagesInDoc,
   flattenDocForChat,
@@ -119,24 +121,125 @@ export function countSectionInlineImages(
   return total;
 }
 
-/** Below this character count (and no images) a section is "partial", not empty. */
+/** Below this character count (and no images) a field is "partial", not empty. */
 export const SECTION_PARTIAL_CHAR_LIMIT = 120;
 
-export type SectionFillState = "empty" | "partial" | "filled";
+export type FieldFillState = "empty" | "partial" | "filled";
+export type SectionFillState = FieldFillState;
 
-export function sectionFillState(
+function fieldImageCount(
+  content: Record<string, unknown>,
+  section: SectionType,
+  targetField: string
+): number {
+  if (!isRichTargetField(section, targetField)) return 0;
+  return countImagesInDoc(getRichFieldValue(content, targetField));
+}
+
+/** Live tables in one rich field (headers from the section, not the pack recipe). */
+export function listFieldTables(
+  content: Record<string, unknown> | undefined,
+  section: SectionType,
+  targetField: string
+): Array<{ tableIndex: number; headers: string[]; dataRowCount: number }> {
+  if (!isRichTargetField(section, targetField)) return [];
+  return summarizeTablesInDoc(getRichFieldValue(content ?? {}, targetField)).map(
+    ({ tableIndex, headers, dataRowCount }) => ({
+      tableIndex,
+      headers,
+      dataRowCount,
+    })
+  );
+}
+
+/** True when any editable rich field in the section already has a table. */
+export function sectionHasTable(
   content: Record<string, unknown> | undefined,
   section: SectionType
-): SectionFillState {
-  const primary = primaryFieldForSection(section);
-  const text = sectionFieldPlainText(content ?? {}, section, primary);
+): boolean {
+  return chatTargetFields(section).some(
+    (field) => listFieldTables(content, section, field.targetField).length > 0
+  );
+}
+
+function isBlankTableCellText(text: string): boolean {
+  return text === "(empty)" || text.trim() === "";
+}
+
+function nodeHasVisibleContent(node: JSONContent): boolean {
+  if (node.type === "text" && (node.text ?? "").trim()) return true;
+  if (node.type === "image" || node.type === "imageInline") return true;
+  for (const child of node.content ?? []) {
+    if (nodeHasVisibleContent(child)) return true;
+  }
+  return false;
+}
+
+function docHasNonTableContent(doc: JSONContent): boolean {
+  for (const node of doc.content ?? []) {
+    if (node.type === "table") continue;
+    if (nodeHasVisibleContent(node)) return true;
+  }
+  return false;
+}
+
+/**
+ * Header-only seeded tables (blank data cells, no surrounding prose/images)
+ * are empty shells — not partial drafts. `sectionHasTable` still sees them
+ * so `tableSchemaReadStep` copies live headers before `edit_table`.
+ */
+export function isEmptyTableScaffoldDoc(doc: JSONContent): boolean {
+  const tables = summarizeTablesInDoc(doc);
+  if (tables.length === 0) return false;
+  if (countImagesInDoc(doc) > 0) return false;
+  if (docHasNonTableContent(doc)) return false;
+  for (const table of tables) {
+    for (const cell of table.cells) {
+      if (cell.row === 0) continue;
+      if (!isBlankTableCellText(cell.text)) return false;
+    }
+  }
+  return true;
+}
+
+export function fieldFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType,
+  targetField: string
+): FieldFillState {
+  const record = content ?? {};
+  if (isRichTargetField(section, targetField)) {
+    const doc = getRichFieldValue(record, targetField);
+    if (isEmptyTableScaffoldDoc(doc)) return "empty";
+  }
+  const text = sectionFieldPlainText(record, section, targetField);
   const charCount = text.replace(/\s+/g, " ").trim().length;
-  const imageCount = countSectionInlineImages(content ?? {}, section);
+  const imageCount = fieldImageCount(record, section, targetField);
   if (charCount === 0 && imageCount === 0) return "empty";
   if (charCount < SECTION_PARTIAL_CHAR_LIMIT && imageCount === 0) {
     return "partial";
   }
   return "filled";
+}
+
+/**
+ * Aggregate of per-field fill state. Empty only when every editable field is
+ * empty — a populated table is not hidden behind an empty narrative.
+ */
+export function sectionFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType
+): SectionFillState {
+  const fields = chatTargetFields(section);
+  if (fields.length === 0) {
+    return fieldFillState(content, section, primaryFieldForSection(section));
+  }
+  const states = fields.map((field) =>
+    fieldFillState(content, section, field.targetField)
+  );
+  if (states.every((state) => state === "empty")) return "empty";
+  if (states.some((state) => state === "filled")) return "filled";
+  return "partial";
 }
 
 /**
@@ -154,6 +257,12 @@ export function sectionFieldForChat(
   imageCount: number;
   /** Coordinate-tagged view for table/list fields (present only when useful). */
   structuredText?: string;
+  /** Existing tables in this field (present only when the field has one). */
+  tables?: Array<{
+    tableIndex: number;
+    headers: string[];
+    dataRowCount: number;
+  }>;
 } {
   if (!isRichTargetField(section, targetField)) {
     const text = getPlainTextFieldValue(sectionContent, targetField);
@@ -172,19 +281,35 @@ export function sectionFieldForChat(
   const structuredText = /\[\d+,\d+\]|\n\[\d+\] /.test(structured)
     ? structured
     : undefined;
+  const tableInventory = summarizeTablesInDoc(doc).map(
+    ({ tableIndex, headers, dataRowCount }) => ({
+      tableIndex,
+      headers,
+      dataRowCount,
+    })
+  );
   return {
     text,
     readingText: chat.readingText,
     imageCount: chat.imageCount,
     structuredText,
+    tables: tableInventory.length > 0 ? tableInventory : undefined,
   };
 }
 
-/** Human label for a section (workspace labels, then any registered document type). */
+const ALL_DOCUMENT_TYPES: Record<DocumentType, true> = {
+  investigation_report: true,
+  design_verification: true,
+  mechanical_design_verification: true,
+  generic_document: true,
+  quality_risk_assessment: true,
+};
+
+/** Human label for a section (registry, then shared map, then title-cased key). */
 export function sectionLabel(section: SectionType): string {
-  for (const def of listDocumentTypes()) {
-    const match = def.sections.find((s) => s.key === section);
+  for (const type of Object.keys(ALL_DOCUMENT_TYPES) as DocumentType[]) {
+    const match = getDocumentType(type).sections.find((s) => s.key === section);
     if (match) return match.label;
   }
-  return SECTION_LABELS[section] ?? section;
+  return displaySectionLabel(section);
 }
