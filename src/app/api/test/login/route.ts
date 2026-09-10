@@ -15,6 +15,12 @@ const bodySchema = z.object({
   mustChangePassword: z.boolean().optional(),
   passwordExpired: z.boolean().optional(),
   passwordWarning: z.boolean().optional(),
+  /**
+   * `true` resets the first-login tour. `"resume"` leaves stored progress
+   * alone. Default (`false` / omitted) dismisses the tour so existing E2E
+   * is not blocked by the overlay.
+   */
+  productTour: z.union([z.boolean(), z.literal("resume")]).optional(),
 });
 
 function displayNameFromEmail(email: string): string {
@@ -43,17 +49,32 @@ function titleForTestRole(role: UserRole): string {
   }
 }
 
+type ProductTourLoginMode = boolean | "resume" | undefined;
+
+function tourFieldsForTestLogin(mode: ProductTourLoginMode): {
+  productTourStatus: "not_started" | "dismissed"
+  productTourStepId: null
+} | null {
+  if (mode === "resume") return null;
+  if (mode === true) {
+    return { productTourStatus: "not_started", productTourStepId: null };
+  }
+  return { productTourStatus: "dismissed", productTourStepId: null };
+}
+
 /** Upsert a Playwright test workspace user when ALLOW_TEST_LOGIN is enabled. */
 async function ensureTestWorkspaceUser(
   email: string,
   role: UserRole,
   mustChangePassword: boolean,
   passwordExpired: boolean,
-  passwordWarning: boolean
+  passwordWarning: boolean,
+  productTour: ProductTourLoginMode
 ) {
   const existing = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, email),
   });
+  const tourFields = tourFieldsForTestLogin(productTour);
 
   if (existing) {
     const needsUpdate =
@@ -61,7 +82,10 @@ async function ensureTestWorkspaceUser(
       existing.mustChangePassword !== mustChangePassword ||
       passwordExpired ||
       passwordWarning ||
-      existing.title !== titleForTestRole(role);
+      existing.title !== titleForTestRole(role) ||
+      (tourFields !== null &&
+        (existing.productTourStatus !== tourFields.productTourStatus ||
+          existing.productTourStepId !== tourFields.productTourStepId));
 
     if (needsUpdate) {
       const passwordFields = passwordExpired || passwordWarning
@@ -82,6 +106,7 @@ async function ensureTestWorkspaceUser(
           title: titleForTestRole(role),
           mustChangePassword,
           ...passwordFields,
+          ...(tourFields ?? {}),
         })
         .where(eq(workspaceUsers.id, existing.id))
         .returning();
@@ -110,6 +135,10 @@ async function ensureTestWorkspaceUser(
           )
         : null,
       passwordExpiryWarningDismissedUntil: null,
+      ...(tourFields ?? {
+        productTourStatus: "dismissed" as const,
+        productTourStepId: null,
+      }),
     })
     .onConflictDoNothing({ target: workspaceUsers.email })
     .returning();
@@ -151,13 +180,15 @@ export async function POST(req: Request) {
     parsed.success ? (parsed.data.passwordExpired ?? false) : false;
   const passwordWarning =
     parsed.success ? (parsed.data.passwordWarning ?? false) : false;
+  const productTour = parsed.success ? parsed.data.productTour : undefined;
 
   const wsUser = await ensureTestWorkspaceUser(
     email,
     role,
     mustChangePassword,
     passwordExpired,
-    passwordWarning
+    passwordWarning,
+    productTour
   );
   if (!wsUser) {
     return NextResponse.json(
@@ -175,6 +206,7 @@ export async function POST(req: Request) {
       workspaceUserId: wsUser.id,
       mustChangePassword: wsUser.mustChangePassword,
       passwordExpired,
+      productTourSessionId: crypto.randomUUID(),
     },
     secret,
     salt: cookieName,

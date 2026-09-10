@@ -27,7 +27,10 @@ export default async function DocumentVaultPage() {
     >
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <div className="flex shrink-0 items-baseline gap-3 border-b border-[var(--border)] px-6 py-3">
-          <h1 className="text-lg font-semibold tracking-tight">
+          <h1
+            className="text-lg font-semibold tracking-tight"
+            data-walkthrough="document-vault"
+          >
             Document vault
           </h1>
           <p className="truncate text-sm text-[var(--muted-foreground)]">
