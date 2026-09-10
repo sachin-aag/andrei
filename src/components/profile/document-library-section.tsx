@@ -1046,6 +1046,8 @@ function LibraryAssetDetails({
             selectedIds={granteeIds}
             onSelectedIdsChange={onGranteeIdsChange}
             placeholder="Add colleagues…"
+            searchPlaceholder="Search colleagues…"
+            noResultsMessage="No colleagues match your search."
             emptyMessage="No other workspace users are available."
           />
         </>
