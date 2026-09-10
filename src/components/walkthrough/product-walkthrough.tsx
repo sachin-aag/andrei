@@ -79,7 +79,11 @@ export function ProductWalkthroughProvider({
   }, []);
 
   const steps = useMemo(() => stepsForRole(role, copy), [role, copy]);
-  const step: ProductTourStep | undefined = steps[index];
+  const resumedIndex = resumeTourIndexForPathname(steps, index, pathname);
+  if (resumedIndex !== index) {
+    setIndex(resumedIndex);
+  }
+  const step: ProductTourStep | undefined = steps[resumedIndex];
   const stepOnPage = Boolean(step && productTourStepIsOnPage(step, pathname));
 
   useEffect(() => {
@@ -154,16 +158,16 @@ export function ProductWalkthroughProvider({
   }, [visible, step, progress?.status, persist, role]);
 
   useEffect(() => {
-    if (!tourActive) return;
-    const nextIndex = resumeTourIndexForPathname(steps, index, pathname);
-    if (nextIndex !== index) {
-      const nextStep = steps[nextIndex];
-      if (!nextStep) return;
-      setIndex(nextIndex);
-      void persist({ status: "in_progress", stepId: nextStep.id });
-      return;
-    }
-    if (!step?.href || !step.match) return;
+    if (!tourActive || !step) return;
+    if (progress?.status !== "in_progress") return;
+    if (progress.stepId === step.id) return;
+    // Keep saved progress on the card the user just opened a page for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- persist() updates progress after a route change
+    void persist({ status: "in_progress", stepId: step.id });
+  }, [tourActive, step, progress?.status, progress?.stepId, persist]);
+
+  useEffect(() => {
+    if (!tourActive || !step?.href || !step.match) return;
     if (step.match(pathname)) {
       navigatedForStepRef.current = null;
       return;
@@ -171,7 +175,7 @@ export function ProductWalkthroughProvider({
     if (navigatedForStepRef.current === step.id) return;
     navigatedForStepRef.current = step.id;
     router.push(step.href);
-  }, [tourActive, steps, index, pathname, persist, router, step]);
+  }, [tourActive, step, pathname, router]);
 
   const goTo = useCallback(
     (nextIndex: number) => {
