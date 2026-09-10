@@ -330,6 +330,8 @@ describe("buildChatTools list_attachments", () => {
   beforeEach(() => {
     listActiveAttachmentsMock.mockReset();
     listAttachmentFoldersMock.mockReset();
+    listReadyDocumentsForReportMock.mockReset();
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
   });
 
   it("is registered with compact catalog inputs", () => {
@@ -339,6 +341,8 @@ describe("buildChatTools list_attachments", () => {
     expect(
       accepts(tools, "list_attachments", {
         query: "COA",
+        folder: "SOPs",
+        fileType: "pdf",
         status: "not_ready",
         offset: 50,
         limit: 80,
@@ -346,6 +350,9 @@ describe("buildChatTools list_attachments", () => {
     ).toBe(true);
     expect(
       accepts(tools, "list_attachments", { status: "maybe" })
+    ).toBe(false);
+    expect(
+      accepts(tools, "list_attachments", { fileType: "xlsx" })
     ).toBe(false);
     expect(tools.list_attachments?.description).toContain("Attachments tree");
     expect(tools.list_attachments?.description).toContain(
@@ -417,13 +424,23 @@ describe("buildChatTools list_attachments", () => {
     const result = (await execute({}, TEST_TOOL_OPTIONS)) as {
       total: number;
       scope: string;
-      files: Array<{ filename: string; folderPath: string }>;
+      files: Array<{ filename: string; folderPath: string; fileKind: string }>;
+      folders: Array<{ path: string; fileCount: number }>;
+      fileTypes: Array<{ kind: string; count: number }>;
     };
     expect(listActiveAttachmentsMock).toHaveBeenCalledWith("report-1");
+    expect(listReadyDocumentsForReportMock).toHaveBeenCalledWith("report-1");
     expect(result.scope).toBe("tagged");
     expect(result.total).toBe(1);
     expect(result.files[0]?.filename).toBe("ignore.pdf");
     expect(result.files[0]?.folderPath).toBe("SOPs / 2026");
+    expect(result.files[0]?.fileKind).toBe("pdf");
+    expect(result.folders).toEqual([
+      { path: "SOPs / 2026", fileCount: 1, ready: 1, notReady: 0 },
+    ]);
+    expect(result.fileTypes.find((bucket) => bucket.kind === "pdf")?.count).toBe(
+      1
+    );
   });
 });
 

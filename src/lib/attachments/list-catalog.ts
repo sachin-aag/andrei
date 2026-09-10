@@ -1,4 +1,5 @@
 import { MAX_FOLDER_DEPTH } from "@/lib/attachments/folder-limits";
+import { resolveAttachmentKind } from "@/lib/attachments/file-types";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import type {
   ReportAttachmentFolderRecord,
@@ -7,6 +8,14 @@ import type {
 
 export const LIST_ATTACHMENTS_DEFAULT_LIMIT = 50;
 export const LIST_ATTACHMENTS_MAX_LIMIT = 80;
+export const LIST_ATTACHMENTS_NOTE_MAX = 80;
+/** Filter value for files that sit at the Attachments tree root. */
+export const LIST_ATTACHMENTS_ROOT_FOLDER = "(root)";
+
+export const ATTACHMENT_CATALOG_FILE_KINDS = ["pdf", "docx", "other"] as const;
+
+export type AttachmentCatalogFileKind =
+  (typeof ATTACHMENT_CATALOG_FILE_KINDS)[number];
 
 export type AttachmentCatalogStatusFilter = "all" | "ready" | "not_ready";
 
@@ -14,16 +23,32 @@ export type AttachmentCatalogRow = {
   id: string;
   filename: string;
   folderPath: string;
+  fileKind: AttachmentCatalogFileKind;
   pageCount: number | null;
   processingStatus: AttachmentProcessingStatus;
   mimeType: string;
   sizeBytes: number;
+  note: string | null;
+};
+
+export type AttachmentCatalogFolderBucket = {
+  path: string;
+  fileCount: number;
+  ready: number;
+  notReady: number;
+};
+
+export type AttachmentCatalogTypeBucket = {
+  kind: AttachmentCatalogFileKind;
+  count: number;
 };
 
 export type AttachmentCatalogResult = {
   scope: "all" | "tagged";
   statusFilter: AttachmentCatalogStatusFilter;
   query: string | null;
+  folder: string | null;
+  fileType: AttachmentCatalogFileKind | null;
   total: number;
   ready: number;
   notReady: number;
@@ -34,6 +59,8 @@ export type AttachmentCatalogResult = {
   nextOffset: number | null;
   pageCountSum: number;
   pageCountUnknown: number;
+  folders: AttachmentCatalogFolderBucket[];
+  fileTypes: AttachmentCatalogTypeBucket[];
   files: AttachmentCatalogRow[];
 };
 
@@ -41,7 +68,11 @@ export type BuildAttachmentCatalogInput = {
   attachments: readonly ReportAttachmentRecord[];
   folders: readonly ReportAttachmentFolderRecord[];
   pinnedAttachmentIds?: readonly string[];
+  /** Ingest summaries keyed by attachment id — used for topic matching only. */
+  topicsById?: ReadonlyMap<string, string>;
   query?: string;
+  folder?: string;
+  fileType?: AttachmentCatalogFileKind;
   status?: AttachmentCatalogStatusFilter;
   offset?: number;
   limit?: number;
@@ -68,6 +99,33 @@ function clampOffset(offset: number | undefined): number {
 function normalizeQuery(query: string | undefined): string | null {
   const trimmed = query?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeFolderFilter(folder: string | undefined): string | null {
+  const trimmed = folder?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function attachmentCatalogKind(
+  filename: string,
+  mimeType: string
+): AttachmentCatalogFileKind {
+  return resolveAttachmentKind({ filename, mimeType }) ?? "other";
+}
+
+function compactNote(
+  description: string | null,
+  topics: string | undefined
+): string | null {
+  const fromDescription = description?.trim() ?? "";
+  if (fromDescription.length > 0) {
+    return fromDescription.slice(0, LIST_ATTACHMENTS_NOTE_MAX);
+  }
+  const fromTopics = topics?.trim() ?? "";
+  if (fromTopics.length > 0) {
+    return fromTopics.slice(0, LIST_ATTACHMENTS_NOTE_MAX);
+  }
+  return null;
 }
 
 /**
@@ -124,12 +182,32 @@ function compareCatalogRows(
   });
 }
 
-function matchesQuery(row: AttachmentCatalogRow, query: string): boolean {
+function compareFolderPaths(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function matchesQuery(
+  row: AttachmentCatalogRow,
+  topics: string | undefined,
+  description: string | null,
+  query: string
+): boolean {
   const needle = query.toLowerCase();
-  return (
-    row.filename.toLowerCase().includes(needle) ||
-    row.folderPath.toLowerCase().includes(needle)
-  );
+  if (row.filename.toLowerCase().includes(needle)) return true;
+  if (row.folderPath.toLowerCase().includes(needle)) return true;
+  if (description?.toLowerCase().includes(needle)) return true;
+  if (topics?.toLowerCase().includes(needle)) return true;
+  return false;
+}
+
+function matchesFolder(
+  folderPath: string,
+  folder: string
+): boolean {
+  if (folder === LIST_ATTACHMENTS_ROOT_FOLDER) {
+    return folderPath === "";
+  }
+  return folderPath.toLowerCase().includes(folder.toLowerCase());
 }
 
 function matchesStatus(
@@ -139,6 +217,58 @@ function matchesStatus(
   if (filter === "all") return true;
   if (filter === "ready") return isReady(status);
   return !isReady(status);
+}
+
+function emptyTypeCounts(): Record<AttachmentCatalogFileKind, number> {
+  return { pdf: 0, docx: 0, other: 0 };
+}
+
+function typeBuckets(
+  counts: Record<AttachmentCatalogFileKind, number>
+): AttachmentCatalogTypeBucket[] {
+  return ATTACHMENT_CATALOG_FILE_KINDS.map((kind) => ({
+    kind,
+    count: counts[kind],
+  }));
+}
+
+function folderBucketsFromMatched(
+  matched: readonly AttachmentCatalogRow[],
+  allFolderPaths: readonly string[],
+  includeEmptyFolders: boolean
+): AttachmentCatalogFolderBucket[] {
+  const byPath = new Map<string, AttachmentCatalogFolderBucket>();
+
+  function ensure(path: string): AttachmentCatalogFolderBucket {
+    const existing = byPath.get(path);
+    if (existing) return existing;
+    const created: AttachmentCatalogFolderBucket = {
+      path,
+      fileCount: 0,
+      ready: 0,
+      notReady: 0,
+    };
+    byPath.set(path, created);
+    return created;
+  }
+
+  if (includeEmptyFolders) {
+    ensure("");
+    for (const path of allFolderPaths) {
+      if (path) ensure(path);
+    }
+  }
+
+  for (const row of matched) {
+    const bucket = ensure(row.folderPath);
+    bucket.fileCount += 1;
+    if (isReady(row.processingStatus)) bucket.ready += 1;
+    else bucket.notReady += 1;
+  }
+
+  return [...byPath.values()].toSorted((a, b) =>
+    compareFolderPaths(a.path, b.path)
+  );
 }
 
 export function buildAttachmentCatalog(
@@ -155,8 +285,11 @@ export function buildAttachmentCatalog(
       ? input.attachments.filter((file) => pinnedSet.has(file.id))
       : [...input.attachments];
   const paths = folderPathById(input.folders);
+  const topicsById = input.topicsById ?? new Map<string, string>();
   const statusFilter = input.status ?? "all";
   const query = normalizeQuery(input.query);
+  const folder = normalizeFolderFilter(input.folder);
+  const fileType = input.fileType ?? null;
   const offset = clampOffset(input.offset);
   const limit = clampLimit(input.limit);
 
@@ -166,17 +299,22 @@ export function buildAttachmentCatalog(
         file.folderId && paths.has(file.folderId)
           ? (paths.get(file.folderId) ?? "")
           : "";
+      const topics = topicsById.get(file.id);
       return {
         id: file.id,
         filename: file.filename,
         folderPath,
+        fileKind: attachmentCatalogKind(file.filename, file.mimeType),
         pageCount: file.pageCount,
         processingStatus: file.processingStatus,
         mimeType: file.mimeType,
         sizeBytes: file.sizeBytes,
+        note: compactNote(file.description, topics),
+        description: file.description,
+        topics,
       };
     })
-    .toSorted(compareCatalogRows);
+    .toSorted((a, b) => compareCatalogRows(a, b));
 
   const ready = rows.filter((row) => isReady(row.processingStatus)).length;
   const folderIds = new Set(
@@ -189,9 +327,25 @@ export function buildAttachmentCatalog(
 
   const matched = rows.filter((row) => {
     if (!matchesStatus(row.processingStatus, statusFilter)) return false;
-    if (query && !matchesQuery(row, query)) return false;
+    if (folder && !matchesFolder(row.folderPath, folder)) return false;
+    if (fileType && row.fileKind !== fileType) return false;
+    if (query && !matchesQuery(row, row.topics, row.description, query)) {
+      return false;
+    }
     return true;
   });
+
+  const typeCounts = emptyTypeCounts();
+  for (const row of matched) {
+    typeCounts[row.fileKind] += 1;
+  }
+
+  const includeEmptyFolders = query == null && folder == null && fileType == null;
+  const folders = folderBucketsFromMatched(
+    matched,
+    [...paths.values()],
+    includeEmptyFolders && pinned.length === 0
+  );
 
   const page = matched.slice(offset, offset + limit);
   const pageCountSum = matched.reduce(
@@ -208,6 +362,8 @@ export function buildAttachmentCatalog(
     scope: pinned.length > 0 ? "tagged" : "all",
     statusFilter,
     query,
+    folder,
+    fileType,
     total: rows.length,
     ready,
     notReady: rows.length - ready,
@@ -218,6 +374,18 @@ export function buildAttachmentCatalog(
     nextOffset,
     pageCountSum,
     pageCountUnknown,
-    files: page,
+    folders,
+    fileTypes: typeBuckets(typeCounts),
+    files: page.map((row) => ({
+      id: row.id,
+      filename: row.filename,
+      folderPath: row.folderPath,
+      fileKind: row.fileKind,
+      pageCount: row.pageCount,
+      processingStatus: row.processingStatus,
+      mimeType: row.mimeType,
+      sizeBytes: row.sizeBytes,
+      note: row.note,
+    })),
   };
 }

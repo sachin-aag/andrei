@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { DOCX_MIME_TYPE } from "./file-types";
 import {
-  buildAttachmentCatalog,
   LIST_ATTACHMENTS_DEFAULT_LIMIT,
   LIST_ATTACHMENTS_MAX_LIMIT,
+  LIST_ATTACHMENTS_ROOT_FOLDER,
+  buildAttachmentCatalog,
 } from "./list-catalog";
 import type {
   ReportAttachmentFolderRecord,
@@ -30,6 +32,8 @@ function file(opts: {
   folderId?: string | null;
   pageCount?: number | null;
   processingStatus?: AttachmentProcessingStatus;
+  mimeType?: string;
+  description?: string | null;
 }): ReportAttachmentRecord {
   return {
     id: opts.id,
@@ -37,8 +41,8 @@ function file(opts: {
     folderId: opts.folderId ?? null,
     assetId: null,
     filename: opts.filename,
-    description: null,
-    mimeType: "application/pdf",
+    description: opts.description ?? null,
+    mimeType: opts.mimeType ?? "application/pdf",
     sizeBytes: 1024,
     pageCount: opts.pageCount === undefined ? 2 : opts.pageCount,
     processingStatus: opts.processingStatus ?? "ready",
@@ -82,6 +86,15 @@ describe("buildAttachmentCatalog", () => {
     expect(catalog.nextOffset).toBeNull();
     expect(catalog.files.map((row) => row.id)).toEqual(["a2", "a1", "a3"]);
     expect(catalog.files.find((row) => row.id === "a3")?.folderPath).toBe("SOPs");
+    expect(catalog.folders).toEqual([
+      { path: "", fileCount: 2, ready: 1, notReady: 1 },
+      { path: "SOPs", fileCount: 1, ready: 0, notReady: 1 },
+    ]);
+    expect(catalog.fileTypes).toEqual([
+      { kind: "pdf", count: 3 },
+      { kind: "docx", count: 0 },
+      { kind: "other", count: 0 },
+    ]);
   });
 
   it("builds nested folder paths and paginates without dropping totals", () => {
@@ -113,6 +126,11 @@ describe("buildAttachmentCatalog", () => {
     expect(first.returned).toBe(2);
     expect(first.nextOffset).toBe(2);
     expect(first.pageCountSum).toBe(16);
+    expect(first.folders.map((bucket) => bucket.path)).toEqual([
+      "",
+      "SOPs",
+      "SOPs / 2026",
+    ]);
 
     const second = buildAttachmentCatalog({
       attachments,
@@ -144,6 +162,9 @@ describe("buildAttachmentCatalog", () => {
     });
     expect(byFolder.matched).toBe(1);
     expect(byFolder.files[0]?.id).toBe("coa");
+    expect(byFolder.folders).toEqual([
+      { path: "Certificates", fileCount: 1, ready: 1, notReady: 0 },
+    ]);
 
     const notReady = buildAttachmentCatalog({
       attachments,
@@ -162,6 +183,114 @@ describe("buildAttachmentCatalog", () => {
     expect(ready.files.map((row) => row.id)).toEqual(["coa"]);
   });
 
+  it("walks folders and file types without guessing from a buried list", () => {
+    const catalog = buildAttachmentCatalog({
+      folders: [folder("f1", "SOPs"), folder("f2", "empty")],
+      attachments: [
+        file({ id: "pdf", filename: "sop.pdf", folderId: "f1" }),
+        file({
+          id: "word",
+          filename: "notes.docx",
+          mimeType: DOCX_MIME_TYPE,
+        }),
+      ],
+    });
+
+    expect(catalog.fileTypes).toEqual([
+      { kind: "pdf", count: 1 },
+      { kind: "docx", count: 1 },
+      { kind: "other", count: 0 },
+    ]);
+    expect(catalog.folders).toEqual([
+      { path: "", fileCount: 1, ready: 1, notReady: 0 },
+      { path: "empty", fileCount: 0, ready: 0, notReady: 0 },
+      { path: "SOPs", fileCount: 1, ready: 1, notReady: 0 },
+    ]);
+
+    const onlyWord = buildAttachmentCatalog({
+      folders: [folder("f1", "SOPs")],
+      attachments: [
+        file({ id: "pdf", filename: "sop.pdf", folderId: "f1" }),
+        file({
+          id: "word",
+          filename: "notes.docx",
+          mimeType: DOCX_MIME_TYPE,
+        }),
+      ],
+      fileType: "docx",
+    });
+    expect(onlyWord.matched).toBe(1);
+    expect(onlyWord.files[0]?.id).toBe("word");
+    expect(onlyWord.fileTypes.find((bucket) => bucket.kind === "docx")?.count).toBe(
+      1
+    );
+    expect(onlyWord.folders).toEqual([
+      { path: "", fileCount: 1, ready: 1, notReady: 0 },
+    ]);
+
+    const inSops = buildAttachmentCatalog({
+      folders: [folder("f1", "SOPs"), folder("f2", "2026", "f1")],
+      attachments: [
+        file({ id: "root", filename: "root.pdf" }),
+        file({ id: "sop", filename: "sop.pdf", folderId: "f1" }),
+        file({ id: "jan", filename: "jan.pdf", folderId: "f2" }),
+      ],
+      folder: "SOPs",
+    });
+    expect(inSops.matched).toBe(2);
+    expect(inSops.files.map((row) => row.id)).toEqual(["sop", "jan"]);
+
+    const rootOnly = buildAttachmentCatalog({
+      folders: [folder("f1", "SOPs")],
+      attachments: [
+        file({ id: "root", filename: "root.pdf" }),
+        file({ id: "sop", filename: "sop.pdf", folderId: "f1" }),
+      ],
+      folder: LIST_ATTACHMENTS_ROOT_FOLDER,
+    });
+    expect(rootOnly.files.map((row) => row.id)).toEqual(["root"]);
+  });
+
+  it("matches a topic query against ingest summaries without returning the full blob", () => {
+    const catalog = buildAttachmentCatalog({
+      folders: [],
+      attachments: [
+        file({
+          id: "coa",
+          filename: "batch-24.pdf",
+          description: "User note about assay",
+        }),
+        file({ id: "unrelated", filename: "cleaning-log.pdf" }),
+      ],
+      topicsById: new Map([
+        [
+          "unrelated",
+          `${"UNCONTROLLED COPY. ".repeat(6)}Certificate of analysis for dissolution.`,
+        ],
+      ]),
+      query: "dissolution",
+    });
+
+    expect(catalog.matched).toBe(1);
+    expect(catalog.files[0]?.id).toBe("unrelated");
+    expect(catalog.files[0]?.note).toHaveLength(80);
+    expect(catalog.files[0]?.note).not.toContain("dissolution");
+
+    const byNote = buildAttachmentCatalog({
+      folders: [],
+      attachments: [
+        file({
+          id: "coa",
+          filename: "batch-24.pdf",
+          description: "User note about assay",
+        }),
+      ],
+      query: "assay",
+    });
+    expect(byNote.files[0]?.id).toBe("coa");
+    expect(byNote.files[0]?.fileKind).toBe("pdf");
+  });
+
   it("treats tagged ids as the complete scope", () => {
     const catalog = buildAttachmentCatalog({
       folders: [folder("f1", "SOPs")],
@@ -177,6 +306,9 @@ describe("buildAttachmentCatalog", () => {
     expect(catalog.total).toBe(1);
     expect(catalog.folderCount).toBe(1);
     expect(catalog.files[0]?.id).toBe("a2");
+    expect(catalog.folders).toEqual([
+      { path: "SOPs", fileCount: 1, ready: 1, notReady: 0 },
+    ]);
   });
 
   it("clamps limit to the catalog max", () => {

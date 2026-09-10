@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v49-list-attachments"
+      "analytics-chat-v50-list-attachments-meta"
     );
   });
 
@@ -165,7 +165,7 @@ describe("analytics chat prompt", () => {
       mode: "agent",
     });
     expect(empty).toContain("Ready documents: none uploaded");
-    expect(empty).toContain("How many attachments, which files, folders, or file status");
+    expect(empty).toContain("How many attachments, which files in which folder, PDF vs Word, file status");
     expect(empty).toContain("call list_attachments");
 
     const two = buildAnalyticsChatSystemPrompt({
