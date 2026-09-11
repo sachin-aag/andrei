@@ -424,6 +424,8 @@ const PLOT_TOOLS = [
   "plot_measurements",
 ] as const;
 
+export type AnalyticsChatRole = "orchestrator" | "sheet_worker";
+
 export type AnalyticsPrepareStep = {
   activeTools: string[];
   toolChoice?: "required";
@@ -450,6 +452,11 @@ export function prepareAnalyticsChatStep(input: {
   searchGate?: AnalyticsSearchGate;
   intent?: ChatUserIntentKind;
   sheetJob?: "extract" | "edit";
+  /**
+   * Sheet workers drain pages for one table. The orchestrator locates tables
+   * and dispatches extract_sheet — it must always be able to reply in prose.
+   */
+  role?: AnalyticsChatRole;
   /** `skip_page_and_search` / `locate_request` must not open another page form. */
   intentReason?: string;
 }): AnalyticsPrepareStep | undefined {
@@ -492,7 +499,11 @@ export function prepareAnalyticsChatStep(input: {
     for (const name of PLOT_TOOLS) hidden.add(name);
   }
 
+  // Hide write_column on both roles while a file is still gathering. Force
+  // a tool call only inside a sheet worker — `"required"` with a menu of
+  // non-progress tools (read_worksheet) is a stall pump on the orchestrator.
   const forceContinue =
+    input.role === "sheet_worker" &&
     input.intent !== "read" &&
     writeDirective !== "finish" &&
     stillGathering;

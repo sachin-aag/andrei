@@ -406,6 +406,7 @@ export async function runSheetExtractJob(
             searchGate,
             intent: "write",
             sheetJob: jobMode,
+            role: "sheet_worker",
           });
           if (!prepared) return undefined;
           return {

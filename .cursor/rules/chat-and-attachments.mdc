@@ -168,7 +168,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   empty dumps, Analytics `ask_user`
   hide on lookups / Skip / after any grep until a page is read, and
   Analytics `manage_worksheet` hide after the first structure call this
-  turn). Analytics `write_column` trusts and atomically persists the complete
+  turn). Analytics hides `write_column` while gathering on both the
+  orchestrator and sheet workers; forced tool choice (`toolChoice:
+  required`) is sheet workers only — the orchestrator must always be able
+  to end a turn with text. A forced tool call must be one-shot or
+  phase-advancing; `"required"` with several tools available is only valid
+  inside a single-purpose worker. Analytics `write_column` trusts and atomically persists the complete
   extractor batch without per-cell source-token verification. Keep page
   provenance when known, or the document name when no page is available.
   One complete write per destination sheet; separate extracts per sheet
