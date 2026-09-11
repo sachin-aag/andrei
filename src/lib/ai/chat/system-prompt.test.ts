@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v86-citation-pdf-pages");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v89-list-attachments-meta");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -55,37 +55,24 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Greeting, thanks, or small talk");
     expect(prompt).toContain("Do not call any tools");
     expect(prompt).toContain("Empty fields and ready documents are not a request to write");
+    expect(prompt).toContain("How many attachments, which files in which folder, PDF vs Word, file status");
+    expect(prompt).toContain("call list_attachments");
+    expect(prompt).not.toContain("use the ready count in the Documents header");
     expect(prompt).toContain("Only draft or edit when this turn is a write request");
     expect(prompt).toContain("Empty sections are not a request to draft");
     expect(prompt).not.toContain("Agent mode drafts; Ask mode does not");
   });
 
-  it("puts citations at the end of the section when the pack mode is on", () => {
+  it("parks citations at the end of the section", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
-      citationsAtEndOfSection: true,
     });
     expect(prompt).toContain("END of the section field");
     expect(prompt).toContain("Citations:");
     expect(prompt).toContain("immediately after the supported statement");
     expect(prompt).toContain("cite it as [filename, p. N]");
     expect(prompt).toContain("Do not invent [1]/[2] numbers");
-    expect(prompt).not.toContain(
-      "When you rely on retrieved evidence in prose, cite it as"
-    );
-  });
-
-  it("keeps inline citations when the pack mode is off", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "agent",
-      citationsAtEndOfSection: false,
-    });
-    expect(prompt).toContain(
-      "When you rely on retrieved evidence in prose, cite it as"
-    );
-    expect(prompt).not.toContain("END of the section field");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -319,12 +306,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("SOP/DP/QA/008");
   });
 
-  it("parks citations at the end on generic documents, not demo investigation", () => {
+  it("parks citations at the end on investigation reports and generic documents", () => {
     const investigation = buildChatSystemPrompt({ ...opts, mode: "agent" });
-    expect(investigation).toContain(
-      "When you rely on retrieved evidence in prose, cite it as"
-    );
-    expect(investigation).not.toContain("END of the section field");
+    expect(investigation).toContain("END of the section field");
+    expect(investigation).toContain("Citations:");
 
     const generic = buildChatSystemPrompt({
       ...opts,
@@ -421,7 +406,8 @@ describe("buildChatSystemPrompt", () => {
     const agent = buildChatSystemPrompt({ ...opts, mode: "agent" });
     expect(agent).toContain("Retrieval mode: ADAPTIVE");
     expect(agent).toContain("Search the attachments first");
-    expect(agent).toContain("document_outline");
+    expect(agent).toContain("list_attachments");
+    expect(agent).toContain("File-set questions");
     expect(agent).toContain("INDEX, not evidence");
     expect(agent).toContain("Never treat the index as ENOUGH");
     expect(agent).toContain("grep in rounds until the question is covered");

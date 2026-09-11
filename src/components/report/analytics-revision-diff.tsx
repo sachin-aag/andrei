@@ -69,7 +69,7 @@ export function AnalyticsRevisionDiffView({
   return (
     <div
       data-testid="analytics-revision-diff"
-      className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-4"
+      className="flex flex-col px-6 py-4"
     >
       <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--secondary)]/50 px-3 py-2">
         <p className="text-sm font-medium text-[var(--foreground)]">

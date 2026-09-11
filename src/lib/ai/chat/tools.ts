@@ -196,6 +196,15 @@ import {
   toClientDocumentSearchResults,
 } from "@/lib/attachments/retrieval";
 import {
+  LIST_ATTACHMENTS_DEFAULT_LIMIT,
+  LIST_ATTACHMENTS_MAX_LIMIT,
+  LIST_ATTACHMENTS_NOTE_MAX,
+  LIST_ATTACHMENTS_ROOT_FOLDER,
+  buildAttachmentCatalog,
+} from "@/lib/attachments/list-catalog";
+import { listAttachmentFolders } from "@/lib/attachments/folders";
+import { listActiveAttachments } from "@/lib/attachments/list-active";
+import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
 import { DocumentReviewSession ,
@@ -1313,6 +1322,94 @@ export function buildChatTools(opts: {
       pinnedAttachmentIds,
       citationRule,
       citationLedger,
+    }),
+
+    list_attachments: tool({
+      description:
+        pinnedAttachmentIds.length > 0
+          ? `Walk the ${pinnedAttachmentIds.length} file(s) the engineer tagged with @. Use folders[] / fileTypes[] for which files sit in which folder and how many PDF vs Word. query matches filename, folder, user note, or ingest summary. Facts inside a PDF still use search_documents.`
+          : "Walk this report's Attachments tree: how many files, which files in which folder, PDF vs Word counts, ready vs still ingesting. Read folders[] and fileTypes[] for those answers — do not recount files[]. Includes uploading/queued/processing/failed. query matches filename, folder, user note, or ingest summary (not page text). Paginate files with offset when nextOffset is set. search_documents greps page text and is the wrong tool for a file inventory. Do not guess from the Documents index.",
+      inputSchema: z.object({
+        query: z
+          .string()
+          .trim()
+          .max(120)
+          .optional()
+          .describe(
+            "Optional case-insensitive substring on filename, folder path, user note, or ingest summary (file-level topic). Not page text."
+          ),
+        folder: z
+          .string()
+          .trim()
+          .max(120)
+          .optional()
+          .describe(
+            `Folder path substring (nested paths included). Use ${LIST_ATTACHMENTS_ROOT_FOLDER} for files at the tree root.`
+          ),
+        fileType: z
+          .enum(["pdf", "docx", "other"])
+          .optional()
+          .describe("Filter to PDF, Word (.docx), or anything else."),
+        status: z
+          .enum(["all", "ready", "not_ready"])
+          .optional()
+          .describe(
+            "all (default) matches the Attachments tree including still-ingesting files. ready = searchable. not_ready = uploading/queued/processing/failed."
+          ),
+        offset: z.number().int().min(0).optional().default(0),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(LIST_ATTACHMENTS_MAX_LIMIT)
+          .optional()
+          .default(LIST_ATTACHMENTS_DEFAULT_LIMIT),
+      }),
+      execute: async ({ query, folder, fileType, status, offset, limit }) => {
+        const [attachments, folders, readyDocs] = await Promise.all([
+          listActiveAttachments(reportId),
+          listAttachmentFolders(reportId),
+          listReadyDocumentsForReport(reportId),
+        ]);
+        const topicsById = new Map(
+          readyDocs.flatMap((doc) => {
+            const summary = doc.documentSummary?.trim();
+            return summary ? [[doc.attachmentId, summary] as const] : [];
+          })
+        );
+        const catalog = buildAttachmentCatalog({
+          attachments,
+          folders,
+          pinnedAttachmentIds,
+          topicsById,
+          query,
+          folder,
+          fileType,
+          status: status ?? "all",
+          offset,
+          limit,
+        });
+        return {
+          ...catalog,
+          folders: catalog.folders.map((bucket) => ({
+            ...bucket,
+            path: sanitizePromptMetadata(bucket.path, 240),
+          })),
+          files: catalog.files.map((row) => ({
+            ...row,
+            filename: sanitizePromptMetadata(row.filename, 180) || "unnamed",
+            folderPath: sanitizePromptMetadata(row.folderPath, 240),
+            note: row.note
+              ? sanitizePromptMetadata(row.note, LIST_ATTACHMENTS_NOTE_MAX)
+              : null,
+          })),
+          hint:
+            catalog.nextOffset != null
+              ? "Call again with offset=nextOffset to continue the file list. folders[] and fileTypes[] are already complete for this filter. Totals are the Attachments tree, not search hits."
+              : "folders[] and fileTypes[] are the folder and PDF/Word counts. These totals are the Attachments tree (including still-ingesting files unless status=ready). search_documents greps page text — use it when the question is which files mention a fact inside the PDF, not for the file set.",
+          trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+        };
+      },
     }),
 
     document_outline: tool({
@@ -2866,7 +2963,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables only when rewriting a field that already is a table. Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. ${reviewableCopy} Use this for empty prose fields, or a genuine rewrite of a filled field (replaceFilledField: true). To add a NEW table, use edit_table create_table — not this tool. To remove a table, use edit_table delete_table — not this tool. The tool refuses a filled field unless replaceFilledField is true. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit for targeted prose, list, or heading edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables only when rewriting a field that already is a table. Use angle-bracket placeholders like <batch number> for facts you do not know — never invent facts, and never wrap a document id as [id: <to be filled>]. ${reviewableCopy} Use this for empty prose fields, or a genuine rewrite of a filled field (replaceFilledField: true). To add a NEW table, use edit_table create_table — not this tool. To remove a table, use edit_table delete_table — not this tool. The tool refuses a filled field unless replaceFilledField is true. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit for targeted prose, list, or heading edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z

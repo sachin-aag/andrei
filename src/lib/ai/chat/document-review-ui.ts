@@ -86,6 +86,7 @@ export function summarizeDocumentReviewProgress(
       reviewedPages,
       findingCount,
       pending,
+      fileScope: fileScopeSuffix(reviewDocumentsFromParts(parts)),
     }),
   };
 }
@@ -122,13 +123,17 @@ function labelForSnapshot(input: {
   reviewedPages: number;
   findingCount: number;
   pending: boolean;
+  fileScope: string;
 }): string {
   const total = input.totalPages > 0 ? input.totalPages : null;
+  const files = input.fileScope;
   switch (input.phase) {
     case "planning":
       return total
-        ? `Planning a complete review of ${total} pages…`
-        : "Planning a complete document review…";
+        ? `Planning a complete review of ${total} pages${files}…`
+        : files
+          ? `Planning a complete document review${files}…`
+          : "Planning a complete document review…";
     case "reviewing": {
       const pages = total
         ? `Reviewed ${input.reviewedPages}/${total} pages`
@@ -137,14 +142,14 @@ function labelForSnapshot(input: {
         input.findingCount > 0
           ? ` · ${input.findingCount} relevant finding${input.findingCount === 1 ? "" : "s"}`
           : "";
-      return `${pages}${findings}`;
+      return `${pages}${files}${findings}`;
     }
     case "finalizing":
       return "Cross-checking citations and duplicates…";
     case "complete":
       return total
-        ? `Complete: reviewed ${input.reviewedPages}/${total} pages`
-        : `Complete: reviewed ${input.reviewedPages} pages`;
+        ? `Complete: reviewed ${input.reviewedPages}/${total} pages${files}`
+        : `Complete: reviewed ${input.reviewedPages} pages${files}`;
     case "error":
       return "Could not finish the document review.";
     default: {
@@ -152,6 +157,53 @@ function labelForSnapshot(input: {
       return _exhaustive;
     }
   }
+}
+
+const REVIEW_FILENAME_MAX = 48;
+
+export type ReviewDocumentUiRef = {
+  filename: string;
+};
+
+/** Filenames from start_document_review (and later tools that echo them). */
+export function reviewDocumentsFromParts(
+  parts: readonly DocumentReviewToolPart[]
+): ReviewDocumentUiRef[] {
+  const seen = new Map<string, ReviewDocumentUiRef>();
+  for (const part of parts) {
+    const raw = part.output?.documents ?? part.input?.documents;
+    if (!Array.isArray(raw)) continue;
+    for (const item of raw) {
+      if (typeof item !== "object" || item === null) continue;
+      const rec = item as {
+        filename?: unknown;
+        attachmentId?: unknown;
+      };
+      const filename =
+        typeof rec.filename === "string" ? rec.filename.trim() : "";
+      if (!filename) continue;
+      const id =
+        typeof rec.attachmentId === "string" && rec.attachmentId.trim()
+          ? rec.attachmentId
+          : filename;
+      if (seen.has(id)) continue;
+      seen.set(id, { filename });
+    }
+  }
+  return [...seen.values()];
+}
+
+export function fileScopeSuffix(docs: readonly ReviewDocumentUiRef[]): string {
+  if (docs.length === 0) return "";
+  const names = docs.map((doc) => truncateReviewFilename(doc.filename));
+  if (names.length === 1) return ` in ${names[0]}`;
+  if (names.length === 2) return ` in ${names[0]} and ${names[1]}`;
+  return ` in ${names[0]} and ${names.length - 1} more files`;
+}
+
+function truncateReviewFilename(name: string): string {
+  if (name.length <= REVIEW_FILENAME_MAX) return name;
+  return `${name.slice(0, REVIEW_FILENAME_MAX - 1).trimEnd()}…`;
 }
 
 function numberField(value: unknown): number | null {

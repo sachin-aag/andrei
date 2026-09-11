@@ -42,7 +42,7 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
 
   const agentSummary =
     `I drafted an addition to the **${label}** section — review the highlighted insertion in the document and accept or reject it. ` +
-    `Replace any \`[bracketed placeholders]\` with the real values. I skipped sections I had too little information for.`;
+    `Replace any \`<placeholders>\` with the real values. I skipped sections I had too little information for.`;
 
   const socialText =
     `Hi — I can draft sections from your attachments when you ask, or answer questions about the report. What would you like to work on?`;

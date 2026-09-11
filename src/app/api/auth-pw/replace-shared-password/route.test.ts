@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-vi.mock("@/auth", () => ({
-  auth: vi.fn(),
+vi.mock("@/lib/auth/session", () => ({
+  getCurrentUser: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -35,7 +35,7 @@ vi.mock("@/lib/audit", () => ({
   recordAuditEvent: vi.fn().mockResolvedValue({ id: "audit-1" }),
 }));
 
-import { auth } from "@/auth";
+import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/db";
 import { hashPassword } from "@/lib/auth/password";
 import {
@@ -89,15 +89,19 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
   });
 
   it("returns 401 without session", async () => {
-    vi.mocked(auth).mockResolvedValueOnce(null as never);
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(null);
     const res = await POST(jsonRequest({ password: "a", confirmPassword: "a" }));
     expect(res.status).toBe(401);
   });
 
   it("returns 403 when mustChangePassword is false", async () => {
-    vi.mocked(auth).mockResolvedValueOnce({
-      user: { workspaceUserId: "ws-1" },
-    } as never);
+    vi.mocked(getCurrentUser).mockResolvedValueOnce({
+      id: "ws-1",
+      name: "User",
+      email: "user@mjbiopharm.com",
+      role: "engineer",
+      title: "Engineer",
+    });
     vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
       id: "ws-1",
       passwordHash: "old.hash",
@@ -114,9 +118,13 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
   });
 
   it("rejects reusing a recent password", async () => {
-    vi.mocked(auth).mockResolvedValueOnce({
-      user: { workspaceUserId: "ws-1" },
-    } as never);
+    vi.mocked(getCurrentUser).mockResolvedValueOnce({
+      id: "ws-1",
+      name: "User",
+      email: "user@mjbiopharm.com",
+      role: "engineer",
+      title: "Engineer",
+    });
     vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
       id: "ws-1",
       passwordHash: "temp.hash",
@@ -138,9 +146,13 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
   });
 
   it("updates hash and clears mustChangePassword", async () => {
-    vi.mocked(auth).mockResolvedValueOnce({
-      user: { workspaceUserId: "ws-1" },
-    } as never);
+    vi.mocked(getCurrentUser).mockResolvedValueOnce({
+      id: "ws-1",
+      name: "User",
+      email: "user@mjbiopharm.com",
+      role: "engineer",
+      title: "Engineer",
+    });
     vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
       id: "ws-1",
       passwordHash: "temp.hash",

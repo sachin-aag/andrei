@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db";
 import {
@@ -38,8 +38,8 @@ export type ReserveAttachmentResult =
   | { ok: false; error: string; status: 400 | 429 };
 
 /**
- * Atomically enforce per-report attachment count/byte quotas under a report
- * row lock, then insert the library asset and report link.
+ * Reserve a report attachment upload under a report row lock, then insert the
+ * library asset and report link. Enforces per-file size and workspace storage budget.
  */
 export async function reserveAttachmentUpload(
   input: ReserveAttachmentInput
@@ -64,67 +64,6 @@ export async function reserveAttachmentUpload(
     await tx.execute(
       sql`select ${reports.id} from ${reports} where ${reports.id} = ${input.reportId} for update`
     );
-
-    const activeRows = await tx
-      .select({
-        sizeBytes: reportAttachments.sizeBytes,
-        assetId: reportAttachments.assetId,
-      })
-      .from(reportAttachments)
-      .where(
-        and(
-          eq(reportAttachments.reportId, input.reportId),
-          isNull(reportAttachments.deletedAt)
-        )
-      );
-
-    const assetIds = [
-      ...new Set(
-        activeRows
-          .map((row) => row.assetId)
-          .filter((id): id is string => id != null)
-      ),
-    ];
-    const linkedAssets =
-      assetIds.length === 0
-        ? []
-        : await tx
-            .select({
-              id: attachmentAssets.id,
-              sizeBytes: attachmentAssets.sizeBytes,
-            })
-            .from(attachmentAssets)
-            .where(
-              and(
-                inArray(attachmentAssets.id, assetIds),
-                isNull(attachmentAssets.deletedAt)
-              )
-            );
-    const assetSizeById = new Map(
-      linkedAssets.map((asset) => [asset.id, asset.sizeBytes])
-    );
-
-    const activeSizeBytes = activeRows.reduce((sum, row) => {
-      if (row.assetId) {
-        return sum + (assetSizeById.get(row.assetId) ?? row.sizeBytes);
-      }
-      return sum + row.sizeBytes;
-    }, 0);
-
-    if (activeRows.length >= limits.maxAttachmentsPerReport) {
-      return {
-        ok: false as const,
-        error: `Report already has ${limits.maxAttachmentsPerReport} attachments`,
-        status: 400 as const,
-      };
-    }
-    if (activeSizeBytes + input.sizeBytes > limits.maxAttachmentBytesPerReport) {
-      return {
-        ok: false as const,
-        error: "Report attachment storage limit exceeded",
-        status: 400 as const,
-      };
-    }
 
     try {
       await assertAttachmentStorageBudgetAvailable(input.sizeBytes, tx);

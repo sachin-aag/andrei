@@ -57,3 +57,8 @@ const sections = getWorkspaceSections(report.documentType);
   (pending insert/delete marks persist and export as Word tracked changes).
   The editor is one TipTap field laid out as Letter pages (`PagedDocumentSurface`);
   do not persist page-break nodes.
+- Left-rail chrome is Attachments | Contents on every pack (Convergent layout:
+  tabs on the first row, folder/upload on a second row while Attachments is
+  selected). `getReportTableOfContents(documentType)` always returns an outline
+  numbered `1. 2. 3.` / `1.1` (Word recipe when the type has one, otherwise the
+  editor section list).

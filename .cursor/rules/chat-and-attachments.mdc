@@ -34,7 +34,7 @@ Retrieval maps those turns to focused (`reason: no_task`) and skips
 kickoff evidence. A yes after the assistant offered to draft is a write
 request.
 
-Search attachments **before** `ask_user`, `draft_field`, or a `[placeholder]`
+Search attachments **before** `ask_user`, `draft_field`, or a `<placeholder>`
 for report facts (batch, date, result, equipment ID, requirement ID, design
 output, verification objective, ECO/DCR). Exception: when intent is **write**
 and the target section is **filled or partial**, call `read_section` first
@@ -106,7 +106,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 - New tools: register in `buildChatTools` **and** add to the Plan allowlist in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
   Missing from the allowlist = silent Plan-mode gap. Analytics tools stay
-  off that list.
+  off that list. File-set questions (how many attachments, which files in which
+  folder, PDF vs Word, status, filename/topic) use `list_attachments`
+  (`src/lib/attachments/list-catalog.ts`). Copy it into
+  `ANALYTICS_DOCUMENT_TOOL_NAMES`. Do not hide it in `searchLoopDirective`.
+  Do not stuff an authoritative count into the Documents index instead.
+  Content-inside-PDF “which files mention X” stays `search_documents`.
 - A tool-input schema violation must never end the engineer's turn.
   `repairChatToolCall` clamps `InvalidToolInputError` input to the tool's own
   JSON Schema (`clampToolInputToSchema`: maxItems, maxLength, min/max, enum,
@@ -203,8 +208,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   tables (blank data cells, no surrounding prose) are empty, not partial
   — `sectionHasTable` still sees them. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if
-  missing or ambiguous). Do not reject or rewrite a draft that omitted a
-  known page. Clicking those brackets (or numbered `[n]` that maps to
+  missing or ambiguous). The saved field converts those to numbered `[n]`
+  markers plus a trailing Citations: list on every pack — there is no
+  inline `[filename, p. N]` document style. Do not reject or rewrite a
+  draft that omitted a known page. Clicking those brackets (or numbered `[n]` that maps to
   a parked source) in the document, chat, or suggestion Sources opens or
   reuses that attachment canvas tab and scrolls the PDF to the cited
   page. Combined `[file A, p. N, file B, p. M]` is two links; extra pages
@@ -231,9 +238,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.
 - Tagged `@` documents are the complete attachment scope for that turn.
-  Search, scan, outline, page reads, and extracts must not drift to untagged
-  files. If the client drops a structured mention payload, recover an exact,
-  unique `@filename` against that report's ready-document index.
+  Search, scan, outline, page reads, extracts, and `list_attachments` must
+  not drift to untagged files. If the client drops a structured mention payload,
+  recover an exact, unique `@filename` against that report's ready-document index.
 - Report body is not in `document_chunks`. Use `read_section`.
 
 ## Ingest

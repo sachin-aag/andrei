@@ -20,6 +20,7 @@ vi.mock("@/lib/ai/chat/tools", async (importOriginal) => {
   return {
     ...actual,
     buildChatTools: vi.fn(() => ({
+      list_attachments: { kind: "catalog" },
       search_documents: { kind: "search" },
       read_document_page: { kind: "page" },
       document_outline: { kind: "outline" },
@@ -111,6 +112,7 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).not.toContain("propose_edit");
     expect(ANALYTICS_CHAT_TOOL_NAMES).not.toContain("draft_field");
     expect(ANALYTICS_CHAT_TOOL_NAMES).not.toContain("read_section");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("list_attachments");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("search_documents");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("write_column");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("manage_worksheet");
@@ -127,13 +129,14 @@ describe("analytics chat tools", () => {
   it("picks only the document tools the analytics assistant is allowed to call", () => {
     expect(
       pickAnalyticsDocumentTools({
+        list_attachments: 0,
         search_documents: 1,
         propose_edit: 2,
         draft_field: 3,
         read_section: 4,
         ask_user: 5,
       })
-    ).toEqual({ search_documents: 1, ask_user: 5 });
+    ).toEqual({ list_attachments: 0, search_documents: 1, ask_user: 5 });
   });
 
   it("omits write tools when the report is locked", () => {
@@ -195,6 +198,7 @@ describe("analytics chat tools", () => {
     expect(locked.plot_boxplot).toBeUndefined();
     expect(locked.plot_histogram).toBeUndefined();
     expect(locked.scan_attachments).toBeDefined();
+    expect(locked.list_attachments).toBeDefined();
     expect(locked.search_documents).toBeDefined();
     const searchSchema = locked.search_documents?.inputSchema as unknown as ZodToolSchema;
     expect(searchSchema.parse({ query: "Conductivity" })).toMatchObject({

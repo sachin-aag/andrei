@@ -39,8 +39,8 @@ describe("Convergent customer pack", () => {
     );
     expect(CONVERGENT_PACK.wordImportEnabled).toBe(false);
     expect(CONVERGENT_PACK.citationsAtEndOfSection).toBe(true);
-    expect(DEMO_PACK.citationsAtEndOfSection).toBe(false);
-    expect(MJ_PACK.citationsAtEndOfSection).toBe(false);
+    expect(DEMO_PACK.citationsAtEndOfSection).toBe(true);
+    expect(MJ_PACK.citationsAtEndOfSection).toBe(true);
     expect(CONVERGENT_PACK.expertReviewEnabled).toBe(true);
     expect(DEMO_PACK.expertReviewEnabled).toBe(false);
     expect(MJ_PACK.expertReviewEnabled).toBe(false);
@@ -74,6 +74,7 @@ describe("Convergent customer pack", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",
       "quality_risk_assessment",
+      "equipment_lifecycle_report",
     ]);
   });
 

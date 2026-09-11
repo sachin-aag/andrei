@@ -206,7 +206,7 @@ export async function POST(req: Request) {
       workspaceUserId: wsUser.id,
       mustChangePassword: wsUser.mustChangePassword,
       passwordExpired,
-      productTourSessionId: crypto.randomUUID(),
+      sessionVersion: wsUser.sessionVersion ?? 0,
     },
     secret,
     salt: cookieName,

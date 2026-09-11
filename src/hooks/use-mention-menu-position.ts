@@ -27,12 +27,13 @@ export function useMentionMenuPosition({
   deps?: readonly unknown[];
 }): MentionMenuPosition | null {
   const [position, setPosition] = useState<MentionMenuPosition | null>(null);
+  const extraKey = JSON.stringify(deps);
+  if (!open && position !== null) {
+    setPosition(null);
+  }
 
   useLayoutEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return;
-    }
+    if (!open) return;
 
     const update = () => {
       const textarea = textareaRef.current;
@@ -71,7 +72,7 @@ export function useMentionMenuPosition({
       textarea?.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
-  }, [anchorRef, atIndex, boundaryRef, menuRef, open, textareaRef, ...deps]);
+  }, [anchorRef, atIndex, boundaryRef, extraKey, menuRef, open, textareaRef]);
 
-  return position;
+  return open ? position : null;
 }

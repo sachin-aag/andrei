@@ -50,7 +50,7 @@ async function waitForWalkthroughProgress(
 }
 
 test.describe("product walkthrough", () => {
-  test("shows on first login and resumes after skip", async ({ page }) => {
+  test("shows on first login and resumes an in-progress tour", async ({ page }) => {
     await loginWithTour(page, true);
 
     const dialog = page.getByRole("dialog");
@@ -67,14 +67,6 @@ test.describe("product walkthrough", () => {
       stepId: "reports",
     });
 
-    await dialog.getByRole("button", { name: /^skip for now$/i }).click();
-    await expect(dialog).toHaveCount(0);
-    await waitForWalkthroughProgress(page, {
-      status: "in_progress",
-      stepId: "reports",
-    });
-    await expect(page.getByRole("heading", { name: /my reports/i })).toBeVisible();
-
     await loginWithTour(page, "resume");
     await expect(
       page.getByRole("dialog").getByRole("heading", { name: /your reports live here/i })
@@ -87,7 +79,7 @@ test.describe("product walkthrough", () => {
     await loginWithTour(page, true);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 15_000 });
-    await dialog.getByRole("button", { name: /don't show this tour again/i }).click();
+    await dialog.getByRole("button", { name: /don't show this again/i }).click();
     await expect(dialog).toHaveCount(0);
     await waitForWalkthroughProgress(page, { status: "dismissed" });
 
@@ -102,7 +94,7 @@ test.describe("product walkthrough", () => {
     await loginWithTour(page, true);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 15_000 });
-    await dialog.getByRole("button", { name: /don't show this tour again/i }).click();
+    await dialog.getByRole("button", { name: /don't show this again/i }).click();
     await expect(dialog).toHaveCount(0);
     await waitForWalkthroughProgress(page, { status: "dismissed" });
 

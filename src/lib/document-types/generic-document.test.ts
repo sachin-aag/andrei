@@ -30,13 +30,13 @@ describe("generic document type", () => {
     expect(isWordImportAvailable("design_verification", DEMO_PACK)).toBe(false);
   });
 
-  it("uses Convergent numbered citations parked at the end of the body", () => {
+  it("uses numbered citations parked at the end of the body", () => {
     expect(getDocumentType("generic_document").citationsAtEndOfSection).toBe(
       true
     );
     expect(citationsAtEndOfSectionFor("generic_document")).toBe(true);
-    expect(citationsAtEndOfSectionFor("investigation_report")).toBe(false);
-    expect(citationsAtEndOfSectionFor("design_verification")).toBe(false);
+    expect(citationsAtEndOfSectionFor("investigation_report")).toBe(true);
+    expect(citationsAtEndOfSectionFor("design_verification")).toBe(true);
   });
 
   it("requires ATX headings when the assistant drafts the body", () => {

@@ -25,6 +25,7 @@ const passwordSchemaDefaults = {
   passwordResetTokenHash: null,
   passwordResetTokenExpiresAt: null,
   deactivatedAt: null,
+  sessionVersion: 0,
   lastLoginAt: null,
 };
 
@@ -171,7 +172,10 @@ describe("POST /api/test/login", () => {
 
     expect(encode).toHaveBeenCalledWith(
       expect.objectContaining({
-        token: expect.objectContaining({ mustChangePassword: true }),
+        token: expect.objectContaining({
+          mustChangePassword: true,
+          sessionVersion: 0,
+        }),
       })
     );
   });

@@ -1,10 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { SectionType } from "@/db/schema";
-import {
-  isCitationShapedBracket,
-  NUMERIC_ONLY_BRACKET,
-} from "@/lib/placeholders/citation-bracket";
+import { isCitationShapedBracket } from "@/lib/placeholders/citation-bracket";
 import { clipBracketPlaceholderText } from "@/lib/text/bracket-span";
 
 export type Placeholder = {
@@ -36,74 +33,138 @@ export function fromPosFromPlaceholderId(
 }
 
 /**
- * Regex to find placeholders in the text.
- * Matches a bracketed placeholder containing either `<to be filled>` or
- * `to be filled`. AI suggestions sometimes omit the angle brackets, so keep
- * both forms visible in the completion checklist.
- * Examples: `[Batch No. 1: <to be filled>]`, `[<to be filled>]`, `[to be filled]`
+ * Legacy square-bracket placeholders (`[Batch No.: <to be filled>]`) plus
+ * canonical angle-bracket tokens (`<batch number>`, `<to be filled>`).
  */
-export const PLACEHOLDER_REGEX = /\[[^\]]*(?:<\s*)?to be filled(?:\s*>)?[^\]]*\]/gi;
+export const PLACEHOLDER_REGEX =
+  /\[[^\]]*(?:<\s*)?to be filled(?:\s*>)?[^\]]*\]|<[^<>]+>/gi;
 
 /** Any `[...]` span; paired with exclusions in `collectPlaceholderSpans`. */
 export const BRACKET_SPAN_REGEX = /\[[^\]]+\]/g;
 
+/** Any `<...>` span; inner `<to be filled>` inside `[...]` is skipped. */
+export const ANGLE_SPAN_REGEX = /<[^<>]+>/g;
+
 /** Citation-style `[12]` — not treated as an editable placeholder. */
-export { NUMERIC_ONLY_BRACKET };
+export { NUMERIC_ONLY_BRACKET } from "@/lib/placeholders/citation-bracket";
 
 /**
- * Max length for a placeholder label (inner text before `: <to be filled>`).
- * Shared by the scanner and the suggestion/document normalizer so they cannot drift.
+ * Max length for a placeholder label after insert compaction
+ * (`compactPlaceholderLabel`). Live scanning does not use this cap —
+ * `<container format: Vial / Cartridge>` and similar tokens still highlight.
  */
 export const MAX_PLACEHOLDER_LABEL_LENGTH = 40;
+
+/** Structural HTML tags — not Placeholders-panel labels (`<date>` is allowed). */
+const HTML_TAG_NAMES = new Set([
+  "a",
+  "article",
+  "aside",
+  "audio",
+  "b",
+  "blockquote",
+  "body",
+  "br",
+  "button",
+  "canvas",
+  "caption",
+  "col",
+  "colgroup",
+  "div",
+  "em",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "head",
+  "header",
+  "hr",
+  "html",
+  "i",
+  "iframe",
+  "img",
+  "input",
+  "li",
+  "main",
+  "math",
+  "mi",
+  "mn",
+  "mo",
+  "mrow",
+  "nav",
+  "ol",
+  "option",
+  "p",
+  "path",
+  "pre",
+  "script",
+  "section",
+  "select",
+  "source",
+  "span",
+  "strong",
+  "style",
+  "sub",
+  "sup",
+  "svg",
+  "table",
+  "tbody",
+  "td",
+  "textarea",
+  "tfoot",
+  "th",
+  "thead",
+  "tr",
+  "ul",
+  "video",
+]);
+
+export function isLikelyHtmlTag(inner: string): boolean {
+  const trimmed = inner.trim();
+  if (!trimmed || trimmed.startsWith("!") || trimmed.startsWith("?")) return true;
+  if (trimmed.includes("=") || trimmed.endsWith("/")) return true;
+  const name = trimmed.replace(/^\//, "").split(/[\s/]/, 1)[0]?.toLowerCase() ?? "";
+  return HTML_TAG_NAMES.has(name);
+}
 
 type TextSpan = { fromRel: number; toRel: number; text: string };
 
 /**
- * True when `[...]` is guidance the author or AI should replace—not static prose
- * such as SOP acceptance criteria that happen to be wrapped in brackets on import.
+ * Legacy square `[Label: <to be filled>]` still highlights as a fill-in.
+ * Other `[...]` spans (citations, `[number]`, SOP limits, `[formula]`) are
+ * not live placeholders — insert still converts guidance squares to `<label>`.
  */
 export function isActionablePlaceholderBracket(match: string): boolean {
   if (!/^\[[^\]]+\]$/.test(match)) return false;
-  if (NUMERIC_ONLY_BRACKET.test(match)) return false;
-  // Document citations (`[file.pdf]`, `[name, p. N]`, `[Appendix B]`,
-  // `[Appendix B DV Report 790-00134R(RevU)]`, including mistaken
-  // `[cite: <to be filled>]`) are never Placeholders-panel tokens.
-  // CUID2 attachment ids the model copied from the document index are cites.
   if (isCitationShapedBracket(match)) return false;
+  return /to\s+be\s+filled/i.test(match.slice(1, -1));
+}
 
-  const inner = match.slice(1, -1);
-
-  // Failed legacy equation import — not a fill-in field.
-  if (/^formula$/i.test(inner.trim())) return false;
-
-  if (/to\s+be\s+filled/i.test(inner)) return true;
-  if (/\be\.g\./i.test(inner)) return true;
-
-  // QC / SOP limit language in brackets is document copy, not a fill-in field.
-  if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
-
-  // Guidance-only labels without `: <to be filled>` — e.g. `[number]`,
-  // `[equipment ID]`, `[Personnel Name(s)]`. Cap length so long bracketed
-  // prose is not treated as a fill-in field; AI postprocess compacts labels
-  // to this same limit. Parentheses cover plural markers like `(s)`.
-  if (
-    !inner.includes(":") &&
-    inner.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
-    /^[\w\s./'()-]+$/i.test(inner.trim())
-  ) {
-    return true;
-  }
-
-  return false;
+/**
+ * True when `<...>` is a fill-in token (`<batch number>`, `<to be filled>`,
+ * `<container format: Vial / Cartridge>`, `<12>`). Citations use square
+ * brackets, so numeric / formula / SOP-limit exceptions do not apply here.
+ * Skip only structural HTML tags; nested `<to be filled>` inside `[...]` is
+ * skipped by the collector, not this predicate.
+ */
+export function isActionablePlaceholderAngle(match: string): boolean {
+  if (!/^<[^<>]+>$/.test(match)) return false;
+  return !isLikelyHtmlTag(match.slice(1, -1));
 }
 
 export function collectPlaceholderSpans(text: string): TextSpan[] {
   const spans: TextSpan[] = [];
+  const squareRanges: Array<{ from: number; to: number }> = [];
 
   BRACKET_SPAN_REGEX.lastIndex = 0;
   let bm: RegExpExecArray | null;
   while ((bm = BRACKET_SPAN_REGEX.exec(text)) !== null) {
     const raw = bm[0];
+    squareRanges.push({ from: bm.index, to: bm.index + raw.length });
     if (!isActionablePlaceholderBracket(raw)) continue;
 
     const seg = clipBracketPlaceholderText(raw);
@@ -114,7 +175,24 @@ export function collectPlaceholderSpans(text: string): TextSpan[] {
     });
   }
 
-  return spans;
+  ANGLE_SPAN_REGEX.lastIndex = 0;
+  let am: RegExpExecArray | null;
+  while ((am = ANGLE_SPAN_REGEX.exec(text)) !== null) {
+    const raw = am[0];
+    const from = am.index;
+    const to = from + raw.length;
+    if (squareRanges.some((range) => from >= range.from && to <= range.to)) {
+      continue;
+    }
+    if (!isActionablePlaceholderAngle(raw)) continue;
+    spans.push({
+      fromRel: from,
+      toRel: to,
+      text: raw,
+    });
+  }
+
+  return spans.toSorted((a, b) => a.fromRel - b.fromRel);
 }
 
 const BLOCK_CONTAINER_TYPES = new Set([
@@ -311,7 +389,7 @@ export function findPlaceholders(
   return placeholders;
 }
 
-/** Scan a plain-text field (textarea) for bracket placeholders. Positions are UTF-16 offsets. */
+/** Scan a plain-text field (textarea) for placeholders. Positions are UTF-16 offsets. */
 export function findPlaceholdersInPlainText(
   text: string,
   section: SectionType,

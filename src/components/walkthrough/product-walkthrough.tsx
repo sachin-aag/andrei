@@ -21,12 +21,7 @@ import {
   resumeTourIndexForPathname,
   stepsForRole,
 } from "@/lib/walkthrough/steps";
-import {
-  isProductTourPausedForSession,
-  PRODUCT_TOUR_SESSION_PAUSE_KEY,
-  productTourPauseToken,
-  shouldShowProductTour,
-} from "@/lib/walkthrough/progress";
+import { shouldShowProductTour } from "@/lib/walkthrough/progress";
 import type {
   ProductTourProgress,
   ProductTourStep,
@@ -49,20 +44,15 @@ export function useProductWalkthrough(): WalkthroughContextValue {
 }
 
 export function ProductWalkthroughProvider({
-  userId,
   role,
   children,
 }: {
-  userId: string
   role: UserRole
   children: ReactNode
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [progress, setProgress] = useState<ProductTourProgress | null>(null);
-  const [sessionKey, setSessionKey] = useState("");
-  const [pausedThisSession, setPausedThisSession] = useState(false);
-  const [sessionPauseReady, setSessionPauseReady] = useState(false);
   const [index, setIndex] = useState(0);
   const persistSeq = useRef(0);
   const startedRef = useRef(false);
@@ -92,30 +82,13 @@ export function ProductWalkthroughProvider({
       try {
         const res = await fetch("/api/me/walkthrough", { cache: "no-store" });
         if (!res.ok) return;
-        const data = (await res.json()) as ProductTourProgress & {
-          sessionKey?: string
-        };
+        const data = (await res.json()) as ProductTourProgress;
         if (cancelled) return;
-        const nextSessionKey =
-          typeof data.sessionKey === "string" ? data.sessionKey : "";
-        setSessionKey(nextSessionKey);
         // Replay (or any persist) can beat this GET. Do not clobber local progress.
         if (persistSeq.current === 0) {
           setProgress({ status: data.status, stepId: data.stepId });
           setIndex(resolveStepIndex(steps, data.stepId));
-          try {
-            setPausedThisSession(
-              isProductTourPausedForSession(
-                sessionStorage.getItem(PRODUCT_TOUR_SESSION_PAUSE_KEY),
-                userId,
-                nextSessionKey
-              )
-            );
-          } catch {
-            setPausedThisSession(false);
-          }
         }
-        setSessionPauseReady(true);
       } catch {
         // Fail closed — do not block the app if progress cannot be loaded.
       }
@@ -123,7 +96,7 @@ export function ProductWalkthroughProvider({
     return () => {
       cancelled = true;
     };
-  }, [steps, userId]);
+  }, [steps]);
 
   const persist = useCallback(async (next: ProductTourProgress) => {
     const seq = ++persistSeq.current;
@@ -142,10 +115,8 @@ export function ProductWalkthroughProvider({
   }, []);
 
   const tourActive =
-    sessionPauseReady &&
     progress !== null &&
     shouldShowProductTour(progress.status) &&
-    !pausedThisSession &&
     Boolean(step);
   const visible = tourActive && stepOnPage;
 
@@ -198,31 +169,8 @@ export function ProductWalkthroughProvider({
     captureEvent("product_tour_dismissed", { role, stepId: step?.id });
   }, [persist, role, step?.id]);
 
-  const skipForNow = useCallback(() => {
-    try {
-      sessionStorage.setItem(
-        PRODUCT_TOUR_SESSION_PAUSE_KEY,
-        productTourPauseToken(userId, sessionKey)
-      );
-    } catch {
-      // Private mode can throw; in-memory pause still applies.
-    }
-    setPausedThisSession(true);
-    if (step) {
-      void persist({ status: "in_progress", stepId: step.id });
-    }
-    captureEvent("product_tour_skipped_session", { role, stepId: step?.id });
-  }, [persist, role, sessionKey, step, userId]);
-
   const restart = useCallback(() => {
-    try {
-      sessionStorage.removeItem(PRODUCT_TOUR_SESSION_PAUSE_KEY);
-    } catch {
-      // ignore
-    }
     startedRef.current = false;
-    setPausedThisSession(false);
-    setSessionPauseReady(true);
     setIndex(0);
     const first = steps[0];
     void persist({
@@ -257,7 +205,6 @@ export function ProductWalkthroughProvider({
             goTo(index + 1);
           }}
           onBack={() => goTo(index - 1)}
-          onSkipForNow={skipForNow}
           onDismissForever={dismissForever}
         />
       ) : null}

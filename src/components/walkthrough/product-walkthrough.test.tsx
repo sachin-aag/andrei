@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { ProductWalkthroughProvider } from "@/components/walkthrough/product-walkthrough";
@@ -32,7 +32,7 @@ vi.mock("@/lib/document-types", () => ({
 
 function wrapper(children: ReactNode) {
   return (
-    <ProductWalkthroughProvider userId="u1" role="engineer">
+    <ProductWalkthroughProvider role="engineer">
       {children}
     </ProductWalkthroughProvider>
   );
@@ -41,12 +41,7 @@ function wrapper(children: ReactNode) {
 describe("ProductWalkthroughProvider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStorage.clear();
     pathname = "/";
-  });
-
-  afterEach(() => {
-    sessionStorage.clear();
   });
 
   it("shows the welcome step for a first-time user", async () => {
@@ -57,7 +52,6 @@ describe("ProductWalkthroughProvider", () => {
         json: async () => ({
           status: "not_started",
           stepId: null,
-          sessionKey: "sess-1",
         }),
       })
     );
@@ -69,7 +63,7 @@ describe("ProductWalkthroughProvider", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /let's go/i })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /don't show this tour again/i })
+      screen.getByRole("button", { name: /don't show this again/i })
     ).toBeInTheDocument();
   });
 
@@ -81,7 +75,6 @@ describe("ProductWalkthroughProvider", () => {
         json: async () => ({
           status: "in_progress",
           stepId: "welcome",
-          sessionKey: "sess-1",
         }),
       })
     );
@@ -103,7 +96,6 @@ describe("ProductWalkthroughProvider", () => {
         json: async () => ({
           status: "in_progress",
           stepId: "create-report",
-          sessionKey: "sess-1",
         }),
       })
     );
@@ -123,7 +115,6 @@ describe("ProductWalkthroughProvider", () => {
         json: async () => ({
           status: "dismissed",
           stepId: "welcome",
-          sessionKey: "sess-1",
         }),
       })
     );
@@ -135,31 +126,27 @@ describe("ProductWalkthroughProvider", () => {
     });
   });
 
-  it("hides for this session when Skip for now is clicked", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        status: "in_progress",
-        stepId: "welcome",
-        sessionKey: "sess-1",
-      }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const user = userEvent.setup();
-    render(wrapper(<div>dashboard</div>));
-    await screen.findByRole("dialog");
-
-    await user.click(screen.getByRole("button", { name: /^skip for now$/i }));
-
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(sessionStorage.getItem("andrei:product-tour:paused")).toBe(
-      "u1:sess-1"
+  it("does not show the tour after it was completed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "completed",
+          stepId: "done",
+        }),
+      })
     );
+
+    render(wrapper(<div>dashboard</div>));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 
-  it("persists dismissed when Don't show this tour again is clicked", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  it("persists dismissed when Don't show this again is clicked", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === "PATCH") {
         return {
           ok: true,
@@ -171,7 +158,6 @@ describe("ProductWalkthroughProvider", () => {
         json: async () => ({
           status: "in_progress",
           stepId: "welcome",
-          sessionKey: "sess-1",
         }),
       };
     });
@@ -182,7 +168,7 @@ describe("ProductWalkthroughProvider", () => {
     await screen.findByRole("dialog");
 
     await user.click(
-      screen.getByRole("button", { name: /don't show this tour again/i })
+      screen.getByRole("button", { name: /don't show this again/i })
     );
 
     await waitFor(() => {
@@ -197,25 +183,48 @@ describe("ProductWalkthroughProvider", () => {
     );
   });
 
-  it("shows the tour again after skip when a new login session starts", async () => {
-    sessionStorage.setItem("andrei:product-tour:paused", "u1:sess-1");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          status: "in_progress",
-          stepId: "reports",
-          sessionKey: "sess-2",
-        }),
-      })
-    );
+  it("does not dismiss when the dimmed backdrop is clicked", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "in_progress",
+        stepId: "welcome",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     render(wrapper(<div>dashboard</div>));
+    await screen.findByRole("dialog");
 
-    expect(
-      await screen.findByRole("heading", { name: /your reports live here/i })
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("walkthrough-scrim"));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/me/walkthrough",
+      expect.objectContaining({ method: "PATCH" })
+    );
+  });
+
+  it("does not dismiss when Escape is pressed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "in_progress",
+        stepId: "welcome",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(wrapper(<div>dashboard</div>));
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/me/walkthrough",
+      expect.objectContaining({ method: "PATCH" })
+    );
   });
 
   it("hides Document or Agent on the dashboard until a report is open", async () => {
@@ -226,7 +235,6 @@ describe("ProductWalkthroughProvider", () => {
         json: async () => ({
           status: "in_progress",
           stepId: "chrome",
-          sessionKey: "sess-1",
         }),
       })
     );
@@ -253,7 +261,6 @@ describe("ProductWalkthroughProvider", () => {
         json: async () => ({
           status: "in_progress",
           stepId: "create-report",
-          sessionKey: "sess-1",
         }),
       })
     );

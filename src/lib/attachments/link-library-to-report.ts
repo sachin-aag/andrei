@@ -9,7 +9,6 @@ import {
   reports,
 } from "@/db/schema";
 import { toAttachmentDto } from "@/lib/attachments/dto";
-import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { loadAccessibleAsset } from "@/lib/attachments/library-access";
 import { classifyAssetsForLibraryLink } from "@/lib/attachments/library-link-classify";
 import { reportProcessingForLinkedAsset } from "@/lib/attachments/library-link-ingest";
@@ -87,8 +86,6 @@ export async function linkLibraryItemsToReport(
     return { ok: false, error: "No vault items selected", status: 400 };
   }
 
-  const limits = getAttachmentLimits();
-
   const folderTree = await loadLibraryFolderTree(libraryFolderIds);
   const folderAssets = (
     await loadAssetsForLibraryFolders(folderTree.map((folder) => folder.id))
@@ -143,24 +140,6 @@ export async function linkLibraryItemsToReport(
       uniqueAssets,
       existingForAssets
     );
-
-    const existingLive = await tx
-      .select({ id: reportAttachments.id })
-      .from(reportAttachments)
-      .where(
-        and(
-          eq(reportAttachments.reportId, input.reportId),
-          isNull(reportAttachments.deletedAt)
-        )
-      );
-    const toAddCount = classified.insert.length + classified.restore.length;
-    if (existingLive.length + toAddCount > limits.maxAttachmentsPerReport) {
-      return {
-        ok: false as const,
-        error: `Report already has ${limits.maxAttachmentsPerReport} attachments`,
-        status: 400 as const,
-      };
-    }
 
     const reportFolderIdByLibraryFolderId = new Map<string, string>();
     const createdFolders: { id: string; name: string; parentId: string | null }[] =

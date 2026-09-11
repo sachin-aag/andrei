@@ -21,6 +21,12 @@ export type UseAutoSaveOptions<T> = {
   onSave: (value: T, context?: AutoSaveContext) => Promise<void | T>;
   delayMs?: number;
   enabled?: boolean;
+  /**
+   * Persist dirty value on pagehide/unmount. Defaults to `enabled`.
+   * Apply-all pauses debounce (`enabled: false`) but must still beacon
+   * accepted wording if the engineer hits Back before the PATCH settles.
+   */
+  persistOnLeave?: boolean;
   beaconUrl?: string;
   serialize?: (value: T) => string;
   /** Body for pagehide/unmount keepalive. Defaults to `serialize`. */
@@ -39,10 +45,12 @@ export function useAutoSave<T>({
   onSave,
   delayMs = AUTOSAVE_DELAY_MS,
   enabled = true,
+  persistOnLeave,
   beaconUrl,
   serialize,
   beaconSerialize,
 }: UseAutoSaveOptions<T>) {
+  const persistOnLeaveEnabled = persistOnLeave ?? enabled;
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const latestValue = useRef(value);
@@ -86,7 +94,7 @@ export function useAutoSave<T>({
 
   useLayoutEffect(() => {
     persistDirtyOnLeave.current = () => {
-      if (!enabled || !beaconUrl) return;
+      if (!persistOnLeaveEnabled || !beaconUrl) return;
       const snapshot = latestValue.current;
       const comparable = serializeValueRef.current(snapshot);
       if (comparable === lastPersisted.current) return;
@@ -111,7 +119,7 @@ export function useAutoSave<T>({
       lastPersisted.current = comparable;
       lastSerialized.current = comparable;
     };
-  }, [enabled, beaconUrl]);
+  }, [persistOnLeaveEnabled, beaconUrl]);
 
   const flushImpl = useRef<() => Promise<void>>(async () => {});
 
@@ -192,6 +200,11 @@ export function useAutoSave<T>({
     []
   );
 
+  useLayoutEffect(() => {
+    if (enabled) return;
+    abortRef.current?.abort();
+  }, [enabled]);
+
   const flush = useCallback(() => flushImpl.current(), []);
 
   const markPersisted = useCallback((next?: T) => {
@@ -243,7 +256,7 @@ export function useAutoSave<T>({
   }, [value, delayMs, enabled]);
 
   useEffect(() => {
-    if (!enabled || !beaconUrl) return;
+    if (!persistOnLeaveEnabled || !beaconUrl) return;
     const handler = () => {
       persistDirtyOnLeave.current();
     };
@@ -253,7 +266,7 @@ export function useAutoSave<T>({
       window.removeEventListener("pagehide", handler);
       window.removeEventListener("beforeunload", handler);
     };
-  }, [beaconUrl, enabled]);
+  }, [beaconUrl, persistOnLeaveEnabled]);
 
   return { status, lastSavedAt, flush, markPersisted };
 }

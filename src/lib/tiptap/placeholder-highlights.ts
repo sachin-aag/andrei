@@ -65,8 +65,9 @@ export function isSelectionOverPlaceholder(state: EditorState): boolean {
 export const placeholderRefreshMeta = "placeholderRefresh";
 
 /**
- * Tiptap extension that highlights actionable bracketed spans: `to be filled`
- * tokens and other non-numeric `[...]` guidance the model may emit.
+ * Tiptap extension that highlights actionable fill-in spans: `<label>`
+ * tokens (including colon hints) and leftover `[Label: <to be filled>]`.
+ * Square brackets without `to be filled` are citations or static copy.
  *
  * Clicking a placeholder selects its full text range so the user can
  * immediately type a replacement — ProseMirror's native selection-replace

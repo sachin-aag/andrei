@@ -65,12 +65,8 @@ export function useVoiceDictation({
   const [status, setStatus] = useState<VoiceDictationStatus>("idle");
   const [level, setLevel] = useState(0);
   const statusRef = useRef(status);
-  statusRef.current = status;
-
   const getPrefixRef = useRef(getPrefix);
-  getPrefixRef.current = getPrefix;
   const onComposerValueRef = useRef(onComposerValue);
-  onComposerValueRef.current = onComposerValue;
 
   const transcriptRef = useRef<VoiceTranscriptState | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -183,7 +179,13 @@ export function useVoiceDictation({
     transcriptRef.current = null;
     setStatus("idle");
   }, [fail, tearDownAudio, transcribeBufferedPcm]);
-  stopRef.current = stop;
+
+  useEffect(() => {
+    statusRef.current = status;
+    getPrefixRef.current = getPrefix;
+    onComposerValueRef.current = onComposerValue;
+    stopRef.current = stop;
+  });
 
   const start = useCallback(async () => {
     if (disabled || statusRef.current !== "idle") return;

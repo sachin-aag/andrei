@@ -123,6 +123,7 @@ export default async function DashboardPage() {
           <ReportList
             reports={myReports}
             currentUserId={user.id}
+            currentUserEmail={user.email}
             userRole={user.role}
             usersById={usersById}
           />

@@ -355,6 +355,30 @@ describe("classifyRetrievalPolicy", () => {
     ).toContain(decision.reason);
   });
 
+  it("keeps drafting a named ELR Objective adaptive on a large catalog", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "draft the objective section",
+      sectionScope: "all",
+      documentType: "equipment_lifecycle_report",
+      hasDocuments: true,
+      totalReadyPages: 87,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("still walks pages for an ELR qualification inventory draft", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "draft the qualification history table",
+      sectionScope: "all",
+      documentType: "equipment_lifecycle_report",
+      hasDocuments: true,
+      totalReadyPages: 87,
+    });
+    expect(decision.policy).toBe("comprehensive");
+    expect(decision.reason).toBe("open_set_distributed");
+  });
+
   it("escalates draft remaining sections after an equipment turn on a large mechanical catalog", () => {
     const decision = classifyRetrievalPolicy({
       userText: "Draft the remaining sections",

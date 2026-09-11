@@ -1,7 +1,7 @@
 "use client";
 
 import { AttachmentViewer } from "@/components/report/attachment-viewer";
-import { cn } from "@/lib/utils";
+import { CanvasTabPane } from "@/components/report/canvas-tab-pane";
 
 export function AttachmentCanvasStack({
   openAttachmentIds,
@@ -19,23 +19,18 @@ export function AttachmentCanvasStack({
       {openAttachmentIds.map((id) => {
         const active = id === activeAttachmentId;
         return (
-          <div
+          <CanvasTabPane
             key={id}
-            hidden={!active}
-            inert={!active}
-            data-testid="attachment-canvas"
+            active={active}
+            testId="attachment-canvas"
             data-attachment-id={id}
-            className={cn(
-              "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-              !active && "hidden"
-            )}
           >
             <AttachmentViewer
               attachmentId={id}
               active={active}
               onClose={() => onCloseTab(id)}
             />
-          </div>
+          </CanvasTabPane>
         );
       })}
     </>

@@ -557,15 +557,16 @@ function MoveToFolderDialog({
     [destinationFolders]
   );
   const rootSelected = destination === LIBRARY_ROOT;
-
-  useEffect(() => {
+  const [dialogOpen, setDialogOpen] = useState(open);
+  if (open !== dialogOpen) {
+    setDialogOpen(open);
     if (!open) {
       setNewFolderName("");
       setCreatingFolder(false);
       setCreating(false);
       setCollapsedFolderIds(new Set());
     }
-  }, [open]);
+  }
 
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
@@ -1850,19 +1851,18 @@ export function DocumentLibrarySection({
           ? "Nothing has been shared with you yet"
           : "Click a file to see its details";
 
-  useEffect(() => {
-    if (!library) return;
+  if (library) {
     const knownIds = new Set([
       ...library.assets.map((asset) => asset.id),
       ...library.archivedAssets.map((asset) => asset.id),
     ]);
-    setInspectedAssetId((active) =>
-      active && knownIds.has(active) ? active : null
-    );
-    setPreviewAssetId((preview) =>
-      preview && knownIds.has(preview) ? preview : null
-    );
-  }, [library]);
+    if (inspectedAssetId && !knownIds.has(inspectedAssetId)) {
+      setInspectedAssetId(null);
+    }
+    if (previewAssetId && !knownIds.has(previewAssetId)) {
+      setPreviewAssetId(null);
+    }
+  }
 
   const showViewer = previewAsset != null || inspectedAsset != null;
 
