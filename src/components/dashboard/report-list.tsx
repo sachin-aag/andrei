@@ -11,19 +11,23 @@ import {
   listDocumentTypes,
 } from "@/lib/document-types";
 import { visibleManagerNames } from "@/lib/reports/hidden-expert-reviewer";
+import { reportWorkspacePath } from "@/lib/reports/workspace-path";
 import type { DocumentType } from "@/db/schema";
+import type { UserRole } from "@/lib/auth/roles";
 
 type DashboardReport = ReportCardData;
 
 export function ReportList({
   reports,
   currentUserId,
+  currentUserEmail,
   userRole,
   usersById,
 }: {
   reports: DashboardReport[];
   currentUserId: string;
-  userRole: "engineer" | "manager" | "qa";
+  currentUserEmail?: string | null;
+  userRole: Exclude<UserRole, "admin">;
   usersById: Record<string, { name: string; email?: string } | undefined>;
 }) {
   const router = useRouter();
@@ -102,7 +106,11 @@ export function ReportList({
           <ReportCard
             key={report.id}
             report={report}
-            href={`/reports/${report.id}`}
+            href={reportWorkspacePath(report.id, {
+              id: currentUserId,
+              role: userRole,
+              email: currentUserEmail,
+            })}
             authorName={author?.name}
             managerNames={managerNames}
             displayTitle={title}

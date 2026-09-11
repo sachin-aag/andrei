@@ -169,7 +169,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button>
+        <Button data-walkthrough="create-report">
           <Plus className="size-4" /> New Report
         </Button>
       </DialogTrigger>

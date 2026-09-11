@@ -125,7 +125,7 @@ They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
 `docs/whitelabel-vercel-deploy.md`. Primary sidebar is Reports, then Document
 Document vault (`/vault`), then Insights on demo only (`insightsEnabled`; MJ and
 Convergent hide the link and `/insights` redirects home). Vault Archive (bottom
-of the file list) hides files and folders without removing them from reports. The vault explorer is a Finder-style Name / Date / Size / Kind list; the file pane starts wide and a drag handle shrinks it so the document viewer can grow. Check files or folders and Share to grant other workspace users access (a folder shares every file inside it). A vault scan or upload shows a spinner in the explorer toolbar and in the browser tab. Report workspace
+of the file list) hides files and folders without removing them from reports. The vault explorer is a Finder-style Name / Date / Size / Kind list; the file pane starts wide and a drag handle shrinks it so the document viewer can grow. Check files or folders and Share to grant other workspace users access (a folder shares every file inside it). Recipients see those files on the vault **Shared with me** tab (folder path preserved) and in Add from vault → Shared with me. They can preview and add them to reports; only the owner can move, archive, or change sharing. A vault scan or upload shows a spinner in the explorer toolbar and in the browser tab. Report workspace
 chrome is Document | Agent.
 New reports open in Agent; returning to a report restores that user's last
 chrome for it. Report | Analytics in the composer is independent of the focused canvas pane in both Document and Agent chrome (locked while a turn is running). Mixed Report + Analytics turns can share a thread; each message is tagged Report or Analytics (`chat_messages.metadata.chatTarget`, stamped by the route). Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. Closing an attachment (header Close or the tab X) restores the canvas tab that was active immediately before that file — not always Report, and not the tab to the left. History is on Report and Analytics (pane-scoped compare). Report compare diffs prose, every table, and added/removed figures; Analytics compare is a cell/plot list. Worksheet versions are `analyticsRevisions`, not `documentRevisions`. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent). The left documents rail is Attachments | Contents on every pack (tabs on the first row, folder/upload on the second while Attachments is selected); Contents is numbered 1. / 1.1 from the Word-recipe outline, or the editor section list when the type has no recipe.
@@ -236,6 +236,16 @@ process serving the request is missing one of them.
 
 `src/proxy.ts` does **not** enforce the site-access gate (`SITE_ACCESS_PASSWORD`
 + `/unlock`).
+
+The JWT callback caches `mustChangePassword` / `passwordExpired` for 60s
+(`jwtStateCheckedAt`) and `getPasswordPolicy()` is process-cached for 60s.
+A token that still requires `/change-password` always refreshes from the DB
+so a successful password replace can leave that page. `getCurrentUser()`
+returns null when `deactivatedAt` is set or `sessionVersion` on the JWT does
+not match `workspace_users.session_version`. Admin deactivate and forced
+password reset bump that version so APIs fail closed even while the JWT cache
+is still warm. Home-list Open links go straight to `/edit` or `/review`
+(`reportWorkspacePath`); `/reports/[id]` still redirects for old bookmarks.
 
 ## AI credentials (not interchangeable)
 

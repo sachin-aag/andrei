@@ -13,6 +13,7 @@ import {
   validatePasswordPolicy,
 } from "@/lib/auth/password-policy";
 import { auditActorFromId, recordAuditEvent } from "@/lib/audit";
+import { nextSessionVersionSql } from "@/lib/auth/session-version";
 
 export async function POST(req: Request) {
   const { token, email, password } = (await req.json()) as {
@@ -98,6 +99,7 @@ export async function POST(req: Request) {
       passwordHistory: updatedHistory,
       passwordResetTokenHash: null,
       passwordResetTokenExpiresAt: null,
+      sessionVersion: nextSessionVersionSql(),
     })
     .where(eq(workspaceUsers.id, wsUser.id));
 

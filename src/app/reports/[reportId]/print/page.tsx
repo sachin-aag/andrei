@@ -6,6 +6,7 @@ import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isAdminRole } from "@/lib/auth/roles";
 import { canViewReport } from "@/lib/reports/access";
+import { reportWorkspacePath } from "@/lib/reports/workspace-path";
 import {
   listReportManagerIds,
   withAssignedManagerIds,
@@ -32,7 +33,10 @@ export default async function ReportPrintPage({
   return (
     <main className="print-page mx-auto max-w-3xl px-8 py-10 text-sm">
       <div className="no-print mb-6 flex gap-3">
-        <Link href={`/reports/${reportId}`} className="underline">
+        <Link
+          href={reportWorkspacePath(reportId, user)}
+          className="underline"
+        >
           Back to report
         </Link>
         <a
