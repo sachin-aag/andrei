@@ -129,4 +129,38 @@ describe("ReportList type filters", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/investigation/i)).not.toBeInTheDocument();
   });
+
+  it("opens engineer reports on the edit workspace", () => {
+    render(
+      <ReportList
+        reports={[report({ id: "ir-1", documentType: "investigation_report" })]}
+        currentUserId="eng-1"
+        currentUserEmail="eng@example.com"
+        userRole="engineer"
+        usersById={usersById}
+      />
+    );
+
+    expect(screen.getByRole("link", { name: /^open$/i })).toHaveAttribute(
+      "href",
+      "/reports/ir-1/edit"
+    );
+  });
+
+  it("opens manager reports on the review workspace", () => {
+    render(
+      <ReportList
+        reports={[report({ id: "ir-1", documentType: "investigation_report" })]}
+        currentUserId="mgr-1"
+        currentUserEmail="mgr@example.com"
+        userRole="manager"
+        usersById={usersById}
+      />
+    );
+
+    expect(screen.getByRole("link", { name: /^open$/i })).toHaveAttribute(
+      "href",
+      "/reports/ir-1/review"
+    );
+  });
 });

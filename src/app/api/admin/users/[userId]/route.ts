@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { nextSessionVersionSql } from "@/lib/auth/session-version";
 import { USER_ROLES, defaultTitleForRole } from "@/lib/auth/roles";
 import { adminUserFromRow, findWorkspaceUserByEmail } from "@/lib/admin/users";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
@@ -69,6 +70,7 @@ export async function PATCH(
   }
 
   const updates: Partial<typeof workspaceUsers.$inferInsert> = {};
+  let invalidateSessions = false;
 
   if (parsed.data.role !== undefined) {
     updates.role = parsed.data.role;
@@ -96,6 +98,9 @@ export async function PATCH(
   }
   if (parsed.data.active !== undefined) {
     updates.deactivatedAt = parsed.data.active ? null : new Date();
+    if (parsed.data.active === false && !existing.deactivatedAt) {
+      invalidateSessions = true;
+    }
   }
 
   if (Object.keys(updates).length === 0) {
@@ -104,7 +109,11 @@ export async function PATCH(
 
   const [updated] = await db
     .update(workspaceUsers)
-    .set(updates)
+    .set(
+      invalidateSessions
+        ? { ...updates, sessionVersion: nextSessionVersionSql() }
+        : updates
+    )
     .where(eq(workspaceUsers.id, userId))
     .returning();
 
@@ -189,7 +198,10 @@ export async function DELETE(
 
   const [updated] = await db
     .update(workspaceUsers)
-    .set({ deactivatedAt: new Date() })
+    .set({
+      deactivatedAt: new Date(),
+      sessionVersion: nextSessionVersionSql(),
+    })
     .where(eq(workspaceUsers.id, userId))
     .returning();
 

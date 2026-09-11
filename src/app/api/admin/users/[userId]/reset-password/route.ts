@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { incrementWorkspaceUserSessionVersion } from "@/lib/auth/session-version";
 import { sendPasswordResetLink } from "@/lib/auth/password-reset";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
@@ -50,6 +51,8 @@ export async function POST(
       { status: 500 }
     );
   }
+
+  await incrementWorkspaceUserSessionVersion(userId);
 
   await recordAuditEvent({
     actor: auditActorFromUser(admin),

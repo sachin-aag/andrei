@@ -69,6 +69,24 @@ export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
   ...DEFAULT_OPERATIONAL_PASSWORD_POLICY,
 };
 
+/** Process-local TTL so proxy `auth()` does not SELECT policy on every request. */
+export const PASSWORD_POLICY_CACHE_TTL_MS = 60_000;
+
+let cachedPasswordPolicy: { value: PasswordPolicy; expiresAt: number } | null =
+  null;
+
+export function clearPasswordPolicyCache(): void {
+  cachedPasswordPolicy = null;
+}
+
+function rememberPasswordPolicy(value: PasswordPolicy): PasswordPolicy {
+  cachedPasswordPolicy = {
+    value,
+    expiresAt: Date.now() + PASSWORD_POLICY_CACHE_TTL_MS,
+  };
+  return value;
+}
+
 function normalizeOperationalPolicy(
   row: Partial<OperationalPasswordPolicy> | null | undefined
 ): OperationalPasswordPolicy {
@@ -92,19 +110,26 @@ function mergePasswordPolicy(
 }
 
 export async function getPasswordPolicy(): Promise<PasswordPolicy> {
+  const cached = cachedPasswordPolicy;
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   try {
     const existing = await db.query.passwordPolicySettings.findFirst({
       where: eq(passwordPolicySettings.id, PASSWORD_POLICY_SETTINGS_ID),
     });
     if (existing) {
-      return mergePasswordPolicy(normalizeOperationalPolicy(existing));
+      return rememberPasswordPolicy(
+        mergePasswordPolicy(normalizeOperationalPolicy(existing))
+      );
     }
 
     await db.insert(passwordPolicySettings).values({
       id: PASSWORD_POLICY_SETTINGS_ID,
       ...DEFAULT_OPERATIONAL_PASSWORD_POLICY,
     });
-    return DEFAULT_PASSWORD_POLICY;
+    return rememberPasswordPolicy(DEFAULT_PASSWORD_POLICY);
   } catch (error) {
     console.error(
       "password policy lookup failed; using code defaults until migrations run",
@@ -139,7 +164,10 @@ export async function updatePasswordPolicySettings(
     throw new Error("password_policy_settings row missing after ensure");
   }
 
-  return mergePasswordPolicy(normalizeOperationalPolicy(updated));
+  clearPasswordPolicyCache();
+  return rememberPasswordPolicy(
+    mergePasswordPolicy(normalizeOperationalPolicy(updated))
+  );
 }
 
 export function passwordPolicyRequirementText(): string {

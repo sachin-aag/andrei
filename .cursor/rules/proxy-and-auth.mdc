@@ -18,6 +18,16 @@ alwaysApply: false
 - Proxy enforces session + `mustChangePassword` / `passwordExpired` →
   `/change-password`. It does **not** enforce `SITE_ACCESS_PASSWORD`
   (that is `/unlock` + `POST /api/site-access`).
+- JWT `mustChangePassword` / `passwordExpired` are reused for 60s
+  (`jwtStateCheckedAt`) so `auth()` in this proxy does not query Postgres on
+  every request. Tokens that still require a password change always refresh.
+  `getPasswordPolicy()` is process-cached for 60s.
+- `getCurrentUser()` is fail-closed: deactivated users and JWTs with a stale
+  `sessionVersion` are unauthenticated. Admin deactivate and forced password
+  reset bump `workspace_users.session_version`. A JWT without
+  `workspaceUserId` is treated as logged out. `/login`, `/forgot-password`,
+  and `/reset-password` stay reachable so those users can sign in or finish a
+  reset; those pages send a still-valid session home.
 - `POST /api/test/login` and `POST /api/test/seed-auth-users` require
   **both** `ALLOW_TEST_LOGIN=true` **and** `TEST_AUTH_EMAIL`. A 404 on those
   routes usually means the process serving the request is missing one of them.

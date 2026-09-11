@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { auth } from "@/auth";
+import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { isPasswordRecentlyUsed } from "@/lib/auth/password-history";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
 
 export async function POST(req: Request) {
-  const session = await auth();
-  const workspaceUserId = session?.user?.workspaceUserId;
-  if (!workspaceUserId) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const workspaceUserId = user.id;
 
   const { password } = (await req.json()) as { password?: string };
 
