@@ -1,5 +1,11 @@
 import type { AttachmentProcessingStatus } from "@/db/schema";
 
+const LIVE_INGEST_STATUSES = new Set<AttachmentProcessingStatus>([
+  "validating",
+  "queued",
+  "processing",
+]);
+
 export function reportProcessingForLinkedAsset(asset: {
   activeIngestRunId: string | null;
   gcsGeneration: string | null;
@@ -8,30 +14,23 @@ export function reportProcessingForLinkedAsset(asset: {
   processingStatus: AttachmentProcessingStatus;
   shouldStartIngest: boolean;
 } {
-  if (asset.activeIngestRunId) {
+  if (asset.activeIngestRunId && asset.processingStatus === "ready") {
+    return {
+      processingStatus: "ready",
+      shouldStartIngest: false,
+    };
+  }
+
+  const liveIngest =
+    Boolean(asset.activeIngestRunId) &&
+    LIVE_INGEST_STATUSES.has(asset.processingStatus);
+
+  if (liveIngest) {
     return {
       processingStatus: asset.processingStatus,
       shouldStartIngest: false,
     };
   }
 
-  const inFlight =
-    asset.processingStatus === "validating" ||
-    asset.processingStatus === "queued" ||
-    asset.processingStatus === "processing";
-
-  if (inFlight) {
-    return {
-      processingStatus: asset.processingStatus,
-      shouldStartIngest: false,
-    };
-  }
-
-  const needsIngest =
-    Boolean(asset.gcsGeneration) && asset.processingStatus === "ready";
-
-  return {
-    processingStatus: needsIngest ? "queued" : asset.processingStatus,
-    shouldStartIngest: needsIngest,
-  };
+  return { processingStatus: "queued", shouldStartIngest: true };
 }

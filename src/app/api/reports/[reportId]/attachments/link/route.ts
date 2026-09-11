@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   targetFolderId: z.string().min(1).nullable().optional(),

@@ -12,7 +12,7 @@ import { toAttachmentDto } from "@/lib/attachments/dto";
 import { loadAccessibleAsset } from "@/lib/attachments/library-access";
 import { classifyAssetsForLibraryLink } from "@/lib/attachments/library-link-classify";
 import { reportProcessingForLinkedAsset } from "@/lib/attachments/library-link-ingest";
-import { startDocumentIngest } from "@/lib/attachments/start-ingest";
+import { startIngestForLinkedVaultAsset } from "@/lib/attachments/start-vault-ingest";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { isPostgresUniqueViolation } from "@/lib/reports/document-no";
 import {
@@ -141,6 +141,13 @@ export async function linkLibraryItemsToReport(
       existingForAssets
     );
 
+    const ingestAssetIds = new Set<string>();
+    for (const asset of classified.skip) {
+      if (reportProcessingForLinkedAsset(asset).shouldStartIngest) {
+        ingestAssetIds.add(asset.id);
+      }
+    }
+
     const reportFolderIdByLibraryFolderId = new Map<string, string>();
     const createdFolders: { id: string; name: string; parentId: string | null }[] =
       [];
@@ -181,7 +188,6 @@ export async function linkLibraryItemsToReport(
     }
 
     const createdAttachments: ReturnType<typeof toAttachmentDto>[] = [];
-    const ingestStarts: { attachmentId: string; generation: string }[] = [];
 
     const reportFolderIdForAsset = (
       asset: (typeof uniqueAssets)[number]
@@ -212,9 +218,10 @@ export async function linkLibraryItemsToReport(
           pageCount: asset.pageCount,
           processingStatus,
           processingProgress: shouldStartIngest ? 0 : asset.processingProgress,
-          processingPage: asset.processingPage,
-          processingError: asset.processingError,
-          activeIngestRunId: asset.activeIngestRunId,
+          processingPage: shouldStartIngest ? null : asset.processingPage,
+          processingError: shouldStartIngest ? null : asset.processingError,
+          activeIngestRunId: shouldStartIngest ? null : asset.activeIngestRunId,
+          gcsGeneration: asset.gcsGeneration,
         })
         .where(eq(reportAttachments.id, attachmentId))
         .returning();
@@ -229,13 +236,10 @@ export async function linkLibraryItemsToReport(
         attachmentId,
         asset
       );
-      createdAttachments.push(toAttachmentDto(row, asset));
-      if (shouldStartIngest && asset.gcsGeneration) {
-        ingestStarts.push({
-          attachmentId,
-          generation: asset.gcsGeneration,
-        });
-      }
+      createdAttachments.push(
+        toLinkedAttachmentDto(row, asset, shouldStartIngest)
+      );
+      if (shouldStartIngest) ingestAssetIds.add(asset.id);
     }
 
     for (const asset of classified.insert) {
@@ -263,9 +267,10 @@ export async function linkLibraryItemsToReport(
             pageCount: asset.pageCount,
             processingStatus,
             processingProgress: shouldStartIngest ? 0 : asset.processingProgress,
-            processingPage: asset.processingPage,
-            processingError: asset.processingError,
-            activeIngestRunId: asset.activeIngestRunId,
+            processingPage: shouldStartIngest ? null : asset.processingPage,
+            processingError: shouldStartIngest ? null : asset.processingError,
+            activeIngestRunId: shouldStartIngest ? null : asset.activeIngestRunId,
+            gcsGeneration: asset.gcsGeneration,
             uploadedById: input.user.id,
           })
           .returning();
@@ -287,39 +292,36 @@ export async function linkLibraryItemsToReport(
           );
         if (!existing) throw error;
         if (existing.deletedAt == null) {
+          if (reportProcessingForLinkedAsset(asset).shouldStartIngest) {
+            ingestAssetIds.add(asset.id);
+          }
           continue;
         }
         const restored = await restoreLink(existing.id, asset);
-        createdAttachments.push(toAttachmentDto(restored.row, asset));
-        if (restored.shouldStartIngest && asset.gcsGeneration) {
-          ingestStarts.push({
-            attachmentId: existing.id,
-            generation: asset.gcsGeneration,
-          });
-        }
+        createdAttachments.push(
+          toLinkedAttachmentDto(restored.row, asset, restored.shouldStartIngest)
+        );
+        if (restored.shouldStartIngest) ingestAssetIds.add(asset.id);
         continue;
       }
 
-      createdAttachments.push(toAttachmentDto(row, asset));
-      if (shouldStartIngest && asset.gcsGeneration) {
-        ingestStarts.push({
-          attachmentId,
-          generation: asset.gcsGeneration,
-        });
-      }
+      createdAttachments.push(
+        toLinkedAttachmentDto(row, asset, shouldStartIngest)
+      );
+      if (shouldStartIngest) ingestAssetIds.add(asset.id);
     }
 
     return {
       ok: true as const,
       attachments: createdAttachments,
       folders: createdFolders,
-      ingestStarts,
+      ingestAssetIds: [...ingestAssetIds],
     };
   }).then(async (result) => {
     if (!result.ok) return result;
-    for (const start of result.ingestStarts) {
+    for (const assetId of result.ingestAssetIds) {
       try {
-        await startDocumentIngest(start.attachmentId, start.generation);
+        await startIngestForLinkedVaultAsset(assetId);
       } catch {
         // Page-budget / ingest failures are recorded on the attachment row.
       }
@@ -330,4 +332,23 @@ export async function linkLibraryItemsToReport(
       folders: result.folders,
     };
   });
+}
+
+function toLinkedAttachmentDto(
+  row: typeof reportAttachments.$inferSelect,
+  asset: typeof attachmentAssets.$inferSelect,
+  shouldStartIngest: boolean
+) {
+  return toAttachmentDto(
+    row,
+    shouldStartIngest
+      ? {
+          ...asset,
+          processingStatus: "queued",
+          processingProgress: 0,
+          processingPage: null,
+          processingError: null,
+        }
+      : asset
+  );
 }
