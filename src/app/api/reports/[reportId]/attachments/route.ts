@@ -1,10 +1,12 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listActiveAttachments } from "@/lib/attachments/list-active";
+import { startIngestForUnprocessedLinkedVaultAssets } from "@/lib/attachments/start-vault-ingest";
 import { reclaimStaleIngests } from "@/lib/attachments/stale-ingest";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function GET(
   _req: Request,
@@ -22,5 +24,9 @@ export async function GET(
   await reclaimStaleIngests(reportId);
 
   const attachments = await listActiveAttachments(reportId);
+  // Old vault files linked before vault ingest existed stay on uploading /
+  // processing with no live run. Kick them here so Add from vault is not
+  // required again (those rows are hidden from the picker).
+  after(() => startIngestForUnprocessedLinkedVaultAssets(attachments));
   return NextResponse.json({ attachments });
 }

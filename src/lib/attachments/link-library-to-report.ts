@@ -141,12 +141,9 @@ export async function linkLibraryItemsToReport(
       existingForAssets
     );
 
-    const ingestAssetIds = new Set<string>();
-    for (const asset of classified.skip) {
-      if (reportProcessingForLinkedAsset(asset).shouldStartIngest) {
-        ingestAssetIds.add(asset.id);
-      }
-    }
+    const ingestAssetIds = new Set<string>(
+      uniqueAssets.map((asset) => asset.id)
+    );
 
     const reportFolderIdByLibraryFolderId = new Map<string, string>();
     const createdFolders: { id: string; name: string; parentId: string | null }[] =
@@ -239,7 +236,6 @@ export async function linkLibraryItemsToReport(
       createdAttachments.push(
         toLinkedAttachmentDto(row, asset, shouldStartIngest)
       );
-      if (shouldStartIngest) ingestAssetIds.add(asset.id);
     }
 
     for (const asset of classified.insert) {
@@ -292,23 +288,18 @@ export async function linkLibraryItemsToReport(
           );
         if (!existing) throw error;
         if (existing.deletedAt == null) {
-          if (reportProcessingForLinkedAsset(asset).shouldStartIngest) {
-            ingestAssetIds.add(asset.id);
-          }
           continue;
         }
         const restored = await restoreLink(existing.id, asset);
         createdAttachments.push(
           toLinkedAttachmentDto(restored.row, asset, restored.shouldStartIngest)
         );
-        if (restored.shouldStartIngest) ingestAssetIds.add(asset.id);
         continue;
       }
 
       createdAttachments.push(
         toLinkedAttachmentDto(row, asset, shouldStartIngest)
       );
-      if (shouldStartIngest) ingestAssetIds.add(asset.id);
     }
 
     return {
@@ -319,13 +310,18 @@ export async function linkLibraryItemsToReport(
     };
   }).then(async (result) => {
     if (!result.ok) return result;
-    for (const assetId of result.ingestAssetIds) {
-      try {
-        await startIngestForLinkedVaultAsset(assetId);
-      } catch {
-        // Page-budget / ingest failures are recorded on the attachment row.
-      }
-    }
+    await Promise.allSettled(
+      result.ingestAssetIds.map(async (assetId) => {
+        try {
+          await startIngestForLinkedVaultAsset(assetId);
+        } catch (error) {
+          console.error("[vault-ingest] link ingest failed", {
+            assetId,
+            error,
+          });
+        }
+      })
+    );
     return {
       ok: true as const,
       attachments: result.attachments,

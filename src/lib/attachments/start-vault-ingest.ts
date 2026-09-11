@@ -1,11 +1,20 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db";
-import { attachmentAssets, reportAttachments } from "@/db/schema";
+import {
+  attachmentAssets,
+  attachmentIngestRuns,
+  reportAttachments,
+} from "@/db/schema";
 import { validateAndPromoteStagedAttachment } from "@/lib/attachments/finalize-staged-bytes";
-import { reportProcessingForLinkedAsset } from "@/lib/attachments/library-link-ingest";
+import {
+  linkedVaultDtoNeedsIngest,
+  resolveVaultIngestHolderLink,
+} from "@/lib/attachments/library-link-ingest";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
+import { reclaimStaleIngests } from "@/lib/attachments/stale-ingest";
 import { syncAssetProcessing } from "@/lib/attachments/sync-asset-processing";
+import { isPostgresUniqueViolation } from "@/lib/reports/document-no";
 import { ensureVaultIngestHolderReport } from "@/lib/reports/ensure-vault-ingest-holder";
 import {
   getAttachmentStorage,
@@ -15,6 +24,8 @@ import {
 
 type VaultAssetRow = typeof attachmentAssets.$inferSelect;
 
+const OPEN_INGEST_RUN_STATUSES = ["pending", "running"] as const;
+
 export const VAULT_ASSET_NO_SOURCE_ERROR =
   "Attachment has no finalized source document";
 
@@ -23,39 +34,82 @@ async function ensureVaultIngestAttachment(
   holderReportId: string
 ): Promise<string> {
   const [existing] = await db
-    .select({ id: reportAttachments.id })
+    .select({
+      id: reportAttachments.id,
+      deletedAt: reportAttachments.deletedAt,
+    })
     .from(reportAttachments)
     .where(
       and(
         eq(reportAttachments.reportId, holderReportId),
-        eq(reportAttachments.assetId, asset.id),
-        isNull(reportAttachments.deletedAt)
+        eq(reportAttachments.assetId, asset.id)
       )
     )
     .limit(1);
-  if (existing) return existing.id;
+
+  const decision = resolveVaultIngestHolderLink(existing);
+  if (decision.action === "use") return decision.id;
+
+  if (decision.action === "restore") {
+    await db
+      .update(reportAttachments)
+      .set({
+        deletedAt: null,
+        deletedById: null,
+        filename: asset.filename,
+        description: asset.description,
+        mimeType: asset.mimeType,
+        sizeBytes: asset.sizeBytes,
+        sha256: asset.sha256,
+        pageCount: asset.pageCount,
+        processingStatus: "queued",
+        processingProgress: 0,
+        processingPage: null,
+        processingError: null,
+        gcsGeneration: asset.gcsGeneration,
+        crc32c: asset.crc32c,
+      })
+      .where(eq(reportAttachments.id, decision.id));
+    return decision.id;
+  }
 
   const attachmentId = createId();
-  await db.insert(reportAttachments).values({
-    id: attachmentId,
-    reportId: holderReportId,
-    assetId: asset.id,
-    folderId: null,
-    filename: asset.filename,
-    description: asset.description,
-    mimeType: asset.mimeType,
-    sizeBytes: asset.sizeBytes,
-    sha256: asset.sha256,
-    stagingObjectKey: stagingObjectKey(attachmentId),
-    permanentObjectKey: permanentObjectKey(holderReportId, attachmentId),
-    pageCount: asset.pageCount,
-    processingStatus: "queued",
-    processingProgress: 0,
-    uploadedById: asset.ownerId,
-    gcsGeneration: asset.gcsGeneration,
-    crc32c: asset.crc32c,
-  });
-  return attachmentId;
+  try {
+    await db.insert(reportAttachments).values({
+      id: attachmentId,
+      reportId: holderReportId,
+      assetId: asset.id,
+      folderId: null,
+      filename: asset.filename,
+      description: asset.description,
+      mimeType: asset.mimeType,
+      sizeBytes: asset.sizeBytes,
+      sha256: asset.sha256,
+      stagingObjectKey: stagingObjectKey(attachmentId),
+      permanentObjectKey: permanentObjectKey(holderReportId, attachmentId),
+      pageCount: asset.pageCount,
+      processingStatus: "queued",
+      processingProgress: 0,
+      uploadedById: asset.ownerId,
+      gcsGeneration: asset.gcsGeneration,
+      crc32c: asset.crc32c,
+    });
+    return attachmentId;
+  } catch (error) {
+    if (!isPostgresUniqueViolation(error)) throw error;
+    const [row] = await db
+      .select({ id: reportAttachments.id })
+      .from(reportAttachments)
+      .where(
+        and(
+          eq(reportAttachments.reportId, holderReportId),
+          eq(reportAttachments.assetId, asset.id)
+        )
+      )
+      .limit(1);
+    if (!row) throw error;
+    return row.id;
+  }
 }
 
 function vaultIngestAlreadyComplete(
@@ -67,6 +121,20 @@ function vaultIngestAlreadyComplete(
     Boolean(asset.activeIngestRunId) &&
     asset.gcsGeneration === generation
   );
+}
+
+async function assetHasOpenIngestRun(assetId: string): Promise<boolean> {
+  const [open] = await db
+    .select({ id: attachmentIngestRuns.id })
+    .from(attachmentIngestRuns)
+    .where(
+      and(
+        eq(attachmentIngestRuns.assetId, assetId),
+        inArray(attachmentIngestRuns.status, [...OPEN_INGEST_RUN_STATUSES])
+      )
+    )
+    .limit(1);
+  return Boolean(open);
 }
 
 /**
@@ -135,6 +203,11 @@ export async function startVaultAssetIngest(
   }
 
   const holderReportId = await ensureVaultIngestHolderReport(asset.ownerId);
+  await reclaimStaleIngests(holderReportId);
+  if (await assetHasOpenIngestRun(assetId)) {
+    return;
+  }
+
   const attachmentId = await ensureVaultIngestAttachment(asset, holderReportId);
 
   await syncAssetProcessing(assetId, {
@@ -160,8 +233,8 @@ export async function startVaultAssetIngest(
 }
 
 /**
- * Add-from-vault path: index old or unprocessed library files on the holder
- * so every report link picks up the same ingest run.
+ * Add-from-vault and report-attachment poll: index old or unprocessed
+ * library files on the holder so every report link picks up the same run.
  */
 export async function startIngestForLinkedVaultAsset(
   assetId: string
@@ -172,10 +245,23 @@ export async function startIngestForLinkedVaultAsset(
     .where(and(eq(attachmentAssets.id, assetId), isNull(attachmentAssets.deletedAt)))
     .limit(1);
   if (!asset) return;
-  if (!reportProcessingForLinkedAsset(asset).shouldStartIngest) return;
+  if (
+    asset.processingStatus === "ready" &&
+    Boolean(asset.activeIngestRunId)
+  ) {
+    return;
+  }
 
   const generation = await ensureVaultAssetGeneration(asset);
   if (!generation) {
+    // A live browser upload is also `uploading` with no generation yet.
+    // Do not fail it from the documents-panel poll.
+    if (
+      asset.processingStatus === "uploading" ||
+      asset.processingStatus === "validating"
+    ) {
+      return;
+    }
     await syncAssetProcessing(assetId, {
       processingStatus: "failed",
       processingProgress: 0,
@@ -185,4 +271,35 @@ export async function startIngestForLinkedVaultAsset(
   }
 
   await startVaultAssetIngest(assetId, generation);
+}
+
+export async function startIngestForUnprocessedLinkedVaultAssets(
+  attachments: {
+    assetId: string | null;
+    processingStatus: VaultAssetRow["processingStatus"];
+  }[]
+): Promise<void> {
+  const assetIds = [
+    ...new Set(
+      attachments.flatMap((row) => {
+        if (!row.assetId) return [];
+        if (!linkedVaultDtoNeedsIngest(row.processingStatus)) return [];
+        return [row.assetId];
+      })
+    ),
+  ];
+  if (assetIds.length === 0) return;
+
+  await Promise.allSettled(
+    assetIds.map(async (assetId) => {
+      try {
+        await startIngestForLinkedVaultAsset(assetId);
+      } catch (error) {
+        console.error("[vault-ingest] linked asset ingest failed", {
+          assetId,
+          error,
+        });
+      }
+    })
+  );
 }

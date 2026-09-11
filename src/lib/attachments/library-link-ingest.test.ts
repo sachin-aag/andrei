@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { reportProcessingForLinkedAsset } from "./library-link-ingest";
+import {
+  linkedVaultDtoNeedsIngest,
+  reportProcessingForLinkedAsset,
+  resolveVaultIngestHolderLink,
+} from "./library-link-ingest";
 
 describe("reportProcessingForLinkedAsset", () => {
   it("reuses a completed vault ingest without starting another", () => {
@@ -76,5 +80,39 @@ describe("reportProcessingForLinkedAsset", () => {
         processingStatus: "uploading",
       })
     ).toEqual({ processingStatus: "queued", shouldStartIngest: true });
+  });
+});
+
+describe("linkedVaultDtoNeedsIngest", () => {
+  it("kicks leftover uploading and processing rows on the report poll", () => {
+    expect(linkedVaultDtoNeedsIngest("uploading")).toBe(true);
+    expect(linkedVaultDtoNeedsIngest("processing")).toBe(true);
+    expect(linkedVaultDtoNeedsIngest("queued")).toBe(true);
+    expect(linkedVaultDtoNeedsIngest("failed")).toBe(true);
+  });
+
+  it("leaves an indexed vault file alone", () => {
+    expect(linkedVaultDtoNeedsIngest("ready")).toBe(false);
+  });
+});
+
+describe("resolveVaultIngestHolderLink", () => {
+  it("inserts when the holder report has no row for the asset", () => {
+    expect(resolveVaultIngestHolderLink(null)).toEqual({ action: "insert" });
+  });
+
+  it("reuses a live holder attachment", () => {
+    expect(
+      resolveVaultIngestHolderLink({ id: "att-1", deletedAt: null })
+    ).toEqual({ action: "use", id: "att-1" });
+  });
+
+  it("restores a tombstoned holder row instead of inserting a duplicate pair", () => {
+    expect(
+      resolveVaultIngestHolderLink({
+        id: "att-1",
+        deletedAt: new Date("2026-09-01T00:00:00.000Z"),
+      })
+    ).toEqual({ action: "restore", id: "att-1" });
   });
 });

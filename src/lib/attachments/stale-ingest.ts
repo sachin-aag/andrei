@@ -1,6 +1,10 @@
 import { and, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { attachmentIngestRuns, reportAttachments } from "@/db/schema";
+import {
+  attachmentAssets,
+  attachmentIngestRuns,
+  reportAttachments,
+} from "@/db/schema";
 import {
   isStaleIngest,
   RECLAIMABLE_STATUSES,
@@ -35,6 +39,7 @@ export async function reclaimStaleIngests(
   const candidates = await db
     .select({
       id: reportAttachments.id,
+      assetId: reportAttachments.assetId,
       processingStatus: reportAttachments.processingStatus,
       uploadedAt: reportAttachments.uploadedAt,
       lastRunAt: max(
@@ -57,23 +62,37 @@ export async function reclaimStaleIngests(
     )
     .groupBy(
       reportAttachments.id,
+      reportAttachments.assetId,
       reportAttachments.processingStatus,
       reportAttachments.uploadedAt
     );
 
-  const staleIds = candidates
-    .filter((row) =>
-      isStaleIngest(
-        {
-          processingStatus: row.processingStatus,
-          lastActivityAt: toDate(row.lastRunAt) ?? row.uploadedAt,
-        },
-        now
-      )
+  const stale = candidates.filter((row) =>
+    isStaleIngest(
+      {
+        processingStatus: row.processingStatus,
+        lastActivityAt: toDate(row.lastRunAt) ?? row.uploadedAt,
+      },
+      now
     )
-    .map((row) => row.id);
+  );
+  const staleIds = stale.map((row) => row.id);
+  const staleAssetIds = [
+    ...new Set(
+      stale
+        .map((row) => row.assetId)
+        .filter((id): id is string => id != null)
+    ),
+  ];
 
   if (staleIds.length === 0) return 0;
+
+  const failPatch = {
+    processingStatus: "failed" as const,
+    processingProgress: FAILED_ATTACHMENT_PROGRESS,
+    processingPage: null,
+    processingError: STALE_INGEST_MESSAGE,
+  };
 
   await db.transaction(async (tx) => {
     await tx
@@ -92,18 +111,27 @@ export async function reclaimStaleIngests(
 
     await tx
       .update(reportAttachments)
-      .set({
-        processingStatus: "failed",
-        processingProgress: FAILED_ATTACHMENT_PROGRESS,
-        processingPage: null,
-        processingError: STALE_INGEST_MESSAGE,
-      })
+      .set(failPatch)
       .where(
         and(
           inArray(reportAttachments.id, staleIds),
           inArray(reportAttachments.processingStatus, [...RECLAIMABLE_STATUSES])
         )
       );
+
+    if (staleAssetIds.length > 0) {
+      await tx
+        .update(attachmentAssets)
+        .set(failPatch)
+        .where(
+          and(
+            inArray(attachmentAssets.id, staleAssetIds),
+            inArray(attachmentAssets.processingStatus, [
+              ...RECLAIMABLE_STATUSES,
+            ])
+          )
+        );
+    }
   });
 
   console.warn("[document-ingest] Reclaimed stale ingests", {
