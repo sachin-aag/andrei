@@ -8,6 +8,7 @@ import {
 } from "@/lib/statistical-analysis/boxplot";
 import {
   boxplotAxisLayout,
+  boxplotBoxWidth,
   boxplotXAxisTitleY,
   boxplotYExtent as yExtent,
   boxplotYTicks as yTicks,
@@ -58,7 +59,7 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
   const xToPx = (index: number) =>
     plotLeft + ((index + 0.5) / groups.length) * plotWidth;
   const yToPx = (y: number) => plotBottom - ((y - yMin) / ySpan) * plotHeight;
-  const boxWidth = Math.min(42, (plotWidth / groups.length) * 0.55);
+  const boxWidth = boxplotBoxWidth(groups.length, plotWidth);
   const ticks = yTicks(yMin, yMax);
   const yLabel = boxplotYAxisLabel(analysis.config);
   const xLabel = boxplotXAxisLabel(analysis.config);

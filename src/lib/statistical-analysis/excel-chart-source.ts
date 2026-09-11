@@ -27,6 +27,8 @@ import {
   type ExcelNativeChart,
 } from "./excel-chart-xml";
 import {
+  BOXPLOT_EXCEL_SPACER,
+  boxplotExcelLayout,
   boxplotTickStep,
   boxplotYExtent,
 } from "./boxplot-chart-layout";
@@ -49,8 +51,6 @@ export const CHARTS_PER_ROW = 2;
 const TWO_UP_MARKER_PT = 5;
 const SINGLE_MARKER_PT = 7;
 const OUT_OF_CONTROL_MARKER_PT = 7;
-/** Boxplot: the SVG box is ~55% of its category slot at 45% fill opacity. */
-const BOX_GAP_WIDTH = 80;
 const BOX_FILL_OPACITY = 0.45;
 const MAX_PLOTTED_OUTLIERS = 8;
 /** Matches the 0.18 fill alpha the SVG and PNG renderers use for area marks. */
@@ -1154,6 +1154,7 @@ function boxplotCharts(
     MAX_PLOTTED_OUTLIERS,
     Math.max(0, ...groups.map((group) => group.outliers.length))
   );
+  const { gapWidth, padLeft, padRight } = boxplotExcelLayout(groups.length);
   const headers = [
     "Group",
     "Q1",
@@ -1164,7 +1165,13 @@ function boxplotCharts(
     "Mean",
     ...Array.from({ length: outlierSlots }, (_, i) => `Outlier ${i + 1}`),
   ];
-  const rows: Array<Array<string | number | null>> = groups.map((group) => [
+  const spacerRow = (): Array<string | number | null> => [
+    BOXPLOT_EXCEL_SPACER,
+    ...Array.from({ length: headers.length - 1 }, () => null),
+  ];
+  const groupRow = (
+    group: (typeof groups)[number]
+  ): Array<string | number | null> => [
     label(group),
     group.q1,
     Math.max(0, group.median - group.q1),
@@ -1176,7 +1183,12 @@ function boxplotCharts(
       { length: outlierSlots },
       (_, i) => group.outliers[i] ?? null
     ),
-  ]);
+  ];
+  const rows: Array<Array<string | number | null>> = [
+    ...Array.from({ length: padLeft }, spacerRow),
+    ...groups.map(groupRow),
+    ...Array.from({ length: padRight }, spacerRow),
+  ];
 
   const boxFill = colors.brand400;
   const series: SeriesRef[] = [
@@ -1247,8 +1259,10 @@ function boxplotCharts(
         xAxisTitle,
         yAxisTitle: analysis.config.yColumnName,
         ...axis,
-        gapWidth: BOX_GAP_WIDTH,
+        gapWidth,
         overlap: 100,
+        forceCategoryAxis: true,
+        categoryAsText: true,
         showLegend: false,
         series,
       },

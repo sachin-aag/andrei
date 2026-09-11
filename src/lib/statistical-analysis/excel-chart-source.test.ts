@@ -14,6 +14,10 @@ import {
 import { chartBrandColors } from "@/lib/charts/brand-colors";
 import { resolveCustomerId } from "@/lib/customers/resolve";
 import {
+  BOXPLOT_EXCEL_SPACER,
+  boxplotExcelLayout,
+} from "./boxplot-chart-layout";
+import {
   BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
   HISTOGRAM,
@@ -526,9 +530,13 @@ describe("boxplot export", () => {
   it("stacks real boxes with whisker error bars and star outliers", () => {
     const source = buildAnalysisChartSource(boxplot(sample));
     const chart = source.charts[0];
+    const layout = boxplotExcelLayout(sample.length);
     expect(chart?.kind).toBe("columnStackedLine");
     expect(chart?.overlap).toBe(100);
     expect(chart?.showLegend).toBe(false);
+    expect(chart?.gapWidth).toBe(layout.gapWidth);
+    expect(chart?.gapWidth).toBeGreaterThan(80);
+    expect(chart?.categoryAsText).toBe(true);
 
     const table = source.tables[0];
     expect(table?.headers.slice(0, 7)).toEqual([
@@ -540,8 +548,12 @@ describe("boxplot export", () => {
       "Upper whisker",
       "Mean",
     ]);
+    expect(table?.rows).toHaveLength(sample.length + layout.padLeft + layout.padRight);
+    expect(table?.rows[0]?.[0]).toBe(BOXPLOT_EXCEL_SPACER);
+    expect(table?.rows.at(-1)?.[0]).toBe(BOXPLOT_EXCEL_SPACER);
+    const dataRows = table?.rows.filter((row) => row[0] !== BOXPLOT_EXCEL_SPACER) ?? [];
     // A: base 10, 10->12, 12->15, whiskers 2 down and 3 up.
-    expect(table?.rows[0]?.slice(1, 6)).toEqual([10, 2, 3, 2, 3]);
+    expect(dataRows[0]?.slice(1, 6)).toEqual([10, 2, 3, 2, 3]);
 
     const base = chart?.series.find((item) => item.name === "Q1");
     expect(base?.hiddenFill).toBe(true);
@@ -557,8 +569,8 @@ describe("boxplot export", () => {
     expect(outliers).toHaveLength(2);
     expect(outliers?.[0]?.markerSymbol).toBe("star");
     expect(outliers?.[0]?.asLine).toBe(true);
-    expect(table?.rows[0]?.slice(7)).toEqual([22, 24]);
-    expect(table?.rows[1]?.slice(7)).toEqual([null, null]);
+    expect(dataRows[0]?.slice(7)).toEqual([22, 24]);
+    expect(dataRows[1]?.slice(7)).toEqual([null, null]);
   });
 
   it("falls back to plotted statistics when a box would cross zero", () => {

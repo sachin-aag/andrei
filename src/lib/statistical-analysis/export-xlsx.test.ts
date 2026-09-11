@@ -12,6 +12,7 @@ import {
 import { listZipPaths, zipText } from "./excel-chart-xml";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
 import {
+  BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
   isScatterAnalysis,
@@ -279,6 +280,71 @@ describe("buildAnalyticsXlsx", () => {
     expect(histogramXml).toContain('<c:overlap val="100"/>');
     expect(histogramXml).not.toContain("c:lineChart");
     expect(histogramXml).toMatch(/<c:ptCount val="8[0-9]"\/>/);
+  });
+
+  it("exports a boxplot with a large gap so boxes stay as narrow as the app", async () => {
+    const analytics = sampleAnalytics();
+    analytics.analyses = [
+      {
+        id: "an-box",
+        workspaceId: "ws-1",
+        kind: BOXPLOT,
+        title: "Boxplot of Assay",
+        config: {
+          yColumnId: "c1",
+          yColumnName: "Assay",
+          categoryColumnIds: ["c2"],
+          categoryColumnNames: ["Lot"],
+          title: "Boxplot of Assay",
+        },
+        results: {
+          n: 20,
+          skipped: 0,
+          groups: [
+            {
+              labels: ["A"],
+              n: 10,
+              min: 8,
+              q1: 10,
+              median: 12,
+              mean: 12.4,
+              q3: 15,
+              max: 18,
+              whiskerLow: 8,
+              whiskerHigh: 18,
+              outliers: [],
+            },
+            {
+              labels: ["B"],
+              n: 10,
+              min: 9,
+              q1: 11,
+              median: 13,
+              mean: 12.8,
+              q3: 14,
+              max: 17,
+              whiskerLow: 9,
+              whiskerHigh: 17,
+              outliers: [],
+            },
+          ],
+        },
+        sourceHash: "box",
+        stale: false,
+        createdAt: "2026-08-26T00:00:00.000Z",
+        previewImage: null,
+      },
+    ];
+    const buffer = await buildAnalyticsXlsx(analytics, { includePlots: true });
+    const chartXml = listZipPaths(buffer)
+      .filter((path) => path.startsWith("xl/charts/chart"))
+      .map((path) => zipText(buffer, path) ?? "");
+    const boxXml = chartXml.find((xml) => xml.includes("Boxplot of Assay"));
+    expect(boxXml).toBeDefined();
+    expect(boxXml).toContain('<c:grouping val="stacked"/>');
+    expect(boxXml).toContain('<c:gapWidth val="500"/>');
+    expect(boxXml).toContain('<c:overlap val="100"/>');
+    expect(boxXml).not.toContain("<c:legend>");
   });
 
   it("does not embed a PNG snapshot when a preview image exists", async () => {

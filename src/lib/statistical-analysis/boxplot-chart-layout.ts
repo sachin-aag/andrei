@@ -4,12 +4,58 @@ import type { BoxplotGroupStats } from "./types";
 export const BOXPLOT_CHART_WIDTH = 960;
 export const BOXPLOT_CHART_HEIGHT = 520;
 export const BOXPLOT_OUTER_BAND = 26;
+/** Uncapped box is this fraction of its category slot (SVG, PNG, and Excel). */
+export const BOXPLOT_BOX_SLOT_FRACTION = 0.55;
+/** Few groups keep a 42px box instead of stretching to 55% of a huge slot. */
+export const BOXPLOT_MAX_BOX_PX = 42;
+/** Excel `gapWidth` cannot exceed 500 (~17% of a category). */
+export const EXCEL_MAX_GAP_WIDTH = 500;
+/** Blank category that still occupies a slot so Excel can pad around few boxes. */
+export const BOXPLOT_EXCEL_SPACER = "\u00a0";
 
 const INNER_FONT_SIZE = 11;
 const BOTTOM_PADDING = 16;
 const PLOT_LEFT = 72;
 const PLOT_TOP = 52;
 const RIGHT_MARGIN = 28;
+
+export function boxplotPlotWidth(): number {
+  return BOXPLOT_CHART_WIDTH - PLOT_LEFT - RIGHT_MARGIN;
+}
+
+/** Same width the SVG and PNG renderers use for each box. */
+export function boxplotBoxWidth(groupCount: number, plotWidth: number): number {
+  const n = Math.max(1, groupCount);
+  return Math.min(BOXPLOT_MAX_BOX_PX, (plotWidth / n) * BOXPLOT_BOX_SLOT_FRACTION);
+}
+
+/**
+ * Excel gap + empty spacer categories so exported boxes match
+ * `boxplotBoxWidth` as a fraction of the plot. Excel cannot make a bar
+ * narrower than ~17% of its slot, so 1–2 groups get blank categories on
+ * each side.
+ */
+export function boxplotExcelLayout(groupCount: number): {
+  gapWidth: number;
+  padLeft: number;
+  padRight: number;
+} {
+  const n = Math.max(1, groupCount);
+  const plotWidth = boxplotPlotWidth();
+  const target = boxplotBoxWidth(n, plotWidth) / plotWidth;
+  const desiredBarFrac = Math.min(BOXPLOT_BOX_SLOT_FRACTION, target * n);
+  let gapWidth = Math.round(100 * (1 / desiredBarFrac - 1));
+  gapWidth = Math.max(0, Math.min(EXCEL_MAX_GAP_WIDTH, gapWidth));
+  const barFrac = 1 / (1 + gapWidth / 100);
+  const visual = barFrac / n;
+  if (visual <= target * 1.15) {
+    return { gapWidth, padLeft: 0, padRight: 0 };
+  }
+  let totalCats = Math.max(n + 2, Math.round(barFrac / target));
+  if ((totalCats - n) % 2 === 1) totalCats += 1;
+  const pads = totalCats - n;
+  return { gapWidth, padLeft: pads / 2, padRight: pads / 2 };
+}
 
 /** Approximate sans-serif glyph width at 11px for layout (not measurement). */
 function estimateTextWidth(label: string, fontSize: number): number {
