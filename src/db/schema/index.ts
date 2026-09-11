@@ -257,6 +257,11 @@ export const workspaceUsers = pgTable(
     }),
     /** Non-null means the account is deactivated and cannot sign in until reactivated. */
     deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+    /**
+     * Bumped to invalidate JWTs issued before an admin deactivation or forced
+     * password reset. Compared to the version stamped on the session token.
+     */
+    sessionVersion: integer("session_version").notNull().default(0),
     /** First-login product tour. Resume from `productTourStepId` while `in_progress`. */
     productTourStatus: productTourStatusEnum("product_tour_status")
       .notNull()

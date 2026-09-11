@@ -138,6 +138,7 @@ const JWT_STATE_COLUMNS = {
   id: true,
   deactivatedAt: true,
   mustChangePassword: true,
+  sessionVersion: true,
   passwordHash: true,
   passwordChangedAt: true,
   passwordExpiryWarningDismissedUntil: true,
@@ -153,6 +154,7 @@ export type WorkspaceJwtUser = PasswordExpiryInput & {
   id: string;
   deactivatedAt: Date | null;
   mustChangePassword: boolean;
+  sessionVersion: number;
 };
 
 async function loadJwtState(
@@ -181,6 +183,7 @@ async function loadJwtState(
   return {
     ...wsUser,
     deactivatedAt: null,
+    sessionVersion: 0,
     passwordChangedAt: null,
     passwordExpiryWarningDismissedUntil: null,
   };

@@ -148,6 +148,43 @@ describe("PATCH /api/admin/users/[userId]", () => {
     });
   });
 
+  it("deactivates a user and invalidates their sessions", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
+    mockSelectExistingUser();
+    const { set } = mockUpdateReturning([
+      {
+        id: "user-1",
+        name: "User One",
+        email: "user.one@mjbiopharm.com",
+        role: "engineer",
+        title: "Engineer",
+        passwordHash: "old.hash",
+        mustChangePassword: false,
+        deactivatedAt: new Date("2026-09-11T00:00:00.000Z"),
+        lockedAt: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ]);
+
+    const response = await PATCH(jsonRequest({ active: false }), {
+      params: Promise.resolve({ userId: "user-1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deactivatedAt: expect.any(Date),
+        sessionVersion: expect.anything(),
+      })
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      user: {
+        id: "user-1",
+        isActive: false,
+      },
+    });
+  });
+
   it("updates a user role for admins", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
     mockSelectExistingUser();
@@ -238,7 +275,7 @@ describe("DELETE /api/admin/users/[userId]", () => {
   it("deactivates a workspace user for admins", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
     mockSelectExistingUser();
-    mockUpdateReturning([
+    const { set } = mockUpdateReturning([
       {
         id: "user-1",
         name: "User One",
@@ -259,6 +296,12 @@ describe("DELETE /api/admin/users/[userId]", () => {
 
     expect(response.status).toBe(200);
     expect(db.update).toHaveBeenCalledTimes(1);
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deactivatedAt: expect.any(Date),
+        sessionVersion: expect.anything(),
+      })
+    );
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
 });

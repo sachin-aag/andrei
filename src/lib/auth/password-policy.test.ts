@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/db", () => ({
   db: {
@@ -11,9 +11,13 @@ vi.mock("@/db/schema", () => ({
   passwordPolicySettings: { id: "id" },
 }));
 
+import { db } from "@/db";
 import {
   DEFAULT_PASSWORD_POLICY,
+  PASSWORD_POLICY_CACHE_TTL_MS,
+  clearPasswordPolicyCache,
   computePasswordExpiryState,
+  getPasswordPolicy,
   validatePasswordPolicy,
 } from "./password-policy";
 
@@ -80,5 +84,74 @@ describe("password policy", () => {
     );
     expect(dismissed.warning).toBe(false);
     expect(dismissed.warningDismissed).toBe(true);
+  });
+});
+
+describe("getPasswordPolicy cache", () => {
+  beforeEach(() => {
+    clearPasswordPolicyCache();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    clearPasswordPolicyCache();
+    vi.useRealTimers();
+  });
+
+  it("reuses a successful lookup within the TTL", async () => {
+    vi.mocked(db.query.passwordPolicySettings.findFirst).mockResolvedValue({
+      id: "default",
+      expiryDays: 90,
+      inactivityTimeoutMinutes: 10,
+      warningDays: 14,
+      failedLoginAttemptLimit: 3,
+      passwordHistoryLimit: 3,
+    } as never);
+
+    await getPasswordPolicy();
+    await getPasswordPolicy();
+
+    expect(db.query.passwordPolicySettings.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache a failed lookup", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(db.query.passwordPolicySettings.findFirst)
+      .mockRejectedValueOnce(new Error("relation missing"))
+      .mockResolvedValueOnce({
+        id: "default",
+        expiryDays: 45,
+        inactivityTimeoutMinutes: 10,
+        warningDays: 14,
+        failedLoginAttemptLimit: 3,
+        passwordHistoryLimit: 3,
+      } as never);
+
+    await expect(getPasswordPolicy()).resolves.toEqual(DEFAULT_PASSWORD_POLICY);
+    const second = await getPasswordPolicy();
+    expect(second.expiryDays).toBe(45);
+    expect(db.query.passwordPolicySettings.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it("looks up again after the TTL", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-10T17:00:00.000Z"));
+    vi.mocked(db.query.passwordPolicySettings.findFirst).mockResolvedValue({
+      id: "default",
+      expiryDays: 90,
+      inactivityTimeoutMinutes: 10,
+      warningDays: 14,
+      failedLoginAttemptLimit: 3,
+      passwordHistoryLimit: 3,
+    } as never);
+
+    await getPasswordPolicy();
+    vi.setSystemTime(
+      new Date("2026-09-10T17:00:00.000Z").getTime() +
+        PASSWORD_POLICY_CACHE_TTL_MS
+    );
+    await getPasswordPolicy();
+
+    expect(db.query.passwordPolicySettings.findFirst).toHaveBeenCalledTimes(2);
   });
 });
