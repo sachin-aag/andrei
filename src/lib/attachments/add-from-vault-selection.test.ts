@@ -4,6 +4,7 @@ import {
   buildVaultLinkPayload,
   countVaultLinkSelection,
   isVaultAssetChecked,
+  omitLinkedVaultAssets,
   toggleVaultAssetSelection,
   toggleVaultFolderSelection,
 } from "./add-from-vault-selection";
@@ -157,5 +158,35 @@ describe("countVaultLinkSelection", () => {
     );
 
     expect(count).toBe(2);
+  });
+});
+
+describe("omitLinkedVaultAssets", () => {
+  it("hides already-linked files and folders whose remaining subtree is empty", () => {
+    const result = omitLinkedVaultAssets(
+      folders,
+      assets,
+      new Set(["a1", "a2"])
+    );
+
+    expect(result.assets.map((asset) => asset.id)).toEqual(["a3"]);
+    expect(result.folders).toEqual([]);
+  });
+
+  it("keeps ancestor folders of remaining files", () => {
+    const result = omitLinkedVaultAssets(folders, assets, new Set(["a1"]));
+
+    expect(result.assets.map((asset) => asset.id).sort()).toEqual(["a2", "a3"]);
+    expect(result.folders.map((folder) => folder.id).sort()).toEqual([
+      "child",
+      "root",
+    ]);
+  });
+
+  it("returns the original lists when nothing is linked", () => {
+    const result = omitLinkedVaultAssets(folders, assets, new Set());
+
+    expect(result.folders).toBe(folders);
+    expect(result.assets).toBe(assets);
   });
 });

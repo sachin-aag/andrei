@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isStaleIngest, STALE_INGEST_MS } from "./stale-ingest-policy";
+import {
+  isStaleIngest,
+  lastActivityForStaleReclaim,
+  STALE_INGEST_MS,
+} from "./stale-ingest-policy";
 
 const now = new Date("2026-08-10T12:00:00.000Z");
 
@@ -55,6 +59,28 @@ describe("isStaleIngest", () => {
     expect(
       isStaleIngest({ processingStatus: "processing", lastActivityAt: null }, now)
     ).toBe(false);
+  });
+
+  it("does not treat an old upload time as ingest activity", () => {
+    expect(lastActivityForStaleReclaim(null)).toBeNull();
+    expect(
+      isStaleIngest(
+        {
+          processingStatus: "queued",
+          lastActivityAt: lastActivityForStaleReclaim(null),
+        },
+        now
+      )
+    ).toBe(false);
+  });
+
+  it("still reclaims a report-native upload with no run after the window", () => {
+    expect(
+      isStaleIngest(
+        { processingStatus: "queued", lastActivityAt: minutesAgo(45) },
+        now
+      )
+    ).toBe(true);
   });
 
   it("honours a caller-supplied window", () => {

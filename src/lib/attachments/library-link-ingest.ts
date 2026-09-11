@@ -1,4 +1,11 @@
 import type { AttachmentProcessingStatus } from "@/db/schema";
+import { STALE_INGEST_MESSAGE } from "@/lib/attachments/stale-ingest-policy";
+
+const LIVE_INGEST_STATUSES = new Set<AttachmentProcessingStatus>([
+  "validating",
+  "queued",
+  "processing",
+]);
 
 export function reportProcessingForLinkedAsset(asset: {
   activeIngestRunId: string | null;
@@ -8,30 +15,64 @@ export function reportProcessingForLinkedAsset(asset: {
   processingStatus: AttachmentProcessingStatus;
   shouldStartIngest: boolean;
 } {
-  if (asset.activeIngestRunId) {
+  if (asset.activeIngestRunId && asset.processingStatus === "ready") {
+    return {
+      processingStatus: "ready",
+      shouldStartIngest: false,
+    };
+  }
+
+  const liveIngest =
+    Boolean(asset.activeIngestRunId) &&
+    LIVE_INGEST_STATUSES.has(asset.processingStatus);
+
+  if (liveIngest) {
     return {
       processingStatus: asset.processingStatus,
       shouldStartIngest: false,
     };
   }
 
-  const inFlight =
-    asset.processingStatus === "validating" ||
-    asset.processingStatus === "queued" ||
-    asset.processingStatus === "processing";
+  return { processingStatus: "queued", shouldStartIngest: true };
+}
 
-  if (inFlight) {
-    return {
-      processingStatus: asset.processingStatus,
-      shouldStartIngest: false,
-    };
+/**
+ * Documents-panel poll / report open: start ingest for leftover vault
+ * links. `ready` is indexed. In-flight statuses are still kicked so a
+ * stuck uploading/processing row with no live run can recover; the
+ * start path no-ops when an open ingest run already exists. Ordinary
+ * `failed` rows are not retried every poll. A false stale-cancel
+ * (no live run, cancelled because upload time was old) is retried
+ * once the report is open so those files do not stay red.
+ */
+export function linkedVaultDtoNeedsIngest(
+  processingStatus: AttachmentProcessingStatus,
+  processingError: string | null = null
+): boolean {
+  if (processingStatus === "ready") return false;
+  if (processingStatus === "failed") {
+    return processingError === STALE_INGEST_MESSAGE;
   }
+  return (
+    processingStatus === "uploading" ||
+    processingStatus === "validating" ||
+    processingStatus === "queued" ||
+    processingStatus === "processing"
+  );
+}
 
-  const needsIngest =
-    Boolean(asset.gcsGeneration) && asset.processingStatus === "ready";
+export type VaultIngestHolderLink =
+  | { action: "use" | "restore"; id: string }
+  | { action: "insert" };
 
-  return {
-    processingStatus: needsIngest ? "queued" : asset.processingStatus,
-    shouldStartIngest: needsIngest,
-  };
+/**
+ * Holder ingest rows use the same unique (report, asset) pair as real
+ * report links. Restore a tombstone instead of inserting a second row.
+ */
+export function resolveVaultIngestHolderLink(
+  existing: { id: string; deletedAt: Date | string | null } | null
+): VaultIngestHolderLink {
+  if (!existing) return { action: "insert" };
+  if (existing.deletedAt == null) return { action: "use", id: existing.id };
+  return { action: "restore", id: existing.id };
 }

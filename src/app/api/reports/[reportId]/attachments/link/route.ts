@@ -1,11 +1,13 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { validateFolderPlacement } from "@/lib/attachments/folders";
 import { linkLibraryItemsToReport } from "@/lib/attachments/link-library-to-report";
+import { startIngestForUnprocessedLinkedVaultAssets } from "@/lib/attachments/start-vault-ingest";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   targetFolderId: z.string().min(1).nullable().optional(),
@@ -46,21 +48,33 @@ export async function POST(
     );
   }
 
-  const result = await linkLibraryItemsToReport({
-    reportId,
-    user: access.user,
-    targetFolderId,
-    assetIds: parsed.data.assetIds,
-    libraryFolderIds: parsed.data.libraryFolderIds,
-    excludedAssetIds: parsed.data.excludedAssetIds,
-  });
+  try {
+    const result = await linkLibraryItemsToReport({
+      reportId,
+      user: access.user,
+      targetFolderId,
+      assetIds: parsed.data.assetIds,
+      libraryFolderIds: parsed.data.libraryFolderIds,
+      excludedAssetIds: parsed.data.excludedAssetIds,
+    });
 
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    // GCS HEAD / holder ingest can take seconds on large PDFs. Return the
+    // queued links first so Add from vault is not stuck on Adding…
+    after(() => startIngestForUnprocessedLinkedVaultAssets(result.attachments));
+
+    return NextResponse.json({
+      attachments: result.attachments,
+      folders: result.folders,
+    });
+  } catch (error) {
+    console.error("link library items failed", error);
+    return NextResponse.json(
+      { error: "Could not add from vault" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({
-    attachments: result.attachments,
-    folders: result.folders,
-  });
 }

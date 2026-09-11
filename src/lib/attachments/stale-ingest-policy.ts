@@ -29,6 +29,20 @@ export type StaleIngestCandidate = {
   lastActivityAt: Date | null;
 };
 
+/**
+ * Reclaim uses ingest-run timestamps only for vault links. Those rows
+ * share `attachment_assets`; the report row's `uploadedAt` is often days
+ * old even when ingest has not started yet. Falling back to upload time
+ * falsely cancels those files with {@link STALE_INGEST_MESSAGE}.
+ * Report-native attachments (no asset) may still use `uploadedAt` at the
+ * reclaim call site when no run exists.
+ */
+export function lastActivityForStaleReclaim(
+  lastRunAt: Date | null
+): Date | null {
+  return lastRunAt;
+}
+
 export function isStaleIngest(
   candidate: StaleIngestCandidate,
   now: Date,

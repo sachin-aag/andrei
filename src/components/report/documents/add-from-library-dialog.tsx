@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Folder, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Folder, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,6 +20,7 @@ import {
   buildVaultTree,
   countVaultLinkSelection,
   isVaultAssetChecked,
+  omitLinkedVaultAssets,
   toggleVaultAssetSelection,
   toggleVaultFolderSelection,
 } from "@/lib/attachments/add-from-vault-selection";
@@ -29,6 +30,8 @@ import type {
 } from "@/lib/attachments/library-dto";
 
 type LibraryScope = "mine" | "shared" | "all";
+
+const EMPTY_LINKED_ASSET_IDS: ReadonlySet<string> = new Set();
 
 type LibraryResponse = {
   scope: LibraryScope;
@@ -45,6 +48,8 @@ type Props = {
     excludedAssetIds: string[];
   }) => Promise<void>;
   isAdmin?: boolean;
+  /** Vault asset ids already linked to this report — hidden from the picker. */
+  linkedAssetIds?: ReadonlySet<string>;
 };
 
 function LibraryTreeNode({
@@ -53,66 +58,114 @@ function LibraryTreeNode({
   foldersByParent,
   assetsByFolder,
   parentById,
-  folders,
-  assets,
   selectedAssetIds,
   selectedFolderIds,
   excludedAssetIds,
+  collapsedFolderIds,
   onToggleAsset,
   onToggleFolder,
+  onToggleFolderCollapsed,
 }: {
   folderId: string | null;
   depth: number;
   foldersByParent: Map<string | null, AttachmentLibraryFolderRecord[]>;
   assetsByFolder: Map<string | null, AttachmentLibraryAssetRecord[]>;
   parentById: Map<string, string | null>;
-  folders: AttachmentLibraryFolderRecord[];
-  assets: AttachmentLibraryAssetRecord[];
   selectedAssetIds: Set<string>;
   selectedFolderIds: Set<string>;
   excludedAssetIds: Set<string>;
+  collapsedFolderIds: Set<string>;
   onToggleAsset: (asset: AttachmentLibraryAssetRecord, checked: boolean) => void;
   onToggleFolder: (id: string, checked: boolean) => void;
+  onToggleFolderCollapsed: (id: string) => void;
 }) {
   const childFolders = foldersByParent.get(folderId) ?? [];
   const childAssets = assetsByFolder.get(folderId) ?? [];
+  const indent = depth * 12 + 8;
 
   return (
     <div className="space-y-1">
       {childFolders.map((folder) => {
         const checked = selectedFolderIds.has(folder.id);
+        const collapsed = collapsedFolderIds.has(folder.id);
+        const hasChildren =
+          (foldersByParent.get(folder.id)?.length ?? 0) > 0 ||
+          (assetsByFolder.get(folder.id)?.length ?? 0) > 0;
         return (
           <div key={folder.id}>
-            <label
+            <div
               className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--secondary)]/60",
+                "flex items-center gap-1 rounded-md py-1.5 pr-2 text-sm hover:bg-[var(--secondary)]/60",
                 checked && "bg-[var(--secondary)]"
               )}
-              style={{ paddingLeft: `${depth * 12 + 8}px` }}
+              style={{ paddingLeft: `${indent}px` }}
             >
+              {hasChildren ? (
+                <button
+                  type="button"
+                  aria-label={
+                    collapsed
+                      ? `Expand ${folder.name}`
+                      : `Collapse ${folder.name}`
+                  }
+                  aria-expanded={!collapsed}
+                  onClick={() => onToggleFolderCollapsed(folder.id)}
+                  className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
+                >
+                  {collapsed ? (
+                    <ChevronRight className="size-3.5" aria-hidden="true" />
+                  ) : (
+                    <ChevronDown className="size-3.5" aria-hidden="true" />
+                  )}
+                </button>
+              ) : (
+                <span className="size-5 shrink-0" aria-hidden="true" />
+              )}
               <Checkbox
                 checked={checked}
                 onCheckedChange={(value) =>
                   onToggleFolder(folder.id, value === true)
                 }
+                aria-label={`Select folder ${folder.name}`}
               />
-              <Folder className="size-4 shrink-0 text-[var(--muted-foreground)]" />
-              <span className="truncate">{folder.name}</span>
-            </label>
-            <LibraryTreeNode
-              folderId={folder.id}
-              depth={depth + 1}
-              foldersByParent={foldersByParent}
-              assetsByFolder={assetsByFolder}
-              parentById={parentById}
-              folders={folders}
-              assets={assets}
-              selectedAssetIds={selectedAssetIds}
-              selectedFolderIds={selectedFolderIds}
-              excludedAssetIds={excludedAssetIds}
-              onToggleAsset={onToggleAsset}
-              onToggleFolder={onToggleFolder}
-            />
+              {hasChildren ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleFolderCollapsed(folder.id)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <Folder
+                    className="size-4 shrink-0 text-[var(--muted-foreground)]"
+                    aria-hidden="true"
+                  />
+                  <span className="truncate">{folder.name}</span>
+                </button>
+              ) : (
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  <Folder
+                    className="size-4 shrink-0 text-[var(--muted-foreground)]"
+                    aria-hidden="true"
+                  />
+                  <span className="truncate">{folder.name}</span>
+                </span>
+              )}
+            </div>
+            {collapsed ? null : (
+              <LibraryTreeNode
+                folderId={folder.id}
+                depth={depth + 1}
+                foldersByParent={foldersByParent}
+                assetsByFolder={assetsByFolder}
+                parentById={parentById}
+                selectedAssetIds={selectedAssetIds}
+                selectedFolderIds={selectedFolderIds}
+                excludedAssetIds={excludedAssetIds}
+                collapsedFolderIds={collapsedFolderIds}
+                onToggleAsset={onToggleAsset}
+                onToggleFolder={onToggleFolder}
+                onToggleFolderCollapsed={onToggleFolderCollapsed}
+              />
+            )}
           </div>
         );
       })}
@@ -128,14 +181,15 @@ function LibraryTreeNode({
           <label
             key={asset.id}
             className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--secondary)]/60",
+              "flex items-center gap-2 rounded-md py-1.5 pr-2 text-sm hover:bg-[var(--secondary)]/60",
               checked && "bg-[var(--secondary)]"
             )}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+            style={{ paddingLeft: `${indent + 20}px` }}
           >
             <Checkbox
               checked={checked}
               onCheckedChange={(value) => onToggleAsset(asset, value === true)}
+              aria-label={`Select ${asset.filename}`}
             />
             <LibraryAssetLabel
               filename={asset.filename}
@@ -154,6 +208,7 @@ export function AddFromLibraryDialog({
   onOpenChange,
   onLink,
   isAdmin = false,
+  linkedAssetIds,
 }: Props) {
   const [scope, setScope] = useState<LibraryScope>("mine");
   const [loading, setLoading] = useState(false);
@@ -168,13 +223,20 @@ export function AddFromLibraryDialog({
   const [excludedAssetIds, setExcludedAssetIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [selectionEpoch, setSelectionEpoch] = useState({ open, scope });
+
+  const linkedIds = linkedAssetIds ?? EMPTY_LINKED_ASSET_IDS;
+
   if (open !== selectionEpoch.open || scope !== selectionEpoch.scope) {
     setSelectionEpoch({ open, scope });
     if (open) {
       setSelectedAssetIds(new Set());
       setSelectedFolderIds(new Set());
       setExcludedAssetIds(new Set());
+      setCollapsedFolderIds(new Set());
       setLibrary(null);
       setLoading(true);
     }
@@ -206,29 +268,33 @@ export function AddFromLibraryDialog({
     };
   }, [open, scope]);
 
-  const tree = useMemo(() => {
+  const visible = useMemo(() => {
     if (!library) {
-      return buildVaultTree([], []);
+      return { folders: [] as AttachmentLibraryFolderRecord[], assets: [] };
     }
-    return buildVaultTree(library.folders, library.assets);
-  }, [library]);
+    return omitLinkedVaultAssets(library.folders, library.assets, linkedIds);
+  }, [library, linkedIds]);
+
+  const tree = useMemo(
+    () => buildVaultTree(visible.folders, visible.assets),
+    [visible]
+  );
 
   const selectionCount = useMemo(() => {
-    if (!library) return 0;
     return countVaultLinkSelection(
-      library.folders,
-      library.assets,
+      visible.folders,
+      visible.assets,
       selectedFolderIds,
       selectedAssetIds,
       excludedAssetIds
     );
-  }, [library, selectedFolderIds, selectedAssetIds, excludedAssetIds]);
+  }, [visible, selectedFolderIds, selectedAssetIds, excludedAssetIds]);
 
   const handleLink = async () => {
     if (!library || selectionCount === 0) return;
     const payload = buildVaultLinkPayload(
-      library.folders,
-      library.assets,
+      visible.folders,
+      visible.assets,
       selectedFolderIds,
       selectedAssetIds,
       excludedAssetIds
@@ -246,6 +312,23 @@ export function AddFromLibraryDialog({
     }
   };
 
+  const toggleFolderCollapsed = useCallback((folderId: string) => {
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  }, []);
+
+  const emptyMessage =
+    library && library.assets.length > 0 && visible.assets.length === 0
+      ? "All documents in this vault view are already on this report."
+      : "No documents in this vault view yet.";
+
   const scopeTabs: { value: LibraryScope; label: string }[] = isAdmin
     ? [
         { value: "mine", label: "My uploads" },
@@ -259,7 +342,10 @@ export function AddFromLibraryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+      <DialogContent
+        className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+        data-testid="add-from-vault-dialog"
+      >
         <DialogHeader className="shrink-0 space-y-1 px-6 pt-6">
           <DialogTitle>Add from vault</DialogTitle>
           <DialogDescription>
@@ -292,9 +378,9 @@ export function AddFromLibraryDialog({
             <div className="flex h-40 items-center justify-center text-[var(--muted-foreground)]">
               <Loader2 className="size-5 animate-spin" aria-hidden="true" />
             </div>
-          ) : library && library.assets.length === 0 ? (
+          ) : visible.assets.length === 0 ? (
             <p className="px-2 py-6 text-center text-sm text-[var(--muted-foreground)]">
-              No documents in this vault view yet.
+              {emptyMessage}
             </p>
           ) : (
             <LibraryTreeNode
@@ -303,11 +389,10 @@ export function AddFromLibraryDialog({
               foldersByParent={tree.foldersByParent}
               assetsByFolder={tree.assetsByFolder}
               parentById={tree.parentById}
-              folders={library?.folders ?? []}
-              assets={library?.assets ?? []}
               selectedAssetIds={selectedAssetIds}
               selectedFolderIds={selectedFolderIds}
               excludedAssetIds={excludedAssetIds}
+              collapsedFolderIds={collapsedFolderIds}
               onToggleAsset={(asset, checked) => {
                 const nextSelectedAssets = new Set(selectedAssetIds);
                 const nextExcludedAssets = new Set(excludedAssetIds);
@@ -329,8 +414,8 @@ export function AddFromLibraryDialog({
                 toggleVaultFolderSelection(
                   id,
                   checked,
-                  library?.folders ?? [],
-                  library?.assets ?? [],
+                  visible.folders,
+                  visible.assets,
                   nextSelectedFolders,
                   nextSelectedAssets,
                   nextExcludedAssets
@@ -339,6 +424,7 @@ export function AddFromLibraryDialog({
                 setSelectedAssetIds(nextSelectedAssets);
                 setExcludedAssetIds(nextExcludedAssets);
               }}
+              onToggleFolderCollapsed={toggleFolderCollapsed}
             />
           )}
         </div>

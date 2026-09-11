@@ -181,6 +181,14 @@ function ExpandedDocumentsPanel({
     </Button>
   );
 
+  const linkedAssetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const attachment of attachments) {
+      if (attachment.assetId) ids.add(attachment.assetId);
+    }
+    return ids;
+  }, [attachments]);
+
   const attachmentActions = canMutateAttachments ? (
     <>
       {hasActiveUpload ? (
@@ -205,6 +213,7 @@ function ExpandedDocumentsPanel({
       </Button>
       <AttachmentUploadMenu
         isAdmin={isWorkspaceAdmin}
+        linkedAssetIds={linkedAssetIds}
         onUploadClick={() => inputRef.current?.click()}
         onLinkFromLibrary={(selection) =>
           linkFromLibrary({ ...selection, targetFolderId: null })
