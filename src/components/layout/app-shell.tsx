@@ -96,7 +96,7 @@ export function AppShell({
 
   return (
     <UserDirectoryProvider initialUsers={initialUsers}>
-    <ProductWalkthroughProvider userId={user.id} role={user.role}>
+    <ProductWalkthroughProvider role={user.role}>
       <InactivityLogout
         timeoutMinutes={inactivityTimeoutMinutes}
         userId={user.id}
