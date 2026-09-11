@@ -12,7 +12,6 @@ import { toAttachmentDto } from "@/lib/attachments/dto";
 import { loadAccessibleAsset } from "@/lib/attachments/library-access";
 import { classifyAssetsForLibraryLink } from "@/lib/attachments/library-link-classify";
 import { reportProcessingForLinkedAsset } from "@/lib/attachments/library-link-ingest";
-import { startIngestForLinkedVaultAsset } from "@/lib/attachments/start-vault-ingest";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { isPostgresUniqueViolation } from "@/lib/reports/document-no";
 import {
@@ -139,10 +138,6 @@ export async function linkLibraryItemsToReport(
     const classified = classifyAssetsForLibraryLink(
       uniqueAssets,
       existingForAssets
-    );
-
-    const ingestAssetIds = new Set<string>(
-      uniqueAssets.map((asset) => asset.id)
     );
 
     const reportFolderIdByLibraryFolderId = new Map<string, string>();
@@ -306,26 +301,6 @@ export async function linkLibraryItemsToReport(
       ok: true as const,
       attachments: createdAttachments,
       folders: createdFolders,
-      ingestAssetIds: [...ingestAssetIds],
-    };
-  }).then(async (result) => {
-    if (!result.ok) return result;
-    await Promise.allSettled(
-      result.ingestAssetIds.map(async (assetId) => {
-        try {
-          await startIngestForLinkedVaultAsset(assetId);
-        } catch (error) {
-          console.error("[vault-ingest] link ingest failed", {
-            assetId,
-            error,
-          });
-        }
-      })
-    );
-    return {
-      ok: true as const,
-      attachments: result.attachments,
-      folders: result.folders,
     };
   });
 }

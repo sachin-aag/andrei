@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, max, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, max, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   attachmentAssets,
@@ -7,6 +7,7 @@ import {
 } from "@/db/schema";
 import {
   isStaleIngest,
+  lastActivityForStaleReclaim,
   RECLAIMABLE_STATUSES,
   STALE_INGEST_MESSAGE,
   STALE_INGEST_MS,
@@ -14,6 +15,7 @@ import {
 
 export {
   isStaleIngest,
+  lastActivityForStaleReclaim,
   STALE_INGEST_MESSAGE,
   STALE_INGEST_MS,
 } from "@/lib/attachments/stale-ingest-policy";
@@ -27,15 +29,16 @@ const FAILED_ATTACHMENT_PROGRESS = 0;
  * Fail ingests that no executor is working on anymore, so the UI stops
  * spinning and the reprocess action becomes available.
  *
- * Safe to call from read paths: it only touches rows whose last activity is
- * older than {@link STALE_INGEST_MS}.
+ * Safe to call from read paths: it only touches rows whose last ingest-run
+ * activity is older than {@link STALE_INGEST_MS}. Never-started leftovers
+ * (no run row) are left for the leftover-ingest kick, not cancelled.
+ * Vault links join runs by attachment or shared asset so a live holder
+ * ingest is not treated as dead.
  */
 export async function reclaimStaleIngests(
   reportId: string,
   now: Date = new Date()
 ): Promise<number> {
-  const cutoff = new Date(now.getTime() - STALE_INGEST_MS);
-
   const candidates = await db
     .select({
       id: reportAttachments.id,
@@ -49,15 +52,22 @@ export async function reclaimStaleIngests(
     .from(reportAttachments)
     .leftJoin(
       attachmentIngestRuns,
-      eq(attachmentIngestRuns.attachmentId, reportAttachments.id)
+      and(
+        inArray(attachmentIngestRuns.status, [...OPEN_RUN_STATUSES]),
+        or(
+          eq(attachmentIngestRuns.attachmentId, reportAttachments.id),
+          and(
+            isNotNull(reportAttachments.assetId),
+            eq(attachmentIngestRuns.assetId, reportAttachments.assetId)
+          )
+        )
+      )
     )
     .where(
       and(
         eq(reportAttachments.reportId, reportId),
         isNull(reportAttachments.deletedAt),
-        inArray(reportAttachments.processingStatus, [...RECLAIMABLE_STATUSES]),
-        // Cheap prefilter: a run can never predate its attachment's upload.
-        sql`${reportAttachments.uploadedAt} < ${cutoff}`
+        inArray(reportAttachments.processingStatus, [...RECLAIMABLE_STATUSES])
       )
     )
     .groupBy(
@@ -71,7 +81,9 @@ export async function reclaimStaleIngests(
     isStaleIngest(
       {
         processingStatus: row.processingStatus,
-        lastActivityAt: toDate(row.lastRunAt) ?? row.uploadedAt,
+        lastActivityAt:
+          lastActivityForStaleReclaim(toDate(row.lastRunAt)) ??
+          (row.assetId == null ? row.uploadedAt : null),
       },
       now
     )
@@ -104,8 +116,13 @@ export async function reclaimStaleIngests(
       })
       .where(
         and(
-          inArray(attachmentIngestRuns.attachmentId, staleIds),
-          inArray(attachmentIngestRuns.status, [...OPEN_RUN_STATUSES])
+          inArray(attachmentIngestRuns.status, [...OPEN_RUN_STATUSES]),
+          or(
+            inArray(attachmentIngestRuns.attachmentId, staleIds),
+            staleAssetIds.length > 0
+              ? inArray(attachmentIngestRuns.assetId, staleAssetIds)
+              : sql`false`
+          )
         )
       );
 
@@ -139,6 +156,44 @@ export async function reclaimStaleIngests(
     attachmentIds: staleIds,
   });
   return staleIds.length;
+}
+
+/**
+ * Fail abandoned `pending`/`running` runs for one vault asset so a new
+ * holder ingest can start. Does not mark the asset failed — never-started
+ * leftovers must be kicked, not cancelled.
+ */
+export async function failStaleOpenIngestRunsForAsset(
+  assetId: string,
+  now: Date = new Date()
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - STALE_INGEST_MS);
+  const staleRuns = await db
+    .select({ id: attachmentIngestRuns.id })
+    .from(attachmentIngestRuns)
+    .where(
+      and(
+        eq(attachmentIngestRuns.assetId, assetId),
+        inArray(attachmentIngestRuns.status, [...OPEN_RUN_STATUSES]),
+        sql`coalesce(${attachmentIngestRuns.startedAt}, ${attachmentIngestRuns.createdAt}) < ${cutoff}`
+      )
+    );
+  if (staleRuns.length === 0) return 0;
+
+  await db
+    .update(attachmentIngestRuns)
+    .set({
+      status: "failed",
+      error: STALE_INGEST_MESSAGE,
+      completedAt: now,
+    })
+    .where(
+      inArray(
+        attachmentIngestRuns.id,
+        staleRuns.map((row) => row.id)
+      )
+    );
+  return staleRuns.length;
 }
 
 function toDate(value: Date | string | null | undefined): Date | null {

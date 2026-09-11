@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { validateFolderPlacement } from "@/lib/attachments/folders";
 import { linkLibraryItemsToReport } from "@/lib/attachments/link-library-to-report";
+import { startIngestForUnprocessedLinkedVaultAssets } from "@/lib/attachments/start-vault-ingest";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 
@@ -60,6 +61,10 @@ export async function POST(
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
+
+    // GCS HEAD / holder ingest can take seconds on large PDFs. Return the
+    // queued links first so Add from vault is not stuck on Adding…
+    after(() => startIngestForUnprocessedLinkedVaultAssets(result.attachments));
 
     return NextResponse.json({
       attachments: result.attachments,

@@ -12,7 +12,7 @@ import {
   resolveVaultIngestHolderLink,
 } from "@/lib/attachments/library-link-ingest";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
-import { reclaimStaleIngests } from "@/lib/attachments/stale-ingest";
+import { failStaleOpenIngestRunsForAsset } from "@/lib/attachments/stale-ingest";
 import { syncAssetProcessing } from "@/lib/attachments/sync-asset-processing";
 import { isPostgresUniqueViolation } from "@/lib/reports/document-no";
 import { ensureVaultIngestHolderReport } from "@/lib/reports/ensure-vault-ingest-holder";
@@ -203,7 +203,9 @@ export async function startVaultAssetIngest(
   }
 
   const holderReportId = await ensureVaultIngestHolderReport(asset.ownerId);
-  await reclaimStaleIngests(holderReportId);
+  // Do not reclaim the whole holder report: leftover vault links often have
+  // an old uploadedAt and no run yet, which used to fail the shared asset.
+  await failStaleOpenIngestRunsForAsset(assetId);
   if (await assetHasOpenIngestRun(assetId)) {
     return;
   }
@@ -277,13 +279,21 @@ export async function startIngestForUnprocessedLinkedVaultAssets(
   attachments: {
     assetId: string | null;
     processingStatus: VaultAssetRow["processingStatus"];
+    processingError?: string | null;
   }[]
 ): Promise<void> {
   const assetIds = [
     ...new Set(
       attachments.flatMap((row) => {
         if (!row.assetId) return [];
-        if (!linkedVaultDtoNeedsIngest(row.processingStatus)) return [];
+        if (
+          !linkedVaultDtoNeedsIngest(
+            row.processingStatus,
+            row.processingError ?? null
+          )
+        ) {
+          return [];
+        }
         return [row.assetId];
       })
     ),

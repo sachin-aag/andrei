@@ -20,7 +20,9 @@ export async function GET(
   }
 
   // The documents panel polls this while ingest runs, so it is where a
-  // timed-out run is first noticed and turned into a retryable failure.
+  // timed-out *run* is first noticed and turned into a retryable failure.
+  // Never-started vault leftovers have no run: reclaim leaves them, and
+  // the leftover kick below starts holder ingest.
   await reclaimStaleIngests(reportId);
 
   const attachments = await listActiveAttachments(reportId);

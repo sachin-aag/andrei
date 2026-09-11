@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STALE_INGEST_MESSAGE } from "./stale-ingest-policy";
 import {
   linkedVaultDtoNeedsIngest,
   reportProcessingForLinkedAsset,
@@ -88,7 +89,18 @@ describe("linkedVaultDtoNeedsIngest", () => {
     expect(linkedVaultDtoNeedsIngest("uploading")).toBe(true);
     expect(linkedVaultDtoNeedsIngest("processing")).toBe(true);
     expect(linkedVaultDtoNeedsIngest("queued")).toBe(true);
-    expect(linkedVaultDtoNeedsIngest("failed")).toBe(true);
+    expect(linkedVaultDtoNeedsIngest("validating")).toBe(true);
+  });
+
+  it("does not retry ordinary failures on every poll", () => {
+    expect(linkedVaultDtoNeedsIngest("failed")).toBe(false);
+    expect(
+      linkedVaultDtoNeedsIngest("failed", "Attachment has no finalized source document")
+    ).toBe(false);
+  });
+
+  it("retries a false stale-cancel so leftover vault files can start", () => {
+    expect(linkedVaultDtoNeedsIngest("failed", STALE_INGEST_MESSAGE)).toBe(true);
   });
 
   it("leaves an indexed vault file alone", () => {

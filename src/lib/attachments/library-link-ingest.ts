@@ -1,4 +1,5 @@
 import type { AttachmentProcessingStatus } from "@/db/schema";
+import { STALE_INGEST_MESSAGE } from "@/lib/attachments/stale-ingest-policy";
 
 const LIVE_INGEST_STATUSES = new Set<AttachmentProcessingStatus>([
   "validating",
@@ -39,12 +40,25 @@ export function reportProcessingForLinkedAsset(asset: {
  * Documents-panel poll / report open: start ingest for leftover vault
  * links. `ready` is indexed. In-flight statuses are still kicked so a
  * stuck uploading/processing row with no live run can recover; the
- * start path no-ops when an open ingest run already exists.
+ * start path no-ops when an open ingest run already exists. Ordinary
+ * `failed` rows are not retried every poll. A false stale-cancel
+ * (no live run, cancelled because upload time was old) is retried
+ * once the report is open so those files do not stay red.
  */
 export function linkedVaultDtoNeedsIngest(
-  processingStatus: AttachmentProcessingStatus
+  processingStatus: AttachmentProcessingStatus,
+  processingError: string | null = null
 ): boolean {
-  return processingStatus !== "ready";
+  if (processingStatus === "ready") return false;
+  if (processingStatus === "failed") {
+    return processingError === STALE_INGEST_MESSAGE;
+  }
+  return (
+    processingStatus === "uploading" ||
+    processingStatus === "validating" ||
+    processingStatus === "queued" ||
+    processingStatus === "processing"
+  );
 }
 
 export type VaultIngestHolderLink =
