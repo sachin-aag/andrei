@@ -119,7 +119,7 @@ Owned by `getWorkspaceSections(documentType)` in `src/lib/document-types/`. The 
 
 ### Auth
 
-NextAuth v5 with Drizzle adapter. Credentials (email/password) is the primary sign-in UI; Resend magic link is a secondary option on `/login`. JWT-based sessions with `workspaceUserId` and `role`. Roles: `engineer`, `manager`, `admin`, `qa` (`src/lib/auth/roles.ts`, `userRoleEnum`). E2E/test seed accounts are created via `POST /api/test/seed-auth-users`; user helpers live in `src/lib/auth/` (`workspace-users.ts`, `user-directory.ts`).
+NextAuth v5 with Drizzle adapter. Credentials (email/password) is the primary sign-in UI; Resend magic link is a secondary option on `/login`. JWT-based sessions with `workspaceUserId` and `role`. Roles: `engineer`, `manager`, `admin`, `qa` (`src/lib/auth/roles.ts`, `userRoleEnum`). E2E/test seed accounts are created via `POST /api/test/seed-auth-users`; user helpers live in `src/lib/auth/` (`workspace-users.ts`, `user-directory.ts`). A successful sign-in from a non-`@andreihealth.com` address emails `sachin@andreihealth.com` and `aditya@andreihealth.com` via Resend (`scheduleExternalLoginAlert` in the Auth.js `signIn` event). Fail-soft and skipped when `ALLOW_TEST_LOGIN` is on.
 
 Password lifecycle is enforced beyond NextAuth: `mustChangePassword`/`passwordExpired` force a redirect to `/change-password` (via the proxy); the JWT callback stamps those flags for 60s (`jwtStateCheckedAt`) instead of querying Postgres on every `auth()`; `getPasswordPolicy()` is process-cached for 60s. `getCurrentUser()` returns null for deactivated users and for JWTs whose `sessionVersion` does not match `workspace_users.session_version`. Admin deactivate (`PATCH`/`DELETE`) and forced password reset (admin reset email, `set-workspace-password`, completing `/api/auth-pw/reset-password`) bump `sessionVersion` so existing sessions cannot keep calling APIs. Configurable password policy in `passwordPolicySettings`; failed-login lockout with admin unlock at `POST /api/admin/users/[userId]/unlock`; self-service forgot/reset via `/forgot-password`, `/reset-password`, and `src/app/api/auth-pw/`. An optional site-wide password gate (`/unlock`, `POST /api/site-access`) is active only when `SITE_ACCESS_PASSWORD` is set.
 
@@ -135,7 +135,7 @@ Required in `.env.local` (see `.env.example` for all options):
 |----------|---------|
 | `DATABASE_URL` | Postgres connection string. Local Docker: `postgresql://andrei:andrei@localhost:5432/andrei_dev`. Runtime always uses the `pg` driver (`src/db/connection.ts`), including Neon TCP. |
 | `AUTH_SECRET` | NextAuth secret — generate with `openssl rand -base64 32` |
-| `AUTH_RESEND_KEY` | Resend API key for magic-link emails |
+| `AUTH_RESEND_KEY` | Resend API key for magic-link, password-reset, expert-review, and external-login-alert emails |
 | `AI_GATEWAY_API_KEY` | Vercel AI Gateway key. AI Check / suggestions / chat can use this **or** `GOOGLE_GENERATIVE_AI_API_KEY`. |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini key (alternative to gateway for eval/suggest/chat) |
 | `GOOGLE_VERTEX_PROJECT` | **Required for PDF/DOCX ingest + embeddings**. Pair with WIF (`GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`) on Vercel. Composer voice dictation uses the same Gemini resolver as chat (Vertex when this is set). |
