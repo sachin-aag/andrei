@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v50-list-attachments-meta"
+      "analytics-chat-v51-orchestrator-no-page-drain"
     );
   });
 
@@ -83,7 +83,8 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("reuses a tab with the same name");
     expect(prompt).toContain("do not dump every table onto the engineer's current tab");
     expect(prompt).toContain("Each worker creates that sheet");
-    expect(prompt).toContain("morePages true");
+    expect(prompt).toContain("Do not drain remaining pages yourself");
+    expect(prompt).toContain("extract_sheet workers pull every page");
     expect(prompt).toContain("Search snippets are not enough to fill the worksheet");
     expect(prompt).toContain("do not write_column until every page of that table is in");
     expect(prompt).toContain("A document_outline is not a page read");

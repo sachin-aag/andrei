@@ -659,6 +659,8 @@ export function prepareDocumentReviewStep(input: {
         toolChoice: { type: "tool", toolName: "finish_document_review" },
       };
     case "complete":
+      // Unlock the parent so it can draft or reply. Do not keep a forced
+      // tool pinned after the review FSM is done.
       return undefined;
     default: {
       const _exhaustive: never = input.phase;
