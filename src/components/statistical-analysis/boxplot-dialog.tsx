@@ -30,6 +30,9 @@ import {
 } from "@/lib/statistical-analysis/row-selection";
 import { boxplotFallbackTitle, MAX_BOXPLOT_CATEGORIES } from "@/lib/statistical-analysis/types";
 import {
+  ANALYSIS_ROW_RANGE_HELP,
+  analysisRowFieldDefaults,
+  collapseFilledAnalysisRows,
   dataSheets,
   findColumn,
 } from "@/lib/statistical-analysis/worksheet";
@@ -99,16 +102,16 @@ export function BoxplotDialog({
 }) {
   const sheets = dataSheets(worksheet);
   const fallbackY = defaultYColumnId || worksheet.columns[0]?.id || "";
+  const initialRows = analysisRowFieldDefaults(
+    findColumn(worksheet, fallbackY) ?? worksheet.columns[0],
+    { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
+  );
   const [yColumnId, setYColumnId] = useState(fallbackY);
   const [categoryColumnIds, setCategoryColumnIds] = useState<string[]>(
     () => defaultCategoryColumnIds ?? []
   );
-  const [rowStart, setRowStart] = useState(
-    defaultRowStart != null ? String(defaultRowStart) : ""
-  );
-  const [rowEnd, setRowEnd] = useState(
-    defaultRowEnd != null ? String(defaultRowEnd) : ""
-  );
+  const [rowStart, setRowStart] = useState(initialRows.rowStart);
+  const [rowEnd, setRowEnd] = useState(initialRows.rowEnd);
   const [xAxisLabel, setXAxisLabel] = useState(defaultXAxisLabel ?? "");
   const [yAxisLabel, setYAxisLabel] = useState(defaultYAxisLabel ?? "");
   const [showMeanLine, setShowMeanLine] = useState(defaultShowMeanLine);
@@ -117,10 +120,12 @@ export function BoxplotDialog({
   const categoryColumns = categoryColumnIds
     .map((id) => findColumn(worksheet, id))
     .filter((column): column is NonNullable<typeof column> => column != null);
-  const rowSelection = normalizeRowSelection({
-    rowStart: parseOptionalRow(rowStart),
-    rowEnd: parseOptionalRow(rowEnd),
-  });
+  const submittedRows = collapseFilledAnalysisRows(
+    yColumn,
+    parseOptionalRow(rowStart),
+    parseOptionalRow(rowEnd)
+  );
+  const rowSelection = normalizeRowSelection(submittedRows);
   const rowLabel = formatRowSelection(rowSelection);
   const suggestedTitle = yColumn
     ? boxplotFallbackTitle(
@@ -174,6 +179,11 @@ export function BoxplotDialog({
               value={yColumnId}
               onValueChange={(value) => {
                 setYColumnId(value);
+                const nextRows = analysisRowFieldDefaults(
+                  findColumn(worksheet, value) ?? worksheet.columns[0]
+                );
+                setRowStart(nextRows.rowStart);
+                setRowEnd(nextRows.rowEnd);
                 setCategoryColumnIds((current) =>
                   current.filter((id) => id !== value)
                 );
@@ -309,7 +319,7 @@ export function BoxplotDialog({
                 <FieldInfoIcon
                   label="Row range"
                   testId="boxplot-row-range-info"
-                  text="Rows are numbered from 1. Leave both blank to use every filled Y cell."
+                  text={ANALYSIS_ROW_RANGE_HELP}
                 />
               </div>
               <Input
@@ -409,8 +419,8 @@ export function BoxplotDialog({
                 yColumnId,
                 categoryColumnIds,
                 title: resolvedTitle,
-                rowStart: parseOptionalRow(rowStart),
-                rowEnd: parseOptionalRow(rowEnd),
+                rowStart: submittedRows.rowStart,
+                rowEnd: submittedRows.rowEnd,
                 xAxisLabel: xAxisLabel.trim() || null,
                 yAxisLabel: yAxisLabel.trim() || null,
                 showMeanLine,

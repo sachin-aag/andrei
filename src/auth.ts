@@ -12,6 +12,7 @@ import {
   computePasswordExpiryState,
   getPasswordPolicy,
 } from "@/lib/auth/password-policy";
+import { scheduleExternalLoginAlert } from "@/lib/auth/external-login-alert";
 import {
   clearFailedLoginAttempts,
   findWorkspaceUserForLogin,
@@ -107,6 +108,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (wsUser) {
         await recordLastLogin(wsUser.id);
       }
+      scheduleExternalLoginAlert({
+        email: user.email,
+        name: user.name,
+      });
     },
   },
   callbacks: {

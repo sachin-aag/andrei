@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   boxplotAxisLayout,
   BOXPLOT_CHART_HEIGHT,
+  boxplotBoxWidth,
+  boxplotExcelLayout,
+  boxplotPlotWidth,
   rotatedInnerLabelBottomY,
   shouldRotateInnerLabels,
 } from "./boxplot-chart-layout";
@@ -39,5 +42,36 @@ describe("boxplotAxisLayout", () => {
     expect(layout.categoryLabelY(1) + 12).toBeLessThanOrEqual(
       BOXPLOT_CHART_HEIGHT - 4
     );
+  });
+});
+
+describe("boxplotExcelLayout", () => {
+  it("keeps one or two boxes near the 42px cap with max gap and side pads", () => {
+    const plotWidth = boxplotPlotWidth();
+    expect(boxplotBoxWidth(1, plotWidth)).toBe(42);
+    expect(boxplotBoxWidth(2, plotWidth)).toBe(42);
+
+    const one = boxplotExcelLayout(1);
+    expect(one.gapWidth).toBe(500);
+    expect(one.padLeft).toBeGreaterThan(0);
+    expect(one.padRight).toBe(one.padLeft);
+
+    const two = boxplotExcelLayout(2);
+    expect(two.gapWidth).toBe(500);
+    expect(two.padLeft).toBeGreaterThan(0);
+    expect(two.padRight).toBe(two.padLeft);
+
+    const barFrac = 1 / (1 + 500 / 100);
+    const oneShare = barFrac / (1 + one.padLeft + one.padRight);
+    const appShare = 42 / plotWidth;
+    expect(oneShare).toBeLessThan(0.08);
+    expect(Math.abs(oneShare - appShare)).toBeLessThan(0.02);
+  });
+
+  it("uses a 55% slot and no pads when many groups already hit the cap", () => {
+    const many = boxplotExcelLayout(12);
+    expect(many.padLeft).toBe(0);
+    expect(many.padRight).toBe(0);
+    expect(many.gapWidth).toBe(82);
   });
 });

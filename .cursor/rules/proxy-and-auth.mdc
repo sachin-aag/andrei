@@ -33,3 +33,7 @@ alwaysApply: false
   routes usually means the process serving the request is missing one of them.
 - Never set `ALLOW_TEST_*` on Vercel. MJ emails (`@mjbiopharm.com`) are a
   convention; `set-workspace-password` does not enforce the domain.
+- Successful Auth.js sign-in from a non-`@andreihealth.com` address emails
+  Sachin and Aditya (`src/lib/auth/external-login-alert.ts`). Fail-soft;
+  skipped when `ALLOW_TEST_LOGIN` is on. Test-login JWT minting does not
+  go through that event.

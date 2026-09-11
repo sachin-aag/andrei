@@ -91,6 +91,11 @@ export function axisTickValues(
   );
 }
 
+/** The step `axisTickValues` derives by default. Excel takes a majorUnit, not ticks. */
+export function axisMajorUnit(min: number, max: number): number {
+  return niceNumber((max - min) / 6, true);
+}
+
 export function formatAxisTick(value: number): string {
   if (!Number.isFinite(value)) return "";
   const rounded = Number(value.toPrecision(12));

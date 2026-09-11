@@ -29,6 +29,10 @@ export {
   xyScatterSourceKey,
   boxplotSourceKey,
   columnNumericValues,
+  columnFilledRowRange,
+  analysisRowFieldDefaults,
+  ANALYSIS_ROW_RANGE_HELP,
+  collapseFilledAnalysisRows,
   columnSourceKey,
   findColumn,
   findColumnIndex,
@@ -76,6 +80,17 @@ export {
   formatStat,
   formatSpecSummary,
 } from "./format";
+export {
+  WORKSHEET_PLOT_CATALOG,
+  analyzePlotTypeHelpText,
+  isAnalyzeInlinePlotKind,
+  worksheetPlotEntry,
+} from "./plot-catalog";
+export type {
+  AnalyzeInlinePlotKind,
+  WorksheetPlotCatalogEntry,
+  WorksheetPlotKind,
+} from "./plot-catalog";
 export {
   formatRowSelection,
   normalizeRowSelection,

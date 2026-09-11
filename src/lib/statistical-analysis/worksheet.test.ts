@@ -5,6 +5,9 @@ import {
   appendColumnValues,
   addDataSheet,
   columnNumericValues,
+  columnFilledRowRange,
+  analysisRowFieldDefaults,
+  collapseFilledAnalysisRows,
   columnSourceKey,
   createEmptyWorksheet,
   defaultSixpackLimits,
@@ -53,6 +56,39 @@ describe("worksheet grid operations", () => {
     expect(findPlaceholderColumnIndex(sheet, new Set([0]))).toBe(1);
     const filled = replaceColumnValues(sheet, 0, ["101.2"], "Assay");
     expect(findPlaceholderColumnIndex(filled)).toBe(1);
+  });
+
+  it("finds the first and last filled cells in a column", () => {
+    let sheet = createEmptyWorksheet(1);
+    expect(columnFilledRowRange(sheet.columns[0]!)).toBeNull();
+    expect(analysisRowFieldDefaults(sheet.columns[0])).toEqual({
+      rowStart: "",
+      rowEnd: "",
+    });
+    sheet = setCell(sheet, 0, 2, "10");
+    sheet = setCell(sheet, 0, 3, "  ");
+    sheet = setCell(sheet, 0, 6, "12");
+    sheet = setCell(sheet, 0, 8, "");
+    expect(columnFilledRowRange(sheet.columns[0]!)).toEqual({
+      start: 3,
+      end: 7,
+    });
+    expect(analysisRowFieldDefaults(sheet.columns[0])).toEqual({
+      rowStart: "3",
+      rowEnd: "7",
+    });
+    expect(
+      analysisRowFieldDefaults(sheet.columns[0], {
+        rowStart: 31,
+        rowEnd: 50,
+      })
+    ).toEqual({ rowStart: "31", rowEnd: "50" });
+    expect(
+      collapseFilledAnalysisRows(sheet.columns[0], 3, 7)
+    ).toEqual({ rowStart: null, rowEnd: null });
+    expect(
+      collapseFilledAnalysisRows(sheet.columns[0], 3, 6)
+    ).toEqual({ rowStart: 3, rowEnd: 6 });
   });
 
   it("parses a numeric subset of rows without using the rest of the column", () => {
