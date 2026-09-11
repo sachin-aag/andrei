@@ -1224,32 +1224,8 @@ export function DocumentLibrarySection({
   }, [vaultScope]);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("/api/attachment-vault?scope=mine");
-        const data = (await response.json().catch(() => ({}))) as LibraryResponse & {
-          error?: string;
-        };
-        if (cancelled) return;
-        if (!response.ok) {
-          toast.error(data.error ?? "Could not load your document vault");
-          return;
-        }
-        setLibrary({
-          folders: data.folders ?? [],
-          assets: data.assets ?? [],
-          archivedFolders: data.archivedFolders ?? [],
-          archivedAssets: data.archivedAssets ?? [],
-        });
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void loadLibrary();
+  }, [loadLibrary]);
 
   const hasIndexingAssets = (library?.assets ?? []).some(
     (asset) =>
