@@ -25,21 +25,20 @@ export default async function DocumentVaultPage() {
       passwordStatus={passwordStatus}
       inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
     >
-      <div className="flex h-full flex-col overflow-auto">
-        <div className="border-b border-[var(--border)] px-10 py-6">
-          <h1 className="text-2xl font-semibold tracking-tight">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-baseline gap-3 border-b border-[var(--border)] px-6 py-3">
+          <h1
+            className="text-lg font-semibold tracking-tight"
+            data-walkthrough="document-vault"
+          >
             Document vault
           </h1>
-          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Upload files or folders here, or drop them onto a folder. Nested
-            folders are kept. A folder must contain only PDF and Word files —
-            anything else stops the upload before it starts. Click a file to see
-            details. Open a preview when you want to read it. Files already on
-            reports stay there if you remove them from the vault.
+          <p className="truncate text-sm text-[var(--muted-foreground)]">
+            Upload, organize, and share files for reports.
           </p>
         </div>
 
-        <div className="px-10 py-6">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <DocumentLibrarySection
             currentUser={user}
             workspaceUsers={workspaceUsers}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePlotTitle } from "@/components/statistical-analysis/use-plot-title";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -170,7 +171,6 @@ export function XyScatterDialog({
   const [mark, setMark] = useState<ChartMark>(() => parseChartMark(defaultMark));
   const [showSpecLimits, setShowSpecLimits] = useState(defaultShowSpecLimits);
   const [showMeanLine, setShowMeanLine] = useState(defaultShowMeanLine);
-  const [title, setTitle] = useState(defaultTitle);
   const initialRows = analysisRowFieldDefaults(
     findColumn(worksheet, fallbackY) ?? worksheet.columns[0],
     { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
@@ -196,7 +196,7 @@ export function XyScatterDialog({
   );
   const rowSelection = normalizeRowSelection(submittedRows);
   const rowLabel = formatRowSelection(rowSelection);
-  const placeholderTitle = yColumn
+  const suggestedTitle = yColumn
     ? xyScatterFallbackTitle(
         yColumn.name,
         xColumn?.name ?? null,
@@ -204,6 +204,10 @@ export function XyScatterDialog({
         legendColumn?.name ?? null
       )
     : "Analysis title";
+  const { title, setTitle, resolvedTitle } = usePlotTitle(
+    suggestedTitle,
+    defaultTitle
+  );
   const xMinValue = parseOptionalFinite(xMin);
   const xMaxValue = parseOptionalFinite(xMax);
   const yMinValue = parseOptionalFinite(yMin);
@@ -473,8 +477,8 @@ export function XyScatterDialog({
             </Label>
             <Input
               id="xy-title"
+              data-testid="xy-title"
               value={title}
-              placeholder={placeholderTitle}
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
@@ -604,7 +608,7 @@ export function XyScatterDialog({
                 mark,
                 showSpecLimits,
                 showMeanLine,
-                title: title.trim(),
+                title: resolvedTitle,
                 rowStart: submittedRows.rowStart,
                 rowEnd: submittedRows.rowEnd,
                 xMin: xMinValue,

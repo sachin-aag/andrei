@@ -124,6 +124,14 @@ export const userRoleEnum = pgEnum("user_role", [
   "qa",
 ]);
 
+/** First-login product tour. `not_started` shows on next session until completed or dismissed. */
+export const productTourStatusEnum = pgEnum("product_tour_status", [
+  "not_started",
+  "in_progress",
+  "completed",
+  "dismissed",
+]);
+
 export const auditActionEnum = pgEnum("audit_action", [
   "report_created",
   "report_updated",
@@ -249,6 +257,11 @@ export const workspaceUsers = pgTable(
     }),
     /** Non-null means the account is deactivated and cannot sign in until reactivated. */
     deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+    /** First-login product tour. Resume from `productTourStepId` while `in_progress`. */
+    productTourStatus: productTourStatusEnum("product_tour_status")
+      .notNull()
+      .default("not_started"),
+    productTourStepId: text("product_tour_step_id"),
     /** Updated on each successful sign-in (credentials or magic link). */
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -492,10 +505,15 @@ export const attachmentLibraryFolders = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => ({
     ownerIdx: index("attachment_library_folders_owner_idx").on(t.ownerId),
     parentIdx: index("attachment_library_folders_parent_idx").on(t.parentId),
+    ownerArchivedIdx: index("attachment_library_folders_owner_archived_idx").on(
+      t.ownerId,
+      t.archivedAt
+    ),
   })
 );
 
@@ -784,6 +802,19 @@ export const documentPages = pgTable(
     visualInterpretation: text("visual_interpretation").notNull().default(""),
     pageContext: text("page_context"),
     confidence: real("confidence"),
+    /** Deterministic heading from the transcript; null when none detected. */
+    outlineTitle: text("outline_title"),
+    /** Requirement-like IDs on this page (`requirementIds()`), cap 40. */
+    identifiers: text("identifiers")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /**
+     * Null = not classified (OCR wave / text-layer-only / gap). true/false
+     * only when Gemini insight or vision actually ran.
+     */
+    hasTable: boolean("has_table"),
+    hasFigure: boolean("has_figure"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -794,6 +825,48 @@ export const documentPages = pgTable(
       t.pageNumber
     ),
     reportIdx: index("document_pages_report_idx").on(t.reportId),
+    identifiersGinIdx: index("document_pages_identifiers_gin_idx").using(
+      "gin",
+      t.identifiers
+    ),
+  })
+);
+
+export const documentOutlineSpans = pgTable(
+  "document_outline_spans",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    ingestRunId: text("ingest_run_id")
+      .notNull()
+      .references(() => attachmentIngestRuns.id, { onDelete: "cascade" }),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    title: text("title").notNull(),
+    pageStart: integer("page_start").notNull(),
+    pageEnd: integer("page_end").notNull(),
+    identifiers: text("identifiers")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+  },
+  (t) => ({
+    runOrdinalUnique: uniqueIndex(
+      "document_outline_spans_run_ordinal_unique"
+    ).on(t.ingestRunId, t.ordinal),
+    reportAttachmentRunIdx: index(
+      "document_outline_spans_report_attachment_run_idx"
+    ).on(t.reportId, t.attachmentId, t.ingestRunId),
+    identifiersGinIdx: index("document_outline_spans_identifiers_gin_idx").using(
+      "gin",
+      t.identifiers
+    ),
   })
 );
 
@@ -1359,6 +1432,7 @@ export const attachmentIngestRunsRelations = relations(
     batches: many(documentIngestBatches),
     pages: many(documentPages),
     chunks: many(documentChunks),
+    outlineSpans: many(documentOutlineSpans),
   })
 );
 
@@ -1380,6 +1454,24 @@ export const documentPagesRelations = relations(
       references: [attachmentIngestRuns.id],
     }),
     chunks: many(documentChunks),
+  })
+);
+
+export const documentOutlineSpansRelations = relations(
+  documentOutlineSpans,
+  ({ one }) => ({
+    ingestRun: one(attachmentIngestRuns, {
+      fields: [documentOutlineSpans.ingestRunId],
+      references: [attachmentIngestRuns.id],
+    }),
+    attachment: one(reportAttachments, {
+      fields: [documentOutlineSpans.attachmentId],
+      references: [reportAttachments.id],
+    }),
+    report: one(reports, {
+      fields: [documentOutlineSpans.reportId],
+      references: [reports.id],
+    }),
   })
 );
 
@@ -1613,6 +1705,8 @@ export type DocumentChunkSourceKind =
   (typeof documentChunkSourceKindEnum.enumValues)[number];
 export type StorageOutboxStatus =
   (typeof storageOutboxStatusEnum.enumValues)[number];
+export type ProductTourStatus =
+  (typeof productTourStatusEnum.enumValues)[number];
 export type DocumentRevisionSource =
   (typeof documentRevisionSourceEnum.enumValues)[number];
 export type AiUsageFeature = (typeof aiUsageFeatureEnum.enumValues)[number];

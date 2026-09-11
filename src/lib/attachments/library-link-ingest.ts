@@ -8,10 +8,28 @@ export function reportProcessingForLinkedAsset(asset: {
   processingStatus: AttachmentProcessingStatus;
   shouldStartIngest: boolean;
 } {
+  if (asset.activeIngestRunId) {
+    return {
+      processingStatus: asset.processingStatus,
+      shouldStartIngest: false,
+    };
+  }
+
+  const inFlight =
+    asset.processingStatus === "validating" ||
+    asset.processingStatus === "queued" ||
+    asset.processingStatus === "processing";
+
+  if (inFlight) {
+    return {
+      processingStatus: asset.processingStatus,
+      shouldStartIngest: false,
+    };
+  }
+
   const needsIngest =
-    !asset.activeIngestRunId &&
-    Boolean(asset.gcsGeneration) &&
-    (asset.processingStatus === "ready" || asset.processingStatus === "queued");
+    Boolean(asset.gcsGeneration) && asset.processingStatus === "ready";
+
   return {
     processingStatus: needsIngest ? "queued" : asset.processingStatus,
     shouldStartIngest: needsIngest,

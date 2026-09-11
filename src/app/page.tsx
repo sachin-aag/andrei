@@ -17,7 +17,7 @@ import {
   listReportManagerIdsByReportIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
-import { activeReportsFilter } from "@/lib/reports/tombstone";
+import { visibleReportsFilter } from "@/lib/reports/tombstone";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +45,7 @@ export default async function DashboardPage() {
           db
             .select()
             .from(reports)
-            .where(activeReportsFilter())
+            .where(visibleReportsFilter())
             .orderBy(desc(reports.updatedAt))
         )
       : user.role === "engineer"
@@ -53,7 +53,7 @@ export default async function DashboardPage() {
           db
             .select()
             .from(reports)
-            .where(and(eq(reports.authorId, user.id), activeReportsFilter()))
+            .where(and(eq(reports.authorId, user.id), visibleReportsFilter()))
             .orderBy(desc(reports.updatedAt))
         )
       : await withTransientRetry("dashboard.managerReports", () =>
@@ -62,7 +62,7 @@ export default async function DashboardPage() {
             .from(reports)
             .where(
               and(
-                activeReportsFilter(),
+                visibleReportsFilter(),
                 or(
                   eq(reports.assignedManagerId, user.id),
                   sql`exists (

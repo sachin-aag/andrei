@@ -16,10 +16,12 @@ vi.mock("@/components/report/pdf-page-preview", () => ({
     title,
     page,
     sizeBytes,
+    active,
   }: {
     title: string;
     page: number;
     sizeBytes?: number;
+    active?: boolean;
   }) => (
     // Mock preview — next/image is not under test here.
     // eslint-disable-next-line @next/next/no-img-element
@@ -27,6 +29,7 @@ vi.mock("@/components/report/pdf-page-preview", () => ({
       alt={`${title}, page ${page}`}
       src="data:image/png;base64,abc"
       data-size-bytes={sizeBytes}
+      data-active={String(active ?? true)}
     />
   ),
 }));
@@ -45,9 +48,14 @@ function baseAttachment(overrides: Record<string, unknown> = {}) {
 }
 
 function mockContext(overrides: Record<string, unknown> = {}) {
+  const attachment = (overrides.attachments as ReturnType<
+    typeof baseAttachment
+  >[] | undefined)?.[0] ?? baseAttachment();
   useReportAttachmentsMock.mockReturnValue({
-    activeAttachment: baseAttachment(),
-    activePage: 1,
+    attachments: [baseAttachment()],
+    previewPageFor: (id: string) =>
+      id === attachment.id ? (overrides.activePage as number | undefined) ?? 1 : 1,
+    rememberDocumentPage: vi.fn(),
     closeDocument: vi.fn(),
     reportId: "report-1",
     ...overrides,
@@ -58,7 +66,7 @@ describe("AttachmentViewer", () => {
   it("renders PDFs as an image preview, not an iframe", () => {
     mockContext();
 
-    render(<AttachmentViewer />);
+    render(<AttachmentViewer attachmentId="att-1" />);
 
     expect(screen.queryByTitle("Attachment_IV_Preparation_Record.pdf")).not.toBeInTheDocument();
     expect(
@@ -69,14 +77,16 @@ describe("AttachmentViewer", () => {
 
   it("does not grant script or download access to the sandboxed DOCX preview", () => {
     mockContext({
-      activeAttachment: baseAttachment({
-        filename: "Report.docx",
-        mimeType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      }),
+      attachments: [
+        baseAttachment({
+          filename: "Report.docx",
+          mimeType:
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }),
+      ],
     });
 
-    render(<AttachmentViewer />);
+    render(<AttachmentViewer attachmentId="att-1" />);
 
     const iframe = screen.getByTitle("Report.docx");
     const sandbox = iframe.getAttribute("sandbox") ?? "";
@@ -86,10 +96,12 @@ describe("AttachmentViewer", () => {
 
   it("does not render a preview until the attachment has a page count", () => {
     mockContext({
-      activeAttachment: baseAttachment({ pageCount: null, processingStatus: "processing" }),
+      attachments: [
+        baseAttachment({ pageCount: null, processingStatus: "processing" }),
+      ],
     });
 
-    render(<AttachmentViewer />);
+    render(<AttachmentViewer attachmentId="att-1" />);
 
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.getByText(/Upload is still finishing/)).toBeInTheDocument();
@@ -100,7 +112,7 @@ describe("AttachmentViewer", () => {
     mockContext({ closeDocument });
     const user = userEvent.setup();
 
-    render(<AttachmentViewer />);
+    render(<AttachmentViewer attachmentId="att-1" />);
 
     await user.click(screen.getByRole("button", { name: "Close document" }));
     expect(closeDocument).toHaveBeenCalledTimes(1);
@@ -111,10 +123,25 @@ describe("AttachmentViewer", () => {
     mockContext({ closeDocument });
     const user = userEvent.setup();
 
-    render(<AttachmentViewer />);
+    render(<AttachmentViewer attachmentId="att-1" />);
 
     await user.keyboard("{Escape}");
     expect(closeDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not close a hidden keep-alive preview on Escape", async () => {
+    const closeDocument = vi.fn();
+    const onClose = vi.fn();
+    mockContext({ closeDocument });
+    const user = userEvent.setup();
+
+    render(
+      <AttachmentViewer attachmentId="att-1" active={false} onClose={onClose} />
+    );
+
+    await user.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(closeDocument).not.toHaveBeenCalled();
   });
 
   it("prefers onClose over closeDocument", async () => {
@@ -123,7 +150,7 @@ describe("AttachmentViewer", () => {
     mockContext({ closeDocument });
     const user = userEvent.setup();
 
-    render(<AttachmentViewer onClose={onClose} />);
+    render(<AttachmentViewer attachmentId="att-1" onClose={onClose} />);
 
     await user.click(screen.getByRole("button", { name: "Close document" }));
     expect(onClose).toHaveBeenCalledTimes(1);

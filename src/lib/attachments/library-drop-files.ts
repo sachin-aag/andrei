@@ -50,25 +50,13 @@ export function classifyCollectedLibraryFiles(
       accepted.push(item);
       continue;
     }
-    rejectedNames.push(basename(item.relativePath) || item.file.name);
+    rejectedNames.push(item.relativePath || item.file.name);
   }
   return { accepted, rejectedNames };
 }
 
-export function libraryUnsupportedFilesError(rejectedNames: string[]): string {
-  const unique = [...new Set(rejectedNames)];
-  if (unique.length === 1) {
-    return `${unique[0]} is not a PDF or Word document. Remove unsupported files and try again.`;
-  }
-  const shown = unique.slice(0, 3);
-  const extra = unique.length - shown.length;
-  const list =
-    extra > 0
-      ? `${shown.join(", ")}, and ${extra} more`
-      : unique.length === 2
-        ? `${shown[0]} and ${shown[1]}`
-        : `${shown[0]}, ${shown[1]}, and ${shown[2]}`;
-  return `This folder includes ${list}, which are not PDF or Word documents. Remove them and try again.`;
+export function uniqueRejectedLibraryNames(rejectedNames: string[]): string[] {
+  return [...new Set(rejectedNames)];
 }
 
 export function libraryTargetFolderDepth(
@@ -94,10 +82,8 @@ export function libraryUploadBatchError(
   scan: LibraryUploadScan,
   targetFolderDepth: number
 ): string | null {
-  if (scan.rejectedNames.length > 0) {
-    return libraryUnsupportedFilesError(scan.rejectedNames);
-  }
   if (scan.accepted.length === 0) {
+    if (scan.rejectedNames.length > 0) return null;
     return "No PDF or Word documents found in that folder";
   }
   for (const item of scan.accepted) {
@@ -121,6 +107,128 @@ export function libraryUploadFilesFromList(
       relativePath: relativePathForFile(file),
     }))
   );
+}
+
+const LIBRARY_UPLOAD_SCAN_CHUNK = 40;
+
+/** Let React paint a spinner before a long folder scan continues. */
+export function yieldToPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        setTimeout(resolve, 0);
+      });
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
+/**
+ * Same scan as `libraryUploadFilesFromList`, but yields between chunks so a
+ * large folder cannot freeze the page before our upload dialog can paint.
+ */
+export async function libraryUploadFilesFromListAsync(
+  fileList: FileList | File[],
+  options?: {
+    chunkSize?: number;
+    onProgress?: (scanned: number, total: number) => void;
+  }
+): Promise<LibraryUploadScan> {
+  const total = fileList.length;
+  const chunkSize = Math.max(1, options?.chunkSize ?? LIBRARY_UPLOAD_SCAN_CHUNK);
+  const collected: LibraryUploadFile[] = [];
+
+  for (let index = 0; index < total; index += 1) {
+    const file = fileList[index]!;
+    collected.push({
+      file,
+      relativePath: relativePathForFile(file),
+    });
+    const scanned = index + 1;
+    const atChunkEnd = scanned % chunkSize === 0 || scanned === total;
+    if (!atChunkEnd) continue;
+    options?.onProgress?.(scanned, total);
+    if (scanned < total) await yieldToPaint();
+  }
+
+  return classifyCollectedLibraryFiles(collected);
+}
+
+export function canShowDirectoryPicker(
+  target: { showDirectoryPicker?: unknown } = typeof window === "undefined"
+    ? {}
+    : window
+): boolean {
+  return typeof target.showDirectoryPicker === "function";
+}
+
+export function isDirectoryPickerAbort(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name: string }).name === "AbortError"
+  );
+}
+
+type DirectoryWalkOptions = {
+  onProgress?: (scanned: number) => void;
+};
+
+function directoryHandleEntries(
+  dir: FileSystemDirectoryHandle
+): AsyncIterableIterator<[string, FileSystemHandle]> {
+  if (typeof dir.entries !== "function") {
+    throw new Error("This browser cannot list folder contents");
+  }
+  return dir.entries();
+}
+
+async function collectFromHandle(
+  handle: FileSystemHandle,
+  prefix: string,
+  out: LibraryUploadFile[],
+  options?: DirectoryWalkOptions
+): Promise<void> {
+  switch (handle.kind) {
+    case "file": {
+      const file = await (handle as FileSystemFileHandle).getFile();
+      const relativePath = prefix ? `${prefix}/${handle.name}` : handle.name;
+      out.push({ file, relativePath });
+      options?.onProgress?.(out.length);
+      if (out.length % LIBRARY_UPLOAD_SCAN_CHUNK === 0) {
+        await yieldToPaint();
+      }
+      return;
+    }
+    case "directory": {
+      const dir = handle as FileSystemDirectoryHandle;
+      const nextPrefix = prefix ? `${prefix}/${dir.name}` : dir.name;
+      for await (const [, child] of directoryHandleEntries(dir)) {
+        await collectFromHandle(child, nextPrefix, out, options);
+      }
+      return;
+    }
+    default: {
+      const _exhaustive: never = handle.kind;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * Walk a directory handle from `showDirectoryPicker` / dropped
+ * `getAsFileSystemHandle`. Paths include the selected folder name, matching
+ * `webkitRelativePath` from `<input webkitdirectory>`.
+ */
+export async function libraryUploadFilesFromDirectoryHandle(
+  dir: FileSystemDirectoryHandle,
+  options?: DirectoryWalkOptions
+): Promise<LibraryUploadScan> {
+  const collected: LibraryUploadFile[] = [];
+  await collectFromHandle(dir, "", collected, options);
+  return classifyCollectedLibraryFiles(collected);
 }
 
 async function walkEntry(
@@ -155,21 +263,43 @@ async function walkEntry(
   }
 }
 
+/**
+ * Snapshot directory handles/entries in the drop event turn. Do not await
+ * paint before calling this — Chrome drops the handles after the gesture.
+ */
 export async function libraryUploadFilesFromDataTransfer(
-  dataTransfer: DataTransfer
+  dataTransfer: DataTransfer,
+  options?: DirectoryWalkOptions
 ): Promise<LibraryUploadScan> {
   const collected: LibraryUploadFile[] = [];
   const items = [...dataTransfer.items];
+  const canUseHandles = items.every(
+    (item) => typeof item.getAsFileSystemHandle === "function"
+  );
+
+  if (canUseHandles && items.length > 0) {
+    const handlePromises = items.map((item) => item.getAsFileSystemHandle());
+    const handles = await Promise.all(handlePromises);
+    for (const handle of handles) {
+      if (!handle) continue;
+      await collectFromHandle(handle, "", collected, options);
+    }
+    return classifyCollectedLibraryFiles(collected);
+  }
+
   if (items.some((item) => typeof item.webkitGetAsEntry === "function")) {
-    for (const item of items) {
-      const entry = item.webkitGetAsEntry?.();
+    const entries = items.map((item) => item.webkitGetAsEntry?.() ?? null);
+    for (let index = 0; index < items.length; index += 1) {
+      const entry = entries[index];
       if (entry) {
         await walkEntry(entry, "", collected);
-      } else if (item.kind === "file") {
-        const file = item.getAsFile();
-        if (!file) continue;
-        collected.push({ file, relativePath: relativePathForFile(file) });
+        continue;
       }
+      const item = items[index]!;
+      if (item.kind !== "file") continue;
+      const file = item.getAsFile();
+      if (!file) continue;
+      collected.push({ file, relativePath: relativePathForFile(file) });
     }
     return classifyCollectedLibraryFiles(collected);
   }

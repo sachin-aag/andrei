@@ -25,6 +25,9 @@ export function ManagerSelector({
   onSelectedIdsChange,
   emptyMessage = "No managers are available.",
   placeholder = "Select reviewer managers…",
+  searchPlaceholder = "Search managers…",
+  noResultsMessage = "No managers match your search.",
+  inDialog = false,
 }: {
   managers: ManagerOption[];
   selectedIds: string[];
@@ -32,6 +35,10 @@ export function ManagerSelector({
   onSelectedIdsChange: (ids: string[]) => void;
   emptyMessage?: string;
   placeholder?: string;
+  searchPlaceholder?: string;
+  noResultsMessage?: string;
+  /** Popover inside a dialog needs modal + in-tree portal so the list scrolls. */
+  inDialog?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -77,6 +84,7 @@ export function ManagerSelector({
 
   return (
     <Popover
+      modal={inDialog}
       open={open}
       onOpenChange={(next) => {
         if (disabled) return;
@@ -123,23 +131,35 @@ export function ManagerSelector({
           <ChevronsUpDown className="size-4 shrink-0 opacity-60" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] p-0"
+        align="start"
+        portalled={!inDialog}
+        onWheel={(event) => {
+          event.stopPropagation();
+        }}
+      >
         <div className="border-b border-[var(--border)] p-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--muted-foreground)]" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search managers…"
+              placeholder={searchPlaceholder}
               className="h-8 pl-8"
               autoFocus
             />
           </div>
         </div>
-        <div className="max-h-56 overflow-y-auto p-1">
+        <div
+          className="max-h-56 overflow-y-auto overscroll-contain p-1"
+          onWheel={(event) => {
+            event.stopPropagation();
+          }}
+        >
           {filteredManagers.length === 0 ? (
             <p className="px-2 py-6 text-center text-sm text-[var(--muted-foreground)]">
-              No managers match your search.
+              {noResultsMessage}
             </p>
           ) : (
             filteredManagers.map((manager) => {

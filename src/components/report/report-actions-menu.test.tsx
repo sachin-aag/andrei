@@ -42,6 +42,11 @@ describe("ReportActionsMenu", () => {
 
   it("hides expert review unless enabled", async () => {
     render(<ReportActionsMenu auditHref="/reports/report-1/audit" />);
+
+    expect(
+      screen.getByRole("button", { name: /more report actions/i })
+    ).toHaveAttribute("data-walkthrough", "audit-trail");
+
     await openMenu();
 
     expect(

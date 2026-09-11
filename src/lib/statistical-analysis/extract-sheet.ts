@@ -5,7 +5,10 @@ import {
   resolveChatExtractLanguageModel,
 } from "@/lib/ai/chat/model";
 import { sanitizePromptMetadata } from "@/lib/ai/chat/prompt-metadata";
-import { remainingChatAbortMs } from "@/lib/ai/chat/assistant-turn";
+import {
+  isChatTurnDeadlineReached,
+  remainingChatAbortMs,
+} from "@/lib/ai/chat/assistant-turn";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import {
   assertAiBudgetAvailable,
@@ -27,6 +30,9 @@ export const EXTRACT_SHEET_CONCURRENCY = 4;
 
 const SHEET_EXTRACT_BUDGET_MS = 180_000;
 
+/** Do not start a model call when the turn has less than this left. */
+export const SHEET_EXTRACT_MIN_START_MS = 30_000;
+
 export type SheetExtractJobMode = "extract" | "edit";
 
 export type SheetExtractJobInput = {
@@ -41,6 +47,8 @@ export type SheetExtractJobInput = {
   pages?: readonly number[];
   metric?: string;
   abortSignal?: AbortSignal;
+  /** Chat-turn start. Workers wait in a slot; budget is from this, not dequeue. */
+  turnStartedAtMs?: number;
 };
 
 export type SheetExtractColumn = {
@@ -56,7 +64,56 @@ export type SheetExtractResult = {
   columns?: SheetExtractColumn[];
   message: string;
   stepCount?: number;
+  morePages?: boolean;
+  truncated?: boolean;
 };
+
+function coverageFromSteps(steps: readonly AnalyticsChatStep[]): {
+  morePages: boolean;
+  truncated: boolean;
+} {
+  let morePages = false;
+  let truncated = false;
+  for (const step of steps) {
+    for (const result of step.toolResults ?? []) {
+      const toolName = callToolName(result);
+      const record = writeRecordFromOutput(toolPayload(result));
+      if (!record) continue;
+      if (toolName === "extract_numeric_series" && typeof record.morePages === "boolean") {
+        morePages = record.morePages;
+      }
+      if (toolName === "scan_attachments" && typeof record.truncated === "boolean") {
+        truncated = record.truncated;
+      }
+    }
+  }
+  return { morePages, truncated };
+}
+
+function withCoverageNote(
+  message: string,
+  coverage: { morePages: boolean; truncated: boolean }
+): string {
+  if (coverage.morePages) {
+    return `${message} Later pages still had more rows — this dump may be incomplete.`;
+  }
+  if (coverage.truncated) {
+    return `${message} The last scan was truncated — remaining pages were not included.`;
+  }
+  return message;
+}
+
+/** Skip generateText when the turn is already out of time (or aborted). */
+export function sheetExtractShouldSkipStart(input: {
+  turnStartedAtMs?: number;
+  abortSignal?: AbortSignal;
+  nowMs?: number;
+}): boolean {
+  if (input.abortSignal?.aborted) return true;
+  if (input.turnStartedAtMs == null) return false;
+  return remainingChatAbortMs(input.turnStartedAtMs, input.nowMs) <
+    SHEET_EXTRACT_MIN_START_MS;
+}
 
 const waiters: Array<() => void> = [];
 let inflight = 0;
@@ -152,6 +209,7 @@ export function sheetExtractResultFromSteps(
   steps: readonly AnalyticsChatStep[],
   sheetName: string
 ): SheetExtractResult | null {
+  const coverage = coverageFromSteps(steps);
   let latest: SheetExtractResult | null = null;
   for (const step of steps) {
     for (const result of step.toolResults ?? []) {
@@ -178,16 +236,19 @@ export function sheetExtractResultFromSteps(
           ? record.sheetId
           : undefined;
       if (record.status === "written" && record.incomplete !== true) {
+        const message =
+          record.mode === "append"
+            ? `Appended rows on ${nextName} (${rowsWritten} rows now).`
+            : `Wrote ${rowsWritten} rows to ${nextName}.`;
         latest = {
           status: "written",
           sheetName: nextName,
           sheetId,
           rowsWritten,
           columns,
-          message:
-            record.mode === "append"
-              ? `Appended rows on ${nextName} (${rowsWritten} rows now).`
-              : `Wrote ${rowsWritten} rows to ${nextName}.`,
+          message: withCoverageNote(message, coverage),
+          ...(coverage.morePages ? { morePages: true } : {}),
+          ...(coverage.truncated ? { truncated: true } : {}),
         };
         continue;
       }
@@ -298,6 +359,21 @@ export async function runSheetExtractJob(
 
   return withSheetExtractSlot(async () => {
     const startedAtMs = Date.now();
+    const deadlineStart = input.turnStartedAtMs ?? startedAtMs;
+    if (
+      sheetExtractShouldSkipStart({
+        turnStartedAtMs: input.turnStartedAtMs,
+        abortSignal: input.abortSignal,
+        nowMs: startedAtMs,
+      })
+    ) {
+      return {
+        status: "incomplete",
+        sheetName,
+        sheetId: input.sheetId,
+        message: `Ran out of time on this turn before starting ${sheetName}. Ask me to continue and I'll pull it.`,
+      };
+    }
     const searchGate = createAnalyticsSearchGate();
     const jobMode: SheetExtractJobMode = input.mode === "edit" ? "edit" : "extract";
     const system = [
@@ -317,6 +393,7 @@ export async function runSheetExtractJob(
         experimental_repairToolCall: repairChatToolCall,
         stopWhen: async ({ steps }) => {
           if (input.abortSignal?.aborted) return true;
+          if (isChatTurnDeadlineReached(deadlineStart)) return true;
           if (Date.now() - startedAtMs >= SHEET_EXTRACT_BUDGET_MS) return true;
           return analyticsSheetJobComplete(steps as AnalyticsChatStep[], {
             allowManageEdit: jobMode === "edit",
@@ -344,7 +421,7 @@ export async function runSheetExtractJob(
         timeout: {
           totalMs: Math.min(
             SHEET_EXTRACT_BUDGET_MS,
-            Math.max(1, remainingChatAbortMs(startedAtMs))
+            Math.max(1, remainingChatAbortMs(deadlineStart))
           ),
         },
         providerOptions: buildGeminiThoughtSummaryProviderOptions({

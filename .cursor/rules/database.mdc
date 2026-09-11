@@ -23,8 +23,10 @@ alwaysApply: false
   `document_chunks.contextual_text`). `CREATE INDEX CONCURRENTLY` cannot run
   inside Drizzle’s transactional migrator.
 - Attachment tables: `reportAttachments`, `attachmentIngestRuns`,
-  `documentPages`, `documentChunks` (pgvector 768). Soft-delete via
-  `deletedAt`; retrieval joins `activeIngestRunId`.
+  `documentPages` (retrieval columns: `identifiers`, `outlineTitle`,
+  nullable `hasTable`/`hasFigure`), `documentOutlineSpans`, `documentChunks`
+  (pgvector 768). Soft-delete via `deletedAt`; retrieval joins
+  `activeIngestRunId`. Identifier overlap uses GIN on `document_pages.identifiers`.
 - Product History: `documentRevisions` + `documentRevisionSections` (one
   snapshot per Agent-chrome report turn, plus idle-coalesced human edits).
   Do not reuse `sectionContentVersions` for that UI — the audit table records

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePlotTitle } from "@/components/statistical-analysis/use-plot-title";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -109,7 +110,6 @@ export function BoxplotDialog({
   const [categoryColumnIds, setCategoryColumnIds] = useState<string[]>(
     () => defaultCategoryColumnIds ?? []
   );
-  const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(initialRows.rowStart);
   const [rowEnd, setRowEnd] = useState(initialRows.rowEnd);
   const [xAxisLabel, setXAxisLabel] = useState(defaultXAxisLabel ?? "");
@@ -127,13 +127,17 @@ export function BoxplotDialog({
   );
   const rowSelection = normalizeRowSelection(submittedRows);
   const rowLabel = formatRowSelection(rowSelection);
-  const placeholderTitle = yColumn
+  const suggestedTitle = yColumn
     ? boxplotFallbackTitle(
         yColumn.name,
         categoryColumns.map((column) => column.name),
         rowLabel
       )
     : "Boxplot title";
+  const { title, setTitle, resolvedTitle } = usePlotTitle(
+    suggestedTitle,
+    defaultTitle
+  );
   const usedIds = new Set([yColumnId, ...categoryColumnIds]);
   const canAddCategory =
     categoryColumnIds.length < MAX_BOXPLOT_CATEGORIES &&
@@ -348,8 +352,8 @@ export function BoxplotDialog({
             </Label>
             <Input
               id="boxplot-title"
+              data-testid="boxplot-title"
               value={title}
-              placeholder={placeholderTitle}
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
@@ -414,7 +418,7 @@ export function BoxplotDialog({
               onSubmit({
                 yColumnId,
                 categoryColumnIds,
-                title: title.trim(),
+                title: resolvedTitle,
                 rowStart: submittedRows.rowStart,
                 rowEnd: submittedRows.rowEnd,
                 xAxisLabel: xAxisLabel.trim() || null,

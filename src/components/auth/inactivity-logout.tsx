@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
+import {
+  hasActiveSessionHold,
+  SESSION_HOLD_CHANGED_EVENT,
+} from "@/lib/auth/session-activity";
 
 export const INACTIVITY_TIMEOUT_UPDATED_EVENT =
   "mjb:inactivity-timeout-updated";
@@ -82,21 +86,31 @@ export function InactivityLogout({
 
       lastResetAtRef.current = now;
       clearLogoutTimer();
-      timerRef.current = window.setTimeout(() => {
+      const onTimeout = () => {
+        if (hasActiveSessionHold()) {
+          timerRef.current = window.setTimeout(onTimeout, timeoutMs);
+          return;
+        }
         signedOutRef.current = true;
         void signOut({ callbackUrl: "/login" });
-      }, timeoutMs);
+      };
+      timerRef.current = window.setTimeout(onTimeout, timeoutMs);
     };
 
     const onActivity = () => scheduleLogout();
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") scheduleLogout(true);
     };
+    const onHoldChanged = () => {
+      if (hasActiveSessionHold()) return;
+      scheduleLogout(true);
+    };
 
     for (const eventName of ACTIVITY_EVENTS) {
       window.addEventListener(eventName, onActivity, { passive: true });
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener(SESSION_HOLD_CHANGED_EVENT, onHoldChanged);
     scheduleLogout(true);
 
     return () => {
@@ -105,6 +119,7 @@ export function InactivityLogout({
         window.removeEventListener(eventName, onActivity);
       }
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener(SESSION_HOLD_CHANGED_EVENT, onHoldChanged);
     };
   }, [effectiveTimeoutMinutes, userId]);
 

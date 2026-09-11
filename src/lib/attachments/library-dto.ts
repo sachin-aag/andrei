@@ -15,6 +15,7 @@ export type AttachmentLibraryFolderRecord = {
   parentId: string | null;
   name: string;
   createdAt: string;
+  archivedAt: string | null;
 };
 
 export type AttachmentLibraryAssetRecord = {
@@ -31,6 +32,7 @@ export type AttachmentLibraryAssetRecord = {
   processingPage: number | null;
   processingError: string | null;
   uploadedAt: string;
+  archivedAt: string | null;
   /** mine | shared | all — how the current user can see this asset. */
   accessKind: "mine" | "shared" | "all";
 };
@@ -52,6 +54,12 @@ export function toLibraryFolderDto(row: FolderRow): AttachmentLibraryFolderRecor
       row.createdAt instanceof Date
         ? row.createdAt.toISOString()
         : String(row.createdAt),
+    archivedAt:
+      row.archivedAt == null
+        ? null
+        : row.archivedAt instanceof Date
+          ? row.archivedAt.toISOString()
+          : String(row.archivedAt),
   };
 }
 
@@ -76,6 +84,12 @@ export function toLibraryAssetDto(
       row.uploadedAt instanceof Date
         ? row.uploadedAt.toISOString()
         : String(row.uploadedAt),
+    archivedAt:
+      row.deletedAt == null
+        ? null
+        : row.deletedAt instanceof Date
+          ? row.deletedAt.toISOString()
+          : String(row.deletedAt),
     accessKind,
   };
 }

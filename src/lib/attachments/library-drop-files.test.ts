@@ -1,12 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAX_FOLDER_DEPTH } from "./folder-limits";
 import {
+  canShowDirectoryPicker,
   classifyCollectedLibraryFiles,
+  isDirectoryPickerAbort,
   isIgnorableLibraryUploadName,
   libraryTargetFolderDepth,
-  libraryUnsupportedFilesError,
   libraryUploadBatchError,
+  libraryUploadFilesFromDataTransfer,
+  libraryUploadFilesFromDirectoryHandle,
   libraryUploadFilesFromList,
+  libraryUploadFilesFromListAsync,
+  uniqueRejectedLibraryNames,
 } from "./library-drop-files";
 
 function fileWithPath(
@@ -29,15 +34,13 @@ describe("library folder upload scan", () => {
     expect(libraryUploadBatchError(scan, 0)).toBeNull();
   });
 
-  it("rejects the whole batch when any real file is not PDF or Word", () => {
+  it("lists unsupported files without blocking accepted PDF and Word files", () => {
     const pdf = fileWithPath("coa.pdf", "q1_batch/coa.pdf");
     const txt = fileWithPath("notes.txt", "q1_batch/notes.txt", "text/plain");
     const scan = libraryUploadFilesFromList([pdf, txt]);
     expect(scan.accepted.map((item) => item.file.name)).toEqual(["coa.pdf"]);
-    expect(scan.rejectedNames).toEqual(["notes.txt"]);
-    expect(libraryUploadBatchError(scan, 0)).toBe(
-      "notes.txt is not a PDF or Word document. Remove unsupported files and try again."
-    );
+    expect(scan.rejectedNames).toEqual(["q1_batch/notes.txt"]);
+    expect(libraryUploadBatchError(scan, 0)).toBeNull();
   });
 
   it("ignores Finder/Explorer metadata so those files do not block the folder", () => {
@@ -51,12 +54,22 @@ describe("library folder upload scan", () => {
     expect(libraryUploadBatchError(scan, 0)).toBeNull();
   });
 
-  it("lists a few unsupported names when several files are wrong", () => {
+  it("dedupes rejected names for the confirm list", () => {
     expect(
-      libraryUnsupportedFilesError(["notes.txt", "photo.png", "data.xlsx", "x.csv"])
-    ).toBe(
-      "This folder includes notes.txt, photo.png, data.xlsx, and 1 more, which are not PDF or Word documents. Remove them and try again."
-    );
+      uniqueRejectedLibraryNames([
+        "q1/notes.txt",
+        "q1/photo.png",
+        "q1/notes.txt",
+      ])
+    ).toEqual(["q1/notes.txt", "q1/photo.png"]);
+  });
+
+  it("does not treat a folder of only unsupported files as a hard error", () => {
+    const txt = fileWithPath("notes.txt", "q1_batch/notes.txt", "text/plain");
+    const scan = libraryUploadFilesFromList([txt]);
+    expect(scan.accepted).toHaveLength(0);
+    expect(scan.rejectedNames).toEqual(["q1_batch/notes.txt"]);
+    expect(libraryUploadBatchError(scan, 0)).toBeNull();
   });
 
   it("blocks a nested path that would exceed folder depth", () => {
@@ -78,4 +91,94 @@ describe("library folder upload scan", () => {
     expect(libraryTargetFolderDepth(folders, null)).toBe(0);
     expect(libraryTargetFolderDepth(folders, "b")).toBe(2);
   });
+
+  it("scans a large list in chunks and reports progress", async () => {
+    const files = [
+      fileWithPath("a.pdf", "batch/a.pdf"),
+      fileWithPath("b.pdf", "batch/b.pdf"),
+      fileWithPath("notes.txt", "batch/notes.txt", "text/plain"),
+    ];
+    const progress: Array<[number, number]> = [];
+    const scan = await libraryUploadFilesFromListAsync(files, {
+      chunkSize: 1,
+      onProgress: (scanned, total) => progress.push([scanned, total]),
+    });
+    expect(progress).toEqual([
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ]);
+    expect(scan.accepted.map((item) => item.file.name)).toEqual(["a.pdf", "b.pdf"]);
+    expect(scan.rejectedNames).toEqual(["batch/notes.txt"]);
+  });
+
+  it("treats a cancelled directory picker as an abort, not an error", () => {
+    expect(isDirectoryPickerAbort(new DOMException("Cancelled", "AbortError"))).toBe(
+      true
+    );
+    expect(isDirectoryPickerAbort(new Error("Could not read that folder"))).toBe(
+      false
+    );
+    expect(canShowDirectoryPicker({})).toBe(false);
+    expect(canShowDirectoryPicker({ showDirectoryPicker: vi.fn() })).toBe(true);
+  });
+
+  it("walks a directory handle and keeps the selected folder in the path", async () => {
+    const pdf = new File(["bytes"], "coa.pdf", { type: "application/pdf" });
+    const txt = new File(["hi"], "notes.txt", { type: "text/plain" });
+    const junk = new File([""], ".DS_Store", { type: "" });
+    const scan = await libraryUploadFilesFromDirectoryHandle(
+      mockDirectoryHandle("q1_batch", [
+        mockFileHandle(pdf),
+        mockDirectoryHandle("SOP", [mockFileHandle(txt)]),
+        mockFileHandle(junk),
+      ])
+    );
+    expect(scan.accepted).toHaveLength(1);
+    expect(scan.accepted[0]?.relativePath).toBe("q1_batch/coa.pdf");
+    expect(scan.rejectedNames).toEqual(["q1_batch/SOP/notes.txt"]);
+  });
+
+  it("reads dropped folders from file-system handles without webkitGetAsEntry", async () => {
+    const pdf = new File(["bytes"], "coa.pdf", { type: "application/pdf" });
+    const webkitGetAsEntry = vi.fn();
+    const dataTransfer = {
+      items: [
+        {
+          kind: "file",
+          getAsFileSystemHandle: async () =>
+            mockDirectoryHandle("q1_batch", [mockFileHandle(pdf)]),
+          webkitGetAsEntry,
+        },
+      ],
+      files: [],
+    } as unknown as DataTransfer;
+
+    const scan = await libraryUploadFilesFromDataTransfer(dataTransfer);
+    expect(webkitGetAsEntry).not.toHaveBeenCalled();
+    expect(scan.accepted[0]?.relativePath).toBe("q1_batch/coa.pdf");
+  });
 });
+
+function mockFileHandle(file: File): FileSystemFileHandle {
+  return {
+    kind: "file",
+    name: file.name,
+    getFile: async () => file,
+  } as FileSystemFileHandle;
+}
+
+function mockDirectoryHandle(
+  name: string,
+  children: FileSystemHandle[]
+): FileSystemDirectoryHandle {
+  return {
+    kind: "directory",
+    name,
+    async *entries() {
+      for (const child of children) {
+        yield [child.name, child] as [string, FileSystemHandle];
+      }
+    },
+  } as unknown as FileSystemDirectoryHandle;
+}

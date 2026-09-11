@@ -134,6 +134,7 @@ export function ReportSidebar({
     <aside
       id="report-chat-sidebar"
       aria-label="Report sidebar"
+      data-walkthrough="assistant"
       className={cn(
         "flex h-full w-full min-w-0 flex-col overflow-hidden bg-[var(--card)]",
         chrome === "agent"

@@ -79,6 +79,8 @@ async function upsertSeedUser(user: SeedUser) {
         failedLoginAttempts: 0,
         lockedAt: null,
         passwordExpiryWarningDismissedUntil: null,
+        productTourStatus: "dismissed",
+        productTourStepId: null,
       })
       .where(eq(workspaceUsers.id, existing.id));
     return existing.id;
@@ -98,6 +100,8 @@ async function upsertSeedUser(user: SeedUser) {
     failedLoginAttempts: 0,
     lockedAt: null,
     passwordExpiryWarningDismissedUntil: null,
+    productTourStatus: "dismissed",
+    productTourStepId: null,
   });
   return id;
 }

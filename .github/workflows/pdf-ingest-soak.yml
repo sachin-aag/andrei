@@ -5,7 +5,10 @@
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   GOOGLE_VERTEX_PROJECT
-#   GCP_SERVICE_ACCOUNT_KEY  — service account JSON with Vertex AI User
+#   GCP_WORKLOAD_IDENTITY_PROVIDER  — projects/.../workloadIdentityPools/.../providers/...
+#   GCP_SERVICE_ACCOUNT_EMAIL       — GitHub Actions SA (Vertex AI User)
+#
+# Do not add GCP_SERVICE_ACCOUNT_KEY (org policy blocks JSON keys).
 #
 # Optional:
 #   DOCUMENT_EXTRACT_GOOGLE_MODEL_ID (defaults in code to gemini-3.1-flash-lite)
@@ -35,6 +38,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   soak:
@@ -51,30 +55,32 @@ jobs:
           cache: pnpm
 
       - name: Check Vertex secrets
-        id: key
+        id: gcp
         run: |
-          if [ -z "$GOOGLE_VERTEX_PROJECT" ] || [ -z "$GCP_SERVICE_ACCOUNT_KEY" ]; then
-            echo "::notice title=PDF ingest soak skipped::Add GOOGLE_VERTEX_PROJECT and GCP_SERVICE_ACCOUNT_KEY Actions secrets."
+          if [ -z "$GOOGLE_VERTEX_PROJECT" ] || [ -z "$GCP_WORKLOAD_IDENTITY_PROVIDER" ] || [ -z "$GCP_SERVICE_ACCOUNT_EMAIL" ]; then
+            echo "::notice title=PDF ingest soak skipped::Add GOOGLE_VERTEX_PROJECT, GCP_WORKLOAD_IDENTITY_PROVIDER, and GCP_SERVICE_ACCOUNT_EMAIL Actions secrets."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
         env:
           GOOGLE_VERTEX_PROJECT: ${{ secrets.GOOGLE_VERTEX_PROJECT }}
-          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Install dependencies
-        if: steps.key.outputs.skip == 'false'
+        if: steps.gcp.outputs.skip == 'false'
         run: pnpm install --frozen-lockfile
 
       - name: Authenticate to Google Cloud
-        if: steps.key.outputs.skip == 'false'
+        if: steps.gcp.outputs.skip == 'false'
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Run PDF extract soak
-        if: steps.key.outputs.skip == 'false'
+        if: steps.gcp.outputs.skip == 'false'
         env:
           GOOGLE_VERTEX_PROJECT: ${{ secrets.GOOGLE_VERTEX_PROJECT }}
           DOCUMENT_EXTRACT_GOOGLE_MODEL_ID: ${{ vars.DOCUMENT_EXTRACT_GOOGLE_MODEL_ID }}

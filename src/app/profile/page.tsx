@@ -8,6 +8,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ChangeOwnPasswordForm } from "@/components/auth/change-own-password-form";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { AgentDoneNotificationSettings } from "@/components/profile/agent-done-notification-settings";
+import { ReplayProductTourButton } from "@/components/walkthrough/replay-product-tour-button";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,16 @@ export default async function ProfilePage() {
             <div className="mt-5">
               <AgentDoneNotificationSettings userId={user.id} />
             </div>
+          </section>
+
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
+            <h2 className="text-base font-semibold">Product tour</h2>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+              A short walkthrough of the features available for your role. New
+              accounts see it on first sign-in. If you skip it, it resumes on
+              the next session until you finish or dismiss it.
+            </p>
+            <ReplayProductTourButton />
           </section>
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">

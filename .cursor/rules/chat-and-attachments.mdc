@@ -23,10 +23,16 @@ Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Document `draft_field` / Analytics `write_column`). Classifier:
 `classifyChatUserIntent` in `src/lib/ai/chat/user-intent.ts` (rules) plus
 `resolveChatUserIntent` in `src/lib/ai/chat/resolve-user-intent.ts`
-(Flash-Lite only when rules would emit `ambiguous_agent_mode`). Stub chat,
-timeout, and parse failures keep the rules decision. Retrieval maps those
-turns to focused (`reason: no_task`) and skips kickoff evidence. A yes
-after the assistant offered to draft is a write request.
+(Flash-Lite when rules would emit `ambiguous_agent_mode`, and on Document
+chat when the text looks like a worksheet dump). The same call may set
+`switchToAnalytics` when Lite is ≥0.75 sure the destination is the Analytics
+grid — Report chat then shows a Switch to Analytics button; clicking it
+sets Analytics and resends the original request. A yes / go for it after
+that copy is a write. Stub chat,
+timeout, and parse failures keep the rules decision with no widget.
+Retrieval maps those turns to focused (`reason: no_task`) and skips
+kickoff evidence. A yes after the assistant offered to draft is a write
+request.
 
 Search attachments **before** `ask_user`, `draft_field`, or a `[placeholder]`
 for report facts (batch, date, result, equipment ID, requirement ID, design
@@ -172,8 +178,16 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 
 - Hybrid: vector (`embedding <=>`) + English FTS with OR tokens
   (`buildKeywordTsQuery`). Skip the keyword arm when tokenization is empty.
+- Identifier queries (`classifyRetrievalQuery` / `requirementIds()`) search
+  `document_pages.identifiers` first (GIN overlap; empty arrays fall back to
+  `ILIKE` on `raw_text`). If exact hits fill `limit`, skip `embedRetrievalQuery`.
+  Every mode collapses to one chunk per `(attachmentId, pageNumber)`.
 - FTS expression must stay `to_tsvector('english', contextual_text)` to hit
   `document_chunks_contextual_text_fts_en_idx`.
+- `readDocumentOutline` prefers stored `document_outline_spans` on the active
+  ingest run and falls back to `buildOutlineFromStoredPages`.
+- Plan and gold cases: `docs/retrieval.md`. CI live path is
+  `pnpm retrieval-eval -- --from-gcs` (GCS corpus + ingest + LLM judge).
 - Default retrieval is adaptive (agentic grep: complementary
   `search_documents` queries, `excludePages` / `nextExcludePages` rounds,
   `mode=keyword` for lexical hits, `document_outline`). Classifier forces
@@ -190,7 +204,17 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   — `sectionHasTable` still sees them. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if
   missing or ambiguous). Do not reject or rewrite a draft that omitted a
-  known page. **Focused** is an explicit skim.
+  known page. Clicking those brackets (or numbered `[n]` that maps to
+  a parked source) in the document, chat, or suggestion Sources opens or
+  reuses that attachment canvas tab and scrolls the PDF to the cited
+  page. Combined `[file A, p. N, file B, p. M]` is two links; extra pages
+  of one file stay one link. Word preview cannot jump to a page.
+  Open attachment canvases stay mounted while the tab is open (hidden/inert
+  like Analytics) so switching to Report does not show “Loading preview…”
+  or reset the page. `openDocument(id)` without a page does not jump to 1;
+  an explicit `page` (citation) still jumps. Closing the tab (header Close
+  or the tab X) unmounts the preview and restores the last canvas tab that
+  was active before that file. **Focused** is an explicit skim.
   Adaptive turns skip auto-evidence so the model must grep.
   Adaptive/focused turns do not expose `start_document_review`. Comprehensive
   `continue_document_review` drains the remaining queue in one call with a

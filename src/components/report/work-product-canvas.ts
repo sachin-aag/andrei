@@ -60,16 +60,41 @@ export function pruneOpenAttachments(
   return openIds.filter((id) => liveIds.has(id));
 }
 
-/** After closing `closedId`, activate the tab to its left, else Report. */
-export function tabIdAfterClose(
-  tabs: readonly { id: CanvasTabId }[],
-  closedId: CanvasTabId,
-  currentlyActive: CanvasTabId
-): CanvasTabId {
-  if (currentlyActive !== closedId) return currentlyActive;
-  const index = tabs.findIndex((tab) => tab.id === closedId);
-  if (index <= 0) return "report";
-  return tabs[index - 1]!.id;
+export const CANVAS_TAB_RECENTS_CAP = 8;
+
+/** Move `visited` to the end (most recent). Drops older entries past the cap. */
+export function rememberCanvasTabVisit(
+  recents: readonly CanvasTabId[],
+  visited: CanvasTabId
+): CanvasTabId[] {
+  const next = recents.filter((id) => id !== visited);
+  next.push(visited);
+  return next.length > CANVAS_TAB_RECENTS_CAP
+    ? next.slice(-CANVAS_TAB_RECENTS_CAP)
+    : next;
+}
+
+/**
+ * After closing a canvas tab, restore the most recently visited tab that is
+ * still open. Closing a background tab leaves the current tab selected.
+ */
+export function tabIdAfterClosing(args: {
+  closedId: CanvasTabId;
+  currentlyActive: CanvasTabId;
+  recents: readonly CanvasTabId[];
+  remainingTabIds: readonly CanvasTabId[];
+}): CanvasTabId {
+  if (args.currentlyActive !== args.closedId) {
+    return args.currentlyActive;
+  }
+  const remaining = new Set(args.remainingTabIds);
+  for (let i = args.recents.length - 1; i >= 0; i--) {
+    const id = args.recents[i];
+    if (id !== args.closedId && remaining.has(id)) {
+      return id;
+    }
+  }
+  return "report";
 }
 
 export function buildCanvasTabs(args: {

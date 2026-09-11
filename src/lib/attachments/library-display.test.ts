@@ -1,10 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { formatLibraryUploadedAt } from "./library-display";
+import {
+  formatVaultByteSize,
+  vaultItemKindLabel,
+} from "./library-display";
 
-describe("formatLibraryUploadedAt", () => {
-  it("formats ISO timestamps for list display", () => {
-    expect(formatLibraryUploadedAt("2026-01-15T14:30:00.000Z")).toMatch(
-      /\d{2}\/\d{2}\/2026/
-    );
+describe("formatVaultByteSize", () => {
+  it("uses KB and MB without trailing zeros", () => {
+    expect(formatVaultByteSize(1200)).toBe("1.2 KB");
+    expect(formatVaultByteSize(10_240)).toBe("10 KB");
+    expect(formatVaultByteSize(33_600_000)).toBe("32 MB");
+  });
+});
+
+describe("vaultItemKindLabel", () => {
+  it("labels folders and PDF/Word files", () => {
+    expect(vaultItemKindLabel({ isFolder: true })).toBe("Folder");
+    expect(
+      vaultItemKindLabel({ isFolder: false, mimeType: "application/pdf" })
+    ).toBe("PDF document");
   });
 });

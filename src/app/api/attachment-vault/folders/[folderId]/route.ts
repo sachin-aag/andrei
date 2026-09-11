@@ -2,10 +2,8 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import {
-  attachmentAssets,
-  attachmentLibraryFolders,
-} from "@/db/schema";
+import { attachmentLibraryFolders } from "@/db/schema";
+import { archiveLibraryItems } from "@/lib/attachments/library-archive";
 import { toLibraryFolderDto } from "@/lib/attachments/library-dto";
 import {
   loadLibraryFolder,
@@ -86,8 +84,8 @@ export async function PATCH(
 }
 
 /**
- * Deleting a library folder reparents child folders and moves assets to the
- * deleted folder's parent. Nothing is removed from reports.
+ * Archiving a library folder hides it and every nested folder and file.
+ * Report links stay. Restore from the vault Archive section.
  */
 export async function DELETE(
   _req: Request,
@@ -99,39 +97,16 @@ export async function DELETE(
   }
 
   const { folderId } = await params;
-  const folder = await loadLibraryFolder(user.id, folderId);
-  if (!folder) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  await db.transaction(async (tx) => {
-    await tx
-      .update(attachmentLibraryFolders)
-      .set({ parentId: folder.parentId, updatedAt: new Date() })
-      .where(
-        and(
-          eq(attachmentLibraryFolders.ownerId, user.id),
-          eq(attachmentLibraryFolders.parentId, folderId)
-        )
-      );
-    await tx
-      .update(attachmentAssets)
-      .set({ libraryFolderId: folder.parentId })
-      .where(
-        and(
-          eq(attachmentAssets.ownerId, user.id),
-          eq(attachmentAssets.libraryFolderId, folderId)
-        )
-      );
-    await tx
-      .delete(attachmentLibraryFolders)
-      .where(
-        and(
-          eq(attachmentLibraryFolders.id, folderId),
-          eq(attachmentLibraryFolders.ownerId, user.id)
-        )
-      );
+  const result = await archiveLibraryItems(user, {
+    assetIds: [],
+    folderIds: [folderId],
   });
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.error },
+      { status: result.status }
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }
