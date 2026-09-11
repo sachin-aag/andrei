@@ -4,7 +4,10 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { createEmptyWorksheet } from "@/lib/statistical-analysis/worksheet";
+import {
+  createEmptyWorksheet,
+  setCell,
+} from "@/lib/statistical-analysis/worksheet";
 import { BoxplotDialog } from "./boxplot-dialog";
 
 const worksheet = createEmptyWorksheet(3);
@@ -114,6 +117,34 @@ describe("BoxplotDialog", () => {
         categoryColumnIds: ["c2"],
       })
     );
+  });
+
+  it("defaults first and last row to filled Y cells, not a passed grid range", async () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = setCell(sheet, 0, 1, "10");
+    sheet = setCell(sheet, 0, 4, "20");
+    const user = userEvent.setup();
+    const { onSubmit } = renderDialog({
+      worksheet: sheet,
+      defaultYColumnId: "c1",
+    });
+
+    expect(screen.getByTestId("boxplot-row-start")).toHaveValue("2");
+    expect(screen.getByTestId("boxplot-row-end")).toHaveValue("5");
+    await user.click(screen.getByTestId("boxplot-ok"));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ rowStart: null, rowEnd: null })
+    );
+  });
+
+  it("keeps an explicit saved row range", () => {
+    renderDialog({
+      editMode: true,
+      defaultRowStart: 31,
+      defaultRowEnd: 50,
+    });
+    expect(screen.getByTestId("boxplot-row-start")).toHaveValue("31");
+    expect(screen.getByTestId("boxplot-row-end")).toHaveValue("50");
   });
 
   it("prefills categories when editing", () => {

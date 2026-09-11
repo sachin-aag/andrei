@@ -8,7 +8,10 @@ import {
 } from "@/lib/statistical-analysis/boxplot";
 import {
   boxplotAxisLayout,
+  boxplotBoxWidth,
   boxplotXAxisTitleY,
+  boxplotYExtent as yExtent,
+  boxplotYTicks as yTicks,
 } from "@/lib/statistical-analysis/boxplot-chart-layout";
 import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import { formatStat } from "@/lib/statistical-analysis/format";
@@ -31,40 +34,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
-
-function yExtent(groups: BoxplotGroupStats[]): { min: number; max: number } {
-  const ys = groups.flatMap((group) => [
-    group.whiskerLow,
-    group.whiskerHigh,
-    ...group.outliers,
-  ]);
-  let min = Math.min(...ys);
-  let max = Math.max(...ys);
-  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
-    min = (Number.isFinite(min) ? min : 0) - 1;
-    max = (Number.isFinite(max) ? max : 0) + 1;
-  }
-  const pad = (max - min) * 0.08;
-  return { min: min - pad, max: max + pad };
-}
-
-function yTicks(min: number, max: number): number[] {
-  const span = max - min || 1;
-  const step = niceStep(span / 4);
-  const start = Math.ceil(min / step) * step;
-  const ticks: number[] = [];
-  for (let value = start; value <= max + step * 0.01; value += step) {
-    ticks.push(Number(value.toPrecision(8)));
-  }
-  return ticks.length > 0 ? ticks : [min, max];
-}
-
-function niceStep(raw: number): number {
-  const magnitude = 10 ** Math.floor(Math.log10(Math.abs(raw) || 1));
-  const scaled = raw / magnitude;
-  const nice = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10;
-  return nice * magnitude;
-}
 
 function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
   const colors = chartBrandColors();
@@ -90,7 +59,7 @@ function BoxplotChart({ analysis }: { analysis: BoxplotAnalysisSummary }) {
   const xToPx = (index: number) =>
     plotLeft + ((index + 0.5) / groups.length) * plotWidth;
   const yToPx = (y: number) => plotBottom - ((y - yMin) / ySpan) * plotHeight;
-  const boxWidth = Math.min(42, (plotWidth / groups.length) * 0.55);
+  const boxWidth = boxplotBoxWidth(groups.length, plotWidth);
   const ticks = yTicks(yMin, yMax);
   const yLabel = boxplotYAxisLabel(analysis.config);
   const xLabel = boxplotXAxisLabel(analysis.config);

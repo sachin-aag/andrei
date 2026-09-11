@@ -80,6 +80,7 @@ export function xyScatterFallbackTitle(
   return rowLabel ? `${base} (${rowLabel})` : base;
 }
 
+/** Saved analysis discriminator. Worksheet Plot / Analyze lists are `WORKSHEET_PLOT_CATALOG`; `MEASUREMENT_SCATTER` is chat-only. */
 export type AnalysisKind =
   | typeof CAPABILITY_SIXPACK_NORMAL
   | typeof MEASUREMENT_SCATTER

@@ -9,25 +9,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  WORKSHEET_PLOT_CATALOG,
+  type WorksheetPlotKind,
+} from "@/lib/statistical-analysis/plot-catalog";
 
 export function WorkspaceMenubar({
   readOnly,
   onLoadSample,
-  onNormalSixpack,
-  onHistogram,
-  onOneWayAnova,
-  onBoxplot,
-  onXyScatter,
+  onSelectPlot,
   onAddDataSheet,
   onRenameDataSheet,
 }: {
   readOnly: boolean;
   onLoadSample: () => void;
-  onNormalSixpack: () => void;
-  onHistogram: () => void;
-  onOneWayAnova: () => void;
-  onBoxplot: () => void;
-  onXyScatter: () => void;
+  onSelectPlot: (kind: WorksheetPlotKind) => void;
   onAddDataSheet: () => void;
   onRenameDataSheet: () => void;
 }) {
@@ -84,36 +80,15 @@ export function WorkspaceMenubar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuItem
-            data-testid="stat-normal-sixpack"
-            onSelect={onNormalSixpack}
-          >
-            Normal Capability Sixpack…
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-testid="stat-histogram"
-            onSelect={onHistogram}
-          >
-            Histogram…
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-testid="stat-one-way-anova"
-            onSelect={onOneWayAnova}
-          >
-            One-Way ANOVA…
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-testid="stat-boxplot"
-            onSelect={onBoxplot}
-          >
-            Boxplot…
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-testid="stat-xy-scatter"
-            onSelect={onXyScatter}
-          >
-            Plot measurements…
-          </DropdownMenuItem>
+          {WORKSHEET_PLOT_CATALOG.map((item) => (
+            <DropdownMenuItem
+              key={item.kind}
+              data-testid={item.menuTestId}
+              onSelect={() => onSelectPlot(item.kind)}
+            >
+              {item.label}…
+            </DropdownMenuItem>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

@@ -419,6 +419,56 @@ export function trimTrailingEmpty(values: string[]): string[] {
   return values.slice(0, end);
 }
 
+/** 1-based inclusive span covering every non-empty cell in the column. */
+export function columnFilledRowRange(
+  column: Pick<WorksheetColumn, "values">
+): { start: number; end: number } | null {
+  let start: number | null = null;
+  let end: number | null = null;
+  for (let i = 0; i < column.values.length; i++) {
+    if ((column.values[i] ?? "").trim() === "") continue;
+    if (start == null) start = i + 1;
+    end = i + 1;
+  }
+  if (start == null || end == null) return null;
+  return { start, end };
+}
+
+/**
+ * First/last row field values for Analyze / Plot dialogs.
+ * An explicit saved range wins; otherwise the filled span of the column.
+ */
+export function analysisRowFieldDefaults(
+  column: Pick<WorksheetColumn, "values"> | null | undefined,
+  explicit: { rowStart?: number | null; rowEnd?: number | null } = {}
+): { rowStart: string; rowEnd: string } {
+  if (explicit.rowStart != null || explicit.rowEnd != null) {
+    return {
+      rowStart: explicit.rowStart != null ? String(explicit.rowStart) : "",
+      rowEnd: explicit.rowEnd != null ? String(explicit.rowEnd) : "",
+    };
+  }
+  const range = column ? columnFilledRowRange(column) : null;
+  if (!range) return { rowStart: "", rowEnd: "" };
+  return { rowStart: String(range.start), rowEnd: String(range.end) };
+}
+
+export const ANALYSIS_ROW_RANGE_HELP =
+  "Rows are numbered from 1. Defaults to the first and last filled cells in the column. Clear both to use the whole column.";
+
+/** Persist “all” when the typed span is exactly the column’s filled cells. */
+export function collapseFilledAnalysisRows(
+  column: Pick<WorksheetColumn, "values"> | null | undefined,
+  rowStart: number | null,
+  rowEnd: number | null
+): { rowStart: number | null; rowEnd: number | null } {
+  const filled = column ? columnFilledRowRange(column) : null;
+  if (filled && rowStart === filled.start && rowEnd === filled.end) {
+    return { rowStart: null, rowEnd: null };
+  }
+  return { rowStart, rowEnd };
+}
+
 export function rowCount(data: WorksheetData): number {
   let max = 0;
   for (const column of data.columns) {

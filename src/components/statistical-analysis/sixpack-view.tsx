@@ -12,6 +12,11 @@ import type {
 } from "@/lib/statistical-analysis/types";
 import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import {
+  CONTROL_CHART_AXIS_PAD,
+  PROBABILITY_PLOT_AXIS_PAD,
+  paddedDomain as domain,
+} from "@/lib/charts/axis-domain";
+import {
   formatAxisTick,
   xTickAnchor,
 } from "@/lib/charts/axis-ticks";
@@ -45,18 +50,6 @@ import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figu
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
-
-function domain(values: number[], pad = 0.08): [number, number] {
-  if (values.length === 0) return [-1, 1];
-  let min = Math.min(...values);
-  let max = Math.max(...values);
-  if (min === max) {
-    min -= 1;
-    max += 1;
-  }
-  const span = max - min;
-  return [min - span * pad, max + span * pad];
-}
 
 function scale(min: number, max: number, start: number, end: number) {
   const span = max - min || 1;
@@ -293,7 +286,7 @@ function ControlChart({
       ...(showControlLimits ? [series.ucl, series.lcl] : []),
       ...specValues,
     ],
-    0.12
+    CONTROL_CHART_AXIS_PAD
   );
   const xMin = (xs[0] ?? 1) - 0.5;
   const xMax = (xs[xs.length - 1] ?? 1) + 0.5;
@@ -590,8 +583,8 @@ function NormalPlot({
     ...lowerBand.map((point) => point.value),
     ...upperBand.map((point) => point.value),
   ];
-  const [xMin, xMax] = domain(zs, 0.08);
-  const [yMin, yMax] = domain(ys, 0.08);
+  const [xMin, xMax] = domain(zs, PROBABILITY_PLOT_AXIS_PAD);
+  const [yMin, yMax] = domain(ys, PROBABILITY_PLOT_AXIS_PAD);
   const x = scale(xMin, xMax, PLOT.left, PLOT.right);
   const y = scale(yMin, yMax, PLOT.bottom, PLOT.top);
   const band = [

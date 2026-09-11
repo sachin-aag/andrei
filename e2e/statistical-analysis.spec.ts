@@ -1,7 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
-import { applySampleAssay } from "@/lib/statistical-analysis/sample-data";
+import { WORKSHEET_PLOT_CATALOG } from "@/lib/statistical-analysis/plot-catalog";
+import { applySampleAssay, SAMPLE_ASSAY_VALUES } from "@/lib/statistical-analysis/sample-data";
+import { BOXPLOT, HISTOGRAM, XY_SCATTER } from "@/lib/statistical-analysis/types";
 import {
   createEmptyWorksheet,
   replaceColumnValues,
@@ -286,7 +288,7 @@ test.describe("report analytics", () => {
     ).toBeVisible();
   });
 
-  test("shift+arrow selects rows and runs a sixpack on that range", async ({
+  test("Analyze first/last row follow filled cells, not the grid selection", async ({
     page,
   }) => {
     test.setTimeout(90_000);
@@ -318,7 +320,11 @@ test.describe("report analytics", () => {
 
     await openAnalyzeDialogForColumn(page, "c1");
     await expect(page.getByTestId("sixpack-row-start")).toHaveValue("1");
-    await expect(page.getByTestId("sixpack-row-end")).toHaveValue("10");
+    await expect(page.getByTestId("sixpack-row-end")).toHaveValue(
+      String(SAMPLE_ASSAY_VALUES.length)
+    );
+    await page.getByTestId("sixpack-row-start").fill("1");
+    await page.getByTestId("sixpack-row-end").fill("10");
     await page.getByTestId("sixpack-lsl").fill("90");
     await page.getByTestId("sixpack-usl").fill("110");
     await page.getByTestId("sixpack-target").fill("100");
@@ -478,24 +484,25 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("column-specs-dialog")).toHaveCount(0);
 
     await page.getByTestId("worksheet-plot-menu").click();
-    await expect(page.getByTestId("stat-normal-sixpack")).toBeVisible();
-    await expect(page.getByTestId("stat-histogram")).toBeVisible();
-    await expect(page.getByTestId("stat-histogram")).toHaveText(/histogram/i);
-    await expect(page.getByTestId("stat-one-way-anova")).toBeVisible();
-    await expect(page.getByTestId("stat-xy-scatter")).toBeVisible();
-    await expect(page.getByTestId("stat-xy-scatter")).toHaveText(
-      /plot measurements/i
-    );
-    await expect(page.getByTestId("stat-boxplot")).toBeVisible();
-    await expect(page.getByTestId("stat-boxplot")).toHaveText(/boxplot/i);
-    await page.getByTestId("stat-boxplot").click();
+    for (const item of WORKSHEET_PLOT_CATALOG) {
+      await expect(page.getByTestId(item.menuTestId)).toHaveText(
+        `${item.label}…`
+      );
+    }
+    await page
+      .getByTestId(WORKSHEET_PLOT_CATALOG.find((item) => item.kind === BOXPLOT)!.menuTestId)
+      .click();
     await expect(page.getByTestId("boxplot-dialog")).toBeVisible();
     await expect(page.getByTestId("boxplot-add-category")).toBeVisible();
     await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
     await expect(page.getByTestId("boxplot-dialog")).toHaveCount(0);
 
     await page.getByTestId("worksheet-plot-menu").click();
-    await page.getByTestId("stat-xy-scatter").click();
+    await page
+      .getByTestId(
+        WORKSHEET_PLOT_CATALOG.find((item) => item.kind === XY_SCATTER)!.menuTestId
+      )
+      .click();
     await expect(page.getByTestId("xy-scatter-dialog")).toBeVisible();
     await expect(page.getByTestId("xy-show-spec-limits")).not.toBeChecked();
     await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
@@ -631,14 +638,26 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("anova-factor")).toContainText("Lot");
 
     await page.getByTestId("analyze-plot-type").click();
-    await expect(page.getByRole("option")).toHaveCount(2);
-    await expect(
-      page.getByRole("option", { name: /normal capability sixpack/i })
-    ).toBeVisible();
-    await expect(page.getByRole("option", { name: /one-way anova/i })).toBeVisible();
-    await page.keyboard.press("Escape");
-    await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
+    await expect(page.getByRole("option")).toHaveCount(
+      WORKSHEET_PLOT_CATALOG.length
+    );
+    for (const item of WORKSHEET_PLOT_CATALOG) {
+      await expect(
+        page.getByRole("option", { name: item.label, exact: true })
+      ).toBeVisible();
+    }
+    await page
+      .getByRole("option", {
+        name: WORKSHEET_PLOT_CATALOG.find((item) => item.kind === HISTOGRAM)!
+          .label,
+        exact: true,
+      })
+      .click();
     await expect(page.getByTestId("analyze-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("histogram-dialog")).toBeVisible();
+    await expect(page.getByTestId("histogram-column")).toContainText("Assay");
+    await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
+    await expect(page.getByTestId("histogram-dialog")).toHaveCount(0);
 
     await page.getByTestId("column-header-c1").click({ button: "right" });
     await page.getByTestId("column-insert-left-c1").click();

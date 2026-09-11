@@ -11,7 +11,11 @@ import {
   boxplotYAxisLabel,
   nestedCategorySpans,
 } from "./boxplot";
-import { boxplotAxisLayout, boxplotXAxisTitleY } from "./boxplot-chart-layout";
+import {
+  boxplotAxisLayout,
+  boxplotBoxWidth,
+  boxplotXAxisTitleY,
+} from "./boxplot-chart-layout";
 import { formatStat } from "./format";
 import type { BoxplotAnalysisSummary, BoxplotGroupStats } from "./types";
 
@@ -112,7 +116,7 @@ function drawBoxplot(
   const xToPx = (index: number) =>
     plotLeft + ((index + 0.5) / groups.length) * plotWidth;
   const yToPx = (y: number) => plotBottom - ((y - yMin) / ySpan) * plotHeight;
-  const boxWidth = Math.min(42, (plotWidth / groups.length) * 0.55);
+  const boxWidth = boxplotBoxWidth(groups.length, plotWidth);
   const ticks = [yMin, (yMin + yMax) / 2, yMax];
   const yLabel = boxplotYAxisLabel(analysis.config);
   const xLabel = boxplotXAxisLabel(analysis.config);
