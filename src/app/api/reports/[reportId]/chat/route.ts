@@ -128,9 +128,14 @@ import {
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
-import { captureChatAssistantFailure } from "@/lib/ai/chat/chat-failure-telemetry";
 import {
+  captureChatAssistantFailure,
+  captureChatTurnDeadlineAbort,
+} from "@/lib/ai/chat/chat-failure-telemetry";
+import {
+  abortChatTurnForCancel,
   CHAT_ASSISTANT_ERROR_MESSAGE,
+  chatUiStreamErrorText,
   consumeAssistantStreamWithBudget,
   formatChatLlmError,
   isChatTurnDeadlineReached,
@@ -140,6 +145,10 @@ import {
   scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
 import { tableEditLoopDirective } from "@/lib/ai/chat/table-edit-loop";
+import {
+  advertisedChatToolNames,
+  withUnsupportedChatToolFallback,
+} from "@/lib/ai/chat/unsupported-tool";
 import {
   buildMentionBlock,
   mentionedAttachmentIds,
@@ -485,11 +494,10 @@ async function handleChatPost(
     mode === "plan"
       ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
-  const tools: ToolSet = restrictToolsForIntent(
-    scopedTools,
-    userIntent.kind,
-    "document"
+  const tools: ToolSet = withUnsupportedChatToolFallback(
+    restrictToolsForIntent(scopedTools, userIntent.kind, "document")
   );
+  const advertisedTools = advertisedChatToolNames(tools);
 
   const stubSection =
     sectionScope === "all"
@@ -513,7 +521,7 @@ async function handleChatPost(
   const stopDeadline = scheduleChatTurnDeadline(turnAbort, turnStartedAtMs);
   const cancelPoll = setInterval(() => {
     void isAssistantTurnCancelRequested(sessionId).then((requested) => {
-      if (requested) turnAbort.abort();
+      if (requested) abortChatTurnForCancel(turnAbort);
     });
   }, 1_000);
   const stopTurnGuards = () => {
@@ -562,6 +570,7 @@ async function handleChatPost(
       system,
       messages: modelMessages,
       tools,
+      activeTools: advertisedTools,
       experimental_repairToolCall: repairChatToolCall,
       stopWhen: async () => {
         // Cancel or wall-clock deadline. No tool-step cap. Loop guards
@@ -608,7 +617,7 @@ async function handleChatPost(
         const prepared = prepareDocumentReviewStep({
           policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
-          availableTools: Object.keys(tools),
+          availableTools: advertisedTools,
         });
         if (!prepared) return undefined;
         let activeTools = alreadyDraftedActive
@@ -755,6 +764,15 @@ async function handleChatPost(
       void drainSseStream(stream);
     },
     onError: (error) => {
+      const formatted = chatUiStreamErrorText(error);
+      if (formatted.recoverable) {
+        console.warn("chat: unavailable tool in stream", {
+          reportId,
+          sessionId,
+          error: formatChatLlmError(error),
+        });
+        return formatted.text;
+      }
       console.error("chat: assistant stream error", {
         reportId,
         sessionId,
@@ -774,7 +792,7 @@ async function handleChatPost(
       } catch {
         void reportFailure();
       }
-      return CHAT_ASSISTANT_ERROR_MESSAGE;
+      return formatted.text;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
       stopTurnGuards();
@@ -783,7 +801,25 @@ async function handleChatPost(
         isAborted,
         finishReason,
       });
-      if (persisted.interrupted) {
+      const deadlineAbort = await captureChatTurnDeadlineAbort({
+        startedAtMs: turnStartedAtMs,
+        abortReason: turnAbort.signal.reason,
+        isAborted,
+        finishReason,
+        userId: user.id,
+        reportId,
+        sessionId,
+        surface: "report",
+      });
+      if (deadlineAbort) {
+        console.warn("chat: wall-clock deadline abort", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
+          isAborted,
+          durationMs: Date.now() - turnStartedAtMs,
+        });
+      } else if (persisted.interrupted) {
         console.warn("chat: interrupted assistant turn", {
           reportId,
           sessionId,

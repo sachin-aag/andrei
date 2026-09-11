@@ -5,6 +5,11 @@ import {
   repairChatToolCall,
   resolveRepairedToolName,
 } from "./repair-tool-call";
+import {
+  UNSUPPORTED_CHAT_TOOL_NAME,
+  advertisedChatToolNames,
+  withUnsupportedChatToolFallback,
+} from "./unsupported-tool";
 
 const AVAILABLE = [
   "read_section",
@@ -107,6 +112,29 @@ describe("repairChatToolCall", () => {
     expect(JSON.parse(repaired?.input as string)).toEqual({
       limit: 16,
       queries: ["a", "b", "c", "d"],
+    });
+  });
+
+  it("remaps unavailable edit_table onto the internal fallback", async () => {
+    const tools = withUnsupportedChatToolFallback(TOOLS);
+    const repaired = await repairChatToolCall({
+      ...base,
+      toolCall: {
+        type: "tool-call",
+        toolCallId: "call_edit_table",
+        toolName: "edit_table",
+        input: '{"kind":"edit_cells","tableIndex":0}',
+      },
+      tools,
+      error: new NoSuchToolError({
+        toolName: "edit_table",
+        availableTools: advertisedChatToolNames(tools),
+      }),
+    });
+    expect(repaired?.toolName).toBe(UNSUPPORTED_CHAT_TOOL_NAME);
+    expect(repaired?.toolCallId).toBe("call_edit_table");
+    expect(JSON.parse(repaired?.input as string)).toEqual({
+      requestedTool: "edit_table",
     });
   });
 

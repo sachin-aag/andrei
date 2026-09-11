@@ -11,6 +11,7 @@ import {
   summarizeDocumentReviewProgress,
   type DocumentReviewToolPart,
 } from "@/lib/ai/chat/document-review-ui";
+import { isUnsupportedChatToolName } from "@/lib/ai/chat/unsupported-tool";
 
 export type ChatToolPartInfo = {
   toolName: string;
@@ -686,6 +687,28 @@ function analyticsPlotLabels(
 }
 
 function buildGenericNode(info: ChatToolPartInfo): ActivitySurfaceNode {
+  if (isUnsupportedChatToolName(info.toolName)) {
+    const pending = isToolPending(info);
+    const requested =
+      typeof info.input?.requestedTool === "string"
+        ? info.input.requestedTool.trim()
+        : "";
+    const hint =
+      typeof info.output?.hint === "string" ? info.output.hint : info.errorText;
+    return {
+      kind: "generic",
+      label: pending
+        ? "Checking that action…"
+        : requested
+          ? `${requested} isn't available this step`
+          : "That action isn't available this step",
+      pending,
+      tone: "muted",
+      expandable: Boolean(hint),
+      children: hint ? [{ kind: "detail", label: hint }] : [],
+    };
+  }
+
   const analytics = analyticsActivityLabel(info);
   if (analytics) return analytics;
 

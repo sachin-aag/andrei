@@ -117,7 +117,11 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   JSON Schema (`clampToolInputToSchema`: maxItems, maxLength, min/max, enum,
   single value → array) and retries once. Malformed JSON is still not
   rewritten. Prefer widening a bound over tightening one — the clamp is a net,
-  not a licence to add tight caps.
+  not a licence to add tight caps. A `NoSuchToolError` for a name that is not
+  loaded this turn (e.g. `edit_table` after write tools were stripped for a
+  question or document-review step) remaps onto the internal `unsupported_tool`
+  fallback so the stream continues with a hint — do not let `AI_NoSuchToolError`
+  fail the chat. Keep that fallback out of `activeTools` / the Plan allowlist.
 - Analytics never asks which page to read. `ask_user` is hidden on a lookup,
   after Skip / “find it”, and after any grep (including TOC-only) until a
   page is read/scanned. Page-number questions are rejected if they still
@@ -150,7 +154,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 - Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
   (`CHAT_SERVER_ABORT_MS` from request start, not from `streamText`).
   Do not add a tool-step cap — users must never hit one. Do not persist
-  a “ran out of steps / ask me to continue” notice. Loop guards live in
+  a “ran out of steps / ask me to continue” notice. When the 270s abort
+  fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`
+  so we can count it. Loop guards live in
   `prepareStep`
   (`tableEditLoopDirective`, `prepareDocumentReviewStep`,
   `alreadyDraftedReadStep`, `tableSchemaReadStep` on write turns whose

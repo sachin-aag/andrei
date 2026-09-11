@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/db", () => ({
+  db: {},
+}));
+
 import {
   planLibraryArchive,
   planLibraryUnarchive,
   type LibraryAssetArchiveRef,
   type LibraryFolderArchiveRef,
 } from "./library-archive";
-
-vi.mock("@/db", () => ({ db: {} }));
 
 const folders: LibraryFolderArchiveRef[] = [
   { id: "root", parentId: null, archivedAt: null },

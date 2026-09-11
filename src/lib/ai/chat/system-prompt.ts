@@ -19,7 +19,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v89-list-attachments-meta";
+export const CHAT_PROMPT_VERSION = "chat-v90-unavailable-tool-recover";
 
 export type ChatMode = "plan" | "agent";
 
@@ -57,7 +57,8 @@ function figureEditTools(includePlotMeasurements: boolean): string {
 function sectionFocusBlock(
   scope: ChatSectionScope,
   analyzeInScope: boolean,
-  includePlotMeasurements: boolean
+  includePlotMeasurements: boolean,
+  writesLoaded: boolean
 ): string {
   if (scope === "all") {
     return `## Section focus: ALL SECTIONS
@@ -73,10 +74,13 @@ The engineer has not narrowed scope. Answer questions about any section unless t
   const editTools = analyzeInScope
     ? `draft_field / edit_table / propose_edit / ${figures} / select_analyze_method`
     : `draft_field / edit_table / propose_edit / ${figures}`;
+  const agentLine = writesLoaded
+    ? `- Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}`
+    : `- Agent mode: write tools are not loaded this turn. Do not call draft_field, edit_table, or propose_edit. Prefer read_section on "${scope}".${priorReadNote}`;
   return `## Section focus: ${label} [${scope}]
 The engineer tagged **${label}** for this conversation. Focus Ask questions and Agent edits on this section only.
 - Ask mode: answer questions about ${label}; do not address other sections unless they tag a different @ section.
-- Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}`;
+${agentLine}`;
 }
 
 const LANGUAGE_RULES = `## Language
@@ -218,6 +222,7 @@ function agentRules(opts: {
   retrievalPolicy: RetrievalPolicy;
   includePlotMeasurements: boolean;
   editPolicy: ChatEditPolicy;
+  writesLoaded: boolean;
 }): string {
   const priority = draftPriorityPhrase(opts.draftOrder);
   const analyzeToolLine = opts.analyzeInScope
@@ -247,6 +252,17 @@ function agentRules(opts: {
   }
 
   const committing = opts.editPolicy === "commit";
+  if (!opts.writesLoaded) {
+    return `## Mode: AGENT (read this turn — write tools not loaded)
+You are in Agent mode, but this message is a question or review, so draft_field / edit_table / propose_edit / insert_image / remove_image are not loaded. Do not call them — they will fail.
+${reviewTools}
+${searchFirst}
+
+Do this:
+- Use only loaded read/review tools (read_section, list_attachments, search_documents, document_outline, read_document_page, ask_user, and document-review tools when this prompt requires them).
+- Answer in chat. If they actually asked to change a table or section, say so in one line and ask them to confirm; write tools return on that next message.
+- Never print a GFM pipe table, a markdown draft, or a code block for them to copy by hand.`;
+  }
   const proposeDeliveryRule = committing
     ? ""
     : `
@@ -364,6 +380,7 @@ export function buildChatSystemPrompt(opts: {
   const analyzeInScope = chatSectionsInScope(sectionScope, documentType).includes(
     "analyze"
   );
+  const writesLoaded = (opts.intent ?? "write") === "write";
   const modeRules =
     mode === "plan"
       ? askRules(retrievalPolicy)
@@ -373,6 +390,7 @@ export function buildChatSystemPrompt(opts: {
           retrievalPolicy,
           includePlotMeasurements,
           editPolicy: opts.editPolicy ?? "propose",
+          writesLoaded,
         });
   const draftedBlock = opts.alreadyDrafted
     ? `\n\n${alreadyDraftedBlock(
@@ -385,15 +403,16 @@ export function buildChatSystemPrompt(opts: {
     ? `\n\n${opts.mentionBlock.trim()}`
     : "";
   const analyzeBlock = analyzeInScope
-    ? `\n\n${mode === "plan" ? ANALYZE_ASK_RULES : ANALYZE_AGENT_RULES}`
+    ? `\n\n${mode === "plan" || !writesLoaded ? ANALYZE_ASK_RULES : ANALYZE_AGENT_RULES}`
     : "";
   const evidencePreview = opts.autoEvidenceBlock?.trim()
     ? `\n\n${opts.autoEvidenceBlock.trim()}`
     : "";
 
-  const draftingGuidance = chat.draftingGuidance?.trim()
-    ? `\n\n${chat.draftingGuidance.trim()}`
-    : "";
+  const draftingGuidance =
+    writesLoaded && chat.draftingGuidance?.trim()
+      ? `\n\n${chat.draftingGuidance.trim()}`
+      : "";
 
   const intentTools =
     mode === "agent"
@@ -409,7 +428,7 @@ ${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}
 
 ${LANGUAGE_RULES}
 
-${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${draftedBlock}${mentions}
+${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements, writesLoaded)}${draftedBlock}${mentions}
 
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope, documentType)}

@@ -81,7 +81,10 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   show for one or more open suggestions).
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
-  are silently missing in Plan.
+  are silently missing in Plan. Internal `unsupported_tool` is the exception
+  — keep it out of the allowlist and `activeTools`; `repairChatToolCall`
+  remaps a hallucinated name such as `edit_table` onto it so
+  `AI_NoSuchToolError` cannot fail the chat.
 - Chat/workspace changes walk the **full spectrum**, not just the control you
   clicked: Document **and** Agent chrome, Report chat **and** Analytics chat,
   then UI → request body → route parser → prompt → tools → Plan allowlist →
@@ -189,8 +192,9 @@ and `add_column` without `at`) instead of appending on the right. Pass
 focused tab (agent writes do not steal focus; `add_sheet` reuses a
 same-named tab). Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
-abort still apply). Do not tell the engineer they ran out of steps or to
-re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
+abort still apply). Do not add a tool-call count limit. When the 270s abort
+fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`.
+Do not tell the engineer they ran out of steps or to re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
 on write turns whose in-scope section already has a table, and Analytics
 hiding `write_column` after a cited-page grep until a page is read, while
 any file still has extract `morePages` or scan `truncated` (a finished

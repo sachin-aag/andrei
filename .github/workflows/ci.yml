@@ -176,8 +176,21 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       # Browser binaries are cached; apt libs (libgtk-4, gstreamer, …) must install every job.
+      # GitHub ubuntu runners ship Google's Chrome apt source. Playwright `--with-deps`
+      # runs apt-get update and can fail with a Hash Sum mismatch from dl.google.com
+      # even when we only need OS libraries for cached browsers.
       - name: Install Playwright browsers and OS dependencies
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+            /etc/apt/sources.list.d/google-chrome.list.save \
+            /etc/apt/sources.list.d/google-chrome.sources
+          if pnpm exec playwright install --with-deps chromium firefox webkit; then
+            exit 0
+          fi
+          echo "Playwright install failed; retrying after apt clean"
+          sudo rm -rf /var/lib/apt/lists/*
+          sudo apt-get clean
+          pnpm exec playwright install --with-deps chromium firefox webkit
 
       - run: pnpm run test:e2e
 

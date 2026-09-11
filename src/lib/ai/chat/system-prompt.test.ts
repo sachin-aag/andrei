@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v89-list-attachments-meta");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v90-unavailable-tool-recover");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -29,6 +29,11 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(read).toContain("## Tools available this turn");
     expect(read).toContain("propose_edit");
+    expect(read).toContain("write tools not loaded");
+    expect(read).toContain("list_attachments");
+    expect(read).toContain("Do not call them — they will fail");
+    expect(read).not.toContain("are loaded and working");
+    expect(read).not.toContain("Never say the edit tools are disabled");
 
     expect(
       buildChatSystemPrompt({ ...opts, mode: "agent", intent: "write" })
