@@ -53,7 +53,7 @@ managed by Terraform in [`infra/document-ai`](../infra/document-ai/README.md).
 - [ ] `DOCUMENT_AI_LOCATION=us` (or `eu`) — regional Document AI, **never** `global`
 - [ ] `DOCUMENT_AI_PROCESSOR_ID` set in Production and Preview (Terraform output `processor_id`)
 - [ ] `DOCUMENT_EMBEDDING_MODEL_ID=gemini-embedding-001` (`GOOGLE_VERTEX_LOCATION=us-central1` is fine for embeddings — separate var from extract, on purpose)
-- [ ] Quotas set (`MAX_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_PAGES`, per-report count/bytes)
+- [ ] Quotas set (`MAX_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_PAGES`; workspace storage/page budgets on Admin → Limits)
 - [ ] `ATTACHMENT_STORAGE_BACKEND` is **not** `local` in production
 - [ ] `ALLOW_LOCAL_ATTACHMENT_STORAGE` unset/false in production
 - [ ] `ALLOW_TEST_STUB_DOCUMENT_INGEST` unset/false in production

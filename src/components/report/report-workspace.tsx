@@ -56,6 +56,8 @@ import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { DocumentsPanel } from "./documents/documents-panel";
 import { AttachmentCanvasStack } from "./attachment-canvas-stack";
+import { CanvasTabPane } from "./canvas-tab-pane";
+import { CanvasTabScrollProvider } from "./canvas-tab-scroll";
 import { StatisticalWorkspace, type AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -160,6 +162,28 @@ import {
   QraScopeEditor,
   QraTeamEditor,
 } from "./sections/qra/qra-section-editors";
+import {
+  ElrAbbreviationsEditor,
+  ElrAccessControlEditor,
+  ElrAlarmsEditor,
+  ElrAttachmentsEditor,
+  ElrAuditTrailEditor,
+  ElrBreakdownsEditor,
+  ElrCalibrationEditor,
+  ElrConclusionEditor,
+  ElrCsvStatusEditor,
+  ElrDiscrepanciesEditor,
+  ElrMediaFillEditor,
+  ElrMonitoringEditor,
+  ElrObjectiveEditor,
+  ElrPreventiveMaintenanceEditor,
+  ElrQmsEditor,
+  ElrQualificationEditor,
+  ElrResponsibilitiesEditor,
+  ElrRevisionHistoryEditor,
+  ElrScopeEditor,
+  ElrSystemDescriptionEditor,
+} from "./sections/elr/elr-section-editors";
 
 export type { WorkspaceMode };
 
@@ -236,6 +260,29 @@ const QRA_SECTION_EDITORS: Record<string, ComponentType> = {
   qra_revision_history: QraRevisionHistoryEditor,
 };
 
+const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
+  elr_objective: ElrObjectiveEditor,
+  elr_scope: ElrScopeEditor,
+  elr_responsibilities: ElrResponsibilitiesEditor,
+  elr_abbreviations: ElrAbbreviationsEditor,
+  elr_system_description: ElrSystemDescriptionEditor,
+  elr_qualification: ElrQualificationEditor,
+  elr_media_fill: ElrMediaFillEditor,
+  elr_monitoring: ElrMonitoringEditor,
+  elr_calibration: ElrCalibrationEditor,
+  elr_preventive_maintenance: ElrPreventiveMaintenanceEditor,
+  elr_breakdowns: ElrBreakdownsEditor,
+  elr_qms: ElrQmsEditor,
+  elr_alarms: ElrAlarmsEditor,
+  elr_access_control: ElrAccessControlEditor,
+  elr_audit_trail: ElrAuditTrailEditor,
+  elr_csv_status: ElrCsvStatusEditor,
+  elr_discrepancies: ElrDiscrepanciesEditor,
+  elr_conclusion: ElrConclusionEditor,
+  elr_attachments: ElrAttachmentsEditor,
+  elr_revision_history: ElrRevisionHistoryEditor,
+};
+
 const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   DocumentType,
   Record<string, ComponentType>
@@ -245,6 +292,7 @@ const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   mechanical_design_verification: MECHANICAL_DV_SECTION_EDITORS,
   generic_document: { body: GenericDocumentEditor },
   quality_risk_assessment: QRA_SECTION_EDITORS,
+  equipment_lifecycle_report: ELR_SECTION_EDITORS,
 };
 
 export function ReportWorkspace({
@@ -398,7 +446,6 @@ export function ReportWorkspace({
   const analyticsSurface = liveActiveTabId === "analytics";
   const comparing = liveActiveTabId === "history" && compare != null;
   const viewingDocument = canvasTabKind(liveActiveTabId) === "attachment";
-  const hideReportEditors = !reportSurface;
   const analyticsCanEdit = canSaveReportSection(
     { id: currentUserId, role: currentUserRole, email: currentUserEmail },
     report
@@ -899,6 +946,7 @@ export function ReportWorkspace({
   );
 
   return (
+    <CanvasTabScrollProvider userId={currentUserId} reportId={report.id}>
     <div className="flex h-full flex-col">
       <ElectronicSignatureDialog
         open={signDialog != null}
@@ -1079,44 +1127,49 @@ export function ReportWorkspace({
                   ) : null}
                 </div>
               </div>
-              <div
-                className={cn(
-                  "relative flex min-h-0 min-w-0 flex-1 flex-col",
-                  hideReportEditors ? "overflow-hidden" : "overflow-auto"
-                )}
-              >
-                {comparing && compare?.surface === "report" ? (
-                  <DocumentRevisionDiff
-                    reportId={report.id}
-                    from={compare.from}
-                    to={compare.to}
-                    onExit={() => {
-                      setCompare(null);
-                      setActiveTabId("report");
-                      setWorkProductView("report");
-                    }}
-                  />
+              <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+                {compare ? (
+                  <CanvasTabPane
+                    active={comparing}
+                    scrollable
+                    scrollTabId="history"
+                    testId="work-product-history-canvas"
+                  >
+                    {compare.surface === "report" ? (
+                      <DocumentRevisionDiff
+                        reportId={report.id}
+                        from={compare.from}
+                        to={compare.to}
+                        onExit={() => {
+                          setCompare(null);
+                          setActiveTabId("report");
+                          setWorkProductView("report");
+                        }}
+                      />
+                    ) : (
+                      <AnalyticsRevisionDiff
+                        reportId={report.id}
+                        from={compare.from}
+                        to={compare.to}
+                        onExit={() => {
+                          setCompare(null);
+                          setAnalyticsOpen(true);
+                          setActiveTabId("analytics");
+                          setWorkProductView("analytics");
+                        }}
+                      />
+                    )}
+                  </CanvasTabPane>
                 ) : null}
-                {comparing && compare?.surface === "analytics" ? (
-                  <AnalyticsRevisionDiff
-                    reportId={report.id}
-                    from={compare.from}
-                    to={compare.to}
-                    onExit={() => {
-                      setCompare(null);
-                      setAnalyticsOpen(true);
-                      setActiveTabId("analytics");
-                      setWorkProductView("analytics");
-                    }}
-                  />
-                ) : null}
+                <CanvasTabPane
+                  active={reportSurface}
+                  scrollable
+                  scrollTabId="report"
+                  testId="report-document-canvas"
+                >
                 <div
-                  hidden={hideReportEditors}
-                  inert={hideReportEditors}
-                  data-testid="report-document-canvas"
                   className={cn(
                     "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
-                    hideReportEditors && "hidden",
                     documentCanvasWidthClass({
                       continuousDocument,
                       reviewGutterVisible: showReviewGutter,
@@ -1206,14 +1259,11 @@ export function ReportWorkspace({
                     </aside>
                   ) : null}
                 </div>
+                </CanvasTabPane>
                 {analyticsOpen ? (
-                  <div
-                    hidden={!analyticsSurface}
-                    inert={!analyticsSurface}
-                    className={cn(
-                      "min-h-0 flex-1",
-                      !analyticsSurface && "hidden"
-                    )}
+                  <CanvasTabPane
+                    active={analyticsSurface}
+                    testId="report-analytics-canvas"
                   >
                     <StatisticalWorkspace
                       reportId={report.id}
@@ -1223,7 +1273,7 @@ export function ReportWorkspace({
                       focusApiRef={analyticsFocusRef}
                       onMentionSheetsChange={handleAnalyticsMentionSheetsChange}
                     />
-                  </div>
+                  </CanvasTabPane>
                 ) : null}
                 <AttachmentCanvasStack
                   openAttachmentIds={liveOpenAttachmentIds}
@@ -1320,5 +1370,6 @@ export function ReportWorkspace({
         </div>
       </div>
     </div>
+    </CanvasTabScrollProvider>
   );
 }

@@ -45,7 +45,7 @@ function TocEntryRow({
   onJumpToSection: (section: SectionType) => void;
 }) {
   const hasChildren = (entry.children?.length ?? 0) > 0;
-  const isJumpTarget = entry.sectionKey != null && !hasChildren;
+  const isJumpTarget = entry.sectionKey != null;
   const indentPx = BASE_INDENT_PX + depth * INDENT_STEP_PX;
 
   return (

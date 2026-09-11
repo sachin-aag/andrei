@@ -5,5 +5,6 @@ describe("placeholder-eval-prompt", () => {
   it("detects placeholder spans in plain text", () => {
     expect(plainTextHasEvalPlaceholders("No tokens here.")).toBe(false);
     expect(plainTextHasEvalPlaceholders("[Room ID: <to be filled>]")).toBe(true);
+    expect(plainTextHasEvalPlaceholders("Record <batch number> here.")).toBe(true);
   });
 });

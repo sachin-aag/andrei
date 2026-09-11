@@ -7,19 +7,16 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v21-convergent-citation-markers");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v23-numbered-citations-all-packs");
   });
 
-  it("adds split-citation rules only when citations-at-end is on", () => {
-    expect(buildSuggestionSystemPrompt("define")).not.toContain(
+  it("includes split-citation rules", () => {
+    expect(buildSuggestionSystemPrompt("define")).toContain(
       "CITATIONS AT END OF SECTION"
     );
-    expect(
-      buildSuggestionSystemPrompt("define", { citationsAtEndOfSection: true })
-    ).toContain("CITATIONS AT END OF SECTION");
-    expect(
-      buildSuggestionSystemPrompt("define", { citationsAtEndOfSection: true })
-    ).toContain("immediately after the claim");
+    expect(buildSuggestionSystemPrompt("define")).toContain(
+      "immediately after the claim"
+    );
     const user = buildSuggestionUserPrompt({
       section: "define",
       contentStr: "Output power met the acceptance limit.",
@@ -32,25 +29,9 @@ describe("buildSuggestionSystemPrompt", () => {
           status: "not_met",
         },
       ],
-      citationsAtEndOfSection: true,
     });
     expect(user).toContain("[protocol.pdf, p. 3]");
     expect(user).toContain("the app numbers it");
-    expect(
-      buildSuggestionUserPrompt({
-        section: "define",
-        contentStr: "Hello",
-        priorBlock: "",
-        failingCriteria: [
-          {
-            key: "define.datetime",
-            label: "Date/time",
-            reasoning: "x",
-            status: "not_met",
-          },
-        ],
-      })
-    ).not.toContain("[protocol.pdf, p. 3]");
   });
 
   it("requires fixed matrix headers for traceability suggest fixes", () => {

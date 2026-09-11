@@ -27,8 +27,12 @@ const LABEL_THEN_TO_BE_FILLED =
 const TRAILING_TO_BE_FILLED_JUNK =
   /[,;:\s]*(?:<\s*)?to\s+be\s+filled(?:\s*>)?\s*$/i;
 
-/** `[filename, p. N]` / `[filename, p. N, M]` page citation suffix. */
-const PAGE_CITE_SUFFIX = /,\s*p\.\s*\d+(?:\s*,\s*\d+)*\s*$/i;
+/**
+ * Page list after a filename: `, p. 4, 26` or repeated `p.` (`, p. 1, p. 2`).
+ * Extra pages may omit `p.` (`p. 4, 26, 163`) or repeat it.
+ */
+const PAGE_LIST_BODY = String.raw`,\s*p\.\s*\d+(?:\s*,\s*(?:p\.\s*)?\d+)*`;
+const PAGE_CITE_SUFFIX = new RegExp(`${PAGE_LIST_BODY}\\s*$`, "i");
 
 /**
  * Extension-less exhibit labels: `Attachment I`, `Attachment_XIV`, `Attachment-21`.
@@ -72,21 +76,89 @@ function citeCoreWithoutPage(core: string): string {
 
 /**
  * Comma that starts another source inside one `[...]`, not extra pages of
- * the same file (`p. 4, 26`) and not a comma glued to the extension (`,.pdf`).
+ * the same file (`p. 4, 26` / `p. 1, p. 2`) and not a comma glued to the
+ * extension (`,.pdf`). Used for extension-less exhibits (Attachment / Appendix
+ * / CUID / QMS ids). Filenames with `.pdf`/`.docx` split on the extension
+ * instead, so commas in the title stay in the filename.
  */
 const NEW_SOURCE_COMMA_RE =
   /,\s+(?=(?:(?!p\.\s*\d)[^[\]])*?\.(?:pdf|docx)\b|Attachment[_\s-]?(?:[IVXLCDM]+|\d+)\b|Appendix\s+(?:[A-Z](?:\.\d+)*|[IVXLCDM]{2,}|\d+)\b|[a-z0-9]{24}\b|\d{3,}-\d{4,})/i;
 
-const PAGE_GROUP_RE = /,\s*p\.\s*\d+(?:\s*,\s*\d+)*/i;
-const SOURCE_SEPARATOR_RE = /^\s*,\s+/;
+const PAGE_GROUP_RE = new RegExp(PAGE_LIST_BODY, "i");
+const FILE_EXT_RE = /\.(?:pdf|docx)\b/gi;
+/** Comma between sources — not the comma before another `p. N` of this file. */
+const SOURCE_SEPARATOR_RE = /^\s*,\s+(?!p\.\s*\d)/;
+
+/**
+ * Split on each `.pdf` / `.docx` so commas before the extension stay in the
+ * filename. Page lists after the extension (including repeated `p.`) stay
+ * with that file. Two extensions still yield two parts.
+ */
+function splitByPdfDocxAnchors(inner: string): string[] | null {
+  const extRe = new RegExp(FILE_EXT_RE.source, "gi");
+  const matches: { index: number; length: number }[] = [];
+  let found: RegExpExecArray | null;
+  while ((found = extRe.exec(inner)) !== null) {
+    matches.push({ index: found.index, length: found[0].length });
+  }
+  if (matches.length === 0) return null;
+
+  const ranges: { start: number; end: number }[] = [];
+  let cursor = 0;
+  for (let i = 0; i < matches.length; i++) {
+    const ext = matches[i]!;
+    while (cursor < inner.length && /\s/.test(inner[cursor]!)) cursor += 1;
+    if (i > 0) {
+      if (inner.startsWith(", ", cursor)) {
+        cursor += 2;
+      } else if (inner[cursor] === ",") {
+        cursor += 1;
+        while (cursor < inner.length && /\s/.test(inner[cursor]!)) cursor += 1;
+      }
+    }
+    if (ext.index < cursor) return null;
+    let end = ext.index + ext.length;
+    const after = inner.slice(end);
+    const pageMatch = PAGE_GROUP_RE.exec(after);
+    if (pageMatch && pageMatch.index === 0) {
+      end += pageMatch[0].length;
+    }
+    ranges.push({ start: cursor, end });
+    cursor = end;
+  }
+
+  const leftover = inner.slice(cursor);
+  if (/^\s*,\s+/.test(leftover)) {
+    const rest = leftover.replace(/^\s*,\s+/, "").trim();
+    const parts = ranges
+      .map((range) => inner.slice(range.start, range.end).trim())
+      .filter(Boolean);
+    if (rest) parts.push(...splitWithoutFileExtensions(rest));
+    return parts.length > 0 ? parts : null;
+  }
+  if (leftover.trim() && ranges.length > 0) {
+    ranges[ranges.length - 1]!.end = inner.length;
+  }
+  const parts = ranges
+    .map((range) => inner.slice(range.start, range.end).trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : null;
+}
 
 /**
  * Split `[file A, p. N, file B, p. M]` into one inner string per source.
- * Same-file page lists (`p. 4, 26, 163`) stay a single part.
+ * Same-file page lists (`p. 4, 26, 163` or `p. 1, p. 2`) stay a single part.
+ * Commas inside a `.pdf`/`.docx` filename are not treated as a new source.
  */
 export function splitSourceCitationParts(inner: string): string[] {
   const trimmed = inner.trim();
   if (!trimmed) return [];
+  const byExt = splitByPdfDocxAnchors(trimmed);
+  if (byExt) return byExt;
+  return splitWithoutFileExtensions(trimmed);
+}
+
+function splitWithoutFileExtensions(trimmed: string): string[] {
   const parts: string[] = [];
   let start = 0;
   while (start < trimmed.length) {
@@ -226,6 +298,19 @@ function isDocumentNumberCite(core: string): boolean {
 }
 
 /**
+ * MJ / pharma QMS identifiers. Slash SOP paths (`SOP/DP/QA/008`,
+ * `E/PR/070`, `ELR/DP/PR/26/001`) and hyphenated codes with a 2+ letter
+ * prefix plus a later letter segment (`PRQR-25-PR-005`). Does not match
+ * batch-style `B-2024-117` or two-part `DEV-001`.
+ */
+const QMS_DOCUMENT_ID =
+  /\b(?:[A-Z]{1,8}(?:\/[A-Z]{1,8})+\/\d{2,}(?:\/[A-Z0-9]+)*|[A-Z]{2,8}(?:-[A-Z]{1,8})*-\d{2,}(?:-[A-Z]{1,8}-\d{2,})+)\b/i;
+
+function isQmsDocumentIdCite(core: string): boolean {
+  return QMS_DOCUMENT_ID.test(citeCoreWithoutPage(core));
+}
+
+/**
  * Default `@paralleldrive/cuid2` `createId()` token (attachment primary keys).
  * Chat tools list `id=` next to the filename; the model sometimes pastes that
  * id in brackets. Same class as underscored report-number cites: a source
@@ -248,12 +333,14 @@ function isAttachmentIdCite(core: string): boolean {
  *
  * Recognizes:
  * - numeric `[12]`
- * - page cites `[name, p. N]` / `[name, p. N, M]` (any name; extension optional)
+ * - page cites `[name, p. N]` / `[name, p. N, M]` / `[name, p. 1, p. 2]`
+ *   (any name; extension optional; commas in the filename stay in that cite)
  * - bare attachment filenames using supported extensions from file-types
  * - extension-less exhibit labels (`[Attachment_XIV]`, lists, optional page)
  * - appendix / report-number cites (`[Appendix B]`,
  *   `[Appendix B DV Report 790-00134R(RevU)]`,
  *   `[790-00134R_Rev_U_Solea_Model_3_Software_…]`)
+ * - MJ QMS identifiers (`[PRQR-25-PR-005]`, `[SOP/DP/QA/008]`, `[E/PR/070]`)
  * - CUID2 attachment ids (`[me1q4zzhb1me0wwskpmqfw7i]`, optional page)
  * - mistaken `[cite: <to be filled>]` / `[cite,; <to be filled>]` wrappers
  */
@@ -267,6 +354,7 @@ export function isCitationShapedBracket(match: string): boolean {
   if (isAttachmentLabelCite(core)) return true;
   if (isAppendixCite(core)) return true;
   if (isDocumentNumberCite(core)) return true;
+  if (isQmsDocumentIdCite(core)) return true;
   if (isAttachmentIdCite(core)) return true;
   return hasSupportedAttachmentExtension(citeCoreWithoutPage(core));
 }

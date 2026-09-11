@@ -1,3 +1,5 @@
+import { fetchWithKeepaliveIfSmall } from "@/lib/suggestions/keepalive-fetch";
+
 export class CommentPersistError extends Error {
   readonly status: number;
 
@@ -54,15 +56,19 @@ export async function patchCommentStatus(
   const operations = extraOperations(extra);
   let res: Response;
   try {
-    res = await fetch(`/api/reports/${reportId}/comments/${commentId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status,
-        ...(content != null ? { content } : {}),
-        ...(operations ? { operations } : {}),
-      }),
+    const body = JSON.stringify({
+      status,
+      ...(content != null ? { content } : {}),
+      ...(operations ? { operations } : {}),
     });
+    res = await fetchWithKeepaliveIfSmall(
+      `/api/reports/${reportId}/comments/${commentId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }
+    );
   } catch {
     throw new CommentPersistError(0, "Could not update suggestion. Please try again.");
   }

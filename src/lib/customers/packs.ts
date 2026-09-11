@@ -51,10 +51,10 @@ export type CustomerPack = {
    * When true, document citations are numbered at the claim and parked at
    * the end of each section field. New edits that add a source citation keep
    * a `[n]` marker beside the claim and append `n. [filename, p. N]` under
-   * Citations:. On for Convergent; off for demo/MJ. Generic (blank)
-   * documents enable the same mode via the document-type flag. Also
-   * enables the Export without citations DOCX option (trailing citation
-   * blocks and matching markers are dropped).
+   * Citations:. On for every pack (demo, MJ, Convergent). Generic (blank)
+   * documents also set the document-type flag. Enables the Export without
+   * citations DOCX option (trailing citation blocks and matching markers
+   * are dropped). There is no inline `[filename, p. N]` citation style.
    */
   citationsAtEndOfSection: boolean;
   /**
@@ -172,7 +172,7 @@ export const DEMO_PACK: CustomerPack = {
   evaluationSectionPromptAdditions: {},
   criterionDescriptionOverrides: {},
   wordImportEnabled: false,
-  citationsAtEndOfSection: false,
+  citationsAtEndOfSection: true,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
   insightsEnabled: true,
@@ -183,6 +183,7 @@ export const DEMO_PACK: CustomerPack = {
 export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v7";
 export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v2";
 export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
+export const ELR_PROMPT_VERSION = "mj-elr-sop-014-r04-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
@@ -204,7 +205,11 @@ export const CONVERGENT_PACK: CustomerPack = {
 
 export const MJ_PACK: CustomerPack = {
   id: "mj",
-  enabledDocumentTypes: ["investigation_report", "quality_risk_assessment"],
+  enabledDocumentTypes: [
+    "investigation_report",
+    "quality_risk_assessment",
+    "equipment_lifecycle_report",
+  ],
   hiddenInvestigationSections: ["conclusion"],
   investigationTemplateFile: "mj-investigation-report-template.docx",
   promptVersion: MJ_PROMPT_VERSION,
@@ -212,7 +217,7 @@ export const MJ_PACK: CustomerPack = {
   evaluationSectionPromptAdditions: MJ_SECTION_PROMPT_ADDITIONS,
   criterionDescriptionOverrides: MJ_CRITERION_DESCRIPTION_OVERRIDES,
   wordImportEnabled: true,
-  citationsAtEndOfSection: false,
+  citationsAtEndOfSection: true,
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,

@@ -1,5 +1,4 @@
-const PLACEHOLDER_IN_TEXT =
-  /\[[^\]]*(?:<\s*)?to be filled(?:\s*>)?[^\]]*\]|<\s*to be filled(?:\s*:[^>]*)?\s*>/i;
+import { collectPlaceholderSpans } from "./find";
 
 /** True when the suggestion edits or replaces a to-be-filled placeholder token. */
 export function suggestionEditsPlaceholder(s: {
@@ -8,16 +7,26 @@ export function suggestionEditsPlaceholder(s: {
   anchorText: string;
 }): boolean {
   const parts = [s.deleteText, s.insertText, s.anchorText];
-  const touchesPlaceholder = parts.some((p) => PLACEHOLDER_IN_TEXT.test(p));
+  const touchesPlaceholder = parts.some(
+    (p) => collectPlaceholderSpans(p).length > 0
+  );
   if (!touchesPlaceholder) return false;
 
-  // Replacing a placeholder with concrete prose (no to-be-filled left in insert).
-  if (s.deleteText && PLACEHOLDER_IN_TEXT.test(s.deleteText) && !/to be filled/i.test(s.insertText)) {
+  const deleteHasPlaceholder = collectPlaceholderSpans(s.deleteText).length > 0;
+  const insertHasPlaceholder = collectPlaceholderSpans(s.insertText).length > 0;
+
+  // Replacing a placeholder with concrete prose (no placeholder left in insert).
+  if (
+    s.deleteText &&
+    deleteHasPlaceholder &&
+    !insertHasPlaceholder &&
+    !/to be filled/i.test(s.insertText)
+  ) {
     return true;
   }
 
   // Deleting a placeholder outright.
-  if (s.deleteText && PLACEHOLDER_IN_TEXT.test(s.deleteText) && !s.insertText.trim()) {
+  if (s.deleteText && deleteHasPlaceholder && !s.insertText.trim()) {
     return true;
   }
 

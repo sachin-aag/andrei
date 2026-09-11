@@ -9,7 +9,6 @@ import {
   reports,
 } from "@/db/schema";
 import { toAttachmentDto } from "@/lib/attachments/dto";
-import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { loadAccessibleAsset } from "@/lib/attachments/library-access";
 import { reportProcessingForLinkedAsset } from "@/lib/attachments/library-link-ingest";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
@@ -85,8 +84,6 @@ export async function linkLibraryItemsToReport(
     return { ok: false, error: "No vault items selected", status: 400 };
   }
 
-  const limits = getAttachmentLimits();
-
   const folderTree = await loadLibraryFolderTree(libraryFolderIds);
   const folderAssets = (
     await loadAssetsForLibraryFolders(folderTree.map((folder) => folder.id))
@@ -136,14 +133,6 @@ export async function linkLibraryItemsToReport(
     );
 
     const newAssets = uniqueAssets.filter((asset) => !linkedAssetIds.has(asset.id));
-    const activeCount = existingLinks.length;
-    if (activeCount + newAssets.length > limits.maxAttachmentsPerReport) {
-      return {
-        ok: false as const,
-        error: `Report already has ${limits.maxAttachmentsPerReport} attachments`,
-        status: 400 as const,
-      };
-    }
 
     const reportFolderIdByLibraryFolderId = new Map<string, string>();
     const createdFolders: { id: string; name: string; parentId: string | null }[] =

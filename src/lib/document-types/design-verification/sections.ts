@@ -162,7 +162,7 @@ export const CONVERGENT_RESULTS_MATRIX_FILLING_NOTES = `Results and Discussion P
 - If the same requirement was run on more than one configuration, list every configuration in both Satisfied by and P/F. Keep one row per Req. ID.
 - Req. ID must match the evidence exactly, including dotted suffixes (\`SW-SST-5.1.1\` is not \`SW-SST-5\`). Do not collapse a child ID into its parent family.
 - When the source has a Requirements Verified table (or a partial-execution datasheet/TOC list), publish those rows — not every requirement ID mentioned in the protocol body.
-- Do not invent a configuration. If evidence does not name one, use a bracketed placeholder like [configuration].`;
+- Do not invent a configuration. If evidence does not name one, use an angle-bracket placeholder like <configuration>.`;
 
 /** Chat-only: Results and Discussion has two fields — never put the matrix in Discussion. */
 export const CONVERGENT_RESULTS_FIELD_SPLIT_NOTES = `Results and Discussion field split (required):
@@ -211,7 +211,7 @@ export function dvFixedTableFormatGuidance(opts?: {
       ? `- When creating a new table or the engineer explicitly asks for a full replacement via draft_field, emit ONE GFM markdown table only (header + separator + data rows), except for the Test Equipment lead-in noted below.
 - Use EXACTLY the headers below, in this order — never rename, reorder, add, or drop columns.
 - If the section already has a table, use edit_table to change cells or add/delete rows. Do not use draft_field for an incremental change — that would overwrite filled cells.
-- Fill known cells; use bracketed placeholders like [requirement ID] for unknowns. Leave optional cells blank rather than inventing new columns.${equipmentLeadIn}`
+- Fill known cells; use angle-bracket placeholders like <requirement ID> for unknowns. Leave optional cells blank rather than inventing new columns.${equipmentLeadIn}`
       : `- targetField MUST be "table".
 - Preserve the existing column headers exactly — never rename, reorder, add, or drop columns.
 - Prefer minimal cell-value edits (anchorText from SECTION CONTENT). Do not rewrite the matrix into a different column layout or free-form prose.

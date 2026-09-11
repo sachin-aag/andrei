@@ -1,14 +1,10 @@
 export type AttachmentLimits = {
   maxAttachmentBytes: number;
   maxAttachmentPages: number;
-  maxAttachmentsPerReport: number;
-  maxAttachmentBytesPerReport: number;
 };
 
 const DEFAULT_MAX_ATTACHMENT_BYTES = 262_144_000;
 const DEFAULT_MAX_ATTACHMENT_PAGES = 500;
-const DEFAULT_MAX_ATTACHMENTS_PER_REPORT = 50;
-const DEFAULT_MAX_ATTACHMENT_BYTES_PER_REPORT = 1_073_741_824;
 
 export function getAttachmentLimits(): AttachmentLimits {
   return {
@@ -19,14 +15,6 @@ export function getAttachmentLimits(): AttachmentLimits {
     maxAttachmentPages: readPositiveIntEnv(
       "MAX_ATTACHMENT_PAGES",
       DEFAULT_MAX_ATTACHMENT_PAGES
-    ),
-    maxAttachmentsPerReport: readPositiveIntEnv(
-      "MAX_ATTACHMENTS_PER_REPORT",
-      DEFAULT_MAX_ATTACHMENTS_PER_REPORT
-    ),
-    maxAttachmentBytesPerReport: readPositiveIntEnv(
-      "MAX_ATTACHMENT_BYTES_PER_REPORT",
-      DEFAULT_MAX_ATTACHMENT_BYTES_PER_REPORT
     ),
   };
 }

@@ -88,6 +88,20 @@ describe("moveCitationsToEndOfText", () => {
     );
   });
 
+  it("repairs MJ QMS ids wrapped as placeholders then parks them as citations", () => {
+    const drafted =
+      "since the last Periodic Re-Qualification [PRQR-25-PR-005: <to be filled>].";
+    const normalized = normalizeSuggestionInsertText(drafted);
+    expect(moveCitationsToEndOfText(normalized)).toBe(
+      [
+        "since the last Periodic Re-Qualification [1].",
+        "",
+        "Citations:",
+        "1. [PRQR-25-PR-005]",
+      ].join("\n")
+    );
+  });
+
   it("repairs mistaken placeholder wrappers then parks attachment-id cites", () => {
     const drafted =
       "defined as TOP-00051 [me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]. " +

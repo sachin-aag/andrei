@@ -13,14 +13,8 @@ import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { AttachmentQuotaDialog } from "@/components/report/documents/attachment-quota-dialog";
 import type { AttachmentProcessingStatus } from "@/db/schema";
-import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { collectFolderSubtreeIds } from "@/lib/attachments/folder-subtree";
-import {
-  formatAttachmentCountLimitMessage,
-  formatAttachmentWouldExceedMessage,
-  isAttachmentCountLimitError,
-  isAttachmentQuotaError,
-} from "@/lib/attachments/quota-messages";
+import { isAttachmentQuotaError } from "@/lib/attachments/quota-messages";
 import { uploadPdfResumable } from "@/lib/attachments/upload-client";
 import {
   attachmentUploadMime,
@@ -156,12 +150,7 @@ export function ReportAttachmentsProvider({
     // Parallel uploads can all hit the same quota; keep a single modal.
     if (quotaWarningShownRef.current) return;
     quotaWarningShownRef.current = true;
-    const max = getAttachmentLimits().maxAttachmentsPerReport;
-    setQuotaWarning(
-      isAttachmentCountLimitError(message)
-        ? formatAttachmentCountLimitMessage(max)
-        : message
-    );
+    setQuotaWarning(message);
   }, []);
 
   const dismissQuotaWarning = useCallback(() => {
@@ -400,28 +389,13 @@ export function ReportAttachmentsProvider({
       }
       if (supportedFiles.length === 0) return;
 
-      const max = getAttachmentLimits().maxAttachmentsPerReport;
-      const remaining = max - attachments.length;
-      if (supportedFiles.length > remaining) {
-        showQuotaWarning(
-          formatAttachmentWouldExceedMessage({
-            max,
-            remaining: Math.max(0, remaining),
-            attempted: supportedFiles.length,
-          })
-        );
-        return;
-      }
-
       quotaWarningShownRef.current = false;
       await Promise.all(
         supportedFiles.map((file) => uploadOneFile(file, folderId))
       );
     },
     [
-      attachments.length,
       canMutateAttachments,
-      showQuotaWarning,
       uploadOneFile,
     ]
   );

@@ -19,18 +19,18 @@ describe("compactPlaceholderLabel", () => {
 });
 
 describe("normalizeBracketPlaceholdersInPlainText", () => {
-  it("appends : <to be filled> for guidance-only brackets", () => {
+  it("converts guidance-only square brackets to <label>", () => {
     expect(normalizeBracketPlaceholdersInPlainText("in [number] vials")).toBe(
-      "in [number: <to be filled>] vials"
+      "in <number> vials"
     );
     expect(
       normalizeBracketPlaceholdersInPlainText("[Personnel Name(s)] were present")
-    ).toBe("[Personnel Name(s): <to be filled>] were present");
+    ).toBe("<Personnel Name(s)> were present");
     expect(
       normalizeBracketPlaceholdersInPlainText(
         "saw [description of particulate, e.g., fibers] here"
       )
-    ).toBe("saw [particulate, e.g., fibers: <to be filled>] here");
+    ).toBe("saw <particulate, e.g., fibers> here");
   });
 
   it("does not turn markdown image alts into placeholders", () => {
@@ -45,10 +45,8 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     const out = normalizeBracketPlaceholdersInPlainText(
       "system is [Name/ID of Monitoring System or Refrigerator Unit]."
     );
-    expect(out).toBe(
-      "system is [Monitoring System or Refrigerator Unit: <to be filled>]."
-    );
-    const label = out.match(/\[(.+?): <to be filled>\]/)?.[1] ?? "";
+    expect(out).toBe("system is <Monitoring System or Refrigerator Unit>.");
+    const label = out.match(/<([^>]+)>/)?.[1] ?? "";
     expect(label.length).toBeLessThanOrEqual(MAX_PLACEHOLDER_LABEL_LENGTH);
   });
 
@@ -57,7 +55,7 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
       normalizeBracketPlaceholdersInPlainText(
         "[Name/ID of Monitoring System or Refrigerator Unit: <to be filled>]"
       )
-    ).toBe("[Monitoring System or Refrigerator Unit: <to be filled>]");
+    ).toBe("<Monitoring System or Refrigerator Unit>");
   });
 
   it("truncates labels that remain over the limit after filler stripping", () => {
@@ -68,7 +66,7 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     expect(compacted).not.toBe(long);
     expect(
       normalizeBracketPlaceholdersInPlainText(`[${long}]`)
-    ).toBe(`[${compacted}: <to be filled>]`);
+    ).toBe(`<${compacted}>`);
   });
 
   it("leaves static acceptance-criteria brackets unchanged", () => {
@@ -77,13 +75,13 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     expect(normalizeBracketPlaceholdersInPlainText(input)).toBe(input);
   });
 
-  it("leaves citations [digits] and bare to-be-filled spans unchanged", () => {
+  it("leaves citations [digits] unchanged and converts legacy to-be-filled spans", () => {
     expect(normalizeBracketPlaceholdersInPlainText("see ref [12]")).toBe("see ref [12]");
     expect(
       normalizeBracketPlaceholdersInPlainText("[SOP No.: <to be filled>]")
-    ).toBe("[SOP No.: <to be filled>]");
+    ).toBe("<SOP No.>");
     expect(normalizeBracketPlaceholdersInPlainText("[to be filled]")).toBe(
-      "[to be filled]"
+      "<to be filled>"
     );
   });
 
@@ -91,8 +89,8 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     const long =
       "[Detailed narrative of the observation, including environmental conditions, software versions, and specific inputs used at the time of failure]";
     const out = normalizeBracketPlaceholdersInPlainText(long);
-    expect(out).toMatch(/^\[.+: <to be filled>\]$/);
-    const label = out.match(/\[(.+?): <to be filled>\]/)?.[1] ?? "";
+    expect(out).toMatch(/^<[^>]+>$/);
+    const label = out.match(/<([^>]+)>/)?.[1] ?? "";
     expect(label.length).toBeLessThanOrEqual(MAX_PLACEHOLDER_LABEL_LENGTH);
     expect(label.toLowerCase()).toContain("detailed");
   });
@@ -172,6 +170,40 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
       )
     ).toBe(
       "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only)]"
+    );
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "[PRQR-25-PR-005: <to be filled>]"
+      )
+    ).toBe("[PRQR-25-PR-005]");
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "Batch [Batch number: B-2024-117] failed."
+      )
+    ).toBe("Batch [Batch number: B-2024-117] failed.");
+  });
+
+  it("does not treat HTML tags as placeholders", () => {
+    expect(normalizeBracketPlaceholdersInPlainText("a <div> box")).toBe(
+      "a <div> box"
+    );
+    expect(normalizeBracketPlaceholdersInPlainText("see <batch number>")).toBe(
+      "see <batch number>"
+    );
+  });
+
+  it("keeps angle placeholders that include a colon hint", () => {
+    const input =
+      "specific to the <container format: Vial / Cartridge> format from <start date>";
+    expect(normalizeBracketPlaceholdersInPlainText(input)).toBe(input);
+  });
+
+  it("canonicalizes numeric and formula angle tokens instead of skipping them", () => {
+    expect(normalizeBracketPlaceholdersInPlainText("use <12> vials")).toBe(
+      "use <12> vials"
+    );
+    expect(normalizeBracketPlaceholdersInPlainText("see <formula>")).toBe(
+      "see <formula>"
     );
   });
 });
