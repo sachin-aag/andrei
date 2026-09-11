@@ -128,8 +128,12 @@ import {
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
-import { captureChatAssistantFailure } from "@/lib/ai/chat/chat-failure-telemetry";
 import {
+  captureChatAssistantFailure,
+  captureChatTurnDeadlineAbort,
+} from "@/lib/ai/chat/chat-failure-telemetry";
+import {
+  abortChatTurnForCancel,
   CHAT_ASSISTANT_ERROR_MESSAGE,
   chatUiStreamErrorText,
   consumeAssistantStreamWithBudget,
@@ -517,7 +521,7 @@ async function handleChatPost(
   const stopDeadline = scheduleChatTurnDeadline(turnAbort, turnStartedAtMs);
   const cancelPoll = setInterval(() => {
     void isAssistantTurnCancelRequested(sessionId).then((requested) => {
-      if (requested) turnAbort.abort();
+      if (requested) abortChatTurnForCancel(turnAbort);
     });
   }, 1_000);
   const stopTurnGuards = () => {
@@ -797,7 +801,25 @@ async function handleChatPost(
         isAborted,
         finishReason,
       });
-      if (persisted.interrupted) {
+      const deadlineAbort = await captureChatTurnDeadlineAbort({
+        startedAtMs: turnStartedAtMs,
+        abortReason: turnAbort.signal.reason,
+        isAborted,
+        finishReason,
+        userId: user.id,
+        reportId,
+        sessionId,
+        surface: "report",
+      });
+      if (deadlineAbort) {
+        console.warn("chat: wall-clock deadline abort", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
+          isAborted,
+          durationMs: Date.now() - turnStartedAtMs,
+        });
+      } else if (persisted.interrupted) {
         console.warn("chat: interrupted assistant turn", {
           reportId,
           sessionId,

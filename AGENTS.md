@@ -192,8 +192,9 @@ and `add_column` without `at`) instead of appending on the right. Pass
 focused tab (agent writes do not steal focus; `add_sheet` reuses a
 same-named tab). Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
-abort still apply). Do not tell the engineer they ran out of steps or to
-re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
+abort still apply). Do not add a tool-call count limit. When the 270s abort
+fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`.
+Do not tell the engineer they ran out of steps or to re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
 on write turns whose in-scope section already has a table, and Analytics
 hiding `write_column` after a cited-page grep until a page is read, while
 any file still has extract `morePages` or scan `truncated` (a finished

@@ -154,7 +154,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 - Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
   (`CHAT_SERVER_ABORT_MS` from request start, not from `streamText`).
   Do not add a tool-step cap — users must never hit one. Do not persist
-  a “ran out of steps / ask me to continue” notice. Loop guards live in
+  a “ran out of steps / ask me to continue” notice. When the 270s abort
+  fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`
+  so we can count it. Loop guards live in
   `prepareStep`
   (`tableEditLoopDirective`, `prepareDocumentReviewStep`,
   `alreadyDraftedReadStep`, `tableSchemaReadStep` on write turns whose

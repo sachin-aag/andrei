@@ -20,10 +20,14 @@ import {
   CHAT_FUNCTION_MAX_DURATION_SEC,
   CHAT_HOBBY_MAX_DURATION_SEC,
   CHAT_SERVER_ABORT_MS,
+  CHAT_TURN_CANCEL_ABORT,
+  CHAT_TURN_DEADLINE_ABORT,
+  abortChatTurnForCancel,
   consumeAssistantStreamWithBudget,
   isChatTurnDeadlineReached,
   remainingChatAbortMs,
   scheduleChatTurnDeadline,
+  shouldCaptureChatDeadlineAbort,
 } from "./assistant-turn";
 import { CHAT_TURN_STALE_MS } from "./background-turn-status";
 
@@ -199,6 +203,7 @@ describe("wall-clock chat deadline", () => {
     const controller = new AbortController();
     const cancel = scheduleChatTurnDeadline(controller, 0, CHAT_SERVER_ABORT_MS);
     expect(controller.signal.aborted).toBe(true);
+    expect(controller.signal.reason).toBe(CHAT_TURN_DEADLINE_ABORT);
     cancel();
   });
 
@@ -214,7 +219,57 @@ describe("wall-clock chat deadline", () => {
     expect(controller.signal.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(CHAT_SERVER_ABORT_MS - 40_000);
     expect(controller.signal.aborted).toBe(true);
+    expect(controller.signal.reason).toBe(CHAT_TURN_DEADLINE_ABORT);
     cancel();
+  });
+
+  it("does not overwrite an engineer Cancel with the deadline reason", () => {
+    const controller = new AbortController();
+    abortChatTurnForCancel(controller);
+    const cancel = scheduleChatTurnDeadline(controller, 0, CHAT_SERVER_ABORT_MS);
+    expect(controller.signal.reason).toBe(CHAT_TURN_CANCEL_ABORT);
+    cancel();
+  });
+});
+
+describe("shouldCaptureChatDeadlineAbort", () => {
+  it("is true once wall-clock time has elapsed, even without an abort reason", () => {
+    expect(
+      shouldCaptureChatDeadlineAbort({
+        startedAtMs: 0,
+        nowMs: CHAT_SERVER_ABORT_MS,
+      })
+    ).toBe(true);
+  });
+
+  it("is true when the deadline abort reason is set before elapsed time is checked", () => {
+    expect(
+      shouldCaptureChatDeadlineAbort({
+        startedAtMs: 0,
+        nowMs: 1_000,
+        abortReason: CHAT_TURN_DEADLINE_ABORT,
+      })
+    ).toBe(true);
+  });
+
+  it("is false for Cancel before the deadline", () => {
+    expect(
+      shouldCaptureChatDeadlineAbort({
+        startedAtMs: 0,
+        nowMs: 5_000,
+        abortReason: CHAT_TURN_CANCEL_ABORT,
+      })
+    ).toBe(false);
+  });
+
+  it("is false for Cancel even if onFinish lands after the wall-clock mark", () => {
+    expect(
+      shouldCaptureChatDeadlineAbort({
+        startedAtMs: 0,
+        nowMs: CHAT_SERVER_ABORT_MS + 1_000,
+        abortReason: CHAT_TURN_CANCEL_ABORT,
+      })
+    ).toBe(false);
   });
 });
 

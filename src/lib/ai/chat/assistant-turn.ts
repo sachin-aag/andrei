@@ -305,11 +305,6 @@ export function formatChatLlmError(error: unknown): string {
   }
 }
 
-/**
- * Wait for the SDK stream to drain, but never past the isolate budget.
- * A hung consume after `NoSuchToolError` used to pin `after()` until
- * Vercel killed the function, so `onFinish` never cleared the turn.
- */
 /** Milliseconds left on the chat deadline (0 once it has elapsed). */
 export function remainingChatAbortMs(
   startedAtMs: number,
@@ -325,6 +320,51 @@ export function isChatTurnDeadlineReached(
   return nowMs - startedAtMs >= CHAT_SERVER_ABORT_MS;
 }
 
+/** `AbortSignal.reason` when the wall-clock timer fires. Distinct from Cancel. */
+export const CHAT_TURN_DEADLINE_ABORT = "chat-turn-deadline";
+
+/** `AbortSignal.reason` when the engineer hits Cancel. */
+export const CHAT_TURN_CANCEL_ABORT = "chat-turn-cancel";
+
+export function abortChatTurnForDeadline(controller: AbortController): void {
+  if (!controller.signal.aborted) {
+    controller.abort(CHAT_TURN_DEADLINE_ABORT);
+  }
+}
+
+export function abortChatTurnForCancel(controller: AbortController): void {
+  if (!controller.signal.aborted) {
+    controller.abort(CHAT_TURN_CANCEL_ABORT);
+  }
+}
+
+export function isChatTurnDeadlineAbortReason(reason: unknown): boolean {
+  return reason === CHAT_TURN_DEADLINE_ABORT;
+}
+
+export function chatTurnElapsedMs(
+  startedAtMs: number,
+  nowMs = Date.now()
+): number {
+  return Math.max(0, nowMs - startedAtMs);
+}
+
+/**
+ * True when this finish should count as the 270s wall-clock abort — not
+ * Cancel, and not a successful turn that finished early. `stopWhen` can
+ * end the SDK stream without aborting the controller, so elapsed time
+ * still counts.
+ */
+export function shouldCaptureChatDeadlineAbort(input: {
+  startedAtMs: number;
+  abortReason?: unknown;
+  nowMs?: number;
+}): boolean {
+  if (input.abortReason === CHAT_TURN_CANCEL_ABORT) return false;
+  if (isChatTurnDeadlineAbortReason(input.abortReason)) return true;
+  return isChatTurnDeadlineReached(input.startedAtMs, input.nowMs);
+}
+
 /**
  * Abort `controller` when the wall-clock deadline elapses. Call at request
  * start so pre-stream work cannot eat the persist margin. Returns a cancel
@@ -337,11 +377,11 @@ export function scheduleChatTurnDeadline(
 ): () => void {
   const remainingMs = remainingChatAbortMs(startedAtMs, nowMs);
   if (remainingMs === 0) {
-    if (!controller.signal.aborted) controller.abort();
+    abortChatTurnForDeadline(controller);
     return () => undefined;
   }
   const timeoutId = setTimeout(() => {
-    if (!controller.signal.aborted) controller.abort();
+    abortChatTurnForDeadline(controller);
   }, remainingMs);
   return () => clearTimeout(timeoutId);
 }

@@ -1,6 +1,11 @@
 import { getPostHogServer } from "@/lib/analytics/posthog-server";
 import type { AnalyticsEvent } from "@/lib/analytics/events";
-import { formatChatLlmError } from "./assistant-turn";
+import {
+  CHAT_SERVER_ABORT_MS,
+  chatTurnElapsedMs,
+  formatChatLlmError,
+  shouldCaptureChatDeadlineAbort,
+} from "./assistant-turn";
 
 /** Which chat product raised the failure. */
 export type ChatFailureSurface = "report" | "analytics";
@@ -10,6 +15,7 @@ export type ChatFailureSite =
   | "stream_start"
   | "stream_error"
   | "consume_timeout"
+  | "deadline_abort"
   | "empty_turn"
   | "client_error";
 
@@ -81,4 +87,50 @@ export async function captureChatAssistantFailure(input: {
   } catch {
     // Capture must never mask the original failure.
   }
+}
+
+/**
+ * Count a wall-clock abort in PostHog. Returns whether it fired so callers
+ * can skip `empty_turn` for the same finish. Cancel before 270s is not this.
+ * There is no tool-call cap — this is elapsed request time only.
+ */
+export async function captureChatTurnDeadlineAbort(input: {
+  startedAtMs: number;
+  abortReason?: unknown;
+  isAborted: boolean;
+  finishReason?: string;
+  userId: string;
+  reportId: string;
+  sessionId: string;
+  surface: ChatFailureSurface;
+  nowMs?: number;
+}): Promise<boolean> {
+  const nowMs = input.nowMs ?? Date.now();
+  if (
+    !shouldCaptureChatDeadlineAbort({
+      startedAtMs: input.startedAtMs,
+      abortReason: input.abortReason,
+      nowMs,
+    })
+  ) {
+    return false;
+  }
+  const durationMs = chatTurnElapsedMs(input.startedAtMs, nowMs);
+  await captureChatAssistantFailure({
+    error: new Error("chat turn hit wall-clock abort"),
+    userId: input.userId,
+    reportId: input.reportId,
+    sessionId: input.sessionId,
+    surface: input.surface,
+    site: "deadline_abort",
+    extra: {
+      durationMs,
+      abortMs: CHAT_SERVER_ABORT_MS,
+      isAborted: input.isAborted,
+      finishReason: input.finishReason ?? "unknown",
+      abortReason:
+        typeof input.abortReason === "string" ? input.abortReason : undefined,
+    },
+  });
+  return true;
 }
