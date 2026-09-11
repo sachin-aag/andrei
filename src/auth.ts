@@ -120,9 +120,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
     async jwt({ token, user, trigger }) {
-      if (user) {
-        token.productTourSessionId = crypto.randomUUID();
-      }
       const hasUser = Boolean(user);
       if (
         !shouldRefreshJwtWorkspaceState(token, {
@@ -191,9 +188,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       if (typeof token.sessionVersion === "number") {
         session.user.sessionVersion = token.sessionVersion;
-      }
-      if (typeof token.productTourSessionId === "string") {
-        session.productTourSessionId = token.productTourSessionId;
       }
       return session;
     },

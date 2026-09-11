@@ -125,7 +125,7 @@ export const userRoleEnum = pgEnum("user_role", [
   "qa",
 ]);
 
-/** First-login product tour. `not_started` shows on next session until completed or dismissed. */
+/** First-login product tour. `not_started` / `in_progress` show until completed or dismissed. */
 export const productTourStatusEnum = pgEnum("product_tour_status", [
   "not_started",
   "in_progress",
@@ -263,7 +263,7 @@ export const workspaceUsers = pgTable(
      * password reset. Compared to the version stamped on the session token.
      */
     sessionVersion: integer("session_version").notNull().default(0),
-    /** First-login product tour. Resume from `productTourStepId` while `in_progress`. */
+    /** First-login product tour. Resume from `productTourStepId` while `in_progress`. Completed and dismissed stay closed across sessions and deploys until Profile replay. */
     productTourStatus: productTourStatusEnum("product_tour_status")
       .notNull()
       .default("not_started"),

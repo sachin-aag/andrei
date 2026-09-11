@@ -207,7 +207,6 @@ export async function POST(req: Request) {
       mustChangePassword: wsUser.mustChangePassword,
       passwordExpired,
       sessionVersion: wsUser.sessionVersion ?? 0,
-      productTourSessionId: crypto.randomUUID(),
     },
     secret,
     salt: cookieName,

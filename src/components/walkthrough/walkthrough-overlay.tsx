@@ -61,7 +61,6 @@ export function WalkthroughOverlay({
   stepCount,
   onNext,
   onBack,
-  onSkipForNow,
   onDismissForever,
 }: {
   step: ProductTourStep
@@ -69,7 +68,6 @@ export function WalkthroughOverlay({
   stepCount: number
   onNext: () => void
   onBack: () => void
-  onSkipForNow: () => void
   onDismissForever: () => void
 }) {
   const titleId = useId();
@@ -108,12 +106,12 @@ export function WalkthroughOverlay({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onSkipForNow();
+        onDismissForever();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onSkipForNow]);
+  }, [onDismissForever]);
 
   const progressPct = ((stepIndex + 1) / stepCount) * 100;
 
@@ -128,7 +126,7 @@ export function WalkthroughOverlay({
       <div
         aria-hidden="true"
         className="absolute inset-0 cursor-default"
-        onClick={onSkipForNow}
+        onClick={onDismissForever}
       />
       {targetRect ? (
         <div
@@ -192,18 +190,11 @@ export function WalkthroughOverlay({
           <button
             type="button"
             className="ml-auto text-xs text-[var(--muted-foreground)] underline-offset-4 hover:text-[var(--foreground)] hover:underline"
-            onClick={onSkipForNow}
+            onClick={onDismissForever}
           >
-            Skip for now
+            {"Don't show this again"}
           </button>
         </div>
-        <button
-          type="button"
-          className="mt-3 text-xs text-[var(--muted-foreground)] underline-offset-4 hover:text-[var(--foreground)] hover:underline"
-          onClick={onDismissForever}
-        >
-          {"Don't show this tour again"}
-        </button>
       </div>
     </div>
   );

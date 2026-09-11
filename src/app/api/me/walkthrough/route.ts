@@ -6,7 +6,6 @@ import { workspaceUsers } from "@/db/schema";
 import {
   normalizeProductTourProgress,
   productTourProgressSchema,
-  productTourSessionKeyFromAuth,
 } from "@/lib/walkthrough/progress";
 
 export async function GET() {
@@ -27,10 +26,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.json({
-    ...normalizeProductTourProgress(row),
-    sessionKey: productTourSessionKeyFromAuth(session),
-  });
+  return NextResponse.json(normalizeProductTourProgress(row));
 }
 
 export async function PATCH(request: Request) {
