@@ -24,6 +24,7 @@ describe("patchCommentStatus", () => {
       "/api/reports/r1/comments/c1",
       expect.objectContaining({
         method: "PATCH",
+        keepalive: true,
         body: JSON.stringify({ status: "dismissed" }),
       })
     );

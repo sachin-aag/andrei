@@ -29,6 +29,27 @@ export function useGenericSectionSave(section: string) {
   const { value } = useGenericReportSection(section);
   const applyInFlight = !!suggestionApplyTransition?.[section];
   const [saveBlocked, setSaveBlocked] = useState(false);
+  const saveActor = {
+    id: currentUserId,
+    role: currentUserRole,
+    email: currentUserEmail,
+  };
+  const persistOnLeave = shouldAutosaveSection({
+    user: saveActor,
+    report,
+    readOnly,
+    trackChangesMode,
+    applyInFlight: false,
+    saveBlocked,
+  });
+  const enabled = shouldAutosaveSection({
+    user: saveActor,
+    report,
+    readOnly,
+    trackChangesMode,
+    applyInFlight,
+    saveBlocked,
+  });
 
   const onSave = useCallback(
     async (v: unknown, context?: AutoSaveContext) => {
@@ -66,14 +87,8 @@ export function useGenericSectionSave(section: string) {
   );
 
   const { status, lastSavedAt, flush } = useAutoSave({
-    enabled: shouldAutosaveSection({
-      user: { id: currentUserId, role: currentUserRole, email: currentUserEmail },
-      report,
-      readOnly,
-      trackChangesMode,
-      applyInFlight,
-      saveBlocked,
-    }),
+    enabled,
+    persistOnLeave,
     value,
     onSave,
     beaconUrl: `/api/reports/${report.id}/sections/${section}`,

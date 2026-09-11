@@ -564,16 +564,10 @@ describe("buildChatTools remove_image", () => {
 });
 
 describe("buildChatTools propose_edit citations", () => {
-  it("exposes propose_edit.second only when citations-at-end is on", () => {
-    const off = buildChatTools({
+  it("exposes propose_edit.second for a trailing Citations split", () => {
+    const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
-      citationsAtEndOfSection: false,
-    });
-    const on = buildChatTools({
-      reportId: "report-1",
-      canEdit: true,
-      citationsAtEndOfSection: true,
     });
     const input = {
       section: "define",
@@ -587,14 +581,10 @@ describe("buildChatTools propose_edit citations", () => {
         insertText: "[protocol.pdf, p. 3]",
       },
     };
-    const parsedOff = inputSchemaOf(off, "propose_edit").parse(input) as {
-      second?: unknown;
-    };
-    expect(parsedOff).not.toHaveProperty("second");
-    const parsedOn = inputSchemaOf(on, "propose_edit").parse(input) as {
+    const parsed = inputSchemaOf(tools, "propose_edit").parse(input) as {
       second?: { insertText: string };
     };
-    expect(parsedOn.second?.insertText).toBe("[protocol.pdf, p. 3]");
+    expect(parsed.second?.insertText).toBe("[protocol.pdf, p. 3]");
   });
 });
 

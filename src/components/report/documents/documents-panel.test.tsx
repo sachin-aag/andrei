@@ -121,3 +121,87 @@ describe("DocumentsPanel attachment actions", () => {
     expect(clickSpy).toHaveBeenCalled();
   });
 });
+
+describe("DocumentsPanel Contents tab", () => {
+  it("always shows Attachments | Contents with folder and upload on a second row", () => {
+    mockContext();
+    renderPanel();
+
+    const attachments = screen.getByRole("button", { name: "Attachments" });
+    const contents = screen.getByRole("button", { name: "Contents" });
+    const folder = screen.getByRole("button", { name: "New folder" });
+    expect(attachments).toHaveAttribute("aria-pressed", "true");
+    expect(contents).toHaveAttribute("aria-pressed", "false");
+    expect(contents.closest("div")).not.toContainElement(folder);
+  });
+
+  it("hides folder and upload while Contents is selected", async () => {
+    const user = userEvent.setup();
+    mockContext();
+    renderPanel();
+
+    await user.click(screen.getByRole("button", { name: "Contents" }));
+    expect(
+      screen.queryByRole("button", { name: "New folder" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add attachment" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a Contents tab that jumps to an ELR section", async () => {
+    const user = userEvent.setup();
+    const onJump = vi.fn();
+    mockContext();
+    render(
+      <DocumentsPanel
+        collapsed={false}
+        onToggleCollapse={vi.fn()}
+        documentType="equipment_lifecycle_report"
+        onJumpToSection={onJump}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Contents" }));
+    await user.click(screen.getByRole("button", { name: "1. Purpose" }));
+    expect(onJump).toHaveBeenCalledWith("elr_objective");
+  });
+
+  it("numbers investigation subsections 1.1 / 3.2 and jumps to Analyze", async () => {
+    const user = userEvent.setup();
+    const onJump = vi.fn();
+    mockContext();
+    render(
+      <DocumentsPanel
+        collapsed={false}
+        onToggleCollapse={vi.fn()}
+        documentType="investigation_report"
+        onJumpToSection={onJump}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Contents" }));
+    expect(screen.getByRole("button", { name: "1. Define" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1.1 Details Investigation" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "3.2 5 Why Approach" }));
+    expect(onJump).toHaveBeenCalledWith("analyze");
+  });
+
+  it("shows Contents on generic documents and jumps to the body", async () => {
+    const user = userEvent.setup();
+    const onJump = vi.fn();
+    mockContext();
+    render(
+      <DocumentsPanel
+        collapsed={false}
+        onToggleCollapse={vi.fn()}
+        documentType="generic_document"
+        onJumpToSection={onJump}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Contents" }));
+    await user.click(screen.getByRole("button", { name: "1. Document" }));
+    expect(onJump).toHaveBeenCalledWith("body");
+  });
+});

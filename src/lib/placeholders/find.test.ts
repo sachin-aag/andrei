@@ -99,7 +99,7 @@ describe("findPlaceholders", () => {
     expect(findPlaceholders(doc, "define", "narrative")).toEqual([]);
   });
 
-  it("treats bracket guidance without to be filled as placeholders but skips numeric citations", () => {
+  it("treats leftover square to-be-filled as placeholders and skips guidance squares and citations", () => {
     const doc: JSONContent = {
       type: "doc",
       content: [
@@ -117,14 +117,7 @@ describe("findPlaceholders", () => {
 
     const found = findPlaceholders(doc, "define", "narrative");
 
-    expect(found.map((p) => p.text).sort()).toEqual(
-      [
-        "[Personnel Name(s)]",
-        "[SOP No.: <to be filled>]",
-        "[description of particulate, e.g., fibers]",
-        "[number]",
-      ].sort()
-    );
+    expect(found.map((p) => p.text)).toEqual(["[SOP No.: <to be filled>]"]);
   });
 
   it("treats long AI guidance labels as placeholders only after compaction", () => {
@@ -185,5 +178,108 @@ describe("findPlaceholders", () => {
       ],
     };
     expect(findPlaceholders(doc, "define", "narrative")).toEqual([]);
+  });
+
+  it("finds canonical <label> placeholders and skips HTML tags", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Batch <batch number> in a <div> and <to be filled>.",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<batch number>",
+      "<to be filled>",
+    ]);
+  });
+
+  it("flags angle fill-ins that the square-bracket scanner used to skip", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Use <12> vials, then <formula>, not [formula]. Limit is [NMT 5.0%].",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<12>",
+      "<formula>",
+    ]);
+  });
+
+  it("flags angle placeholders that include a colon hint", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text:
+                "performance, maintenance, and quality data specific to the <container format: Vial / Cartridge> format over the review period from <start date> to <end date>.",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<container format: Vial / Cartridge>",
+      "<start date>",
+      "<end date>",
+    ]);
+  });
+
+  it("flags long angle labels that used to miss the scan length cap", () => {
+    const token = "<container format: Vial / Cartridge with extra hint text>";
+    expect(token.slice(1, -1).length).toBeGreaterThan(MAX_PLACEHOLDER_LABEL_LENGTH);
+
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: `Use ${token} over the review period.` }],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      token,
+    ]);
+  });
+
+  it("does not treat MJ QMS ids wrapped as to-be-filled as placeholders", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "since the last Periodic Re-Qualification [PRQR-25-PR-005: <to be filled>]. Use <last PRQ number> if unknown.",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<last PRQ number>",
+    ]);
   });
 });

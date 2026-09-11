@@ -301,7 +301,6 @@ export async function generateSuggestionsForSection({
   allSections,
   gapCriteria,
   documentType,
-  citationsAtEndOfSection: citationsAtEndOfSectionOption,
 }: {
   section: SectionType;
   content: unknown;
@@ -316,10 +315,10 @@ export async function generateSuggestionsForSection({
     status: CriterionStatus;
   }>;
   documentType?: DocumentType;
-  citationsAtEndOfSection?: boolean;
 }): Promise<{ suggestions: GeneratedSuggestion[]; dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> }> {
-  const citationsAtEndOfSection =
-    citationsAtEndOfSectionOption ?? citationsAtEndOfSectionFor(documentType);
+  const citationsAtEndOfSection = citationsAtEndOfSectionFor(
+    documentType ?? "investigation_report"
+  );
   if (gapCriteria.length === 0) {
     return { suggestions: [], dropped: [] };
   }
@@ -364,9 +363,7 @@ export async function generateSuggestionsForSection({
   }
 
   const contentStr = existingFieldText;
-  const systemPrompt = buildSuggestionSystemPrompt(section, {
-    citationsAtEndOfSection,
-  });
+  const systemPrompt = buildSuggestionSystemPrompt(section);
   const priorBlock = buildPriorSectionsBlock(section, allSections);
   const evidenceByCriterion = await retrieveEvidenceForCriteria({
     reportId,
@@ -388,7 +385,6 @@ export async function generateSuggestionsForSection({
         reasoning: g.reasoning,
         status: g.status,
       })),
-      citationsAtEndOfSection,
     });
 
     await assertAiBudgetAvailable();

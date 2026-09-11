@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
+import { plainTextFromTiptapJson } from "@/lib/section-content-normalize";
 import {
   acceptSuggestionMarksById as acceptMarks,
   applyEditToRichDoc,
@@ -203,4 +204,36 @@ export function stripPendingSuggestionsExcept(
     result = stripSuggestionMarksById(result, id);
   }
   return result;
+}
+
+/**
+ * After Apply, the provider already holds accepted wording (no pending AI
+ * marks). Leftover editor preview marks must not be dismissed back to the
+ * original span — that would overwrite the applied PATCH on the next save.
+ * When the canonical doc still matches the dismissed preview, strip as usual.
+ */
+export function resolveSuggestionPreviewSyncDoc(opts: {
+  editorDoc: JSONContent;
+  canonicalDoc: JSONContent;
+  keepMarkId: string | null;
+}): JSONContent {
+  const editorPending = collectPendingSuggestionMarkIds(
+    opts.editorDoc,
+    AI_AUTHOR_ID
+  );
+  const canonicalPending = collectPendingSuggestionMarkIds(
+    opts.canonicalDoc,
+    AI_AUTHOR_ID
+  );
+  if (
+    canonicalPending.length === 0 &&
+    editorPending.length > 0 &&
+    plainTextFromTiptapJson(opts.canonicalDoc) !==
+      plainTextFromTiptapJson(
+        stripPendingSuggestionsExcept(opts.editorDoc, null)
+      )
+  ) {
+    return opts.canonicalDoc;
+  }
+  return stripPendingSuggestionsExcept(opts.editorDoc, opts.keepMarkId);
 }

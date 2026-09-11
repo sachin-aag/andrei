@@ -760,8 +760,8 @@ export function normalizeTrailingCitationBlockInDoc(doc: JSONContent): JSONConte
 }
 
 /**
- * Move inline document citations to a trailing block at the end of `text`.
- * Used for whole-field drafts when citations-at-end mode is on.
+ * Move source citation brackets to a trailing Citations: block and leave
+ * numbered `[n]` markers on the claim. Used for whole-field drafts.
  */
 export function moveCitationsToEndOfText(text: string): string {
   const { body, lines } = splitTrailingCitationBlock(text);

@@ -13,10 +13,12 @@ import { useReportData } from "@/providers/report-provider";
 import {
   investigationOtherTools,
   investigationToolsUsed,
+  elrMetadata,
   qraMetadata,
   type ReportRecord,
 } from "@/types/report";
 import type { QraMetadata } from "@/lib/document-types/qra/sections";
+import type { ElrMetadata } from "@/lib/document-types/elr/sections";
 
 function ReportHeaderForm({
   report,
@@ -143,6 +145,224 @@ function IdentityField({
         onChange={(e) => onChange(e.target.value)}
       />
     </div>
+  );
+}
+
+/**
+ * ELR title-page identity. The container format matters: a separate ELR is
+ * compiled per format, and the format scopes the qualification and QMS rows.
+ * The review interval is risk-based, so frequency is a field, not a constant.
+ */
+function ElrIdentityForm({
+  report,
+  setReport,
+  readOnly,
+}: {
+  report: ReportRecord;
+  setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
+  readOnly: boolean;
+}) {
+  const [documentNo, setDocumentNo] = useState(report.documentNo);
+  const [meta, setMeta] = useState<ElrMetadata>(() => elrMetadata(report));
+
+  const { status, lastSavedAt } = useAutoSave({
+    enabled: !readOnly,
+    value: { documentNo, meta },
+    onSave: async (v, context) => {
+      const res = await fetch(`/api/reports/${report.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentNo: v.documentNo.trim(),
+          metadata: v.meta,
+        }),
+        signal: context?.signal,
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const data = await res.json();
+      setReport(data.report);
+    },
+  });
+
+  const set = (key: keyof ElrMetadata) => (next: string) =>
+    setMeta((prev) => ({ ...prev, [key]: next }));
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Identity fields print on the Word title page. A separate ELR is
+            compiled for each container format; line-level records are reported
+            in both and marked Line-common.
+          </p>
+          {!readOnly && <SaveStatus status={status} lastSavedAt={lastSavedAt} />}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <IdentityField
+            id="elr-report-no"
+            label="ELR Report No."
+            value={documentNo}
+            placeholder="ELR/DP/PR/26/001"
+            disabled={readOnly}
+            onChange={setDocumentNo}
+          />
+          <IdentityField
+            id="elr-cycle-no"
+            label="ELR Cycle No."
+            value={meta.cycleNo}
+            disabled={readOnly}
+            onChange={set("cycleNo")}
+          />
+          <IdentityField
+            id="elr-equipment-name"
+            label="Equipment name"
+            value={meta.equipmentName}
+            placeholder="Filling and Capping Machine"
+            disabled={readOnly}
+            onChange={set("equipmentName")}
+          />
+          <IdentityField
+            id="elr-equipment-make"
+            label="Equipment make"
+            value={meta.equipmentMake}
+            placeholder="Steriline SRL"
+            disabled={readOnly}
+            onChange={set("equipmentMake")}
+          />
+          <IdentityField
+            id="elr-equipment-model"
+            label="Equipment model"
+            value={meta.equipmentModel}
+            placeholder="VKFCM168"
+            disabled={readOnly}
+            onChange={set("equipmentModel")}
+          />
+          <IdentityField
+            id="elr-equipment-id"
+            label="Equipment ID"
+            value={meta.equipmentId}
+            placeholder="E/PR/070"
+            disabled={readOnly}
+            onChange={set("equipmentId")}
+          />
+          <IdentityField
+            id="elr-system-id"
+            label="Associated computerized system / ID"
+            value={meta.systemId}
+            placeholder="SCADA for Filling Line (E/PR/077)"
+            disabled={readOnly}
+            onChange={set("systemId")}
+          />
+          <IdentityField
+            id="elr-format-scope"
+            label="Container format / product scope"
+            value={meta.formatScope}
+            placeholder="Vial"
+            disabled={readOnly}
+            onChange={set("formatScope")}
+          />
+          <IdentityField
+            id="elr-location"
+            label="Location / area"
+            value={meta.location}
+            placeholder="Filling and capping room (GF-89)"
+            disabled={readOnly}
+            onChange={set("location")}
+          />
+          <IdentityField
+            id="elr-department"
+            label="Department"
+            value={meta.department}
+            disabled={readOnly}
+            onChange={set("department")}
+          />
+          <IdentityField
+            id="elr-risk-classification"
+            label="System impact (SLIA)"
+            value={meta.riskClassification}
+            placeholder="Direct Impact"
+            disabled={readOnly}
+            onChange={set("riskClassification")}
+          />
+          <IdentityField
+            id="elr-frequency"
+            label="ELR frequency (per VMP)"
+            value={meta.elrFrequency}
+            placeholder="Half yearly"
+            disabled={readOnly}
+            onChange={set("elrFrequency")}
+          />
+          <div className="grid gap-1.5">
+            <Label htmlFor="elr-period-from">
+              ELR period — from
+              <CalendarDays className="ml-1 inline size-3" />
+            </Label>
+            <Input
+              id="elr-period-from"
+              type="date"
+              value={meta.periodFrom}
+              disabled={readOnly}
+              onChange={(e) => set("periodFrom")(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="elr-period-to">
+              ELR period — to
+              <CalendarDays className="ml-1 inline size-3" />
+            </Label>
+            <Input
+              id="elr-period-to"
+              type="date"
+              value={meta.periodTo}
+              disabled={readOnly}
+              onChange={(e) => set("periodTo")(e.target.value)}
+            />
+          </div>
+          <IdentityField
+            id="elr-last-prq-no"
+            label="Last PRQ No."
+            value={meta.lastPrqNo}
+            placeholder="PRQR-25-PR-060"
+            disabled={readOnly}
+            onChange={set("lastPrqNo")}
+          />
+          <div className="grid gap-1.5">
+            <Label htmlFor="elr-last-prq-date">
+              Last PRQ completion date
+              <CalendarDays className="ml-1 inline size-3" />
+            </Label>
+            <Input
+              id="elr-last-prq-date"
+              type="date"
+              value={meta.lastPrqDate}
+              disabled={readOnly}
+              onChange={(e) => set("lastPrqDate")(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="elr-next-prq-date">
+              Next PRQ due date
+              <CalendarDays className="ml-1 inline size-3" />
+            </Label>
+            <Input
+              id="elr-next-prq-date"
+              type="date"
+              value={meta.nextPrqDate}
+              disabled={readOnly}
+              onChange={(e) => set("nextPrqDate")(e.target.value)}
+            />
+          </div>
+          <IdentityField
+            id="elr-revision"
+            label="Revision"
+            value={meta.revision}
+            disabled={readOnly}
+            onChange={set("revision")}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -296,6 +516,16 @@ function QraIdentityForm({
 
 export function ReportHeader() {
   const { report, setReport, readOnly } = useReportData();
+  if (report.documentType === "equipment_lifecycle_report") {
+    return (
+      <ElrIdentityForm
+        key={report.id}
+        report={report}
+        setReport={setReport}
+        readOnly={readOnly}
+      />
+    );
+  }
   if (report.documentType === "quality_risk_assessment") {
     return (
       <QraIdentityForm

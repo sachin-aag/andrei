@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Folder, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -168,33 +168,43 @@ export function AddFromLibraryDialog({
   const [excludedAssetIds, setExcludedAssetIds] = useState<Set<string>>(
     () => new Set()
   );
-
-  const loadLibrary = useCallback(async (nextScope: LibraryScope) => {
-    setLoading(true);
-    try {
-      const response = await fetch(
-        `/api/attachment-vault?scope=${encodeURIComponent(nextScope)}`
-      );
-      const data = (await response.json().catch(() => ({}))) as LibraryResponse & {
-        error?: string;
-      };
-      if (!response.ok) {
-        toast.error(data.error ?? "Could not load document vault");
-        return;
-      }
-      setLibrary(data);
-    } finally {
-      setLoading(false);
+  const [selectionEpoch, setSelectionEpoch] = useState({ open, scope });
+  if (open !== selectionEpoch.open || scope !== selectionEpoch.scope) {
+    setSelectionEpoch({ open, scope });
+    if (open) {
+      setSelectedAssetIds(new Set());
+      setSelectedFolderIds(new Set());
+      setExcludedAssetIds(new Set());
+      setLibrary(null);
+      setLoading(true);
     }
-  }, []);
+  }
 
   useEffect(() => {
     if (!open) return;
-    setSelectedAssetIds(new Set());
-    setSelectedFolderIds(new Set());
-    setExcludedAssetIds(new Set());
-    void loadLibrary(scope);
-  }, [open, scope, loadLibrary]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/attachment-vault?scope=${encodeURIComponent(scope)}`
+        );
+        const data = (await response.json().catch(() => ({}))) as LibraryResponse & {
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!response.ok) {
+          toast.error(data.error ?? "Could not load document vault");
+          return;
+        }
+        setLibrary(data);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, scope]);
 
   const tree = useMemo(() => {
     if (!library) {

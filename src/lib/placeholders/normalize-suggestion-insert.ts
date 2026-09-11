@@ -5,12 +5,17 @@ import { normalizeBracketPlaceholdersInPlainText } from "./normalize-bracket-pla
 const ANGLE_TO_BE_FILLED =
   /<\s*to\s+be\s+filled(?:\s*:\s*([^>]*))?\s*>/gi;
 
-/** `[label: [[<to be filled>]] ]` or `[label: <to be filled>]]` → `[label: <to be filled>]`. */
+/** `[label: [[<to be filled>]] ]` or `[label: <to be filled>]]` → `<label>`. */
 const NESTED_LABEL_PLACEHOLDER =
   /\[([^\[\]]+?)\s*:\s*(?:\[\s*)*<\s*to\s+be\s+filled\s*>(?:\s*\])+\s*\]/gi;
 
 function isInsideBracketLabel(before: string, after: string): boolean {
   return /\[[^\]]*:\s*$/.test(before) && /^\s*\]/.test(after);
+}
+
+function toCanonicalPlaceholder(label: string): string {
+  const compacted = compactPlaceholderLabel(label);
+  return compacted ? `<${compacted}>` : "<to be filled>";
 }
 
 function collapseNestedLabelPlaceholders(text: string): string {
@@ -19,17 +24,17 @@ function collapseNestedLabelPlaceholders(text: string): string {
   while (out !== prev) {
     prev = out;
     out = out.replace(NESTED_LABEL_PLACEHOLDER, (_m, label: string) => {
-      const compacted = compactPlaceholderLabel(label);
-      return compacted ? `[${compacted}: <to be filled>]` : "[<to be filled>]";
+      return toCanonicalPlaceholder(label);
     });
   }
   return out;
 }
 
 /**
- * Normalizes AI suggestion insert text to the same bracket placeholders used
- * in the editor (`[Label: <to be filled>]`), so Placeholders panel + highlights work.
- * Also compacts long AI labels to the shared length limit.
+ * Normalizes AI suggestion insert text to the editor's placeholder form
+ * (`<label>`), so Placeholders panel + highlights work. Legacy square
+ * tokens (`[Label: <to be filled>]`) are converted. Citations stay in
+ * square brackets. Long AI labels are compacted to the shared length limit.
  */
 export function normalizeSuggestionInsertText(text: string): string {
   let out = text.trim();
@@ -44,11 +49,8 @@ export function normalizeSuggestionInsertText(text: string): string {
         return "<to be filled>";
       }
       const inner = label?.trim();
-      if (inner) {
-        const compacted = compactPlaceholderLabel(inner);
-        return compacted ? `[${compacted}: <to be filled>]` : "[<to be filled>]";
-      }
-      return "[<to be filled>]";
+      if (inner) return toCanonicalPlaceholder(inner);
+      return "<to be filled>";
     }
   );
 

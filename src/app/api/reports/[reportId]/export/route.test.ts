@@ -155,7 +155,7 @@ describe("GET /api/reports/[reportId]/export", () => {
     );
   });
 
-  it("ignores omitCitations on packs that keep citations inline", async () => {
+  it("omits citations for MJ when requested", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     mockSelectOnce([report]);
@@ -170,14 +170,14 @@ describe("GET /api/reports/[reportId]/export", () => {
 
     expect(response.status).toBe(200);
     expect(generateReportDocx).toHaveBeenCalledWith(
-      expect.objectContaining({ omitCitations: false })
+      expect.objectContaining({ omitCitations: true })
     );
     expect(response.headers.get("Content-Disposition")).toBe(
-      'attachment; filename="Investigation_Report_DEV-001.docx"'
+      'attachment; filename="Investigation_Report_DEV-001_without_citations.docx"'
     );
   });
 
-  it("ignores omitCitations on demo investigation reports", async () => {
+  it("omits citations for demo investigation reports when requested", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     mockSelectOnce([report]);
@@ -192,7 +192,10 @@ describe("GET /api/reports/[reportId]/export", () => {
 
     expect(response.status).toBe(200);
     expect(generateReportDocx).toHaveBeenCalledWith(
-      expect.objectContaining({ omitCitations: false })
+      expect.objectContaining({ omitCitations: true })
+    );
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="Investigation_Report_DEV-001_without_citations.docx"'
     );
   });
 
