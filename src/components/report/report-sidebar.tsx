@@ -81,14 +81,15 @@ export function ReportSidebar({
   const chatVisible =
     !collapsed && (analyticsSurface || activeTab === "assistant");
   const chatShellRef = useRef<HTMLDivElement>(null);
-  const lastOpenChatWidthRef = useRef(360);
   const wasChatVisibleRef = useRef(chatVisible);
   const [holdChatPark, setHoldChatPark] = useState(false);
   useLayoutEffect(() => {
     if (!chatVisible) return;
-    const width = chatShellRef.current?.offsetWidth ?? 0;
+    const el = chatShellRef.current;
+    if (!el) return;
+    const width = el.offsetWidth;
     if (width > COLLAPSED_RAIL_PX) {
-      lastOpenChatWidthRef.current = width;
+      el.style.setProperty("--last-open-chat-width", `${width}px`);
     }
   });
   useLayoutEffect(() => {
@@ -134,6 +135,7 @@ export function ReportSidebar({
     <aside
       id="report-chat-sidebar"
       aria-label="Report sidebar"
+      data-walkthrough="assistant"
       className={cn(
         "flex h-full w-full min-w-0 flex-col overflow-hidden bg-[var(--card)]",
         chrome === "agent"
@@ -260,7 +262,9 @@ export function ReportSidebar({
             !chatVisible && "invisible pointer-events-none"
           )}
           style={
-            parkChat ? { width: lastOpenChatWidthRef.current } : undefined
+            parkChat
+              ? { width: "var(--last-open-chat-width, 360px)" }
+              : undefined
           }
           aria-hidden={!chatVisible}
         >

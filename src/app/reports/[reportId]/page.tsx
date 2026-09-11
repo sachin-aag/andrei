@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
-import { isHiddenExpertReviewer } from "@/lib/reports/hidden-expert-reviewer";
+import { reportWorkspacePath } from "@/lib/reports/workspace-path";
 
 export default async function ReportEntryPage({
   params,
@@ -20,20 +20,5 @@ export default async function ReportEntryPage({
     .where(eq(reports.id, reportId));
   if (!report) redirect("/");
 
-  if (isHiddenExpertReviewer(user)) {
-    redirect(`/reports/${reportId}/edit`);
-  }
-  if (user.role === "engineer" && report.authorId === user.id) {
-    redirect(`/reports/${reportId}/edit`);
-  }
-  if (user.role === "manager") {
-    redirect(`/reports/${reportId}/review`);
-  }
-  if (user.role === "admin") {
-    redirect(`/admin/reports/${reportId}`);
-  }
-  if (user.role === "qa") {
-    redirect(`/reports/${reportId}/edit`);
-  }
-  redirect(`/reports/${reportId}/edit`);
+  redirect(reportWorkspacePath(reportId, user));
 }

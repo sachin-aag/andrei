@@ -54,6 +54,7 @@ export const documentTypeEnum = pgEnum("document_type", [
   "mechanical_design_verification",
   "generic_document",
   "quality_risk_assessment",
+  "equipment_lifecycle_report",
 ]);
 
 /**
@@ -122,6 +123,14 @@ export const userRoleEnum = pgEnum("user_role", [
   "manager",
   "admin",
   "qa",
+]);
+
+/** First-login product tour. `not_started` / `in_progress` show until completed or dismissed. */
+export const productTourStatusEnum = pgEnum("product_tour_status", [
+  "not_started",
+  "in_progress",
+  "completed",
+  "dismissed",
 ]);
 
 export const auditActionEnum = pgEnum("audit_action", [
@@ -249,6 +258,16 @@ export const workspaceUsers = pgTable(
     }),
     /** Non-null means the account is deactivated and cannot sign in until reactivated. */
     deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+    /**
+     * Bumped to invalidate JWTs issued before an admin deactivation or forced
+     * password reset. Compared to the version stamped on the session token.
+     */
+    sessionVersion: integer("session_version").notNull().default(0),
+    /** First-login product tour. Resume from `productTourStepId` while `in_progress`. Completed and dismissed stay closed across sessions and deploys until Profile replay. */
+    productTourStatus: productTourStatusEnum("product_tour_status")
+      .notNull()
+      .default("not_started"),
+    productTourStepId: text("product_tour_step_id"),
     /** Updated on each successful sign-in (credentials or magic link). */
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1692,6 +1711,8 @@ export type DocumentChunkSourceKind =
   (typeof documentChunkSourceKindEnum.enumValues)[number];
 export type StorageOutboxStatus =
   (typeof storageOutboxStatusEnum.enumValues)[number];
+export type ProductTourStatus =
+  (typeof productTourStatusEnum.enumValues)[number];
 export type DocumentRevisionSource =
   (typeof documentRevisionSourceEnum.enumValues)[number];
 export type AiUsageFeature = (typeof aiUsageFeatureEnum.enumValues)[number];

@@ -149,6 +149,20 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 </details>
 
 <details>
+<summary><strong>product-walkthrough.spec.ts</strong> — first-login feature tour</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| shows on first login and resumes an in-progress tour | Welcome → next; next session resumes mid-tour (email scoped per project + test so parallel workers do not share one user) |
+| dismiss forever stays closed | Don't show this again, then resume login has no dialog |
+| replay from profile starts the tour again | Dismiss, wait for `GET /api/me/walkthrough` `dismissed`, then Profile **Replay product tour** |
+| Document or Agent waits until a report is open | Next on create-report hides the overlay on home; opening a report shows Document or Agent, then Write in the editor |
+
+Engineer steps include Document \| Agent chrome, Analytics, and the Document vault. Insights is demo-only. Report-only cards stay hidden until a report is open.
+
+</details>
+
+<details>
 <summary><strong>create-report.spec.ts</strong> — dashboard create flow</summary>
 
 | Test | What it verifies |
@@ -276,7 +290,7 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 | autosave settles to Saved and keeps later cell edits | Two cells persist; History shows Version 1 · Edits (Analytics compare is a cell/plot list, not a live grid overlay) |
 | loads sample assay and runs a Normal Capability Sixpack | Data menu sample → flattened Stat menu → Cp/Cpk sixpack |
 | saves a sixpack per column and switches between them | Analyze selected column + column context menu; Analyze data popup defaults to sixpack with Specs then min/max form defaults; two Results entries |
-| shift+arrow selects rows and runs a sixpack on that range | Range highlight, Analyze label, Sample N matches the span |
+| Analyze first/last row follow filled cells, not the grid selection | Shift+arrow still highlights rows; Analyze First/Last row is the filled Assay span; typing 1–10 still runs that subset |
 | saves a sixpack for specific row numbers | POST `rows` list; Results shows that subset; Download saves a CSV |
 | marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
 | streams a stats-assistant reply | Opening Analytics does not retarget chat; composer Report \| Analytics does; stub chat streams and persists with an **Analytics** tag; Ask/Agent + Quick/Deep + attach image are present (cannot assert tools) |

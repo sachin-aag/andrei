@@ -10,6 +10,13 @@ describe("suggestion-placeholder-policy", () => {
         insertText: "SOP/DP/QC/045",
       })
     ).toBe(true);
+    expect(
+      suggestionEditsPlaceholder({
+        anchorText: "per <SOP number>, section",
+        deleteText: "<SOP number>",
+        insertText: "SOP/DP/QC/045",
+      })
+    ).toBe(true);
   });
 
   it("allows edits that do not touch placeholders", () => {

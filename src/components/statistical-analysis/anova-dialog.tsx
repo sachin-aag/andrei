@@ -27,6 +27,9 @@ import {
 } from "@/lib/statistical-analysis/row-selection";
 import { suggestFactorColumn } from "@/lib/statistical-analysis/anova";
 import {
+  ANALYSIS_ROW_RANGE_HELP,
+  analysisRowFieldDefaults,
+  collapseFilledAnalysisRows,
   dataSheets,
   findColumn,
 } from "@/lib/statistical-analysis/worksheet";
@@ -88,20 +91,22 @@ export function AnovaDialog({
       suggestFactorColumn(worksheet, fallbackResponse) ??
       ""
   );
-  const [rowStart, setRowStart] = useState(
-    defaultRowStart != null ? String(defaultRowStart) : ""
+  const initialRows = analysisRowFieldDefaults(
+    findColumn(worksheet, fallbackResponse) ?? worksheet.columns[0],
+    { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
   );
-  const [rowEnd, setRowEnd] = useState(
-    defaultRowEnd != null ? String(defaultRowEnd) : ""
-  );
+  const [rowStart, setRowStart] = useState(initialRows.rowStart);
+  const [rowEnd, setRowEnd] = useState(initialRows.rowEnd);
 
   const responseColumn =
     findColumn(worksheet, responseColumnId) ?? worksheet.columns[0];
   const factorColumn = findColumn(worksheet, factorColumnId);
-  const rowSelection = normalizeRowSelection({
-    rowStart: parseOptionalRow(rowStart),
-    rowEnd: parseOptionalRow(rowEnd),
-  });
+  const submittedRows = collapseFilledAnalysisRows(
+    responseColumn,
+    parseOptionalRow(rowStart),
+    parseOptionalRow(rowEnd)
+  );
+  const rowSelection = normalizeRowSelection(submittedRows);
   const rowLabel = formatRowSelection(rowSelection);
   const suggestedTitle =
     responseColumn && factorColumn
@@ -137,6 +142,11 @@ export function AnovaDialog({
               value={responseColumnId}
               onValueChange={(value) => {
                 setResponseColumnId(value);
+                const nextRows = analysisRowFieldDefaults(
+                  findColumn(worksheet, value) ?? worksheet.columns[0]
+                );
+                setRowStart(nextRows.rowStart);
+                setRowEnd(nextRows.rowEnd);
                 if (value === factorColumnId) {
                   setFactorColumnId(suggestFactorColumn(worksheet, value) ?? "");
                 }
@@ -202,7 +212,7 @@ export function AnovaDialog({
                 <FieldInfoIcon
                   label="Row range"
                   testId="anova-row-range-info"
-                  text="Rows are numbered from 1. Leave both blank to use every filled pair of cells."
+                  text={ANALYSIS_ROW_RANGE_HELP}
                 />
               </div>
               <Input
@@ -265,8 +275,8 @@ export function AnovaDialog({
                 responseColumnId,
                 factorColumnId,
                 title: resolvedTitle,
-                rowStart: parseOptionalRow(rowStart),
-                rowEnd: parseOptionalRow(rowEnd),
+                rowStart: submittedRows.rowStart,
+                rowEnd: submittedRows.rowEnd,
               })
             }
           >

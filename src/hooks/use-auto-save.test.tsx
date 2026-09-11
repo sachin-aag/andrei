@@ -316,4 +316,133 @@ describe("useAutoSave", () => {
     );
     fetchSpy.mockRestore();
   });
+
+  it("aborts an in-flight save when debounce is paused", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    let resolveSave: (() => void) | undefined;
+    const onSave = vi.fn(
+      (_value: string, context?: { signal?: AbortSignal }) => {
+        capturedSignal = context?.signal;
+        return new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        });
+      }
+    );
+    const { rerender } = renderHook(
+      ({ value, enabled }) =>
+        useAutoSave({ value, onSave, delayMs: 100, enabled }),
+      { initialProps: { value: "initial", enabled: true } }
+    );
+
+    rerender({ value: "stale", enabled: true });
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(capturedSignal?.aborted).toBe(false);
+
+    rerender({ value: "stale", enabled: false });
+    expect(capturedSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      resolveSave?.();
+    });
+  });
+
+  it("posts dirty value on pagehide while debounce is paused for apply", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const { rerender } = renderHook(
+      ({ value, enabled }) =>
+        useAutoSave({
+          value,
+          onSave,
+          delayMs: 5_000,
+          enabled,
+          persistOnLeave: true,
+          beaconUrl: "/api/reports/r1/sections/define",
+          serialize: (v) => JSON.stringify({ content: v }),
+        }),
+      { initialProps: { value: "initial", enabled: true } }
+    );
+
+    rerender({ value: "applied", enabled: false });
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/reports/r1/sections/define",
+      expect.objectContaining({
+        method: "POST",
+        keepalive: true,
+        body: JSON.stringify({ content: "applied" }),
+      })
+    );
+    fetchSpy.mockRestore();
+  });
+
+  it("posts dirty value on unmount while debounce is paused for apply", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const { rerender, unmount } = renderHook(
+      ({ value, enabled }) =>
+        useAutoSave({
+          value,
+          onSave,
+          delayMs: 5_000,
+          enabled,
+          persistOnLeave: true,
+          beaconUrl: "/api/reports/r1/sections/define",
+          serialize: (v) => JSON.stringify({ content: v }),
+        }),
+      { initialProps: { value: "initial", enabled: true } }
+    );
+
+    rerender({ value: "applied", enabled: false });
+    unmount();
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/reports/r1/sections/define",
+      expect.objectContaining({
+        method: "POST",
+        keepalive: true,
+        body: JSON.stringify({ content: "applied" }),
+      })
+    );
+    fetchSpy.mockRestore();
+  });
+
+  it("does not post on pagehide when persistOnLeave is false", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const { rerender } = renderHook(
+      ({ value }) =>
+        useAutoSave({
+          value,
+          onSave,
+          delayMs: 5_000,
+          enabled: false,
+          persistOnLeave: false,
+          beaconUrl: "/api/reports/r1/sections/define",
+          serialize: (v) => JSON.stringify({ content: v }),
+        }),
+      { initialProps: { value: "initial" } }
+    );
+
+    rerender({ value: "applied" });
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
 });

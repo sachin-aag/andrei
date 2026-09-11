@@ -16,7 +16,12 @@ export type AnalyticsEvent =
   | "comment_dismissed"
   | "sidebar_tab_changed"
   | "expert_review_requested"
-  | "ai_chat_failed";
+  | "ai_chat_failed"
+  | "product_tour_started"
+  | "product_tour_step_viewed"
+  | "product_tour_completed"
+  | "product_tour_dismissed"
+  | "product_tour_replayed";
 
 export function captureEvent(
   event: AnalyticsEvent,

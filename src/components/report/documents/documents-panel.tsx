@@ -42,8 +42,8 @@ const LEFT_PANEL_TABS: {
 ];
 
 /**
- * Report-scoped left rail: attachments tree, and (Convergent DV only) a table of
- * contents that mirrors the Word export hierarchy.
+ * Report-scoped left rail: attachments tree plus a table of contents.
+ * Attachments | Contents chrome matches Convergent on every pack.
  */
 export function DocumentsPanel({
   collapsed,
@@ -56,21 +56,14 @@ export function DocumentsPanel({
     () => getReportTableOfContents(documentType),
     [documentType]
   );
-  const showContentsTab = tableOfContents != null;
   const [activeTab, setActiveTab] = useState<LeftPanelTab>("attachments");
-  const resolvedTab =
-    showContentsTab || activeTab !== "contents" ? activeTab : "attachments";
 
   useEffect(() => {
     warmupPdfjsPreview({ whenIdle: true });
   }, []);
 
-  const visibleTabs = showContentsTab
-    ? LEFT_PANEL_TABS
-    : LEFT_PANEL_TABS.filter((tab) => tab.value === "attachments");
-
   const activeTabDef =
-    visibleTabs.find((tab) => tab.value === resolvedTab) ?? visibleTabs[0]!;
+    LEFT_PANEL_TABS.find((tab) => tab.value === activeTab) ?? LEFT_PANEL_TABS[0]!;
 
   if (collapsed) {
     const ActiveIcon = activeTabDef.icon;
@@ -78,6 +71,7 @@ export function DocumentsPanel({
       <aside
         id="report-documents-panel"
         aria-label="Documents"
+        data-walkthrough="documents"
         className="relative flex h-full w-full min-w-0 flex-col items-center border-r border-[var(--border)] bg-[var(--card)] py-2"
       >
         <button
@@ -99,7 +93,7 @@ export function DocumentsPanel({
           className="relative mt-1 flex size-9 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
         >
           <ActiveIcon className="size-4" aria-hidden="true" />
-          {resolvedTab === "attachments" && attachments.length > 0 ? (
+          {activeTab === "attachments" && attachments.length > 0 ? (
             <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
               {attachments.length}
             </span>
@@ -113,8 +107,7 @@ export function DocumentsPanel({
     <DragProvider>
       <ExpandedDocumentsPanel
         onToggleCollapse={onToggleCollapse}
-        showContentsTab={showContentsTab}
-        activeTab={resolvedTab}
+        activeTab={activeTab}
         onTabChange={setActiveTab}
         tableOfContents={tableOfContents}
         onJumpToSection={onJumpToSection}
@@ -125,14 +118,12 @@ export function DocumentsPanel({
 
 function ExpandedDocumentsPanel({
   onToggleCollapse,
-  showContentsTab,
   activeTab,
   onTabChange,
   tableOfContents,
   onJumpToSection,
 }: {
   onToggleCollapse: () => void;
-  showContentsTab: boolean;
   activeTab: LeftPanelTab;
   onTabChange: (tab: LeftPanelTab) => void;
   tableOfContents: ReturnType<typeof getReportTableOfContents>;
@@ -173,9 +164,6 @@ function ExpandedDocumentsPanel({
   );
 
   const isEmpty = tree.folders.length === 0 && tree.attachments.length === 0;
-  const visibleTabs = showContentsTab
-    ? LEFT_PANEL_TABS
-    : LEFT_PANEL_TABS.filter((tab) => tab.value === "attachments");
   const onAttachmentsTab = activeTab === "attachments";
 
   const collapseButton = (
@@ -192,6 +180,14 @@ function ExpandedDocumentsPanel({
       <PanelLeftClose className="size-4" aria-hidden="true" />
     </Button>
   );
+
+  const linkedAssetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const attachment of attachments) {
+      if (attachment.assetId) ids.add(attachment.assetId);
+    }
+    return ids;
+  }, [attachments]);
 
   const attachmentActions = canMutateAttachments ? (
     <>
@@ -217,6 +213,7 @@ function ExpandedDocumentsPanel({
       </Button>
       <AttachmentUploadMenu
         isAdmin={isWorkspaceAdmin}
+        linkedAssetIds={linkedAssetIds}
         onUploadClick={() => inputRef.current?.click()}
         onLinkFromLibrary={(selection) =>
           linkFromLibrary({ ...selection, targetFolderId: null })
@@ -237,47 +234,44 @@ function ExpandedDocumentsPanel({
     <aside
       id="report-documents-panel"
       aria-label="Documents"
+      data-walkthrough="documents"
       className="flex h-full w-full min-w-0 flex-col border-r border-[var(--border)] bg-[var(--card)]"
     >
       <div className="flex shrink-0 items-center justify-between gap-1 border-b border-[var(--border)] px-2 py-1.5">
-        {showContentsTab ? (
-          <div className="flex flex-wrap items-center gap-1">
-            {visibleTabs.map((tab) => {
-              const Icon = tab.icon;
-              const selected = activeTab === tab.value;
-              return (
-                <button
-                  key={tab.value}
-                  type="button"
-                  onClick={() => onTabChange(tab.value)}
-                  className={cn(
-                    "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                    selected
-                      ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]"
-                  )}
-                  aria-label={tab.label}
-                  aria-pressed={selected}
-                >
-                  <Icon className="size-3.5" aria-hidden="true" />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="flex items-center gap-0.5">{attachmentActions}</div>
-        )}
+        <div className="flex flex-wrap items-center gap-1">
+          {LEFT_PANEL_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const selected = activeTab === tab.value;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => onTabChange(tab.value)}
+                className={cn(
+                  "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  selected
+                    ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
+                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]"
+                )}
+                aria-label={tab.label}
+                aria-pressed={selected}
+              >
+                <Icon className="size-3.5" aria-hidden="true" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
         {collapseButton}
       </div>
 
-      {showContentsTab && onAttachmentsTab && canMutateAttachments ? (
+      {onAttachmentsTab && canMutateAttachments ? (
         <div className="flex shrink-0 items-center justify-end gap-0.5 border-b border-[var(--border)] px-2 py-1.5">
           {attachmentActions}
         </div>
       ) : null}
 
-      {activeTab === "contents" && tableOfContents ? (
+      {activeTab === "contents" ? (
         <TableOfContentsPanel
           entries={tableOfContents}
           onJumpToSection={onJumpToSection}

@@ -104,9 +104,14 @@ function sectionHeadingRegex(key: ImportSectionKey): RegExp {
   );
 }
 
+/** Mammoth emits ATX markers when the Word paragraph uses Heading1–3. */
+function normalizeImportHeadingLine(line: string): string {
+  return line.replace(/\s+/g, " ").trim().replace(/^#{1,6}\s+/, "");
+}
+
 /** Match an exported section title line (Word headings, numbered sections, or `Define:` labels). */
 function matchSectionHeading(trimmedLine: string): HeadingMatch | null {
-  const t = trimmedLine.replace(/\s+/g, " ").trim();
+  const t = normalizeImportHeadingLine(trimmedLine);
   for (const key of SECTION_ORDER) {
     const re = sectionHeadingRegex(key);
     const match = re.exec(t);
@@ -117,7 +122,7 @@ function matchSectionHeading(trimmedLine: string): HeadingMatch | null {
 
 function splitLinesIntoSections(
   lines: string[],
-  headingLine: (line: string) => string = (line) => line.replace(/\s+/g, " ").trim()
+  headingLine: (line: string) => string = normalizeImportHeadingLine
 ): {
   sections: Record<ImportSectionKey, string>;
   foundHeadings: boolean;
@@ -219,7 +224,8 @@ export function mammothMarkdownToImportPlain(markdown: string): string {
     const withImagePlaceholders = withoutItalic.replace(MAMMOTH_MARKDOWN_IMAGE_RE, "[image]");
     const unescaped = unescapeMammothMarkdownEscapes(withImagePlaceholders);
     const stripped = stripWordBookmarkAnchors(unescaped);
-    return softBreak ? `${stripped}${MAMMOTH_SOFT_BREAK}` : stripped;
+    const withoutAtx = stripped.replace(/^#{1,6}\s+/, "");
+    return softBreak ? `${withoutAtx}${MAMMOTH_SOFT_BREAK}` : withoutAtx;
   });
   return normalized.join("\n");
 }

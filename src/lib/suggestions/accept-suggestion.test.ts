@@ -4,6 +4,7 @@ import type { CommentRecord } from "@/types/report";
 import {
   acceptSuggestion,
   dismissSuggestion,
+  patchSection,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 import {
@@ -93,7 +94,7 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     if (a.ok && b.ok) {
       expect(a.nextSection).toEqual(b.nextSection);
       const text = JSON.stringify(a.nextSection);
-      expect(text).toContain("[detection date: <to be filled>]");
+      expect(text).toContain("<detection date>");
       expect(text).not.toContain("DD/MM/YYYY");
     }
 
@@ -125,7 +126,7 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     expect(json).toContain('"status":"accepted"');
     expect(json).not.toContain('"status":"pending"');
     expect(json).toContain("DD/MM/YYYY");
-    expect(json).toContain("[detection date: <to be filled>]");
+    expect(json).toContain("<detection date>");
   });
 
   it("tracked_change accept of an already-injected preview commits marks so they survive strip", async () => {
@@ -171,7 +172,7 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     expect(json).toContain('"status":"accepted"');
     const stripped = stripPendingSuggestionsExcept(narrative, null);
     expect(JSON.stringify(stripped)).toContain("suggestionInsert");
-    expect(JSON.stringify(stripped)).toContain("[detection date: <to be filled>]");
+    expect(JSON.stringify(stripped)).toContain("<detection date>");
   });
 
   it("accept leaves comment open when locate fails (no status flip)", async () => {
@@ -624,5 +625,25 @@ describe("acceptSuggestion same-turn table pair", () => {
     expect(JSON.stringify(result.ok ? result.nextSection : null)).not.toContain(
       "The VCS mapping follows."
     );
+  });
+});
+
+describe("patchSection", () => {
+  it("uses keepalive so Apply can finish after Back", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await patchSection("report-1", "define", {
+      narrative: { type: "doc", content: [] },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/reports/report-1/sections/define",
+      expect.objectContaining({
+        method: "PATCH",
+        keepalive: true,
+      })
+    );
+    vi.unstubAllGlobals();
   });
 });

@@ -113,6 +113,20 @@ describe("isCitationShapedBracket", () => {
     expect(isSourceCitationBracket("[me1q4zzhb1me0wwskpmqfw7i]")).toBe(true);
   });
 
+  it("recognizes MJ QMS document identifiers", () => {
+    expect(isCitationShapedBracket("[PRQR-25-PR-005]")).toBe(true);
+    expect(
+      isCitationShapedBracket("[PRQR-25-PR-005: <to be filled>]")
+    ).toBe(true);
+    expect(isCitationShapedBracket("[SOP/DP/QA/008]")).toBe(true);
+    expect(isCitationShapedBracket("[ELR/DP/PR/26/001]")).toBe(true);
+    expect(isCitationShapedBracket("[E/PR/070]")).toBe(true);
+    expect(isSourceCitationBracket("[PRQR-25-PR-005]")).toBe(true);
+    expect(isCitationShapedBracket("[Batch number: B-2024-117]")).toBe(false);
+    expect(isCitationShapedBracket("[B-2024-117]")).toBe(false);
+    expect(isCitationShapedBracket("[DEV-001]")).toBe(false);
+  });
+
   it("rejects ordinary placeholders and guidance", () => {
     expect(isCitationShapedBracket("[batch number]")).toBe(false);
     expect(isCitationShapedBracket("[SOP No.: <to be filled>]")).toBe(false);
@@ -169,6 +183,12 @@ describe("repairedCitationBracket", () => {
     expect(
       repairedCitationBracket("[me1q4zzhb1me0wwskpmqfw7i,: <to be filled>]")
     ).toBe("[me1q4zzhb1me0wwskpmqfw7i]");
+    expect(
+      repairedCitationBracket("[PRQR-25-PR-005: <to be filled>]")
+    ).toBe("[PRQR-25-PR-005]");
+    expect(
+      repairedCitationBracket("[SOP/DP/QA/008: <to be filled>]")
+    ).toBe("[SOP/DP/QA/008]");
   });
 
   it("returns null for real placeholders and bare citations", () => {
@@ -195,6 +215,29 @@ describe("parseSourceCitation", () => {
     ).toEqual({
       filename: "825-00101(RevA) Model 3 Perioguide DV Report.pdf",
       pages: [4, 26, 163, 260],
+    });
+  });
+
+  it("keeps commas inside the filename and parses a single page", () => {
+    expect(
+      parseSourceCitation(
+        "[URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16]"
+      )
+    ).toEqual({
+      filename:
+        "URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf",
+      pages: [16],
+    });
+  });
+
+  it("parses repeated p. N page lists as pages of the same file", () => {
+    expect(
+      parseSourceCitation(
+        "[Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2]"
+      )
+    ).toEqual({
+      filename: "Master PMC-PR-014-R03 Filling and Capping Machine.pdf",
+      pages: [1, 2],
     });
   });
 
@@ -241,6 +284,26 @@ describe("splitSourceCitationParts", () => {
     ]);
   });
 
+  it("does not split on commas inside a pdf filename", () => {
+    expect(
+      splitSourceCitationParts(
+        "URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16"
+      )
+    ).toEqual([
+      "URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16",
+    ]);
+  });
+
+  it("keeps repeated p. N lists on one file", () => {
+    expect(
+      splitSourceCitationParts(
+        "Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2"
+      )
+    ).toEqual([
+      "Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2",
+    ]);
+  });
+
   it("splits two filenames without pages", () => {
     expect(splitSourceCitationParts("fileA.pdf, fileB.pdf")).toEqual([
       "fileA.pdf",
@@ -259,6 +322,22 @@ describe("sourceCitationLinkSpans", () => {
   it("keeps a single file as one whole-bracket link", () => {
     expect(sourceCitationLinkSpans("[protocol.pdf, p. 3]")).toEqual([
       { from: 0, to: "[protocol.pdf, p. 3]".length, openRaw: "[protocol.pdf, p. 3]" },
+    ]);
+  });
+
+  it("keeps a comma-in-filename cite as one whole-bracket link", () => {
+    const match =
+      "[URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16]";
+    expect(sourceCitationLinkSpans(match)).toEqual([
+      { from: 0, to: match.length, openRaw: match },
+    ]);
+  });
+
+  it("keeps a repeated p. N cite as one whole-bracket link", () => {
+    const match =
+      "[Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2]";
+    expect(sourceCitationLinkSpans(match)).toEqual([
+      { from: 0, to: match.length, openRaw: match },
     ]);
   });
 

@@ -149,6 +149,7 @@ async function main() {
   const { getPasswordPolicy, validatePasswordPolicy } = await import(
     "@/lib/auth/password-policy"
   );
+  const { nextSessionVersionSql } = await import("@/lib/auth/session-version");
 
   const { email, password, role, roleSpecified } = parseArgs(scriptArgv());
 
@@ -199,6 +200,7 @@ async function main() {
       lockedAt: null;
       passwordExpiryWarningDismissedUntil: null;
       passwordHistory: string[];
+      sessionVersion: ReturnType<typeof nextSessionVersionSql>;
       role?: UserRole;
       title?: string;
     } = {
@@ -214,6 +216,7 @@ async function main() {
         previousPasswordHash: existing.passwordHash,
         historyLimit: policy.passwordHistoryLimit,
       }),
+      sessionVersion: nextSessionVersionSql(),
     };
 
     if (role !== undefined) {

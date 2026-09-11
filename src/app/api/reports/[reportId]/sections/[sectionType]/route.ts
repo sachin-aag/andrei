@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
@@ -11,6 +11,12 @@ import {
 } from "@/lib/document-revisions/snapshot";
 import { canSaveReportSection } from "@/lib/reports/access";
 import { auditActorFromUser } from "@/lib/audit";
+import { isLangfuseEnabled } from "@/lib/observability/langfuse";
+import { checkSectionLlmAuthorship } from "@/lib/observability/llm-section-tracking";
+import {
+  recordUserEditedAfterScore,
+  flushLangfuseScores,
+} from "@/lib/observability/langfuse-scores";
 
 /** PATCH and POST use the same body; POST exists for `navigator.sendBeacon` (always POST). */
 async function saveSection(
@@ -41,6 +47,12 @@ async function saveSection(
   }
   const content = "content" in body ? body.content : body;
 
+  // Check if this section was recently LLM-authored before saving.
+  // Skip the extra queries when Langfuse is off — scores would no-op anyway.
+  const llmAuthorship = isLangfuseEnabled()
+    ? await checkSectionLlmAuthorship(reportId, sectionType)
+    : { wasLlmAuthored: false as const, reason: "not_llm_authored" as const };
+
   const saved = await persistSectionContent({
     actor: auditActorFromUser(user),
     reportId,
@@ -54,6 +66,20 @@ async function saveSection(
     createdBy: user.id,
     summary: manualRevisionSummary(report.documentType, sectionType),
   });
+
+  // Record user_edited_after score if the section was LLM-authored
+  if (llmAuthorship.wasLlmAuthored) {
+    after(async () => {
+      await recordUserEditedAfterScore({
+        reportId,
+        sectionId: sectionType,
+        wasLlmGenerated: true,
+        sessionId: reportId,
+        llmAuthoredAt: llmAuthorship.lastModifiedAt,
+      });
+      await flushLangfuseScores();
+    });
+  }
 
   return NextResponse.json({ section: saved });
 }

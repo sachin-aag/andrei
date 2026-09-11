@@ -90,6 +90,28 @@ describe("docx import", () => {
     expect(mammothMarkdownToImportPlain("* keep this as a bullet-looking line")).toBe(
       "* keep this as a bullet-looking line"
     );
+    expect(mammothMarkdownToImportPlain("# Define:\n\nBody")).toBe("Define:\n\nBody");
+    expect(mammothMarkdownToImportPlain("## Investigation Outcome:")).toBe(
+      "Investigation Outcome:"
+    );
+  });
+
+  it("treats markdown ATX headings as DMAIC section titles", () => {
+    const raw = [
+      "# Define:",
+      "Def body",
+      "## Measure:",
+      "Measure body",
+      "# Analyze:",
+      "Investigation Outcome:",
+      "Analyze body",
+    ].join("\n");
+    const sections = buildSectionsFromRaw(raw);
+    expect(richJsonToPlainText(sections.define.narrative)).toContain("Def body");
+    expect(richJsonToPlainText(sections.measure.narrative)).toContain("Measure body");
+    expect(richJsonToPlainText(sections.analyze.investigationOutcome)).toContain(
+      "Analyze body"
+    );
   });
 
   it("imports draft DEV-QC-26-001 with full improve and control checkpoint lists", async () => {

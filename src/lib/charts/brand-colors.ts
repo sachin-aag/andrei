@@ -1,24 +1,31 @@
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
 
 export type ChartBrandColors = {
+  brand100: string;
+  brand200: string;
   brand400: string;
   brand500: string;
   brand600: string;
   brand800: string;
   grid: string;
   axis: string;
+  /** Body ink — matches the `--foreground` token for the pack. */
+  foreground: string;
   plotFill: string;
   limit: string;
   series: readonly string[];
 };
 
 const DEMO: ChartBrandColors = {
+  brand100: "#d9e6f5",
+  brand200: "#b3cce9",
   brand400: "#5b8ad0",
   brand500: "#3d6fb5",
   brand600: "#001838",
   brand800: "#061528",
   grid: "#e2e8f2",
   axis: "#5b6b82",
+  foreground: "#0f1e33",
   plotFill: "#ffffff",
   limit: "#dc2626",
   // Legend / group fills: hue-separated, not a brand-blue ramp. Never spec-limit red.
@@ -35,12 +42,15 @@ const DEMO: ChartBrandColors = {
 };
 
 const MJ: ChartBrandColors = {
+  brand100: "#d6d1ff",
+  brand200: "#a9a1f7",
   brand400: "#5b4fe0",
   brand500: "#403ac8",
   brand600: "#133782",
   brand800: "#13122e",
   grid: "#e5e5e5",
   axis: "#5c5c72",
+  foreground: "#16162b",
   plotFill: "#ffffff",
   limit: "#dc2626",
   series: [
@@ -56,12 +66,15 @@ const MJ: ChartBrandColors = {
 };
 
 const CONVERGENT: ChartBrandColors = {
+  brand100: "#cfeaf8",
+  brand200: "#9fd4f0",
   brand400: "#3aabd9",
   brand500: "#009ddc",
   brand600: "#0079c1",
   brand800: "#043e64",
   grid: "#d5e6f0",
   axis: "#4d6a80",
+  foreground: "#0c2740",
   plotFill: "#ffffff",
   limit: "#dc2626",
   series: [

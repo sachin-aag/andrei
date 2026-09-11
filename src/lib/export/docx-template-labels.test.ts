@@ -10,6 +10,7 @@ vi.mock("@/lib/ai/usage", () => ({
 import PizZip from "pizzip";
 import { reports } from "@/db/schema";
 import { generateReportDocx } from "@/lib/export/generate-docx";
+import { docxParagraphPlainText } from "@/lib/export/docx-toc-headings";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 import { buildDefaultGuidancePreamble } from "@/lib/report-section-guidance";
 import { legacyStringToDoc } from "@/lib/tiptap/rich-text";
@@ -92,6 +93,73 @@ describe("investigation-report-template.docx label formatting", () => {
     expect(xml).toContain("detail impact assessment");
     expect(xml).toContain("System:");
     expect(xml).toContain("Document:");
+  });
+
+  it("marks DMAIC section titles as Word headings for Insert TOC", async () => {
+    const reportId = "test-report-toc-headings";
+    const sections: ReportSectionRecord[] = REPORT_SECTION_ROW_ORDER.map(
+      (section, i) => ({
+        id: `sec-${section}-${i}`,
+        reportId,
+        section,
+        content: EMPTY_CONTENT[section as keyof typeof EMPTY_CONTENT],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })
+    );
+    const report: typeof reports.$inferSelect = {
+      id: reportId,
+      documentType: "investigation_report",
+      documentNo: "DEV/TEST/01",
+      date: new Date("2026-04-08"),
+      authorId: "user-1",
+      assignedManagerId: null,
+      reviewedById: null,
+      deletedAt: null,
+      deletedById: null,
+      metadata: {
+        toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+        otherTools: "",
+      },
+      status: "draft" as const,
+      createdAt: new Date("2026-01-01"),
+      updatedAt: new Date("2026-01-01"),
+    };
+
+    const buf = await generateReportDocx({ report, sections });
+    const zip = new PizZip(buf);
+    const xml = zip.file("word/document.xml")?.asText() ?? "";
+    const styles = zip.file("word/styles.xml")?.asText() ?? "";
+    const paras = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? [];
+    const styleOf = (text: string) =>
+      paras
+        .find((p) => docxParagraphPlainText(p) === text)
+        ?.match(/<w:pStyle w:val="([^"]+)"/)?.[1] ?? null;
+    const headingPara = (text: string) =>
+      paras.find((p) => docxParagraphPlainText(p) === text) ?? "";
+
+    expect(styleOf("Define:")).toBe("Heading1");
+    expect(styleOf("Analyze:")).toBe("Heading1");
+    expect(styleOf("Measure:")).toBe("Heading1");
+    expect(styleOf("Details Investigation:")).toBe("Heading2");
+    expect(styleOf("6 M Method (If Applicable):")).toBe("Heading2");
+    expect(styleOf("Conclusion:")).toBe("Heading1");
+    expect(xml).not.toContain("TABLE OF CONTENTS");
+    expect(headingPara("Details Investigation:")).toContain(
+      '<w:color w:val="000000"/>'
+    );
+    expect(headingPara("Details Investigation:")).not.toContain("2E74B5");
+    for (const id of ["Heading1", "Heading2", "Heading3"] as const) {
+      const block =
+        styles.match(
+          new RegExp(
+            `<w:style\\b[^>]*w:styleId="${id}"[^>]*>[\\s\\S]*?</w:style>`
+          )
+        )?.[0] ?? "";
+      expect(block, id).toContain('<w:color w:val="000000"/>');
+      expect(block, id).not.toContain("2E74B5");
+      expect(block, id).not.toContain("1F4D78");
+      expect(block, id).not.toContain('themeColor="accent1"');
+    }
   });
 
   it("places improve and control checkpoints in the row above corrective/preventive action", async () => {

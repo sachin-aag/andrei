@@ -14,6 +14,10 @@ vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),
 }));
 
+vi.mock("@/lib/auth/session-version", () => ({
+  incrementWorkspaceUserSessionVersion: vi.fn(),
+}));
+
 vi.mock("@/lib/auth/password-reset", () => ({
   sendPasswordResetLink: vi.fn(),
 }));
@@ -29,6 +33,7 @@ vi.mock("@/lib/audit", () => ({
 
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
+import { incrementWorkspaceUserSessionVersion } from "@/lib/auth/session-version";
 import { sendPasswordResetLink } from "@/lib/auth/password-reset";
 import { POST } from "./route";
 
@@ -113,6 +118,7 @@ describe("POST /api/admin/users/[userId]/reset-password", () => {
 
     expect(response.status).toBe(200);
     expect(sendPasswordResetLink).toHaveBeenCalledWith("user.one@mjbiopharm.com");
+    expect(incrementWorkspaceUserSessionVersion).toHaveBeenCalledWith("user-1");
     await expect(response.json()).resolves.toEqual({
       ok: true,
       email: "user.one@mjbiopharm.com",
@@ -140,5 +146,6 @@ describe("POST /api/admin/users/[userId]/reset-password", () => {
     });
 
     expect(response.status).toBe(500);
+    expect(incrementWorkspaceUserSessionVersion).not.toHaveBeenCalled();
   });
 });

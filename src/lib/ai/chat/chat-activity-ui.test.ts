@@ -258,4 +258,33 @@ describe("readChatToolPart", () => {
       })
     );
   });
+
+  it("lists attachments as a catalog walk, not a search", () => {
+    const pending = buildChatActivityBlocks([
+      toolPart("list_attachments", "input-available"),
+    ] as never);
+    expect(pending).toHaveLength(1);
+    if (pending[0]?.kind !== "activity") return;
+    expect(pending[0].node.label).toBe("Listing attachments…");
+    expect(pending[0].node.children[0]).toEqual(
+      expect.objectContaining({ label: "Listing attachments…" })
+    );
+
+    const done = buildChatActivityBlocks([
+      toolPart("list_attachments", "output-available", undefined, {
+        total: 45,
+        files: [
+          { filename: "a.pdf" },
+          { filename: "b.pdf" },
+          { filename: "c.pdf" },
+        ],
+      }),
+    ] as never);
+    expect(done).toHaveLength(1);
+    if (done[0]?.kind !== "activity") return;
+    expect(done[0].node.label).toBe("Listed attachments");
+    expect(done[0].node.children[0]).toEqual(
+      expect.objectContaining({ label: "Listed attachments" })
+    );
+  });
 });

@@ -31,6 +31,10 @@ describe("WorkProductTabs", () => {
     expect(screen.getByTestId("report-surface-analytics")).toHaveTextContent(
       "Analytics"
     );
+    expect(screen.getByTestId("report-surface-analytics")).toHaveAttribute(
+      "data-walkthrough",
+      "analytics"
+    );
     expect(screen.getByTestId("report-surface-document")).toHaveAttribute(
       "aria-selected",
       "true"

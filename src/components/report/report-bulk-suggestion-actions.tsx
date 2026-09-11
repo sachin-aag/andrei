@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { CheckCheck, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -76,7 +77,9 @@ export function ReportBulkSuggestionActions() {
         beginSuggestionApplyTransition(section, firstCommentId, holdMode);
       },
       onSectionSettled: (section: SectionType, next: Record<string, unknown>) => {
-        replaceSection(section, next as unknown);
+        flushSync(() => {
+          replaceSection(section, next as unknown);
+        });
       },
     }),
     [

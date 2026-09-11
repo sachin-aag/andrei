@@ -322,7 +322,7 @@ export function buildCriterionEvaluationLlmPrompts({
 
   const rawContentStr = sectionPlainTextForPrompt(section, content);
   const placeholderNote = plainTextHasEvalPlaceholders(rawContentStr)
-    ? `\n\nPLACEHOLDER NOTE: SECTION CONTENT includes bracket placeholders the author will fill in later. For this evaluation, treat each [Label: <to be filled>] as if it will contain appropriate factual data matching the label — evaluate whether the right facts are represented in the right places, not whether the bracket text is already a final value. You may note in reasoning that a placeholder still needs completion in the Placeholders panel.`
+    ? `\n\nPLACEHOLDER NOTE: SECTION CONTENT includes placeholders the author will fill in later (<Label> or legacy [Label: <to be filled>]). For this evaluation, treat each placeholder as if it will contain appropriate factual data matching the label — evaluate whether the right facts are represented in the right places, not whether the token text is already a final value. You may note in reasoning that a placeholder still needs completion in the Placeholders panel.`
     : "";
 
   const userPrompt = `DOCUMENT: ${reportContext.deviationNo} (report date: ${

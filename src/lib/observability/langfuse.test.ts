@@ -11,6 +11,7 @@ vi.mock("@langfuse/tracing", () => ({
   observe,
   propagateAttributes,
   updateActiveObservation,
+  getActiveTraceId: vi.fn(() => undefined),
 }));
 
 vi.mock("@opentelemetry/api", () => ({

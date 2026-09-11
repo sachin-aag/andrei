@@ -29,6 +29,37 @@ export function buildVaultTree<T extends FolderNode>(
   return { foldersByParent, parentById, assetsByFolder };
 }
 
+/**
+ * Drop files already linked to the report, and folders whose subtree has no
+ * remaining files. Empty folders are not useful in Add from vault.
+ */
+export function omitLinkedVaultAssets<T extends FolderNode>(
+  folders: T[],
+  assets: AttachmentLibraryAssetRecord[],
+  linkedAssetIds: ReadonlySet<string>
+): { folders: T[]; assets: AttachmentLibraryAssetRecord[] } {
+  if (linkedAssetIds.size === 0) {
+    return { folders, assets };
+  }
+
+  const visibleAssets = assets.filter((asset) => !linkedAssetIds.has(asset.id));
+  const parentById = new Map(folders.map((folder) => [folder.id, folder.parentId]));
+  const keepFolderIds = new Set<string>();
+  for (const asset of visibleAssets) {
+    for (const ancestorId of folderAncestorIds(
+      asset.libraryFolderId,
+      parentById
+    )) {
+      keepFolderIds.add(ancestorId);
+    }
+  }
+
+  return {
+    folders: folders.filter((folder) => keepFolderIds.has(folder.id)),
+    assets: visibleAssets,
+  };
+}
+
 export function toggleVaultFolderSelection(
   folderId: string,
   checked: boolean,

@@ -31,6 +31,7 @@ describe("AttachmentCanvasStack", () => {
 
     const canvas = screen.getByTestId("attachment-canvas");
     expect(canvas).not.toHaveAttribute("hidden");
+    expect(canvas).toHaveAttribute("data-canvas-pane", "active");
     expect(screen.getByTestId("viewer-att-1")).toHaveAttribute(
       "data-active",
       "true"
@@ -44,7 +45,11 @@ describe("AttachmentCanvasStack", () => {
       />
     );
 
-    expect(screen.getByTestId("attachment-canvas")).toHaveAttribute("hidden");
+    expect(screen.getByTestId("attachment-canvas")).not.toHaveAttribute("hidden");
+    expect(screen.getByTestId("attachment-canvas")).toHaveAttribute(
+      "data-canvas-pane",
+      "parked"
+    );
     expect(screen.getByTestId("viewer-att-1")).toHaveAttribute(
       "data-active",
       "false"

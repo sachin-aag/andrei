@@ -25,7 +25,8 @@ describe("ReportExportButton", () => {
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
   });
 
-  it("shows a single Export DOCX link on demo investigation reports", () => {
+  it("offers a without-citations export on demo investigation reports", async () => {
+    const user = userEvent.setup();
     render(
       <ReportExportButton
         reportId="report-1"
@@ -37,9 +38,11 @@ describe("ReportExportButton", () => {
       "href",
       "/api/reports/report-1/export"
     );
+
+    await user.click(screen.getByRole("button", { name: /more export options/i }));
     expect(
-      screen.queryByRole("button", { name: /more export options/i })
-    ).not.toBeInTheDocument();
+      screen.getByRole("menuitem", { name: /export without citations/i })
+    ).toHaveAttribute("href", "/api/reports/report-1/export?omitCitations=1");
   });
 
   it("offers a without-citations export on demo generic documents", async () => {
@@ -102,13 +105,13 @@ describe("ReportExportButton", () => {
     );
   });
 
-  it("offers export with plots on the analytics surface", async () => {
+  it("offers export with Excel charts on the analytics surface", async () => {
     const user = userEvent.setup();
     render(<ReportExportButton reportId="report-1" surface="analytics" />);
 
     await user.click(screen.getByRole("button", { name: /more export options/i }));
     expect(
-      screen.getByRole("menuitem", { name: /export with plots/i })
+      screen.getByRole("menuitem", { name: /export with excel charts/i })
     ).toHaveAttribute("href", analyticsExportHref("report-1", true));
   });
 });

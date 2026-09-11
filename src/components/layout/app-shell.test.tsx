@@ -49,6 +49,11 @@ vi.mock("@/providers/user-directory-provider", () => ({
   UserDirectoryProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
+vi.mock("@/components/walkthrough/product-walkthrough", () => ({
+  ProductWalkthroughProvider: ({ children }: { children: ReactNode }) => children,
+  useProductWalkthrough: () => ({ restart: () => undefined, canReplay: false }),
+}));
+
 import { AppShell } from "./app-shell";
 
 const engineer: WorkspaceUser = {
@@ -142,8 +147,11 @@ describe("AppShell primary navigation", () => {
     expect(primaryNavHrefs()).toEqual(["/", "/vault", "/insights"]);
     expect(
       screen.getByRole("link", { name: "Document vault" })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Insights" })).toBeInTheDocument();
+    ).toHaveAttribute("data-walkthrough", "nav-vault");
+    expect(screen.getByRole("link", { name: "Insights" })).toHaveAttribute(
+      "data-walkthrough",
+      "nav-insights"
+    );
   });
 
   it("hides Insights on MJ and keeps Document vault under Reports", () => {

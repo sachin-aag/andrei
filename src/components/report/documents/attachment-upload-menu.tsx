@@ -14,6 +14,7 @@ import { AddFromLibraryDialog } from "./add-from-library-dialog";
 type Props = {
   disabled?: boolean;
   isAdmin?: boolean;
+  linkedAssetIds?: ReadonlySet<string>;
   onUploadClick: () => void;
   onLinkFromLibrary: (selection: {
     assetIds: string[];
@@ -25,6 +26,7 @@ type Props = {
 export function AttachmentUploadMenu({
   disabled = false,
   isAdmin = false,
+  linkedAssetIds,
   onUploadClick,
   onLinkFromLibrary,
 }: Props) {
@@ -62,6 +64,7 @@ export function AttachmentUploadMenu({
         open={libraryOpen}
         onOpenChange={setLibraryOpen}
         isAdmin={isAdmin}
+        linkedAssetIds={linkedAssetIds}
         onLink={onLinkFromLibrary}
       />
     </>

@@ -32,6 +32,18 @@ vi.mock("@/lib/document-revisions/snapshot", () => ({
   tryRecordManualDocumentRevision: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock("@/lib/observability/llm-section-tracking", () => ({
+  checkSectionLlmAuthorship: vi.fn().mockResolvedValue({
+    wasLlmAuthored: false,
+    reason: "not_llm_authored",
+  }),
+}));
+
+vi.mock("@/lib/observability/langfuse-scores", () => ({
+  recordUserEditedAfterScore: vi.fn(),
+  flushLangfuseScores: vi.fn(),
+}));
+
 const engineer = {
   id: "engineer-1",
   name: "Engineer",

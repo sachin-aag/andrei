@@ -43,6 +43,7 @@ export type ChatActivityBlock =
   | { kind: "activity"; node: ActivitySurfaceNode };
 
 const DOCUMENT_ACTIVITY_TOOLS = new Set([
+  "list_attachments",
   "search_documents",
   "read_document_page",
   "document_outline",
@@ -206,6 +207,12 @@ function documentActivityDetail(
   const names = filenamesFromTool(info, filenameById);
   const named = names.length > 0 ? formatNameList(names) : null;
   switch (info.toolName) {
+    case "list_attachments":
+      return {
+        kind: "detail",
+        label: pending ? "Listing attachments…" : "Listed attachments",
+        pending,
+      };
     case "search_documents":
       return {
         kind: "detail",
@@ -273,27 +280,34 @@ function documentActivityDetail(
 function countDocumentActivity(items: ActivityChildNode[]): {
   reads: number;
   searches: number;
+  listings: number;
 } {
   let reads = 0;
   let searches = 0;
+  let listings = 0;
   for (const item of items) {
     if (item.kind !== "detail") continue;
     const label = item.label.toLowerCase();
-    if (label.startsWith("search") || label.startsWith("scan")) {
+    if (label.startsWith("list")) {
+      listings += 1;
+    } else if (label.startsWith("search") || label.startsWith("scan")) {
       searches += 1;
     } else {
       reads += 1;
     }
   }
-  return { reads, searches };
+  return { reads, searches, listings };
 }
 
 function documentsSurfaceLabel(input: {
-  counts: { reads: number; searches: number };
+  counts: { reads: number; searches: number; listings: number };
   pending: boolean;
   filenames: readonly string[];
 }): string {
   const { counts, pending, filenames } = input;
+  if (counts.listings > 0 && counts.reads === 0 && counts.searches === 0) {
+    return pending ? "Listing attachments…" : "Listed attachments";
+  }
   if (filenames.length > 0 && filenames.length <= 2) {
     const named = formatNameList(filenames);
     if (pending) {

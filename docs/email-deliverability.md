@@ -6,6 +6,8 @@ Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`
 - Demo: `https://demo.andreihealth.com`
 - Convergent: `https://convergent.andreihealth.com`
 
+Successful logins from a non-`@andreihealth.com` address also email `sachin@andreihealth.com` and `aditya@andreihealth.com` (skipped when `ALLOW_TEST_LOGIN` is on).
+
 Do not leave Production `AUTH_URL` on `https://andrei-v2.vercel.app` after the custom-domain cutover — Auth.js rewrites every request to that origin, so sessions 401 on the public host.
 
 ## If MJ IT blocks email

@@ -12,6 +12,7 @@ import {
   computePasswordExpiryState,
   getPasswordPolicy,
 } from "@/lib/auth/password-policy";
+import { scheduleExternalLoginAlert } from "@/lib/auth/external-login-alert";
 import {
   clearFailedLoginAttempts,
   findWorkspaceUserForLogin,
@@ -20,6 +21,13 @@ import {
   recordFailedLoginAttempt,
   recordLastLogin,
 } from "@/lib/auth/workspace-login";
+import {
+  bindJwtWorkspaceIdentity,
+  clearJwtWorkspaceIdentity,
+  jwtSessionWasInvalidated,
+  shouldRefreshJwtWorkspaceState,
+  stampJwtWorkspaceStateCheckedAt,
+} from "@/lib/auth/jwt-workspace-state";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Required when the app is reached via 127.0.0.1, Docker, or CI (not only Vercel).
@@ -100,6 +108,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (wsUser) {
         await recordLastLogin(wsUser.id);
       }
+      scheduleExternalLoginAlert({
+        email: user.email,
+        name: user.name,
+      });
     },
   },
   callbacks: {
@@ -112,7 +124,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return false;
       }
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
+      const hasUser = Boolean(user);
+      if (
+        !shouldRefreshJwtWorkspaceState(token, {
+          hasUser,
+          trigger,
+        })
+      ) {
+        return token;
+      }
+
       const email =
         user?.email ??
         (typeof token.email === "string" ? token.email : undefined);
@@ -129,25 +151,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (workspaceUserId) {
         const policy = await getPasswordPolicy();
         const wsUser = await loadWorkspaceUserJwtState(workspaceUserId);
-        if (!wsUser || wsUser.deactivatedAt) {
-          delete token.workspaceUserId;
+        if (
+          !wsUser ||
+          wsUser.deactivatedAt ||
+          (!hasUser && jwtSessionWasInvalidated(token, wsUser.sessionVersion))
+        ) {
+          clearJwtWorkspaceIdentity(token);
         } else {
-          const expiryState = computePasswordExpiryState(wsUser, policy);
-          token.workspaceUserId = wsUser.id;
-          token.mustChangePassword = wsUser.mustChangePassword;
-          token.passwordExpired = expiryState.expired;
+          bindJwtWorkspaceIdentity(
+            token,
+            wsUser,
+            computePasswordExpiryState(wsUser, policy).expired
+          );
         }
-      } else if (email) {
+      } else if (email && hasUser) {
         const policy = await getPasswordPolicy();
         const wsUser = await loadWorkspaceUserJwtStateByEmail(email);
         if (wsUser && !wsUser.deactivatedAt) {
-          const expiryState = computePasswordExpiryState(wsUser, policy);
-          token.workspaceUserId = wsUser.id;
-          token.mustChangePassword = wsUser.mustChangePassword;
-          token.passwordExpired = expiryState.expired;
+          bindJwtWorkspaceIdentity(
+            token,
+            wsUser,
+            computePasswordExpiryState(wsUser, policy).expired
+          );
+        } else {
+          clearJwtWorkspaceIdentity(token);
         }
       }
 
+      stampJwtWorkspaceStateCheckedAt(token);
       return token;
     },
     async session({ session, token }) {
@@ -159,6 +190,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       if (typeof token.passwordExpired === "boolean") {
         session.user.passwordExpired = token.passwordExpired;
+      }
+      if (typeof token.sessionVersion === "number") {
+        session.user.sessionVersion = token.sessionVersion;
       }
       return session;
     },

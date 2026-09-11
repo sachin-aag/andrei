@@ -35,6 +35,16 @@ import {
   type WorksheetData,
 } from "@/lib/statistical-analysis/types";
 import {
+  analyzePlotTypeHelpText,
+  isAnalyzeInlinePlotKind,
+  WORKSHEET_PLOT_CATALOG,
+  type AnalyzeInlinePlotKind,
+  type WorksheetPlotKind,
+} from "@/lib/statistical-analysis/plot-catalog";
+import {
+  ANALYSIS_ROW_RANGE_HELP,
+  analysisRowFieldDefaults,
+  collapseFilledAnalysisRows,
   columnNumericValues,
   dataSheets,
   defaultSixpackLimits,
@@ -44,10 +54,6 @@ import {
 export type AnalyzeDialogSubmit =
   | { kind: typeof CAPABILITY_SIXPACK_NORMAL; values: CapabilityDialogValues }
   | { kind: typeof ONE_WAY_ANOVA; values: AnovaDialogValues };
-
-type AnalyzePlotKind =
-  | typeof CAPABILITY_SIXPACK_NORMAL
-  | typeof ONE_WAY_ANOVA;
 
 const fieldLabelClass =
   "normal-case tracking-normal text-sm font-medium text-[var(--foreground)]";
@@ -100,11 +106,6 @@ function limitsForColumn(
   };
 }
 
-const PLOT_TYPES: { value: AnalyzePlotKind; label: string }[] = [
-  { value: CAPABILITY_SIXPACK_NORMAL, label: "Normal Capability Sixpack" },
-  { value: ONE_WAY_ANOVA, label: "One-Way ANOVA" },
-];
-
 export function AnalyzeDialog({
   open,
   worksheet,
@@ -114,6 +115,7 @@ export function AnalyzeDialog({
   submitting,
   error,
   onOpenChange,
+  onHandoff,
   onSubmit,
 }: {
   open: boolean;
@@ -124,19 +126,25 @@ export function AnalyzeDialog({
   submitting: boolean;
   error: string | null;
   onOpenChange: (open: boolean) => void;
+  onHandoff: (kind: WorksheetPlotKind) => void;
   onSubmit: (payload: AnalyzeDialogSubmit) => void;
 }) {
   const fallbackColumnId = defaultColumnId || worksheet.columns[0]?.id || "";
-  const initialRowStart =
-    defaultRowStart != null ? String(defaultRowStart) : "";
-  const initialRowEnd = defaultRowEnd != null ? String(defaultRowEnd) : "";
+  const initialRows = analysisRowFieldDefaults(
+    findColumn(worksheet, fallbackColumnId) ?? worksheet.columns[0],
+    { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
+  );
+  const initialRowStart = initialRows.rowStart;
+  const initialRowEnd = initialRows.rowEnd;
   const initialLimits = limitsForColumn(
     worksheet,
     fallbackColumnId,
     initialRowStart,
     initialRowEnd
   );
-  const [kind, setKind] = useState<AnalyzePlotKind>(CAPABILITY_SIXPACK_NORMAL);
+  const [kind, setKind] = useState<AnalyzeInlinePlotKind>(
+    CAPABILITY_SIXPACK_NORMAL
+  );
   const [columnId, setColumnId] = useState(fallbackColumnId);
   const [factorColumnId, setFactorColumnId] = useState(
     () => suggestFactorColumn(worksheet, fallbackColumnId) ?? ""
@@ -165,7 +173,12 @@ export function AnalyzeDialog({
 
   const changeColumn = (nextColumnId: string) => {
     setColumnId(nextColumnId);
-    applyColumnLimits(nextColumnId, rowStart, rowEnd);
+    const nextRows = analysisRowFieldDefaults(
+      findColumn(worksheet, nextColumnId) ?? worksheet.columns[0]
+    );
+    setRowStart(nextRows.rowStart);
+    setRowEnd(nextRows.rowEnd);
+    applyColumnLimits(nextColumnId, nextRows.rowStart, nextRows.rowEnd);
     if (nextColumnId === factorColumnId) {
       setFactorColumnId(suggestFactorColumn(worksheet, nextColumnId) ?? "");
     }
@@ -174,10 +187,12 @@ export function AnalyzeDialog({
   const selectedColumn = findColumn(worksheet, columnId) ?? worksheet.columns[0];
   const factorColumn = findColumn(worksheet, factorColumnId);
   const sheets = dataSheets(worksheet);
-  const rowSelection = normalizeRowSelection({
-    rowStart: parseOptionalRow(rowStart),
-    rowEnd: parseOptionalRow(rowEnd),
-  });
+  const submittedRows = collapseFilledAnalysisRows(
+    selectedColumn,
+    parseOptionalRow(rowStart),
+    parseOptionalRow(rowEnd)
+  );
+  const rowSelection = normalizeRowSelection(submittedRows);
   const numeric = selectedColumn
     ? columnNumericValues(selectedColumn, rowSelection)
     : { values: [], skipped: 0 };
@@ -213,8 +228,8 @@ export function AnalyzeDialog({
           responseColumnId: columnId,
           factorColumnId,
           title: resolvedTitle,
-          rowStart: parseOptionalRow(rowStart),
-          rowEnd: parseOptionalRow(rowEnd),
+          rowStart: submittedRows.rowStart,
+          rowEnd: submittedRows.rowEnd,
         },
       });
       return;
@@ -227,8 +242,8 @@ export function AnalyzeDialog({
         lsl: parseOptionalNumber(lsl),
         usl: parseOptionalNumber(usl),
         target: parseOptionalNumber(target),
-        rowStart: parseOptionalRow(rowStart),
-        rowEnd: parseOptionalRow(rowEnd),
+        rowStart: submittedRows.rowStart,
+        rowEnd: submittedRows.rowEnd,
       },
     });
   };
@@ -250,12 +265,19 @@ export function AnalyzeDialog({
               <FieldInfoIcon
                 label="Plot type"
                 testId="analyze-plot-type-info"
-                text="Sixpack for capability. ANOVA to compare means by a factor."
+                text={analyzePlotTypeHelpText()}
               />
             </div>
             <Select
               value={kind}
-              onValueChange={(value) => setKind(value as AnalyzePlotKind)}
+              onValueChange={(value) => {
+                const next = value as WorksheetPlotKind;
+                if (isAnalyzeInlinePlotKind(next)) {
+                  setKind(next);
+                  return;
+                }
+                onHandoff(next);
+              }}
             >
               <SelectTrigger
                 id="analyze-plot-type"
@@ -264,8 +286,8 @@ export function AnalyzeDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PLOT_TYPES.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
+                {WORKSHEET_PLOT_CATALOG.map((item) => (
+                  <SelectItem key={item.kind} value={item.kind}>
                     {item.label}
                   </SelectItem>
                 ))}
@@ -386,7 +408,7 @@ export function AnalyzeDialog({
                     <FieldInfoIcon
                       label="Row range"
                       testId="analyze-row-range-info"
-                      text="Rows are numbered from 1. Leave both blank to use the whole column."
+                      text={ANALYSIS_ROW_RANGE_HELP}
                     />
                   </div>
                   <Input

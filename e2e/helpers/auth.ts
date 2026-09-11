@@ -11,6 +11,12 @@ const TEST_AUTH_EMAIL =
 const PLAYWRIGHT_BASE_URL =
   process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 
+export function scopedTestEmail(baseEmail: string, scope: string): string {
+  const [local, domain] = baseEmail.split("@");
+  if (!local || !domain || !scope) return baseEmail;
+  return `${local}+${scope.toLowerCase()}@${domain}`;
+}
+
 export type TestLoginResult = {
   userId: string;
   email: string;
@@ -52,6 +58,7 @@ async function testLogin(
     mustChangePassword?: boolean;
     passwordExpired?: boolean;
     passwordWarning?: boolean;
+    productTour?: boolean | "resume";
   }
 ): Promise<TestLoginResult> {
   await parkPageForSessionSwap(page);
@@ -131,6 +138,7 @@ export async function loginAsTestUser(
     mustChangePassword?: boolean;
     passwordExpired?: boolean;
     passwordWarning?: boolean;
+    productTour?: boolean | "resume";
   }
 ): Promise<TestLoginResult> {
   return testLogin(page, body);
