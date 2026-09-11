@@ -102,17 +102,6 @@ export function WalkthroughOverlay({
     nextRef.current?.focus();
   }, [step.id]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onDismissForever();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onDismissForever]);
-
   const progressPct = ((stepIndex + 1) / stepCount) * 100;
 
   return (
@@ -125,8 +114,8 @@ export function WalkthroughOverlay({
     >
       <div
         aria-hidden="true"
+        data-testid="walkthrough-scrim"
         className="absolute inset-0 cursor-default"
-        onClick={onDismissForever}
       />
       {targetRect ? (
         <div

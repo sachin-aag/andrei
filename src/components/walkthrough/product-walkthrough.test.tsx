@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { ProductWalkthroughProvider } from "@/components/walkthrough/product-walkthrough";
@@ -183,21 +183,35 @@ describe("ProductWalkthroughProvider", () => {
     );
   });
 
-  it("persists dismissed when Escape is pressed", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "PATCH") {
-        return {
-          ok: true,
-          json: async () => ({ status: "dismissed", stepId: "welcome" }),
-        };
-      }
-      return {
-        ok: true,
-        json: async () => ({
-          status: "in_progress",
-          stepId: "welcome",
-        }),
-      };
+  it("does not dismiss when the dimmed backdrop is clicked", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "in_progress",
+        stepId: "welcome",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(wrapper(<div>dashboard</div>));
+    await screen.findByRole("dialog");
+
+    fireEvent.click(screen.getByTestId("walkthrough-scrim"));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/me/walkthrough",
+      expect.objectContaining({ method: "PATCH" })
+    );
+  });
+
+  it("does not dismiss when Escape is pressed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "in_progress",
+        stepId: "welcome",
+      }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -206,15 +220,10 @@ describe("ProductWalkthroughProvider", () => {
     await screen.findByRole("dialog");
     await user.keyboard("{Escape}");
 
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/me/walkthrough",
-      expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({ status: "dismissed", stepId: "welcome" }),
-      })
+      expect.objectContaining({ method: "PATCH" })
     );
   });
 
