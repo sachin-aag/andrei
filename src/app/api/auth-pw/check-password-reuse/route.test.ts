@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-vi.mock("@/auth", () => ({
-  auth: vi.fn(),
+vi.mock("@/lib/auth/session", () => ({
+  getCurrentUser: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -18,7 +18,7 @@ vi.mock("@/lib/auth/password-policy", () => ({
   getPasswordPolicy: vi.fn(),
 }));
 
-import { auth } from "@/auth";
+import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/db";
 import { isPasswordRecentlyUsed } from "@/lib/auth/password-history";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
@@ -35,9 +35,13 @@ function jsonRequest(body: unknown) {
 describe("POST /api/auth-pw/check-password-reuse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(auth).mockResolvedValue({
-      user: { workspaceUserId: "user-1" },
-    } as never);
+    vi.mocked(getCurrentUser).mockResolvedValue({
+      id: "user-1",
+      name: "User",
+      email: "user@mjbiopharm.com",
+      role: "engineer",
+      title: "Engineer",
+    });
     vi.mocked(getPasswordPolicy).mockResolvedValue({
       passwordHistoryLimit: 3,
     } as never);
@@ -48,7 +52,7 @@ describe("POST /api/auth-pw/check-password-reuse", () => {
   });
 
   it("returns 401 when unauthenticated", async () => {
-    vi.mocked(auth).mockResolvedValue(null as never);
+    vi.mocked(getCurrentUser).mockResolvedValue(null);
 
     const res = await POST(jsonRequest({ password: "new-pass" }));
 

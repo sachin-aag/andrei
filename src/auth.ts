@@ -21,6 +21,9 @@ import {
   recordLastLogin,
 } from "@/lib/auth/workspace-login";
 import {
+  bindJwtWorkspaceIdentity,
+  clearJwtWorkspaceIdentity,
+  jwtSessionWasInvalidated,
   shouldRefreshJwtWorkspaceState,
   stampJwtWorkspaceStateCheckedAt,
 } from "@/lib/auth/jwt-workspace-state";
@@ -120,9 +123,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.productTourSessionId = crypto.randomUUID();
       }
+      const hasUser = Boolean(user);
       if (
         !shouldRefreshJwtWorkspaceState(token, {
-          hasUser: Boolean(user),
+          hasUser,
           trigger,
         })
       ) {
@@ -145,22 +149,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (workspaceUserId) {
         const policy = await getPasswordPolicy();
         const wsUser = await loadWorkspaceUserJwtState(workspaceUserId);
-        if (!wsUser || wsUser.deactivatedAt) {
-          delete token.workspaceUserId;
+        if (
+          !wsUser ||
+          wsUser.deactivatedAt ||
+          (!hasUser && jwtSessionWasInvalidated(token, wsUser.sessionVersion))
+        ) {
+          clearJwtWorkspaceIdentity(token);
         } else {
-          const expiryState = computePasswordExpiryState(wsUser, policy);
-          token.workspaceUserId = wsUser.id;
-          token.mustChangePassword = wsUser.mustChangePassword;
-          token.passwordExpired = expiryState.expired;
+          bindJwtWorkspaceIdentity(
+            token,
+            wsUser,
+            computePasswordExpiryState(wsUser, policy).expired
+          );
         }
-      } else if (email) {
+      } else if (email && hasUser) {
         const policy = await getPasswordPolicy();
         const wsUser = await loadWorkspaceUserJwtStateByEmail(email);
         if (wsUser && !wsUser.deactivatedAt) {
-          const expiryState = computePasswordExpiryState(wsUser, policy);
-          token.workspaceUserId = wsUser.id;
-          token.mustChangePassword = wsUser.mustChangePassword;
-          token.passwordExpired = expiryState.expired;
+          bindJwtWorkspaceIdentity(
+            token,
+            wsUser,
+            computePasswordExpiryState(wsUser, policy).expired
+          );
+        } else {
+          clearJwtWorkspaceIdentity(token);
         }
       }
 
@@ -176,6 +188,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       if (typeof token.passwordExpired === "boolean") {
         session.user.passwordExpired = token.passwordExpired;
+      }
+      if (typeof token.sessionVersion === "number") {
+        session.user.sessionVersion = token.sessionVersion;
       }
       if (typeof token.productTourSessionId === "string") {
         session.productTourSessionId = token.productTourSessionId;

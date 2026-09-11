@@ -15,18 +15,12 @@ function isPublicAuthRoute(path: string): boolean {
   );
 }
 
-/** Auth pages only — signed-in users should leave, but /api/auth/* must stay reachable for logout. */
-function isSignedInAuthPageRoute(path: string): boolean {
-  return (
-    path === "/login" ||
-    path === "/forgot-password" ||
-    path === "/reset-password"
-  );
-}
-
 function isAllowedWhileMustChangePassword(path: string): boolean {
   return (
     path === "/change-password" ||
+    path === "/login" ||
+    path === "/forgot-password" ||
+    path === "/reset-password" ||
     path === "/api/auth-pw/replace-shared-password" ||
     path === "/api/auth-pw/change-password" ||
     path === "/api/auth-pw/check-password-reuse" ||
@@ -36,8 +30,9 @@ function isAllowedWhileMustChangePassword(path: string): boolean {
 
 export const proxy = auth((req) => {
   const path = req.nextUrl.pathname;
+  const workspaceUserId = req.auth?.user?.workspaceUserId;
 
-  if (!req.auth) {
+  if (!req.auth || !workspaceUserId) {
     if (isPublicAuthRoute(path)) {
       return NextResponse.next();
     }
@@ -63,10 +58,6 @@ export const proxy = auth((req) => {
   }
 
   if (path === "/change-password") {
-    return NextResponse.redirect(new URL("/", req.url));
-  }
-
-  if (isSignedInAuthPageRoute(path)) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 

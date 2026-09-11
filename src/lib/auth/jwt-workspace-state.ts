@@ -4,6 +4,7 @@ export type JwtWorkspaceStateToken = {
   workspaceUserId?: string;
   mustChangePassword?: boolean;
   passwordExpired?: boolean;
+  sessionVersion?: number;
   jwtStateCheckedAt?: number;
   email?: unknown;
 };
@@ -43,4 +44,37 @@ export function stampJwtWorkspaceStateCheckedAt(
   now = Date.now()
 ): void {
   token.jwtStateCheckedAt = now;
+}
+
+export function jwtSessionVersion(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+export function jwtSessionWasInvalidated(
+  token: JwtWorkspaceStateToken,
+  workspaceSessionVersion: number
+): boolean {
+  return jwtSessionVersion(token.sessionVersion) !== workspaceSessionVersion;
+}
+
+export function clearJwtWorkspaceIdentity(token: JwtWorkspaceStateToken): void {
+  delete token.workspaceUserId;
+  delete token.sessionVersion;
+  delete token.mustChangePassword;
+  delete token.passwordExpired;
+}
+
+export function bindJwtWorkspaceIdentity(
+  token: JwtWorkspaceStateToken,
+  wsUser: {
+    id: string;
+    mustChangePassword: boolean;
+    sessionVersion: number;
+  },
+  passwordExpired: boolean
+): void {
+  token.workspaceUserId = wsUser.id;
+  token.mustChangePassword = wsUser.mustChangePassword;
+  token.passwordExpired = passwordExpired;
+  token.sessionVersion = wsUser.sessionVersion;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-vi.mock("@/auth", () => ({
-  auth: vi.fn(),
+vi.mock("@/lib/auth/session", () => ({
+  getCurrentUser: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -14,7 +14,7 @@ vi.mock("@/lib/auth/password", () => ({
   verifyPassword: vi.fn(),
 }));
 
-import { auth } from "@/auth";
+import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/db";
 import { verifyPassword } from "@/lib/auth/password";
 import { POST } from "./route";
@@ -30,16 +30,20 @@ function jsonRequest(body: unknown) {
 describe("POST /api/auth-pw/verify-current-password", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(auth).mockResolvedValue({
-      user: { workspaceUserId: "user-1" },
-    } as never);
+    vi.mocked(getCurrentUser).mockResolvedValue({
+      id: "user-1",
+      name: "User",
+      email: "user@mjbiopharm.com",
+      role: "engineer",
+      title: "Engineer",
+    });
     vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValue({
       passwordHash: "hash",
     } as never);
   });
 
   it("returns 401 when unauthenticated", async () => {
-    vi.mocked(auth).mockResolvedValue(null as never);
+    vi.mocked(getCurrentUser).mockResolvedValue(null);
 
     const res = await POST(jsonRequest({ currentPassword: "old-pass" }));
 
