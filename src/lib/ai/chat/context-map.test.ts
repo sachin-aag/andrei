@@ -58,6 +58,7 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("Analyze [analyze] — empty");
     expect(map).toContain("analyze method: not chosen");
     expect(map).toContain("Documents (ready evidence attachments");
+    expect(map).toContain("list_attachments");
     expect(map).toContain("an index only");
     expect(map).toContain("UNTRUSTED");
     expect(map).toContain('filename="Lab Results.pdf"');
@@ -114,6 +115,47 @@ describe("buildReportContextMap", () => {
     expect(injected).toContain("topics=");
     expect(injected).not.toMatch(/topics="# System/);
     expect(injected.toLowerCase()).not.toMatch(/topics="system:/);
+  });
+
+  it("points file-set questions at list_attachments instead of a buried count", () => {
+    const empty = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+      documents: [],
+    });
+    expect(empty).toContain("Documents (ready evidence attachments");
+    expect(empty).toContain("list_attachments");
+    expect(empty).toContain("- none");
+
+    const two = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+      documents: [
+        {
+          attachmentId: "att_a",
+          filename: "a.pdf",
+          description: null,
+          pageCount: 1,
+          ingestRunId: "run_a",
+          documentSummary: null,
+        },
+        {
+          attachmentId: "att_b",
+          filename: "b.pdf",
+          description: null,
+          pageCount: 2,
+          ingestRunId: "run_b",
+          documentSummary: null,
+        },
+      ],
+    });
+    expect(two).toContain('filename="a.pdf"');
+    expect(two).toContain('filename="b.pdf"');
+    expect(two).not.toContain("use this count");
   });
 
   it("surfaces the analyze method from section content and header checkboxes", () => {

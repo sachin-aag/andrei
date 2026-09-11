@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v88-numbered-citations-pdf-pages");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v89-list-attachments-meta");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -55,6 +55,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Greeting, thanks, or small talk");
     expect(prompt).toContain("Do not call any tools");
     expect(prompt).toContain("Empty fields and ready documents are not a request to write");
+    expect(prompt).toContain("How many attachments, which files in which folder, PDF vs Word, file status");
+    expect(prompt).toContain("call list_attachments");
+    expect(prompt).not.toContain("use the ready count in the Documents header");
     expect(prompt).toContain("Only draft or edit when this turn is a write request");
     expect(prompt).toContain("Empty sections are not a request to draft");
     expect(prompt).not.toContain("Agent mode drafts; Ask mode does not");
@@ -403,7 +406,8 @@ describe("buildChatSystemPrompt", () => {
     const agent = buildChatSystemPrompt({ ...opts, mode: "agent" });
     expect(agent).toContain("Retrieval mode: ADAPTIVE");
     expect(agent).toContain("Search the attachments first");
-    expect(agent).toContain("document_outline");
+    expect(agent).toContain("list_attachments");
+    expect(agent).toContain("File-set questions");
     expect(agent).toContain("INDEX, not evidence");
     expect(agent).toContain("Never treat the index as ENOUGH");
     expect(agent).toContain("grep in rounds until the question is covered");

@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v47-trusted-extract-writes"
+      "analytics-chat-v50-list-attachments-meta"
     );
   });
 
@@ -153,5 +153,48 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("switch to Agent");
     expect(prompt).toContain("Ask mode: search and extract only");
     expect(prompt).not.toContain("The engineer can save the worksheet");
+  });
+
+  it("points file-set questions at list_attachments instead of a buried count", () => {
+    const empty = buildAnalyticsChatSystemPrompt({
+      documentNo: "DEV-1",
+      status: "draft",
+      documents: [],
+      analytics: emptyAnalytics,
+      canEdit: true,
+      mode: "agent",
+    });
+    expect(empty).toContain("Ready documents: none uploaded");
+    expect(empty).toContain("How many attachments, which files in which folder, PDF vs Word, file status");
+    expect(empty).toContain("call list_attachments");
+
+    const two = buildAnalyticsChatSystemPrompt({
+      documentNo: "DEV-1",
+      status: "draft",
+      documents: [
+        {
+          attachmentId: "att_a",
+          filename: "a.pdf",
+          description: null,
+          pageCount: 1,
+          ingestRunId: "run_a",
+          documentSummary: null,
+        },
+        {
+          attachmentId: "att_b",
+          filename: "b.pdf",
+          description: null,
+          pageCount: 2,
+          ingestRunId: "run_b",
+          documentSummary: "topics",
+        },
+      ],
+      analytics: emptyAnalytics,
+      canEdit: true,
+      mode: "agent",
+    });
+    expect(two).toContain("Ready documents (index only");
+    expect(two).toContain("list_attachments");
+    expect(two).not.toContain("do not recount the list");
   });
 });

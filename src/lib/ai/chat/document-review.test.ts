@@ -384,6 +384,7 @@ describe("pickPlanModeChatTools", () => {
         "continue_document_review",
         "finish_document_review",
         "document_outline",
+        "list_attachments",
         "ask_user",
       ])
     );
