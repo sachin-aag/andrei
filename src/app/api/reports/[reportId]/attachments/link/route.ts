@@ -46,21 +46,29 @@ export async function POST(
     );
   }
 
-  const result = await linkLibraryItemsToReport({
-    reportId,
-    user: access.user,
-    targetFolderId,
-    assetIds: parsed.data.assetIds,
-    libraryFolderIds: parsed.data.libraryFolderIds,
-    excludedAssetIds: parsed.data.excludedAssetIds,
-  });
+  try {
+    const result = await linkLibraryItemsToReport({
+      reportId,
+      user: access.user,
+      targetFolderId,
+      assetIds: parsed.data.assetIds,
+      libraryFolderIds: parsed.data.libraryFolderIds,
+      excludedAssetIds: parsed.data.excludedAssetIds,
+    });
 
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    return NextResponse.json({
+      attachments: result.attachments,
+      folders: result.folders,
+    });
+  } catch (error) {
+    console.error("link library items failed", error);
+    return NextResponse.json(
+      { error: "Could not add from vault" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({
-    attachments: result.attachments,
-    folders: result.folders,
-  });
 }

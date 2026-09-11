@@ -11,9 +11,11 @@ import {
 import { toAttachmentDto } from "@/lib/attachments/dto";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { loadAccessibleAsset } from "@/lib/attachments/library-access";
+import { classifyAssetsForLibraryLink } from "@/lib/attachments/library-link-classify";
 import { reportProcessingForLinkedAsset } from "@/lib/attachments/library-link-ingest";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
+import { isPostgresUniqueViolation } from "@/lib/reports/document-no";
 import {
   permanentObjectKey,
   stagingObjectKey,
@@ -120,8 +122,30 @@ export async function linkLibraryItemsToReport(
       sql`select ${reports.id} from ${reports} where ${reports.id} = ${input.reportId} for update`
     );
 
-    const existingLinks = await tx
-      .select({ assetId: reportAttachments.assetId })
+    const uniqueAssetIds = uniqueAssets.map((asset) => asset.id);
+    const existingForAssets =
+      uniqueAssetIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: reportAttachments.id,
+              assetId: reportAttachments.assetId,
+              deletedAt: reportAttachments.deletedAt,
+            })
+            .from(reportAttachments)
+            .where(
+              and(
+                eq(reportAttachments.reportId, input.reportId),
+                inArray(reportAttachments.assetId, uniqueAssetIds)
+              )
+            );
+    const classified = classifyAssetsForLibraryLink(
+      uniqueAssets,
+      existingForAssets
+    );
+
+    const existingLive = await tx
+      .select({ id: reportAttachments.id })
       .from(reportAttachments)
       .where(
         and(
@@ -129,15 +153,8 @@ export async function linkLibraryItemsToReport(
           isNull(reportAttachments.deletedAt)
         )
       );
-    const linkedAssetIds = new Set(
-      existingLinks
-        .map((row) => row.assetId)
-        .filter((id): id is string => id != null)
-    );
-
-    const newAssets = uniqueAssets.filter((asset) => !linkedAssetIds.has(asset.id));
-    const activeCount = existingLinks.length;
-    if (activeCount + newAssets.length > limits.maxAttachmentsPerReport) {
+    const toAddCount = classified.insert.length + classified.restore.length;
+    if (existingLive.length + toAddCount > limits.maxAttachmentsPerReport) {
       return {
         ok: false as const,
         error: `Report already has ${limits.maxAttachmentsPerReport} attachments`,
@@ -186,38 +203,123 @@ export async function linkLibraryItemsToReport(
 
     const createdAttachments: ReturnType<typeof toAttachmentDto>[] = [];
     const ingestStarts: { attachmentId: string; generation: string }[] = [];
-    for (const asset of newAssets) {
-      const attachmentId = createId();
-      const reportFolderId = asset.libraryFolderId
+
+    const reportFolderIdForAsset = (
+      asset: (typeof uniqueAssets)[number]
+    ) =>
+      asset.libraryFolderId
         ? (reportFolderIdByLibraryFolderId.get(asset.libraryFolderId) ??
           input.targetFolderId)
         : input.targetFolderId;
+
+    const restoreLink = async (
+      attachmentId: string,
+      asset: (typeof uniqueAssets)[number]
+    ) => {
+      const reportFolderId = reportFolderIdForAsset(asset);
       const { processingStatus, shouldStartIngest } =
         reportProcessingForLinkedAsset(asset);
-
       const [row] = await tx
-        .insert(reportAttachments)
-        .values({
-          id: attachmentId,
-          reportId: input.reportId,
-          assetId: asset.id,
+        .update(reportAttachments)
+        .set({
+          deletedAt: null,
+          deletedById: null,
           folderId: reportFolderId,
           filename: asset.filename,
           description: asset.description,
           mimeType: asset.mimeType,
           sizeBytes: asset.sizeBytes,
           sha256: asset.sha256,
-          stagingObjectKey: stagingObjectKey(attachmentId),
-          permanentObjectKey: permanentObjectKey(input.reportId, attachmentId),
           pageCount: asset.pageCount,
           processingStatus,
           processingProgress: shouldStartIngest ? 0 : asset.processingProgress,
           processingPage: asset.processingPage,
           processingError: asset.processingError,
           activeIngestRunId: asset.activeIngestRunId,
-          uploadedById: input.user.id,
         })
+        .where(eq(reportAttachments.id, attachmentId))
         .returning();
+      if (!row) {
+        throw new Error("Failed to restore vault link");
+      }
+      return { row, shouldStartIngest };
+    };
+
+    for (const { asset, attachmentId } of classified.restore) {
+      const { row, shouldStartIngest } = await restoreLink(
+        attachmentId,
+        asset
+      );
+      createdAttachments.push(toAttachmentDto(row, asset));
+      if (shouldStartIngest && asset.gcsGeneration) {
+        ingestStarts.push({
+          attachmentId,
+          generation: asset.gcsGeneration,
+        });
+      }
+    }
+
+    for (const asset of classified.insert) {
+      const attachmentId = createId();
+      const reportFolderId = reportFolderIdForAsset(asset);
+      const { processingStatus, shouldStartIngest } =
+        reportProcessingForLinkedAsset(asset);
+
+      let row: typeof reportAttachments.$inferSelect;
+      try {
+        const inserted = await tx
+          .insert(reportAttachments)
+          .values({
+            id: attachmentId,
+            reportId: input.reportId,
+            assetId: asset.id,
+            folderId: reportFolderId,
+            filename: asset.filename,
+            description: asset.description,
+            mimeType: asset.mimeType,
+            sizeBytes: asset.sizeBytes,
+            sha256: asset.sha256,
+            stagingObjectKey: stagingObjectKey(attachmentId),
+            permanentObjectKey: permanentObjectKey(input.reportId, attachmentId),
+            pageCount: asset.pageCount,
+            processingStatus,
+            processingProgress: shouldStartIngest ? 0 : asset.processingProgress,
+            processingPage: asset.processingPage,
+            processingError: asset.processingError,
+            activeIngestRunId: asset.activeIngestRunId,
+            uploadedById: input.user.id,
+          })
+          .returning();
+        const insertedRow = inserted[0];
+        if (!insertedRow) {
+          throw new Error("Failed to link vault file");
+        }
+        row = insertedRow;
+      } catch (error) {
+        if (!isPostgresUniqueViolation(error)) throw error;
+        const [existing] = await tx
+          .select()
+          .from(reportAttachments)
+          .where(
+            and(
+              eq(reportAttachments.reportId, input.reportId),
+              eq(reportAttachments.assetId, asset.id)
+            )
+          );
+        if (!existing) throw error;
+        if (existing.deletedAt == null) {
+          continue;
+        }
+        const restored = await restoreLink(existing.id, asset);
+        createdAttachments.push(toAttachmentDto(restored.row, asset));
+        if (restored.shouldStartIngest && asset.gcsGeneration) {
+          ingestStarts.push({
+            attachmentId: existing.id,
+            generation: asset.gcsGeneration,
+          });
+        }
+        continue;
+      }
 
       createdAttachments.push(toAttachmentDto(row, asset));
       if (shouldStartIngest && asset.gcsGeneration) {
