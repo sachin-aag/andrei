@@ -633,3 +633,131 @@ export const ELR_REVISION_HISTORY_COLUMN_SCHEMA: readonly MatrixColumnSchema<Elr
       aliases: ["change control no", "change control", "ccf"],
     },
   ];
+
+export type SystemTrendsColumnId =
+  | "serial"
+  | "theme"
+  | "whereSeen"
+  | "occurrences"
+  | "trend"
+  | "impact"
+  | "carriedToRisk";
+
+export const SYSTEM_TRENDS_COLUMN_SCHEMA: readonly MatrixColumnSchema<SystemTrendsColumnId>[] =
+  [
+    serialFor<SystemTrendsColumnId>(),
+    { id: "theme", label: "Theme", aliases: ["theme", "pattern", "issue"] },
+    {
+      id: "whereSeen",
+      label: "Where seen (sections / record nos.)",
+      aliases: [
+        "where seen sections record nos",
+        "where seen",
+        "sections",
+        "source",
+      ],
+    },
+    {
+      id: "occurrences",
+      label: "Occurrences in period",
+      aliases: ["occurrences in period", "occurrences", "count", "frequency"],
+    },
+    {
+      id: "trend",
+      label: "Trend (increasing / stable / decreasing)",
+      aliases: [
+        "trend increasing stable decreasing",
+        "trend",
+        "direction",
+      ],
+    },
+    {
+      id: "impact",
+      label: "Product or runtime impact",
+      aliases: [
+        "product or runtime impact",
+        "product impact",
+        "runtime impact",
+        "impact",
+      ],
+    },
+    {
+      id: "carriedToRisk",
+      label: "Carried to risk (Risk ID)",
+      aliases: [
+        "carried to risk risk id",
+        "carried to risk",
+        "risk id",
+        "risk",
+      ],
+    },
+  ];
+
+export type RiskActionColumnId =
+  | "serial"
+  | "risk"
+  | "source"
+  | "occurrence"
+  | "severity"
+  | "priority"
+  | "action"
+  | "actionType"
+  | "owner"
+  | "targetDate"
+  | "reference";
+
+export const RISK_ACTION_COLUMN_SCHEMA: readonly MatrixColumnSchema<RiskActionColumnId>[] =
+  [
+    serialFor<RiskActionColumnId>(),
+    { id: "risk", label: "Risk", aliases: ["risk", "issue", "finding"] },
+    {
+      id: "source",
+      label: "Source (section / records)",
+      aliases: [
+        "source section records",
+        "source",
+        "section",
+        "records",
+      ],
+    },
+    {
+      id: "occurrence",
+      label: "Occurrence in period",
+      aliases: ["occurrence in period", "occurrence", "frequency", "count"],
+    },
+    {
+      id: "severity",
+      label: "Severity",
+      aliases: ["severity", "impact"],
+    },
+    {
+      id: "priority",
+      label: "Priority (High / Medium / Low)",
+      aliases: ["priority high medium low", "priority"],
+    },
+    {
+      id: "action",
+      label: "Recommended action",
+      aliases: ["recommended action", "action", "recommendation"],
+    },
+    {
+      id: "actionType",
+      label: "Action type (CAPA / PM revision / change control / monitoring)",
+      aliases: [
+        "action type capa pm revision change control monitoring",
+        "action type",
+        "type",
+      ],
+    },
+    { id: "owner", label: "Owner", aliases: ["owner", "responsible"] },
+    {
+      id: "targetDate",
+      label: "Target date",
+      aliases: ["target date", "due date", "date"],
+    },
+    {
+      id: "reference",
+      label: "Reference",
+      aliases: ["reference", "document reference", "capa ref", "ccf"],
+    },
+  ];

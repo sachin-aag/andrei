@@ -279,7 +279,20 @@ const ELR_TOC: TableOfContentsEntry[] = [
     label: "4.0 Discrepancy / Deviations",
     sectionKey: "elr_discrepancies",
   },
-  { label: "5.0 Summary and Conclusion", sectionKey: "elr_conclusion" },
+  {
+    label: "5.0 Summary and Conclusion",
+    children: [
+      {
+        label: "5.1 System Trends and Patterns",
+        sectionKey: "elr_system_trends",
+      },
+      {
+        label: "5.2 Risk Assessment and Prioritized Actions",
+        sectionKey: "elr_risk_actions",
+      },
+      { label: "5.3 Conclusion", sectionKey: "elr_conclusion" },
+    ],
+  },
   { label: "6.0 Recommendation", sectionKey: "elr_conclusion" },
   { label: "7.0 Attachments", sectionKey: "elr_attachments" },
   { label: "8.0 Revision History", sectionKey: "elr_revision_history" },

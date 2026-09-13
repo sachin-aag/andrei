@@ -1,4 +1,5 @@
 import {
+  ELR_ACCESS_CONTROL_HEADERS,
   ELR_ALARM_HEADERS,
   ELR_AUDIT_TRAIL_HEADERS,
   ELR_BREAKDOWN_HEADERS,
@@ -10,7 +11,9 @@ import {
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
   ELR_QMS_HEADERS,
   ELR_QUALIFICATION_HEADERS,
+  ELR_RISK_ACTION_HEADERS,
   ELR_SECTION_LABELS,
+  ELR_SYSTEM_TRENDS_HEADERS,
 } from "./sections";
 
 const TABLE_SCHEMAS: readonly (readonly [string, readonly string[]])[] = [
@@ -22,8 +25,11 @@ const TABLE_SCHEMAS: readonly (readonly [string, readonly string[]])[] = [
   ["elr_breakdowns", ELR_BREAKDOWN_HEADERS],
   ["elr_qms", ELR_QMS_HEADERS],
   ["elr_alarms", ELR_ALARM_HEADERS],
+  ["elr_access_control", ELR_ACCESS_CONTROL_HEADERS],
   ["elr_audit_trail", ELR_AUDIT_TRAIL_HEADERS],
   ["elr_csv_status", ELR_CSV_STATUS_HEADERS],
+  ["elr_system_trends", ELR_SYSTEM_TRENDS_HEADERS],
+  ["elr_risk_actions", ELR_RISK_ACTION_HEADERS],
 ];
 
 export const ELR_DRAFTING_GUIDANCE = `## Report shape
@@ -119,6 +125,47 @@ These pairings are checked. Draft them consistently:
 - A QMS record marked as affecting the qualified state (Y) must be referenced
   in the qualification history.
 
+## Assessment above every evidence table
+
+Write a brief assessment in the section's `narrative` field, above the table.
+Do not recap that the section was reviewed. Reason from the rows:
+
+- Counts (how many events, which codes, how many repeats).
+- What happened.
+- Implication for the qualified state.
+- What was done (CA / CAPA / deviation / change control).
+- Whether product was scrapped or runtime was lost.
+
+Suggest only actions that follow from these rows. If the table is empty, say
+none occurred. The assessment is the quality of the report — a cheerful recap
+of a noisy table is a failure.
+
+Breakdowns and alarms still have a separate `trend` field (3.9.1 / 3.11.1)
+for grouping failure modes / whether the trended alarm set is still
+appropriate. That is not a substitute for the assessment above the table.
+
+Access control: separate initial qualification of access (21 CFR Part 11) from
+periodic verification this period (admin holders, privilege changes, leavers).
+
+## System trends
+
+`elr_system_trends` is a synthesis over the evidence sections, not a new
+inventory. Look for themes that cut across sections: the same sensor causing
+breakdowns and Direct Impact alarms; PM that is out of sync with the failure
+mode; a part that recurrently malfunctions. State downtime, uptime or
+availability for the period from the breakdown hours. Carry each theme that
+needs action into the risk-actions table via the Risk ID column.
+
+## Risk assessment and actions
+
+`elr_risk_actions` is the owned action list that follows from the trends.
+Prioritize by occurrence, frequency and severity. Product scrap and lost
+runtime are High. Each action must be a specific, owned, dated step (raise a
+CAPA, revise a PM checklist, file a change control) — not "monitor closely".
+Around ten actions is a working size; do not list every event. Select an
+overall report risk grade (Low / Medium / High) that matches the highest-priority
+rows.
+
 ## Conclusion
 
 State whether the equipment remains in its qualified state for this container
@@ -128,9 +175,10 @@ to account for it — do not conclude "no action required" over an open gap.
 ## Verbosity
 
 - Short: Objective, Scope, Responsibilities narrative.
-- Packed paragraph: Equipment description, each section's narrative lead-in,
-  trend summaries, conclusion.
-- Tables carry the evidence. Prefer a row over a sentence.
+- Packed paragraph: Equipment description, each section's assessment,
+  trend summaries, system-trends narrative, risk-actions narrative, conclusion.
+- Tables carry the evidence. Prefer a row over a sentence in the table;
+  the assessment above it is where you interpret.
 
 ## Evidence
 

@@ -117,6 +117,8 @@ const ELR_LANDSCAPE_TABLE_KEYS = new Set([
   "accessControlTableXml",
   "auditTrailTableXml",
   "csvStatusTableXml",
+  "systemTrendsTableXml",
+  "riskActionsTableXml",
 ]);
 
 function stringifyDvTemplateValue(

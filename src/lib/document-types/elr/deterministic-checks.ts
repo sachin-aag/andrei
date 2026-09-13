@@ -20,10 +20,17 @@ import {
   parseQmsMatrix,
   parseQualificationMatrix,
   parseResponsibilitiesMatrix,
+  parseRiskActionMatrix,
+  parseSystemTrendsMatrix,
 } from "./matrix-parser";
+import { extractRawRows } from "@/lib/document-types/design-verification/matrix-parser";
+import { tableFieldDoc } from "@/lib/document-types/qra/matrix-parser";
 import {
   ELR_FORMAT_APPLICABILITY,
+  ELR_RISK_ACTION_MAX_ROWS,
+  ELR_RISK_GRADES,
   type ElrRecommendation,
+  type ElrRiskGrade,
 } from "./sections";
 
 function verdict(
@@ -559,6 +566,208 @@ export function checkElrRevisionHistory(ctx: EvaluationContext) {
     );
   }
   return verdict("met", `${parsed.rows.length} revision(s) recorded`);
+}
+
+function countFilledTableRows(content: unknown, field = "table"): number {
+  const raw = extractRawRows(tableFieldDoc(content, field));
+  if ("error" in raw) return 0;
+  return raw.dataRows.filter((cells) => cells.some((c) => c.trim())).length;
+}
+
+/**
+ * Floor for the assessment above an evidence table: if there are events, the
+ * narrative has to interpret them (a count, not a "section was reviewed" recap).
+ * Empty tables do not require an assessment.
+ */
+export function checkAssessmentInterpretsTable(ctx: EvaluationContext) {
+  const rows = countFilledTableRows(ctx.content);
+  if (rows === 0) {
+    return verdict("met", "No table rows to interpret");
+  }
+  const text = narrativeText(ctx.content);
+  if (text.length < 40) {
+    return verdict(
+      "not_met",
+      `The table has ${rows} row(s) but the assessment is empty or a one-liner — interpret the counts, implication, and any product or runtime impact`
+    );
+  }
+  if (!/\d/.test(text)) {
+    return verdict(
+      "not_met",
+      "The assessment does not state a count from the table"
+    );
+  }
+  return verdict("met", "Assessment is present and includes a count");
+}
+
+function flaggedFindings(dependencies: Record<string, unknown>): string[] {
+  const flags: string[] = [];
+
+  const breakdowns = parseBreakdownMatrix(dependencies.elr_breakdowns ?? {});
+  if (breakdowns.ok) {
+    const n = breakdowns.rows.filter((r) => isYes(r.repeat)).length;
+    if (n > 0) flags.push(`${n} repeat breakdown(s)`);
+  }
+
+  const alarms = parseAlarmMatrix(dependencies.elr_alarms ?? {});
+  if (alarms.ok) {
+    const n = alarms.rows.filter((r) => isDirectImpact(r.criticality)).length;
+    if (n > 0) flags.push(`${n} Direct Impact alarm(s)`);
+  }
+
+  const monitoring = parseMonitoringMatrix(dependencies.elr_monitoring ?? {});
+  if (monitoring.ok) {
+    const n = monitoring.rows.filter((r) => isYes(r.excursion)).length;
+    if (n > 0) flags.push(`${n} monitoring excursion(s)`);
+  }
+
+  const calibration = parseCalibrationMatrix(dependencies.elr_calibration ?? {});
+  if (calibration.ok) {
+    const n = calibration.rows.filter((r) => isOutOfTolerance(r.result)).length;
+    if (n > 0) flags.push(`${n} out-of-tolerance calibration(s)`);
+  }
+
+  const pm = parsePreventiveMaintenanceMatrix(
+    dependencies.elr_preventive_maintenance ?? {}
+  );
+  if (pm.ok) {
+    const n = pm.rows.filter((r) => isDelayed(r.status)).length;
+    if (n > 0) flags.push(`${n} delayed PM(s)`);
+  }
+
+  const qms = parseQmsMatrix(dependencies.elr_qms ?? {});
+  if (qms.ok) {
+    const n = qms.rows.filter((r) => isYes(r.qualificationImpact)).length;
+    if (n > 0) flags.push(`${n} qualification-impacting QMS record(s)`);
+  }
+
+  return flags;
+}
+
+export function checkSystemTrendRows(ctx: EvaluationContext) {
+  const parsed = parseSystemTrendsMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No system trends recorded");
+  }
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const label = rowLabel(row.serial, index);
+    if (!row.theme.trim()) problems.push(`${label} has no theme`);
+    if (!row.whereSeen.trim()) {
+      problems.push(`${label} does not say where the theme was seen`);
+    }
+    if (!row.occurrences.trim()) {
+      problems.push(`${label} has no occurrence count`);
+    }
+    if (!row.impact.trim()) {
+      problems.push(`${label} has no product or runtime impact`);
+    }
+  });
+  return listProblems(problems, `${parsed.rows.length} system trend(s) recorded`);
+}
+
+export function checkSystemTrendsCoverFlaggedFindings(ctx: EvaluationContext) {
+  const flags = flaggedFindings(ctx.dependencies);
+  if (flags.length === 0) {
+    return verdict("met", "No flagged findings that require a system-trend row");
+  }
+  const parsed = parseSystemTrendsMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict(
+      "not_met",
+      `Flagged findings are present (${flags.join("; ")}) but the system-trends table is empty`
+    );
+  }
+  return verdict(
+    "met",
+    `${parsed.rows.length} trend theme(s) against ${flags.length} flagged finding group(s)`
+  );
+}
+
+function isPriorityCell(cell: string): boolean {
+  return /^(high|medium|low|h|m|l)\b/i.test(cell.trim());
+}
+
+function isHighPriority(cell: string): boolean {
+  return /^h(igh)?\b/i.test(cell.trim());
+}
+
+export function checkRiskActionRows(ctx: EvaluationContext) {
+  const parsed = parseRiskActionMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No recommended actions recorded");
+  }
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const label = rowLabel(row.serial, index);
+    if (!row.risk.trim()) problems.push(`${label} has no risk description`);
+    if (!row.source.trim()) problems.push(`${label} has no source`);
+    if (!row.occurrence.trim()) {
+      problems.push(`${label} has no occurrence`);
+    }
+    if (!row.severity.trim()) problems.push(`${label} has no severity`);
+    if (!isPriorityCell(row.priority)) {
+      problems.push(`${label} priority must be High, Medium or Low`);
+    }
+    if (!row.action.trim()) problems.push(`${label} has no recommended action`);
+    if (!row.owner.trim()) problems.push(`${label} has no owner`);
+    if (!row.targetDate.trim()) problems.push(`${label} has no target date`);
+  });
+  return listProblems(
+    problems,
+    `${parsed.rows.length} recommended action(s) recorded`
+  );
+}
+
+export function checkRiskGradeConsistent(ctx: EvaluationContext) {
+  const content = ctx.content as
+    | { overallGrade?: ElrRiskGrade }
+    | null
+    | undefined;
+  const grade = (content?.overallGrade ?? "").trim();
+  if (!grade) {
+    return verdict("not_met", "No overall report risk grade selected");
+  }
+  if (
+    !(ELR_RISK_GRADES as readonly string[]).includes(grade)
+  ) {
+    return verdict("not_met", `Unknown risk grade (${grade})`);
+  }
+  const parsed = parseRiskActionMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  const highCount = parsed.rows.filter((r) => isHighPriority(r.priority)).length;
+  if (grade === "low" && highCount > 0) {
+    return verdict(
+      "not_met",
+      `${highCount} High-priority action(s) recorded — overall grade cannot be Low`
+    );
+  }
+  return verdict("met", `Overall grade recorded (${grade})`);
+}
+
+export function checkRiskActionsNotBloated(ctx: EvaluationContext) {
+  const parsed = parseRiskActionMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  const flags = flaggedFindings(ctx.dependencies);
+  if (parsed.rows.length === 0 && flags.length > 0) {
+    return verdict(
+      "not_met",
+      `Flagged findings are present (${flags.join("; ")}) but no recommended actions are recorded`
+    );
+  }
+  if (parsed.rows.length > ELR_RISK_ACTION_MAX_ROWS) {
+    return verdict(
+      "partially_met",
+      `${parsed.rows.length} actions — consolidate related risks; ${ELR_RISK_ACTION_MAX_ROWS} is a working ceiling`
+    );
+  }
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No flagged findings requiring an action");
+  }
+  return verdict("met", `${parsed.rows.length} recommended action(s)`);
 }
 
 /** Exported for tests that assert the Y/N helpers behave on real MJ phrasing. */
