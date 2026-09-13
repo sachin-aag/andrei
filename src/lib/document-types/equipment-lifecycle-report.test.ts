@@ -7,6 +7,7 @@ import { getCriteria, getDocumentType, getWorkspaceSections } from ".";
 import type { EvaluationContext } from "./types";
 import {
   checkAlarmDirectImpactAction,
+  checkAssessmentInterpretsTable,
   checkBreakdownRepeatCapa,
   checkCalibrationStatus,
   checkMonitoringExcursionsLinked,
@@ -16,7 +17,16 @@ import {
   checkQmsRecords,
   checkQualificationFormatScope,
   checkRecommendationSelected,
+  checkRiskActionRows,
+  checkRiskActionsNotBloated,
+  checkRiskGradeConsistent,
+  checkSystemTrendRows,
+  checkSystemTrendsCoverFlaggedFindings,
 } from "./elr/deterministic-checks";
+import {
+  RISK_ACTION_COLUMN_SCHEMA,
+  SYSTEM_TRENDS_COLUMN_SCHEMA,
+} from "./elr/matrix-columns";
 import {
   ELR_ALARM_HEADERS,
   ELR_BREAKDOWN_HEADERS,
@@ -25,8 +35,11 @@ import {
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
   ELR_QMS_HEADERS,
   ELR_QUALIFICATION_HEADERS,
+  ELR_RISK_ACTION_HEADERS,
+  ELR_RISK_ACTION_MAX_ROWS,
   ELR_SECTION_KEYS,
   ELR_SECTION_LABELS,
+  ELR_SYSTEM_TRENDS_HEADERS,
   EMPTY_ELR_CONTENT,
 } from "./elr/sections";
 
@@ -114,11 +127,18 @@ describe("equipment lifecycle report definition", () => {
     expect(ELR_SECTION_LABELS.elr_objective).toBe("Purpose");
     expect(sections).toContain("elr_abbreviations");
     expect(sections).toContain("elr_discrepancies");
-    // Discrepancy sits after the evidence sections and before the conclusion.
+    // Discrepancy sits after the evidence sections; system trends and risk
+    // actions sit between discrepancy and the conclusion.
     expect(sections.indexOf("elr_discrepancies")).toBeGreaterThan(
       sections.indexOf("elr_csv_status")
     );
     expect(sections.indexOf("elr_discrepancies")).toBeLessThan(
+      sections.indexOf("elr_system_trends")
+    );
+    expect(sections.indexOf("elr_system_trends")).toBeLessThan(
+      sections.indexOf("elr_risk_actions")
+    );
+    expect(sections.indexOf("elr_risk_actions")).toBeLessThan(
       sections.indexOf("elr_conclusion")
     );
   });
@@ -139,9 +159,13 @@ describe("equipment lifecycle report definition", () => {
     const def = getDocumentType(TYPE);
     expect(def.chat.inventorySections).toContain("elr_qualification");
     expect(def.chat.inventorySections).toContain("elr_qms");
+    expect(def.chat.inventorySections).toContain("elr_access_control");
+    expect(def.chat.inventorySections).toContain("elr_audit_trail");
     expect(def.chat.inventorySections).not.toContain("elr_objective");
     expect(def.chat.inventorySections).not.toContain("elr_scope");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v1");
+    expect(def.chat.inventorySections).not.toContain("elr_system_trends");
+    expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v2");
   });
 
   it("maps every section into the export template data", () => {
@@ -407,6 +431,32 @@ describe("ELR criteria wiring", () => {
     const decision = criteria.find((c) => c.key === "conclusion.states_decision");
     expect(decision?.dependsOn).toContain("elr_discrepancies");
   });
+
+  it("wires synthesis criteria onto the evidence sections they read", () => {
+    const trends = getCriteria(TYPE, "elr_system_trends");
+    const cover = trends.find((c) => c.key === "system_trends.covers_flagged_findings");
+    expect(cover?.kind).toBe("deterministic");
+    expect(cover?.dependsOn).toEqual(
+      expect.arrayContaining([
+        "elr_breakdowns",
+        "elr_alarms",
+        "elr_monitoring",
+        "elr_calibration",
+        "elr_preventive_maintenance",
+        "elr_qms",
+      ])
+    );
+
+    const actions = getCriteria(TYPE, "elr_risk_actions");
+    const bloated = actions.find((c) => c.key === "risk.not_bloated");
+    expect(bloated?.kind).toBe("deterministic");
+    expect(bloated?.dependsOn).toEqual(cover?.dependsOn);
+
+    const monitoring = getCriteria(TYPE, "elr_monitoring");
+    expect(monitoring.some((c) => c.key === "monitoring.assessment_present")).toBe(
+      true
+    );
+  });
 });
 
 describe("ELR periodic re-qualification schedule", () => {
@@ -620,5 +670,249 @@ describe("ELR pack enablement", () => {
   it("is enabled for MJ and not for demo", () => {
     expect(isDocumentTypeEnabled(TYPE, MJ_PACK)).toBe(true);
     expect(isDocumentTypeEnabled(TYPE, DEMO_PACK)).toBe(false);
+  });
+});
+
+describe("ELR assessment, trends and risk checks", () => {
+  const filledMonitoring = tableDoc([
+    [...ELR_MONITORING_HEADERS],
+    row(ELR_MONITORING_HEADERS, {
+      "Sr. No.": "1",
+      "Monitoring Parameter": "Non-viable particle count",
+      "Excursion (Y/N)": "Y",
+      "Linked Deviation Ref.": "DEV-26-011",
+    }),
+  ]);
+
+  const repeatBreakdown = {
+    table: tableDoc([
+      [...ELR_BREAKDOWN_HEADERS],
+      row(ELR_BREAKDOWN_HEADERS, {
+        "Sr. No.": "1",
+        "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+        "Repeat (Y/N)": "Y",
+      }),
+    ]),
+  };
+
+  const completeTrend = row(ELR_SYSTEM_TRENDS_HEADERS, {
+    "Sr. No.": "1",
+    Theme: "Peristaltic pump dosing faults",
+    "Where seen (sections / record nos.)": "Breakdowns 3.9; alarm 1951",
+    "Occurrences in period": "4",
+    "Trend (increasing / stable / decreasing)": "increasing",
+    "Product or runtime impact": "Lost runtime on the filling line",
+    "Carried to risk (Risk ID)": "R-1",
+  });
+
+  const completeAction = (priority: string, serial = "1") =>
+    row(ELR_RISK_ACTION_HEADERS, {
+      "Sr. No.": serial,
+      Risk: "Recurrent peristaltic pump dosing fault",
+      "Source (section / records)": "Breakdowns; alarm 1951",
+      "Occurrence in period": "4",
+      Severity: "High — lost filling runtime",
+      "Priority (High / Medium / Low)": priority,
+      "Recommended action": "Raise a CAPA to replace the pump tubing set",
+      "Action type (CAPA / PM revision / change control / monitoring)": "CAPA",
+      Owner: "Engineering",
+      "Target date": "2026-10-31",
+      Reference: "CAPA-26-014",
+    });
+
+  it("keeps system-trend and risk-action headers identical to the column schemas", () => {
+    expect(SYSTEM_TRENDS_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_SYSTEM_TRENDS_HEADERS,
+    ]);
+    expect(RISK_ACTION_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_RISK_ACTION_HEADERS,
+    ]);
+  });
+
+  it("does not require an assessment when the evidence table is empty", () => {
+    expect(
+      checkAssessmentInterpretsTable(
+        ctx(
+          { table: tableDoc([[...ELR_MONITORING_HEADERS]]), narrative: narrative("") },
+          { section: "elr_monitoring" }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("fails a filled table with a one-line recap and no count", () => {
+    const short = checkAssessmentInterpretsTable(
+      ctx(
+        { table: filledMonitoring, narrative: narrative("Section reviewed.") },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(short.status).toBe("not_met");
+    expect(short.reasoning).toMatch(/one-liner|empty/i);
+
+    const noCount = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: filledMonitoring,
+          narrative: narrative(
+            "Monitoring was reviewed for the period and one excursion was closed with a linked deviation."
+          ),
+        },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(noCount.status).toBe("not_met");
+    expect(noCount.reasoning).toMatch(/count/i);
+  });
+
+  it("passes an assessment that states a count from the table", () => {
+    const result = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: filledMonitoring,
+          narrative: narrative(
+            "One of three monitoring parameters recorded an excursion; it was closed under DEV-26-011 with no product impact."
+          ),
+        },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(result.status).toBe("met");
+  });
+
+  it("requires theme, where-seen, occurrences and impact on each trend row", () => {
+    const incomplete = tableDoc([
+      [...ELR_SYSTEM_TRENDS_HEADERS],
+      row(ELR_SYSTEM_TRENDS_HEADERS, {
+        "Sr. No.": "1",
+        Theme: "Peristaltic pump dosing faults",
+      }),
+    ]);
+    const result = checkSystemTrendRows(
+      ctx({ table: incomplete }, { section: "elr_system_trends" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/where the theme was seen/i);
+  });
+
+  it("fails an empty trends table when a repeat breakdown is flagged", () => {
+    const result = checkSystemTrendsCoverFlaggedFindings(
+      ctx(
+        { table: tableDoc([[...ELR_SYSTEM_TRENDS_HEADERS]]) },
+        {
+          section: "elr_system_trends",
+          dependencies: { elr_breakdowns: repeatBreakdown },
+        }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/repeat breakdown/i);
+  });
+
+  it("passes a complete trend row against flagged findings", () => {
+    const table = tableDoc([[...ELR_SYSTEM_TRENDS_HEADERS], completeTrend]);
+    expect(
+      checkSystemTrendRows(ctx({ table }, { section: "elr_system_trends" })).status
+    ).toBe("met");
+    expect(
+      checkSystemTrendsCoverFlaggedFindings(
+        ctx(
+          { table },
+          {
+            section: "elr_system_trends",
+            dependencies: { elr_breakdowns: repeatBreakdown },
+          }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("rejects a High-priority action with overall grade Low", () => {
+    const result = checkRiskGradeConsistent(
+      ctx(
+        {
+          overallGrade: "low",
+          table: tableDoc([[...ELR_RISK_ACTION_HEADERS], completeAction("High")]),
+        },
+        { section: "elr_risk_actions" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/cannot be Low/i);
+  });
+
+  it("accepts a High-priority action with overall grade High", () => {
+    expect(
+      checkRiskGradeConsistent(
+        ctx(
+          {
+            overallGrade: "high",
+            table: tableDoc([[...ELR_RISK_ACTION_HEADERS], completeAction("High")]),
+          },
+          { section: "elr_risk_actions" }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("requires owner, date and High/Medium/Low on each risk row", () => {
+    const incomplete = tableDoc([
+      [...ELR_RISK_ACTION_HEADERS],
+      row(ELR_RISK_ACTION_HEADERS, {
+        "Sr. No.": "1",
+        Risk: "Recurrent peristaltic pump dosing fault",
+        "Source (section / records)": "Breakdowns",
+        "Occurrence in period": "4",
+        Severity: "High",
+        "Priority (High / Medium / Low)": "urgent",
+        "Recommended action": "Replace the pump",
+      }),
+    ]);
+    const result = checkRiskActionRows(
+      ctx({ table: incomplete }, { section: "elr_risk_actions" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/High, Medium or Low/i);
+  });
+
+  it("fails an empty action list when flagged findings exist", () => {
+    const result = checkRiskActionsNotBloated(
+      ctx(
+        { table: tableDoc([[...ELR_RISK_ACTION_HEADERS]]) },
+        {
+          section: "elr_risk_actions",
+          dependencies: { elr_breakdowns: repeatBreakdown },
+        }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/no recommended actions/i);
+  });
+
+  it("marks more than 15 risk rows as partially met", () => {
+    const rows = Array.from({ length: ELR_RISK_ACTION_MAX_ROWS + 1 }, (_, i) =>
+      completeAction("Medium", String(i + 1))
+    );
+    const result = checkRiskActionsNotBloated(
+      ctx(
+        { table: tableDoc([[...ELR_RISK_ACTION_HEADERS], ...rows]) },
+        { section: "elr_risk_actions" }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/consolidate/i);
+  });
+
+  it("hydrates a missing overallGrade on merge without dropping the table", () => {
+    const merged = getDocumentType(TYPE).mergeSection("elr_risk_actions", {
+      narrative: narrative("High because of lost runtime."),
+      table: tableDoc([[...ELR_RISK_ACTION_HEADERS], completeAction("High")]),
+    });
+    expect(merged).toMatchObject({ overallGrade: "" });
+    expect(
+      checkRiskGradeConsistent(
+        ctx(merged, { section: "elr_risk_actions" })
+      ).status
+    ).toBe("not_met");
   });
 });
