@@ -127,7 +127,7 @@ These pairings are checked. Draft them consistently:
 
 ## Assessment above every evidence table
 
-Write a brief assessment in the section's `narrative` field, above the table.
+Write a brief assessment in the section's \`narrative\` field, above the table.
 Do not recap that the section was reviewed. Reason from the rows:
 
 - Counts (how many events, which codes, how many repeats).
@@ -140,7 +140,7 @@ Suggest only actions that follow from these rows. If the table is empty, say
 none occurred. The assessment is the quality of the report — a cheerful recap
 of a noisy table is a failure.
 
-Breakdowns and alarms still have a separate `trend` field (3.9.1 / 3.11.1)
+Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.11.1)
 for grouping failure modes / whether the trended alarm set is still
 appropriate. That is not a substitute for the assessment above the table.
 
@@ -149,7 +149,7 @@ periodic verification this period (admin holders, privilege changes, leavers).
 
 ## System trends
 
-`elr_system_trends` is a synthesis over the evidence sections, not a new
+\`elr_system_trends\` is a synthesis over the evidence sections, not a new
 inventory. Look for themes that cut across sections: the same sensor causing
 breakdowns and Direct Impact alarms; PM that is out of sync with the failure
 mode; a part that recurrently malfunctions. State downtime, uptime or
@@ -158,7 +158,7 @@ needs action into the risk-actions table via the Risk ID column.
 
 ## Risk assessment and actions
 
-`elr_risk_actions` is the owned action list that follows from the trends.
+\`elr_risk_actions\` is the owned action list that follows from the trends.
 Prioritize by occurrence, frequency and severity. Product scrap and lost
 runtime are High. Each action must be a specific, owned, dated step (raise a
 CAPA, revise a PM checklist, file a change control) — not "monitor closely".
