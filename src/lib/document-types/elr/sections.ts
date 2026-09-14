@@ -226,6 +226,51 @@ export const ELR_RISK_ACTION_HEADERS = [
 /** Soft cap on the risk-actions table — consolidate related rows rather than list every event. */
 export const ELR_RISK_ACTION_MAX_ROWS = 15;
 
+/** Caption titles — keep identical to the editor table labels. */
+export const ELR_TABLE_CAPTION_TITLES = {
+  elr_responsibilities: "Departments and responsibilities",
+  elr_abbreviations: "Abbreviations",
+  elr_qualification: "Qualification and periodic re-qualification history",
+  elr_media_fill: "Media fill / aseptic process simulation",
+  elr_monitoring: "Monitoring records",
+  elr_calibration: "Associated instruments",
+  elr_preventive_maintenance: "Preventive maintenance",
+  elr_breakdowns: "Breakdown events",
+  elr_qms: "Change control / deviation / CAPA / OOS / OOT",
+  elr_alarms: "Alarm records",
+  elr_access_control: "Access control",
+  elr_audit_trail: "Audit trail review",
+  elr_csv_status: "Validation status",
+  elr_system_trends: "Recurring themes",
+  elr_risk_actions: "Prioritized actions",
+  elr_attachments: "Attachments",
+  elr_revision_history: "Revision history",
+} as const satisfies Partial<Record<ElrSectionKey, string>>;
+
+const ELR_TABLE_HEADERS: Partial<Record<ElrSectionKey, readonly string[]>> = {
+  elr_responsibilities: ELR_RESPONSIBILITIES_HEADERS,
+  elr_abbreviations: ELR_ABBREVIATIONS_HEADERS,
+  elr_qualification: ELR_QUALIFICATION_HEADERS,
+  elr_media_fill: ELR_MEDIA_FILL_HEADERS,
+  elr_monitoring: ELR_MONITORING_HEADERS,
+  elr_calibration: ELR_CALIBRATION_HEADERS,
+  elr_preventive_maintenance: ELR_PREVENTIVE_MAINTENANCE_HEADERS,
+  elr_breakdowns: ELR_BREAKDOWN_HEADERS,
+  elr_qms: ELR_QMS_HEADERS,
+  elr_alarms: ELR_ALARM_HEADERS,
+  elr_access_control: ELR_ACCESS_CONTROL_HEADERS,
+  elr_audit_trail: ELR_AUDIT_TRAIL_HEADERS,
+  elr_csv_status: ELR_CSV_STATUS_HEADERS,
+  elr_system_trends: ELR_SYSTEM_TRENDS_HEADERS,
+  elr_risk_actions: ELR_RISK_ACTION_HEADERS,
+  elr_attachments: ELR_ATTACHMENTS_HEADERS,
+  elr_revision_history: ELR_REVISION_HISTORY_HEADERS,
+};
+
+export function elrTableHeadersForSection(section: string): readonly string[] {
+  return ELR_TABLE_HEADERS[section as ElrSectionKey] ?? [];
+}
+
 // ---------------------------------------------------------------- content shapes
 
 export type ElrNarrativeSection = { narrative: JSONContent };

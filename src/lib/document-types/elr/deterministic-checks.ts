@@ -29,6 +29,7 @@ import {
 } from "./matrix-parser";
 import { extractRawRows } from "@/lib/document-types/design-verification/matrix-parser";
 import { tableFieldDoc } from "@/lib/document-types/qra/matrix-parser";
+import { captionNumberAboveTable } from "@/lib/suggestions/table-operation";
 import {
   ELR_FORMAT_APPLICABILITY,
   ELR_RISK_ACTION_MAX_ROWS,
@@ -137,6 +138,23 @@ export function checkResponsibilitiesTable(ctx: EvaluationContext) {
   if (!parsed.ok) return verdict("not_met", parsed.reason);
   if (parsed.rows.length === 0) {
     return verdict("not_met", "No responsibilities are listed");
+  }
+  const problems: string[] = [];
+  if (captionNumberAboveTable(tableFieldDoc(ctx.content, "table"), 0) === null) {
+    problems.push(
+      "The table is missing a Table N. caption immediately above it"
+    );
+  }
+  if (narrativeText(ctx.content).length < 20) {
+    problems.push(
+      "Write a short summary of departmental responsibilities above the table and refer to Table N"
+    );
+  }
+  if (problems.length > 0) {
+    return listProblems(
+      problems,
+      `${parsed.rows.length} department(s) listed`
+    );
   }
   const incomplete = parsed.rows.filter(
     (r) => !r.department.trim() || !r.responsibility.trim()
@@ -829,11 +847,16 @@ export function checkAssessmentInterpretsTable(ctx: EvaluationContext) {
   if (rows === 0) {
     return verdict("met", "No table rows to interpret");
   }
+  const missingCaption =
+    captionNumberAboveTable(tableFieldDoc(ctx.content, "table"), 0) === null;
   const text = narrativeText(ctx.content);
   if (text.length < 40) {
+    const captionNote = missingCaption
+      ? " The table is also missing a Table N. caption immediately above it."
+      : "";
     return verdict(
       "not_met",
-      `The table has ${rows} row(s) but the assessment is empty or a one-liner — interpret the counts, implication, and any product or runtime impact`
+      `The table has ${rows} row(s) but the assessment is empty or a one-liner — interpret the counts, implication, and any product or runtime impact.${captionNote}`
     );
   }
   if (!/\d/.test(text)) {
@@ -843,6 +866,11 @@ export function checkAssessmentInterpretsTable(ctx: EvaluationContext) {
     );
   }
   const gaps: string[] = [];
+  if (missingCaption) {
+    gaps.push(
+      "The filled table is missing a Table N. caption immediately above it"
+    );
+  }
   const downtime = totalBreakdownDowntime(ctx.content);
   if (
     downtime > 0 &&

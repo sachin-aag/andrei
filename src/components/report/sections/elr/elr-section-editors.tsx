@@ -15,6 +15,7 @@ import {
   ELR_RISK_GRADES,
   ELR_RISK_GRADE_LABELS,
   ELR_SECTION_LABELS,
+  ELR_TABLE_CAPTION_TITLES,
   type ElrConclusionSection,
   type ElrRecommendation,
   type ElrRiskActionsSection,
@@ -32,7 +33,7 @@ const TABLE_PLACEHOLDER =
   "Use the table toolbar to add rows. Keep the header columns unchanged.";
 
 const ASSESSMENT_PLACEHOLDER =
-  "Interpret the table: counts, what happened, implication, what was done (CA / CAPA / deviation), and whether product was scrapped or runtime was lost. Suggest only actions that follow from these rows.";
+  "Interpret the table (refer to it as Table N once numbered): counts, what happened, implication, what was done (CA / CAPA / deviation), and whether product was scrapped or runtime was lost. Suggest only actions that follow from these rows.";
 
 type NarrativeContent = { narrative: JSONContent };
 
@@ -267,8 +268,8 @@ export function ElrResponsibilitiesEditor() {
     <NarrativeTableEditor
       section="elr_responsibilities"
       narrativeLabel="Responsibilities"
-      tableLabel="Departments and responsibilities"
-      narrativePlaceholder="Optional lead-in. The table carries the departmental responsibilities."
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_responsibilities}
+      narrativePlaceholder="Summarise who does what and refer to Table N. The table carries the departmental responsibilities."
     />
   );
 }
@@ -277,7 +278,7 @@ export function ElrAbbreviationsEditor() {
   return (
     <TableEditor
       section="elr_abbreviations"
-      fieldLabel="Abbreviations"
+      fieldLabel={ELR_TABLE_CAPTION_TITLES.elr_abbreviations}
       hint="Starter glossary — keep the terms this report actually uses and delete the rest."
     />
   );
@@ -298,7 +299,7 @@ export function ElrQualificationEditor() {
     <NarrativeTableEditor
       section="elr_qualification"
       narrativeLabel="Assessment"
-      tableLabel="Qualification and periodic re-qualification history"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_qualification}
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} State whether the chain is unbroken and whether the next periodic re-qualification is due or overdue.`}
       hint="Cumulative for the life of the equipment — not limited to the ELR period. Mark every row Vial, Cartridge or Line-common."
     />
@@ -310,7 +311,7 @@ export function ElrMediaFillEditor() {
     <NarrativeTableEditor
       section="elr_media_fill"
       narrativeLabel="Assessment"
-      tableLabel="Media fill / aseptic process simulation"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_media_fill}
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} State whether the qualifying configuration for this format remains current and whether the required frequency per line and shift has been met.`}
     />
   );
@@ -321,7 +322,7 @@ export function ElrMonitoringEditor() {
     <NarrativeTableEditor
       section="elr_monitoring"
       narrativeLabel="Assessment"
-      tableLabel="Monitoring records"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_monitoring}
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} Call out any excursion and its linked deviation.`}
       hint="Every row reporting an excursion must carry a linked deviation reference."
     />
@@ -333,7 +334,7 @@ export function ElrCalibrationEditor() {
     <NarrativeTableEditor
       section="elr_calibration"
       narrativeLabel="Assessment"
-      tableLabel="Associated instruments"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_calibration}
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} Confirm no instrument is overdue at the cut-off date.`}
       hint="Instruments are the equipment ID prefix in the annual calibration planner (for example E/PR/070/…)."
     />
@@ -345,7 +346,7 @@ export function ElrPreventiveMaintenanceEditor() {
     <NarrativeTableEditor
       section="elr_preventive_maintenance"
       narrativeLabel="Assessment"
-      tableLabel="Preventive maintenance"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_preventive_maintenance}
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} State PM compliance (completed on schedule against planned) and note any checklist revision.`}
     />
   );
@@ -357,7 +358,7 @@ export function ElrBreakdownsEditor() {
       section="elr_breakdowns"
       narrativeLabel="Assessment"
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} Include downtime hours and whether a repeat failure lost runtime.`}
-      tableLabel="Breakdown events"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_breakdowns}
       trendLabel="Breakdown trend summary"
       trendPlaceholder="Group recurring failure modes and state what recurrence implies for PM frequency, design change or re-qualification timing."
     />
@@ -369,7 +370,7 @@ export function ElrQmsEditor() {
     <NarrativeTableEditor
       section="elr_qms"
       narrativeLabel="Assessment"
-      tableLabel="Change control / deviation / CAPA / OOS / OOT"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_qms}
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} List open items separately from closed ones and explain why any change affecting the qualified state did or did not trigger a re-qualification.`}
       hint="Period runs from the last PRQ completion date to the ELR cut-off — not the rolling window."
     />
@@ -382,7 +383,7 @@ export function ElrAlarmsEditor() {
       section="elr_alarms"
       narrativeLabel="Assessment"
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} Distinguish Direct Impact alarms from nuisance codes and say whether any lost runtime.`}
-      tableLabel="Alarm records"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_alarms}
       trendLabel="Alarm trend summary"
       trendPlaceholder="Distinguish recurring or nuisance alarms from GMP-relevant ones, and state whether the trended alarm set still covers the equipment's direct-impact functions."
     />
@@ -394,7 +395,7 @@ export function ElrAccessControlEditor() {
     <NarrativeTableEditor
       section="elr_access_control"
       narrativeLabel="Assessment"
-      tableLabel="Access control"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_access_control}
       narrativePlaceholder="Separate initial qualification of access control (21 CFR Part 11) from what was verified this period: admin holders, privilege changes, leavers removed. Interpret the table counts."
       hint="Where the control system is shared across the line, scope to this equipment where the system permits and mark the remainder Line-common."
     />
@@ -406,7 +407,7 @@ export function ElrAuditTrailEditor() {
     <NarrativeTableEditor
       section="elr_audit_trail"
       narrativeLabel="Assessment"
-      tableLabel="Audit trail review"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_audit_trail}
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} Review periods must cover the whole ELR period without a gap.`}
       hint="Any anomaly needs a deviation reference."
     />
@@ -418,7 +419,7 @@ export function ElrCsvStatusEditor() {
     <NarrativeTableEditor
       section="elr_csv_status"
       narrativeLabel="Assessment"
-      tableLabel="Validation status"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_csv_status}
       narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} State when each system's periodic review was last performed. Mark Not Applicable explicitly if the equipment has no computerized system.`}
     />
   );
@@ -439,7 +440,7 @@ export function ElrSystemTrendsEditor() {
     <NarrativeTableEditor
       section="elr_system_trends"
       narrativeLabel="System-level assessment"
-      tableLabel="Recurring themes"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_system_trends}
       narrativePlaceholder="Identify recurring themes that cut across sections — the same sensor, a PM alarm that is out of sync, a part that keeps failing. State downtime, uptime or availability for the period. Carry each theme that needs action into the risk-actions table."
       hint="This is a synthesis over the evidence sections, not a new inventory of records."
     />
@@ -506,7 +507,7 @@ export function ElrRiskActionsEditor() {
       <TiptapSectionField
         section={section}
         contentPath="table"
-        label="Prioritized actions"
+        label={ELR_TABLE_CAPTION_TITLES.elr_risk_actions}
         placeholder={TABLE_PLACEHOLDER}
         className="grid gap-2"
         value={content.table}
@@ -586,11 +587,19 @@ export function ElrConclusionEditor() {
 }
 
 export function ElrAttachmentsEditor() {
-  return <TableEditor section="elr_attachments" fieldLabel="Attachments" />;
+  return (
+    <TableEditor
+      section="elr_attachments"
+      fieldLabel={ELR_TABLE_CAPTION_TITLES.elr_attachments}
+    />
+  );
 }
 
 export function ElrRevisionHistoryEditor() {
   return (
-    <TableEditor section="elr_revision_history" fieldLabel="Revision history" />
+    <TableEditor
+      section="elr_revision_history"
+      fieldLabel={ELR_TABLE_CAPTION_TITLES.elr_revision_history}
+    />
   );
 }

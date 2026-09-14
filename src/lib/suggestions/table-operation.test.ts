@@ -10,9 +10,11 @@ import {
   captureTableOperationSnapshots,
   existingTableCountFromContents,
   parseTableOperation,
+  prefixTableCaptionMarkdown,
   summarizeTableOperation,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
+import { ELR_RESPONSIBILITIES_HEADERS } from "@/lib/document-types/elr/sections";
 
 function textCell(
   type: "tableHeader" | "tableCell",
@@ -133,7 +135,7 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 0, 3)).toBe("Description");
     expect(cellText(result.doc, 1, 3)).toBe("Dental laser");
     const manufacturerCell = (
-      result.doc.content![0]!.content![1] as JSONContent
+      result.doc.content!.find((n) => n.type === "table")!.content![1] as JSONContent
     ).content![1] as JSONContent;
     const textNode = manufacturerCell.content![0]!.content![0]!;
     expect(textNode.marks).toEqual([{ type: "bold" }]);
@@ -657,7 +659,24 @@ describe("applyTableOperation", () => {
     );
   });
 
-  it("counts tables and Table N. captions across section maps", () => {
+  it("does not count uncaptioned table shells toward N", () => {
+    expect(
+      existingTableCountFromContents([
+        {
+          table: {
+            type: "doc",
+            content: [{ type: "table", content: [] }],
+          },
+        },
+        {
+          type: "doc",
+          content: [{ type: "table", content: [] }],
+        },
+      ])
+    ).toBe(0);
+  });
+
+  it("counts Table N. captions across section maps, not uncaptioned shells", () => {
     expect(
       existingTableCountFromContents([
         {
@@ -678,6 +697,160 @@ describe("applyTableOperation", () => {
         },
       ])
     ).toBe(7);
+  });
+
+  it("inserts a Table N. caption when a seeded table is first filled", () => {
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "1" },
+          { row: 1, col: 1, insertText: "Production" },
+          { row: 1, col: 2, insertText: "Operate the filling line" },
+        ],
+      },
+      {
+        section: "elr_responsibilities",
+        targetField: "table",
+        existingTableCount: 0,
+      }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(1);
+    expect(result.doc.content?.map((n) => n.type)).toEqual(["paragraph", "table"]);
+    expect(flattenForAnchor(result.doc.content![0]!).text).toBe(
+      "Table 1. Departments and responsibilities"
+    );
+  });
+
+  it("does not caption a still-empty seeded table", () => {
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 1, insertText: "" }],
+      },
+      {
+        section: "elr_responsibilities",
+        targetField: "table",
+        existingTableCount: 0,
+      }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBeUndefined();
+    expect(result.doc.content?.map((n) => n.type)).toEqual(["table"]);
+  });
+
+  it("reuses an existing caption instead of inserting a second one", () => {
+    const filled = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "1" },
+          { row: 1, col: 1, insertText: "Production" },
+          { row: 1, col: 2, insertText: "Operate the filling line" },
+        ],
+      },
+      {
+        section: "elr_responsibilities",
+        targetField: "table",
+        existingTableCount: 0,
+      }
+    );
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+    const again = applyTableOperation(
+      filled.doc,
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [["2", "QA", "Approve the report"]],
+      },
+      {
+        section: "elr_responsibilities",
+        targetField: "table",
+        existingTableCount: 1,
+      }
+    );
+    expect(again.status).toBe("ok");
+    if (!again.ok) return;
+    expect(again.tableNumber).toBe(1);
+    expect(
+      again.doc.content?.filter((n) => n.type === "paragraph")
+    ).toHaveLength(1);
+  });
+
+  it("refuses create_table on a seeded ELR matrix field", () => {
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      { kind: "create_table", headers: ["A", "B"], title: "Extra" },
+      { section: "elr_responsibilities", targetField: "table" }
+    );
+    expect(result.status).toBe("fixed_schema");
+  });
+
+  it("removes the caption with delete_table", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 1. Spare parts" }],
+        },
+        tableDoc(["Part", "Qty"], [["A", "2"]]).content![0]!,
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.content?.some((n) => n.type === "table")).toBe(false);
+    expect(flattenForAnchor(result.doc).text).not.toMatch(/Table 1/);
+  });
+
+  it("prefixes GFM table markdown with Table N. when rewriting a filled table", () => {
+    const prefixed = prefixTableCaptionMarkdown(
+      "| Department | Responsibilities |\n| --- | --- |\n| Production | Operate the line |\n",
+      2,
+      "Departments and responsibilities"
+    );
+    expect(prefixed.tableNumber).toBe(3);
+    expect(prefixed.markdown).toMatch(
+      /^Table 3\. Departments and responsibilities\n\n\| Department/
+    );
+  });
+
+  it("does not prefix GFM that already has a Table N. caption or has no data rows", () => {
+    expect(
+      prefixTableCaptionMarkdown(
+        "Table 4. Monitoring records\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+        0,
+        "Monitoring records"
+      )
+    ).toEqual({
+      markdown:
+        "Table 4. Monitoring records\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+      tableNumber: 4,
+    });
+    expect(
+      prefixTableCaptionMarkdown(
+        "| A | B |\n| --- | --- |\n",
+        0,
+        "Monitoring records"
+      )
+    ).toEqual({
+      markdown: "| A | B |\n| --- | --- |\n",
+      tableNumber: undefined,
+    });
   });
 
   it("inserts a new table before trailing Citations", () => {

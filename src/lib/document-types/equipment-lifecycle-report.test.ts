@@ -24,6 +24,7 @@ import {
   checkRecommendationSelected,
   checkRecordTypeMatchesReference,
   checkMediaFillTable,
+  checkResponsibilitiesTable,
   checkRiskActionRows,
   checkRiskActionsNotBloated,
   checkRiskGradeConsistent,
@@ -45,6 +46,7 @@ import {
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
   ELR_QMS_HEADERS,
   ELR_QUALIFICATION_HEADERS,
+  ELR_RESPONSIBILITIES_HEADERS,
   ELR_RISK_ACTION_HEADERS,
   ELR_RISK_ACTION_MAX_ROWS,
   ELR_SECTION_KEYS,
@@ -74,6 +76,23 @@ function tableDoc(rows: readonly (readonly string[])[]): JSONContent {
           })),
         })),
       },
+    ],
+  };
+}
+
+function captionedTableDoc(
+  rows: readonly (readonly string[])[],
+  title = "Monitoring records"
+): JSONContent {
+  const doc = tableDoc(rows);
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: `Table 1. ${title}` }],
+      },
+      ...(doc.content ?? []),
     ],
   };
 }
@@ -175,7 +194,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_scope");
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v5");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v6");
   });
 
   it("asks which container format when attachments name both and the title page is unset", () => {
@@ -793,7 +812,7 @@ describe("ELR pack enablement", () => {
 });
 
 describe("ELR assessment, trends and risk checks", () => {
-  const filledMonitoring = tableDoc([
+  const filledMonitoring = captionedTableDoc([
     [...ELR_MONITORING_HEADERS],
     row(ELR_MONITORING_HEADERS, {
       "Sr. No.": "1",
@@ -859,6 +878,66 @@ describe("ELR assessment, trends and risk checks", () => {
     ).toBe("met");
   });
 
+  it("fails a filled evidence table that has no Table N. caption", () => {
+    const result = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: tableDoc([
+            [...ELR_MONITORING_HEADERS],
+            row(ELR_MONITORING_HEADERS, {
+              "Sr. No.": "1",
+              "Monitoring Parameter": "Non-viable particle count",
+              "Excursion (Y/N)": "Y",
+              "Linked Deviation Ref.": "DEV-26-011",
+            }),
+          ]),
+          narrative: narrative(
+            "One of three monitoring parameters recorded an excursion; it was closed under DEV-26-011 with no product impact. The qualified state remains."
+          ),
+        },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/Table N/i);
+  });
+
+  it("requires a caption and a short summary on a filled responsibilities table", () => {
+    const rows = [
+      [...ELR_RESPONSIBILITIES_HEADERS],
+      row(ELR_RESPONSIBILITIES_HEADERS, {
+        "Sr. No.": "1",
+        Department: "Production",
+        Responsibilities: "Operate the filling line",
+      }),
+    ];
+    const missingBoth = checkResponsibilitiesTable(
+      ctx(
+        { table: tableDoc(rows), narrative: narrative("") },
+        { section: "elr_responsibilities" }
+      )
+    );
+    expect(missingBoth.status).toBe("not_met");
+    expect(missingBoth.reasoning).toMatch(/Table N/i);
+    expect(missingBoth.reasoning).toMatch(/summary/i);
+
+    const complete = checkResponsibilitiesTable(
+      ctx(
+        {
+          table: captionedTableDoc(
+            rows,
+            "Departments and responsibilities"
+          ),
+          narrative: narrative(
+            "Production operates the filling line; see Table 1."
+          ),
+        },
+        { section: "elr_responsibilities" }
+      )
+    );
+    expect(complete.status).toBe("met");
+  });
+
   it("fails a filled table with a one-line recap and no count", () => {
     const short = checkAssessmentInterpretsTable(
       ctx(
@@ -900,7 +979,7 @@ describe("ELR assessment, trends and risk checks", () => {
   });
 
   it("requires downtime, scrap, CAPA and qualified-state language when the table carries them", () => {
-    const downtimeTable = tableDoc([
+    const downtimeTable = captionedTableDoc([
       [...ELR_BREAKDOWN_HEADERS],
       row(ELR_BREAKDOWN_HEADERS, {
         "Sr. No.": "1",
@@ -937,7 +1016,7 @@ describe("ELR assessment, trends and risk checks", () => {
       ).status
     ).toBe("met");
 
-    const scrapTable = tableDoc([
+    const scrapTable = captionedTableDoc([
       [...ELR_BREAKDOWN_HEADERS],
       row(ELR_BREAKDOWN_HEADERS, {
         "Sr. No.": "1",
@@ -960,7 +1039,7 @@ describe("ELR assessment, trends and risk checks", () => {
     expect(missingScrap.status).toBe("not_met");
     expect(missingScrap.reasoning).toMatch(/scrap/i);
 
-    const capaTable = tableDoc([
+    const capaTable = captionedTableDoc([
       [...ELR_BREAKDOWN_HEADERS],
       row(ELR_BREAKDOWN_HEADERS, {
         "Sr. No.": "1",

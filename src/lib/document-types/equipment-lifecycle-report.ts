@@ -141,7 +141,7 @@ const RESPONSIBILITIES_CRITERIA: CriterionDefinition[] = [
   det(
     "responsibilities.table",
     "Responsibilities list each contributing department",
-    "Does the responsibilities table name each department and what it provides or approves?",
+    "Does the responsibilities table name each department and what it provides or approves, with a Table N. caption and a short summary above it?",
     checkResponsibilitiesTable
   ),
 ];
@@ -181,7 +181,7 @@ const QUALIFICATION_CRITERIA: CriterionDefinition[] = [
   det(
     "qualification.assessment_present",
     "The assessment interprets the qualification table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(
@@ -206,7 +206,7 @@ const MEDIA_FILL_CRITERIA: CriterionDefinition[] = [
   det(
     "media_fill.assessment_present",
     "The assessment interprets the media fill table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(
@@ -226,7 +226,7 @@ const MONITORING_CRITERIA: CriterionDefinition[] = [
   det(
     "monitoring.assessment_present",
     "The assessment interprets the monitoring table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(
@@ -257,7 +257,7 @@ const CALIBRATION_CRITERIA: CriterionDefinition[] = [
   det(
     "calibration.assessment_present",
     "The assessment interprets the calibration table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(
@@ -282,7 +282,7 @@ const PREVENTIVE_MAINTENANCE_CRITERIA: CriterionDefinition[] = [
   det(
     "preventive_maintenance.assessment_present",
     "The assessment interprets the PM table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(
@@ -313,7 +313,7 @@ const BREAKDOWN_CRITERIA: CriterionDefinition[] = [
   det(
     "breakdowns.assessment_present",
     "The assessment interprets the breakdown table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(
@@ -351,7 +351,7 @@ const QMS_CRITERIA: CriterionDefinition[] = [
   det(
     "qms.assessment_present",
     "The assessment interprets the QMS table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(
@@ -376,7 +376,7 @@ const ALARM_CRITERIA: CriterionDefinition[] = [
   det(
     "alarms.assessment_present",
     "The assessment interprets the alarm table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(
@@ -408,7 +408,7 @@ const ACCESS_CONTROL_CRITERIA: CriterionDefinition[] = [
   det(
     "access_control.assessment_present",
     "The assessment interprets the access-control table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   llm(
@@ -433,7 +433,7 @@ const AUDIT_TRAIL_CRITERIA: CriterionDefinition[] = [
   det(
     "audit_trail.assessment_present",
     "The assessment interprets the audit trail table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(
@@ -458,7 +458,7 @@ const CSV_STATUS_CRITERIA: CriterionDefinition[] = [
   det(
     "csv_status.assessment_present",
     "The assessment interprets the CSV status table",
-    "If the table has rows, does the assessment include a count rather than a recap?",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
   assessment(

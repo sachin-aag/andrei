@@ -102,8 +102,10 @@ import {
   applyTableOperation,
   captureTableOperationSnapshots,
   coerceTableOperationInput,
+  defaultTableCaptionTitle,
   existingTableCountFromContents,
   parseTableOperation,
+  prefixTableCaptionMarkdown,
   summarizeTableOperation,
   tableOperationInvalidHint,
 } from "@/lib/suggestions/table-operation";
@@ -320,6 +322,7 @@ export type DraftFieldResult =
       targetField: string;
       summary: string;
       supersededSuggestionIds?: string[];
+      tableNumber?: number;
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -2908,7 +2911,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, delete_table (remove the whole table; keeps surrounding prose, figures, and citations), insert_column (optional per-row values; omit afterCol to append as the last column), delete_column, and create_table (headers plus rows, plus title) to add a NEW table in a rich field. Pass title so the server inserts \`Table N. {title}\` above the table and returns tableNumber; refer to Table N in the same-turn lead-in. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section FIRST and copy tableIndex plus [row,col] / header text from tables[] / structuredText when editing an existing table. To add an example to a table, edit_cells (or insert_column) — never propose_edit a bullet list. Row 0 is the header and cannot be deleted; the first data row is row 1. To delete the whole table, use kind delete_table with tableIndex — do not delete every data row (that leaves an empty header) and do not rewrite the field with draft_field. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. edit_cells may omit expectedText (server captures it). When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create, incrementally edit, or remove a table.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, delete_table (remove the whole table; keeps surrounding prose, figures, and citations), insert_column (optional per-row values; omit afterCol to append as the last column), delete_column, and create_table (headers plus rows, plus title) to add a NEW table in a rich field. Pass title so the server inserts \`Table N. {title}\` above the table and returns tableNumber; refer to Table N in the same-turn lead-in. Filling an existing or seeded table (edit_cells / insert_rows) also inserts Table N. {title} when data lands and returns tableNumber — do not create_table a second grid. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section FIRST and copy tableIndex plus [row,col] / header text from tables[] / structuredText when editing an existing table. To add an example to a table, edit_cells (or insert_column) — never propose_edit a bullet list. Row 0 is the header and cannot be deleted; the first data row is row 1. To delete the whole table, use kind delete_table with tableIndex — do not delete every data row (that leaves an empty header) and do not rewrite the field with draft_field. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. edit_cells may omit expectedText (server captures it). When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create, incrementally edit, or remove a table.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3015,10 +3018,7 @@ export function buildChatTools(opts: {
           : { operation: capturedOp, citations: [] as string[] };
         let applied;
         try {
-          const existingTableCount =
-            stripped.operation.kind === "create_table"
-              ? await existingTableCountForReport(reportId)
-              : undefined;
+          const existingTableCount = await existingTableCountForReport(reportId);
           applied = applyTableOperation(fieldDoc, stripped.operation, {
             section,
             targetField: resolvedField,
@@ -3305,7 +3305,18 @@ export function buildChatTools(opts: {
 
         const suggestionId = createId();
         await ensureEvidence();
-        const normalizedMarkdown = normalizeSuggestionInsertText(markdown);
+        let markdownForDraft = markdown;
+        let tableNumber: number | undefined;
+        if (resolvedField === "table" && markdownHasTable(markdown)) {
+          const prefixed = prefixTableCaptionMarkdown(
+            markdown,
+            await existingTableCountForReport(reportId),
+            defaultTableCaptionTitle(section)
+          );
+          markdownForDraft = prefixed.markdown;
+          tableNumber = prefixed.tableNumber;
+        }
+        const normalizedMarkdown = normalizeSuggestionInsertText(markdownForDraft);
         const groundedDraft = groundDraftText({
           text: normalizedMarkdown,
           ledger: citationLedger,
@@ -3336,7 +3347,7 @@ export function buildChatTools(opts: {
           ? moveCitationsToEndOfText(groundedDraft.text)
           : groundedDraft.text;
         if (committing) {
-          return commitFieldEdit({
+          const drafted = await commitFieldEdit({
             section,
             targetField: resolvedField,
             reasoning,
@@ -3346,6 +3357,10 @@ export function buildChatTools(opts: {
               allowDropFilledPlaceholders: replaceFilledField === true,
             },
           });
+          if (drafted.status === "applied" && tableNumber !== undefined) {
+            return { ...drafted, tableNumber };
+          }
+          return drafted;
         }
         await db.insert(comments).values({
           id: suggestionId,
@@ -3398,6 +3413,7 @@ export function buildChatTools(opts: {
             section,
             targetField: resolvedField,
             summary: reasoning,
+            ...(tableNumber !== undefined ? { tableNumber } : {}),
           },
           supersededSuggestionIds
         );

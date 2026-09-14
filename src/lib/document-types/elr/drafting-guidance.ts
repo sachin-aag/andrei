@@ -140,8 +140,9 @@ These pairings are checked. Draft them consistently:
 
 ## Assessment above every evidence table
 
-Write a brief assessment in the section's \`narrative\` field, above the table.
-Do not recap that the section was reviewed. Reason from the rows:
+Write a brief assessment in the section's \`narrative\` field, above the table,
+and refer to it as Table N (use the tableNumber returned when the grid was
+filled). Do not recap that the section was reviewed. Reason from the rows:
 
 - Counts (how many events, which codes, how many repeats).
 - What happened.
@@ -152,6 +153,17 @@ Do not recap that the section was reviewed. Reason from the rows:
 Suggest only actions that follow from these rows. If the table is empty, say
 none occurred. The assessment is the quality of the report — a cheerful recap
 of a noisy table is a failure.
+
+Responsibilities: the table is a seeded matrix. Fill it with edit_cells /
+insert_rows (do not create_table a second grid). In the same turn, draft a short
+narrative that summarises who does what and refers to Table N.
+
+## Table numbers
+
+Seeded matrices already exist as empty grids. Filling them inserts
+\`Table N. {title}\` above the grid when data lands. Empty unused grids stay
+unnumbered. N is document-wide among published captions, not reserved by empty
+shells.
 
 Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.11.1)
 for grouping failure modes / whether the trended alarm set is still

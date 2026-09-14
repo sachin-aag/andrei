@@ -1,6 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
 import { dvTableHeadersForSection } from "@/lib/document-types/design-verification/sections";
+import {
+  ELR_TABLE_CAPTION_TITLES,
+  elrTableHeadersForSection,
+} from "@/lib/document-types/elr/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
@@ -9,6 +13,7 @@ import {
   insertNodesIntoFieldBody,
 } from "@/lib/suggestions/block-insert";
 import { normalizeTrailingCitationBlockInDoc } from "@/lib/suggestions/citations-at-end";
+import { displaySectionLabel } from "@/types/sections";
 
 /** Structured table mutation proposed via `edit_table` and stored on an `ai_fix`. */
 export type TableOperation =
@@ -151,17 +156,20 @@ export function countNumberedTablesInContent(value: unknown): {
   return { tableCount, maxCaption };
 }
 
+/**
+ * Next `Table N` is `maxCaption + 1`. Uncaptioned seeded shells do not consume N.
+ */
 export function existingTableCountFromContents(
   contents: readonly unknown[]
 ): number {
-  let tables = 0;
   let maxCaption = 0;
   for (const content of contents) {
-    const counted = countNumberedTablesInContent(content);
-    tables += counted.tableCount;
-    maxCaption = Math.max(maxCaption, counted.maxCaption);
+    maxCaption = Math.max(
+      maxCaption,
+      countNumberedTablesInContent(content).maxCaption
+    );
   }
-  return Math.max(tables, maxCaption);
+  return maxCaption;
 }
 
 const EMPTY_CELL_LABEL = "(empty)";
@@ -172,12 +180,141 @@ const DEFAULT_CELL_ATTRS = {
   colwidth: null,
 } as const;
 
-/** True when this field is a seeded DV matrix with a locked column schema. */
+/** True when this field is a seeded matrix with a locked column schema. */
 export function isFixedColumnTable(
   section: string,
   targetField: string
 ): boolean {
-  return targetField === "table" && dvTableHeadersForSection(section).length > 0;
+  if (targetField !== "table") return false;
+  return (
+    dvTableHeadersForSection(section).length > 0 ||
+    elrTableHeadersForSection(section).length > 0
+  );
+}
+
+export function defaultTableCaptionTitle(section: string): string {
+  const elrTitle =
+    ELR_TABLE_CAPTION_TITLES[section as keyof typeof ELR_TABLE_CAPTION_TITLES];
+  return elrTitle ?? displaySectionLabel(section);
+}
+
+function captionMatch(node: JSONContent | undefined): number | null {
+  if (!node || node.type !== "paragraph") return null;
+  const match = TABLE_CAPTION_RE.exec(flattenForAnchor(node).text.trim());
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Caption number sitting immediately above this table, if any. */
+export function captionNumberAboveTable(
+  doc: JSONContent | null | undefined,
+  tableIndex: number
+): number | null {
+  if (!doc) return null;
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return null;
+  return captionMatch(location.parent.content[location.index - 1]);
+}
+
+function tableHasData(table: JSONContent): boolean {
+  const rows = tableRows(table);
+  for (let i = 1; i < rows.length; i += 1) {
+    for (const cell of rowCells(rows[i]!)) {
+      if (cellPlainText(cell)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Insert `Table N. {title}` immediately above a filled table if it has no caption.
+ */
+export function ensureCaptionOnFilledTable(
+  doc: JSONContent,
+  tableIndex: number,
+  context?: TableOperationContext
+): { doc: JSONContent; tableNumber?: number } {
+  const tables = collectTables(doc);
+  const table = tables[tableIndex];
+  if (!table || !tableHasData(table)) return { doc };
+  const existingCaption = captionNumberAboveTable(doc, tableIndex);
+  if (existingCaption !== null) {
+    return { doc, tableNumber: existingCaption };
+  }
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return { doc };
+  const title = defaultTableCaptionTitle(context?.section ?? "");
+  const existing =
+    context?.existingTableCount ?? existingTableCountFromContents([doc]);
+  const tableNumber = existing + 1;
+  location.parent.content.splice(
+    location.index,
+    0,
+    tableCaptionParagraph(tableNumber, title)
+  );
+  return { doc, tableNumber };
+}
+
+function markdownTableHasData(markdown: string): boolean {
+  const rows = markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("|"));
+  for (const line of rows.slice(2)) {
+    const cells = line
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim())
+      .filter((cell) => cell.length > 0 && !/^:?-{3,}:?$/.test(cell));
+    if (cells.length > 0) return true;
+  }
+  return false;
+}
+
+/** Prepend `Table N. {title}` to GFM when rewriting a filled table field. */
+export function prefixTableCaptionMarkdown(
+  markdown: string,
+  existingTableCount: number,
+  title: string
+): { markdown: string; tableNumber?: number } {
+  const firstLine = markdown.trimStart().split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const match = TABLE_CAPTION_RE.exec(firstLine);
+  if (match) {
+    const n = Number(match[1]);
+    return {
+      markdown,
+      tableNumber: Number.isFinite(n) ? n : undefined,
+    };
+  }
+  if (!markdownTableHasData(markdown)) return { markdown };
+  const tableNumber = existingTableCount + 1;
+  const trimmed = markdown.replace(/^\s+/, "");
+  return {
+    markdown: `Table ${tableNumber}. ${title.trim()}\n\n${trimmed}`,
+    tableNumber,
+  };
+}
+
+function captionAfterFill(
+  result: TableOperationResult,
+  tableIndex: number,
+  context?: TableOperationContext
+): TableOperationResult {
+  if (!result.ok) return result;
+  const captioned = ensureCaptionOnFilledTable(
+    result.doc,
+    tableIndex,
+    context
+  );
+  return {
+    ok: true,
+    status: "ok",
+    doc: captioned.doc,
+    ...(captioned.tableNumber !== undefined
+      ? { tableNumber: captioned.tableNumber }
+      : {}),
+  };
 }
 
 export function normalizeTableCellText(text: string): string {
@@ -498,9 +635,17 @@ export function applyTableOperation(
 
   switch (operation.kind) {
     case "edit_cells":
-      return applyEditCells(next, table, operation, fixedColumns);
+      return captionAfterFill(
+        applyEditCells(next, table, operation, fixedColumns),
+        operation.tableIndex,
+        context
+      );
     case "insert_rows":
-      return applyInsertRows(next, table, operation);
+      return captionAfterFill(
+        applyInsertRows(next, table, operation),
+        operation.tableIndex,
+        context
+      );
     case "delete_rows":
       return applyDeleteRows(next, table, operation);
     case "delete_table":
@@ -518,7 +663,11 @@ export function applyTableOperation(
           "This matrix has a fixed column schema. Do not add columns. Edit cells or insert rows instead."
         );
       }
-      return applyInsertColumn(next, table, operation);
+      return captionAfterFill(
+        applyInsertColumn(next, table, operation),
+        operation.tableIndex,
+        context
+      );
     case "delete_column":
       if (fixedColumns) {
         return fail(
@@ -722,8 +871,12 @@ function applyDeleteTable(
   if (!location.parent.content) {
     return fail("invalid", "Cannot remove this table.");
   }
+  const remove = new Set([location.index]);
+  if (captionMatch(location.parent.content[location.index - 1]) !== null) {
+    remove.add(location.index - 1);
+  }
   location.parent.content = location.parent.content.filter(
-    (_, index) => index !== location.index
+    (_, index) => !remove.has(index)
   );
   return {
     ok: true,
