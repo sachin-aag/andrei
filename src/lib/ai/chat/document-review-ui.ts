@@ -64,10 +64,18 @@ export function summarizeDocumentReviewProgress(
   const findingCount = numberField(output.findingCount) ?? 0;
   const remainingBatches = numberField(output.remainingBatches) ?? 0;
   const status = typeof output.status === "string" ? output.status : "";
+  const continuePending = parts.some(
+    (part) =>
+      part.toolName === "continue_document_review" &&
+      (part.state === "input-streaming" ||
+        part.state === "input-available" ||
+        !part.output)
+  );
   const phase = resolvePhase({
     toolName: latest.toolName,
     status,
     pending,
+    continuePending,
     remainingBatches,
     reviewedPages,
     totalPages,
@@ -95,6 +103,7 @@ function resolvePhase(input: {
   toolName: string;
   status: string;
   pending: boolean;
+  continuePending: boolean;
   remainingBatches: number;
   reviewedPages: number;
   totalPages: number;
@@ -110,6 +119,7 @@ function resolvePhase(input: {
   ) {
     return "finalizing";
   }
+  if (input.continuePending) return "reviewing";
   if (input.toolName === "start_document_review" && input.reviewedPages === 0) {
     return "planning";
   }
@@ -135,13 +145,19 @@ function labelForSnapshot(input: {
           ? `Planning a complete document review${files}…`
           : "Planning a complete document review…";
     case "reviewing": {
-      const pages = total
-        ? `Reviewed ${input.reviewedPages}/${total} pages`
-        : `Reviewed ${input.reviewedPages} pages`;
       const findings =
         input.findingCount > 0
           ? ` · ${input.findingCount} relevant finding${input.findingCount === 1 ? "" : "s"}`
           : "";
+      if (input.pending) {
+        const pages = total
+          ? `Reviewing pages in parallel · ${input.reviewedPages}/${total} done`
+          : "Reviewing pages in parallel…";
+        return `${pages}${files}${findings}`;
+      }
+      const pages = total
+        ? `Reviewed ${input.reviewedPages}/${total} pages`
+        : `Reviewed ${input.reviewedPages} pages`;
       return `${pages}${files}${findings}`;
     }
     case "finalizing":

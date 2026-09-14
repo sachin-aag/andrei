@@ -27,6 +27,24 @@ describe("summarizeDocumentReviewProgress", () => {
     expect(snapshot?.label).toBe("Planning a complete review of 62 pages…");
   });
 
+  it("shows reviewing, not planning, while the first continue is in flight", () => {
+    const snapshot = summarizeDocumentReviewProgress([
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: { status: "started", totalPages: 12, remainingBatches: 3 },
+      },
+      {
+        toolName: "continue_document_review",
+        state: "input-available",
+      },
+    ]);
+    expect(snapshot?.phase).toBe("reviewing");
+    expect(snapshot?.label).toBe(
+      "Reviewing pages in parallel · 0/12 done"
+    );
+  });
+
   it("shows page and finding counts while continuing", () => {
     const snapshot = summarizeDocumentReviewProgress([
       {

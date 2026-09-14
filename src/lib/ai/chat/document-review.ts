@@ -420,6 +420,9 @@ export class DocumentReviewSession {
         const batch = this.queue.shift();
         if (!batch) return;
         started += 1;
+        // Yield so sibling workers can claim batches before a sync extract
+        // (transcript-only skip) monopolizes the queue.
+        await Promise.resolve();
         try {
           const extracted = await this.extractBatch({
             objective: this.objective,
@@ -760,6 +763,18 @@ export function extractReviewFindingsFromPages(
   return findings;
 }
 
+/** Pages shorter than this still need an LLM extract (image-only / OCR miss). */
+export const REVIEW_LLM_MIN_TRANSCRIPT_CHARS = 200;
+
+/** Skip Flash-Lite when every page already has a usable transcript. */
+export function reviewBatchNeedsLlmExtract(
+  pages: readonly ReviewPageSource[]
+): boolean {
+  return pages.some(
+    (page) => page.transcript.trim().length < REVIEW_LLM_MIN_TRANSCRIPT_CHARS
+  );
+}
+
 export async function extractReviewBatch(input: {
   objective: string;
   pages: ReviewPageSource[];
@@ -770,6 +785,7 @@ export async function extractReviewBatch(input: {
   if (input.abortSignal?.aborted) {
     throw new DOMException("The operation was aborted.", "AbortError");
   }
+  if (!reviewBatchNeedsLlmExtract(input.pages)) return deterministic;
 
   try {
     const llmFindings = await extractReviewBatchWithLlm(input);

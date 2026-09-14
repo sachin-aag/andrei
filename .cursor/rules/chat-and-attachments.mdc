@@ -77,7 +77,7 @@ coverage delta unless the latest message is explicit pushback
 (`you missed`, `look again`, `re-check`, a test-family code). Pushback
 skips rehydrate so a finished session does not hide
 `start_document_review`. `planReviewPages` queues pages that score on the current
-objective (floor ~40 if almost nothing matches). `REVIEW_PAGE_FETCH_CAP`
+objective (floor 8; nearby same-file pages if almost nothing matches). `REVIEW_PAGE_FETCH_CAP`
 (2500) is listing safety only — there is no 300-page walk cap.
 `continue_document_review` stops starting batches after ~60s and round-robins
 batches across attachments. `start_document_review`
@@ -278,8 +278,8 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   empty in-scope ELR inventory still needs a matching review
   (`requireInventoryReview`). Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
-  worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
-  on extract). `finish_document_review` caps the findings sample;
+  worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (transcript-backed
+  batches skip the extract LLM; no thought summaries on extract). `finish_document_review` caps the findings sample;
   follow-up turns strip prior findings arrays before the model call.
   `search_documents` `queries[]` is at most 8 and `limit` at most 16;
   `coerceSearchDocumentsInput` normalizes oversized model JSON, and

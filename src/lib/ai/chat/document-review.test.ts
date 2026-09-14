@@ -17,6 +17,7 @@ import {
   prepareDocumentReviewStep,
   REVIEW_EXTRACT_CONCURRENCY,
   REVIEW_FINISH_FINDINGS_CAP,
+  reviewBatchNeedsLlmExtract,
   reviewContinueBudgetMs,
   selectReviewPages,
   capFindingsForFinish,
@@ -240,14 +241,26 @@ describe("DocumentReviewSession", () => {
       },
     });
     const manyPages = Array.from({ length: 24 }, (_, index) =>
-      page(index + 1, `${"x".repeat(7_000)} SW-SST-${index + 1} Pass`)
+      page(index + 1, `SW-SST-${index + 1} Pass ${"x".repeat(7_000)}`)
     );
-    session.start({ objective: "ids", pages: manyPages });
+    session.start({ objective: "SW-SST", pages: manyPages });
     const first = await session.continue();
     expect(first.status).toBe("ready_to_finish");
     expect(first.reviewedPages).toBe(24);
     expect(calls).toBe(24);
     expect(maxInflight).toBe(REVIEW_EXTRACT_CONCURRENCY);
+  });
+
+  it("skips the extract LLM when every page already has a transcript", () => {
+    expect(
+      reviewBatchNeedsLlmExtract([
+        page(1, `${"x".repeat(200)} SW-SST-1 Pass`),
+        page(2, `${"y".repeat(200)} SW-SIB-1 Pass`),
+      ])
+    ).toBe(false);
+    expect(
+      reviewBatchNeedsLlmExtract([page(1, "short OCR miss")])
+    ).toBe(true);
   });
 
   it("stops draining when the turn abort fires and leaves remaining batches", async () => {
@@ -262,9 +275,9 @@ describe("DocumentReviewSession", () => {
       },
     });
     const manyPages = Array.from({ length: 24 }, (_, index) =>
-      page(index + 1, `${"x".repeat(7_000)} SW-SST-${index + 1} Pass`)
+      page(index + 1, `SW-SST-${index + 1} Pass ${"x".repeat(7_000)}`)
     );
-    session.start({ objective: "ids", pages: manyPages });
+    session.start({ objective: "SW-SST", pages: manyPages });
     const first = await session.continue({ abortSignal: abort.signal });
     expect(first.status).toBe("in_progress");
     expect(first.remainingBatches).toBeGreaterThan(0);
@@ -277,9 +290,9 @@ describe("DocumentReviewSession", () => {
       extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
     });
     const manyPages = Array.from({ length: 24 }, (_, index) =>
-      page(index + 1, `${"x".repeat(7_000)} SW-SST-${index + 1} Pass`)
+      page(index + 1, `SW-SST-${index + 1} Pass ${"x".repeat(7_000)}`)
     );
-    session.start({ objective: "ids", pages: manyPages });
+    session.start({ objective: "SW-SST", pages: manyPages });
     const first = await session.continue({ budgetMs: 0 });
     expect(first.status).toBe("in_progress");
     expect(first.budgetExhausted).toBe(true);

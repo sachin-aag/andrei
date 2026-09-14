@@ -20,6 +20,7 @@ export type ReviewPagePlanInput = {
   pageContext?: string | null;
   outlineTitle?: string | null;
   identifiers?: readonly string[] | null;
+  pageNumber?: number | null;
 };
 
 /**
@@ -121,14 +122,74 @@ export function scoreReviewPage(
   return score;
 }
 
-/** If almost no pages score, pad with fair-shared leftovers up to this floor. */
-export const REVIEW_OBJECTIVE_PAGE_FLOOR = 40;
+/**
+ * If almost no pages score, keep nearby pages from the same file (or a
+ * small fair-share sample when nothing matched). Do not pad 40 leftover
+ * pages from other attachments.
+ */
+export const REVIEW_OBJECTIVE_PAGE_FLOOR = 8;
+
+function pageOrdinal<T extends ReviewPagePlanInput>(
+  page: T,
+  indexInAttachment: number
+): number {
+  return typeof page.pageNumber === "number" && Number.isFinite(page.pageNumber)
+    ? page.pageNumber
+    : indexInAttachment;
+}
+
+/**
+ * Same-attachment pages closest to scored hits (page ±1, then ±2, …).
+ * Does not pull unrelated files.
+ */
+export function neighborFillPages<T extends ReviewPagePlanInput>(
+  all: readonly T[],
+  hits: readonly T[],
+  fill: number
+): T[] {
+  if (fill <= 0 || hits.length === 0) return [];
+  const hitSet = new Set<T>(hits);
+  const byAttachment = new Map<string, T[]>();
+  for (const page of all) {
+    const existing = byAttachment.get(page.attachmentId);
+    if (existing) {
+      existing.push(page);
+      continue;
+    }
+    byAttachment.set(page.attachmentId, [page]);
+  }
+
+  const ranked: { dist: number; page: T }[] = [];
+  for (const hit of hits) {
+    const siblings = byAttachment.get(hit.attachmentId) ?? [];
+    const hitAt = siblings.indexOf(hit);
+    const hitNo = pageOrdinal(hit, hitAt);
+    for (const [sibAt, sib] of siblings.entries()) {
+      if (hitSet.has(sib)) continue;
+      ranked.push({
+        dist: Math.abs(pageOrdinal(sib, sibAt) - hitNo),
+        page: sib,
+      });
+    }
+  }
+  ranked.sort((a, b) => a.dist - b.dist);
+  const out: T[] = [];
+  const seen = new Set<T>(hits);
+  for (const row of ranked) {
+    if (seen.has(row.page)) continue;
+    seen.add(row.page);
+    out.push(row.page);
+    if (out.length >= fill) break;
+  }
+  return out;
+}
 
 /**
  * Queue pages that match the review objective. Do not pad leftovers up to
  * the listing cap — an objective-filtered finish is complete for that `|obj:`.
- * When almost nothing matches, fill to `REVIEW_OBJECTIVE_PAGE_FLOOR` so a
- * sparse heading still has nearby pages.
+ * When few pages score, keep nearby pages in the same file up to
+ * `REVIEW_OBJECTIVE_PAGE_FLOOR`. When nothing scores, take that many
+ * fair-shared pages so the walk is not empty.
  */
 export function planReviewPages<T extends ReviewPagePlanInput>(
   pages: readonly T[],
@@ -139,20 +200,20 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
     return selectReviewPages(pages, cap);
   }
   const relevant: T[] = [];
-  const rest: T[] = [];
   for (const page of pages) {
     if (scoreReviewPage(page, objective) > 0) relevant.push(page);
-    else rest.push(page);
+  }
+  if (relevant.length === 0) {
+    return selectReviewPages(pages, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap));
   }
   const prioritized = selectReviewPages(relevant, cap);
-  if (prioritized.length >= REVIEW_OBJECTIVE_PAGE_FLOOR || rest.length === 0) {
+  if (prioritized.length >= REVIEW_OBJECTIVE_PAGE_FLOOR) {
     return prioritized;
   }
   const fill = Math.min(
     REVIEW_OBJECTIVE_PAGE_FLOOR - prioritized.length,
-    cap - prioritized.length,
-    rest.length
+    cap - prioritized.length
   );
   if (fill <= 0) return prioritized;
-  return [...prioritized, ...selectReviewPages(rest, fill)];
+  return [...prioritized, ...neighborFillPages(pages, prioritized, fill)];
 }
