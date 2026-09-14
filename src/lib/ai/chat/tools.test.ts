@@ -22,6 +22,7 @@ import {
 
 const {
   readDocumentOutlineMock,
+  readDocumentPageMock,
   listReadyDocumentsForReportMock,
   listDocumentPagesForReviewMock,
   loadDocumentPageEvidenceMock,
@@ -34,6 +35,7 @@ const {
   getReportAnalyticsMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
+  readDocumentPageMock: vi.fn(),
   listReadyDocumentsForReportMock: vi.fn(),
   listDocumentPagesForReviewMock: vi.fn(),
   loadDocumentPageEvidenceMock: vi.fn(async () => []),
@@ -82,6 +84,8 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
     ...actual,
     readDocumentOutline: (...args: unknown[]) =>
       readDocumentOutlineMock(...(args as [])),
+    readDocumentPage: (...args: unknown[]) =>
+      readDocumentPageMock(...(args as [])),
     listReadyDocumentsForReport: (...args: unknown[]) =>
       listReadyDocumentsForReportMock(...(args as [])),
     listDocumentPagesForReview: (...args: unknown[]) =>
@@ -1428,6 +1432,7 @@ describe("buildChatTools propose vs commit", () => {
     getReportAnalyticsMock.mockResolvedValue(null);
     loadDocumentPageEvidenceMock.mockReset();
     loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    readDocumentPageMock.mockReset();
     mockDefineSectionSelect();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
     dbUpdateMock.mockReturnValue({
@@ -1768,6 +1773,141 @@ describe("buildChatTools propose vs commit", () => {
     expect(markdown).toContain(`1. [${report}, p. 2]`);
     expect(markdown).not.toMatch(/\[PRQR-25-PR-005 Report\.pdf, p\. 2\] \[1\]/);
     expect(markdown).not.toContain(`[${protocol}, p. 21]`);
+  });
+
+  it("refuses MJ <date> dumps until a page is read this turn", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      unsupportedFactPolicy: "block",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Due date <date>. Instrument <identifier>.",
+        reasoning: "Fill calibration.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({
+      status: "unsupported_facts",
+      keepSearchOpen: true,
+    });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("persists leftover MJ placeholders after a same-turn page read", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: "att-cert",
+      filename: "Cert.pdf",
+      pageNumber: 33,
+      transcript: "Certificate 2025/014 due 12/03/2026 as found 0.1",
+      visualInterpretation: "",
+      pageContext: null,
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      unsupportedFactPolicy: "block",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: "att-cert", pageNumber: 33 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Due date 12/03/2026. Spare slot <date>.",
+        reasoning: "Fill known date; leave one gap.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("grounds a date from a reviewed page that was omitted from the findings sample", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    loadDocumentPageEvidenceMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att-cert",
+        filename: "Cert.pdf",
+        pageNumber: 33,
+        quote: "Certificate 2025/014 due 12/03/2026 as found 0.1",
+        ingestRunId: "run-1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      unsupportedFactPolicy: "block",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-finish_document_review",
+              toolCallId: "call_finish",
+              state: "output-available",
+              input: {},
+              output: {
+                status: "complete",
+                findings: [
+                  {
+                    filename: "Cert.pdf",
+                    pageNumber: 1,
+                    summary: "Cover sheet ATTACHMENT NO. 3",
+                  },
+                ],
+                reviewedEvidence: [
+                  {
+                    attachmentId: "att-cert",
+                    filename: "Cert.pdf",
+                    pageNumber: 1,
+                  },
+                  {
+                    attachmentId: "att-cert",
+                    filename: "Cert.pdf",
+                    pageNumber: 33,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Due 12/03/2026 [Cert.pdf, p. 33].",
+        reasoning: "Fill from cert table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted[0]?.content).toContain("12/03/2026");
+    expect(inserted[0]?.content).not.toContain("<date>");
   });
 
   it("refuses draft_field on a filled field unless replaceFilledField is true", async () => {

@@ -122,6 +122,12 @@ describe("DocumentReviewSession", () => {
     const finished = session.finish();
     expect(finished.status).toBe("complete");
     expect(finished.reviewedPages).toBe(62);
+    expect(finished.reviewedEvidence).toHaveLength(62);
+    expect(finished.reviewedEvidence[0]).toMatchObject({
+      attachmentId: expect.any(String),
+      filename: expect.any(String),
+      pageNumber: expect.any(Number),
+    });
     expect(finished.coverageComplete).toBe(true);
     for (const id of ["SW-SST-1", "SW-SIB-2", "SW-LWB-4", "SW-LCB-1", "SW-SDT-3"]) {
       expect(finished.identifiers).toContain(id);

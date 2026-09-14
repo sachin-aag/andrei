@@ -134,8 +134,10 @@ function compactFinishOutput(output: unknown): unknown {
     findings: [],
     findingsOmitted: findings.length,
     citationDigest,
+    // Keep every reviewed page pointer so later drafts can hydrate quotes.
+    // Do not cap reviewedEvidence — it is ids only, not finding text.
     citationDigestNote:
-      "Page-cited pointers only — copy [filename, p. N] from citationDigest when drafting. Full finding text was omitted to keep history small.",
+      "Page-cited pointers only — copy [filename, p. N] from citationDigest when drafting. Full finding text was omitted to keep history small. reviewedEvidence lists every page the review walked so the server can ground facts that were not in the 60-finding sample.",
   };
   return emitOutput(output, next, parsed.asString);
 }

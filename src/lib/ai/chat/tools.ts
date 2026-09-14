@@ -228,8 +228,11 @@ import {
   CitationPageLedger,
 } from "@/lib/ai/chat/citation-grounding";
 import {
+  containsGatedFactPlaceholders,
   groundDraftText,
   groundTableOperation,
+  PLACEHOLDER_NEEDS_RETRIEVAL_MESSAGE,
+  tableOperationContainsGatedPlaceholders,
   unsupportedFactsToolResult,
   type UnsupportedFactsToolResult,
 } from "@/lib/ai/chat/ground-draft";
@@ -762,8 +765,10 @@ function buildSearchDocumentsTool(opts: {
   pinnedAttachmentIds: string[];
   citationRule: string;
   citationLedger: CitationPageLedger;
+  onCitedPage?: () => void;
 }) {
-  const { reportId, pinnedAttachmentIds, citationRule, citationLedger } = opts;
+  const { reportId, pinnedAttachmentIds, citationRule, citationLedger, onCitedPage } =
+    opts;
 
   async function runSearch(input: {
     query?: string;
@@ -806,6 +811,9 @@ function buildSearchDocumentsTool(opts: {
     const nextExcludePages = mergeExcludePages(input.excludePages, merged);
     const cited = toClientDocumentSearchResults(merged).map(withSourceCitation);
     const annotated = annotateDividerSearchHits(cited);
+    if (merged.length > 0 && !annotated.keepSearchOpen) {
+      onCitedPage?.();
+    }
     return {
       results: annotated.results,
       queriesRun: queryList,
@@ -1183,6 +1191,22 @@ export function buildChatTools(opts: {
       console.error("claim provenance audit failed", err);
     });
   };
+  let retrievalPassesThisTurn = 0;
+  const noteCitedRetrieval = () => {
+    retrievalPassesThisTurn += 1;
+  };
+  const refuseGatedPlaceholderDump = (
+    text: string
+  ): UnsupportedFactsToolResult | null => {
+    if (unsupportedFactPolicy !== "block") return null;
+    if (!containsGatedFactPlaceholders(text)) return null;
+    if (retrievalPassesThisTurn > 0) return null;
+    return unsupportedFactsToolResult({
+      unsupported: [],
+      draftWithPlaceholders: text,
+      message: PLACEHOLDER_NEEDS_RETRIEVAL_MESSAGE,
+    });
+  };
   const includePlotMeasurements = opts.includePlotMeasurements ?? true;
   const citationRule = documentCitationRule(citationsAtEndOfSection);
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
@@ -1426,6 +1450,7 @@ export function buildChatTools(opts: {
       pinnedAttachmentIds,
       citationRule,
       citationLedger,
+      onCitedPage: noteCitedRetrieval,
     }),
 
     list_attachments: tool({
@@ -1578,6 +1603,7 @@ export function buildChatTools(opts: {
             .filter((part) => part.trim().length > 0)
             .join("\n"),
         });
+        noteCitedRetrieval();
         return {
           status: "found" as const,
           page: {
@@ -1913,6 +1939,10 @@ export function buildChatTools(opts: {
             draftWithPlaceholders: groundedInsert.text,
           });
         }
+        const placeholderDump = refuseGatedPlaceholderDump(
+          `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`
+        );
+        if (placeholderDump) return placeholderDump;
         const claimProvenance = {
           claims: [
             ...groundedInsert.provenance.claims,
@@ -3049,6 +3079,14 @@ export function buildChatTools(opts: {
               .join("; "),
           });
         }
+        if (
+          tableOperationContainsGatedPlaceholders(groundedTable.operation)
+        ) {
+          const placeholderDump = refuseGatedPlaceholderDump(
+            JSON.stringify(groundedTable.operation)
+          );
+          if (placeholderDump) return placeholderDump;
+        }
         if (groundedTable.provenance.claims.length > 0) {
           void scoreDraftEntailment({
             draft: JSON.stringify(groundedTable.operation),
@@ -3404,6 +3442,8 @@ export function buildChatTools(opts: {
               : groundedDraft.text,
           });
         }
+        const placeholderDump = refuseGatedPlaceholderDump(groundedDraft.text);
+        if (placeholderDump) return placeholderDump;
         if (groundedDraft.provenance.claims.length > 0) {
           void scoreDraftEntailment({
             draft: groundedDraft.text,

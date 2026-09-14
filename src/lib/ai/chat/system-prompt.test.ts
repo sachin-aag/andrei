@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v98-divider-pages");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v99-review-ledger");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -523,6 +523,7 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain("Never write a citation as a placeholder");
     expect(prompt).toContain("unsupported_facts");
+    expect(prompt).toContain("do not persist <date>/<identifier>/<number>");
     expect(prompt).toContain(
       "The server rejects unsupported facts on MJ and flags them as unsourced on other packs"
     );

@@ -399,6 +399,7 @@ function collectPagesFromToolOutput(
   const rec = root as Record<string, unknown>;
   recordRow(rec);
   for (const key of [
+    "reviewedEvidence",
     "results",
     "seenPages",
     "citationDigest",

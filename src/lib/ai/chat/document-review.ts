@@ -121,6 +121,13 @@ export type DocumentReviewFailedPage = {
   reason: string;
 };
 
+/** Page pointers for the citation ledger — no transcripts (history size). */
+export type ReviewedEvidencePage = {
+  attachmentId: string;
+  filename: string;
+  pageNumber: number;
+};
+
 export type DocumentReviewBatch = {
   id: string;
   pages: ReviewPageSource[];
@@ -187,6 +194,7 @@ export class DocumentReviewSession {
   private seenKeys = new Set<string>();
   private failedPages: DocumentReviewFailedPage[] = [];
   private reviewedPageKeys = new Set<string>();
+  private reviewedPageList: ReviewedEvidencePage[] = [];
   private totalPages = 0;
   private extractBatch: ExtractReviewBatchFn;
   private findingSeq = 0;
@@ -223,6 +231,7 @@ export class DocumentReviewSession {
     this.seenKeys = new Set();
     this.failedPages = [];
     this.reviewedPageKeys = new Set();
+    this.reviewedPageList = [];
     this.totalPages = 0;
     this.objective = "";
     this.lastRecommended =
@@ -305,6 +314,7 @@ export class DocumentReviewSession {
     this.seenKeys = new Set();
     this.failedPages = [];
     this.reviewedPageKeys = new Set();
+    this.reviewedPageList = [];
     this.totalPages = pages.length;
     this.coverageKey = documentReviewCoverageKey(
       input.coverageSources && input.coverageSources.length > 0
@@ -408,15 +418,14 @@ export class DocumentReviewSession {
     }
     const page = batch.pages[0];
     if (!page) return;
-    const key = pageKey(page);
-    if (this.reviewedPageKeys.has(key)) return;
+    if (this.reviewedPageKeys.has(pageKey(page))) return;
     this.failedPages.push({
       attachmentId: page.attachmentId,
       filename: page.filename,
       pageNumber: page.pageNumber,
       reason: "extraction_failed",
     });
-    this.reviewedPageKeys.add(key);
+    this.recordReviewed(page);
   }
 
   finish(): {
@@ -433,6 +442,7 @@ export class DocumentReviewSession {
     conflicts: string[];
     failedPages: DocumentReviewFailedPage[];
     coverageSummary: string;
+    reviewedEvidence: ReviewedEvidencePage[];
   } {
     if (this.phaseState === "idle" || this.queue.length > 0) {
       this.lastRecommended = null;
@@ -453,6 +463,7 @@ export class DocumentReviewSession {
         ),
         failedPages: [...this.failedPages],
         coverageSummary: `Review incomplete: ${this.reviewedPageKeys.size}/${this.totalPages} pages, ${this.queue.length} batches remaining.`,
+        reviewedEvidence: this.reviewedEvidencePages(),
       };
     }
 
@@ -484,6 +495,7 @@ export class DocumentReviewSession {
       coverageSummary: coverageComplete
         ? `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages; ${this.findings.length} findings (${capped.findings.length} in sample${capped.omitted > 0 ? `, ${capped.omitted} omitted` : ""}); ${identifiers.length} identifiers.${inventoryNote}`
         : `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages with ${this.failedPages.length} failed page(s); do not claim completeness.${inventoryNote}`,
+      reviewedEvidence: this.reviewedEvidencePages(),
     };
   }
 
@@ -517,8 +529,23 @@ export class DocumentReviewSession {
 
   private markReviewed(pages: ReviewPageSource[]) {
     for (const page of pages) {
-      this.reviewedPageKeys.add(pageKey(page));
+      this.recordReviewed(page);
     }
+  }
+
+  private recordReviewed(page: ReviewedEvidencePage) {
+    const key = pageKey(page);
+    if (this.reviewedPageKeys.has(key)) return;
+    this.reviewedPageKeys.add(key);
+    this.reviewedPageList.push({
+      attachmentId: page.attachmentId,
+      filename: page.filename,
+      pageNumber: page.pageNumber,
+    });
+  }
+
+  private reviewedEvidencePages(): ReviewedEvidencePage[] {
+    return this.reviewedPageList.map((page) => ({ ...page }));
   }
 }
 

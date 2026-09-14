@@ -236,7 +236,10 @@ not unlock Associated Instruments. Attachment cover sheets
 following pages, then fill the seeded matrix with edit_cells / insert_rows.
 Do not rewrite the table with draft_field. recommendedInventory is for
 design-verification Results, not ELR cert rows. If finish_document_review
-reports findingsOmitted, the sample is incomplete. Never claim 100% on-time,
+reports findingsOmitted, the sample is incomplete — read the cited
+certificate/record pages (p. N+1 after a cover sheet) before filling dates
+and IDs. Do not persist a grid of <date>/<identifier>/<number> instead of
+that pass. Never claim 100% on-time,
 none overdue, or no OOT while required cells are still <placeholders>.
 
 ## Section keys

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import {
+  containsGatedFactPlaceholders,
   groundDraftText,
   groundTableOperation,
+  unsupportedFactsToolResult,
+  UNSUPPORTED_FACTS_RETRY_MESSAGE,
 } from "@/lib/ai/chat/ground-draft";
 import { GROUNDEDNESS_GOLD_CASES } from "@/lib/eval/groundedness-cases";
 import { moveCitationsToEndOfText } from "@/lib/suggestions/citations-at-end";
@@ -168,5 +171,25 @@ describe("groundTableOperation", () => {
       kind: "edit_cells",
       cells: [{ insertText: "<identifier> [PQR-24-PR-102.pdf, p. 2]" }],
     });
+  });
+});
+
+describe("gated placeholder persist policy", () => {
+  it("detects MJ fact-gating tokens", () => {
+    expect(containsGatedFactPlaceholders("Due <date>")).toBe(true);
+    expect(containsGatedFactPlaceholders("id <identifier>")).toBe(true);
+    expect(containsGatedFactPlaceholders("n <number>")).toBe(true);
+    expect(containsGatedFactPlaceholders("use <batch number>")).toBe(false);
+  });
+
+  it("tells the model to read the page, not persist placeholders", () => {
+    const result = unsupportedFactsToolResult({
+      unsupported: [],
+      draftWithPlaceholders: "Due <date>",
+    });
+    expect(result.status).toBe("unsupported_facts");
+    expect(result.keepSearchOpen).toBe(true);
+    expect(result.message).toBe(UNSUPPORTED_FACTS_RETRY_MESSAGE);
+    expect(result.message).not.toMatch(/or use angle-bracket placeholders/i);
   });
 });

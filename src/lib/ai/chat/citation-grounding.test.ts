@@ -80,6 +80,48 @@ describe("CitationPageLedger", () => {
     expect(ledger.decision("Protocol.pdf", 104)).toBe("drop");
   });
 
+  it("seeds every reviewedEvidence page, not only the findings sample", () => {
+    const ledger = new CitationPageLedger();
+    ledger.seedFromMessages([
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "call_finish",
+            state: "output-available",
+            input: {},
+            output: {
+              findings: [
+                {
+                  filename: "Cert.pdf",
+                  pageNumber: 1,
+                  citation: "[Cert.pdf, p. 1]",
+                },
+              ],
+              reviewedEvidence: [
+                {
+                  attachmentId: "att-cert",
+                  filename: "Cert.pdf",
+                  pageNumber: 1,
+                },
+                {
+                  attachmentId: "att-cert",
+                  filename: "Cert.pdf",
+                  pageNumber: 33,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+    expect(ledger.decision("Cert.pdf", 1)).toBe("keep");
+    expect(ledger.decision("Cert.pdf", 33)).toBe("keep");
+    expect(ledger.decision("Cert.pdf", 99)).toBe("drop");
+  });
+
   it("does not treat document_outline pages as evidence", () => {
     const ledger = new CitationPageLedger();
     ledger.seedFromMessages([

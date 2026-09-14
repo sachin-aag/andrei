@@ -261,15 +261,42 @@ export type UnsupportedFactsToolResult = {
   draftWithPlaceholders: string;
 };
 
+export const GATED_FACT_PLACEHOLDERS = [
+  "<date>",
+  "<identifier>",
+  "<number>",
+] as const;
+
+export const UNSUPPORTED_FACTS_RETRY_MESSAGE =
+  "These facts were not on any retrieved page. Search or read the page that states them, then fill the real value. Do not persist <date>/<identifier>/<number> until that pass. Placeholders are only for facts still missing after the page read this turn.";
+
+export const PLACEHOLDER_NEEDS_RETRIEVAL_MESSAGE =
+  "Do not persist <date>/<identifier>/<number> yet. Search or read_document_page for the certificate or record that states the fact, then fill the real value. Placeholders are only for facts still missing after that pass this turn.";
+
+export function containsGatedFactPlaceholders(text: string): boolean {
+  return GATED_FACT_PLACEHOLDERS.some((token) => text.includes(token));
+}
+
+export function tableOperationContainsGatedPlaceholders(
+  operation: TableOperation
+): boolean {
+  let found = false;
+  mapTableOperationText(operation, (value) => {
+    if (containsGatedFactPlaceholders(value)) found = true;
+    return value;
+  });
+  return found;
+}
+
 export function unsupportedFactsToolResult(input: {
   unsupported: readonly HardFact[];
   draftWithPlaceholders: string;
+  message?: string;
 }): UnsupportedFactsToolResult {
   return {
     status: "unsupported_facts",
     keepSearchOpen: true,
-    message:
-      "These facts were not on any retrieved page. Search or read the page that states them, or use angle-bracket placeholders. Do not invent identifiers, dates, or results.",
+    message: input.message ?? UNSUPPORTED_FACTS_RETRY_MESSAGE,
     unsupported: input.unsupported.map((fact) => ({
       text: fact.text,
       kind: fact.kind,

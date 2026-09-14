@@ -83,11 +83,14 @@ reports `truncated` / `skippedDocuments`. Call `list_attachments` first
 when the file set is unknown.
 
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
-against the citation ledger's served quotes (`groundDraftText`). Empty
-ledger or pages with no quotes fail open. MJ `unsupportedFactPolicy:
-block` (no persist; placeholders + `unsupported_facts`). Demo/Convergent
-`flag` (persist with Traceability). Analytics `write_column` stays
-ungated. Pack identity, not a feature flag.
+against the citation ledger's served quotes (`groundDraftText`). Finish
+seeds `reviewedEvidence` (every walked page, not the 60-finding sample)
+so those transcripts can hydrate. Empty ledger or pages with no quotes
+fail open. MJ `unsupportedFactPolicy: block` (no persist;
+`unsupported_facts`). MJ also refuses `<date>` / `<identifier>` /
+`<number>` until a same-turn `read_document_page` or non-divider search.
+Demo/Convergent `flag` (persist with Traceability). Analytics `write_column`
+stays ungated. Pack identity, not a feature flag.
 
 ## Spectrum
 
