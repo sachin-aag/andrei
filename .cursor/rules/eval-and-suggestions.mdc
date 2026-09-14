@@ -46,6 +46,9 @@ DV mixes LLM criteria with deterministic `check()` functions.
   section → flip comment. Never resolve without a successful apply. Zero-ops
   dismiss (`already_present`), not resolve. A superseded sibling is
   `dismissed` with `resolutionReason: "superseded_by:<id>"`, never `resolved`.
+  Table ops on the same table supersede only when the later op covers or
+  invalidates the earlier coordinates (`insert_rows` after the header shifts
+  row 1; an append does not dismiss a disjoint `edit_cells` of row 1).
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits
   persist as one section PATCH. Preview applied wording before that PATCH
