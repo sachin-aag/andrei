@@ -357,6 +357,23 @@ describe("prepareDocumentReviewStep", () => {
       })
     ).toBeUndefined();
   });
+
+  it("does not pin tools after a finished review so the parent can reply", () => {
+    expect(
+      prepareDocumentReviewStep({
+        policy: "comprehensive",
+        phase: "complete",
+        availableTools: available,
+      })
+    ).toBeUndefined();
+    expect(
+      prepareDocumentReviewStep({
+        policy: "adaptive",
+        phase: "complete",
+        availableTools: available,
+      })
+    ).toBeUndefined();
+  });
 });
 
 describe("pickPlanModeChatTools", () => {

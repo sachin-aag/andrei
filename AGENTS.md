@@ -202,7 +202,12 @@ extract of file B does not unlock a partial write of file A), after two
 consecutive empty dumps — not after a dump with blank cells, hiding
 `ask_user` on lookups / Skip / after any grep until a page is read (never
 ask which page — search/scan and say found or not), and hiding
-`manage_worksheet` after the first structure call). One complete
+`manage_worksheet` after the first structure call). Tool hiding applies on
+both the Analytics orchestrator and sheet workers; forced tool choice
+(`toolChoice: required`) is sheet workers only — the orchestrator must
+always be able to end a turn with text. A forced tool call must be one-shot
+or phase-advancing; `"required"` with several tools available is only valid
+inside a single-purpose worker. One complete
 `write_column` per destination sheet — separate extracts per sheet are
 correct; always pass `sheetId`. `write_column` `mode append` adds rows onto
 an existing named column. `delete_row` accepts `rowEnd` for a range. Agent

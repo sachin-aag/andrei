@@ -132,7 +132,7 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).not.toContain("ask_user");
     expect(prepared?.activeTools).not.toContain("plot_xy_scatter");
     expect(prepared?.activeTools).toContain("manage_worksheet");
-    expect(prepared?.toolChoice).toBe("required");
+    expect(prepared?.toolChoice).toBeUndefined();
   });
 
   it("keeps write tools after many post-search steps — there is no step budget", () => {
@@ -595,7 +595,7 @@ describe("analyticsGatherDirective", () => {
     expect(prepared?.activeTools).not.toContain("write_column");
     expect(prepared?.activeTools).not.toContain("plot_xy_scatter");
     expect(prepared?.activeTools).toContain("extract_numeric_series");
-    expect(prepared?.toolChoice).toBe("required");
+    expect(prepared?.toolChoice).toBeUndefined();
   });
 
   it("unlocks write_column after a later extract with morePages false", () => {
@@ -621,7 +621,7 @@ describe("analyticsGatherDirective", () => {
       canEdit: true,
     });
     expect(prepared?.activeTools).not.toContain("write_column");
-    expect(prepared?.toolChoice).toBe("required");
+    expect(prepared?.toolChoice).toBeUndefined();
   });
 
   it("keeps gathering file A when a later extract of file B is done", () => {
@@ -640,7 +640,7 @@ describe("analyticsGatherDirective", () => {
       canEdit: true,
     });
     expect(prepared?.activeTools).not.toContain("write_column");
-    expect(prepared?.toolChoice).toBe("required");
+    expect(prepared?.toolChoice).toBeUndefined();
   });
 
   it("does not let a bare page read clear a named extract that still has pages", () => {
@@ -716,6 +716,46 @@ describe("analyticsGatherDirective", () => {
       canEdit: true,
     });
     expect(prepared?.activeTools).not.toContain("write_column");
-    expect(prepared?.toolChoice).toBe("required");
+    expect(prepared?.toolChoice).toBeUndefined();
+  });
+
+  it("does not force a tool call on the orchestrator after a truncated multi-file scan", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        truncatedScanStep("att-a"),
+        truncatedScanStep("att-b"),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.activeTools).toContain("extract_sheet");
+    expect(prepared?.activeTools).toContain("read_worksheet");
+    expect(prepared?.toolChoice).toBeUndefined();
+  });
+
+  it("still forces a sheet worker to keep gathering", () => {
+    for (const steps of [
+      [truncatedScanStep("att-a")],
+      [extractMorePagesStep("att-a")],
+    ]) {
+      const prepared = prepareAnalyticsChatStep({
+        steps,
+        canEdit: true,
+        intent: "write",
+        role: "sheet_worker",
+      });
+      expect(prepared?.activeTools).not.toContain("write_column");
+      expect(prepared?.toolChoice).toBe("required");
+    }
+  });
+
+  it("lets the orchestrator finish in prose after workers write even if a scan was truncated", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [
+        truncatedScanStep("att-a"),
+        completeWriteStep(),
+      ],
+      canEdit: true,
+    });
+    expect(prepared?.toolChoice).toBeUndefined();
   });
 });
