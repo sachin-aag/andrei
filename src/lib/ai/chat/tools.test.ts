@@ -15,6 +15,7 @@ import {
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
+import type { PageEvidenceRow } from "@/lib/ai/chat/citation-grounding";
 import {
   DocumentReviewSession,
   extractReviewFindingsFromPages,
@@ -38,7 +39,9 @@ const {
   readDocumentPageMock: vi.fn(),
   listReadyDocumentsForReportMock: vi.fn(),
   listDocumentPagesForReviewMock: vi.fn(),
-  loadDocumentPageEvidenceMock: vi.fn(async () => []),
+  loadDocumentPageEvidenceMock: vi.fn(
+    async (): Promise<PageEvidenceRow[]> => []
+  ),
   listActiveAttachmentsMock: vi.fn(),
   listAttachmentFoldersMock: vi.fn(),
   dbSelectMock: vi.fn(),
