@@ -358,7 +358,8 @@ export function TiptapSectionField({
   useEffect(() => {
     focusedPanelPlaceholderIdRef.current = focusedPanelPlaceholderId;
   }, [focusedPanelPlaceholderId]);
-  const { registerEditor, setActiveEditor, activeEditorKey } = useReportEditors();
+  const { registerEditor, registerLiveEditorSync, setActiveEditor, activeEditorKey } =
+    useReportEditors();
   const isRichField = isRichTargetField(section, contentPath);
   const thisEditorKey = editorRegistryKey(section, contentPath);
   const {
@@ -634,6 +635,14 @@ export function TiptapSectionField({
     const unregister = registerEditor(section, contentPath, editor);
     return unregister;
   }, [editor, registerEditor, section, contentPath]);
+
+  useEffect(() => {
+    if (!editor) return;
+    return registerLiveEditorSync(section, contentPath, () => {
+      if (editor.isDestroyed) return;
+      onChangeRef.current(editor.getJSON() as JSONContent);
+    });
+  }, [editor, registerLiveEditorSync, section, contentPath]);
 
   useEffect(() => {
     if (!editor || !editable) return;

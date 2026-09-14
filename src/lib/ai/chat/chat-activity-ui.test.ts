@@ -137,6 +137,7 @@ describe("buildChatActivityBlocks", () => {
     if (blocks[0]?.kind !== "activity") return;
     expect(blocks[0].node.kind).toBe("thought");
     expect(blocks[0].node.thoughtText).toBe("Planning the next edit.");
+    expect(blocks[0].node.children).toEqual([]);
   });
 
   it("collapses edit failures to Edit attempted with hidden detail", () => {

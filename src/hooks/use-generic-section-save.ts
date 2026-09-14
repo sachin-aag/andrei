@@ -8,6 +8,7 @@ import {
   useReportEvaluations,
 } from "@/providers/report-provider";
 import { useAutoSave, type AutoSaveContext } from "./use-auto-save";
+import { useHydrateAutosaveFromSectionRow } from "./use-hydrate-autosave-from-section-row";
 import { shouldAutosaveSection } from "@/lib/reports/section-save-policy";
 
 const saveBlockedReports = new Set<string>();
@@ -24,10 +25,12 @@ export function useGenericSectionSave(section: string) {
     currentUserId,
     currentUserRole,
     currentUserEmail,
+    agentCommitInFlight,
   } = useReportData();
   const { suggestionApplyTransition } = useReportEvaluations();
   const { value } = useGenericReportSection(section);
-  const applyInFlight = !!suggestionApplyTransition?.[section];
+  const applyInFlight =
+    !!suggestionApplyTransition?.[section] || agentCommitInFlight;
   const [saveBlocked, setSaveBlocked] = useState(false);
   const saveActor = {
     id: currentUserId,
@@ -86,7 +89,7 @@ export function useGenericSectionSave(section: string) {
     [report.id, section]
   );
 
-  const { status, lastSavedAt, flush } = useAutoSave({
+  const { status, lastSavedAt, flush, markPersisted } = useAutoSave({
     enabled,
     persistOnLeave,
     value,
@@ -94,6 +97,8 @@ export function useGenericSectionSave(section: string) {
     beaconUrl: `/api/reports/${report.id}/sections/${section}`,
     serialize: (v) => JSON.stringify({ content: v }),
   });
+
+  useHydrateAutosaveFromSectionRow(section, markPersisted);
 
   useEffect(
     () => registerSectionFlush(section, flush),

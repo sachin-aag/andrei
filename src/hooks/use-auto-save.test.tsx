@@ -282,6 +282,29 @@ describe("useAutoSave", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it("flushes a revert to empty after markPersisted hydrates server content", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const { rerender, result } = renderHook(
+      ({ value }) => useAutoSave({ value, onSave, delayMs: 5_000 }),
+      { initialProps: { value: "empty" } }
+    );
+
+    act(() => {
+      result.current.markPersisted("loaded-from-server");
+    });
+    rerender({ value: "loaded-from-server" });
+    rerender({ value: "empty" });
+
+    await act(async () => {
+      await result.current.flush();
+    });
+
+    expect(onSave).toHaveBeenCalledWith(
+      "empty",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+  });
+
   it("posts beaconSerialize on pagehide while dirty-checking with serialize", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const fetchSpy = vi

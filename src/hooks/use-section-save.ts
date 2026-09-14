@@ -8,6 +8,7 @@ import {
   useReportSection,
 } from "@/providers/report-provider";
 import { useAutoSave, type AutoSaveContext } from "./use-auto-save";
+import { useHydrateAutosaveFromSectionRow } from "./use-hydrate-autosave-from-section-row";
 import { shouldAutosaveSection } from "@/lib/reports/section-save-policy";
 import type { SectionContentMap } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
@@ -94,7 +95,7 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
     [report.id, section]
   );
 
-  const { status, lastSavedAt, flush } = useAutoSave({
+  const { status, lastSavedAt, flush, markPersisted } = useAutoSave({
     enabled,
     persistOnLeave,
     value,
@@ -102,6 +103,8 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
     beaconUrl: `/api/reports/${report.id}/sections/${section}`,
     serialize: (v) => JSON.stringify({ content: v }),
   });
+
+  useHydrateAutosaveFromSectionRow(section, markPersisted);
 
   useEffect(
     () => registerSectionFlush(section, flush),

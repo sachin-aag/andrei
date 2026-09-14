@@ -1496,6 +1496,14 @@ export function ChatPanel({
       if (agentDonePrefs.notifications) {
         void requestAgentDoneNotificationPermission();
       }
+      try {
+        await flushPendingSectionSaves();
+      } catch {
+        toast.error(
+          "Could not save your latest edits before the assistant ran."
+        );
+        return;
+      }
       let sessionId = currentSessionId;
       if (!sessionId) {
         sessionId = await createSession();
@@ -1523,14 +1531,6 @@ export function ChatPanel({
         mode === "agent" &&
         sendTarget !== "analytics"
       ) {
-        try {
-          await flushPendingSectionSaves();
-        } catch {
-          toast.error(
-            "Could not save your latest edits before the assistant ran."
-          );
-          return;
-        }
         setAgentCommitInFlight(true);
       }
       setInput("");

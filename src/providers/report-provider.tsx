@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import type { Editor } from "@tiptap/react";
 import type {
@@ -224,6 +225,15 @@ type ReportContextValue = {
     contentPath: string,
     editor: Editor
   ) => () => void;
+  /**
+   * Push live TipTap JSON into provider state so flush() sees the latest
+   * keystrokes (onUpdate cannot flushSync during React 19 lifecycle).
+   */
+  registerLiveEditorSync: (
+    section: SectionType,
+    contentPath: string,
+    sync: () => void
+  ) => () => void;
   getEditor: (section: SectionType, contentPath: string) => Editor | null;
   /** Key of the last-focused field (`section:contentPath`), rich or plain. */
   activeFieldKey: string | null;
@@ -320,6 +330,7 @@ type ReportEvaluationContextValue = Pick<
 type ReportEditorsContextValue = Pick<
   ReportContextValue,
   | "registerEditor"
+  | "registerLiveEditorSync"
   | "getEditor"
   | "activeFieldKey"
   | "activeFieldKind"
@@ -470,6 +481,7 @@ export function ReportProvider({
    * uses these editor refs to compute live anchor coordinates via `view.coordsAtPos`.
    */
   const editorsRef = useRef<Map<string, EditorRegistryEntry>>(new Map());
+  const liveEditorSyncsRef = useRef<Map<string, () => void>>(new Map());
   const sectionFlushesRef = useRef<Map<SectionType, () => Promise<void>>>(
     new Map()
   );
@@ -511,6 +523,19 @@ export function ReportProvider({
         if (cur && cur.editor === editor) {
           editorsRef.current.delete(key);
           setEditorTick((n) => n + 1);
+        }
+      };
+    },
+    []
+  );
+
+  const registerLiveEditorSync = useCallback(
+    (section: SectionType, contentPath: string, sync: () => void) => {
+      const key = editorRegistryKey(section, contentPath);
+      liveEditorSyncsRef.current.set(key, sync);
+      return () => {
+        if (liveEditorSyncsRef.current.get(key) === sync) {
+          liveEditorSyncsRef.current.delete(key);
         }
       };
     },
@@ -598,6 +623,15 @@ export function ReportProvider({
   );
 
   const flushPendingSectionSaves = useCallback(async () => {
+    flushSync(() => {
+      for (const sync of liveEditorSyncsRef.current.values()) {
+        try {
+          sync();
+        } catch {
+          // A torn-down editor must not block the registered section PATCH.
+        }
+      }
+    });
     const flushes = [...sectionFlushesRef.current.values()];
     await Promise.all(flushes.map((flush) => flush()));
   }, []);
@@ -1164,6 +1198,7 @@ export function ReportProvider({
   const editorsValue = useMemo<ReportEditorsContextValue>(
     () => ({
       registerEditor,
+      registerLiveEditorSync,
       getEditor,
       activeFieldKey,
       activeFieldKind,
@@ -1175,6 +1210,7 @@ export function ReportProvider({
     }),
     [
       registerEditor,
+      registerLiveEditorSync,
       getEditor,
       activeFieldKey,
       activeFieldKind,

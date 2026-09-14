@@ -380,7 +380,7 @@ function buildThoughtNode(
     pending,
     tone: "muted",
     expandable: Boolean(text),
-    children: text ? [{ kind: "thought", text, pending: false }] : [],
+    children: [],
     thoughtText: text,
   };
 }
