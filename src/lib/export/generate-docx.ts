@@ -79,6 +79,7 @@ import {
   tocHeadingSpecsForDocumentType,
 } from "@/lib/export/docx-toc-headings";
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
+import { buildElrCitedAttachmentsTable } from "@/lib/document-types/elr/cited-attachments";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
@@ -511,15 +512,6 @@ export async function generateReportDocx({
   electronicSignatures?: DocxAuditSignature[];
   omitCitations?: boolean;
 }): Promise<Buffer> {
-  const exportSections = sectionsForDocxExport(sections, omitCitations);
-  if (report.documentType === "generic_document") {
-    return generateGenericDocumentDocx({
-      report,
-      sections: exportSections,
-      comments,
-      electronicSignatures,
-    });
-  }
   if (
     report.documentType === "design_verification" ||
     report.documentType === "mechanical_design_verification" ||
@@ -529,7 +521,18 @@ export async function generateReportDocx({
     return generateDesignVerificationDocx({
       documentType: report.documentType,
       report,
+      sections,
+      electronicSignatures,
+      omitCitations,
+    });
+  }
+
+  const exportSections = sectionsForDocxExport(sections, omitCitations);
+  if (report.documentType === "generic_document") {
+    return generateGenericDocumentDocx({
+      report,
       sections: exportSections,
+      comments,
       electronicSignatures,
     });
   }
@@ -652,11 +655,13 @@ async function generateDesignVerificationDocx({
   report,
   sections,
   electronicSignatures,
+  omitCitations = false,
 }: {
   documentType: DocumentType;
   report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   electronicSignatures: DocxAuditSignature[];
+  omitCitations?: boolean;
 }): Promise<Buffer> {
   const templateContent = fs.readFileSync(
     getDocumentType(documentType).export.templatePath
@@ -678,16 +683,25 @@ async function generateDesignVerificationDocx({
     { pageSetup }
   );
   const def = getDocumentType(documentType);
-  const mergedSections = sections.map((row) => ({
+  const mergedOriginal = sections.map((row) => ({
     section: row.section,
     content: mergeSectionForType(documentType, row.section, row.content),
   }));
+  const mergedSections = omitCitations
+    ? mergedOriginal.map((row) => ({
+        ...row,
+        content: stripTrailingCitationsFromContent(row.content),
+      }))
+    : mergedOriginal;
   const built = def.export.buildTemplateData({
     report: report as unknown as ReportRecord,
     sections: mergedSections,
     ctx,
     comments: [],
   });
+  if (documentType === "equipment_lifecycle_report") {
+    built.attachmentsTableXml = buildElrCitedAttachmentsTable(mergedOriginal);
+  }
 
   const data: Record<string, string> = {
     date: formatCalendarDate(report.date),

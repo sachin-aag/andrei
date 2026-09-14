@@ -137,6 +137,7 @@ describe("equipment lifecycle report definition", () => {
     expect(ELR_SECTION_LABELS.elr_objective).toBe("Purpose");
     expect(sections).toContain("elr_abbreviations");
     expect(sections).toContain("elr_discrepancies");
+    expect(sections).not.toContain("elr_attachments");
     // Discrepancy sits after the evidence sections; system trends and risk
     // actions sit between discrepancy and the conclusion.
     expect(sections.indexOf("elr_discrepancies")).toBeGreaterThan(
@@ -214,6 +215,7 @@ describe("equipment lifecycle report definition", () => {
     // Trend sub-fields are separate placeholders in the docx template.
     expect(data).toHaveProperty("breakdownTrendXml");
     expect(data).toHaveProperty("alarmTrendXml");
+    expect(data).toHaveProperty("attachmentsTableXml");
   });
 });
 
@@ -475,8 +477,8 @@ describe("ELR criteria wiring", () => {
     expect(cross?.dependsOn).toContain("elr_qualification");
   });
 
-  // Attachments and abbreviations are boilerplate registers, not judgments.
-  const CRITERIA_FREE_SECTIONS = ["elr_attachments", "elr_abbreviations"];
+  // Abbreviations is a boilerplate glossary, not a judgment.
+  const CRITERIA_FREE_SECTIONS = ["elr_abbreviations"];
 
   it("gives every evaluable section at least one criterion except the registers", () => {
     for (const key of ELR_SECTION_KEYS) {

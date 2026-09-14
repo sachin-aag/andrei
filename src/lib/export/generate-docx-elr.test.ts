@@ -407,4 +407,83 @@ describe("ELR DOCX export", () => {
     expect(gridSum).toBeGreaterThan(10469);
     expect(gridSum).toBeLessThanOrEqual(15394);
   });
+
+  it("compiles 7.0 Attachments from unique citations, without a page-count column", async () => {
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections({
+        elr_qualification: {
+          ...EMPTY_ELR_CONTENT.elr_qualification,
+          narrative: narrative(
+            "URS approved [URS-FP-21-006.pdf, p. 3]. IQ recorded [19063LIVAIQ41.pdf, p. 1]."
+          ),
+        },
+        elr_calibration: {
+          ...EMPTY_ELR_CONTENT.elr_calibration,
+          narrative: narrative(
+            "Same URS cited again [URS-FP-21-006.pdf, p. 8]. Certificate [cal-cert.pdf, p. 2]."
+          ),
+        },
+      }),
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+    const start = xml.indexOf("7.0 ATTACHMENTS");
+    const end = xml.indexOf("8.0 REVISION");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const slice = xml.slice(start, end);
+    expect(slice).toContain("Attachment-1");
+    expect(slice).toContain("URS-FP-21-006.pdf");
+    expect(slice).toContain("19063LIVAIQ41.pdf");
+    expect(slice).toContain("cal-cert.pdf");
+    expect(slice).not.toContain("No. of Pages");
+    expect(slice.split("URS-FP-21-006.pdf").length - 1).toBe(1);
+  });
+
+  it("keeps cited files in Attachments when exporting without citations", async () => {
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections({
+        elr_objective: {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  { type: "text", text: "Periodic review of the filler [1]." },
+                ],
+              },
+              { type: "paragraph" },
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Citations:" }],
+              },
+              {
+                type: "paragraph",
+                content: [
+                  { type: "text", text: "1. [SOP-DP-QA-014.pdf, p. 21]" },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+      omitCitations: true,
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+    const purposeStart = xml.indexOf("1.0 PURPOSE");
+    const purposeEnd = xml.indexOf("2.0 SCOPE");
+    const purpose = xml.slice(purposeStart, purposeEnd);
+    expect(purpose).toContain("Periodic review of the filler");
+    expect(purpose).not.toContain("Citations:");
+    expect(purpose).not.toContain("SOP-DP-QA-014.pdf");
+
+    const attachments = xml.slice(
+      xml.indexOf("7.0 ATTACHMENTS"),
+      xml.indexOf("8.0 REVISION")
+    );
+    expect(attachments).toContain("SOP-DP-QA-014.pdf");
+    expect(attachments).toContain("Attachment-1");
+  });
 });

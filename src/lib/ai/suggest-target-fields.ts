@@ -93,7 +93,6 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   elr_system_trends: ["narrative", "table"],
   elr_risk_actions: ["narrative", "table", "overallGrade"],
   elr_conclusion: ["narrative", "recommendation", "recommendationNarrative"],
-  elr_attachments: ["table"],
   elr_revision_history: ["table"],
 };
 
@@ -213,7 +212,6 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   elr_system_trends: ["narrative", "table"],
   elr_risk_actions: ["narrative", "table"],
   elr_conclusion: ["narrative", "recommendationNarrative"],
-  elr_attachments: ["table"],
   elr_revision_history: ["table"],
 };
 

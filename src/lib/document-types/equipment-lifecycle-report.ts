@@ -41,6 +41,7 @@ import {
   checkSystemTrendRows,
   checkSystemTrendsCoverFlaggedFindings,
 } from "./elr/deterministic-checks";
+import { buildElrCitedAttachmentsTable } from "./elr/cited-attachments";
 import {
   ELR_DEFAULT_METADATA,
   ELR_RECOMMENDATION_LABELS,
@@ -684,7 +685,6 @@ function mergeElrSection(key: string, raw: unknown): unknown {
     case "elr_discrepancies":
       return mergeNarrative(raw, key as ElrSectionKey);
     case "elr_abbreviations":
-    case "elr_attachments":
     case "elr_revision_history":
       return mergeTable(raw, key as ElrSectionKey);
     case "elr_breakdowns":
@@ -748,7 +748,6 @@ export const equipmentLifecycleReportDefinition: DocumentTypeDefinition = {
     elr_system_trends: withQuantityMath(SYSTEM_TRENDS_CRITERIA),
     elr_risk_actions: withQuantityMath(RISK_ACTIONS_CRITERIA),
     elr_conclusion: withQuantityMath(CONCLUSION_CRITERIA),
-    elr_attachments: [],
     elr_revision_history: withQuantityMath(REVISION_CRITERIA),
   },
   prompts: {
@@ -947,7 +946,12 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         riskActionsTableXml: field("elr_risk_actions", "table"),
         conclusionXml: narrative("elr_conclusion"),
         recommendationXml: field("elr_conclusion", "recommendationNarrative"),
-        attachmentsTableXml: field("elr_attachments", "table"),
+        attachmentsTableXml: buildElrCitedAttachmentsTable(
+          sections.map((row) => ({
+            section: row.section,
+            content: row.content,
+          }))
+        ),
         revisionHistoryTableXml: field("elr_revision_history", "table"),
       };
     },

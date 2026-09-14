@@ -259,6 +259,7 @@ describe("getReportTableOfContents", () => {
     expect(toc.find((e) => e.label === "6. Recommendation")?.sectionKey).toBe(
       "elr_conclusion"
     );
+    expect(toc.find((e) => e.label === "7. Attachments")?.sectionKey).toBeUndefined();
     expect(toc.find((e) => e.label === "9. Approval Page")?.sectionKey).toBeUndefined();
   });
 

@@ -585,10 +585,6 @@ export function ElrConclusionEditor() {
   );
 }
 
-export function ElrAttachmentsEditor() {
-  return <TableEditor section="elr_attachments" fieldLabel="Attachments" />;
-}
-
 export function ElrRevisionHistoryEditor() {
   return (
     <TableEditor section="elr_revision_history" fieldLabel="Revision history" />

@@ -166,7 +166,6 @@ import {
   ElrAbbreviationsEditor,
   ElrAccessControlEditor,
   ElrAlarmsEditor,
-  ElrAttachmentsEditor,
   ElrAuditTrailEditor,
   ElrBreakdownsEditor,
   ElrCalibrationEditor,
@@ -283,7 +282,6 @@ const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
   elr_system_trends: ElrSystemTrendsEditor,
   elr_risk_actions: ElrRiskActionsEditor,
   elr_conclusion: ElrConclusionEditor,
-  elr_attachments: ElrAttachmentsEditor,
   elr_revision_history: ElrRevisionHistoryEditor,
 };
 

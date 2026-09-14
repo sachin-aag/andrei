@@ -10,7 +10,8 @@ import { seededTableDoc } from "@/lib/document-types/design-verification/section
  *
  * Prefix every key with `elr_`. SUGGEST_TARGET_FIELD_PATTERNS is a flat map
  * shared across types, so unprefixed keys (scope, conclusion, revision_history)
- * already belong to other types.
+ * already belong to other types. Word §7 Attachments is compiled at export
+ * from citations (`cited-attachments.ts`) — it is not an editor section.
  */
 export const ELR_SECTION_KEYS = [
   "elr_objective",
@@ -33,7 +34,6 @@ export const ELR_SECTION_KEYS = [
   "elr_system_trends",
   "elr_risk_actions",
   "elr_conclusion",
-  "elr_attachments",
   "elr_revision_history",
 ] as const;
 
@@ -184,12 +184,12 @@ export const ELR_CSV_STATUS_HEADERS = [
   "Remarks",
 ] as const;
 
+/** Export-only register — compiled from citations, not an editor section. */
 export const ELR_ATTACHMENTS_HEADERS = [
   "Sr. No.",
   "Attachment No.",
   "Title",
   "Document Reference No.",
-  "No. of Pages",
 ] as const;
 
 export const ELR_REVISION_HISTORY_HEADERS = [
@@ -306,7 +306,6 @@ export type ElrSectionMap = {
   elr_system_trends: ElrNarrativeTableSection;
   elr_risk_actions: ElrRiskActionsSection;
   elr_conclusion: ElrConclusionSection;
-  elr_attachments: ElrTableSection;
   elr_revision_history: ElrTableSection;
 };
 
@@ -332,7 +331,6 @@ export const ELR_SECTION_LABELS: Record<ElrSectionKey, string> = {
   elr_system_trends: "System Trends and Patterns",
   elr_risk_actions: "Risk Assessment and Prioritized Actions",
   elr_conclusion: "Summary, Conclusion and Recommendation",
-  elr_attachments: "Attachments",
   elr_revision_history: "Revision History",
 };
 
@@ -452,7 +450,6 @@ export const EMPTY_ELR_CONTENT: ElrSectionMap = {
     recommendation: "",
     recommendationNarrative: emptyDoc(),
   },
-  elr_attachments: { table: seededTableDoc(ELR_ATTACHMENTS_HEADERS) },
   elr_revision_history: {
     table: seededTableDoc(ELR_REVISION_HISTORY_HEADERS),
   },

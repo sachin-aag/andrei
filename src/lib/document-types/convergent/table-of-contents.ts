@@ -294,7 +294,7 @@ const ELR_TOC: TableOfContentsEntry[] = [
     ],
   },
   { label: "6.0 Recommendation", sectionKey: "elr_conclusion" },
-  { label: "7.0 Attachments", sectionKey: "elr_attachments" },
+  { label: "7.0 Attachments" },
   { label: "8.0 Revision History", sectionKey: "elr_revision_history" },
   { label: "9.0 Approval Page" },
 ];
