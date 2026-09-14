@@ -1,4 +1,5 @@
 import { hasSupportedAttachmentExtension } from "@/lib/attachments/file-types";
+import { citationDisplayFilename } from "@/lib/citations/citation-filename";
 
 /** Citation-style `[12]` — not a fill-in placeholder. */
 export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
@@ -289,6 +290,30 @@ export function parseSourceCitation(match: string): ParsedSourceCitation | null 
   const filename = citeCoreWithoutPage(part);
   if (!filename) return null;
   return { filename, pages: pageNumbersFromCore(part) };
+}
+
+function canonicalizeSourceCitationPart(part: string): string {
+  const filename = citeCoreWithoutPage(part);
+  const display = citationDisplayFilename(filename);
+  if (!filename || display === filename) return part.trim();
+  return part.trim().replace(filename, display);
+}
+
+/**
+ * Drop a trailing `_YYYYMMDDHHmmss` download stamp from each filename in a
+ * source bracket so parked cites show the document number, not the export name.
+ */
+export function canonicalizeSourceCitationBracket(match: string): string {
+  if (!isSourceCitationBracket(match) || isNumericCitationMarker(match)) {
+    return match;
+  }
+  const inner = match.slice(1, -1);
+  const core = citationCoreFromInner(inner);
+  const parts = splitSourceCitationParts(core || inner);
+  if (parts.length === 0) return match;
+  const next = parts.map((part) => canonicalizeSourceCitationPart(part));
+  if (next.every((part, i) => part === parts[i]!.trim())) return match;
+  return `[${next.join(", ")}]`;
 }
 
 /** True when `core` is one or more Attachment_XIV-style exhibit labels. */

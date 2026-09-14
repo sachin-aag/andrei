@@ -141,6 +141,21 @@ describe("moveCitationsToEndOfText", () => {
     );
   });
 
+  it("parks a QMS download-stamped filename as the document number", () => {
+    expect(
+      moveCitationsToEndOfText(
+        "Media fill MF-24-001 was executed [PQR-24-PR-102_20250320092518.pdf, p. 1]."
+      )
+    ).toBe(
+      [
+        "Media fill MF-24-001 was executed [1].",
+        "",
+        "Citations:",
+        "1. [PQR-24-PR-102.pdf, p. 1]",
+      ].join("\n")
+    );
+  });
+
   it("numbers underscored Convergent document-number cites instead of leaving them inline", () => {
     const markdown = [
       "All testing was performed between 15 June 2023 and 19 July 2023 [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1].",
@@ -424,6 +439,12 @@ describe("sourceCitationBracket", () => {
       "[Mechanical Test Report.pdf]"
     );
   });
+
+  it("strips a QMS download stamp from the filename", () => {
+    expect(
+      sourceCitationBracket("PQR-24-PR-102_20250320092518.pdf", 1)
+    ).toBe("[PQR-24-PR-102.pdf, p. 1]");
+  });
 });
 
 describe("stripCitationsFromTableOperation", () => {
@@ -527,6 +548,16 @@ describe("normalizeTrailingCitationBlockInText", () => {
         "Verify REQ-101.\n\nCitations:\n[protocol.pdf, p. 3]"
       )
     ).toBe("Verify REQ-101.\n\nCitations:\n1. [protocol.pdf, p. 3]");
+  });
+
+  it("strips a download stamp from an already parked source", () => {
+    expect(
+      normalizeTrailingCitationBlockInText(
+        "Media fill executed [1].\n\nCitations:\n1. [PQR-24-PR-102_20250320092518.pdf, p. 1]"
+      )
+    ).toBe(
+      "Media fill executed [1].\n\nCitations:\n1. [PQR-24-PR-102.pdf, p. 1]"
+    );
   });
 });
 
