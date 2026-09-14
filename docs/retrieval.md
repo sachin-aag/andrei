@@ -18,9 +18,10 @@ does not search page text. Do not stuff an authoritative count into the
 Documents index instead. Which files mention a fact inside a PDF is still
 `search_documents`.
 
-Caps stay as they are (250 MB/file, 500 pages/file, 1 GB/report, 50
-files/report, 100k pages/month, outline/review 2500 pages, search 16 hits /
-80 `excludePages`, 270s chat abort). This work does not raise them.
+Caps stay as they are (250 MB/file, 500 pages/file, workspace stored-bytes
+default 100 GiB, 100k pages/month, outline/review 2500 pages, search 16 hits /
+80 `excludePages`, 270s chat abort). There is no per-report file-count or
+byte ceiling. This work does not raise them.
 
 Citations stay **filename + page**. Chunk ids change on re-ingest.
 
