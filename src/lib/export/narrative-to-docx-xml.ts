@@ -11,6 +11,8 @@ import {
 } from "@/lib/export/docx-page-setup";
 import { allocateListNumId } from "@/lib/export/docx-numbering";
 import { resolveOmmlFromMathAttrs } from "@/lib/math/omml-mathml";
+import { quantityLatexToPlainText } from "@/lib/math/quantity-math";
+import { simpleLatexToPlainText } from "@/lib/math/simple-latex";
 import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
 import { linesToDoc } from "@/lib/tiptap/rich-text";
 import {
@@ -441,16 +443,44 @@ function mathOmmlFromNode(node: JSONContent): string {
   });
 }
 
+function mathPlainFromNode(node: JSONContent): string | null {
+  const latex = typeof node.attrs?.latex === "string" ? node.attrs.latex : "";
+  return quantityLatexToPlainText(latex) ?? simpleLatexToPlainText(latex);
+}
+
+function mathTextRun(text: string, ctx?: DocxExportContext): string {
+  return `<w:r>${runProperties({}, ctx)}<w:t xml:space="preserve">${escapeXml(
+    text
+  )}</w:t></w:r>`;
+}
+
+/**
+ * Quantity TeX (`$<1$`, `$\pm 0.5\%$`) becomes Unicode `w:t` so Word never
+ * sees an unescaped `<` in OMML. Remaining equations stay OMML (already
+ * XML-escaped). Never return empty — stripped math was leaving holes in
+ * §5.3 / §6.0 prose.
+ */
 function mathInlineToRun(node: JSONContent, ctx?: DocxExportContext): string {
+  const plain = mathPlainFromNode(node);
+  if (plain) return mathTextRun(plain, ctx);
   const omml = mathOmmlFromNode(node);
-  if (!omml) return "";
-  const inner = omml.startsWith("<m:oMath") ? omml : `<m:oMath>${omml}</m:oMath>`;
-  return `<w:r>${runProperties({}, ctx)}${inner}</w:r>`;
+  if (omml) {
+    const inner = omml.startsWith("<m:oMath") ? omml : `<m:oMath>${omml}</m:oMath>`;
+    return `<w:r>${runProperties({}, ctx)}${inner}</w:r>`;
+  }
+  const latex = typeof node.attrs?.latex === "string" ? node.attrs.latex.trim() : "";
+  return mathTextRun(latex || "[equation]", ctx);
 }
 
 function mathBlockToXml(node: JSONContent): string {
+  const plain = mathPlainFromNode(node);
+  if (plain) return wrapParagraph(plain);
   const omml = mathOmmlFromNode(node);
-  if (!omml) return wrapParagraph("[equation]");
+  if (!omml) {
+    const latex =
+      typeof node.attrs?.latex === "string" ? node.attrs.latex.trim() : "";
+    return wrapParagraph(latex || "[equation]");
+  }
   const inner = omml.startsWith("<m:oMath") ? omml : `<m:oMath>${omml}</m:oMath>`;
   return `<w:p>${paragraphProperties()}<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">${inner}</m:oMathPara></w:p>`;
 }

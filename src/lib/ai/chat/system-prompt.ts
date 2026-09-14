@@ -19,7 +19,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v91-elr-format-fork";
+export const CHAT_PROMPT_VERSION = "chat-v92-quantity-prose";
 
 export type ChatMode = "plan" | "agent";
 

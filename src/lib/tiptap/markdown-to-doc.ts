@@ -1,5 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
 import {
+  quantityLatexToPlainText,
+  quantityLatexToTextNodes,
+  shouldFlattenDollarLatex,
+} from "@/lib/math/quantity-math";
+import {
   looksLikeTexFormula,
   simpleLatexToPlainText,
   simpleLatexToTextNodes,
@@ -64,7 +69,13 @@ function latexToInlineNodes(
 ): JSONContent[] {
   const simple = simpleLatexToTextNodes(latex, extraMarks);
   if (simple) return simple;
+  const quantity = quantityLatexToTextNodes(latex, extraMarks);
+  if (quantity) return quantity;
   return [mathInlineNode(latex)];
+}
+
+function shouldConvertDollarInner(inner: string): boolean {
+  return looksLikeTexFormula(inner) || shouldFlattenDollarLatex(inner);
 }
 
 function appendLiteralWithMath(
@@ -76,7 +87,7 @@ function appendLiteralWithMath(
   let last = 0;
   for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
     const inner = match[1]!;
-    if (!looksLikeTexFormula(inner)) continue;
+    if (!shouldConvertDollarInner(inner)) continue;
     const start = match.index ?? 0;
     if (start > last) {
       nodes.push(textNode(text.slice(last, start), extraMarks));
@@ -96,7 +107,7 @@ function appendLiteralWithMath(
 export function hasInlineTexDollars(text: string): boolean {
   INLINE_LATEX_DOLLAR_RE.lastIndex = 0;
   for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
-    if (looksLikeTexFormula(match[1]!)) return true;
+    if (shouldConvertDollarInner(match[1]!)) return true;
   }
   return false;
 }
@@ -107,7 +118,11 @@ export function stripInlineMarkdown(text: string): string {
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
     .replace(UNDERSCORE_ITALIC_RE, "$1")
     .replace(INLINE_LATEX_DOLLAR_RE, (_match, inner: string) =>
-      looksLikeTexFormula(inner) ? (simpleLatexToPlainText(inner) ?? inner) : _match
+      shouldConvertDollarInner(inner)
+        ? (simpleLatexToPlainText(inner) ??
+          quantityLatexToPlainText(inner) ??
+          inner)
+        : _match
     );
 }
 

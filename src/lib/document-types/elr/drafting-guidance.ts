@@ -185,6 +185,14 @@ State whether the equipment remains in its qualified state for this container
 format. Where a section carries an unresolved finding, the recommendation has
 to account for it — do not conclude "no action required" over an open gap.
 
+## Limits and counts
+
+Write limits, tolerances, particle counts and CFU values as ordinary Unicode
+prose (\`<1 CFU/plate\`, \`≤ 3,520 particles/m³\`, \`±0.5%\`, \`18 of 18\`). Do not
+wrap them in \`$...$\` or TeX (\`\\le\`, \`\\pm\`, \`\\text{...}\`). Those become math
+atoms that Word cannot open when they contain \`<\`. Keep \`$...$\` for real
+equations only (\`\\frac\`, \`\\sum\`).
+
 ## Verbosity
 
 - Short: Objective, Scope, Responsibilities narrative.

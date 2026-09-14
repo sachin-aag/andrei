@@ -13,6 +13,7 @@ import {
   checkMonitoringExcursionsLinked,
   checkPreventiveMaintenanceJustified,
   checkPrqScheduleCurrent,
+  checkQuantityMathAsProse,
   checkQmsQualificationFollowUp,
   checkQmsRecords,
   checkQualificationFormatScope,
@@ -23,6 +24,7 @@ import {
   checkSystemTrendRows,
   checkSystemTrendsCoverFlaggedFindings,
 } from "./elr/deterministic-checks";
+import { QUANTITY_MATH_CRITERION_KEY } from "@/lib/math/quantity-math";
 import {
   RISK_ACTION_COLUMN_SCHEMA,
   SYSTEM_TRENDS_COLUMN_SCHEMA,
@@ -165,7 +167,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_scope");
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v2");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v3");
   });
 
   it("asks which container format when attachments name both and the title page is unset", () => {
@@ -176,6 +178,8 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).toContain(
       "If it is unset and attachments name **both** Vial and Cartridge, stop"
     );
+    expect(def.chat.draftingGuidance).toContain("Limits and counts");
+    expect(def.chat.draftingGuidance).toContain("<1 CFU/plate");
     expect(def.chat.contextIdentity?.({})).toEqual(
       expect.arrayContaining([
         expect.stringContaining("container format: (unset)"),
@@ -471,6 +475,58 @@ describe("ELR criteria wiring", () => {
     expect(monitoring.some((c) => c.key === "monitoring.assessment_present")).toBe(
       true
     );
+  });
+
+  it("attaches the quantity-math check to every judged section, not the registers", () => {
+    for (const key of ELR_SECTION_KEYS) {
+      const criteria = getCriteria(TYPE, key);
+      if (CRITERIA_FREE_SECTIONS.includes(key)) {
+        expect(criteria.some((c) => c.key === QUANTITY_MATH_CRITERION_KEY)).toBe(
+          false
+        );
+        continue;
+      }
+      const row = criteria.find((c) => c.key === QUANTITY_MATH_CRITERION_KEY);
+      expect(row?.kind).toBe("deterministic");
+    }
+  });
+});
+
+describe("ELR quantity math as prose", () => {
+  it("fails when Monitoring still has the Word-breaking $<1 CFU/plate$ math atom", () => {
+    const result = checkQuantityMathAsProse(
+      ctx({
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "settle plates " },
+                {
+                  type: "mathInline",
+                  attrs: {
+                    latex: String.raw`<1\text{ CFU/plate}`,
+                    mathml: "",
+                    omml: null,
+                    ommlDirty: true,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toContain(String.raw`$<1\text{ CFU/plate}$`);
+  });
+
+  it("passes Unicode prose", () => {
+    const result = checkQuantityMathAsProse(
+      ctx({ narrative: narrative("settle plates <1 CFU/plate on every location") })
+    );
+    expect(result.status).toBe("met");
   });
 });
 

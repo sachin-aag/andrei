@@ -35,6 +35,8 @@ DV mixes LLM criteria with deterministic `check()` functions.
 
 - Entry: `generateSuggestionsForSection()`. Gate ≡ apply via
   `probeRichEdit` / `probePlainEdit` in `src/lib/suggestions/locator.ts`.
+  ELR `math.quantity_as_prose` is a deterministic repair: skip the LLM and
+  persist a whole-field `ai_redraft` that flattens leftover quantity math.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
 - Accept/dismiss: three-way merge when `suggestionBase`/`suggestionIntent`
   are stored (`mergeField` in `three-way-merge.ts`); otherwise locate the

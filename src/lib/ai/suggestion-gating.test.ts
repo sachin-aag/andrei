@@ -84,6 +84,15 @@ describe("suggestion-gating", () => {
     expect(gap.map((g) => g.criterionKey)).toEqual(["define.location"]);
   });
 
+  it("gap criteria excludes rows with an open ai_redraft", () => {
+    const evaluations = [baseEval({})];
+    const comments = [baseComment({ kind: "ai_redraft" })];
+    const gap = gapCriteriaForSection("define", evaluations, comments, {
+      narrative: { type: "doc", content: [] },
+    });
+    expect(gap).toHaveLength(0);
+  });
+
   it("includes partially_met criteria in the gap set", () => {
     const evaluations = [
       baseEval({

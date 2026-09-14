@@ -1,5 +1,6 @@
 import type { CriterionStatus } from "@/db/schema";
 import type { EvaluationContext } from "@/lib/document-types/types";
+import { collectQuantityMathSamples } from "@/lib/math/quantity-math";
 import {
   hasReference,
   isDelayed,
@@ -105,6 +106,27 @@ export function checkNarrativePresent(ctx: EvaluationContext) {
     return verdict("not_met", "This section is still empty");
   }
   return verdict("met", "Narrative is present");
+}
+
+/**
+ * Limits/counts in math atoms (`$<1 CFU/plate$`) become OMML that Word
+ * refuses when `m:t` contains a raw `<`. Flatten them to Unicode prose.
+ */
+export function checkQuantityMathAsProse(ctx: EvaluationContext) {
+  const samples = collectQuantityMathSamples(ctx.content);
+  if (samples.length === 0) {
+    return verdict("met", "Limits and counts are written as ordinary text");
+  }
+  const shown = samples
+    .slice(0, 4)
+    .map((latex) => `$${latex}$`)
+    .join("; ");
+  const more =
+    samples.length > 4 ? ` (+${samples.length - 4} more)` : "";
+  return verdict(
+    "not_met",
+    `Limits/counts sit in math atoms that can break Word export: ${shown}${more}`
+  );
 }
 
 export function checkResponsibilitiesTable(ctx: EvaluationContext) {

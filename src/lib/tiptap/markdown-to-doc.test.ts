@@ -250,14 +250,11 @@ describe("markdownToDoc", () => {
     expect(richJsonToPlainText(doc)).not.toContain("$");
   });
 
-  it("turns $\\pm 20\\%$ into an inline math node", () => {
+  it("turns $\\pm 20\\%$ into Unicode tolerance prose", () => {
     const doc = markdownToDoc(String.raw`tolerance $\pm 20\%$`);
     expect(doc.content![0]!.content).toEqual([
       { type: "text", text: "tolerance " },
-      {
-        type: "mathInline",
-        attrs: { mathml: "", latex: String.raw`\pm 20\%`, omml: null, ommlDirty: true },
-      },
+      { type: "text", text: "± 20%" },
     ]);
   });
 
@@ -268,14 +265,30 @@ describe("markdownToDoc", () => {
     ]);
   });
 
-  it("parses math inside bold", () => {
+  it("parses quantity TeX inside bold as Unicode, not a math atom", () => {
     const doc = markdownToDoc(String.raw`**$\pm 20\%$**`);
     expect(doc.content![0]!.content).toEqual([
       {
-        type: "mathInline",
-        attrs: { mathml: "", latex: String.raw`\pm 20\%`, omml: null, ommlDirty: true },
+        type: "text",
+        text: "± 20%",
+        marks: [{ type: "bold" }],
       },
     ]);
+  });
+
+  it("flattens the Langfuse Monitoring $<1 CFU/plate$ dollar span", () => {
+    const doc = markdownToDoc(
+      String.raw`settle plates $<1\text{ CFU/plate}$ on every location`
+    );
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "settle plates " },
+      { type: "text", text: "<1 CFU/plate" },
+      { type: "text", text: " on every location" },
+    ]);
+    expect(richJsonToPlainText(doc)).toContain("<1 CFU/plate");
+    expect(doc.content![0]!.content!.some((n) => n.type === "mathInline")).toBe(
+      false
+    );
   });
 
   it("keeps unsupported markdown as literal text", () => {

@@ -88,7 +88,7 @@ export function isFailingStatus(status: CriterionStatus): boolean {
   return FAILING.includes(status);
 }
 
-/** Failing criteria with no open ai_fix linked to their evaluation row. */
+/** Failing criteria with no open AI suggestion linked to their evaluation row. */
 export function gapCriteriaForSection(
   section: SectionType,
   evaluations: EvaluationRecord[],
@@ -102,7 +102,10 @@ export function gapCriteriaForSection(
   );
   const openFixEvalIds = new Set(
     comments
-      .filter((c) => c.kind === "ai_fix" && c.status === "open" && c.evaluationId)
+      .filter(
+        (c) =>
+          isAiSuggestionKind(c.kind) && c.status === "open" && c.evaluationId
+      )
       .map((c) => c.evaluationId as string)
   );
   const hash = sectionContentHash(section, sectionContent, {

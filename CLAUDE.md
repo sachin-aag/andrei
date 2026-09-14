@@ -238,7 +238,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Pipeline:**
 1. Load template DOCX (`templates/investigation-report-template.docx`) via PizZip + Docxtemplater
-2. Per-section generators convert TipTap JSONContent → Word XML (`<w:p>`, `<w:r>`, `<w:rPr>`) via `narrativeToDocxXmlWithContext()`. Handles bold, italic, underline, colors, subscript, superscript, images, OMML equations.
+2. Per-section generators convert TipTap JSONContent → Word XML (`<w:p>`, `<w:r>`, `<w:rPr>`) via `narrativeToDocxXmlWithContext()`. Handles bold, italic, underline, colors, subscript, superscript, images, OMML equations. Quantity TeX (`$<1$`, `$\pm$`, `$\le$`) flattens to Unicode `w:t`; remaining OMML `m:t` is XML-escaped so a raw `<` cannot corrupt `document.xml`. Never emit empty for leftover math.
 3. Analyze section formats 6M fields, 5-Why pairs, investigation outcome, root cause, impact assessment
 4. Improve/Control split into narrative + CA-N/PA-N register tables (`improve-control-checkpoints-docx.ts`)
 5. Post-processing passes:

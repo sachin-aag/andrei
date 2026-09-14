@@ -4,6 +4,7 @@ import {
   SUGGEST_TARGET_FIELD_PATTERNS,
 } from "@/lib/ai/suggest-target-fields";
 import { ELR_PROMPT_VERSION } from "@/lib/customers/packs";
+import { QUANTITY_MATH_CRITERION_KEY } from "@/lib/math/quantity-math";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import { elrChatContextIdentity } from "./elr/chat-identity";
@@ -20,6 +21,7 @@ import {
   checkMediaFillTable,
   checkMonitoringExcursionsLinked,
   checkNarrativePresent,
+  checkQuantityMathAsProse,
   checkPreventiveMaintenanceJustified,
   checkPrqScheduleCurrent,
   checkQmsQualificationFollowUp,
@@ -72,6 +74,19 @@ function det(
   dependsOn?: string[]
 ): CriterionDefinition {
   return { key, label, description, kind: "deterministic", check, dependsOn };
+}
+
+const QUANTITY_MATH_CRITERION = det(
+  QUANTITY_MATH_CRITERION_KEY,
+  "Limits and counts are written as ordinary text, not math atoms",
+  "Are comparison limits, tolerances and counts written as Unicode prose rather than inline TeX / math atoms that Word cannot open?",
+  checkQuantityMathAsProse
+);
+
+function withQuantityMath(
+  criteria: CriterionDefinition[]
+): CriterionDefinition[] {
+  return [...criteria, QUANTITY_MATH_CRITERION];
 }
 
 const SYNTHESIS_DEPENDS_ON = [
@@ -675,28 +690,30 @@ export const equipmentLifecycleReportDefinition: DocumentTypeDefinition = {
     emptyContent: EMPTY_ELR_CONTENT[key],
   })),
   criteriaBySection: {
-    elr_objective: OBJECTIVE_CRITERIA,
-    elr_scope: SCOPE_CRITERIA,
-    elr_responsibilities: RESPONSIBILITIES_CRITERIA,
+    elr_objective: withQuantityMath(OBJECTIVE_CRITERIA),
+    elr_scope: withQuantityMath(SCOPE_CRITERIA),
+    elr_responsibilities: withQuantityMath(RESPONSIBILITIES_CRITERIA),
     elr_abbreviations: [],
-    elr_system_description: SYSTEM_DESCRIPTION_CRITERIA,
-    elr_qualification: QUALIFICATION_CRITERIA,
-    elr_media_fill: MEDIA_FILL_CRITERIA,
-    elr_monitoring: MONITORING_CRITERIA,
-    elr_calibration: CALIBRATION_CRITERIA,
-    elr_preventive_maintenance: PREVENTIVE_MAINTENANCE_CRITERIA,
-    elr_breakdowns: BREAKDOWN_CRITERIA,
-    elr_qms: QMS_CRITERIA,
-    elr_alarms: ALARM_CRITERIA,
-    elr_access_control: ACCESS_CONTROL_CRITERIA,
-    elr_audit_trail: AUDIT_TRAIL_CRITERIA,
-    elr_csv_status: CSV_STATUS_CRITERIA,
-    elr_discrepancies: DISCREPANCY_CRITERIA,
-    elr_system_trends: SYSTEM_TRENDS_CRITERIA,
-    elr_risk_actions: RISK_ACTIONS_CRITERIA,
-    elr_conclusion: CONCLUSION_CRITERIA,
+    elr_system_description: withQuantityMath(SYSTEM_DESCRIPTION_CRITERIA),
+    elr_qualification: withQuantityMath(QUALIFICATION_CRITERIA),
+    elr_media_fill: withQuantityMath(MEDIA_FILL_CRITERIA),
+    elr_monitoring: withQuantityMath(MONITORING_CRITERIA),
+    elr_calibration: withQuantityMath(CALIBRATION_CRITERIA),
+    elr_preventive_maintenance: withQuantityMath(
+      PREVENTIVE_MAINTENANCE_CRITERIA
+    ),
+    elr_breakdowns: withQuantityMath(BREAKDOWN_CRITERIA),
+    elr_qms: withQuantityMath(QMS_CRITERIA),
+    elr_alarms: withQuantityMath(ALARM_CRITERIA),
+    elr_access_control: withQuantityMath(ACCESS_CONTROL_CRITERIA),
+    elr_audit_trail: withQuantityMath(AUDIT_TRAIL_CRITERIA),
+    elr_csv_status: withQuantityMath(CSV_STATUS_CRITERIA),
+    elr_discrepancies: withQuantityMath(DISCREPANCY_CRITERIA),
+    elr_system_trends: withQuantityMath(SYSTEM_TRENDS_CRITERIA),
+    elr_risk_actions: withQuantityMath(RISK_ACTIONS_CRITERIA),
+    elr_conclusion: withQuantityMath(CONCLUSION_CRITERIA),
     elr_attachments: [],
-    elr_revision_history: REVISION_CRITERIA,
+    elr_revision_history: withQuantityMath(REVISION_CRITERIA),
   },
   prompts: {
     base: ELR_BASE_PROMPT,
