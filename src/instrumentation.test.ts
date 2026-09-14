@@ -25,10 +25,13 @@ describe("Langfuse span processor v4 ingestion", () => {
     expect(ctor).not.toHaveBeenCalled();
   });
 
-  it("sends immediate export and the v4 ingestion header", async () => {
+  it("sends immediate export, v4 ingestion header, and deploy environment", async () => {
     vi.stubEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-test");
     vi.stubEnv("LANGFUSE_SECRET_KEY", "sk-lf-test");
     vi.stubEnv("LANGFUSE_HOST", "https://langfuse.example.test");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "cursor/preview-branch");
     const ctor = vi.fn(function MockLangfuseSpanProcessor(this: {
       forceFlush: ReturnType<typeof vi.fn>;
     }) {
@@ -43,6 +46,8 @@ describe("Langfuse span processor v4 ingestion", () => {
     expect(processor).not.toBeNull();
     expect(ctor).toHaveBeenCalledWith({
       baseUrl: "https://langfuse.example.test",
+      environment: "preview",
+      release: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       exportMode: "immediate",
       additionalHeaders: {
         "x-langfuse-ingestion-version": "4",
