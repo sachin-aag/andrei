@@ -23,10 +23,10 @@ describe("findPlaceholders", () => {
 
     expect(placeholders).toMatchObject([
       {
-        id: "define-narrative-8",
+        id: "define-narrative-7",
         section: "define",
         contentPath: "narrative",
-        fromPos: 8,
+        fromPos: 7,
         text: "[Batch No.: <to be filled>]",
       },
       {
@@ -74,8 +74,8 @@ describe("findPlaceholders", () => {
     const [placeholder] = findPlaceholders(doc, "measure", "narrative");
 
     expect(placeholder).toMatchObject({
-      id: "measure-narrative-29",
-      fromPos: 29,
+      id: "measure-narrative-28",
+      fromPos: 28,
       text: "[Room ID: <to be filled>]",
     });
   });
@@ -260,6 +260,135 @@ describe("findPlaceholders", () => {
     };
     expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
       token,
+    ]);
+  });
+
+  it("counts a placeholder inside a list item once", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "bulletList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Started on <start date>." }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<start date>",
+    ]);
+  });
+
+  it("counts a placeholder inside a table cell once", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "<equipment id>" }],
+                    },
+                  ],
+                },
+                {
+                  type: "tableHeader",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "<review period>" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<equipment id>",
+      "<review period>",
+    ]);
+  });
+
+  it("counts a placeholder inside a blockquote once", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "blockquote",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "See <SOP number>." }],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<SOP number>",
+    ]);
+  });
+
+  it("counts a nested-list placeholder once, not once per ancestor", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "bulletList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Outer <outer>" }],
+                },
+                {
+                  type: "bulletList",
+                  content: [
+                    {
+                      type: "listItem",
+                      content: [
+                        {
+                          type: "paragraph",
+                          content: [{ type: "text", text: "Inner <inner>" }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<outer>",
+      "<inner>",
     ]);
   });
 

@@ -25,4 +25,47 @@ describe("collectPlaceholders", () => {
       ].sort()
     );
   });
+
+  it("does not double-count table-cell placeholders in nested rich docs", () => {
+    const found = collectPlaceholders({
+      improve: {
+        narrative: emptyDoc(),
+        correctiveActions: {
+          type: "doc",
+          content: [
+            {
+              type: "table",
+              content: [
+                {
+                  type: "tableRow",
+                  content: [
+                    {
+                      type: "tableCell",
+                      content: [
+                        {
+                          type: "paragraph",
+                          content: [{ type: "text", text: "<name>" }],
+                        },
+                      ],
+                    },
+                    {
+                      type: "tableCell",
+                      content: [
+                        {
+                          type: "paragraph",
+                          content: [{ type: "text", text: "<role>" }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    expect(found.map((p) => p.text)).toEqual(["<name>", "<role>"]);
+  });
 });
