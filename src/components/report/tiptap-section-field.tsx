@@ -636,12 +636,31 @@ export function TiptapSectionField({
     return unregister;
   }, [editor, registerEditor, section, contentPath]);
 
+  const liveDirtyRef = useRef(false);
+
   useEffect(() => {
     if (!editor) return;
-    return registerLiveEditorSync(section, contentPath, () => {
-      if (editor.isDestroyed) return;
-      onChangeRef.current(editor.getJSON() as JSONContent);
-    });
+    const markDirty = () => {
+      liveDirtyRef.current = true;
+    };
+    editor.on("update", markDirty);
+    return () => {
+      editor.off("update", markDirty);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    return registerLiveEditorSync(
+      section,
+      contentPath,
+      () => {
+        if (editor.isDestroyed) return;
+        liveDirtyRef.current = false;
+        onChangeRef.current(editor.getJSON() as JSONContent);
+      },
+      () => liveDirtyRef.current
+    );
   }, [editor, registerLiveEditorSync, section, contentPath]);
 
   useEffect(() => {

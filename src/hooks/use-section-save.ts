@@ -95,7 +95,7 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
     [report.id, section]
   );
 
-  const { status, lastSavedAt, flush, markPersisted } = useAutoSave({
+  const { status, lastSavedAt, flush, needsFlush, markPersisted } = useAutoSave({
     enabled,
     persistOnLeave,
     value,
@@ -107,8 +107,8 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   useHydrateAutosaveFromSectionRow(section, markPersisted);
 
   useEffect(
-    () => registerSectionFlush(section, flush),
-    [section, flush, registerSectionFlush]
+    () => registerSectionFlush(section, flush, needsFlush),
+    [section, flush, needsFlush, registerSectionFlush]
   );
 
   return { status, lastSavedAt, value, flushSave: flush };

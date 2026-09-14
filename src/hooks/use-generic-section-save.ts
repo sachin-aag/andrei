@@ -89,7 +89,7 @@ export function useGenericSectionSave(section: string) {
     [report.id, section]
   );
 
-  const { status, lastSavedAt, flush, markPersisted } = useAutoSave({
+  const { status, lastSavedAt, flush, needsFlush, markPersisted } = useAutoSave({
     enabled,
     persistOnLeave,
     value,
@@ -101,8 +101,8 @@ export function useGenericSectionSave(section: string) {
   useHydrateAutosaveFromSectionRow(section, markPersisted);
 
   useEffect(
-    () => registerSectionFlush(section, flush),
-    [section, flush, registerSectionFlush]
+    () => registerSectionFlush(section, flush, needsFlush),
+    [section, flush, needsFlush, registerSectionFlush]
   );
 
   return { status, lastSavedAt, value, flushSave: flush };

@@ -1496,33 +1496,62 @@ export function ChatPanel({
       if (agentDonePrefs.notifications) {
         void requestAgentDoneNotificationPermission();
       }
+      const tagsForRequest = mentions;
+      // Clear the composer before awaiting section saves so Enter does not
+      // sit on the typed text while ELR (and other types) persist.
+      setInput("");
+      setPendingImages([]);
+      setMentionRange(null);
+      setMentions([]);
+      const restoreComposer = () => {
+        setInput(text);
+        setPendingImages(attached);
+        setMentions(tagsForRequest);
+      };
       try {
-        await flushPendingSectionSaves();
+        const flushPromise = flushPendingSectionSaves();
+        let sessionId = currentSessionId;
+        if (!sessionId) {
+          const [, created] = await Promise.all([flushPromise, createSession()]);
+          sessionId = created;
+        } else {
+          await flushPromise;
+        }
+        if (!sessionId) {
+          restoreComposer();
+          toast.error("Could not start a chat session.");
+          return;
+        }
+        currentSessionIdRef.current = sessionId;
+        if (!currentSessionId) {
+          mountSession(sessionId, false);
+          setCurrentSessionId(sessionId);
+        }
       } catch {
+        restoreComposer();
         toast.error(
           "Could not save your latest edits before the assistant ran."
         );
         return;
       }
-      let sessionId = currentSessionId;
+      const sessionId = currentSessionIdRef.current;
       if (!sessionId) {
-        sessionId = await createSession();
-        if (!sessionId) {
-          toast.error("Could not start a chat session.");
-          return;
-        }
-        currentSessionIdRef.current = sessionId;
-        mountSession(sessionId, false);
-        setCurrentSessionId(sessionId);
+        restoreComposer();
+        toast.error("Could not start a chat session.");
+        return;
       }
       const sessionRuntime = await waitForValue(() =>
         runtimeBySessionRef.current.get(sessionId)
       );
       if (!sessionRuntime) {
+        restoreComposer();
         toast.error("Could not start a chat session.");
         return;
       }
-      if (sessionRuntime.busy) return;
+      if (sessionRuntime.busy) {
+        restoreComposer();
+        return;
+      }
       lastSendTargetRef.current = sendTarget;
       setLastSendTarget(sendTarget);
       savedScrollRef.current = { kind: "bottom" };
@@ -1533,11 +1562,6 @@ export function ChatPanel({
       ) {
         setAgentCommitInFlight(true);
       }
-      setInput("");
-      setPendingImages([]);
-      setMentionRange(null);
-      const tagsForRequest = mentions;
-      setMentions([]);
       for (const mention of tagsForRequest) {
         applyMentionFocus(mention);
       }

@@ -60,6 +60,7 @@ describe("useAutoSave", () => {
 
     expect(onSave).toHaveBeenCalledWith("latest", expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(result.current.status).toBe("saved");
+    expect(result.current.needsFlush()).toBe(false);
   });
 
   it("does not save on flush when nothing changed since last persist", async () => {
@@ -68,10 +69,25 @@ describe("useAutoSave", () => {
       useAutoSave({ value: "initial", onSave, delayMs: 1_000 })
     );
 
+    expect(result.current.needsFlush()).toBe(false);
+
     await act(async () => {
       await result.current.flush();
     });
 
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("reports needsFlush while a debounce is pending without re-saving", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const { rerender, result } = renderHook(
+      ({ value }) => useAutoSave({ value, onSave, delayMs: 1_000 }),
+      { initialProps: { value: "initial" } },
+    );
+
+    expect(result.current.needsFlush()).toBe(false);
+    rerender({ value: "updated" });
+    expect(result.current.needsFlush()).toBe(true);
     expect(onSave).not.toHaveBeenCalled();
   });
 

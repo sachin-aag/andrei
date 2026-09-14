@@ -207,6 +207,18 @@ export function useAutoSave<T>({
 
   const flush = useCallback(() => flushImpl.current(), []);
 
+  /**
+   * True when a chat/submit flush would do work. Does not re-serialize —
+   * lastSerialized is updated when a debounce is scheduled or a persist lands.
+   */
+  const needsFlush = useCallback(() => {
+    if (!enabled) return false;
+    if (timer.current !== null) return true;
+    if (isSaving.current) return true;
+    if (pending.current) return true;
+    return lastSerialized.current !== lastPersisted.current;
+  }, [enabled]);
+
   const markPersisted = useCallback((next?: T) => {
     const serialized = serializeValueRef.current(
       next === undefined ? latestValue.current : next
@@ -268,5 +280,5 @@ export function useAutoSave<T>({
     };
   }, [beaconUrl, persistOnLeaveEnabled]);
 
-  return { status, lastSavedAt, flush, markPersisted };
+  return { status, lastSavedAt, flush, needsFlush, markPersisted };
 }
