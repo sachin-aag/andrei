@@ -72,7 +72,7 @@ export type DocumentSearchMode = (typeof DOCUMENT_SEARCH_MODES)[number];
 const DEFAULT_CANDIDATE_LIMIT = 40;
 const RRF_K = 60;
 const PAGE_TEXT_LIMIT = 12_000;
-const OUTLINE_PAGE_CAP = 300;
+const OUTLINE_PAGE_CAP = 2500;
 const REVIEW_PAGE_FETCH_CAP = 2500;
 const OUTLINE_CONTEXT_CHARS = 400;
 const KEYWORD_TOKEN_RE = /[A-Za-z0-9]/;
@@ -145,6 +145,8 @@ export type ReviewPageSource = {
   pageContext: string | null;
   printedPageLabel: string | null;
   ingestRunId?: string | null;
+  outlineTitle?: string | null;
+  identifiers?: readonly string[] | null;
 };
 
 export type DocumentPageRead = {
@@ -1475,6 +1477,8 @@ export async function listDocumentPagesForReview({
           transcript: documentPages.transcript,
           pageContext: documentPages.pageContext,
           printedPageLabel: documentPages.printedPageLabel,
+          outlineTitle: documentPages.outlineTitle,
+          identifiers: documentPages.identifiers,
           ingestRunId: reportAttachments.activeIngestRunId,
         })
         .from(reportAttachments)
@@ -1501,6 +1505,8 @@ export async function listDocumentPagesForReview({
     pageContext: page.pageContext ?? null,
     printedPageLabel: page.printedPageLabel,
     ingestRunId: page.ingestRunId,
+    outlineTitle: page.outlineTitle ?? null,
+    identifiers: page.identifiers ?? [],
   }));
 }
 

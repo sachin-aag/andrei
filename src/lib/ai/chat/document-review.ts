@@ -25,8 +25,14 @@ import {
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
+import {
+  coverageObjectiveDigest,
+  planReviewPages,
+  selectReviewPages,
+} from "@/lib/ai/chat/review-page-plan";
 
 export { DOCUMENT_REVIEW_TOOL_NAMES, type DocumentReviewToolName };
+export { selectReviewPages };
 
 export const REVIEW_TARGET_BATCH_CHARS = 8_000;
 export const REVIEW_MAX_PAGES_PER_BATCH = 6;
@@ -62,15 +68,18 @@ export type DocumentReviewCoverageSource = {
 };
 
 export function documentReviewCoverageKey(
-  sources: readonly DocumentReviewCoverageSource[]
+  sources: readonly DocumentReviewCoverageSource[],
+  objective?: string
 ): DocumentReviewCoverageKey {
-  return sources
+  const base = sources
     .map((source) => {
       const ingest = source.ingestRunId?.trim() || "unknown";
       return `${source.attachmentId}:${source.pageCount}:${ingest}`;
     })
     .sort()
     .join("|");
+  const digest = coverageObjectiveDigest(objective ?? "");
+  return digest ? `${base}|obj:${digest}` : base;
 }
 
 export function coverageKeysMatch(
@@ -89,42 +98,9 @@ export type ReviewPageSource = {
   pageContext: string | null;
   printedPageLabel: string | null;
   ingestRunId?: string | null;
+  outlineTitle?: string | null;
+  identifiers?: readonly string[] | null;
 };
-
-/**
- * Fair-share a page cap across attachments (round-robin) so a
- * lexicographically earlier file cannot consume the entire review.
- */
-export function selectReviewPages<T extends { attachmentId: string }>(
-  pages: readonly T[],
-  cap: number
-): T[] {
-  if (pages.length <= cap) return [...pages];
-  const queues = new Map<string, T[]>();
-  const order: string[] = [];
-  for (const page of pages) {
-    const existing = queues.get(page.attachmentId);
-    if (existing) {
-      existing.push(page);
-      continue;
-    }
-    order.push(page.attachmentId);
-    queues.set(page.attachmentId, [page]);
-  }
-  const selected: T[] = [];
-  while (selected.length < cap) {
-    let progressed = false;
-    for (const id of order) {
-      if (selected.length >= cap) break;
-      const queue = queues.get(id);
-      if (!queue || queue.length === 0) continue;
-      selected.push(queue.shift()!);
-      progressed = true;
-    }
-    if (!progressed) break;
-  }
-  return selected;
-}
 
 export type DocumentReviewFinding = {
   id: string;
@@ -274,10 +250,11 @@ export class DocumentReviewSession {
     pages: ReviewPageSource[];
     /**
      * Identity for rehydrate. Pass the selected documents' full page
-     * counts (not the capped review set) so a truncated walk of the same
-     * files does not force another review.
+     * counts (not the planned review set) plus a section/objective digest
+     * so a finished calibration walk does not satisfy monitoring.
      */
     coverageSources?: DocumentReviewCoverageSource[];
+    coverageObjective?: string;
   }): {
     status: "started" | "no_pages" | "already_in_progress";
     totalPages: number;
@@ -299,7 +276,11 @@ export class DocumentReviewSession {
       };
     }
 
-    const pages = selectReviewPages(input.pages, REVIEW_PAGE_CAP);
+    const pages = planReviewPages(
+      input.pages,
+      input.coverageObjective ?? input.objective,
+      REVIEW_PAGE_FETCH_CAP
+    );
     if (pages.length === 0) {
       this.phaseState = "idle";
       this.totalPages = 0;
@@ -328,7 +309,8 @@ export class DocumentReviewSession {
     this.coverageKey = documentReviewCoverageKey(
       input.coverageSources && input.coverageSources.length > 0
         ? input.coverageSources
-        : coverageSourcesFromReviewPages(pages)
+        : coverageSourcesFromReviewPages(pages),
+      input.coverageObjective ?? input.objective
     );
     this.findingSeq = 0;
     this.lastRecommended = null;

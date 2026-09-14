@@ -10,6 +10,7 @@ import {
   parseChatPendingPlan,
   pauseChatPendingPlan,
   persistablePendingPlan,
+  planCoverageObjective,
   planProgressChipLabel,
   planPromptBlock,
   resolvePlanAtTurnStart,
@@ -289,5 +290,20 @@ describe("plan prompt and metadata", () => {
         items: [{ sectionKey: "define", label: "Define", state: "queued" }],
       })?.items[0]?.sectionKey
     ).toBe("define");
+  });
+
+  it("uses the in-progress section as the review coverage objective", () => {
+    expect(
+      planCoverageObjective(
+        plan([
+          { sectionKey: "elr_calibration", label: "Calibration", state: "in_progress" },
+          { sectionKey: "elr_monitoring", label: "Monitoring", state: "queued" },
+        ]),
+        "Continue the remaining sections."
+      )
+    ).toBe("elr_calibration");
+    expect(planCoverageObjective(null, "Fill monitoring from the certificates")).toBe(
+      "Fill monitoring from the certificates"
+    );
   });
 });

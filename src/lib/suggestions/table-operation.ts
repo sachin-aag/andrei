@@ -62,6 +62,8 @@ export type TableOperation =
        * block that contains it. Omit to append before a trailing Citations list.
        */
       afterAnchor?: string;
+      /** Caption title. The server inserts `Table N. {title}` above the table. */
+      title?: string;
     };
 
 export type TableCellEdit = {
@@ -80,6 +82,8 @@ export type TableRowDelete = {
 export type TableOperationContext = {
   section: SectionType;
   targetField: string;
+  /** Document-wide count of existing tables/captions; next caption is N+1. */
+  existingTableCount?: number;
 };
 
 export type TableOperationStatus =
@@ -91,8 +95,74 @@ export type TableOperationStatus =
   | "invalid";
 
 export type TableOperationResult =
-  | { ok: true; status: "ok"; doc: JSONContent }
+  | { ok: true; status: "ok"; doc: JSONContent; tableNumber?: number }
   | { ok: false; status: Exclude<TableOperationStatus, "ok">; hint: string };
+
+export const TABLE_CAPTION_RE = /^Table\s+(\d+)\.\s+/i;
+
+function tableCaptionParagraph(number: number, title: string): JSONContent {
+  return {
+    type: "paragraph",
+    content: [{ type: "text", text: `Table ${number}. ${title.trim()}` }],
+  };
+}
+
+function walkJsonContent(
+  value: unknown,
+  visit: (node: JSONContent) => void
+): void {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const child of value) walkJsonContent(child, visit);
+    return;
+  }
+  const node = value as JSONContent;
+  visit(node);
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) walkJsonContent(child, visit);
+    return;
+  }
+  if (!node.type) {
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      walkJsonContent(child, visit);
+    }
+  }
+}
+
+/** Count tables and `Table N. …` captions in a TipTap doc or section JSON. */
+export function countNumberedTablesInContent(value: unknown): {
+  tableCount: number;
+  maxCaption: number;
+} {
+  let tableCount = 0;
+  let maxCaption = 0;
+  walkJsonContent(value, (node) => {
+    if (node.type === "table") {
+      tableCount += 1;
+      return;
+    }
+    if (node.type !== "paragraph") return;
+    const match = TABLE_CAPTION_RE.exec(flattenForAnchor(node).text.trim());
+    if (match) {
+      const n = Number(match[1]);
+      if (Number.isFinite(n)) maxCaption = Math.max(maxCaption, n);
+    }
+  });
+  return { tableCount, maxCaption };
+}
+
+export function existingTableCountFromContents(
+  contents: readonly unknown[]
+): number {
+  let tables = 0;
+  let maxCaption = 0;
+  for (const content of contents) {
+    const counted = countNumberedTablesInContent(content);
+    tables += counted.tableCount;
+    maxCaption = Math.max(maxCaption, counted.maxCaption);
+  }
+  return Math.max(tables, maxCaption);
+}
 
 const EMPTY_CELL_LABEL = "(empty)";
 
@@ -370,6 +440,15 @@ function applyCreateTable(
       })),
     ],
   };
+  const title = operation.title?.trim() ?? "";
+  const existing =
+    context?.existingTableCount ??
+    existingTableCountFromContents([doc]);
+  const tableNumber = title ? existing + 1 : undefined;
+  const nodes: JSONContent[] =
+    title && tableNumber !== undefined
+      ? [tableCaptionParagraph(tableNumber, title), table]
+      : [table];
   const afterAnchor = operation.afterAnchor?.trim() ?? "";
   if (afterAnchor) {
     const located = topLevelIndexAfterAnchor(doc, afterAnchor);
@@ -381,11 +460,11 @@ function applyCreateTable(
           : "afterAnchor was not found in the field. Call read_section and quote a unique span, or omit afterAnchor to append before Citations."
       );
     }
-    insertNodesAfterTopLevelIndex(doc, located.index, [table]);
-    return { ok: true, status: "ok", doc };
+    insertNodesAfterTopLevelIndex(doc, located.index, nodes);
+    return { ok: true, status: "ok", doc, tableNumber };
   }
-  insertNodesIntoFieldBody(doc, [table]);
-  return { ok: true, status: "ok", doc };
+  insertNodesIntoFieldBody(doc, nodes);
+  return { ok: true, status: "ok", doc, tableNumber };
 }
 
 export function applyTableOperation(
@@ -1170,7 +1249,11 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         typeof coerced.afterAnchor === "string" && coerced.afterAnchor.trim()
           ? coerced.afterAnchor.trim()
           : undefined;
-      return { kind: "create_table", headers, rows, afterAnchor };
+      const title =
+        typeof coerced.title === "string" && coerced.title.trim()
+          ? coerced.title.trim()
+          : undefined;
+      return { kind: "create_table", headers, rows, afterAnchor, title };
     }
     default:
       return undefined;
@@ -1188,7 +1271,7 @@ export function tableOperationInvalidHint(raw: unknown): string {
     return `delete_table needs tableIndex from read_section (0 for the first table). ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "create_table") {
-    return `create_table needs kind: "create_table" with headers (and optional rows, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. ${TABLE_EDIT_RECOVERY}`;
+    return `create_table needs kind: "create_table" with headers (and optional rows, title, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "edit_cells") {
     return `edit_cells needs kind: "edit_cells" with cells: [{ row, col, insertText }]. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
@@ -1253,9 +1336,12 @@ export function summarizeTableOperation(operation: TableOperation): string {
     case "create_table": {
       const n = (operation.rows ?? []).length;
       const cols = operation.headers.length;
+      const titled = operation.title?.trim()
+        ? ` “${operation.title.trim()}”`
+        : "";
       return n === 0
-        ? `Create a ${cols}-column table`
-        : `Create a ${cols}-column table with ${n} row${n === 1 ? "" : "s"}`;
+        ? `Create a ${cols}-column table${titled}`
+        : `Create a ${cols}-column table${titled} with ${n} row${n === 1 ? "" : "s"}`;
     }
     default: {
       const _exhaustive: never = operation;
@@ -1300,6 +1386,9 @@ export function tableOperationDetailLines(operation: TableOperation): string[] {
       return [`Column ${operation.col}: ${operation.expectedHeaderText}`];
     case "create_table":
       return [
+        ...(operation.title?.trim()
+          ? [`Title: ${operation.title.trim()}`]
+          : []),
         `Headers: ${operation.headers.map((h) => h || EMPTY_CELL_LABEL).join(" | ")}`,
         ...(operation.rows ?? []).map(
           (row, i) =>

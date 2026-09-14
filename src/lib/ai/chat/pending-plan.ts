@@ -351,6 +351,17 @@ export function persistablePendingPlan(
   return plan;
 }
 
+export function planCoverageObjective(
+  plan: ChatPendingPlan | null,
+  userText: string
+): string {
+  if (plan && !plan.paused) {
+    const current = plan.items.find((item) => item.state === "in_progress");
+    if (current?.sectionKey) return current.sectionKey;
+  }
+  return userText.trim().slice(0, 80);
+}
+
 export function planProgressChipLabel(
   continuation: ChatTurnContinuation
 ): string {

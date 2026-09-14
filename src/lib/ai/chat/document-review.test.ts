@@ -9,6 +9,7 @@ import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u
 import {
   buildReviewBatches,
   DocumentReviewSession,
+  documentReviewCoverageKey,
   extractReviewFindingsFromPages,
   pickPlanModeChatTools,
   PLAN_MODE_CHAT_TOOL_NAMES,
@@ -483,5 +484,33 @@ describe("DocumentReviewSession coverage identity", () => {
     expect(finished.status).toBe("complete");
     expect(finished.coverageKey).toContain("att_a:400:");
     expect(finished.coverageKey).toContain("att_b:80:");
+    expect(finished.coverageKey).toContain("|obj:ids");
+  });
+
+  it("does not reuse a finished walk when the coverage objective changes", () => {
+    const sources = [
+      { attachmentId: "att_a", pageCount: 10, ingestRunId: "run" },
+    ];
+    expect(documentReviewCoverageKey(sources, "elr_calibration")).not.toBe(
+      documentReviewCoverageKey(sources, "elr_monitoring")
+    );
+  });
+
+  it("queues more than 300 pages when the set is under the fetch cap", () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const pages = Array.from({ length: 350 }, (_, i) =>
+      page(i + 1, `inventory ${i + 1}`, "att_a")
+    );
+    const started = session.start({
+      objective: "inventory",
+      pages,
+      coverageSources: [
+        { attachmentId: "att_a", pageCount: 350, ingestRunId: "run" },
+      ],
+    });
+    expect(started.status).toBe("started");
+    expect(started.totalPages).toBe(350);
   });
 });

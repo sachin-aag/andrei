@@ -102,6 +102,7 @@ import {
   applyTableOperation,
   captureTableOperationSnapshots,
   coerceTableOperationInput,
+  existingTableCountFromContents,
   parseTableOperation,
   summarizeTableOperation,
   tableOperationInvalidHint,
@@ -236,6 +237,7 @@ type AgentCommitOutcome =
       section: SectionType;
       targetField: string;
       summary: string;
+      tableNumber?: number;
     }
   | { status: "not_editable"; message: string }
   | { status: "section_not_found"; message: string }
@@ -302,6 +304,7 @@ export type EditTableResult =
       targetField: string;
       summary: string;
       supersededSuggestionIds?: string[];
+      tableNumber?: number;
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -492,6 +495,13 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
       .array(z.array(z.string()))
       .optional()
       .describe("Data rows. Each row is padded or trimmed to headers.length."),
+    title: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Caption title. The server inserts `Table N. {title}` above the table and returns tableNumber. Refer to Table N in the lead-in sentence."
+      ),
     afterAnchor: z
       .string()
       .optional()
@@ -854,6 +864,19 @@ async function loadMergedSection(
   };
 }
 
+async function existingTableCountForReport(reportId: string): Promise<number> {
+  const rows = await db
+    .select({
+      section: reportSections.section,
+      content: reportSections.content,
+    })
+    .from(reportSections)
+    .where(eq(reportSections.reportId, reportId));
+  return existingTableCountFromContents(
+    rows.map((row) => mergeSection(row.section, row.content))
+  );
+}
+
 function fieldSnapshotKey(section: SectionType, targetField: string): string {
   return `${section}\0${targetField}`;
 }
@@ -924,6 +947,8 @@ export function buildChatTools(opts: {
   includePlotMeasurements?: boolean;
   /** Override pack policy in tests. */
   unsupportedFactPolicy?: UnsupportedFactPolicy;
+  /** Section/objective digest so review coverage does not leak across sections. */
+  reviewCoverageObjective?: string;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1550,7 +1575,7 @@ export function buildChatTools(opts: {
 
     start_document_review: tool({
       description:
-        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. Returns page counts only — call continue_document_review next.",
+        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. Returns page counts only — call continue_document_review next.",
       inputSchema: z.object({
         objective: z
           .string()
@@ -1603,7 +1628,7 @@ export function buildChatTools(opts: {
             remainingBatches: 0,
             documents: ready.map(reviewDocumentIndexItem),
             message:
-              "Multiple ready documents are in scope. Call start_document_review again with attachmentIds for the evidence file (prefer the tagged document or the Requirements Verified / Appendix B report). Reviewing every file at once can hit the page cap and drop rows.",
+              "Multiple ready documents are in scope. Call list_attachments, then start_document_review again with attachmentIds for the evidence file (prefer the tagged document or the Requirements Verified / Appendix B report).",
           };
         }
         const pages = await listDocumentPagesForReview({
@@ -1622,6 +1647,7 @@ export function buildChatTools(opts: {
           objective,
           pages,
           coverageSources,
+          coverageObjective: opts.reviewCoverageObjective || objective,
         });
         const queuedIds = new Set(started.queuedAttachmentIds);
         const skippedDocuments = selectedDocs
@@ -1643,7 +1669,10 @@ export function buildChatTools(opts: {
           remainingBatches: started.remainingBatches,
           documentCount: started.documentCount,
           attachmentIds: selected,
-          coverageKey: documentReviewCoverageKey(coverageSources),
+          coverageKey: documentReviewCoverageKey(
+            coverageSources,
+            opts.reviewCoverageObjective || objective
+          ),
           queuedPages: started.totalPages,
           inputPageCount: started.inputPageCount,
           truncated:
@@ -2882,7 +2911,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, delete_table (remove the whole table; keeps surrounding prose, figures, and citations), insert_column (optional per-row values; omit afterCol to append as the last column), delete_column, and create_table (headers plus rows) to add a NEW table in a rich field. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section FIRST and copy tableIndex plus [row,col] / header text from tables[] / structuredText when editing an existing table. To add an example to a table, edit_cells (or insert_column) — never propose_edit a bullet list. Row 0 is the header and cannot be deleted; the first data row is row 1. To delete the whole table, use kind delete_table with tableIndex — do not delete every data row (that leaves an empty header) and do not rewrite the field with draft_field. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. edit_cells may omit expectedText (server captures it). When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create, incrementally edit, or remove a table.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, delete_table (remove the whole table; keeps surrounding prose, figures, and citations), insert_column (optional per-row values; omit afterCol to append as the last column), delete_column, and create_table (headers plus rows, plus title) to add a NEW table in a rich field. Pass title so the server inserts \`Table N. {title}\` above the table and returns tableNumber; refer to Table N in the same-turn lead-in. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section FIRST and copy tableIndex plus [row,col] / header text from tables[] / structuredText when editing an existing table. To add an example to a table, edit_cells (or insert_column) — never propose_edit a bullet list. Row 0 is the header and cannot be deleted; the first data row is row 1. To delete the whole table, use kind delete_table with tableIndex — do not delete every data row (that leaves an empty header) and do not rewrite the field with draft_field. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. edit_cells may omit expectedText (server captures it). When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create, incrementally edit, or remove a table.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -2989,9 +3018,14 @@ export function buildChatTools(opts: {
           : { operation: capturedOp, citations: [] as string[] };
         let applied;
         try {
+          const existingTableCount =
+            stripped.operation.kind === "create_table"
+              ? await existingTableCountForReport(reportId)
+              : undefined;
           applied = applyTableOperation(fieldDoc, stripped.operation, {
             section,
             targetField: resolvedField,
+            existingTableCount,
           });
         } catch (err) {
           console.error("edit_table failed", err);
@@ -3035,7 +3069,10 @@ export function buildChatTools(opts: {
             });
           }
           if (tableResult.status !== "applied" || !second) {
-            return tableResult;
+            return tableResult.status === "applied" &&
+              applied.tableNumber !== undefined
+              ? { ...tableResult, tableNumber: applied.tableNumber }
+              : tableResult;
           }
           return commitFieldEdit({
             section,
@@ -3125,6 +3162,9 @@ export function buildChatTools(opts: {
             section,
             targetField: resolvedField,
             summary: reasoning,
+            ...(applied.tableNumber !== undefined
+              ? { tableNumber: applied.tableNumber }
+              : {}),
           },
           supersededSuggestionIds
         );

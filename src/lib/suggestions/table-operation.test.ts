@@ -8,6 +8,7 @@ import { flattenForAnchor } from "@/lib/suggestions/locator";
 import {
   applyTableOperation,
   captureTableOperationSnapshots,
+  existingTableCountFromContents,
   parseTableOperation,
   summarizeTableOperation,
   type TableOperation,
@@ -623,6 +624,62 @@ describe("applyTableOperation", () => {
     expect(rowCount(result.doc)).toBe(3);
   });
 
+  it("inserts a Table N. caption when create_table has a title", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Intro." }],
+        },
+      ],
+    };
+    const result = applyTableOperation(
+      before,
+      {
+        kind: "create_table",
+        title: "Calibration certificates this period",
+        headers: ["Instrument", "Result"],
+        rows: [["TI-12", "Pass"]],
+      },
+      { section: "define", targetField: "narrative", existingTableCount: 3 }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(4);
+    expect(result.doc.content?.map((n) => n.type)).toEqual([
+      "paragraph",
+      "paragraph",
+      "table",
+    ]);
+    expect(flattenForAnchor(result.doc.content![1]!).text).toBe(
+      "Table 4. Calibration certificates this period"
+    );
+  });
+
+  it("counts tables and Table N. captions across section maps", () => {
+    expect(
+      existingTableCountFromContents([
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Table 7. Spare parts" }],
+              },
+              { type: "table", content: [] },
+            ],
+          },
+        },
+        {
+          type: "doc",
+          content: [{ type: "table", content: [] }],
+        },
+      ])
+    ).toBe(7);
+  });
+
   it("inserts a new table before trailing Citations", () => {
     const before: JSONContent = {
       type: "doc",
@@ -1032,6 +1089,22 @@ describe("parseTableOperation", () => {
       afterAnchor: "Purpose of this verification.",
     };
     expect(parseTableOperation(raw)).toEqual(raw);
+  });
+
+  it("preserves create_table title", () => {
+    expect(
+      parseTableOperation({
+        kind: "create_table",
+        title: "Calibration certificates this period",
+        headers: ["Instrument", "Result"],
+        rows: [["TI-12", "Pass"]],
+      })
+    ).toEqual({
+      kind: "create_table",
+      title: "Calibration certificates this period",
+      headers: ["Instrument", "Result"],
+      rows: [["TI-12", "Pass"]],
+    });
   });
 });
 

@@ -80,6 +80,7 @@ import {
   chatUserTurnIsAutoContinue,
   parseChatPendingPlan,
   persistablePendingPlan,
+  planCoverageObjective,
   resolvePlanAtTurnStart,
   type ChatPendingPlan,
 } from "@/lib/ai/chat/pending-plan";
@@ -423,6 +424,7 @@ async function handleChatPost(
   });
   const documentReview = new DocumentReviewSession();
   const pushback = isRetrievalPushback(userText);
+  const coverageObjective = planCoverageObjective(pendingPlan, userText);
   const coverageRehydrate = rehydrateDocumentReviewIfCoverageUnchanged({
     session: documentReview,
     messages,
@@ -432,6 +434,7 @@ async function handleChatPost(
       ingestRunId: doc.ingestRunId,
     })),
     skipRestore: pushback,
+    coverageObjective,
   });
   // Coverage growth or explicit pushback can start a fresh comprehensive walk.
   const retrievalPolicy = retrievalPolicyAfterCoverageDelta({
@@ -534,6 +537,7 @@ async function handleChatPost(
     messages,
     editPolicy,
     turnEdits,
+    reviewCoverageObjective: coverageObjective,
   });
   const scopedTools: ToolSet =
     mode === "plan"
@@ -910,7 +914,7 @@ async function handleChatPost(
           targetField: item.targetField,
           reasoning: item.reasoning,
         }));
-        let advanced =
+        const advanced =
           mode === "agent" && pendingPlan && !pendingPlan.paused
             ? advancePlanAfterTurn({
                 plan: pendingPlan,

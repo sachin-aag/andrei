@@ -104,6 +104,51 @@ describe("rehydrateDocumentReviewIfCoverageUnchanged", () => {
     expect(session.isFinished()).toBe(true);
   });
 
+  it("does not restore a finished walk for a different coverage objective", () => {
+    const session = new DocumentReviewSession();
+    const messages: UIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-start_document_review",
+            toolCallId: "s1",
+            state: "output-available",
+            input: { objective: "elr_calibration" },
+            output: {
+              status: "started",
+              attachmentIds: ["att_a"],
+              documents: [{ attachmentId: "att_a", pageCount: 3 }],
+              coverageKey: "att_a:3:unknown|obj:elr_calibration",
+            },
+          },
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "f1",
+            state: "output-available",
+            input: {},
+            output: {
+              status: "complete",
+              coverageComplete: true,
+              coverageKey: "att_a:3:unknown|obj:elr_calibration",
+            },
+          },
+        ],
+      },
+    ];
+    const result = rehydrateDocumentReviewIfCoverageUnchanged({
+      session,
+      messages,
+      readyDocuments: [
+        { attachmentId: "att_a", pageCount: 3, ingestRunId: null },
+      ],
+      coverageObjective: "elr_monitoring",
+    });
+    expect(result.restored).toBe(false);
+    expect(session.isFinished()).toBe(false);
+  });
+
   it("does not restore when skipRestore is set (pushback re-review)", () => {
     const session = new DocumentReviewSession();
     const messages: UIMessage[] = [

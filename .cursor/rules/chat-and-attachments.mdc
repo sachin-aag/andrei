@@ -62,14 +62,16 @@ with Analytics). Do not hide search while a document review is
 `convertToModelMessages` (page transcripts, finish findings, write
 payloads). Finished document-review coverage is rehydrated across turns
 when the ready-attachment coverage key is unchanged (the key is the
-selected documents' **full** page counts, not the 300-page review
-cap); comprehensive retrieval does not force another walk on a zero
+selected documents' **full** page counts plus the current section/objective,
+not a silent 300-page prefix); comprehensive retrieval does not force another walk on a zero
 coverage delta unless the latest message is explicit pushback
 (`you missed`, `look again`, `re-check`, a test-family code). Pushback
 skips rehydrate so a finished session does not hide
-`start_document_review`. `selectReviewPages` fair-shares the 300-page
-cap across attachments so an earlier file cannot starve later ones.
-`start_document_review` reports `truncated` / `skippedDocuments`.
+`start_document_review`. `planReviewPages` scores pages to the current
+objective, then fair-shares leftover pages up to `REVIEW_PAGE_FETCH_CAP`
+(2500) so an earlier file cannot starve later ones. `start_document_review`
+reports `truncated` / `skippedDocuments`. Call `list_attachments` first
+when the file set is unknown.
 
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
 against the citation ledger's served quotes (`groundDraftText`). Empty

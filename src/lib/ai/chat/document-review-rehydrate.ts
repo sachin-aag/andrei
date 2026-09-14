@@ -163,9 +163,10 @@ export function findPriorFinishedDocumentReview(
 }
 
 export function coverageKeyFromReadyDocuments(
-  documents: readonly DocumentReviewCoverageSource[]
+  documents: readonly DocumentReviewCoverageSource[],
+  coverageObjective?: string
 ): DocumentReviewCoverageKey {
-  return documentReviewCoverageKey(documents);
+  return documentReviewCoverageKey(documents, coverageObjective);
 }
 
 /**
@@ -181,13 +182,16 @@ export function rehydrateDocumentReviewIfCoverageUnchanged(input: {
    * walk. Restoring `complete` hides `start_document_review`.
    */
   skipRestore?: boolean;
+  /** Current section/objective so a finished walk of another section is not reused. */
+  coverageObjective?: string;
 }): {
   restored: boolean;
   prior: PriorFinishedDocumentReview | null;
   currentCoverageKey: DocumentReviewCoverageKey;
 } {
   const currentCoverageKey = coverageKeyFromReadyDocuments(
-    input.readyDocuments
+    input.readyDocuments,
+    input.coverageObjective
   );
   const prior = findPriorFinishedDocumentReview(input.messages);
   if (
