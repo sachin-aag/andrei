@@ -23,8 +23,9 @@ Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Document `draft_field` / Analytics `write_column`). Classifier:
 `classifyChatUserIntent` in `src/lib/ai/chat/user-intent.ts` (rules) plus
 `resolveChatUserIntent` in `src/lib/ai/chat/resolve-user-intent.ts`
-(Flash-Lite when rules would emit `ambiguous_agent_mode`, and on Document
-chat when the text looks like a worksheet dump). The same call may set
+(Flash-Lite when rules would emit `ambiguous_agent_mode` or
+`ambiguous_polite_request` such as "can you do the same for X", and on
+Document chat when the text looks like a worksheet dump). The same call may set
 `switchToAnalytics` when Lite is ≥0.75 sure the destination is the Analytics
 grid — Report chat then shows a Switch to Analytics button; clicking it
 sets Analytics and resends the original request. A yes / go for it after
@@ -33,9 +34,10 @@ timeout, and parse failures keep the rules decision with no widget.
 Retrieval maps those turns to focused (`reason: no_task`) and skips
 kickoff evidence. A yes after the assistant offered to draft is a write
 request. Agent-mode "go for it" / "do it" is write even when the prior
-turn dumped findings instead of matching the offer regex. "Can you do
-the same for @Section" is write (`continue_task`), not a lookup — `do`
-in `QUESTION_START_RE` must not win.
+turn dumped findings instead of matching the offer regex. Polite leftovers
+(`can you` without a produce verb, "do the same") go to Lite — they are
+not `question_or_lookup`. Real lookups (`what` / `who` / `do you`) stay
+on rules.
 
 Search attachments **before** `ask_user`, `draft_field`, or a `<placeholder>`
 for report facts (batch, date, result, equipment ID, requirement ID, design

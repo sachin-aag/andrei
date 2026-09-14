@@ -4,11 +4,12 @@
  * call — not a second sequential model.
  *
  * Rules in `classifyChatUserIntent` still own greetings, explicit produce
- * verbs, and clear questions. This call runs when those rules would emit
- * `ambiguous_agent_mode`, or when Document chat looks like a worksheet dump
- * (`looksLikeAnalyticsWorkProductRequest`). Timeout, stub chat, and parse
- * failures fall back to the rules decision with no switch widget. Retrieval
- * policy is not this model's job.
+ * verbs, and high-precision lookups (`what` / `who` / `do you`). This call
+ * runs when those rules would emit `ambiguous_agent_mode` or
+ * `ambiguous_polite_request` ("can you do the same for X"), or when Document
+ * chat looks like a worksheet dump (`looksLikeAnalyticsWorkProductRequest`).
+ * Timeout, stub chat, and parse failures fall back to the rules decision with
+ * no switch widget. Retrieval policy is not this model's job.
  */
 
 import { generateText, Output } from "ai";
@@ -39,7 +40,7 @@ import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-genera
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 
-export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v4-switch-confirm";
+export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v5-polite-same";
 export const INTENT_CLASSIFIER_TIMEOUT_MS = 2_500;
 const INTENT_MIN_CONFIDENCE = 0.4;
 /** Stricter than kind-classification — the switch widget must be rare. */
@@ -178,6 +179,8 @@ function buildIntentClassifierPrompt(input: ResolveChatUserIntentInput): string 
     "kind=read: a question, plan, outline, writing advice, or lookup. Reply in chat. Do not edit the document or worksheet.",
     "kind=write: they asked to change the document or worksheet now (draft, insert, fill, edit, plot, extract into the grid, or yes to an offer to write).",
     "A yes / go for it / do it after you told them to switch to Analytics is write — continue the earlier extract/fill request. Do not classify that as social.",
+    '"Can you do the same for X" and "do that for Preventive Maintenance" are kind=write — they continue the previous edit. They are not questions.',
+    '"Can you tell me what is in the table" is read.',
     "preferredSurface=analytics: they asked to fill, extract into, or plot on the Analytics worksheet / spreadsheet / data grid. Not when they asked to put worksheet results into a report section.",
     "preferredSurface=report: anything else, including drafting prose or editing a document table.",
     "Document vs Agent chrome is layout, not write intent. Both chromes land edits as reviewable suggestions.",

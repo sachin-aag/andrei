@@ -76,19 +76,47 @@ describe("classifyChatUserIntent", () => {
     ).toEqual({ kind: "social", reason: "ack_without_task" });
   });
 
-  it("treats do-the-same and Agent proceed as write, not a lookup", () => {
+  it("sends do-the-same and leftover can-you to Flash-Lite, not a lookup", () => {
     expect(
       classifyChatUserIntent({
         userText: "can you do the same for @Preventive Maintenance",
         mode: "agent",
       })
-    ).toEqual({ kind: "write", reason: "continue_task" });
+    ).toEqual({ kind: "write", reason: "ambiguous_polite_request" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "can you do the same for @Preventive Maintenance",
+          mode: "agent",
+        })
+      )
+    ).toBe(true);
     expect(
       classifyChatUserIntent({
         userText: "do the same for Preventive Maintenance",
         mode: "agent",
-      }).kind
-    ).toBe("write");
+      })
+    ).toEqual({ kind: "write", reason: "ambiguous_polite_request" });
+    expect(
+      classifyChatUserIntent({
+        userText: "can you do the same for @Preventive Maintenance",
+        mode: "plan",
+      })
+    ).toEqual({ kind: "read", reason: "ambiguous_polite_request" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "do you have the protocol?",
+          mode: "agent",
+        })
+      )
+    ).toBe(false);
+    expect(
+      classifyChatUserIntent({
+        userText: "do you have the protocol?",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "read", reason: "question_or_lookup" });
     expect(
       classifyChatUserIntent({
         userText: "go for it",
@@ -188,6 +216,14 @@ describe("classifyChatUserIntent", () => {
     expect(
       needsLlmIntentClassification(
         classifyChatUserIntent({ userText: "draft Purpose" })
+      )
+    ).toBe(false);
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "what is in the equipment table?",
+          mode: "agent",
+        })
       )
     ).toBe(false);
   });

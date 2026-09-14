@@ -73,10 +73,13 @@ const START_REPORT_RE =
   /\b(?:start|begin|kick ?off)\b.{0,48}\b(?:report|draft|document|writing|this)\b|\b(?:let'?s|please)\s+(?:start|begin|go)\b/i;
 
 const CONTINUE_RE =
-  /\b(?:keep going|continue|you missed|still missing|go on|finish (?:it|the (?:draft|report|section|review))|do(?:\s+the)?\s+same|do that)\b/i;
+  /\b(?:keep going|continue|you missed|still missing|go on|finish (?:it|the (?:draft|report|section|review)))\b/i;
 
 const POLITE_WRITE_RE =
-  /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run|do(?:\s+the)?\s+same|do that)\b/i;
+  /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;
+
+/** Repeat-the-last-edit phrasing. Not a lookup — Lite decides write vs read. */
+const SAME_TASK_RE = /\bdo(?:\s+the)?\s+same\b|\bdo that\b/i;
 
 /**
  * "Can you", "could you", "please" read as questions to `QUESTION_START_RE`
@@ -114,8 +117,13 @@ const FILL_THE_WORKSHEET_RE =
 const ADVICE_QUESTION_RE =
   /\b(?:how should i|what should i (?:write|draft|put|say|include)|which section should i|how do i (?:write|draft))\b/i;
 
+/**
+ * High-precision lookups only. `can` / `could` / `would` / bare `do` are
+ * polite wrappers ("can you do the same") — those must not short-circuit
+ * Flash-Lite. `do you` stays a question ("do you have the protocol?").
+ */
 const QUESTION_START_RE =
-  /^(?:what|who|when|where|which|why|how|is|are|do|does|did|can|could|would|should|tell me|summar(?:y|ize)|explain|show|list|find|search|look)\b/i;
+  /^(?:what|who|when|where|which|why|how|is|are|do you|does|did|should|tell me|summar(?:y|ize)|explain|show|list|find|search|look)\b/i;
 
 const ASSISTANT_WRITE_OFFER_RE =
   /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot|update|apply)|ready to (?:draft|update|write|fill|apply)|start drafting|i(?:'ll| will) (?:draft|update|apply)|please confirm to proceed)\b/i;
@@ -244,6 +252,15 @@ function classifyTaskText(
     return { kind: "write", reason: "produce_request" };
   }
 
+  // Polite leftover ("can you do the same for PM") is not a confident
+  // lookup. Flash-Lite decides; timeout keeps Agent writable / Ask read-only.
+  if (polite || SAME_TASK_RE.test(text) || SAME_TASK_RE.test(instruction)) {
+    return {
+      kind: mode === "agent" ? "write" : "read",
+      reason: "ambiguous_polite_request",
+    };
+  }
+
   // Neither a question nor a recognized write verb. Fall back to where the
   // engineer is rather than to read: stripping the edit tools in Agent mode
   // is what made the assistant claim it could not write and paste a markdown
@@ -255,11 +272,14 @@ function classifyTaskText(
   return { kind: "read", reason: "question_or_lookup" };
 }
 
-/** The unresolvable hole: rules would default Agent mush to write. */
+/** Rules were not sure — Flash-Lite should classify this turn. */
 export function needsLlmIntentClassification(
   decision: ChatUserIntentDecision
 ): boolean {
-  return decision.reason === "ambiguous_agent_mode";
+  return (
+    decision.reason === "ambiguous_agent_mode" ||
+    decision.reason === "ambiguous_polite_request"
+  );
 }
 
 /**
