@@ -102,6 +102,24 @@ describe("CitationPageLedger", () => {
     ]);
     expect(ledger.decision("protocol.pdf", 104)).toBe("unknown");
   });
+
+  it("hydrates missing quotes from document_pages", async () => {
+    const ledger = new CitationPageLedger();
+    ledger.record("protocol.pdf", 12, "att-1");
+    expect(ledger.pagesMissingQuotes()).toEqual([
+      { attachmentId: "att-1", pageNumber: 12 },
+    ]);
+    await ledger.hydrateQuotes(async () => [
+      {
+        attachmentId: "att-1",
+        filename: "protocol.pdf",
+        pageNumber: 12,
+        quote: "E/PR/070 Purpose",
+      },
+    ]);
+    expect(ledger.recordedPages()[0]?.quote).toContain("E/PR/070");
+    expect(ledger.pagesMissingQuotes()).toEqual([]);
+  });
 });
 
 describe("rewriteCitationPagesInText", () => {
@@ -142,6 +160,16 @@ describe("rewriteCitationPagesInText", () => {
     expect(
       rewriteCitationPagesInText("See [Appendix B, p. 104].", ledger)
     ).toBe("See [Appendix B, p. 104].");
+  });
+
+  it("drops a never-retrieved attachment filename once any page was served", () => {
+    const ledger = ledgerWithSearchHit("protocol.pdf", 12);
+    expect(
+      rewriteCitationPagesInText(
+        "The APS result [invented-aps.pdf, p. 4] is missing.",
+        ledger
+      )
+    ).toBe("The APS result is missing.");
   });
 });
 

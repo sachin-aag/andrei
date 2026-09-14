@@ -21,6 +21,7 @@ const {
   readDocumentOutlineMock,
   listReadyDocumentsForReportMock,
   listDocumentPagesForReviewMock,
+  loadDocumentPageEvidenceMock,
   listActiveAttachmentsMock,
   listAttachmentFoldersMock,
   dbSelectMock,
@@ -32,6 +33,7 @@ const {
   readDocumentOutlineMock: vi.fn(),
   listReadyDocumentsForReportMock: vi.fn(),
   listDocumentPagesForReviewMock: vi.fn(),
+  loadDocumentPageEvidenceMock: vi.fn(async () => []),
   listActiveAttachmentsMock: vi.fn(),
   listAttachmentFoldersMock: vi.fn(),
   dbSelectMock: vi.fn(),
@@ -81,6 +83,8 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
       listReadyDocumentsForReportMock(...(args as [])),
     listDocumentPagesForReview: (...args: unknown[]) =>
       listDocumentPagesForReviewMock(...(args as [])),
+    loadDocumentPageEvidence: (...args: unknown[]) =>
+      loadDocumentPageEvidenceMock(...(args as [])),
   };
 });
 
@@ -857,6 +861,8 @@ describe("buildChatTools document review", () => {
   beforeEach(() => {
     listReadyDocumentsForReportMock.mockReset();
     listDocumentPagesForReviewMock.mockReset();
+    loadDocumentPageEvidenceMock.mockReset();
+    loadDocumentPageEvidenceMock.mockResolvedValue([]);
   });
 
   it("registers review tools", () => {
@@ -917,6 +923,48 @@ describe("buildChatTools document review", () => {
       attachmentIds: ["att_b"],
       documents: [{ attachmentId: "att_b", filename: "Appendix-B.pdf" }],
     });
+  });
+
+  it("reports truncated coverage when selected documents have more pages than the review cap", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_a",
+        filename: "early.pdf",
+        description: null,
+        pageCount: 400,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_a",
+        filename: "early.pdf",
+        pageNumber: 1,
+        transcript: "Purpose",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      pinnedAttachmentIds: ["att_a"],
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "inventory" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "started",
+      truncated: true,
+      queuedPages: 1,
+      inputPageCount: 1,
+      skippedDocuments: [],
+    });
+    expect(
+      (result as { coverageKey?: string }).coverageKey
+    ).toContain("att_a:400:");
   });
 
   it("asks which attachment to review when several ready documents are untagged", async () => {
@@ -1257,6 +1305,8 @@ describe("buildChatTools propose vs commit", () => {
     commitChatEditMock.mockReset();
     getReportAnalyticsMock.mockReset();
     getReportAnalyticsMock.mockResolvedValue(null);
+    loadDocumentPageEvidenceMock.mockReset();
+    loadDocumentPageEvidenceMock.mockResolvedValue([]);
     mockDefineSectionSelect();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
     dbUpdateMock.mockReturnValue({

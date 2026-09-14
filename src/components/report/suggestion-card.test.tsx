@@ -127,6 +127,43 @@ describe("SuggestionCardFace", () => {
     expect(row.className).not.toContain("flex-wrap");
   });
 
+  it("shows Traceability counts from claim provenance", () => {
+    renderFixCard({
+      kind: "fix",
+      comment,
+      linkedEval: undefined,
+      queueIndex: 1,
+      queueTotal: 1,
+      payload: {
+        deleteText: "",
+        insertText: "E/PR/070",
+        reasoning: "Name the filling machine.",
+        claimProvenance: {
+          policy: "flag",
+          claims: [
+            {
+              text: "E/PR/070",
+              kind: "identifier",
+              status: "verified",
+            },
+            {
+              text: "MF-25-VIAL-01",
+              kind: "identifier",
+              status: "unsourced",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(screen.getByTestId("suggestion-traceability")).toHaveTextContent(
+      "Verified 1"
+    );
+    expect(screen.getByTestId("suggestion-traceability")).toHaveTextContent(
+      "Unsourced 1"
+    );
+  });
+
   it("summarizes a table edit without listing cell text", () => {
     renderFixCard({
       kind: "fix",

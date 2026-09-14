@@ -57,14 +57,26 @@ After a cited search hit, a locate/read (`read_document_page` /
 `document_outline` / Analytics scan-extract), or two empty greps, hide
 `search_documents` for the rest of the turn (`searchLoopDirective` shared
 with Analytics). Do not hide search while a document review is
-`in_progress` / `ready_to_finish`. Prior-turn tool JSON is compacted before
+`in_progress` / `ready_to_finish`, or when a tool result sets
+`keepSearchOpen` / `status: unsupported_facts`. Prior-turn tool JSON is compacted before
 `convertToModelMessages` (page transcripts, finish findings, write
 payloads). Finished document-review coverage is rehydrated across turns
-when the ready-attachment coverage key is unchanged; comprehensive
-retrieval does not force another walk on a zero coverage delta unless the
-latest message is explicit pushback (`you missed`, `look again`,
-`re-check`, a test-family code). Pushback skips rehydrate so a finished
-session does not hide `start_document_review`.
+when the ready-attachment coverage key is unchanged (the key is the
+selected documents' **full** page counts, not the 300-page review
+cap); comprehensive retrieval does not force another walk on a zero
+coverage delta unless the latest message is explicit pushback
+(`you missed`, `look again`, `re-check`, a test-family code). Pushback
+skips rehydrate so a finished session does not hide
+`start_document_review`. `selectReviewPages` fair-shares the 300-page
+cap across attachments so an earlier file cannot starve later ones.
+`start_document_review` reports `truncated` / `skippedDocuments`.
+
+Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
+against the citation ledger's served quotes (`groundDraftText`). Empty
+ledger or pages with no quotes fail open. MJ `unsupportedFactPolicy:
+block` (no persist; placeholders + `unsupported_facts`). Demo/Convergent
+`flag` (persist with Traceability). Analytics `write_column` stays
+ungated. Pack identity, not a feature flag.
 
 ## Spectrum
 

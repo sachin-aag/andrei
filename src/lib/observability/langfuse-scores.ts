@@ -223,6 +223,45 @@ export async function recordUserEditedAfterScore(
   }
 }
 
+export interface GroundednessScoreParams {
+  reportId?: string;
+  value: number;
+  comment?: string;
+}
+
+/**
+ * Numeric 0–1 groundedness of a chat draft against retrieved pages.
+ * Attaches to the active chat trace when one exists.
+ */
+export async function recordGroundednessScore(
+  params: GroundednessScoreParams
+): Promise<void> {
+  const client = getLangfuseClient();
+  if (!client) return;
+  const traceId = getActiveTraceId() ?? undefined;
+  const sessionId = params.reportId;
+  if (!traceId && !sessionId) return;
+  const value = Math.min(1, Math.max(0, params.value));
+  try {
+    client.score.create({
+      ...(traceId ? { traceId } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      name: "groundedness",
+      value,
+      dataType: "NUMERIC",
+      comment: params.comment
+        ? clipLangfuseAttribute(params.comment)
+        : undefined,
+      metadata: observationMetadata({
+        reportId: params.reportId,
+      }),
+    });
+    await client.flush();
+  } catch (err) {
+    console.error("langfuse: failed to record groundedness score", err);
+  }
+}
+
 /**
  * Flushes any pending Langfuse scores.
  * Call this at the end of request handlers to ensure scores are sent.
