@@ -14,6 +14,11 @@ export type ChatUserIntentDecision = {
   reason: string;
   /** High-confidence Document→Analytics redirect. Widget only when true. */
   switchToAnalytics?: boolean;
+  /**
+   * Seed the remaining-section HTTP queue. Set by `resolveChatUserIntent`
+   * (Flash-Lite, with a regex fallback when Lite is skipped or fails).
+   */
+  sectionQueue?: boolean;
 };
 
 export const DOCUMENT_WRITE_TOOLS = [

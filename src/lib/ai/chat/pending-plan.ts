@@ -36,8 +36,13 @@ export type ChatTurnContinuation = {
   total: number;
 };
 
+/**
+ * Whole-document / remaining-section asks. `remaining` may sit between the
+ * verb and the noun (`draft remaining report`), not only after it
+ * (`draft the report`, `remaining sections`).
+ */
 const MULTI_SECTION_DRAFT_RE =
-  /\b(?:remaining sections?|all (?:the )?(?:empty )?sections?|every section|entire (?:report|document)|whole (?:report|document)|(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\s+(?:the )?(?:report|document|elr)|fill(?:\s+(?:in|out))?\s+(?:the )?(?:rest|remaining))\b/i;
+  /\b(?:remaining (?:sections?|report|document|elr)|all (?:the )?(?:empty )?sections?|every section|entire (?:report|document)|whole (?:report|document)|(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\s+(?:the )?(?:remaining |rest of (?:the )?)?(?:report|document|elr)|fill(?:\s+(?:in|out))?\s+(?:the )?(?:rest|remaining))\b/i;
 
 const RESUME_PLAN_RE =
   /\b(?:continue (?:the )?(?:remaining )?sections?|keep going|resume|finish (?:the )?(?:rest|remaining|report|draft))\b/i;
@@ -146,6 +151,40 @@ export function isMultiSectionDraftRequest(userText: string): boolean {
   return MULTI_SECTION_DRAFT_RE.test(userText.trim());
 }
 
+/**
+ * High-recall prefilter for the Flash-Lite queue question. Broader than
+ * {@link isMultiSectionDraftRequest} so phrasing like "draft remaining report"
+ * still reaches the classifier. False for a named single section ("draft Purpose").
+ */
+export function looksLikeSectionQueueRequest(userText: string): boolean {
+  const text = userText.replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  if (isMultiSectionDraftRequest(text)) return true;
+  return (
+    /\b(?:remaining|rest of|(?:all|every) (?:the )?(?:empty )?sections?|entire|whole)\b/i.test(
+      text
+    ) ||
+    /\b(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\b.{0,48}\b(?:report|document|elr|sections?)\b/i.test(
+      text
+    )
+  );
+}
+
+export function emptyDraftSectionCount(
+  documentType: DocumentType | undefined,
+  sections:
+    | Partial<Record<SectionType, Record<string, unknown> | undefined>>
+    | undefined
+): number {
+  if (!documentType) return 0;
+  const def = getDocumentType(documentType);
+  let n = 0;
+  for (const section of def.chat.draftOrder) {
+    if (sectionFillState(sections?.[section], section) === "empty") n += 1;
+  }
+  return n;
+}
+
 export function isPlanResumeRequest(userText: string): boolean {
   return RESUME_PLAN_RE.test(userText.trim());
 }
@@ -191,6 +230,8 @@ export function resolvePlanAtTurnStart(input: {
   userText: string;
   autoContinue: boolean;
   writeIntent: boolean;
+  /** From `resolveChatUserIntent`. `undefined` falls back to the regex. */
+  sectionQueue?: boolean;
   documentType: DocumentType;
   sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
   promptVersion: string;
@@ -207,7 +248,11 @@ export function resolvePlanAtTurnStart(input: {
   ) {
     return resumeChatPendingPlan(existing);
   }
-  if (input.writeIntent && isMultiSectionDraftRequest(input.userText)) {
+  const wantQueue =
+    input.sectionQueue === true ||
+    (input.sectionQueue !== false &&
+      isMultiSectionDraftRequest(input.userText));
+  if (input.writeIntent && wantQueue) {
     return seedSectionQueuePlan({
       userText: input.userText,
       documentType: input.documentType,
