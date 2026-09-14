@@ -322,7 +322,23 @@ function scanBlockForPlaceholders(
   section: SectionType,
   contentPath: string
 ): Placeholder[] {
-  const { chunks } = collectTextChunks(block, blockContentStart);
+  // Direct text children only — same model as scanPmBlockForPlaceholders.
+  // Nested blocks (paragraph inside listItem / tableCell / blockquote) are
+  // scanned when walk() visits those children. Flattening descendants here
+  // used to double-count every placeholder in lists and tables.
+  const chunks: TextChunk[] = [];
+  let cursor = blockContentStart;
+  for (const child of block.content ?? []) {
+    if (child.type === "text") {
+      const text = child.text ?? "";
+      if (text.length > 0) {
+        chunks.push({ pmStart: cursor, text });
+      }
+      cursor += text.length;
+      continue;
+    }
+    cursor = collectTextChunks(child, cursor).end;
+  }
   if (chunks.length === 0) return [];
 
   const flat = chunks.map((c) => c.text).join("");
