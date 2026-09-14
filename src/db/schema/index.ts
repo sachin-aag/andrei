@@ -1010,6 +1010,11 @@ export const chatSessions = pgTable(
     assistantTurnStartedAt: timestamp("assistant_turn_started_at", {
       withTimezone: true,
     }),
+    /**
+     * Server-owned remaining-section queue. The client auto-continues while
+     * items remain and the plan is not paused. Cancel sets paused.
+     */
+    pendingPlan: jsonb("pending_plan"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -17,9 +17,10 @@ import {
   intentToolAvailabilityRule,
   type ChatUserIntentKind,
 } from "@/lib/ai/chat/user-intent";
+import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v93-evidence-fact-gate";
+export const CHAT_PROMPT_VERSION = "chat-v94-section-plan";
 
 export type ChatMode = "plan" | "agent";
 
@@ -371,6 +372,8 @@ export function buildChatSystemPrompt(opts: {
    * button is on the reply; do not dump a worksheet table into chat.
    */
   switchToAnalytics?: boolean;
+  /** Server-owned remaining-section queue for this thread. */
+  pendingPlan?: ChatPendingPlan | null;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
@@ -422,10 +425,13 @@ export function buildChatSystemPrompt(opts: {
   const switchBlock = opts.switchToAnalytics
     ? `\n\n${SWITCH_TO_ANALYTICS_RULES}`
     : "";
+  const planBlock = opts.pendingPlan
+    ? `\n\n${planPromptBlock(opts.pendingPlan, documentType)}`
+    : "";
 
   return `${chat.persona}
 
-${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}
+${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}${planBlock}
 
 ${LANGUAGE_RULES}
 

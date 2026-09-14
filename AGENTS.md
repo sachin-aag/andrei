@@ -192,7 +192,15 @@ and `add_column` without `at`) instead of appending on the right. Pass
 focused tab (agent writes do not steal focus; `add_sheet` reuses a
 same-named tab). Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
-abort still apply). Do not add a tool-call count limit. When the 270s abort
+abort still apply). Do not add a tool-call count limit. Report Agent may
+persist a remaining-section queue on `chat_sessions.pending_plan` when the
+engineer asks to fill several empty `draftOrder` sections. Each turn drafts
+the current item (or two adjacent non-inventory sections). After persist the
+client POSTs `Continue the remaining sections.` with `autoContinue` (progress
+chip, not a user bubble). Cancel pauses the queue; a new typed prompt also
+pauses it. Reopening the thread does not auto-chain — Resume continues.
+Coverage identity for document review includes the current objective so a
+finished calibration walk does not satisfy monitoring. When the 270s abort
 fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`.
 Do not tell the engineer they ran out of steps or to re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
 on write turns whose in-scope section already has a table, and Analytics

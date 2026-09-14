@@ -72,8 +72,17 @@ import {
 import {
   createChatSession,
   findChatSession,
+  saveChatPendingPlan,
   touchChatSession,
 } from "@/lib/ai/chat/sessions";
+import {
+  advancePlanAfterTurn,
+  chatUserTurnIsAutoContinue,
+  parseChatPendingPlan,
+  persistablePendingPlan,
+  resolvePlanAtTurnStart,
+  type ChatPendingPlan,
+} from "@/lib/ai/chat/pending-plan";
 import {
   clearAssistantTurn,
   drainSseStream,
@@ -240,10 +249,15 @@ async function handleChatPost(
   const turnEdits: TurnEditItem[] = [];
 
   // Resolve the session (create one if the client didn't supply a valid id).
+  let existingPlan: ChatPendingPlan | null = null;
   let sessionId = body.sessionId?.trim() || "";
   if (sessionId) {
     const found = await findChatSession(reportId, sessionId);
-    if (!found) sessionId = "";
+    if (!found) {
+      sessionId = "";
+    } else {
+      existingPlan = parseChatPendingPlan(found.pendingPlan);
+    }
   }
   if (!sessionId) {
     sessionId = (await createChatSession(reportId, "report")).id;
@@ -263,6 +277,7 @@ async function handleChatPost(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const autoContinue = chatUserTurnIsAutoContinue(userMsg?.metadata);
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -270,7 +285,7 @@ async function handleChatPost(
         sessionId,
         role: "user",
         parts: userMsg.parts ?? [],
-        metadata: chatUserTurnMetadata("report"),
+        metadata: chatUserTurnMetadata("report", { autoContinue }),
         authorId: user.id,
       });
       await touchChatSession(sessionId, userText || null);
@@ -338,7 +353,7 @@ async function handleChatPost(
     documentType: report.documentType,
     sections: mergedSections,
   });
-  const userIntent = await resolveChatUserIntent({
+  let userIntent = await resolveChatUserIntent({
     userText,
     recentAssistantTexts: recentAssistantMessageTexts(messages),
     hasChatImages: messageHasChatImage(userMsg?.parts),
@@ -351,6 +366,29 @@ async function handleChatPost(
     userId: user.id,
   });
   const switchToAnalytics = userIntent.switchToAnalytics === true;
+  let pendingPlan: ChatPendingPlan | null = existingPlan;
+  if (mode === "agent") {
+    pendingPlan = resolvePlanAtTurnStart({
+      existing: existingPlan,
+      userText,
+      autoContinue,
+      writeIntent: userIntent.kind === "write",
+      documentType: report.documentType,
+      sections: mergedSections,
+      promptVersion: CHAT_PROMPT_VERSION,
+    });
+    const toSave = persistablePendingPlan(pendingPlan);
+    if (JSON.stringify(toSave) !== JSON.stringify(existingPlan)) {
+      try {
+        await saveChatPendingPlan(sessionId, toSave);
+      } catch (err) {
+        console.error("chat: failed to save pending plan", err);
+      }
+    }
+    if (pendingPlan && !pendingPlan.paused && userIntent.kind !== "write") {
+      userIntent = { ...userIntent, kind: "write", reason: "pending_section_plan" };
+    }
+  }
 
   // Detect course correction — user contradicting or overriding prior LLM output.
   const recentTexts = recentAssistantMessageTexts(messages);
@@ -480,6 +518,7 @@ async function handleChatPost(
     editPolicy,
     intent: userIntent.kind,
     switchToAnalytics,
+    pendingPlan,
   });
 
   const allTools = buildChatTools({
@@ -871,6 +910,40 @@ async function handleChatPost(
           targetField: item.targetField,
           reasoning: item.reasoning,
         }));
+        let advanced =
+          mode === "agent" && pendingPlan && !pendingPlan.paused
+            ? advancePlanAfterTurn({
+                plan: pendingPlan,
+                documentType: report.documentType,
+                draftedSectionKeys: [
+                  ...new Set(turnEdits.map((item) => item.section)),
+                ],
+                parts: persisted.parts,
+              })
+            : null;
+        if (advanced) {
+          try {
+            await saveChatPendingPlan(
+              sessionId,
+              persistablePendingPlan(advanced.plan)
+            );
+          } catch (err) {
+            console.error("chat: failed to save pending plan", err);
+          }
+        }
+        const assistantMetadata = (changeSummary?: {
+          items: typeof changeItems;
+          revisionNo?: number;
+        }) =>
+          chatAssistantTurnMetadata({
+            pace,
+            mode,
+            promptVersion: CHAT_PROMPT_VERSION,
+            chatTarget: "report",
+            switchToAnalytics,
+            changeSummary,
+            continuation: advanced?.continuation ?? undefined,
+          });
         const [inserted] = await db
           .insert(chatMessages)
           .values({
@@ -878,15 +951,9 @@ async function handleChatPost(
             sessionId,
             role: "assistant",
             parts: persisted.parts,
-            metadata: chatAssistantTurnMetadata({
-              pace,
-              mode,
-              promptVersion: CHAT_PROMPT_VERSION,
-              chatTarget: "report",
-              switchToAnalytics,
-              changeSummary:
-                changeItems.length > 0 ? { items: changeItems } : undefined,
-            }),
+            metadata: assistantMetadata(
+              changeItems.length > 0 ? { items: changeItems } : undefined
+            ),
             authorId: null,
           })
           .returning({ id: chatMessages.id });
@@ -904,16 +971,9 @@ async function handleChatPost(
             await db
               .update(chatMessages)
               .set({
-                metadata: chatAssistantTurnMetadata({
-                  pace,
-                  mode,
-                  promptVersion: CHAT_PROMPT_VERSION,
-                  chatTarget: "report",
-                  switchToAnalytics,
-                  changeSummary: {
-                    items: changeItems,
-                    revisionNo: revision.revisionNo,
-                  },
+                metadata: assistantMetadata({
+                  items: changeItems,
+                  revisionNo: revision.revisionNo,
                 }),
               })
               .where(eq(chatMessages.id, inserted.id));

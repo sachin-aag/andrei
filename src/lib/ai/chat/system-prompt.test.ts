@@ -18,7 +18,33 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v93-evidence-fact-gate");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v94-section-plan");
+  });
+
+  it("tells Agent to draft only the current queued section", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "write",
+      documentType: "equipment_lifecycle_report",
+      pendingPlan: {
+        kind: "section_queue",
+        objective: "Draft the remaining sections",
+        createdAt: "2026-09-14T00:00:00.000Z",
+        promptVersion: "chat-v94-section-plan",
+        items: [
+          {
+            sectionKey: "elr_calibration",
+            label: "Calibration",
+            state: "in_progress",
+          },
+          { sectionKey: "elr_monitoring", label: "Monitoring", state: "queued" },
+        ],
+      },
+    });
+    expect(prompt).toContain("## Multi-section plan");
+    expect(prompt).toContain("This turn: **Calibration**");
+    expect(prompt).toContain("Do not start Monitoring");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {

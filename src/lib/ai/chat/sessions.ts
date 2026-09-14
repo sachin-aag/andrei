@@ -8,6 +8,10 @@ import {
   type ChatAssistantTurnStatus,
 } from "@/lib/ai/chat/background-turn-status";
 import { reclaimStaleAssistantTurn } from "@/lib/ai/chat/background-turn";
+import {
+  parseChatPendingPlan,
+  type ChatPendingPlan,
+} from "@/lib/ai/chat/pending-plan";
 import { deriveSessionTitle, UNTITLED_SESSION } from "@/lib/ai/chat/session-title";
 
 export { deriveSessionTitle };
@@ -105,6 +109,7 @@ export async function findChatSession(
   title: string;
   assistantTurnStatus: ChatAssistantTurnStatus;
   assistantTurnStartedAt: Date | null;
+  pendingPlan: unknown;
 } | null> {
   const [row] = await db
     .select({
@@ -112,6 +117,7 @@ export async function findChatSession(
       title: chatSessions.title,
       assistantTurnStatus: chatSessions.assistantTurnStatus,
       assistantTurnStartedAt: chatSessions.assistantTurnStartedAt,
+      pendingPlan: chatSessions.pendingPlan,
     })
     .from(chatSessions)
     .where(
@@ -130,7 +136,18 @@ export type ChatSessionView = {
   messages: PersistedChatMessage[];
   assistantTurnStatus: ChatAssistantTurnStatus;
   assistantTurnStartedAt: string | null;
+  pendingPlan: ChatPendingPlan | null;
 };
+
+export async function saveChatPendingPlan(
+  sessionId: string,
+  plan: ChatPendingPlan | null
+): Promise<void> {
+  await db
+    .update(chatSessions)
+    .set({ pendingPlan: plan, updatedAt: new Date() })
+    .where(eq(chatSessions.id, sessionId));
+}
 
 export async function loadSessionView(
   reportId: string,
@@ -151,6 +168,7 @@ export async function loadSessionView(
     messages,
     assistantTurnStatus: session.assistantTurnStatus,
     assistantTurnStartedAt: session.assistantTurnStartedAt?.toISOString() ?? null,
+    pendingPlan: parseChatPendingPlan(session.pendingPlan),
   };
 }
 
