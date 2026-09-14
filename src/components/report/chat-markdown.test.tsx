@@ -64,6 +64,19 @@ describe("ChatMarkdown", () => {
     });
   });
 
+  it("renders $N_2$ instead of dollar latex", async () => {
+    const { container } = render(
+      <ChatMarkdown>{"high-purity process Nitrogen ($N_2$),"}</ChatMarkdown>
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector("math")).not.toBeNull();
+    });
+    expect(container.textContent).not.toContain("$");
+    expect(container.textContent).toMatch(/N/);
+    expect(container.textContent).toMatch(/2/);
+  });
+
   it("still renders GFM lists", () => {
     render(<ChatMarkdown>{"- one\n- two"}</ChatMarkdown>);
     expect(screen.getByText("one")).toBeInTheDocument();

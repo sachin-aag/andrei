@@ -234,6 +234,50 @@ describe("markdownToDoc", () => {
     expect(flush.content).toEqual(expected);
   });
 
+  it("turns Nitrogen ($N_2$) into N plus a subscript 2", () => {
+    const doc = markdownToDoc(
+      "compressed air (oil-free, 6 bar), high-purity process Nitrogen ($N_2$),"
+    );
+    expect(doc.content![0]!.content).toEqual([
+      {
+        type: "text",
+        text: "compressed air (oil-free, 6 bar), high-purity process Nitrogen (",
+      },
+      { type: "text", text: "N" },
+      { type: "text", text: "2", marks: [{ type: "subscript" }] },
+      { type: "text", text: ")," },
+    ]);
+    expect(richJsonToPlainText(doc)).not.toContain("$");
+  });
+
+  it("turns $\\pm 20\\%$ into an inline math node", () => {
+    const doc = markdownToDoc(String.raw`tolerance $\pm 20\%$`);
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "tolerance " },
+      {
+        type: "mathInline",
+        attrs: { mathml: "", latex: String.raw`\pm 20\%`, omml: null, ommlDirty: true },
+      },
+    ]);
+  });
+
+  it("leaves currency-like dollar spans literal", () => {
+    const doc = markdownToDoc("Cost is $100-$200 per lot.");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "Cost is $100-$200 per lot." },
+    ]);
+  });
+
+  it("parses math inside bold", () => {
+    const doc = markdownToDoc(String.raw`**$\pm 20\%$**`);
+    expect(doc.content![0]!.content).toEqual([
+      {
+        type: "mathInline",
+        attrs: { mathml: "", latex: String.raw`\pm 20\%`, omml: null, ommlDirty: true },
+      },
+    ]);
+  });
+
   it("keeps unsupported markdown as literal text", () => {
     const doc = markdownToDoc("Some `code` and [link](http://x)");
     expect(doc.content![0]!.content).toEqual([
@@ -254,10 +298,11 @@ describe("markdownHasTable", () => {
 });
 
 describe("markdownToPlainText", () => {
-  it("strips bold markers, italic markers, and heading hashes", () => {
+  it("strips bold markers, italic markers, heading hashes, and $N_2$", () => {
     expect(markdownToPlainText("## Title\n\n**Bold** and *italic* text")).toBe(
       "Title\n\nBold and italic text"
     );
+    expect(markdownToPlainText("Nitrogen ($N_2$)")).toBe("Nitrogen (N₂)");
   });
 });
 
@@ -369,5 +414,28 @@ describe("hydrateLiteralMarkdownInDoc", () => {
     expect(
       hydrateLiteralMarkdownInDoc({ type: "doc", content: [paragraph] })
     ).toEqual({ type: "doc", content: [paragraph] });
+  });
+
+  it("renders a saved Nitrogen ($N_2$) paragraph instead of dollar latex", () => {
+    const doc = hydrateLiteralMarkdownInDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "high-purity process Nitrogen ($N_2$),",
+            },
+          ],
+        },
+      ],
+    });
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "high-purity process Nitrogen (" },
+      { type: "text", text: "N" },
+      { type: "text", text: "2", marks: [{ type: "subscript" }] },
+      { type: "text", text: ")," },
+    ]);
   });
 });
