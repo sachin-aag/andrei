@@ -20,7 +20,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v97-seeded-table-captions";
+export const CHAT_PROMPT_VERSION = "chat-v98-divider-pages";
 
 export type ChatMode = "plan" | "agent";
 
@@ -120,7 +120,7 @@ function documentRules(
 - Retrieval mode: COMPREHENSIVE. The engineer asked for a complete inventory, matrix, full-document review, or an open set over a multi-page catalog (for example drafting the report when Results must list every executed test) — not a handful of search hits.
 - Reply with ONE short sentence that you are starting a complete review, then call list_attachments if you have not already, then start_document_review. Prefer tagged (@) documents. If several ready documents are untagged, pass attachmentIds for the evidence file rather than walking every file.
 - Call continue_document_review until the tool reports coverage is complete. Do not stop after a few batches. Do not draft from search_documents snippets or the evidence preview.
-- Call finish_document_review before draft_field, edit_table, propose_edit, or claiming completeness. finish_document_review returns allIdentifiers (every mention found — diagnostic only), recommendedInventory (the Requirements Verified / executed-test rows to publish), and a short findings sample (not every page). Draft the results matrix from recommendedInventory only. Copy that section's live table headers from read_section / the context map (demo Traceability is not Convergent Results). Preserve each requirement ID exactly, including its family prefix and any dotted suffix (M3-SYS-FN-037 is not SYS-FN-037; SW-SST-5.1.1 is not SW-SST-5). Do not dump allIdentifiers into the matrix. Cite [filename, p. N] when the finding has a page; [filename] only if the page is missing or ambiguous.
+- Call finish_document_review before draft_field, edit_table, propose_edit, or claiming completeness. finish_document_review returns allIdentifiers (every mention found — diagnostic only), recommendedInventory (design-verification Requirements Verified / executed-test rows to publish — not an ELR calibration or qualification matrix), and a short findings sample (not every page). If findingsOmitted > 0, the sample is incomplete — do not treat it as every instrument or record. On design-verification Results, draft the matrix from recommendedInventory only. On an Equipment Lifecycle Report, inventory tables are seeded matrices: read the cited certificate/record pages, then fill them with edit_table (edit_cells / insert_rows); do not rewrite the grid with draft_field. Copy that section's live table headers from read_section / the context map (demo Traceability is not Convergent Results). Preserve each requirement ID exactly, including its family prefix and any dotted suffix (M3-SYS-FN-037 is not SYS-FN-037; SW-SST-5.1.1 is not SW-SST-5). Do not dump allIdentifiers into the matrix. Cite [filename, p. N] when the finding has a page; [filename] only if the page is missing or ambiguous.
 - Preserve repeated executions and configurations as separate cited findings. If finish reports failed pages, say so — do not claim every page was read.
 - search_documents remains for later fact checks after the review finishes. It is not a substitute for the review. Use document_outline only as a map, not as evidence.`;
       break;
@@ -129,6 +129,8 @@ function documentRules(
 - Retrieval mode: ADAPTIVE. Treat search_documents as grep over the attachments. Work in rounds: grep → read the hits → grep complementary terms with excludePages set to nextExcludePages from the last result. Do not stop at the first matching table. Do not read every page unless the set is unbounded.
 - If this turn is a question or a write request and Documents are listed, you MUST grep before ask_user or draft_field — except when the target section is already filled or partial: call read_section first and grep only for a gap you found. Start with search_documents. Prefer queries[] in one call (equipment AND UUT AND fixtures). At most 8 strings per call — OR related requirement IDs into those strings rather than sending more. Use mode=keyword for exact protocol terms (UUT, Solea, 13.3). Do not grep because the report is empty or because you are in Agent mode.
 - If hits look like one table or heading, call document_outline and read neighboring pages, then grep again for sibling objects.
+- Hits with divider=true (ATTACHMENT NO. / certificate-of cover sheets) are locators, not ENOUGH. They do not count as a cited data page. Read the following page (p. N+1) before drafting.
+- Never claim 100% on-time, none overdue, or no OOT/OOS while the table still has <placeholders> or blank required cells.
 - If truncated=true or nextExcludePages grew, grep again with different terms. Never draft a table from a single truncated hit list.
 - For a single fact (one requirement ID, one date, one labelled page), one grep and one page read is enough.
 - Do not start a document review. Every-row inventories use the comprehensive path.`;

@@ -50,6 +50,27 @@ describe("searchLoopDirective", () => {
     );
   });
 
+  it("does not treat divider-only cover sheets as a cited page", () => {
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [{ toolName: "search_documents" }],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 2,
+                dividerHits: 2,
+                keepSearchOpen: true,
+                results: [{ pageNumber: 32, divider: true }],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+  });
+
   it("does not treat a TOC-only ID laundry list as a cited page", () => {
     expect(
       searchLoopDirective([

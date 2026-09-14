@@ -78,9 +78,12 @@ import {
 import {
   advancePlanAfterTurn,
   chatUserTurnIsAutoContinue,
+  currentPlanTurnSections,
+  inScopeEmptyInventoryNeedsReview,
   parseChatPendingPlan,
   persistablePendingPlan,
   planCoverageObjective,
+  planKeepsComprehensive,
   resolvePlanAtTurnStart,
   type ChatPendingPlan,
 } from "@/lib/ai/chat/pending-plan";
@@ -436,12 +439,38 @@ async function handleChatPost(
     skipRestore: pushback,
     coverageObjective,
   });
+  const inventoryTurnSections =
+    pendingPlan && !pendingPlan.paused
+      ? currentPlanTurnSections(pendingPlan, report.documentType).map(
+          (item) => item.sectionKey as SectionType
+        )
+      : sectionScope && sectionScope !== "all"
+        ? [sectionScope]
+        : (() => {
+            const detected = detectSectionIntentFromText(
+              userText,
+              report.documentType
+            );
+            return detected ? [detected] : [];
+          })();
+  const needsInventoryReview = inScopeEmptyInventoryNeedsReview({
+    documentType: report.documentType,
+    sections: mergedSections,
+    sectionKeys: inventoryTurnSections,
+    finishedCoverageKey: documentReview.finishedCoverageKey(),
+  });
   // Coverage growth or explicit pushback can start a fresh comprehensive walk.
-  const retrievalPolicy = retrievalPolicyAfterCoverageDelta({
+  // Queued ELR inventory and empty inventory fills keep comprehensive so a
+  // finished qualification walk cannot downgrade the next calibration turn.
+  let retrievalPolicy = retrievalPolicyAfterCoverageDelta({
     policy: retrievalDecision.policy,
     coverageUnchanged: coverageRehydrate.restored,
-    keepComprehensive: pushback,
+    keepComprehensive:
+      pushback || planKeepsComprehensive(pendingPlan, report.documentType),
   });
+  if (needsInventoryReview && retrievalPolicy !== "comprehensive") {
+    retrievalPolicy = "comprehensive";
+  }
   const retrieval = {
     ...retrievalDecision,
     policy: retrievalPolicy,
@@ -667,6 +696,9 @@ async function handleChatPost(
           policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
           availableTools: advertisedTools,
+          requireInventoryReview: alreadyDraftedActive
+            ? false
+            : needsInventoryReview,
         });
         if (!prepared) return undefined;
         let activeTools = alreadyDraftedActive

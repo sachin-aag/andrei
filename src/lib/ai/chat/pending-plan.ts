@@ -1,6 +1,13 @@
 import type { DocumentType, SectionType } from "@/db/schema";
-import { sectionFillState, sectionLabel } from "@/lib/ai/chat/fields";
+import {
+  isChatEditableSection,
+  isEmptyTableScaffoldDoc,
+  sectionFillState,
+  sectionLabel,
+} from "@/lib/ai/chat/fields";
+import { coverageKeySatisfiesObjective } from "@/lib/ai/chat/review-page-plan";
 import { getDocumentType } from "@/lib/document-types";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 
 /** Client-sent user turn that continues a server-owned section queue. */
 export const CHAT_AUTO_CONTINUE_TEXT = "Continue the remaining sections.";
@@ -159,6 +166,73 @@ export function inventorySectionSet(
   documentType: DocumentType
 ): ReadonlySet<string> {
   return new Set(getDocumentType(documentType).chat.inventorySections ?? []);
+}
+
+export function isInventoryTableField(
+  documentType: DocumentType,
+  section: string,
+  targetField: string
+): boolean {
+  return inventorySectionSet(documentType).has(section) && targetField === "table";
+}
+
+/** Seeded ELR matrices — never rewrite with draft_field. DV Results still uses it. */
+export function isElrInventoryTableField(
+  documentType: DocumentType,
+  section: string,
+  targetField: string
+): boolean {
+  return (
+    documentType === "equipment_lifecycle_report" &&
+    isInventoryTableField(documentType, section, targetField)
+  );
+}
+
+export function isEmptyInventoryTable(
+  documentType: DocumentType,
+  section: SectionType,
+  content: Record<string, unknown> | undefined
+): boolean {
+  if (!inventorySectionSet(documentType).has(section)) return false;
+  return isEmptyTableScaffoldDoc(getRichFieldValue(content ?? {}, "table"));
+}
+
+export function emptyInventoryNeedsMatchingReview(input: {
+  documentType: DocumentType;
+  section: SectionType;
+  content: Record<string, unknown> | undefined;
+  finishedCoverageKey: string | null | undefined;
+}): boolean {
+  if (!isEmptyInventoryTable(input.documentType, input.section, input.content)) {
+    return false;
+  }
+  return !coverageKeySatisfiesObjective(input.finishedCoverageKey, input.section);
+}
+
+export function inScopeEmptyInventoryNeedsReview(input: {
+  documentType: DocumentType;
+  sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
+  sectionKeys: readonly SectionType[];
+  finishedCoverageKey: string | null | undefined;
+}): boolean {
+  return input.sectionKeys.some((section) =>
+    emptyInventoryNeedsMatchingReview({
+      documentType: input.documentType,
+      section,
+      content: input.sections[section],
+      finishedCoverageKey: input.finishedCoverageKey,
+    })
+  );
+}
+
+export function planKeepsComprehensive(
+  plan: ChatPendingPlan | null,
+  documentType: DocumentType
+): boolean {
+  if (!plan || plan.paused) return false;
+  const current = plan.items.find((item) => item.state === "in_progress");
+  if (!current) return false;
+  return inventorySectionSet(documentType).has(current.sectionKey);
 }
 
 export function seedSectionQueuePlan(input: {
@@ -365,6 +439,24 @@ export function planCoverageObjective(
     if (current?.sectionKey) return current.sectionKey;
   }
   return userText.trim().slice(0, 80);
+}
+
+/**
+ * Prefer the in-progress section key from the route. Bare user text
+ * ("draft remaining report") must not overwrite a tool objective such as
+ * calibration, or a later start is still keyed as the remaining-report walk.
+ */
+export function resolveReviewCoverageObjective(input: {
+  routeObjective?: string | null;
+  toolObjective: string;
+  documentType: DocumentType;
+}): string {
+  const route = input.routeObjective?.trim() ?? "";
+  if (route && isChatEditableSection(route, input.documentType)) {
+    return route;
+  }
+  const tool = input.toolObjective.trim();
+  return tool || route;
 }
 
 export function planProgressChipLabel(

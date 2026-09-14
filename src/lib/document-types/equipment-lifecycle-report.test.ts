@@ -194,6 +194,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_scope");
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
+    expect(def.chat.inventorySections).not.toContain("elr_media_fill");
     expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v6");
   });
 
@@ -205,6 +206,8 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).toContain(
       "If it is unset and attachments name **both** Vial and Cartridge, stop"
     );
+    expect(def.chat.draftingGuidance).toContain("ATTACHMENT NO.");
+    expect(def.chat.draftingGuidance).toContain("findingsOmitted");
     expect(def.chat.draftingGuidance).toContain("Limits and counts");
     expect(def.chat.draftingGuidance).toContain("<1 CFU/plate");
     expect(def.chat.contextIdentity?.({})).toEqual(

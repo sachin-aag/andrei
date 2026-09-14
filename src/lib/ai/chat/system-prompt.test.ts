@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v97-seeded-table-captions");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v98-divider-pages");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -444,7 +444,9 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("File-set questions");
     expect(agent).toContain("INDEX, not evidence");
     expect(agent).toContain("Never treat the index as ENOUGH");
-    expect(agent).toContain("grep in rounds until the question is covered");
+    expect(plan).toContain("divider=true");
+    expect(agent).toContain("divider=true");
+    expect(agent).toContain("Never claim 100% on-time");
     expect(agent).toContain("Do not start a document review");
     expect(agent).toContain(
       "If the engineer asked to draft a section the context map marks filled or partial"
@@ -471,6 +473,8 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("recommendedInventory");
+    expect(prompt).toContain("not an ELR calibration or qualification matrix");
+    expect(prompt).toContain("findingsOmitted");
     expect(prompt).toContain("allIdentifiers");
     expect(prompt).toContain("short findings sample");
     expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");

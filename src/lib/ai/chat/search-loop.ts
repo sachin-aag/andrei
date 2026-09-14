@@ -104,10 +104,14 @@ function searchHitCount(output: unknown): number {
     typeof record.requirementIndexHits === "number"
       ? record.requirementIndexHits
       : 0;
+  const dividerHits =
+    typeof record.dividerHits === "number" ? record.dividerHits : 0;
   if (typeof record.returnedCount === "number" && record.returnedCount > 0) {
-    // TOC / running-header laundry lists are not a data sheet. Keep search
-    // open so the model can grep again (or scan) instead of asking for a page.
+    // TOC / running-header laundry lists and attachment cover sheets are
+    // not a data page. Keep search open so the model can grep again or read
+    // the following page instead of drafting from the divider.
     if (indexHits >= record.returnedCount) return 0;
+    if (dividerHits >= record.returnedCount) return 0;
     return record.returnedCount;
   }
   if (Array.isArray(record.seenPages) && record.seenPages.length > 0) {

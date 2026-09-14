@@ -667,23 +667,30 @@ export function prepareDocumentReviewStep(input: {
   policy: RetrievalPolicy;
   phase: DocumentReviewPhase;
   availableTools: readonly string[];
+  /**
+   * Empty ELR inventory tables still need a matching page walk even when
+   * retrieval classified the turn as adaptive (e.g. @Calibration fill).
+   * When a prior finish was for a different section, `complete` must restart.
+   */
+  requireInventoryReview?: boolean;
 }): DocumentReviewToolChoice | undefined {
   const allow = (names: readonly string[]): string[] =>
     names.filter((name) => input.availableTools.includes(name));
+  const forceStart = (): DocumentReviewToolChoice => ({
+    activeTools: allow(["start_document_review"]),
+    toolChoice: { type: "tool", toolName: "start_document_review" },
+  });
 
   switch (input.phase) {
     case "idle":
-      if (input.policy !== "comprehensive") {
+      if (input.policy !== "comprehensive" && !input.requireInventoryReview) {
         return {
           activeTools: input.availableTools.filter(
             (name) => !isDocumentReviewToolName(name)
           ),
         };
       }
-      return {
-        activeTools: allow(["start_document_review"]),
-        toolChoice: { type: "tool", toolName: "start_document_review" },
-      };
+      return forceStart();
     case "in_progress":
       return {
         activeTools: allow(["continue_document_review"]),
@@ -695,6 +702,7 @@ export function prepareDocumentReviewStep(input: {
         toolChoice: { type: "tool", toolName: "finish_document_review" },
       };
     case "complete":
+      if (input.requireInventoryReview) return forceStart();
       return undefined;
     default: {
       const _exhaustive: never = input.phase;

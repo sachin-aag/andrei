@@ -866,6 +866,8 @@ describe("buildChatTools document review", () => {
     listDocumentPagesForReviewMock.mockReset();
     loadDocumentPageEvidenceMock.mockReset();
     loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    dbInsertMock.mockReset();
+    dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
   });
 
   it("registers review tools", () => {
@@ -1029,6 +1031,122 @@ describe("buildChatTools document review", () => {
       TEST_TOOL_OPTIONS
     );
     expect(blocked).toMatchObject({ status: "review_incomplete" });
+  });
+
+  it("refuses draft_field of an ELR inventory table in favor of edit_table", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-cal",
+                  reportId: "report-1",
+                  section: "elr_calibration",
+                  content: { narrative: { type: "doc", content: [] }, table: { type: "doc", content: [] } },
+                },
+              ]
+        ),
+      }),
+    }));
+    const session = new DocumentReviewSession();
+    session.restoreFromFinishedReview({
+      coverageKey: "att:1:run|obj:elr_calibration",
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "adaptive",
+      documentReview: session,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_calibration",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "elr_calibration",
+        targetField: "table",
+        markdown: "| a | b |",
+        reasoning: "Fill Associated Instruments.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "use_edit_table" });
+  });
+
+  it("blocks an empty ELR inventory fill until a matching review has finished", async () => {
+    const { EMPTY_ELR_CONTENT } = await import(
+      "@/lib/document-types/elr/sections"
+    );
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-cal",
+                  reportId: "report-1",
+                  section: "elr_calibration",
+                  content: EMPTY_ELR_CONTENT.elr_calibration,
+                },
+              ]
+        ),
+      }),
+    }));
+    const mismatched = new DocumentReviewSession();
+    mismatched.restoreFromFinishedReview({
+      coverageKey: "att:1:run|obj:elr_qualification",
+    });
+    const blockedTools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "adaptive",
+      documentReview: mismatched,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_calibration",
+    });
+    const blocked = await blockedTools.edit_table!.execute!(
+      {
+        section: "elr_calibration",
+        targetField: "table",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 1, col: 0, insertText: "1" }],
+        },
+        reasoning: "Fill the first row.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(blocked).toMatchObject({ status: "review_incomplete" });
+
+    const matched = new DocumentReviewSession();
+    matched.restoreFromFinishedReview({
+      coverageKey: "att:1:run|obj:elr_calibration",
+    });
+    const allowedTools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "adaptive",
+      documentReview: matched,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_calibration",
+    });
+    const allowed = await allowedTools.edit_table!.execute!(
+      {
+        section: "elr_calibration",
+        targetField: "table",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 1, col: 0, insertText: "1" }],
+        },
+        reasoning: "Fill the first row.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(allowed).not.toMatchObject({ status: "review_incomplete" });
   });
 
   it("rejects markdown image syntax instead of drafting a fake figure", async () => {

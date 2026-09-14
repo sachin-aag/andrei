@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { REVIEW_PAGE_FETCH_CAP } from "@/lib/ai/chat/document-review";
 import {
+  coverageKeySatisfiesObjective,
   coverageObjectiveDigest,
   objectiveTokens,
   planReviewPages,
@@ -77,5 +78,34 @@ describe("planReviewPages", () => {
     expect(coverageObjectiveDigest("  Calibration  Walk ")).toBe(
       "calibration walk"
     );
+  });
+});
+
+describe("coverageKeySatisfiesObjective", () => {
+  it("matches a section key to a same-section digest or overlapping tokens", () => {
+    expect(
+      coverageKeySatisfiesObjective(
+        "att:10:run|obj:elr_calibration",
+        "elr_calibration"
+      )
+    ).toBe(true);
+    expect(
+      coverageKeySatisfiesObjective(
+        "att:10:run|obj:calibration of associated instruments",
+        "elr_calibration"
+      )
+    ).toBe(true);
+  });
+
+  it("does not treat a qualification finish as covering calibration", () => {
+    expect(
+      coverageKeySatisfiesObjective(
+        "att:10:run|obj:elr_qualification",
+        "elr_calibration"
+      )
+    ).toBe(false);
+    expect(
+      coverageKeySatisfiesObjective("att:10:run", "elr_calibration")
+    ).toBe(false);
   });
 });

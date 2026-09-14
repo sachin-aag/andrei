@@ -1,19 +1,24 @@
 import { describe, expect, it } from "vitest";
+import { EMPTY_ELR_CONTENT } from "@/lib/document-types/elr/sections";
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   advancePlanAfterTurn,
   chatUserTurnIsAutoContinue,
   continuationFromMetadata,
   currentPlanTurnSections,
+  emptyInventoryNeedsMatchingReview,
+  isElrInventoryTableField,
   isMultiSectionDraftRequest,
   isPlanResumeRequest,
   parseChatPendingPlan,
   pauseChatPendingPlan,
   persistablePendingPlan,
   planCoverageObjective,
+  planKeepsComprehensive,
   planProgressChipLabel,
   planPromptBlock,
   resolvePlanAtTurnStart,
+  resolveReviewCoverageObjective,
   resumeChatPendingPlan,
   seedSectionQueuePlan,
   shouldAutoContinuePlan,
@@ -352,5 +357,96 @@ describe("plan prompt and metadata", () => {
     expect(planCoverageObjective(null, "Fill monitoring from the certificates")).toBe(
       "Fill monitoring from the certificates"
     );
+  });
+
+  it("prefers a section-key route objective over user text when starting a review", () => {
+    expect(
+      resolveReviewCoverageObjective({
+        routeObjective: "elr_calibration",
+        toolObjective: "every attached record",
+        documentType: "equipment_lifecycle_report",
+      })
+    ).toBe("elr_calibration");
+    expect(
+      resolveReviewCoverageObjective({
+        routeObjective: "draft remaining report",
+        toolObjective: "calibration certificates",
+        documentType: "equipment_lifecycle_report",
+      })
+    ).toBe("calibration certificates");
+  });
+
+  it("refuses draft_field only for ELR inventory tables, not DV Results", () => {
+    expect(
+      isElrInventoryTableField(
+        "equipment_lifecycle_report",
+        "elr_calibration",
+        "table"
+      )
+    ).toBe(true);
+    expect(
+      isElrInventoryTableField(
+        "design_verification",
+        "results_and_discussions",
+        "table"
+      )
+    ).toBe(false);
+    expect(
+      isElrInventoryTableField(
+        "equipment_lifecycle_report",
+        "elr_objective",
+        "narrative"
+      )
+    ).toBe(false);
+  });
+
+  it("needs a matching review only while an ELR inventory table is still empty", () => {
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "equipment_lifecycle_report",
+        section: "elr_calibration",
+        content: EMPTY_ELR_CONTENT.elr_calibration,
+        finishedCoverageKey: "att:10:run|obj:elr_qualification",
+      })
+    ).toBe(true);
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "equipment_lifecycle_report",
+        section: "elr_calibration",
+        content: EMPTY_ELR_CONTENT.elr_calibration,
+        finishedCoverageKey: "att:10:run|obj:elr_calibration",
+      })
+    ).toBe(false);
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "equipment_lifecycle_report",
+        section: "elr_objective",
+        content: EMPTY_ELR_CONTENT.elr_objective,
+        finishedCoverageKey: null,
+      })
+    ).toBe(false);
+  });
+
+  it("keeps comprehensive retrieval for a queued inventory section", () => {
+    expect(
+      planKeepsComprehensive(
+        plan([
+          {
+            sectionKey: "elr_calibration",
+            label: "Associated instruments",
+            state: "in_progress",
+          },
+        ]),
+        "equipment_lifecycle_report"
+      )
+    ).toBe(true);
+    expect(
+      planKeepsComprehensive(
+        plan([
+          { sectionKey: "elr_objective", label: "Objective", state: "in_progress" },
+        ]),
+        "equipment_lifecycle_report"
+      )
+    ).toBe(false);
   });
 });

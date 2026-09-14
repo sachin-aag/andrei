@@ -229,7 +229,15 @@ citations because the section is short. Do not start a complete page-by-page
 review to draft Objective, Scope, Responsibilities, or Equipment description;
 grep for the procedure language instead. Full-document review is for the
 inventory tables (qualification history, monitoring, calibration, QMS, alarms,
-CSV).
+CSV). An empty inventory table (header-only seeded grid) is not draftable
+until that section's review has finished — a finished qualification walk does
+not unlock Associated Instruments. Attachment cover sheets
+(ATTACHMENT NO. / "CALIBRATION CERTIFICATE OF …") are locators: read the
+following pages, then fill the seeded matrix with edit_cells / insert_rows.
+Do not rewrite the table with draft_field. recommendedInventory is for
+design-verification Results, not ELR cert rows. If finish_document_review
+reports findingsOmitted, the sample is incomplete. Never claim 100% on-time,
+none overdue, or no OOT while required cells are still <placeholders>.
 
 ## Section keys
 

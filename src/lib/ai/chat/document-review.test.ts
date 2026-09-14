@@ -360,6 +360,34 @@ describe("prepareDocumentReviewStep", () => {
       })
     ).toBeUndefined();
   });
+
+  it("forces start on adaptive idle when an empty inventory still needs a matching review", () => {
+    expect(
+      prepareDocumentReviewStep({
+        policy: "adaptive",
+        phase: "idle",
+        availableTools: available,
+        requireInventoryReview: true,
+      })
+    ).toEqual({
+      activeTools: ["start_document_review"],
+      toolChoice: { type: "tool", toolName: "start_document_review" },
+    });
+  });
+
+  it("restarts from complete when the finished walk does not cover this inventory", () => {
+    expect(
+      prepareDocumentReviewStep({
+        policy: "adaptive",
+        phase: "complete",
+        availableTools: available,
+        requireInventoryReview: true,
+      })
+    ).toEqual({
+      activeTools: ["start_document_review"],
+      toolChoice: { type: "tool", toolName: "start_document_review" },
+    });
+  });
 });
 
 describe("pickPlanModeChatTools", () => {

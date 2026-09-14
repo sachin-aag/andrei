@@ -61,6 +61,32 @@ export function coverageObjectiveDigest(objective: string): string {
   return objective.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 80);
 }
 
+const COVERAGE_OBJECTIVE_MARKER = "|obj:";
+
+/**
+ * A finished review keyed to qualification must not unlock an empty
+ * calibration (or other inventory) fill. Legacy keys with no `|obj:` digest
+ * do not satisfy a specific section.
+ */
+export function coverageKeySatisfiesObjective(
+  coverageKey: string | null | undefined,
+  objective: string
+): boolean {
+  if (!coverageKey) return false;
+  const want = coverageObjectiveDigest(objective);
+  if (!want) return false;
+  const idx = coverageKey.lastIndexOf(COVERAGE_OBJECTIVE_MARKER);
+  if (idx === -1) return false;
+  const digest = coverageKey.slice(idx + COVERAGE_OBJECTIVE_MARKER.length);
+  if (!digest) return false;
+  if (digest === want) return true;
+  const wantTokens = objectiveTokens(want);
+  const haveTokens = objectiveTokens(digest);
+  if (wantTokens.length === 0 || haveTokens.length === 0) return false;
+  const have = new Set(haveTokens);
+  return wantTokens.some((token) => have.has(token));
+}
+
 export function objectiveTokens(objective: string): string[] {
   const tokens = coverageObjectiveDigest(objective)
     .replace(/^elr_/, "")
