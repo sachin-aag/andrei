@@ -11,6 +11,7 @@ describe("elrChatContextIdentity", () => {
     expect(lines.join("\n")).toContain("ask_user");
     expect(lines.join("\n")).toContain("Do not pick the first PRQR");
     expect(lines.join("\n")).toContain("equipment ID: (unset)");
+    expect(lines.join("\n")).toContain("F22-R00 (proposed)");
   });
 
   it("uses a set title-page format and does not quiz", () => {

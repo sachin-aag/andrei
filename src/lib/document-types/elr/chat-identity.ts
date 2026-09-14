@@ -38,5 +38,6 @@ export function elrChatContextIdentity(
     `equipment ID: ${equipmentId || "(unset)"}`,
     formatLine,
     `period: ${periodFrom || "(unset)"} – ${periodTo || "(unset)"}`,
+    "format number: SOP/DP/QA/014/F22-R00 (proposed)",
   ];
 }

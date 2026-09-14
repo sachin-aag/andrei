@@ -1,6 +1,8 @@
 import type { CriterionStatus } from "@/db/schema";
 import { textHasSourceCitation } from "@/lib/citations/cell-has-source";
 import type { EvaluationContext } from "@/lib/document-types/types";
+import { findDirectedContradictions } from "@/lib/eval/contradictions";
+import { recordTypeReferenceMismatch } from "@/lib/eval/record-type";
 import { collectQuantityMathSamples } from "@/lib/math/quantity-math";
 import {
   hasReference,
@@ -423,6 +425,30 @@ export function checkQmsRecords(ctx: EvaluationContext) {
 }
 
 /**
+ * A typed QMS row must cite a document number of the same class
+ * (CAPA → CAPA-…, deviation → DEV-…, not a CAPA row citing DEV-).
+ */
+export function checkRecordTypeMatchesReference(ctx: EvaluationContext) {
+  const parsed = parseQmsMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No QMS rows to bind");
+  }
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const mismatch = recordTypeReferenceMismatch(row.type, row.documentRef);
+    if (!mismatch) return;
+    problems.push(
+      `${rowLabel(row.serial, index)} is typed ${mismatch.typeClass} but cites a ${mismatch.refClass} number (${row.documentRef.trim()})`
+    );
+  });
+  return listProblems(
+    problems,
+    "Each typed QMS row cites a matching document number"
+  );
+}
+
+/**
  * A QMS record marked as affecting the qualified state has to show up in the
  * qualification history — an executed change control with no follow-up
  * qualification activity is the gap this report exists to catch.
@@ -500,6 +526,134 @@ export function checkAccessControlRows(ctx: EvaluationContext) {
     if (!row.role.trim()) problems.push(`${label} has no privilege level`);
   });
   return listProblems(problems, `${parsed.rows.length} access record(s)`);
+}
+
+/**
+ * Access-control assessment must cover the period: last review date,
+ * recertification of Level 4 / admin holders, and 21 CFR Part 11.
+ */
+export function checkAccessControlPeriodCompleteness(ctx: EvaluationContext) {
+  const parsed = parseAccessControlMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No access-control rows requiring a period statement");
+  }
+  const text = narrativeText(ctx.content);
+  const problems: string[] = [];
+  if (
+    !/last (?:review|verification|recertif)|reviewed on|review date|last performed|period(?:ic)? verification/i.test(
+      text
+    )
+  ) {
+    problems.push(
+      "The assessment does not state when access control was last reviewed this period"
+    );
+  }
+  const adminHolders = parsed.rows.some((row) =>
+    /level\s*4|\badmin\b|administrator/i.test(row.role)
+  );
+  if (adminHolders && !/recertif/i.test(text)) {
+    problems.push(
+      "Level 4 / admin holders require a recertification statement"
+    );
+  }
+  if (!/21\s*c\.?f\.?r\.?|part\s*11/i.test(text)) {
+    problems.push(
+      "The assessment does not confirm 21 CFR Part 11 access, audit-trail and authority checks remain in force"
+    );
+  }
+  return listProblems(
+    problems,
+    "Access-control period completeness is stated"
+  );
+}
+
+const CALIBRATION_CONTRADICTION_RULES = [
+  {
+    when: /\boot\b|out of tolerance|expired|overdue/i,
+    contradicts:
+      /within calibration|in tolerance|\bvalid\b|all instruments remain/i,
+    message:
+      "The table has an out-of-tolerance or overdue result but the assessment says instruments remain within calibration",
+  },
+] as const;
+
+const REPEAT_ISOLATED_RULES = [
+  {
+    when: /\by\b|\byes\b|repeat/i,
+    contradicts:
+      /\bisolated\b|one-off|first occurrence|first time|single event/i,
+    message:
+      "A repeat failure is recorded but the assessment treats it as isolated / one-off",
+  },
+] as const;
+
+const PRIVILEGE_DRIFT_RULES = [
+  {
+    when: /granted|modified|revoked/i,
+    contradicts: /no change|unchanged|no privilege/i,
+    message:
+      "Privilege grants, modifications or revocations are recorded but the assessment says access is unchanged",
+  },
+] as const;
+
+export function checkCalibrationValidityNotContradicted(
+  ctx: EvaluationContext
+) {
+  const parsed = parseCalibrationMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No calibration rows");
+  }
+  const source = parsed.rows
+    .map((row) => `${row.result} ${row.dueDate} ${row.doneDate}`)
+    .join("\n");
+  return listProblems(
+    findDirectedContradictions(
+      source,
+      narrativeText(ctx.content),
+      CALIBRATION_CONTRADICTION_RULES
+    ),
+    "Calibration assessment does not contradict table results"
+  );
+}
+
+export function checkBreakdownRepeatNotIsolated(ctx: EvaluationContext) {
+  const parsed = parseBreakdownMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  const repeats = parsed.rows.filter((row) => isYes(row.repeat));
+  if (repeats.length === 0) {
+    return verdict("met", "No repeat failures to contradict");
+  }
+  const source = repeats.map((row) => `repeat ${row.repeat}`).join("\n");
+  return listProblems(
+    findDirectedContradictions(
+      source,
+      narrativeText(ctx.content),
+      REPEAT_ISOLATED_RULES
+    ),
+    "Repeat failures are not described as isolated"
+  );
+}
+
+export function checkAccessControlPrivilegeDrift(ctx: EvaluationContext) {
+  const parsed = parseAccessControlMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  const drifted = parsed.rows.filter((row) =>
+    /granted|modified|revoked/i.test(row.action)
+  );
+  if (drifted.length === 0) {
+    return verdict("met", "No privilege changes recorded");
+  }
+  const source = drifted.map((row) => row.action).join("\n");
+  return listProblems(
+    findDirectedContradictions(
+      source,
+      narrativeText(ctx.content),
+      PRIVILEGE_DRIFT_RULES
+    ),
+    "Privilege changes are not described as unchanged"
+  );
 }
 
 export function checkAuditTrailReviewed(ctx: EvaluationContext) {
@@ -611,6 +765,60 @@ function countFilledTableRows(content: unknown, field = "table"): number {
   return raw.dataRows.filter((cells) => cells.some((c) => c.trim())).length;
 }
 
+const QUALIFIED_STATE_RE =
+  /qualified state|remain(?:s)? qualified|still qualified|not in (?:its )?qualified|requalif/i;
+
+function filledCellText(content: unknown, field = "table"): string {
+  const raw = extractRawRows(tableFieldDoc(content, field));
+  if ("error" in raw) return "";
+  return raw.dataRows.flat().join(" ");
+}
+
+function parseHours(cell: string): number {
+  const match = cell.replace(/,/g, "").match(/(-?\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function totalBreakdownDowntime(content: unknown): number {
+  const parsed = parseBreakdownMatrix(content);
+  if (!parsed.ok) return 0;
+  return parsed.rows.reduce((sum, row) => sum + parseHours(row.downtime), 0);
+}
+
+function contentMentionsScrap(content: unknown): boolean {
+  return /scrap|discard/i.test(filledCellText(content));
+}
+
+function sectionHasFlaggedFindings(ctx: EvaluationContext): boolean {
+  if (ctx.section === "elr_monitoring") {
+    const parsed = parseMonitoringMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isYes(row.excursion));
+  }
+  if (ctx.section === "elr_calibration") {
+    const parsed = parseCalibrationMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isOutOfTolerance(row.result));
+  }
+  if (ctx.section === "elr_breakdowns") {
+    const parsed = parseBreakdownMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isYes(row.repeat));
+  }
+  if (ctx.section === "elr_alarms") {
+    const parsed = parseAlarmMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isDirectImpact(row.criticality));
+  }
+  if (ctx.section === "elr_preventive_maintenance") {
+    const parsed = parsePreventiveMaintenanceMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isDelayed(row.status));
+  }
+  if (ctx.section === "elr_qms") {
+    const parsed = parseQmsMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isYes(row.qualificationImpact));
+  }
+  return false;
+}
+
 /**
  * Floor for the assessment above an evidence table: if there are events, the
  * narrative has to interpret them (a count, not a "section was reviewed" recap).
@@ -633,6 +841,33 @@ export function checkAssessmentInterpretsTable(ctx: EvaluationContext) {
       "not_met",
       "The assessment does not state a count from the table"
     );
+  }
+  const gaps: string[] = [];
+  const downtime = totalBreakdownDowntime(ctx.content);
+  if (
+    downtime > 0 &&
+    !/downtime|hours|runtime|availability/i.test(text)
+  ) {
+    gaps.push(
+      `The table records ${downtime} downtime hour(s) but the assessment does not mention downtime, hours, runtime or availability`
+    );
+  }
+  const cells = filledCellText(ctx.content);
+  if (/scrap|discard/i.test(cells) && !/scrap/i.test(text)) {
+    gaps.push("The table mentions scrap or discard but the assessment does not");
+  }
+  if (/\bcapa[-/]/i.test(cells) && !/\bcapa\b/i.test(text)) {
+    gaps.push(
+      "The table cites a CAPA number but the assessment does not mention CAPA"
+    );
+  }
+  if (sectionHasFlaggedFindings(ctx) && !QUALIFIED_STATE_RE.test(text)) {
+    gaps.push(
+      "Flagged findings are present — the assessment must state whether the equipment remains in its qualified state"
+    );
+  }
+  if (gaps.length > 0) {
+    return listProblems(gaps, "Assessment interprets the table");
   }
   return verdict("met", "Assessment is present and includes a count");
 }
@@ -759,6 +994,31 @@ export function checkRiskActionRows(ctx: EvaluationContext) {
   );
 }
 
+const GRADE_RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
+
+function increasingHighImpactThemes(content: unknown): boolean {
+  const parsed = parseSystemTrendsMatrix(content);
+  if (!parsed.ok) return false;
+  return parsed.rows.some(
+    (row) =>
+      /increas/i.test(row.trend) &&
+      /high|scrap|discard|runtime|downtime|lost|availability/i.test(row.impact)
+  );
+}
+
+function riskGradeFloor(ctx: EvaluationContext): ElrRiskGrade | null {
+  const breakdowns = ctx.dependencies.elr_breakdowns ?? {};
+  const trends = ctx.dependencies.elr_system_trends ?? {};
+  const downtime = totalBreakdownDowntime(breakdowns);
+  const scrap =
+    contentMentionsScrap(breakdowns) ||
+    contentMentionsScrap(trends) ||
+    contentMentionsScrap(ctx.content);
+  if (scrap || downtime >= 8) return "high";
+  if (downtime > 0 || increasingHighImpactThemes(trends)) return "medium";
+  return null;
+}
+
 export function checkRiskGradeConsistent(ctx: EvaluationContext) {
   const content = ctx.content as
     | { overallGrade?: ElrRiskGrade }
@@ -780,6 +1040,13 @@ export function checkRiskGradeConsistent(ctx: EvaluationContext) {
     return verdict(
       "not_met",
       `${highCount} High-priority action(s) recorded — overall grade cannot be Low`
+    );
+  }
+  const floor = riskGradeFloor(ctx);
+  if (floor && (GRADE_RANK[grade] ?? 0) < GRADE_RANK[floor]) {
+    return verdict(
+      "not_met",
+      `Overall grade ${grade} is below the floor (${floor}) from downtime, scrap or increasing high-impact themes`
     );
   }
   return verdict("met", `Overall grade recorded (${grade})`);

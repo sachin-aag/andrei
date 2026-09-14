@@ -6,10 +6,14 @@ import { DEMO_PACK, MJ_PACK, isDocumentTypeEnabled } from "@/lib/customers/packs
 import { getCriteria, getDocumentType, getWorkspaceSections } from ".";
 import type { EvaluationContext } from "./types";
 import {
+  checkAccessControlPeriodCompleteness,
+  checkAccessControlPrivilegeDrift,
   checkAlarmDirectImpactAction,
   checkAssessmentInterpretsTable,
   checkBreakdownRepeatCapa,
+  checkBreakdownRepeatNotIsolated,
   checkCalibrationStatus,
+  checkCalibrationValidityNotContradicted,
   checkMonitoringExcursionsLinked,
   checkPreventiveMaintenanceJustified,
   checkPrqScheduleCurrent,
@@ -18,6 +22,7 @@ import {
   checkQmsRecords,
   checkQualificationFormatScope,
   checkRecommendationSelected,
+  checkRecordTypeMatchesReference,
   checkMediaFillTable,
   checkRiskActionRows,
   checkRiskActionsNotBloated,
@@ -31,6 +36,7 @@ import {
   SYSTEM_TRENDS_COLUMN_SCHEMA,
 } from "./elr/matrix-columns";
 import {
+  ELR_ACCESS_CONTROL_HEADERS,
   ELR_ALARM_HEADERS,
   ELR_BREAKDOWN_HEADERS,
   ELR_CALIBRATION_HEADERS,
@@ -169,7 +175,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_scope");
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v4");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v5");
   });
 
   it("asks which container format when attachments name both and the title page is unset", () => {
@@ -508,6 +514,10 @@ describe("ELR criteria wiring", () => {
     const bloated = actions.find((c) => c.key === "risk.not_bloated");
     expect(bloated?.kind).toBe("deterministic");
     expect(bloated?.dependsOn).toEqual(cover?.dependsOn);
+    const grade = actions.find((c) => c.key === "risk.grade_consistent");
+    expect(grade?.dependsOn).toEqual(
+      expect.arrayContaining([...(cover?.dependsOn ?? []), "elr_system_trends"])
+    );
 
     const monitoring = getCriteria(TYPE, "elr_monitoring");
     expect(monitoring.some((c) => c.key === "monitoring.assessment_present")).toBe(
@@ -880,13 +890,232 @@ describe("ELR assessment, trends and risk checks", () => {
         {
           table: filledMonitoring,
           narrative: narrative(
-            "One of three monitoring parameters recorded an excursion; it was closed under DEV-26-011 with no product impact."
+            "One of three monitoring parameters recorded an excursion; it was closed under DEV-26-011 with no product impact. The qualified state remains."
           ),
         },
         { section: "elr_monitoring" }
       )
     );
     expect(result.status).toBe("met");
+  });
+
+  it("requires downtime, scrap, CAPA and qualified-state language when the table carries them", () => {
+    const downtimeTable = tableDoc([
+      [...ELR_BREAKDOWN_HEADERS],
+      row(ELR_BREAKDOWN_HEADERS, {
+        "Sr. No.": "1",
+        "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+        "Downtime (Hrs)": "4.5",
+        "Repeat (Y/N)": "N",
+      }),
+    ]);
+    const missingDowntime = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: downtimeTable,
+          narrative: narrative(
+            "1 breakdown occurred on the filling pump and was closed with no product impact this period."
+          ),
+        },
+        { section: "elr_breakdowns" }
+      )
+    );
+    expect(missingDowntime.status).toBe("not_met");
+    expect(missingDowntime.reasoning).toMatch(/downtime/i);
+
+    expect(
+      checkAssessmentInterpretsTable(
+        ctx(
+          {
+            table: downtimeTable,
+            narrative: narrative(
+              "One breakdown occurred; 4.5 hours of downtime were recovered with no product impact."
+            ),
+          },
+          { section: "elr_breakdowns" }
+        )
+      ).status
+    ).toBe("met");
+
+    const scrapTable = tableDoc([
+      [...ELR_BREAKDOWN_HEADERS],
+      row(ELR_BREAKDOWN_HEADERS, {
+        "Sr. No.": "1",
+        "Component / Failure Description": "Sealing head scored; batch discarded",
+        "Format Impact": "Vial scrap",
+        "Repeat (Y/N)": "N",
+      }),
+    ]);
+    const missingScrap = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: scrapTable,
+          narrative: narrative(
+            "1 breakdown on the sealing head was closed with no further action this period."
+          ),
+        },
+        { section: "elr_breakdowns" }
+      )
+    );
+    expect(missingScrap.status).toBe("not_met");
+    expect(missingScrap.reasoning).toMatch(/scrap/i);
+
+    const capaTable = tableDoc([
+      [...ELR_BREAKDOWN_HEADERS],
+      row(ELR_BREAKDOWN_HEADERS, {
+        "Sr. No.": "1",
+        "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+        "Repeat (Y/N)": "N",
+        "Linked CAPA Ref.": "CAPA-26-014",
+      }),
+    ]);
+    const missingCapa = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: capaTable,
+          narrative: narrative(
+            "1 breakdown on the filling pump was closed with no product impact this period."
+          ),
+        },
+        { section: "elr_breakdowns" }
+      )
+    );
+    expect(missingCapa.status).toBe("not_met");
+    expect(missingCapa.reasoning).toMatch(/capa/i);
+
+    const deviationOnly = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: filledMonitoring,
+          narrative: narrative(
+            "One of three monitoring parameters recorded an excursion; it was closed under DEV-26-011 with no product impact."
+          ),
+        },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(deviationOnly.status).toBe("not_met");
+    expect(deviationOnly.reasoning).toMatch(/qualified state/i);
+    expect(deviationOnly.reasoning).not.toMatch(/capa/i);
+  });
+
+  it("flags an OOT table contradicted by a within-calibration assessment", () => {
+    const table = tableDoc([
+      [...ELR_CALIBRATION_HEADERS],
+      row(ELR_CALIBRATION_HEADERS, {
+        "Sr. No.": "1",
+        "Instrument ID / Tag": "TI-12",
+        "Result (Pass / OOT)": "OOT",
+      }),
+    ]);
+    const result = checkCalibrationValidityNotContradicted(
+      ctx(
+        {
+          table,
+          narrative: narrative(
+            "All instruments remain within calibration for the period."
+          ),
+        },
+        { section: "elr_calibration" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/within calibration/i);
+  });
+
+  it("flags a repeat breakdown described as isolated", () => {
+    const result = checkBreakdownRepeatNotIsolated(
+      ctx(
+        {
+          ...repeatBreakdown,
+          narrative: narrative(
+            "This was an isolated, one-off pump fault with no recurrence."
+          ),
+        },
+        { section: "elr_breakdowns" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/isolated/i);
+  });
+
+  it("flags privilege grants described as unchanged", () => {
+    const table = tableDoc([
+      [...ELR_ACCESS_CONTROL_HEADERS],
+      row(ELR_ACCESS_CONTROL_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA",
+        "Role / Privilege Level": "Level 3",
+        "Action (Granted / Modified / Revoked)": "Granted",
+      }),
+    ]);
+    const result = checkAccessControlPrivilegeDrift(
+      ctx(
+        {
+          table,
+          narrative: narrative("Access privileges are unchanged this period."),
+        },
+        { section: "elr_access_control" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/unchanged/i);
+  });
+
+  it("requires last review, admin recertification and Part 11 on access control", () => {
+    const table = tableDoc([
+      [...ELR_ACCESS_CONTROL_HEADERS],
+      row(ELR_ACCESS_CONTROL_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA",
+        "Role / Privilege Level": "Level 4 administrator",
+        "Action (Granted / Modified / Revoked)": "Modified",
+      }),
+    ]);
+    const incomplete = checkAccessControlPeriodCompleteness(
+      ctx(
+        {
+          table,
+          narrative: narrative("Two users are listed on the SCADA system."),
+        },
+        { section: "elr_access_control" }
+      )
+    );
+    expect(incomplete.status).toBe("not_met");
+    expect(incomplete.reasoning).toMatch(/last reviewed|Part 11|recertif/i);
+
+    expect(
+      checkAccessControlPeriodCompleteness(
+        ctx(
+          {
+            table,
+            narrative: narrative(
+              "Last reviewed 12-Mar-2026. Level 4 admin holders were recertified. 21 CFR Part 11 access, audit-trail and authority checks remain in force."
+            ),
+          },
+          { section: "elr_access_control" }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("flags a CAPA-typed QMS row that cites a deviation number", () => {
+    const table = tableDoc([
+      [...ELR_QMS_HEADERS],
+      row(ELR_QMS_HEADERS, {
+        "Sr. No.": "1",
+        "Type (CC / Dev / CAPA / OOS / OOT)": "CAPA",
+        "Document Reference No.": "DEV-26-011",
+        Status: "Closed",
+        "Qualification Impact (Y/N)": "N",
+      }),
+    ]);
+    const result = checkRecordTypeMatchesReference(
+      ctx({ table }, { section: "elr_qms" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/capa/i);
+    expect(result.reasoning).toMatch(/deviation/i);
   });
 
   it("requires theme, where-seen, occurrences and impact on each trend row", () => {
@@ -959,6 +1188,90 @@ describe("ELR assessment, trends and risk checks", () => {
             table: tableDoc([[...ELR_RISK_ACTION_HEADERS], completeAction("High")]),
           },
           { section: "elr_risk_actions" }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("floors overall grade from downtime, scrap and increasing high-impact themes", () => {
+    const eightHours = {
+      table: tableDoc([
+        [...ELR_BREAKDOWN_HEADERS],
+        row(ELR_BREAKDOWN_HEADERS, {
+          "Sr. No.": "1",
+          "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+          "Downtime (Hrs)": "8",
+          "Repeat (Y/N)": "N",
+        }),
+      ]),
+    };
+    const emptyActions = tableDoc([[...ELR_RISK_ACTION_HEADERS]]);
+    const highFloor = checkRiskGradeConsistent(
+      ctx(
+        { overallGrade: "medium", table: emptyActions },
+        {
+          section: "elr_risk_actions",
+          dependencies: { elr_breakdowns: eightHours },
+        }
+      )
+    );
+    expect(highFloor.status).toBe("not_met");
+    expect(highFloor.reasoning).toMatch(/floor \(high\)/i);
+
+    const twoHours = {
+      table: tableDoc([
+        [...ELR_BREAKDOWN_HEADERS],
+        row(ELR_BREAKDOWN_HEADERS, {
+          "Sr. No.": "1",
+          "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+          "Downtime (Hrs)": "2",
+          "Repeat (Y/N)": "N",
+        }),
+      ]),
+    };
+    const mediumFloor = checkRiskGradeConsistent(
+      ctx(
+        { overallGrade: "low", table: emptyActions },
+        {
+          section: "elr_risk_actions",
+          dependencies: { elr_breakdowns: twoHours },
+        }
+      )
+    );
+    expect(mediumFloor.status).toBe("not_met");
+    expect(mediumFloor.reasoning).toMatch(/floor \(medium\)/i);
+
+    const increasing = {
+      table: tableDoc([
+        [...ELR_SYSTEM_TRENDS_HEADERS],
+        row(ELR_SYSTEM_TRENDS_HEADERS, {
+          "Sr. No.": "1",
+          Theme: "Peristaltic pump dosing faults",
+          "Trend (increasing / stable / decreasing)": "increasing",
+          "Product or runtime impact": "Lost runtime on the filling line",
+        }),
+      ]),
+    };
+    const themeFloor = checkRiskGradeConsistent(
+      ctx(
+        { overallGrade: "low", table: emptyActions },
+        {
+          section: "elr_risk_actions",
+          dependencies: { elr_system_trends: increasing },
+        }
+      )
+    );
+    expect(themeFloor.status).toBe("not_met");
+    expect(themeFloor.reasoning).toMatch(/floor \(medium\)/i);
+
+    expect(
+      checkRiskGradeConsistent(
+        ctx(
+          { overallGrade: "high", table: emptyActions },
+          {
+            section: "elr_risk_actions",
+            dependencies: { elr_breakdowns: eightHours },
+          }
         )
       ).status
     ).toBe("met");

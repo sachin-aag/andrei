@@ -10,12 +10,16 @@ import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import { elrChatContextIdentity } from "./elr/chat-identity";
 import { ELR_DRAFTING_GUIDANCE } from "./elr/drafting-guidance";
 import {
+  checkAccessControlPeriodCompleteness,
+  checkAccessControlPrivilegeDrift,
   checkAccessControlRows,
   checkAlarmDirectImpactAction,
   checkAssessmentInterpretsTable,
   checkAuditTrailReviewed,
   checkBreakdownRepeatCapa,
+  checkBreakdownRepeatNotIsolated,
   checkCalibrationStatus,
+  checkCalibrationValidityNotContradicted,
   checkCsvStatus,
   checkElrRevisionHistory,
   checkMediaFillTable,
@@ -29,6 +33,7 @@ import {
   checkQualificationChain,
   checkQualificationFormatScope,
   checkRecommendationSelected,
+  checkRecordTypeMatchesReference,
   checkResponsibilitiesTable,
   checkRiskActionRows,
   checkRiskActionsNotBloated,
@@ -238,6 +243,12 @@ const CALIBRATION_CRITERIA: CriterionDefinition[] = [
     "Does every row carry an instrument ID and a result, with a linked deviation or CAPA for any out-of-tolerance finding?",
     checkCalibrationStatus
   ),
+  det(
+    "calibration.validity_not_contradicted",
+    "The assessment does not contradict an OOT or overdue result",
+    "If the table records an out-of-tolerance, expired or overdue result, does the narrative avoid saying instruments remain within calibration / in tolerance / valid?",
+    checkCalibrationValidityNotContradicted
+  ),
   llm(
     "calibration.no_overdue",
     "No calibration is overdue at the ELR cut-off date",
@@ -288,6 +299,12 @@ const BREAKDOWN_CRITERIA: CriterionDefinition[] = [
     "Does every breakdown row describe the failure and answer whether it repeated, with a CAPA reference for repeats?",
     checkBreakdownRepeatCapa
   ),
+  det(
+    "breakdowns.repeat_not_isolated",
+    "Repeat failures are not described as isolated",
+    "If any breakdown is marked Repeat = Y, does the assessment avoid calling the failure isolated, one-off or a first occurrence?",
+    checkBreakdownRepeatNotIsolated
+  ),
   llm(
     "breakdowns.trend",
     "The trend summary identifies recurring failure modes and their implication",
@@ -312,6 +329,12 @@ const QMS_CRITERIA: CriterionDefinition[] = [
     "QMS records are complete and correctly scoped",
     "Does every row carry a type, document reference, status and qualification-impact answer, and is no row scoped only to the counterpart container format?",
     checkQmsRecords
+  ),
+  det(
+    "qms.record_type_matches_reference",
+    "Each typed QMS row cites a matching document number",
+    "Does a CAPA row cite a CAPA number, a deviation a DEV/INV/NCR number, a change control a CCF/CC number — not a mismatch such as CAPA citing DEV-?",
+    checkRecordTypeMatchesReference
   ),
   det(
     "qms.qualification_follow_up",
@@ -369,6 +392,18 @@ const ACCESS_CONTROL_CRITERIA: CriterionDefinition[] = [
     "Access records name the system and privilege level",
     "Does each access row name the system and the privilege level, or is the section explicitly marked not applicable?",
     checkAccessControlRows
+  ),
+  det(
+    "access_control.period_completeness",
+    "The assessment covers last review, admin recertification and Part 11",
+    "Does the assessment state when access control was last reviewed this period, recertify Level 4 / admin holders when they appear, and confirm 21 CFR Part 11 access, audit-trail and authority checks remain in force?",
+    checkAccessControlPeriodCompleteness
+  ),
+  det(
+    "access_control.privilege_drift",
+    "Privilege changes are not described as unchanged",
+    "If any row is Granted, Modified or Revoked, does the assessment avoid saying access is unchanged / no privilege change?",
+    checkAccessControlPrivilegeDrift
   ),
   det(
     "access_control.assessment_present",
@@ -484,9 +519,10 @@ const RISK_ACTIONS_CRITERIA: CriterionDefinition[] = [
   ),
   det(
     "risk.grade_consistent",
-    "The overall grade is selected and consistent with High-priority rows",
-    "Is an overall report risk grade selected, and is it not Low when any High-priority action is listed?",
-    checkRiskGradeConsistent
+    "The overall grade is selected and not below the floor from High-priority rows, downtime, scrap or increasing high-impact themes",
+    "Is an overall report risk grade selected? It cannot be Low when any High-priority action is listed. Scrap or ≥8 downtime hours floor High; any downtime or an increasing high-impact theme floors Medium.",
+    checkRiskGradeConsistent,
+    [...SYNTHESIS_DEPENDS_ON, "elr_system_trends"]
   ),
   det(
     "risk.not_bloated",
