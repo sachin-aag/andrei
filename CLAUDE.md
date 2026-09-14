@@ -381,4 +381,4 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
   Style new UI from the tokens, never a hardcoded brand hex.
 - Tailwind CSS v4 configured in `src/app/globals.css`.
 - Toast notifications via `sonner`.
-- Observability: Langfuse JS/TS SDK v5 (`@langfuse/otel` + `@langfuse/tracing`) with v4 observations-first ingestion (`x-langfuse-ingestion-version: 4` in `src/instrumentation.ts`). Reads go through Observations API v2 (`src/lib/observability/langfuse-observations.ts`), not the deprecated traces list/get endpoints.
+- Observability: Langfuse JS/TS SDK v5 (`@langfuse/otel` + `@langfuse/tracing`) with v4 observations-first ingestion (`x-langfuse-ingestion-version: 4` in `src/instrumentation.ts`). Environment is `VERCEL_ENV` (`production` / `preview` / `development`); release is the git SHA. Observation metadata also carries `tracingEnvironment`, `gitBranch`, `vercelEnv`, and `customer`. Reads go through Observations API v2 (`src/lib/observability/langfuse-observations.ts`), not the deprecated traces list/get endpoints.
