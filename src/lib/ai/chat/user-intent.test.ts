@@ -64,6 +64,48 @@ describe("classifyChatUserIntent", () => {
           "Hello! How can I help you with your statistical analysis today?",
         ],
       })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        mode: "plan",
+        recentAssistantTexts: [
+          "The caliper is on page 46 of the SAT protocol.",
+        ],
+      })
+    ).toEqual({ kind: "social", reason: "ack_without_task" });
+  });
+
+  it("treats do-the-same and Agent proceed as write, not a lookup", () => {
+    expect(
+      classifyChatUserIntent({
+        userText: "can you do the same for @Preventive Maintenance",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "continue_task" });
+    expect(
+      classifyChatUserIntent({
+        userText: "do the same for Preventive Maintenance",
+        mode: "agent",
+      }).kind
+    ).toBe("write");
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        mode: "agent",
+        recentAssistantTexts: [
+          "Based on Master PMC-PR-014-R03, here are the retrieved preventive maintenance records.",
+        ],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "yes",
+        mode: "agent",
+        recentAssistantTexts: [
+          "Based on Master PMC-PR-014-R03, here are the retrieved preventive maintenance records.",
+        ],
+      })
     ).toEqual({ kind: "social", reason: "ack_without_task" });
   });
 

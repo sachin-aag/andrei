@@ -32,7 +32,10 @@ that copy is a write. Stub chat,
 timeout, and parse failures keep the rules decision with no widget.
 Retrieval maps those turns to focused (`reason: no_task`) and skips
 kickoff evidence. A yes after the assistant offered to draft is a write
-request.
+request. Agent-mode "go for it" / "do it" is write even when the prior
+turn dumped findings instead of matching the offer regex. "Can you do
+the same for @Section" is write (`continue_task`), not a lookup — `do`
+in `QUESTION_START_RE` must not win.
 
 Search attachments **before** `ask_user`, `draft_field`, or a `<placeholder>`
 for report facts (batch, date, result, equipment ID, requirement ID, design

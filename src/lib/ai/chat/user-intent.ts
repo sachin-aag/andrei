@@ -51,6 +51,14 @@ const CONFIRM_RE =
   /^(?:yes|yeah|yep|yup|sure|ok|okay|k|go ahead|do it|please do|sounds good|yes please|please|go for it|do that|that works)(?:\s*[!.]*)?$/i;
 
 /**
+ * Stronger than a bare yes/ok. In Agent mode these mean proceed even when
+ * the prior assistant turn dumped findings instead of matching
+ * {@link ASSISTANT_WRITE_OFFER_RE} ("go for it" after a retrieval dump).
+ */
+const PROCEED_RE =
+  /^(?:go for it|do it|do that|please do|go ahead)(?:\s*[!.]*)?$/i;
+
+/**
  * A confirmation that carries its own instruction ("yes put it in the data
  * worksheet"). `CONFIRM_RE` is anchored, so these fall through to the generic
  * matchers and the affirmation swallows the verb.
@@ -65,10 +73,10 @@ const START_REPORT_RE =
   /\b(?:start|begin|kick ?off)\b.{0,48}\b(?:report|draft|document|writing|this)\b|\b(?:let'?s|please)\s+(?:start|begin|go)\b/i;
 
 const CONTINUE_RE =
-  /\b(?:keep going|continue|you missed|still missing|go on|finish (?:it|the (?:draft|report|section|review)))\b/i;
+  /\b(?:keep going|continue|you missed|still missing|go on|finish (?:it|the (?:draft|report|section|review))|do(?:\s+the)?\s+same|do that)\b/i;
 
 const POLITE_WRITE_RE =
-  /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;
+  /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run|do(?:\s+the)?\s+same|do that)\b/i;
 
 /**
  * "Can you", "could you", "please" read as questions to `QUESTION_START_RE`
@@ -110,7 +118,7 @@ const QUESTION_START_RE =
   /^(?:what|who|when|where|which|why|how|is|are|do|does|did|can|could|would|should|tell me|summar(?:y|ize)|explain|show|list|find|search|look)\b/i;
 
 const ASSISTANT_WRITE_OFFER_RE =
-  /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot)|ready to draft|start drafting|i(?:'ll| will) draft)\b/i;
+  /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot|update|apply)|ready to (?:draft|update|write|fill|apply)|start drafting|i(?:'ll| will) (?:draft|update|apply)|please confirm to proceed)\b/i;
 
 /** Report chat pointed them at Analytics; a yes is continue-the-extract, not small talk. */
 const SWITCH_TO_ANALYTICS_OFFER_RE =
@@ -178,6 +186,9 @@ export function classifyChatUserIntent(
     );
     if (offeredAnalyticsSwitch) {
       return { kind: "write", reason: "confirm_analytics_switch" };
+    }
+    if ((input.mode ?? "agent") === "agent" && PROCEED_RE.test(latest)) {
+      return { kind: "write", reason: "confirm_write_offer" };
     }
     return { kind: "social", reason: "ack_without_task" };
   }
