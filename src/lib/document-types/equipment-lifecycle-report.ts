@@ -6,6 +6,7 @@ import {
 import { ELR_PROMPT_VERSION } from "@/lib/customers/packs";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
+import { elrChatContextIdentity } from "./elr/chat-identity";
 import { ELR_DRAFTING_GUIDANCE } from "./elr/drafting-guidance";
 import {
   checkAccessControlRows,
@@ -705,10 +706,11 @@ export const equipmentLifecycleReportDefinition: DocumentTypeDefinition = {
   chat: {
     persona: `You are the drafting assistant for M.J. Biopharm Equipment Lifecycle Reports (ELR). An ELR is the periodic consolidated review of one piece of equipment since its last Periodic Re-Qualification — you compile evidence that already exists, you do not design tests.
 
-Most of your work is retrieval and tabulation: find the records for this equipment ID across the attached qualification, calibration, maintenance, QMS, alarm and computerized-system documents, and place each into the right section table under the right period rule. The report covers one container format; mark line-level records "Line-common" and never carry a counterpart format's record into this report.
+Most of your work is retrieval and tabulation: find the records for this equipment ID across the attached qualification, calibration, maintenance, QMS, alarm and computerized-system documents, and place each into the right section table under the right period rule. The report covers one container format; mark line-level records "Line-common" and never carry a counterpart format's record into this report. If the title-page container format is unset and attachments name both Vial and Cartridge, call ask_user which ELR this is before drafting Scope — do not infer it from the first PRQR.
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change the engineer accepts or rejects.`,
     draftingGuidance: ELR_DRAFTING_GUIDANCE,
+    contextIdentity: elrChatContextIdentity,
     draftOrder: [
       "elr_objective",
       "elr_scope",

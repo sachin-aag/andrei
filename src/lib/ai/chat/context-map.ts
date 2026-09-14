@@ -60,6 +60,8 @@ export type BuildContextMapInput = {
   comments: ContextMapComment[];
   documents?: ReadyDocumentIndexItem[];
   documentType?: DocumentType;
+  /** Title-page identity from reports.metadata (type-owned via contextIdentity). */
+  metadata?: Record<string, unknown> | null;
   /** Saved Analytics plots the document chat can copy in with insert_image. */
   analyticsPlots?: StatisticalAnalysisSummary[];
 };
@@ -112,7 +114,8 @@ function analyzeMethodLine(
 export function buildReportContextMap(input: BuildContextMapInput): string {
   const { report, sections, evaluations, comments } = input;
   const documentType = input.documentType ?? "investigation_report";
-  const { documentNoun } = getDocumentType(documentType);
+  const def = getDocumentType(documentType);
+  const { documentNoun } = def;
   const dateStr =
     typeof report.date === "string"
       ? report.date
@@ -120,9 +123,20 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
 
   const lines: string[] = [
     `Report: ${documentNoun} ${report.documentNo || "(unset)"} · date ${dateStr} · status ${report.status}`,
-    "Sections (empty = draft after searching attachments; filled/partial = already drafted — read_section first):",
-    "Live table N headers are this report's schema — call read_section and copy fields[].tables[].headers before edit_table or draft_field. Do not assume another pack's columns.",
   ];
+  const identity = def.chat.contextIdentity?.(input.metadata);
+  if (identity && identity.length > 0) {
+    lines.push(
+      "Title-page identity (source of truth; unset fields are not retrieved facts):"
+    );
+    for (const line of identity) {
+      lines.push(`- ${line}`);
+    }
+  }
+  lines.push(
+    "Sections (empty = draft after searching attachments; filled/partial = already drafted — read_section first):",
+    "Live table N headers are this report's schema — call read_section and copy fields[].tables[].headers before edit_table or draft_field. Do not assume another pack's columns."
+  );
 
   for (const section of chatEditableSections(documentType)) {
     const content = sections[section] ?? {};

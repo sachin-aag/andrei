@@ -168,6 +168,21 @@ describe("equipment lifecycle report definition", () => {
     expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v2");
   });
 
+  it("asks which container format when attachments name both and the title page is unset", () => {
+    const def = getDocumentType(TYPE);
+    expect(def.chat.persona).toContain("both Vial and Cartridge");
+    expect(def.chat.persona).toContain("ask_user");
+    expect(def.chat.persona).toContain("do not infer it from the first PRQR");
+    expect(def.chat.draftingGuidance).toContain(
+      "If it is unset and attachments name **both** Vial and Cartridge, stop"
+    );
+    expect(def.chat.contextIdentity?.({})).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("container format: (unset)"),
+      ])
+    );
+  });
+
   it("maps every section into the export template data", () => {
     const def = getDocumentType(TYPE);
     const data = def.export.buildTemplateData({

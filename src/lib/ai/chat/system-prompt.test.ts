@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v90-unavailable-tool-recover");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v91-elr-format-fork");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -421,6 +421,10 @@ describe("buildChatSystemPrompt", () => {
       "If the engineer asked to draft a section the context map marks filled or partial"
     );
     expect(agent).toContain("Never call ask_user for a fact already in the current section");
+    expect(agent).toContain(
+      "unset title-page identity field that retrieved evidence answers with more than one mutually exclusive value"
+    );
+    expect(agent).toContain("both Vial and Cartridge on an ELR");
     expect(agent).toContain("Never put the actual answer in hint");
   });
 
@@ -599,5 +603,17 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Delivery in this chrome is ALWAYS a suggestion card");
     expect(prompt).not.toContain("there is no direct-insertion path");
     expect(prompt).not.toContain("Never tell the engineer to switch to Agent mode");
+  });
+
+  it("tells ELR Agent to ask when attachments name both container formats", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "equipment_lifecycle_report",
+    });
+    expect(prompt).toContain("both Vial and Cartridge");
+    expect(prompt).toContain("title-page container format");
+    expect(prompt).toMatch(/pick the\s+first PRQR/);
+    expect(prompt).toContain("do not infer it from the first PRQR");
   });
 });

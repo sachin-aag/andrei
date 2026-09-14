@@ -77,6 +77,14 @@ export type DocumentTypeChatConfig = {
    * (e.g. fixed table column schemas for matrix sections).
    */
   draftingGuidance?: string;
+  /**
+   * Title-page identity from `reports.metadata` for the chat context map.
+   * Unset fields must still be listed so the model does not invent them from
+   * the first attachment hit. Omit when the type has no identity block.
+   */
+  contextIdentity?: (
+    metadata: Record<string, unknown> | null | undefined
+  ) => readonly string[];
 };
 
 export type DocxTemplateData = Record<string, unknown>;

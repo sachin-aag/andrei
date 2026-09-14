@@ -352,4 +352,45 @@ describe("buildReportContextMap", () => {
     );
     expect(map).not.toContain("anl_3");
   });
+
+  it("does not invent a title-page identity block for investigation reports", () => {
+    const map = buildReportContextMap({
+      report: { documentNo: "DEV-123", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+    });
+    expect(map).not.toContain("Title-page identity");
+    expect(map).not.toContain("container format");
+  });
+
+  it("surfaces unset ELR container format so chat asks before drafting", () => {
+    const map = buildReportContextMap({
+      documentType: "equipment_lifecycle_report",
+      report: { documentNo: "ELR-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+      metadata: { equipmentId: "E/PR/070" },
+    });
+    expect(map).toContain("Title-page identity");
+    expect(map).toContain("equipment ID: E/PR/070");
+    expect(map).toContain("container format: (unset)");
+    expect(map).toContain("both Vial and Cartridge");
+    expect(map).toContain("ask_user");
+    expect(map).toContain("Purpose [elr_objective]");
+  });
+
+  it("uses a set ELR format and does not tell chat to ask", () => {
+    const map = buildReportContextMap({
+      documentType: "equipment_lifecycle_report",
+      report: { documentNo: "ELR-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+      metadata: { formatScope: "Cartridge" },
+    });
+    expect(map).toContain("container format: Cartridge — use this");
+    expect(map).not.toContain("ask_user");
+  });
 });

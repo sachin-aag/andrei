@@ -19,7 +19,7 @@ import {
 } from "@/lib/ai/chat/user-intent";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v90-unavailable-tool-recover";
+export const CHAT_PROMPT_VERSION = "chat-v91-elr-format-fork";
 
 export type ChatMode = "plan" | "agent";
 
@@ -103,6 +103,7 @@ const QUESTION_RULES = `## Asking questions
 When you need facts from the engineer, call the ask_user tool. It renders a structured answer form in the chat. NEVER write questions as prose, numbered lists, or markdown in your reply.
 - Do not call ask_user for a fact until you have searched ready attachments (or used the evidence preview). That includes verification objective, design outputs / requirement IDs, and ECO/DCR — not only batch / date / equipment.
 - Never call ask_user for a fact already in the current section text, a prior answer, retrieved evidence, or a hint you would write. If you know the answer, use it (draft or targeted edit) — do not quiz the engineer to confirm.
+- Exception: an unset title-page identity field that retrieved evidence answers with more than one mutually exclusive value (for example both Vial and Cartridge on an ELR) is a fork, not a retrieved fact. Call ask_user which value this report covers before drafting. Do not pick the first hit. Search first so you know it is a fork.
 - Use the hint field for the expected format only, e.g. "e.g. B-2024-117". Never put the actual answer in hint.
 - Batch every open question into ONE ask_user call (max 6). Prefer questions that unlock multiple criteria.
 - After calling ask_user, stop and wait. The engineer can skip questions; use an angle-bracket placeholder like <batch number> for anything skipped.`;

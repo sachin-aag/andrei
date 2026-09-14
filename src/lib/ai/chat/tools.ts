@@ -3163,7 +3163,7 @@ export function buildChatTools(opts: {
 
     ask_user: tool({
       description:
-        "Ask the engineer for facts still missing AFTER searching ready attachments (search_documents or the evidence preview). Do not ask for facts that are likely in a listed document (requirement IDs, design outputs, verification objective, ECO/DCR, batch/date/equipment), already in the current section, or that you would put in hint. If you know the answer, use it — do not quiz them to confirm. hint is an expected format (e.g. 'e.g. B-2024-117'), never the answer itself. The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
+        "Ask the engineer for facts still missing AFTER searching ready attachments (search_documents or the evidence preview). Do not ask for facts that are likely in a listed document (requirement IDs, design outputs, verification objective, ECO/DCR, batch/date/equipment), already in the current section, or that you would put in hint. If you know the answer, use it — do not quiz them to confirm. Exception: an unset title-page identity field with two mutually exclusive answers in the attachments (for example both Vial and Cartridge on an ELR) is a fork — ask which report this is, then draft only that value; do not pick the first hit. hint is an expected format (e.g. 'e.g. B-2024-117'), never the answer itself. The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
       inputSchema: z.object({
         questions: z
           .array(

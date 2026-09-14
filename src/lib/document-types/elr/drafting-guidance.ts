@@ -96,7 +96,20 @@ Open or unresolved items carry forward regardless of date.
 ## Container format — this report covers one format
 
 The equipment is qualified separately per container format. A separate ELR is
-compiled for each. Mark every qualification and QMS row with one of:
+compiled for each. The title-page container format is the source of truth for
+which ELR this is.
+
+- If that field is set (Vial or Cartridge), use it. Do not switch based on
+  attachments and do not ask to confirm.
+- If it is unset and attachments name only one of Vial or Cartridge, use that
+  one and say so.
+- If it is unset and attachments name **both** Vial and Cartridge, stop.
+  Call ask_user which format this ELR covers before draft_field on Scope or
+  any format-scoped table. Two PRQR lineages is not permission to pick the
+  first PRQR.
+- After they answer, draft only that format. Counterpart-format rows stay out.
+
+Mark every qualification and QMS row with one of:
 ${ELR_FORMAT_APPLICABILITY.join(" | ")}
 
 "Line-common" means the record belongs to the equipment or the line rather than

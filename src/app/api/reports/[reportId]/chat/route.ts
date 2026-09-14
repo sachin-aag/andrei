@@ -436,6 +436,12 @@ async function handleChatPost(
     })),
     documents,
     documentType: report.documentType,
+    metadata:
+      report.metadata &&
+      typeof report.metadata === "object" &&
+      !Array.isArray(report.metadata)
+        ? (report.metadata as Record<string, unknown>)
+        : undefined,
     analyticsPlots: analytics?.analyses ?? [],
   });
 
