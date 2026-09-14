@@ -174,7 +174,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   return (
     <div className="chat-markdown min-w-0 wrap-anywhere space-y-2 text-sm leading-relaxed text-[var(--foreground)]">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkMath, remarkGfm]}
         remarkRehypeOptions={{ handlers: CHAT_MATH_HAST_HANDLERS }}
         components={components}
       >

@@ -15,6 +15,12 @@ describe("rewriteChatMathHtmlConflicts", () => {
     expect(rewriteChatMathHtmlConflicts("$>5$")).toBe("$\\gt 5$");
   });
 
+  it("braces unbraced subscripts so $N_2$ stays one math span", () => {
+    expect(rewriteChatMathHtmlConflicts("Nitrogen ($N_2$)")).toBe(
+      "Nitrogen ($N_{2}$)"
+    );
+  });
+
   it("leaves other latex unchanged", () => {
     expect(rewriteChatMathHtmlConflicts(String.raw`**$\pm 20\%$**`)).toBe(
       String.raw`**$\pm 20\%$**`
