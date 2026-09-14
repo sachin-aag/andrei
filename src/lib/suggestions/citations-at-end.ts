@@ -1,5 +1,9 @@
 import type { JSONContent } from "@tiptap/core";
-import { isSourceCitationBracket } from "@/lib/placeholders/citation-bracket";
+import { citationDisplayFilename } from "@/lib/citations/citation-filename";
+import {
+  canonicalizeSourceCitationBracket,
+  isSourceCitationBracket,
+} from "@/lib/placeholders/citation-bracket";
 import type { EditScope } from "@/lib/suggestions/locator";
 import type { TableOperation } from "@/lib/suggestions/table-operation";
 
@@ -35,7 +39,7 @@ export function sourceCitationBracket(
   filename: string,
   pageNumber?: number | null
 ): string {
-  const name = filename.trim();
+  const name = citationDisplayFilename(filename);
   if (!name) return "";
   if (
     typeof pageNumber === "number" &&
@@ -85,7 +89,7 @@ function findSourceCitationSpans(
     spans.push({
       start: match.index,
       end: match.index + match[0].length,
-      text: match[0],
+      text: canonicalizeSourceCitationBracket(match[0]),
     });
   }
   return spans;

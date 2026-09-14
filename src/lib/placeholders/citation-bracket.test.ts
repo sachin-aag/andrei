@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalizeSourceCitationBracket,
   isCitationShapedBracket,
   isNumericCitationMarker,
   isSourceCitationBracket,
@@ -387,6 +388,29 @@ describe("sourceCitationLinkSpans", () => {
     );
     expect(spans[1]?.openRaw).toBe(
       "[AAP-E-PR-070-036-R00 List of alarm and their action plan Filling.pdf, p. 1-3]"
+    );
+  });
+});
+
+describe("canonicalizeSourceCitationBracket", () => {
+  it("strips a QMS download stamp from a parked filename cite", () => {
+    expect(
+      canonicalizeSourceCitationBracket(
+        "[PQR-24-PR-102_20250320092518.pdf, p. 1]"
+      )
+    ).toBe("[PQR-24-PR-102.pdf, p. 1]");
+  });
+
+  it("leaves underscored titles and ordinary filenames unchanged", () => {
+    expect(
+      canonicalizeSourceCitationBracket(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]"
+      )
+    ).toBe(
+      "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]"
+    );
+    expect(canonicalizeSourceCitationBracket("[protocol.pdf, p. 3]")).toBe(
+      "[protocol.pdf, p. 3]"
     );
   });
 });

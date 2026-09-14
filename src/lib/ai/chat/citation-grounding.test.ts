@@ -213,6 +213,19 @@ describe("rewriteCitationPagesInText", () => {
       )
     ).toBe("The APS result is missing.");
   });
+
+  it("strips a QMS download stamp from a rewritten citation filename", () => {
+    const ledger = ledgerWithSearchHit(
+      "PQR-24-PR-102_20250320092518.pdf",
+      1
+    );
+    expect(
+      rewriteCitationPagesInText(
+        "See [PQR-24-PR-102_20250320092518.pdf, p. 1].",
+        ledger
+      )
+    ).toBe("See [PQR-24-PR-102.pdf, p. 1].");
+  });
 });
 
 describe("rewriteTableOperationCitations", () => {

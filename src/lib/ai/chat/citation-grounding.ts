@@ -3,6 +3,7 @@ import type { UIMessage } from "ai";
 import { hasSupportedAttachmentExtension } from "@/lib/attachments/file-types";
 import { resolveCitedAttachment } from "@/lib/citations/resolve-cited-attachment";
 import {
+  canonicalizeSourceCitationBracket,
   isSourceCitationBracket,
   parseSourceCitation,
   splitSourceCitationParts,
@@ -275,7 +276,7 @@ function rewriteSourceCitationBracket(
     .map((part) => rewriteCitationPart(part, ledger))
     .filter((part) => part.trim().length > 0);
   if (rewritten.length === 0) return "";
-  return `[${rewritten.join(", ")}]`;
+  return canonicalizeSourceCitationBracket(`[${rewritten.join(", ")}]`);
 }
 
 function rewriteCitationPart(
