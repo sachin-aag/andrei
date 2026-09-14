@@ -18,6 +18,8 @@ describe("isCitationShapedBracket", () => {
       true
     );
     expect(isCitationShapedBracket("[protocol.docx]")).toBe(true);
+    expect(isCitationShapedBracket("[batch-coa.pdf, p. 1-3]")).toBe(true);
+    expect(isCitationShapedBracket("[batch-coa.pdf, p. 1–3]")).toBe(true);
   });
 
   it("treats numeric markers as citations but not as source cites", () => {
@@ -263,6 +265,13 @@ describe("parseSourceCitation", () => {
       pages: [100],
     });
   });
+
+  it("parses a hyphen page range without expanding it", () => {
+    expect(parseSourceCitation("[batch-coa.pdf, p. 1-3]")).toEqual({
+      filename: "batch-coa.pdf",
+      pages: [1, 3],
+    });
+  });
 });
 
 describe("splitSourceCitationParts", () => {
@@ -311,6 +320,17 @@ describe("splitSourceCitationParts", () => {
     ]);
   });
 
+  it("splits semicolon-combined files including a page range", () => {
+    expect(
+      splitSourceCitationParts(
+        "Alarm trend 01 April to 30 June 25 (2).pdf, p. 1; AAP-E-PR-070-036-R00 List of alarm and their action plan Filling.pdf, p. 1-3"
+      )
+    ).toEqual([
+      "Alarm trend 01 April to 30 June 25 (2).pdf, p. 1",
+      "AAP-E-PR-070-036-R00 List of alarm and their action plan Filling.pdf, p. 1-3",
+    ]);
+  });
+
   it("splits attachment-label lists", () => {
     expect(
       splitSourceCitationParts("Attachment_XIV, Attachment_VIII")
@@ -353,6 +373,20 @@ describe("sourceCitationLinkSpans", () => {
     );
     expect(match.slice(spans[1]!.from, spans[1]!.to)).toBe(
       "CSV-RTM-PR-053.pdf, p. 5"
+    );
+  });
+
+  it("makes two inner links for a semicolon-combined cite with a page range", () => {
+    const match =
+      "[Alarm trend 01 April to 30 June 25 (2).pdf, p. 1; AAP-E-PR-070-036-R00 List of alarm and their action plan Filling.pdf, p. 1-3]";
+    expect(isCitationShapedBracket(match)).toBe(true);
+    const spans = sourceCitationLinkSpans(match);
+    expect(spans).toHaveLength(2);
+    expect(spans[0]?.openRaw).toBe(
+      "[Alarm trend 01 April to 30 June 25 (2).pdf, p. 1]"
+    );
+    expect(spans[1]?.openRaw).toBe(
+      "[AAP-E-PR-070-036-R00 List of alarm and their action plan Filling.pdf, p. 1-3]"
     );
   });
 });
