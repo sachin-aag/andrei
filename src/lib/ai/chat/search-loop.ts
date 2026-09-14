@@ -159,6 +159,30 @@ function stepLocatedAttachment(
  * `emptyLimit` empty greps have already run. Shared by Document and Analytics
  * chat. `read_section` / `read_worksheet` are not progress.
  */
+function payloadKeepSearchOpen(output: unknown): boolean {
+  const payload = unwrapToolPayload(output);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.keepSearchOpen === true) return true;
+  return record.status === "unsupported_facts";
+}
+
+function stepKeepSearchOpen(step: SearchLoopStep): boolean {
+  for (const result of step.toolResults ?? []) {
+    if (payloadKeepSearchOpen(toolPayload(result))) return true;
+  }
+  for (const part of step.content ?? []) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    const record = part as Record<string, unknown>;
+    if (payloadKeepSearchOpen(unwrapToolPayload(record.output ?? record.result))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function searchLoopDirective(
   steps: readonly SearchLoopStep[],
   options: SearchLoopOptions = {}
@@ -166,6 +190,10 @@ export function searchLoopDirective(
   const searchTool = options.searchTool ?? DEFAULT_SEARCH_TOOL;
   const locateTools = options.locateTools ?? DEFAULT_ATTACHMENT_LOCATE_TOOLS;
   const emptyLimit = options.emptyLimit ?? SEARCH_LOOP_EMPTY_LIMIT;
+
+  if (steps.some((step) => stepKeepSearchOpen(step))) {
+    return "continue";
+  }
 
   let emptySearches = 0;
   for (const step of steps) {

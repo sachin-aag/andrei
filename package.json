@@ -51,6 +51,7 @@
     "@langfuse/client": "^5.11.1",
     "@langfuse/otel": "^5.11.0",
     "@langfuse/tracing": "^5.11.0",
+    "@leeoniya/ufuzzy": "^1.0.19",
     "@napi-rs/canvas": "^1.0.0",
     "@napi-rs/canvas-linux-x64-gnu": "^1.0.0",
     "@neondatabase/serverless": "^1.1.0",

@@ -174,6 +174,8 @@ export const auditActionEnum = pgEnum("audit_action", [
   "analysis_created",
   "analysis_updated",
   "analysis_deleted",
+  "claim_verified",
+  "claim_unsupported",
 ]);
 
 export const auditEntityEnum = pgEnum("audit_entity", [

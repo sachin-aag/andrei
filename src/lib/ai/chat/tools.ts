@@ -190,6 +190,7 @@ import {
   DOCUMENT_SEARCH_MODES,
   listDocumentPagesForReview,
   listReadyDocumentsForReport,
+  loadDocumentPageEvidence,
   readDocumentOutline,
   readDocumentPage,
   searchReportDocumentsMany,
@@ -207,14 +208,21 @@ import { listActiveAttachments } from "@/lib/attachments/list-active";
 import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
-import { DocumentReviewSession ,
+import {
+  DocumentReviewSession,
   documentReviewCoverageKey,
 } from "@/lib/ai/chat/document-review";
 import {
   CitationPageLedger,
-  rewriteCitationPagesInText,
-  rewriteTableOperationCitations,
 } from "@/lib/ai/chat/citation-grounding";
+import {
+  groundDraftText,
+  groundTableOperation,
+  unsupportedFactsToolResult,
+  type UnsupportedFactsToolResult,
+} from "@/lib/ai/chat/ground-draft";
+import { scoreDraftEntailment } from "@/lib/ai/chat/entailment";
+import { getCustomerPack, type UnsupportedFactPolicy } from "@/lib/customers/packs";
 import {
   compareDraftedInventory,
   type RecommendedResultsInventory,
@@ -258,7 +266,8 @@ export type ProposeEditResult =
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
-  | { status: "review_incomplete"; message: string };
+  | { status: "review_incomplete"; message: string }
+  | UnsupportedFactsToolResult;
 
 export type InsertImageResult =
   | {
@@ -297,7 +306,8 @@ export type EditTableResult =
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
-  | { status: "review_incomplete"; message: string };
+  | { status: "review_incomplete"; message: string }
+  | UnsupportedFactsToolResult;
 
 export type DraftFieldResult =
   | {
@@ -323,7 +333,8 @@ export type DraftFieldResult =
       missingIds: string[];
       unexpectedIds: string[];
       collapsedIds: Array<{ drafted: string; expected: string }>;
-    };
+    }
+  | UnsupportedFactsToolResult;
 
 export type AskUserQuestion = {
   question: string;
@@ -758,7 +769,11 @@ function buildSearchDocumentsTool(opts: {
     }
     const merged = Array.from(byId.values());
     for (const hit of merged) {
-      citationLedger.record(hit.filename, hit.pageNumber, hit.attachmentId);
+      citationLedger.record(hit.filename, hit.pageNumber, hit.attachmentId, {
+        quote: hit.quote || hit.text,
+        citationId: hit.citationId,
+        sourceSha256: hit.sourceSha256,
+      });
     }
     const truncated =
       merged.length >= SEARCH_DOCUMENTS_RESULT_CAP ||
@@ -907,6 +922,8 @@ export function buildChatTools(opts: {
   messages?: UIMessage[];
   /** Document-chat scatter plots from attachments. Off when embedding Document tools in Analytics chat. */
   includePlotMeasurements?: boolean;
+  /** Override pack policy in tests. */
+  unsupportedFactPolicy?: UnsupportedFactPolicy;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1079,6 +1096,47 @@ export function buildChatTools(opts: {
   const messages = opts.messages ?? [];
   const citationLedger = new CitationPageLedger();
   citationLedger.seedFromMessages(messages);
+  const unsupportedFactPolicy: UnsupportedFactPolicy =
+    opts.unsupportedFactPolicy ?? getCustomerPack().unsupportedFactPolicy;
+  let evidenceHydrate: Promise<void> | null = null;
+  const ensureEvidence = () => {
+    evidenceHydrate ??= citationLedger.hydrateQuotes(async (pages) => {
+      try {
+        return await loadDocumentPageEvidence({ reportId, pages });
+      } catch (err) {
+        console.error("citation ledger hydrate failed", err);
+        return [];
+      }
+    });
+    return evidenceHydrate;
+  };
+  const recordClaimAudit = (input: {
+    suggestionId?: string;
+    blocked: boolean;
+    provenanceClaims: number;
+    unsourced: number;
+  }) => {
+    if (!actor) return;
+    void recordAuditEvent({
+      actor,
+      action: input.blocked || input.unsourced > 0 ? "claim_unsupported" : "claim_verified",
+      entityType: "suggestion",
+      entityId: input.suggestionId ?? reportId,
+      reportId,
+      summary: input.blocked
+        ? "Blocked a draft with facts that were not on retrieved pages"
+        : input.unsourced > 0
+          ? `Proposed a draft with ${input.unsourced} unsourced hard fact(s)`
+          : "Verified hard facts in a proposed draft against retrieved pages",
+      metadata: {
+        provenanceClaims: input.provenanceClaims,
+        unsourced: input.unsourced,
+        policy: unsupportedFactPolicy,
+      },
+    }).catch((err) => {
+      console.error("claim provenance audit failed", err);
+    });
+  };
   const includePlotMeasurements = opts.includePlotMeasurements ?? true;
   const citationRule = documentCitationRule(citationsAtEndOfSection);
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
@@ -1469,7 +1527,11 @@ export function buildChatTools(opts: {
         if (outOfScope) return outOfScope;
         const page = await readDocumentPage({ reportId, attachmentId, pageNumber });
         if (!page) return { status: "not_found" as const };
-        citationLedger.record(page.filename, page.pageNumber, page.attachmentId);
+        citationLedger.record(page.filename, page.pageNumber, page.attachmentId, {
+          quote: [page.transcript, page.visualInterpretation]
+            .filter((part) => part.trim().length > 0)
+            .join("\n"),
+        });
         return {
           status: "found" as const,
           page: {
@@ -1548,9 +1610,30 @@ export function buildChatTools(opts: {
           reportId,
           attachmentIds: selected,
         });
-        const started = documentReview.start({ objective, pages });
         const selectedDocs = ready.filter((doc) =>
           selected.includes(doc.attachmentId)
+        );
+        const coverageSources = selectedDocs.map((doc) => ({
+          attachmentId: doc.attachmentId,
+          pageCount: doc.pageCount ?? 0,
+          ingestRunId: doc.ingestRunId,
+        }));
+        const started = documentReview.start({
+          objective,
+          pages,
+          coverageSources,
+        });
+        const queuedIds = new Set(started.queuedAttachmentIds);
+        const skippedDocuments = selectedDocs
+          .filter((doc) => !queuedIds.has(doc.attachmentId))
+          .map((doc) => ({
+            attachmentId: doc.attachmentId,
+            filename: doc.filename,
+            pageCount: doc.pageCount ?? 0,
+          }));
+        const selectedPageTotal = selectedDocs.reduce(
+          (sum, doc) => sum + (doc.pageCount ?? 0),
+          0
         );
         return {
           status: started.status,
@@ -1560,13 +1643,12 @@ export function buildChatTools(opts: {
           remainingBatches: started.remainingBatches,
           documentCount: started.documentCount,
           attachmentIds: selected,
-          coverageKey: documentReviewCoverageKey(
-            selectedDocs.map((doc) => ({
-              attachmentId: doc.attachmentId,
-              pageCount: doc.pageCount ?? 0,
-              ingestRunId: doc.ingestRunId,
-            }))
-          ),
+          coverageKey: documentReviewCoverageKey(coverageSources),
+          queuedPages: started.totalPages,
+          inputPageCount: started.inputPageCount,
+          truncated:
+            started.totalPages < selectedPageTotal || skippedDocuments.length > 0,
+          skippedDocuments,
           documents: selectedDocs.map(reviewDocumentIndexItem),
           nextAction: started.nextAction,
         };
@@ -1762,17 +1844,58 @@ export function buildChatTools(opts: {
           } as ProposeEditResult;
         }
 
+        await ensureEvidence();
+        const groundedInsert = groundDraftText({
+          text: prepared.insertText,
+          ledger: citationLedger,
+          policy: unsupportedFactPolicy,
+        });
+        const groundedSecond = prepared.second
+          ? groundDraftText({
+              text: prepared.second.insertText,
+              ledger: citationLedger,
+              policy: unsupportedFactPolicy,
+            })
+          : null;
+        if (groundedInsert.blocked || groundedSecond?.blocked) {
+          const unsupported = [
+            ...groundedInsert.unsupported,
+            ...(groundedSecond?.unsupported ?? []),
+          ];
+          recordClaimAudit({
+            blocked: true,
+            provenanceClaims:
+              groundedInsert.provenance.claims.length +
+              (groundedSecond?.provenance.claims.length ?? 0),
+            unsourced: unsupported.length,
+          });
+          return unsupportedFactsToolResult({
+            unsupported,
+            draftWithPlaceholders: groundedInsert.text,
+          });
+        }
+        const claimProvenance = {
+          claims: [
+            ...groundedInsert.provenance.claims,
+            ...(groundedSecond?.provenance.claims ?? []),
+          ],
+          policy: unsupportedFactPolicy,
+        };
+        if (claimProvenance.claims.length > 0) {
+          void scoreDraftEntailment({
+            draft: groundedInsert.text,
+            provenance: claimProvenance,
+            reportId,
+          });
+        }
         const normalizedInsert = normalizeSuggestionInsertText(
-          rewriteCitationPagesInText(prepared.insertText, citationLedger)
+          groundedInsert.text
         );
         const second = prepared.second
           ? {
               ...prepared.second,
               insertText: normalizeSuggestionInsertText(
-                rewriteCitationPagesInText(
-                  prepared.second.insertText,
-                  citationLedger
-                )
+                groundedSecond?.text ?? prepared.second.insertText
               ),
             }
           : undefined;
@@ -1894,6 +2017,8 @@ export function buildChatTools(opts: {
             reasoning,
             scope: prepared.scope,
             second,
+            claimProvenance:
+              claimProvenance.claims.length > 0 ? claimProvenance : undefined,
           };
           if (leadIn) {
             const pairBlock = takeUnusedBlock(blockPairing, section, resolvedField);
@@ -1937,6 +2062,16 @@ export function buildChatTools(opts: {
             kind: "ai_fix",
             evaluationId: null,
           });
+          if (claimProvenance.claims.length > 0) {
+            recordClaimAudit({
+              suggestionId,
+              blocked: false,
+              provenanceClaims: claimProvenance.claims.length,
+              unsourced: claimProvenance.claims.filter(
+                (claim) => claim.status === "unsourced"
+              ).length,
+            });
+          }
           if (range) {
             recordNearbyEdit(nearbyEdits, {
               suggestionId,
@@ -2817,10 +2952,33 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
-        const capturedOp = rewriteTableOperationCitations(
-          captureTableOperationSnapshots(fieldDoc, parsedOp),
-          citationLedger
-        );
+        await ensureEvidence();
+        const groundedTable = groundTableOperation({
+          operation: captureTableOperationSnapshots(fieldDoc, parsedOp),
+          ledger: citationLedger,
+          policy: unsupportedFactPolicy,
+        });
+        if (groundedTable.blocked) {
+          recordClaimAudit({
+            blocked: true,
+            provenanceClaims: groundedTable.provenance.claims.length,
+            unsourced: groundedTable.unsupported.length,
+          });
+          return unsupportedFactsToolResult({
+            unsupported: groundedTable.unsupported,
+            draftWithPlaceholders: groundedTable.unsupported
+              .map((fact) => fact.text)
+              .join("; "),
+          });
+        }
+        if (groundedTable.provenance.claims.length > 0) {
+          void scoreDraftEntailment({
+            draft: JSON.stringify(groundedTable.operation),
+            provenance: groundedTable.provenance,
+            reportId,
+          });
+        }
+        const capturedOp = groundedTable.operation;
         const fieldText = sectionFieldPlainText(
           loaded.content,
           section,
@@ -2900,6 +3058,10 @@ export function buildChatTools(opts: {
           reasoning,
           tableOperation: stripped.operation,
           second,
+          claimProvenance:
+            groundedTable.provenance.claims.length > 0
+              ? groundedTable.provenance
+              : undefined,
         };
         if (appendTable) {
           const leadIn = takeUnusedLeadIn(blockPairing, section, resolvedField);
@@ -2942,6 +3104,14 @@ export function buildChatTools(opts: {
           kind: "ai_fix",
           evaluationId: null,
         });
+        if (groundedTable.provenance.claims.length > 0) {
+          recordClaimAudit({
+            suggestionId,
+            blocked: false,
+            provenanceClaims: groundedTable.provenance.claims.length,
+            unsourced: groundedTable.unsupported.length,
+          });
+        }
 
         const supersededSuggestionIds = await dismissCovered({
           section,
@@ -3097,13 +3267,36 @@ export function buildChatTools(opts: {
         }
 
         const suggestionId = createId();
+        await ensureEvidence();
         const normalizedMarkdown = normalizeSuggestionInsertText(markdown);
-        const draftMarkdown = rewriteCitationPagesInText(
-          citationsAtEndOfSection
-            ? moveCitationsToEndOfText(normalizedMarkdown)
-            : normalizedMarkdown,
-          citationLedger
-        );
+        const relocated = citationsAtEndOfSection
+          ? moveCitationsToEndOfText(normalizedMarkdown)
+          : normalizedMarkdown;
+        const groundedDraft = groundDraftText({
+          text: relocated,
+          ledger: citationLedger,
+          policy: unsupportedFactPolicy,
+        });
+        if (groundedDraft.blocked) {
+          recordClaimAudit({
+            suggestionId,
+            blocked: true,
+            provenanceClaims: groundedDraft.provenance.claims.length,
+            unsourced: groundedDraft.unsupported.length,
+          });
+          return unsupportedFactsToolResult({
+            unsupported: groundedDraft.unsupported,
+            draftWithPlaceholders: groundedDraft.text,
+          });
+        }
+        if (groundedDraft.provenance.claims.length > 0) {
+          void scoreDraftEntailment({
+            draft: groundedDraft.text,
+            provenance: groundedDraft.provenance,
+            reportId,
+          });
+        }
+        const draftMarkdown = groundedDraft.text;
         if (committing) {
           return commitFieldEdit({
             section,
@@ -3127,6 +3320,10 @@ export function buildChatTools(opts: {
               {
                 markdown: draftMarkdown,
                 reasoning,
+                claimProvenance:
+                  groundedDraft.provenance.claims.length > 0
+                    ? groundedDraft.provenance
+                    : undefined,
               },
               loaded.content as Record<string, unknown>,
               section,
@@ -3142,6 +3339,14 @@ export function buildChatTools(opts: {
           kind: "ai_redraft",
           evaluationId: null,
         });
+        if (groundedDraft.provenance.claims.length > 0) {
+          recordClaimAudit({
+            suggestionId,
+            blocked: false,
+            provenanceClaims: groundedDraft.provenance.claims.length,
+            unsourced: groundedDraft.unsupported.length,
+          });
+        }
 
         const supersededSuggestionIds = await dismissCovered({
           section,

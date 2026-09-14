@@ -1,4 +1,5 @@
 import type { CriterionStatus } from "@/db/schema";
+import { textHasSourceCitation } from "@/lib/citations/cell-has-source";
 import type { EvaluationContext } from "@/lib/document-types/types";
 import {
   hasReference,
@@ -243,6 +244,20 @@ export function checkMediaFillTable(ctx: EvaluationContext) {
     }
     if (isOutOfTolerance(row.result) && !hasReference(row.deviationRef)) {
       problems.push(`${label} failed but has no linked deviation`);
+    }
+    const sourcedCells: Array<[string, string]> = [
+      ["media fill number", row.mediaFillNo],
+      ["date", row.date],
+      ["units filled", row.unitsFilled],
+      ["contaminated units", row.contaminatedUnits],
+    ];
+    for (const [cellLabel, value] of sourcedCells) {
+      if (!value.trim()) continue;
+      if (!textHasSourceCitation(value)) {
+        problems.push(
+          `${label} ${cellLabel} has no source citation ([filename] or [n])`
+        );
+      }
     }
   });
   return listProblems(problems, `${parsed.rows.length} media fill(s) recorded`);

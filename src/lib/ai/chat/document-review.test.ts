@@ -15,6 +15,8 @@ import {
   prepareDocumentReviewStep,
   REVIEW_EXTRACT_CONCURRENCY,
   REVIEW_FINISH_FINDINGS_CAP,
+  REVIEW_PAGE_CAP,
+  selectReviewPages,
   capFindingsForFinish,
   type ReviewPageSource,
 } from "./document-review";
@@ -439,5 +441,47 @@ describe("capFindingsForFinish", () => {
     expect(capped.findings).toHaveLength(REVIEW_FINISH_FINDINGS_CAP);
     expect(capped.omitted).toBe(17);
     expect(capped.findings[0]?.id).toBe("d1");
+  });
+});
+
+describe("selectReviewPages", () => {
+  it("round-robins so an earlier attachment cannot consume the cap", () => {
+    const pages = [
+      ...Array.from({ length: 280 }, (_, i) =>
+        page(i + 1, `early ${i + 1}`, "att_a")
+      ),
+      ...Array.from({ length: 80 }, (_, i) =>
+        page(i + 1, `later ${i + 1}`, "att_b")
+      ),
+    ];
+    const selected = selectReviewPages(pages, REVIEW_PAGE_CAP);
+    expect(selected).toHaveLength(REVIEW_PAGE_CAP);
+    const byAttachment = selected.reduce<Record<string, number>>((acc, row) => {
+      acc[row.attachmentId] = (acc[row.attachmentId] ?? 0) + 1;
+      return acc;
+    }, {});
+    expect(byAttachment.att_a).toBe(220);
+    expect(byAttachment.att_b).toBe(80);
+  });
+});
+
+describe("DocumentReviewSession coverage identity", () => {
+  it("uses the selected documents' full page counts for the coverage key", async () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    session.start({
+      objective: "ids",
+      pages: [page(1, "SW-SST-1 Pass", "att_a")],
+      coverageSources: [
+        { attachmentId: "att_a", pageCount: 400, ingestRunId: "run" },
+        { attachmentId: "att_b", pageCount: 80, ingestRunId: "run" },
+      ],
+    });
+    await session.continue();
+    const finished = session.finish();
+    expect(finished.status).toBe("complete");
+    expect(finished.coverageKey).toContain("att_a:400:");
+    expect(finished.coverageKey).toContain("att_b:80:");
   });
 });

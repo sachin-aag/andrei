@@ -73,6 +73,7 @@ const DEFAULT_CANDIDATE_LIMIT = 40;
 const RRF_K = 60;
 const PAGE_TEXT_LIMIT = 12_000;
 const OUTLINE_PAGE_CAP = 300;
+const REVIEW_PAGE_FETCH_CAP = 2500;
 const OUTLINE_CONTEXT_CHARS = 400;
 const KEYWORD_TOKEN_RE = /[A-Za-z0-9]/;
 
@@ -143,6 +144,7 @@ export type ReviewPageSource = {
   transcript: string;
   pageContext: string | null;
   printedPageLabel: string | null;
+  ingestRunId?: string | null;
 };
 
 export type DocumentPageRead = {
@@ -1462,35 +1464,109 @@ export async function listDocumentPagesForReview({
   const ids = normalizeAttachmentIdFilter(attachmentIds);
   if (ids.length === 0) return [];
 
-  const pages = await db
-    .select({
-      attachmentId: reportAttachments.id,
-      filename: reportAttachments.filename,
-      pageNumber: documentPages.pageNumber,
-      transcript: documentPages.transcript,
-      pageContext: documentPages.pageContext,
-      printedPageLabel: documentPages.printedPageLabel,
-    })
-    .from(reportAttachments)
-    .innerJoin(documentPages, reportAttachmentPageJoin())
-    .where(
-      and(
-        eq(reportAttachments.reportId, reportId),
-        inArray(reportAttachments.id, ids),
-        isNull(reportAttachments.deletedAt),
-        isNotNull(reportAttachments.activeIngestRunId),
-        eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
-      )
+  const perDoc = Math.max(1, Math.ceil(REVIEW_PAGE_FETCH_CAP / ids.length));
+  const groups = await Promise.all(
+    ids.map((id) =>
+      db
+        .select({
+          attachmentId: reportAttachments.id,
+          filename: reportAttachments.filename,
+          pageNumber: documentPages.pageNumber,
+          transcript: documentPages.transcript,
+          pageContext: documentPages.pageContext,
+          printedPageLabel: documentPages.printedPageLabel,
+          ingestRunId: reportAttachments.activeIngestRunId,
+        })
+        .from(reportAttachments)
+        .innerJoin(documentPages, reportAttachmentPageJoin())
+        .where(
+          and(
+            eq(reportAttachments.reportId, reportId),
+            eq(reportAttachments.id, id),
+            isNull(reportAttachments.deletedAt),
+            isNotNull(reportAttachments.activeIngestRunId),
+            eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
+          )
+        )
+        .orderBy(documentPages.pageNumber)
+        .limit(perDoc)
     )
-    .orderBy(reportAttachments.id, documentPages.pageNumber)
-    .limit(OUTLINE_PAGE_CAP);
+  );
 
-  return pages.map((page) => ({
+  return groups.flat().map((page) => ({
     attachmentId: page.attachmentId,
     filename: page.filename,
     pageNumber: page.pageNumber,
     transcript: page.transcript ?? "",
     pageContext: page.pageContext ?? null,
     printedPageLabel: page.printedPageLabel,
+    ingestRunId: page.ingestRunId,
   }));
+}
+
+export async function loadDocumentPageEvidence({
+  reportId,
+  pages,
+}: {
+  reportId: string;
+  pages: readonly { attachmentId: string; pageNumber: number }[];
+}): Promise<
+  Array<{
+    attachmentId: string;
+    filename: string;
+    pageNumber: number;
+    quote: string;
+    ingestRunId: string;
+  }>
+> {
+  if (pages.length === 0) return [];
+  const attachmentIds = [
+    ...new Set(pages.map((page) => page.attachmentId).filter(Boolean)),
+  ];
+  if (attachmentIds.length === 0) return [];
+  const pageNumbers = [
+    ...new Set(pages.map((page) => page.pageNumber).filter((n) => n >= 1)),
+  ];
+  if (pageNumbers.length === 0) return [];
+
+  const rows = await db
+    .select({
+      attachmentId: reportAttachments.id,
+      filename: reportAttachments.filename,
+      pageNumber: documentPages.pageNumber,
+      transcript: documentPages.transcript,
+      visualInterpretation: documentPages.visualInterpretation,
+      ingestRunId: reportAttachments.activeIngestRunId,
+    })
+    .from(reportAttachments)
+    .innerJoin(documentPages, reportAttachmentPageJoin())
+    .where(
+      and(
+        eq(reportAttachments.reportId, reportId),
+        inArray(reportAttachments.id, attachmentIds),
+        inArray(documentPages.pageNumber, pageNumbers),
+        isNull(reportAttachments.deletedAt),
+        isNotNull(reportAttachments.activeIngestRunId),
+        eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
+      )
+    );
+
+  const wanted = new Set(
+    pages.map((page) => `${page.attachmentId}:${page.pageNumber}`)
+  );
+  return rows.flatMap((row) => {
+    if (!wanted.has(`${row.attachmentId}:${row.pageNumber}`)) return [];
+    const quote = [row.transcript, row.visualInterpretation]
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+      .join("\n");
+    return [
+      {
+        attachmentId: row.attachmentId,
+        filename: row.filename,
+        pageNumber: row.pageNumber,
+        quote,
+        ingestRunId: row.ingestRunId ?? "",
+      },
+    ];
+  });
 }

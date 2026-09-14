@@ -16,11 +16,13 @@ import {
   checkQmsRecords,
   checkQualificationFormatScope,
   checkRecommendationSelected,
+  checkMediaFillTable,
 } from "./elr/deterministic-checks";
 import {
   ELR_ALARM_HEADERS,
   ELR_BREAKDOWN_HEADERS,
   ELR_CALIBRATION_HEADERS,
+  ELR_MEDIA_FILL_HEADERS,
   ELR_MONITORING_HEADERS,
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
   ELR_QMS_HEADERS,
@@ -141,7 +143,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).toContain("elr_qms");
     expect(def.chat.inventorySections).not.toContain("elr_objective");
     expect(def.chat.inventorySections).not.toContain("elr_scope");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v1");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v2");
   });
 
   it("maps every section into the export template data", () => {
@@ -179,6 +181,42 @@ describe("ELR cross-reference checks", () => {
     const result = checkMonitoringExcursionsLinked(ctx({ table }));
     expect(result.status).toBe("not_met");
     expect(result.reasoning).toMatch(/excursion with no linked deviation/i);
+  });
+
+  it("requires a source citation on filled media-fill identity cells", () => {
+    const table = tableDoc([
+      [...ELR_MEDIA_FILL_HEADERS],
+      row(ELR_MEDIA_FILL_HEADERS, {
+        "Sr. No.": "1",
+        "Media Fill No.": "MF-25-VIAL-01",
+        "Date": "12 Jan 2024",
+        "Units Filled": "10,000",
+        "Contaminated Units": "0",
+        "Result": "Pass",
+      }),
+    ]);
+    const result = checkMediaFillTable(
+      ctx({ table }, { section: "elr_media_fill" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/no source citation/i);
+  });
+
+  it("passes a media-fill row whose sourced cells carry citations", () => {
+    const table = tableDoc([
+      [...ELR_MEDIA_FILL_HEADERS],
+      row(ELR_MEDIA_FILL_HEADERS, {
+        "Sr. No.": "1",
+        "Media Fill No.": "MF-24-001 [PQR-24-PR-102.pdf, p. 8]",
+        "Date": "12 Jan 2024 [PQR-24-PR-102.pdf, p. 8]",
+        "Units Filled": "10,000 [1]",
+        "Contaminated Units": "0 [1]",
+        "Result": "Pass",
+      }),
+    ]);
+    expect(
+      checkMediaFillTable(ctx({ table }, { section: "elr_media_fill" })).status
+    ).toBe("met");
   });
 
   it("passes a monitoring excursion that carries a deviation", () => {

@@ -33,6 +33,8 @@ export const REVIEW_MAX_PAGES_PER_BATCH = 6;
 export const REVIEW_DENSE_PAGE_CHARS = 6_000;
 export const REVIEW_PAGE_TEXT_LIMIT = 12_000;
 export const REVIEW_PAGE_CAP = 300;
+/** Safety cap when listing pages for a review so one file cannot starve others. */
+export const REVIEW_PAGE_FETCH_CAP = 2500;
 /** In-flight extract calls inside one continue_document_review. */
 export const REVIEW_EXTRACT_CONCURRENCY = 8;
 const REVIEW_DRAIN_MAX_EXTRACTS = 800;
@@ -86,7 +88,43 @@ export type ReviewPageSource = {
   transcript: string;
   pageContext: string | null;
   printedPageLabel: string | null;
+  ingestRunId?: string | null;
 };
+
+/**
+ * Fair-share a page cap across attachments (round-robin) so a
+ * lexicographically earlier file cannot consume the entire review.
+ */
+export function selectReviewPages<T extends { attachmentId: string }>(
+  pages: readonly T[],
+  cap: number
+): T[] {
+  if (pages.length <= cap) return [...pages];
+  const queues = new Map<string, T[]>();
+  const order: string[] = [];
+  for (const page of pages) {
+    const existing = queues.get(page.attachmentId);
+    if (existing) {
+      existing.push(page);
+      continue;
+    }
+    order.push(page.attachmentId);
+    queues.set(page.attachmentId, [page]);
+  }
+  const selected: T[] = [];
+  while (selected.length < cap) {
+    let progressed = false;
+    for (const id of order) {
+      if (selected.length >= cap) break;
+      const queue = queues.get(id);
+      if (!queue || queue.length === 0) continue;
+      selected.push(queue.shift()!);
+      progressed = true;
+    }
+    if (!progressed) break;
+  }
+  return selected;
+}
 
 export type DocumentReviewFinding = {
   id: string;
@@ -158,7 +196,7 @@ function coverageSourcesFromReviewPages(
     byAttachment.set(page.attachmentId, {
       attachmentId: page.attachmentId,
       pageCount: 1,
-      ingestRunId: null,
+      ingestRunId: page.ingestRunId ?? null,
     });
   }
   return [...byAttachment.values()];
@@ -234,12 +272,20 @@ export class DocumentReviewSession {
   start(input: {
     objective: string;
     pages: ReviewPageSource[];
+    /**
+     * Identity for rehydrate. Pass the selected documents' full page
+     * counts (not the capped review set) so a truncated walk of the same
+     * files does not force another review.
+     */
+    coverageSources?: DocumentReviewCoverageSource[];
   }): {
     status: "started" | "no_pages" | "already_in_progress";
     totalPages: number;
     documentCount: number;
     remainingBatches: number;
     nextAction: "continue_document_review" | null;
+    queuedAttachmentIds: string[];
+    inputPageCount: number;
   } {
     if (this.phaseState === "in_progress" || this.phaseState === "ready_to_finish") {
       return {
@@ -248,10 +294,12 @@ export class DocumentReviewSession {
         documentCount: uniqueDocuments(input.pages),
         remainingBatches: this.queue.length,
         nextAction: this.phaseState === "ready_to_finish" ? null : "continue_document_review",
+        queuedAttachmentIds: [...new Set(input.pages.map((page) => page.attachmentId))],
+        inputPageCount: input.pages.length,
       };
     }
 
-    const pages = input.pages.slice(0, REVIEW_PAGE_CAP);
+    const pages = selectReviewPages(input.pages, REVIEW_PAGE_CAP);
     if (pages.length === 0) {
       this.phaseState = "idle";
       this.totalPages = 0;
@@ -261,6 +309,8 @@ export class DocumentReviewSession {
         documentCount: 0,
         remainingBatches: 0,
         nextAction: null,
+        queuedAttachmentIds: [],
+        inputPageCount: 0,
       };
     }
 
@@ -276,7 +326,9 @@ export class DocumentReviewSession {
     this.reviewedPageKeys = new Set();
     this.totalPages = pages.length;
     this.coverageKey = documentReviewCoverageKey(
-      coverageSourcesFromReviewPages(pages)
+      input.coverageSources && input.coverageSources.length > 0
+        ? input.coverageSources
+        : coverageSourcesFromReviewPages(pages)
     );
     this.findingSeq = 0;
     this.lastRecommended = null;
@@ -289,6 +341,8 @@ export class DocumentReviewSession {
       remainingBatches: this.queue.length,
       nextAction:
         this.phaseState === "in_progress" ? "continue_document_review" : null,
+      queuedAttachmentIds: [...new Set(pages.map((page) => page.attachmentId))],
+      inputPageCount: input.pages.length,
     };
   }
 

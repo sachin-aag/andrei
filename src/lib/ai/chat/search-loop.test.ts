@@ -83,6 +83,26 @@ describe("searchLoopDirective", () => {
       ])
     ).toBe("continue");
   });
+
+  it("keeps search open after unsupported_facts so the model can grep again", () => {
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [{ toolName: "draft_field" }],
+          toolResults: [
+            {
+              toolName: "draft_field",
+              output: {
+                status: "unsupported_facts",
+                keepSearchOpen: true,
+                unsupported: [{ text: "MF-25-VIAL-01", kind: "identifier" }],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+  });
 });
 
 describe("withoutSearchTool", () => {

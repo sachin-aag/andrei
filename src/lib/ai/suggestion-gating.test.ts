@@ -531,3 +531,45 @@ describe("parseAiFixCommentContent supersededSuggestionIds", () => {
     expect(parsed.suggestionIntent).toBe("new");
   });
 });
+
+describe("parseAiFixCommentContent claimProvenance", () => {
+  it("round-trips verified and unsourced claims", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "E/PR/070",
+      reasoning: "Name the machine",
+      claimProvenance: {
+        policy: "block",
+        claims: [
+          {
+            text: "E/PR/070",
+            kind: "identifier",
+            status: "verified",
+            cited: { filename: "PQR-24-PR-102.pdf", page: 2 },
+            source: {
+              filename: "PQR-24-PR-102.pdf",
+              page: 2,
+              attachmentId: "att-pqr",
+            },
+          },
+        ],
+      },
+    });
+    expect(parseAiFixCommentContent(json).claimProvenance).toEqual({
+      policy: "block",
+      claims: [
+        {
+          text: "E/PR/070",
+          kind: "identifier",
+          status: "verified",
+          cited: { filename: "PQR-24-PR-102.pdf", page: 2 },
+          source: {
+            filename: "PQR-24-PR-102.pdf",
+            page: 2,
+            attachmentId: "att-pqr",
+          },
+        },
+      ],
+    });
+  });
+});
