@@ -768,7 +768,7 @@ async function lexicalChunkSearch({
   const plan = planSearchQuery(trimmed, { families: phraseFamilies });
   const needles = lexicalSearchNeedles(plan);
   if (needles.phrases.length === 0 && needles.tokens.length === 0) {
-    if (trimmed.length < 3) return [];
+    return [];
   }
 
   const candidateLimit = Math.max(limit * 5, DEFAULT_CANDIDATE_LIMIT);
@@ -785,12 +785,7 @@ async function lexicalChunkSearch({
   );
 
   const matchConditions = [];
-  const phrases =
-    needles.phrases.length > 0
-      ? needles.phrases
-      : trimmed.length >= 3 && needles.tokens.length === 0
-        ? [trimmed]
-        : [];
+  const phrases = needles.phrases;
   for (const phrase of phrases) {
     const phrasePattern = `%${escapeIlike(phrase)}%`;
     matchConditions.push(

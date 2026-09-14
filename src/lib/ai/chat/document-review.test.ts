@@ -542,6 +542,7 @@ describe("selectReviewPages", () => {
         page(i + 1, `later ${i + 1}`, "att_b")
       ),
     ];
+    // Binding test cap — not a walk-size limit. Production listing uses REVIEW_PAGE_FETCH_CAP.
     const selected = selectReviewPages(pages, 300);
     expect(selected).toHaveLength(300);
     const byAttachment = selected.reduce<Record<string, number>>((acc, row) => {

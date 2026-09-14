@@ -114,11 +114,11 @@ export function planSearchQuery(
   options?: { families?: readonly (readonly string[])[] }
 ): SearchQueryPlan {
   const original = trimmed.replace(/\s+/g, " ").trim();
-  const families = (options?.families ?? []).map((family) =>
+  const inputFamilies = (options?.families ?? []).map((family) =>
     family.map((term) => normalizeFamilyTerm(term)).filter(Boolean)
   );
   if (!original) {
-    return { original, tsQuery: null, phrases: [], tokens: [], families };
+    return { original, tsQuery: null, phrases: [], tokens: [], families: [] };
   }
 
   const parsed = parseQuotedPhrases(original);
@@ -132,12 +132,12 @@ export function planSearchQuery(
   const usedFamily = new Set<number>();
 
   const pushFamilyOrPhrase = (text: string) => {
-    const idx = families.findIndex(
+    const idx = inputFamilies.findIndex(
       (family, index) => !usedFamily.has(index) && familyTouchesQuery(text, family)
     );
     if (idx >= 0) {
       usedFamily.add(idx);
-      const family = families[idx]!;
+      const family = inputFamilies[idx]!;
       parts.push(`(${orFamily([...family, text])})`);
       return;
     }
@@ -156,26 +156,30 @@ export function planSearchQuery(
   } else if (tokens.length > 0) {
     const tokenParts: string[] = [];
     for (const token of tokens) {
-      const idx = families.findIndex(
+      const idx = inputFamilies.findIndex(
         (family, index) =>
           !usedFamily.has(index) && familyTouchesQuery(token, family)
       );
       if (idx >= 0) {
         usedFamily.add(idx);
-        tokenParts.push(`(${orFamily(families[idx]!)})`);
+        tokenParts.push(`(${orFamily(inputFamilies[idx]!)})`);
       } else {
         tokenParts.push(token);
       }
     }
     parts.push(tokenParts.join(" "));
   } else {
-    const idx = families.findIndex((family) =>
+    const idx = inputFamilies.findIndex((family) =>
       familyTouchesQuery(original, family)
     );
-    if (idx >= 0) parts.push(`(${orFamily(families[idx]!)})`);
+    if (idx >= 0) {
+      usedFamily.add(idx);
+      parts.push(`(${orFamily(inputFamilies[idx]!)})`);
+    }
   }
 
   const tsQuery = parts.length > 0 ? parts.join(" ") : null;
+  const families = inputFamilies.filter((_, index) => usedFamily.has(index));
   return { original, tsQuery, phrases, tokens, families };
 }
 
@@ -192,24 +196,20 @@ export function lexicalSearchNeedles(plan: SearchQueryPlan): {
   phrases: string[];
   tokens: string[];
 } {
-  const phrases = plan.phrases.length > 0 ? plan.phrases : [];
   const familyPhrases = plan.families.flatMap((family) =>
     family.filter((term) => /[\s-/]/.test(term) || term.length > 4)
   );
-  const phraseSet = new Set(
-    [...phrases, ...familyPhrases].map((phrase) => phrase.toLowerCase())
-  );
   const uniquePhrases: string[] = [];
-  for (const phrase of [...phrases, ...familyPhrases]) {
+  for (const phrase of [...plan.phrases, ...familyPhrases]) {
+    if (!phrase) continue;
     const key = phrase.toLowerCase();
-    if (!phrase || uniquePhrases.some((existing) => existing.toLowerCase() === key)) {
+    if (uniquePhrases.some((existing) => existing.toLowerCase() === key)) {
       continue;
     }
     uniquePhrases.push(phrase);
   }
-  const tokens =
-    uniquePhrases.length > 0
-      ? []
-      : plan.tokens.filter((token) => !phraseSet.has(token.toLowerCase()));
-  return { phrases: uniquePhrases, tokens };
+  return {
+    phrases: uniquePhrases,
+    tokens: uniquePhrases.length > 0 ? [] : plan.tokens,
+  };
 }

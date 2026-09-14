@@ -1221,7 +1221,7 @@ describe("buildChatTools document review", () => {
         attachmentId: "att_b",
         filename: "Appendix-B.pdf",
         pageNumber,
-        transcript: families[(pageNumber - 1) % families.length]!,
+        transcript: `TABLE 4 SOFTWARE REQUIREMENTS\n${families[(pageNumber - 1) % families.length]!} results`,
         pageContext: null,
         printedPageLabel: String(pageNumber),
       };

@@ -28,11 +28,10 @@ import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import {
   coverageObjectiveDigest,
   planReviewPages,
-  selectReviewPages,
 } from "@/lib/ai/chat/review-page-plan";
 
 export { DOCUMENT_REVIEW_TOOL_NAMES, type DocumentReviewToolName };
-export { selectReviewPages };
+export { selectReviewPages } from "@/lib/ai/chat/review-page-plan";
 
 export const REVIEW_TARGET_BATCH_CHARS = 8_000;
 export const REVIEW_MAX_PAGES_PER_BATCH = 6;

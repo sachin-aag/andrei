@@ -9,7 +9,7 @@ import { MEDIA_FILL_PHRASE_FAMILY } from "@/lib/ai/chat/search-phrase-families";
 describe("buildKeywordTsQuery", () => {
   it("keeps a two-word query as a phrase instead of OR-splitting Fill", () => {
     const tsQuery = buildKeywordTsQuery("Media Fill");
-    expect(tsQuery).toBe('"media fill"');
+    expect(tsQuery).toBe('"Media Fill"');
     expect(tsQuery).not.toMatch(/\bor\b/);
     expect(tsQuery?.toLowerCase()).not.toContain("filling");
   });
@@ -46,7 +46,15 @@ describe("buildKeywordTsQuery", () => {
 describe("lexicalSearchNeedles", () => {
   it("uses the phrase for ILIKE and does not AND Fill as a substring", () => {
     const needles = lexicalSearchNeedles(planSearchQuery("Media Fill"));
-    expect(needles.phrases).toEqual(["media fill"]);
+    expect(needles.phrases).toEqual(["Media Fill"]);
     expect(needles.tokens).toEqual([]);
+  });
+
+  it("does not ILIKE unused section-family phrases", () => {
+    const needles = lexicalSearchNeedles(
+      planSearchQuery("deviation number", { families: [MEDIA_FILL_PHRASE_FAMILY] })
+    );
+    expect(needles.phrases).toEqual(["deviation number"]);
+    expect(needles.phrases.join(" ").toLowerCase()).not.toContain("media fill");
   });
 });

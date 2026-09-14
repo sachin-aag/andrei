@@ -24,7 +24,8 @@ describe("planDocumentSearchQuery", () => {
 
   it("does not expand an unrelated query in that section", () => {
     const plan = planDocumentSearchQuery("deviation number", "elr_media_fill");
-    expect(plan.tsQuery).toBe("deviation number");
+    expect(plan.tsQuery).toBe('"deviation number"');
     expect(plan.tsQuery).not.toContain("media fill");
+    expect(plan.families).toEqual([]);
   });
 });
