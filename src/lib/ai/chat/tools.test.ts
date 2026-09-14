@@ -11,7 +11,10 @@ import {
   SEARCH_DOCUMENTS_MAX_QUERIES,
   SEARCH_EXCLUDE_PAGES_MAX,
 } from "@/lib/ai/chat/tools";
-import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import {
+  parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
+} from "@/lib/ai/suggestion-gating";
 import {
   DocumentReviewSession,
   extractReviewFindingsFromPages,
@@ -1576,6 +1579,77 @@ describe("buildChatTools propose vs commit", () => {
     expect(inserted).toHaveLength(1);
     expect(inserted[0]?.content).toContain("[protocol.pdf]");
     expect(inserted[0]?.content).not.toContain("p. 104");
+  });
+
+  it("grounds a mis-cited SOP then parks [n] (does not leave filename + [1])", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const protocol = "PRQP-25-PR-001 Protocol.pdf";
+    const report = "PRQR-25-PR-005 Report.pdf";
+    const sop = "SOP/DP/QA/014";
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      unsupportedFactPolicy: "block",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: sop },
+              output: {
+                results: [
+                  {
+                    filename: protocol,
+                    pageNumber: 21,
+                    attachmentId: "att-protocol",
+                    citation: `[${protocol}, p. 21]`,
+                    quote:
+                      "Periodic Re-Qualification protocol for isolator filling. Scope of testing only.",
+                  },
+                  {
+                    filename: report,
+                    pageNumber: 2,
+                    attachmentId: "att-report",
+                    citation: `[${report}, p. 2]`,
+                    quote: `This review is performed in accordance with Validation/Qualification Procedure ${sop}.`,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: `In accordance with Validation/Qualification Procedure ${sop} [${protocol}, p. 21].`,
+        reasoning: "Draft Objective.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    const markdown = parseAiRedraftCommentContent(
+      String(inserted[0]?.content)
+    ).markdown;
+    expect(markdown).toMatch(/SOP\/DP\/QA\/014 \[1\]/);
+    expect(markdown).toContain(`1. [${report}, p. 2]`);
+    expect(markdown).not.toMatch(/\[PRQR-25-PR-005 Report\.pdf, p\. 2\] \[1\]/);
+    expect(markdown).not.toContain(`[${protocol}, p. 21]`);
   });
 
   it("refuses draft_field on a filled field unless replaceFilledField is true", async () => {

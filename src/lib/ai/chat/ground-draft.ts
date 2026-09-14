@@ -88,6 +88,23 @@ function filenamesMatch(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
+const MARKER_AFTER_FACT = /^\s*\[(\d+)\]/;
+
+/** `1. [filename, p. N]` in a trailing Citations: list. */
+function numberedCitationLineRe(n: number): RegExp {
+  return new RegExp(`(^|\\n)${n}\\. \\[[^\\]\\n]+\\]`);
+}
+
+function rewriteParkedListSource(
+  text: string,
+  n: number,
+  source: string
+): string | null {
+  const re = numberedCitationLineRe(n);
+  if (!re.test(text)) return null;
+  return text.replace(re, `$1${n}. ${source}`);
+}
+
 function applyMovedCitations(
   text: string,
   facts: readonly HardFact[],
@@ -120,6 +137,19 @@ function applyMovedCitations(
       }
     }
     if (!replaced) {
+      const afterFact = next.slice(fact.end);
+      const marker = MARKER_AFTER_FACT.exec(afterFact);
+      if (marker) {
+        const rewritten = rewriteParkedListSource(
+          next,
+          Number(marker[1]),
+          neu
+        );
+        if (rewritten != null) {
+          next = rewritten;
+          continue;
+        }
+      }
       insertions.push({ at: fact.end, cite: ` ${neu}` });
     }
   }

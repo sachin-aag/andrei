@@ -1844,44 +1844,15 @@ export function buildChatTools(opts: {
               resolvedField
             )
           : null;
-        const prepared = prepareEditForCitationMode(
-          {
-            anchorText,
-            deleteText,
-            insertText,
-            scope: parsedScope,
-            second: rawSecond
-              ? {
-                  anchorText: rawSecond.anchorText ?? "",
-                  deleteText: rawSecond.deleteText ?? "",
-                  insertText: rawSecond.insertText ?? "",
-                  scope: parseEditScope(rawSecond.scope),
-                }
-              : undefined,
-          },
-          { citationsAtEndOfSection, existingFieldText: fieldText }
-        );
-        const check = checkProposedEdit(fieldText, prepared, fieldDoc);
-        if (check.status !== "ok") {
-          return {
-            status: check.status,
-            hint: proposedEditHint(check, {
-              anchorText: prepared.anchorText,
-              insertText: prepared.insertText,
-              fieldDoc,
-            }),
-          } as ProposeEditResult;
-        }
-
         await ensureEvidence();
         const groundedInsert = groundDraftText({
-          text: prepared.insertText,
+          text: insertText,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
         });
-        const groundedSecond = prepared.second
+        const groundedSecond = rawSecond
           ? groundDraftText({
-              text: prepared.second.insertText,
+              text: rawSecond.insertText ?? "",
               ledger: citationLedger,
               policy: unsupportedFactPolicy,
             })
@@ -1917,15 +1888,41 @@ export function buildChatTools(opts: {
             reportId,
           });
         }
+        const prepared = prepareEditForCitationMode(
+          {
+            anchorText,
+            deleteText,
+            insertText: groundedInsert.text,
+            scope: parsedScope,
+            second: rawSecond
+              ? {
+                  anchorText: rawSecond.anchorText ?? "",
+                  deleteText: rawSecond.deleteText ?? "",
+                  insertText: groundedSecond?.text ?? rawSecond.insertText ?? "",
+                  scope: parseEditScope(rawSecond.scope),
+                }
+              : undefined,
+          },
+          { citationsAtEndOfSection, existingFieldText: fieldText }
+        );
+        const check = checkProposedEdit(fieldText, prepared, fieldDoc);
+        if (check.status !== "ok") {
+          return {
+            status: check.status,
+            hint: proposedEditHint(check, {
+              anchorText: prepared.anchorText,
+              insertText: prepared.insertText,
+              fieldDoc,
+            }),
+          } as ProposeEditResult;
+        }
         const normalizedInsert = normalizeSuggestionInsertText(
-          groundedInsert.text
+          prepared.insertText
         );
         const second = prepared.second
           ? {
               ...prepared.second,
-              insertText: normalizeSuggestionInsertText(
-                groundedSecond?.text ?? prepared.second.insertText
-              ),
+              insertText: normalizeSuggestionInsertText(prepared.second.insertText),
             }
           : undefined;
         const leadIn = isAppendLeadIn({
@@ -3309,11 +3306,8 @@ export function buildChatTools(opts: {
         const suggestionId = createId();
         await ensureEvidence();
         const normalizedMarkdown = normalizeSuggestionInsertText(markdown);
-        const relocated = citationsAtEndOfSection
-          ? moveCitationsToEndOfText(normalizedMarkdown)
-          : normalizedMarkdown;
         const groundedDraft = groundDraftText({
-          text: relocated,
+          text: normalizedMarkdown,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
         });
@@ -3326,7 +3320,9 @@ export function buildChatTools(opts: {
           });
           return unsupportedFactsToolResult({
             unsupported: groundedDraft.unsupported,
-            draftWithPlaceholders: groundedDraft.text,
+            draftWithPlaceholders: citationsAtEndOfSection
+              ? moveCitationsToEndOfText(groundedDraft.text)
+              : groundedDraft.text,
           });
         }
         if (groundedDraft.provenance.claims.length > 0) {
@@ -3336,7 +3332,9 @@ export function buildChatTools(opts: {
             reportId,
           });
         }
-        const draftMarkdown = groundedDraft.text;
+        const draftMarkdown = citationsAtEndOfSection
+          ? moveCitationsToEndOfText(groundedDraft.text)
+          : groundedDraft.text;
         if (committing) {
           return commitFieldEdit({
             section,

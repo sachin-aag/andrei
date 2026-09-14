@@ -5,6 +5,7 @@ import {
   groundTableOperation,
 } from "@/lib/ai/chat/ground-draft";
 import { GROUNDEDNESS_GOLD_CASES } from "@/lib/eval/groundedness-cases";
+import { moveCitationsToEndOfText } from "@/lib/suggestions/citations-at-end";
 
 function ledgerFromPages(
   pages: Array<{
@@ -83,6 +84,65 @@ describe("groundDraftText", () => {
       }
     }
   );
+});
+
+describe("groundDraftText citation parking", () => {
+  const PROTOCOL = "PRQP-25-PR-001 Protocol.pdf";
+  const REPORT = "PRQR-25-PR-005 Report.pdf";
+  const SOP = "SOP/DP/QA/014";
+
+  const pages = [
+    {
+      filename: PROTOCOL,
+      pageNumber: 21,
+      attachmentId: "att-protocol",
+      quote: "Periodic Re-Qualification protocol for isolator filling. Scope of testing only.",
+    },
+    {
+      filename: REPORT,
+      pageNumber: 2,
+      attachmentId: "att-report",
+      quote: `This review is performed in accordance with Validation/Qualification Procedure ${SOP}.`,
+    },
+  ];
+
+  it("moves a mis-cited SOP then parks a single numbered marker (Langfuse Objective mix)", () => {
+    const draft = `The purpose of this Equipment Lifecycle Report (ELR) is to provide a periodic, consolidated review of the equipment since its last Periodic Re-Qualification, in accordance with Validation/Qualification Procedure ${SOP} [${PROTOCOL}, p. 21].`;
+    const grounded = groundDraftText({
+      text: draft,
+      ledger: ledgerFromPages(pages),
+      policy: "block",
+    });
+    expect(grounded.blocked).toBe(false);
+    expect(
+      grounded.provenance.claims
+        .filter((claim) => claim.status === "citation_moved")
+        .map((claim) => claim.text)
+    ).toEqual([SOP]);
+    expect(grounded.text).toContain(`[${REPORT}, p. 2]`);
+    expect(grounded.text).not.toContain(`[${PROTOCOL}, p. 21]`);
+
+    const parked = moveCitationsToEndOfText(grounded.text);
+    expect(parked).toMatch(new RegExp(`${SOP.replaceAll("/", "\\/")} \\[1\\]`));
+    expect(parked).not.toMatch(/\[PRQR-25-PR-005 Report\.pdf, p\. 2\] \[1\]/);
+    expect(parked).not.toContain(`[${PROTOCOL}, p. 21]`);
+    expect(parked).toContain(`1. [${REPORT}, p. 2]`);
+    expect((parked.match(/\[\d+\]/g) ?? []).length).toBe(1);
+  });
+
+  it("rewrites a parked Citations line instead of inserting a filename cite beside [n]", () => {
+    const parkedDraft = `The review follows ${SOP} [1].\n\nCitations:\n1. [${PROTOCOL}, p. 21]`;
+    const grounded = groundDraftText({
+      text: parkedDraft,
+      ledger: ledgerFromPages(pages),
+      policy: "block",
+    });
+    expect(grounded.blocked).toBe(false);
+    expect(grounded.text).toMatch(new RegExp(`${SOP.replaceAll("/", "\\/")} \\[1\\]`));
+    expect(grounded.text).toContain(`1. [${REPORT}, p. 2]`);
+    expect(grounded.text).not.toContain(`[${REPORT}, p. 2] [1]`);
+    expect(grounded.text).not.toContain(`[${PROTOCOL}, p. 21]`);
+  });
 });
 
 describe("groundTableOperation", () => {
