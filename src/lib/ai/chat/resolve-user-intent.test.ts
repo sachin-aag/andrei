@@ -42,19 +42,13 @@ vi.mock("@/lib/test/ai-bypass", () => ({
 function mockIntent(
   kind: "social" | "read" | "write",
   confidence = 0.9,
-  preferredSurface?: "report" | "analytics",
-  sectionQueue?: boolean
+  preferredSurface?: "report" | "analytics"
 ) {
   generateTextMock.mockResolvedValueOnce({
-    output: { kind, confidence, preferredSurface, sectionQueue },
+    output: { kind, confidence, preferredSurface },
     usage: { inputTokens: 40, outputTokens: 8 },
   } as never);
 }
-
-const emptyReport = {
-  documentType: "investigation_report" as const,
-  sections: {} as const,
-};
 
 describe("resolveChatUserIntent", () => {
   beforeEach(() => {
@@ -66,18 +60,10 @@ describe("resolveChatUserIntent", () => {
   it("skips Flash-Lite for greetings and explicit produce verbs", async () => {
     await expect(
       resolveChatUserIntent({ userText: "hi", mode: "agent" })
-    ).resolves.toEqual({
-      kind: "social",
-      reason: "greeting",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "social", reason: "greeting" });
     await expect(
       resolveChatUserIntent({ userText: "draft Purpose", mode: "agent" })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "produce_request",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "write", reason: "produce_request" });
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 
@@ -88,22 +74,14 @@ describe("resolveChatUserIntent", () => {
         userText: "plan the first 3 sections",
         mode: "agent",
       })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "ambiguous_agent_mode",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "write", reason: "ambiguous_agent_mode" });
     await expect(
       resolveChatUserIntent({
         userText: "fill the worksheet",
         mode: "agent",
         surface: "document",
       })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "produce_request",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "write", reason: "produce_request" });
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 
@@ -115,18 +93,13 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
         workspaceChrome: "agent",
       })
-    ).resolves.toEqual({
-      kind: "read",
-      reason: "llm_read",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "read", reason: "llm_read" });
     expect(generateTextMock).toHaveBeenCalledOnce();
     const prompt = String(
       (generateTextMock.mock.calls[0]?.[0] as { prompt?: string }).prompt ?? ""
     );
     expect(prompt).toContain("plan the first 3 sections");
     expect(prompt).toContain("chrome: agent");
-    expect(prompt).toContain("sectionQueue=true");
     expect(recordAiUsage).toHaveBeenCalledWith(
       expect.objectContaining({
         feature: "document_chat",
@@ -145,11 +118,7 @@ describe("resolveChatUserIntent", () => {
         userText: "the equipment table needs the three UUTs from page 4",
         mode: "agent",
       })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "llm_write",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "write", reason: "llm_write" });
   });
 
   it("falls back to the rules decision when Lite fails", async () => {
@@ -159,11 +128,7 @@ describe("resolveChatUserIntent", () => {
         userText: "plan the first 3 sections",
         mode: "agent",
       })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "ambiguous_agent_mode",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "write", reason: "ambiguous_agent_mode" });
     generateTextMock.mockRejectedValueOnce(new Error("timeout"));
     await expect(
       resolveChatUserIntent({
@@ -171,11 +136,7 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
         surface: "document",
       })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "produce_request",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "write", reason: "produce_request" });
   });
 
   it("falls back when Lite confidence is too low", async () => {
@@ -185,11 +146,7 @@ describe("resolveChatUserIntent", () => {
         userText: "plan the first 3 sections",
         mode: "agent",
       })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "ambiguous_agent_mode",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "write", reason: "ambiguous_agent_mode" });
   });
 
   it("runs Lite for a Document worksheet dump and offers Analytics at high confidence", async () => {
@@ -204,7 +161,6 @@ describe("resolveChatUserIntent", () => {
       kind: "read",
       reason: "llm_analytics_surface",
       switchToAnalytics: true,
-      sectionQueue: false,
     });
     expect(generateTextMock).toHaveBeenCalledOnce();
     const prompt = String(
@@ -228,7 +184,6 @@ describe("resolveChatUserIntent", () => {
     ).resolves.toEqual({
       kind: "write",
       reason: "confirm_analytics_switch",
-      sectionQueue: false,
     });
     expect(generateTextMock).not.toHaveBeenCalled();
   });
@@ -245,7 +200,6 @@ describe("resolveChatUserIntent", () => {
       kind: "read",
       reason: "llm_analytics_surface",
       switchToAnalytics: true,
-      sectionQueue: false,
     });
     expect(generateTextMock).toHaveBeenCalledOnce();
   });
@@ -258,11 +212,7 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
         surface: "document",
       })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "produce_request",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "write", reason: "produce_request" });
 
     mockIntent("write", 0.95, "report");
     await expect(
@@ -271,11 +221,7 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
         surface: "document",
       })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "produce_request",
-      sectionQueue: false,
-    });
+    ).resolves.toEqual({ kind: "write", reason: "produce_request" });
   });
 
   it("does not switch on ambiguous Agent text even if Lite names Analytics", async () => {
@@ -286,99 +232,7 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
         surface: "document",
       })
-    ).resolves.toEqual({
-      kind: "read",
-      reason: "llm_read",
-      sectionQueue: false,
-    });
-  });
-
-  it("asks Lite whether a remaining-report write should seed the section queue", async () => {
-    mockIntent("write", 0.9, "report", true);
-    await expect(
-      resolveChatUserIntent({
-        userText: "draft remaining report",
-        mode: "agent",
-        surface: "document",
-        ...emptyReport,
-      })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "produce_request",
-      sectionQueue: true,
-    });
-    expect(generateTextMock).toHaveBeenCalledOnce();
-    const prompt = String(
-      (generateTextMock.mock.calls[0]?.[0] as { prompt?: string }).prompt ?? ""
-    );
-    expect(prompt).toContain("sectionQueue=true");
-    expect(prompt).toContain("draft remaining report");
-    expect(prompt).toContain("emptySections:");
-  });
-
-  it("trusts Lite when it declines a queue even if the regex would match", async () => {
-    mockIntent("write", 0.9, "report", false);
-    await expect(
-      resolveChatUserIntent({
-        userText: "draft remaining report",
-        mode: "agent",
-        surface: "document",
-        ...emptyReport,
-      })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "produce_request",
-      sectionQueue: false,
-    });
-  });
-
-  it("falls back to the regex queue when Lite times out on remaining-report phrasing", async () => {
-    generateTextMock.mockRejectedValueOnce(new Error("timeout"));
-    await expect(
-      resolveChatUserIntent({
-        userText: "draft remaining report",
-        mode: "agent",
-        surface: "document",
-        ...emptyReport,
-      })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "produce_request",
-      sectionQueue: true,
-    });
-  });
-
-  it("does not call Lite for a single-section draft while other sections are empty", async () => {
-    await expect(
-      resolveChatUserIntent({
-        userText: "draft Purpose",
-        mode: "agent",
-        surface: "document",
-        ...emptyReport,
-      })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "produce_request",
-      sectionQueue: false,
-    });
-    expect(generateTextMock).not.toHaveBeenCalled();
-  });
-
-  it("does not call Lite for the queue on auto-continue", async () => {
-    await expect(
-      resolveChatUserIntent({
-        userText: "Continue the remaining sections.",
-        mode: "agent",
-        surface: "document",
-        autoContinue: true,
-        ...emptyReport,
-      })
-    ).resolves.toEqual({
-      kind: "write",
-      reason: "continue_task",
-      sectionQueue: true,
-    });
-    expect(generateTextMock).not.toHaveBeenCalled();
+    ).resolves.toEqual({ kind: "read", reason: "llm_read" });
   });
 });
 

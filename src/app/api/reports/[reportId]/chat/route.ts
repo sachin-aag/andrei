@@ -365,9 +365,6 @@ async function handleChatPost(
     fillState: intentFocus.fillState,
     reportId,
     userId: user.id,
-    autoContinue,
-    documentType: report.documentType,
-    sections: mergedSections,
   });
   const switchToAnalytics = userIntent.switchToAnalytics === true;
   let pendingPlan: ChatPendingPlan | null = existingPlan;
@@ -377,7 +374,6 @@ async function handleChatPost(
       userText,
       autoContinue,
       writeIntent: userIntent.kind === "write",
-      sectionQueue: userIntent.sectionQueue === true,
       documentType: report.documentType,
       sections: mergedSections,
       promptVersion: CHAT_PROMPT_VERSION,

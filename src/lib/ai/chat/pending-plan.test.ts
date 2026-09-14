@@ -7,7 +7,6 @@ import {
   currentPlanTurnSections,
   isMultiSectionDraftRequest,
   isPlanResumeRequest,
-  looksLikeSectionQueueRequest,
   parseChatPendingPlan,
   pauseChatPendingPlan,
   persistablePendingPlan,
@@ -50,15 +49,7 @@ describe("multi-section draft detection", () => {
       true
     );
     expect(isMultiSectionDraftRequest("Write the Objective")).toBe(false);
-  });
-
-  it("prefilters queue phrasing for the intent classifier", () => {
-    expect(looksLikeSectionQueueRequest("draft remaining report")).toBe(true);
-    expect(looksLikeSectionQueueRequest("Draft the remaining sections")).toBe(
-      true
-    );
-    expect(looksLikeSectionQueueRequest("Write the Objective")).toBe(false);
-    expect(looksLikeSectionQueueRequest("draft Purpose")).toBe(false);
+    expect(isMultiSectionDraftRequest("draft Purpose")).toBe(false);
   });
 
   it("treats continue/resume as a plan resume, not a new queue", () => {
@@ -211,14 +202,32 @@ describe("resolvePlanAtTurnStart", () => {
     ).toBe(seeded);
   });
 
-  it("does not seed when the intent classifier declined the queue", () => {
+  it("seeds a queue on remaining-report phrasing that used to miss", () => {
+    const seeded = resolvePlanAtTurnStart({
+      existing: null,
+      userText: "draft remaining report",
+      autoContinue: false,
+      writeIntent: true,
+      documentType: "investigation_report",
+      sections: {
+        define: emptyNarrative,
+        measure: emptyNarrative,
+        analyze: emptyNarrative,
+      },
+      promptVersion: "chat-v94-section-plan",
+      now: new Date("2026-09-14T00:00:00.000Z"),
+    });
+    expect(seeded?.items.length).toBeGreaterThanOrEqual(2);
+    expect(seeded?.objective).toBe("draft remaining report");
+  });
+
+  it("does not seed a named single-section draft", () => {
     expect(
       resolvePlanAtTurnStart({
         existing: null,
-        userText: "Draft the remaining sections from the attachments",
+        userText: "draft Purpose",
         autoContinue: false,
         writeIntent: true,
-        sectionQueue: false,
         documentType: "investigation_report",
         sections: {
           define: emptyNarrative,

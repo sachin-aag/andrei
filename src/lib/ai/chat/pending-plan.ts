@@ -151,40 +151,6 @@ export function isMultiSectionDraftRequest(userText: string): boolean {
   return MULTI_SECTION_DRAFT_RE.test(userText.trim());
 }
 
-/**
- * High-recall prefilter for the Flash-Lite queue question. Broader than
- * {@link isMultiSectionDraftRequest} so phrasing like "draft remaining report"
- * still reaches the classifier. False for a named single section ("draft Purpose").
- */
-export function looksLikeSectionQueueRequest(userText: string): boolean {
-  const text = userText.replace(/\s+/g, " ").trim();
-  if (!text) return false;
-  if (isMultiSectionDraftRequest(text)) return true;
-  return (
-    /\b(?:remaining|rest of|(?:all|every) (?:the )?(?:empty )?sections?|entire|whole)\b/i.test(
-      text
-    ) ||
-    /\b(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\b.{0,48}\b(?:report|document|elr|sections?)\b/i.test(
-      text
-    )
-  );
-}
-
-export function emptyDraftSectionCount(
-  documentType: DocumentType | undefined,
-  sections:
-    | Partial<Record<SectionType, Record<string, unknown> | undefined>>
-    | undefined
-): number {
-  if (!documentType) return 0;
-  const def = getDocumentType(documentType);
-  let n = 0;
-  for (const section of def.chat.draftOrder) {
-    if (sectionFillState(sections?.[section], section) === "empty") n += 1;
-  }
-  return n;
-}
-
 export function isPlanResumeRequest(userText: string): boolean {
   return RESUME_PLAN_RE.test(userText.trim());
 }
@@ -230,8 +196,6 @@ export function resolvePlanAtTurnStart(input: {
   userText: string;
   autoContinue: boolean;
   writeIntent: boolean;
-  /** From `resolveChatUserIntent`. `undefined` falls back to the regex. */
-  sectionQueue?: boolean;
   documentType: DocumentType;
   sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
   promptVersion: string;
@@ -248,11 +212,7 @@ export function resolvePlanAtTurnStart(input: {
   ) {
     return resumeChatPendingPlan(existing);
   }
-  const wantQueue =
-    input.sectionQueue === true ||
-    (input.sectionQueue !== false &&
-      isMultiSectionDraftRequest(input.userText));
-  if (input.writeIntent && wantQueue) {
+  if (input.writeIntent && isMultiSectionDraftRequest(input.userText)) {
     return seedSectionQueuePlan({
       userText: input.userText,
       documentType: input.documentType,
