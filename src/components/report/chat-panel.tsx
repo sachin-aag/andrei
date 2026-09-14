@@ -1007,11 +1007,11 @@ export function ChatPanel({
   }, [input]);
 
   const updateMentionQuery = useCallback((value: string, caret: number) => {
-    const next = findMentionQuery(value, caret);
+    const next = findMentionQuery(value, caret, mentionCandidates);
     setMentionRange(next);
     setMentionIndex(0);
     if (next?.query.trim()) setMentionPath([]);
-  }, []);
+  }, [mentionCandidates]);
 
   const selectMention = useCallback(
     (candidate: MentionCandidate) => {
