@@ -20,6 +20,15 @@ import {
  * `promptVersion`). Linking those is a follow-up, not required for these scores.
  */
 
+function langfuseScoreTarget(
+  traceId?: string,
+  sessionId?: string
+): { traceId: string } | { sessionId: string } | null {
+  if (traceId) return { traceId };
+  if (sessionId) return { sessionId };
+  return null;
+}
+
 let langfuseClient: LangfuseClient | null = null;
 
 function getLangfuseClient(): LangfuseClient | null {
@@ -126,10 +135,6 @@ export async function recordUserCourseCorrectScore(
   if (!client) return;
 
   const traceId = params.traceId ?? getActiveTraceId() ?? undefined;
-  if (!traceId && !params.sessionId) {
-    console.warn("langfuse: no trace or session for user_course_corrected score");
-    return;
-  }
 
   const comment = [
     `Course correction detected: ${params.reason}`,
@@ -145,9 +150,13 @@ export async function recordUserCourseCorrectScore(
     .join("; ");
 
   try {
+    const target = langfuseScoreTarget(traceId, params.sessionId);
+    if (!target) {
+      console.warn("langfuse: no trace or session for user_course_corrected score");
+      return;
+    }
     client.score.create({
-      ...(traceId ? { traceId } : {}),
-      sessionId: params.sessionId,
+      ...target,
       name: "user_course_corrected",
       value: 1,
       dataType: "BOOLEAN",
@@ -203,10 +212,11 @@ export async function recordUserEditedAfterScore(
   ].join("; ");
 
   try {
+    const target = langfuseScoreTarget(traceId, sessionId);
+    if (!target) return;
     client.score.create({
       id: scoreId,
-      ...(traceId ? { traceId } : {}),
-      sessionId,
+      ...target,
       name: "user_edited_after",
       value: 1,
       dataType: "BOOLEAN",
@@ -240,12 +250,12 @@ export async function recordGroundednessScore(
   if (!client) return;
   const traceId = getActiveTraceId() ?? undefined;
   const sessionId = params.reportId;
-  if (!traceId && !sessionId) return;
+  const target = langfuseScoreTarget(traceId, sessionId);
+  if (!target) return;
   const value = Math.min(1, Math.max(0, params.value));
   try {
     client.score.create({
-      ...(traceId ? { traceId } : {}),
-      ...(sessionId ? { sessionId } : {}),
+      ...target,
       name: "groundedness",
       value,
       dataType: "NUMERIC",

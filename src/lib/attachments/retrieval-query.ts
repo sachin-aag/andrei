@@ -159,6 +159,21 @@ export function lexicalQueryTokens(query: string): string[] {
     .filter((token) => token.length > 0 && LEXICAL_TOKEN_RE.test(token));
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Whole-token match so `fill` does not score `filling` or `S.No MF` via `MF`. */
+export function lexicalTokenMatches(haystack: string, token: string): boolean {
+  const needle = token.trim();
+  if (!needle) return false;
+  const pattern = new RegExp(
+    `(^|[^a-z0-9])${escapeRegex(needle)}([^a-z0-9]|$)`,
+    "i"
+  );
+  return pattern.test(haystack);
+}
+
 /**
  * Higher = better lexical overlap between chunk text and the query. Used to pick
  * the winning chunk per page and to decide whether a lexical-only pass can
@@ -175,9 +190,8 @@ export function lexicalMatchScore(text: string, query: string): number {
   }
 
   for (const token of lexicalQueryTokens(query)) {
-    const lower = token.toLowerCase();
-    if (haystack.includes(lower)) {
-      score += 10 + Math.min(lower.length, 20);
+    if (lexicalTokenMatches(haystack, token)) {
+      score += 10 + Math.min(token.length, 20);
     }
   }
   return score;

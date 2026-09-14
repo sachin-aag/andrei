@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { closeIncompleteChatToolHistory } from "@/lib/ai/chat/tool-part-repair";
 import { sourceCitationBracket } from "@/lib/suggestions/citations-at-end";
 
 /**
@@ -307,7 +308,7 @@ function compactToolPart<T extends ToolPartRecord>(part: T): T {
 export function compactChatToolHistoryForModel(
   messages: UIMessage[]
 ): UIMessage[] {
-  return messages.map((message) => {
+  return closeIncompleteChatToolHistory(messages).map((message) => {
     const parts = message.parts;
     if (!parts || parts.length === 0) return message;
     let changed = false;

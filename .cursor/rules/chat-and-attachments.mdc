@@ -76,11 +76,14 @@ not a silent 300-page prefix); comprehensive retrieval does not force another wa
 coverage delta unless the latest message is explicit pushback
 (`you missed`, `look again`, `re-check`, a test-family code). Pushback
 skips rehydrate so a finished session does not hide
-`start_document_review`. `planReviewPages` scores pages to the current
-objective, then fair-shares leftover pages up to `REVIEW_PAGE_FETCH_CAP`
-(2500) so an earlier file cannot starve later ones. `start_document_review`
+`start_document_review`. `planReviewPages` queues pages that score on the current
+objective (floor ~40 if almost nothing matches). `REVIEW_PAGE_FETCH_CAP`
+(2500) is listing safety only — there is no 300-page walk cap.
+`continue_document_review` stops starting batches after ~60s and round-robins
+batches across attachments. `start_document_review`
 reports `truncated` / `skippedDocuments`. Call `list_attachments` first
-when the file set is unknown.
+when the file set is unknown. Rehydrate only a finish with `status=complete`
+and `truncated !== true`.
 
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
 against the citation ledger's served quotes (`groundDraftText`). Finish

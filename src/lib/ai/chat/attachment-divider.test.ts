@@ -32,6 +32,34 @@ describe("isAttachmentDividerHit", () => {
       })
     ).toBe(false);
   });
+
+  it("flags ASEPTIC PROCESSING running headers and S.No MF alarm magnets", () => {
+    expect(
+      isAttachmentDividerHit({
+        quote: "STERILINE ASEPTIC PROCESSING IQ OQ filter certification",
+        text: "FAT / SAT running header",
+        pageNumber: 12,
+      })
+    ).toBe(true);
+    expect(
+      isAttachmentDividerHit({
+        quote: "S.No MF Project ID alarm log",
+        text: "",
+        pageNumber: 4,
+      })
+    ).toBe(true);
+  });
+
+  it("does not flag a media fill / APS data page", () => {
+    expect(
+      isAttachmentDividerHit({
+        quote:
+          "Media fill / aseptic process simulation MF/DP/25/001 zero contaminated units.",
+        text: "APS run table",
+        pageNumber: 18,
+      })
+    ).toBe(false);
+  });
 });
 
 describe("annotateDividerSearchHits", () => {

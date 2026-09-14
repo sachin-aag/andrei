@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v99-review-ledger");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v100-phrase-review");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -433,6 +433,8 @@ describe("buildChatSystemPrompt", () => {
     expect(plan).toContain("At most 8 strings per call");
     expect(plan).toContain("ECO/DCR");
     expect(plan).toContain("Do not start a document review");
+    expect(plan).toContain("do not grep again because truncated=true");
+    expect(plan).not.toContain("If truncated=true or nextExcludePages grew, grep again");
     expect(plan).not.toContain("Escalate to start_document_review");
     expect(plan).toContain("The document index (filenames/topics) is not enough information by itself");
     expect(plan.indexOf("search_documents")).toBeLessThan(plan.indexOf("ask_user"));

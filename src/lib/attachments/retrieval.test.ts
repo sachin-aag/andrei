@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  buildKeywordTsQuery,
   buildMatchCenteredSnippet,
   buildOutlineFromStoredPages,
   normalizeAttachmentIdFilter,
@@ -138,22 +137,6 @@ describe("normalizeAttachmentIdFilter", () => {
     expect(normalizeAttachmentIdFilter(["a", "a", " ", "", "b"])).toEqual(["a", "b"]);
     expect(normalizeAttachmentIdFilter(undefined)).toEqual([]);
     expect(normalizeAttachmentIdFilter(["  "])).toEqual([]);
-  });
-});
-
-describe("buildKeywordTsQuery", () => {
-  it("joins a multi-word natural-language query with OR", () => {
-    expect(
-      buildKeywordTsQuery("what was the sterilization cycle for autoclave AC-12")
-    ).toBe(
-      "what or was or the or sterilization or cycle or for or autoclave or AC-12"
-    );
-  });
-
-  it("skips punctuation-only input so the keyword arm is not queried", () => {
-    expect(buildKeywordTsQuery("???")).toBeNull();
-    expect(buildKeywordTsQuery("...")).toBeNull();
-    expect(buildKeywordTsQuery("")).toBeNull();
   });
 });
 

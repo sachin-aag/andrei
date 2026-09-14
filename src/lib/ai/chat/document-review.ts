@@ -38,12 +38,25 @@ export const REVIEW_TARGET_BATCH_CHARS = 8_000;
 export const REVIEW_MAX_PAGES_PER_BATCH = 6;
 export const REVIEW_DENSE_PAGE_CHARS = 6_000;
 export const REVIEW_PAGE_TEXT_LIMIT = 12_000;
-export const REVIEW_PAGE_CAP = 300;
-/** Safety cap when listing pages for a review so one file cannot starve others. */
+/** Safety cap when listing pages so one file cannot starve others. Not a walk cap. */
 export const REVIEW_PAGE_FETCH_CAP = 2500;
 /** In-flight extract calls inside one continue_document_review. */
 export const REVIEW_EXTRACT_CONCURRENCY = 8;
 const REVIEW_DRAIN_MAX_EXTRACTS = 800;
+/** Stop starting new extract batches after this wall time in one continue. */
+export const REVIEW_CONTINUE_BUDGET_MS = 60_000;
+/** Leave this much of the chat abort window for persist after continue. */
+export const REVIEW_CONTINUE_DEADLINE_MARGIN_MS = 20_000;
+
+export function reviewContinueBudgetMs(remainingAbortMs: number): number {
+  return Math.max(
+    1_000,
+    Math.min(
+      REVIEW_CONTINUE_BUDGET_MS,
+      remainingAbortMs - REVIEW_CONTINUE_DEADLINE_MARGIN_MS
+    )
+  );
+}
 /**
  * `finish_document_review` must stay small enough to persist in chat history.
  * Inventory drafting uses `recommendedInventory` / `allIdentifiers`, not this
@@ -134,6 +147,14 @@ export type DocumentReviewBatch = {
   retryCount: number;
 };
 
+export type DocumentReviewAttachmentProgress = {
+  attachmentId: string;
+  filename: string;
+  queued: number;
+  reviewed: number;
+  remaining: number;
+};
+
 export type ExtractReviewBatchFn = (input: {
   objective: string;
   pages: ReviewPageSource[];
@@ -199,6 +220,8 @@ export class DocumentReviewSession {
   private extractBatch: ExtractReviewBatchFn;
   private findingSeq = 0;
   private lastRecommended: RecommendedResultsInventory | null = null;
+  private lastContinueStartedAt = 0;
+  private lastBudgetExhausted = false;
 
   constructor(options?: { extractBatch?: ExtractReviewBatchFn }) {
     this.extractBatch = options?.extractBatch ?? extractReviewBatch;
@@ -305,11 +328,13 @@ export class DocumentReviewSession {
     }
 
     this.objective = input.objective.trim();
-    this.queue = buildReviewBatches(pages).map((batchPages, index) => ({
-      id: `batch-${index + 1}`,
-      pages: batchPages,
-      retryCount: 0,
-    }));
+    this.queue = interleaveReviewBatchesByAttachment(buildReviewBatches(pages)).map(
+      (batchPages, index) => ({
+        id: `batch-${index + 1}`,
+        pages: batchPages,
+        retryCount: 0,
+      })
+    );
     this.findings = [];
     this.seenKeys = new Set();
     this.failedPages = [];
@@ -338,7 +363,10 @@ export class DocumentReviewSession {
     };
   }
 
-  async continue(options?: { abortSignal?: AbortSignal }): Promise<{
+  async continue(options?: {
+    abortSignal?: AbortSignal;
+    budgetMs?: number;
+  }): Promise<{
     status: "in_progress" | "ready_to_finish" | "not_started";
     reviewedPages: number;
     totalPages: number;
@@ -346,7 +374,12 @@ export class DocumentReviewSession {
     remainingBatches: number;
     failedPages: number;
     nextAction: "continue_document_review" | "finish_document_review" | null;
+    elapsedMs: number;
+    budgetExhausted: boolean;
+    byAttachment: DocumentReviewAttachmentProgress[];
   }> {
+    this.lastContinueStartedAt = Date.now();
+    this.lastBudgetExhausted = false;
     if (this.phaseState === "idle") {
       return {
         status: "not_started",
@@ -356,6 +389,9 @@ export class DocumentReviewSession {
         remainingBatches: 0,
         failedPages: 0,
         nextAction: "continue_document_review",
+        elapsedMs: 0,
+        budgetExhausted: false,
+        byAttachment: [],
       };
     }
     if (this.phaseState === "complete" || this.queue.length === 0) {
@@ -363,7 +399,7 @@ export class DocumentReviewSession {
       return this.progressPayload("ready_to_finish", "finish_document_review");
     }
 
-    await this.drainQueue(options?.abortSignal);
+    await this.drainQueue(options?.abortSignal, options?.budgetMs);
 
     if (this.queue.length === 0) {
       this.phaseState = "ready_to_finish";
@@ -373,11 +409,15 @@ export class DocumentReviewSession {
     return this.progressPayload("in_progress", "continue_document_review");
   }
 
-  private async drainQueue(abortSignal?: AbortSignal) {
+  private async drainQueue(abortSignal?: AbortSignal, budgetMs?: number) {
     let started = 0;
     const worker = async () => {
       while (started < REVIEW_DRAIN_MAX_EXTRACTS) {
         if (abortSignal?.aborted) return;
+        if (budgetMs != null && Date.now() - this.lastContinueStartedAt >= budgetMs) {
+          this.lastBudgetExhausted = true;
+          return;
+        }
         const batch = this.queue.shift();
         if (!batch) return;
         started += 1;
@@ -443,6 +483,7 @@ export class DocumentReviewSession {
     failedPages: DocumentReviewFailedPage[];
     coverageSummary: string;
     reviewedEvidence: ReviewedEvidencePage[];
+    truncated: boolean;
   } {
     if (this.phaseState === "idle" || this.queue.length > 0) {
       this.lastRecommended = null;
@@ -464,6 +505,7 @@ export class DocumentReviewSession {
         failedPages: [...this.failedPages],
         coverageSummary: `Review incomplete: ${this.reviewedPageKeys.size}/${this.totalPages} pages, ${this.queue.length} batches remaining.`,
         reviewedEvidence: this.reviewedEvidencePages(),
+        truncated: true,
       };
     }
 
@@ -496,6 +538,7 @@ export class DocumentReviewSession {
         ? `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages; ${this.findings.length} findings (${capped.findings.length} in sample${capped.omitted > 0 ? `, ${capped.omitted} omitted` : ""}); ${identifiers.length} identifiers.${inventoryNote}`
         : `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages with ${this.failedPages.length} failed page(s); do not claim completeness.${inventoryNote}`,
       reviewedEvidence: this.reviewedEvidencePages(),
+      truncated: false,
     };
   }
 
@@ -511,7 +554,46 @@ export class DocumentReviewSession {
       remainingBatches: this.queue.length,
       failedPages: this.failedPages.length,
       nextAction,
+      elapsedMs: this.lastContinueStartedAt
+        ? Date.now() - this.lastContinueStartedAt
+        : 0,
+      budgetExhausted: this.lastBudgetExhausted,
+      byAttachment: this.attachmentProgress(),
     };
+  }
+
+  private attachmentProgress(): DocumentReviewAttachmentProgress[] {
+    const map = new Map<string, DocumentReviewAttachmentProgress>();
+    const bump = (attachmentId: string, filename: string) => {
+      let row = map.get(attachmentId);
+      if (!row) {
+        row = {
+          attachmentId,
+          filename,
+          queued: 0,
+          reviewed: 0,
+          remaining: 0,
+        };
+        map.set(attachmentId, row);
+      }
+      return row;
+    };
+    for (const page of this.reviewedPageList) {
+      const row = bump(page.attachmentId, page.filename);
+      row.reviewed += 1;
+      row.queued += 1;
+    }
+    for (const batch of this.queue) {
+      for (const page of batch.pages) {
+        const row = bump(page.attachmentId, page.filename);
+        row.remaining += 1;
+        row.queued += 1;
+      }
+    }
+    for (const page of this.failedPages) {
+      bump(page.attachmentId, page.filename).queued += 1;
+    }
+    return [...map.values()];
   }
 
   private absorbFindings(extracted: DocumentReviewFinding[]) {
@@ -573,6 +655,12 @@ export function buildReviewBatches(
 
   for (const page of pages) {
     const chars = page.transcript.length;
+    if (
+      current.length > 0 &&
+      current[0]!.attachmentId !== page.attachmentId
+    ) {
+      flush();
+    }
     if (chars >= denseChars) {
       flush();
       batches.push([page]);
@@ -589,6 +677,39 @@ export function buildReviewBatches(
   }
   flush();
   return batches;
+}
+
+/**
+ * Round-robin already-built batches across attachments so one file cannot
+ * occupy every concurrent extract slot for a continue.
+ */
+export function interleaveReviewBatchesByAttachment(
+  batches: readonly ReviewPageSource[][]
+): ReviewPageSource[][] {
+  const queues = new Map<string, ReviewPageSource[][]>();
+  const order: string[] = [];
+  for (const batch of batches) {
+    const id = batch[0]?.attachmentId ?? "";
+    const existing = queues.get(id);
+    if (existing) {
+      existing.push(batch);
+      continue;
+    }
+    order.push(id);
+    queues.set(id, [batch]);
+  }
+  const out: ReviewPageSource[][] = [];
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const id of order) {
+      const queue = queues.get(id);
+      if (!queue || queue.length === 0) continue;
+      out.push(queue.shift()!);
+      progressed = true;
+    }
+  }
+  return out;
 }
 
 export function extractReviewFindingsFromPages(

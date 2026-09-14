@@ -20,7 +20,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v99-review-ledger";
+export const CHAT_PROMPT_VERSION = "chat-v100-phrase-review";
 
 export type ChatMode = "plan" | "agent";
 
@@ -128,10 +128,10 @@ function documentRules(
       retrievalMode = `## Document evidence
 - Retrieval mode: ADAPTIVE. Treat search_documents as grep over the attachments. Work in rounds: grep → read the hits → grep complementary terms with excludePages set to nextExcludePages from the last result. Do not stop at the first matching table. Do not read every page unless the set is unbounded.
 - If this turn is a question or a write request and Documents are listed, you MUST grep before ask_user or draft_field — except when the target section is already filled or partial: call read_section first and grep only for a gap you found. Start with search_documents. Prefer queries[] in one call (equipment AND UUT AND fixtures). At most 8 strings per call — OR related requirement IDs into those strings rather than sending more. Use mode=keyword for exact protocol terms (UUT, Solea, 13.3). Do not grep because the report is empty or because you are in Agent mode.
-- If hits look like one table or heading, call document_outline and read neighboring pages, then grep again for sibling objects.
-- Hits with divider=true (ATTACHMENT NO. / certificate-of cover sheets) are locators, not ENOUGH. They do not count as a cited data page. Read the following page (p. N+1) before drafting.
+- If hits look like one table or heading, call document_outline and read neighboring pages, then grep complementary sibling objects (not the same terms again).
+- Hits with divider=true (ATTACHMENT NO. / certificate-of cover sheets, Steriline ASEPTIC PROCESSING running headers, S.No MF / MF Project ID magnets) are locators, not ENOUGH. They do not count as a cited data page. Read the following page (p. N+1) before drafting.
 - Never claim 100% on-time, none overdue, or no OOT/OOS while the table still has <placeholders> or blank required cells.
-- If truncated=true or nextExcludePages grew, grep again with different terms. Never draft a table from a single truncated hit list.
+- After a cited data page, outline or read — do not grep again because truncated=true. truncated=true means more matching pages exist in this ranked list. Complementary greps are for sibling objects you have not searched yet. Never draft a table from a single truncated hit list.
 - For a single fact (one requirement ID, one date, one labelled page), one grep and one page read is enough.
 - Do not start a document review. Every-row inventories use the comprehensive path.`;
       break;
@@ -288,7 +288,7 @@ Choosing the right tool:
 ${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric measurements from attachments and ${committing ? "insert" : "propose"} a scatter plot as a ${committing ? "figure in the document" : "reviewable figure"}. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec.` : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). Do not use this to move a figure. ${committing ? "The removal is applied immediately." : "The engineer reviews it like any other suggestion."} Do not rewrite the field with draft_field just to drop a figure.
 - list_attachments — walk the Attachments tree: how many files, which files in which folder (folders[]), PDF vs Word (fileTypes[]), ready vs still ingesting, page counts, filename/note/summary topic matches. Paginate files[] with offset when nextOffset is set. Not a substitute for search_documents.
-- search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is already filled or partial, call read_section first and only grep for a gap you found.
+- search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. truncated=true is not a reason to grep again — outline or read the cited page. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is already filled or partial, call read_section first and only grep for a gap you found.
 - document_outline — list per-page context for one attachment so you can pick which pages to read. Not a substitute for search_documents.
 - read_document_page — read bounded transcript/visual context for one page from a retrieved attachment.
 - ask_user — structured questions when facts are still missing after a document search (see "Asking questions").${analyzeToolLine}${reviewTools}

@@ -10,6 +10,7 @@ import {
   SEARCH_DOCUMENTS_MAX_LIMIT,
   SEARCH_DOCUMENTS_MAX_QUERIES,
   SEARCH_EXCLUDE_PAGES_MAX,
+  SEARCH_COVERAGE_HINT,
 } from "@/lib/ai/chat/tools";
 import {
   parseAiFixCommentContent,
@@ -337,6 +338,10 @@ describe("buildChatTools search_documents scoping", () => {
       "missing or ambiguous"
     );
     expect(tools.search_documents?.description).toContain("Grep only");
+    expect(tools.search_documents?.description).not.toContain(
+      "truncated=true means keep grepping"
+    );
+    expect(SEARCH_COVERAGE_HINT).not.toContain("If truncated=true, grep again");
   });
 });
 

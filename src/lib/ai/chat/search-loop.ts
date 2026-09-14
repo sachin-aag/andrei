@@ -37,6 +37,14 @@ export type SearchLoopStep = {
 
 export type SearchLoopDirective = "continue" | "read";
 
+export type SearchGate = {
+  closed: boolean;
+};
+
+export function createSearchGate(): SearchGate {
+  return { closed: false };
+}
+
 export type SearchLoopOptions = {
   searchTool?: string;
   locateTools?: ReadonlySet<string>;
@@ -214,11 +222,37 @@ export function searchLoopDirective(
   return emptySearches >= emptyLimit ? "read" : "continue";
 }
 
+function stepReadDocumentPage(step: SearchLoopStep): boolean {
+  return collectToolCalls(step).some(
+    (call) => callToolName(call) === "read_document_page"
+  );
+}
+
+/**
+ * After any grep this turn, hide ask_user until a page is actually read.
+ * Outline locates; it does not unlock a quiz.
+ */
+export function documentAskUserDirective(
+  steps: readonly SearchLoopStep[]
+): "continue" | "hide" {
+  let searched = false;
+  let readPage = false;
+  for (const step of steps) {
+    if (stepCalledSearch(step, DEFAULT_SEARCH_TOOL)) searched = true;
+    if (stepReadDocumentPage(step)) readPage = true;
+  }
+  return searched && !readPage ? "hide" : "continue";
+}
+
 /** Drop search from an activeTools list when the loop directive says read. */
 export function withoutSearchTool(
   activeTools: readonly string[],
   searchTool: string = DEFAULT_SEARCH_TOOL
 ): string[] {
   return activeTools.filter((name) => name !== searchTool);
+}
+
+export function withoutAskUserTool(activeTools: readonly string[]): string[] {
+  return activeTools.filter((name) => name !== "ask_user");
 }
 

@@ -224,6 +224,11 @@ import {
   DocumentReviewSession,
   documentReviewCoverageKey,
 } from "@/lib/ai/chat/document-review";
+import type { SearchGate } from "@/lib/ai/chat/search-loop";
+import {
+  planDocumentSearchQuery,
+  phraseFamiliesForSection,
+} from "@/lib/ai/chat/search-phrase-families";
 import {
   CitationPageLedger,
 } from "@/lib/ai/chat/citation-grounding";
@@ -544,7 +549,9 @@ export const SEARCH_QUERY_MAX_CHARS = 500;
 export const SEARCH_EXCLUDE_PAGES_MAX = 80;
 const SEARCH_SCOPES = ["tagged", "all"] as const;
 export const SEARCH_COVERAGE_HINT =
-  "Grep loop: this list is ranked, not complete. Pass nextExcludePages as excludePages on the next call. For tables, grep complementary objects (UUT vs equipment, fixtures, serials) before drafting. Use mode=keyword for exact protocol terms. If truncated=true, grep again. Hits with divider=true are attachment cover/title pages, not the data table — read p. N+1 before drafting. They do not count as a cited data page.";
+  "Grep loop: this list is ranked, not complete. Pass nextExcludePages as excludePages on the next complementary grep (sibling objects you have not searched), not because truncated=true. truncated=true means more matching pages exist — outline or read the cited page. For tables, grep complementary objects (UUT vs equipment, fixtures, serials) before drafting. Use mode=keyword for exact protocol terms. Hits with divider=true are attachment cover/title pages, not the data table — read p. N+1 before drafting. They do not count as a cited data page.";
+export const DOCUMENT_SEARCH_CLOSED_MESSAGE =
+  "Search is closed for this turn. Read a cited page or document_outline — do not grep again because truncated=true, and do not ask_user which page to read.";
 
 function clampSearchQueryText(value: string): string {
   const query = value.replace(/\s+/g, " ").trim();
@@ -755,6 +762,15 @@ function hasSearchQuery(value: {
   return collectSearchQueries(value).length > 0;
 }
 
+function phraseFamiliesForChatSearch(
+  sectionScope?: string | null,
+  coverageObjective?: string | null
+): readonly (readonly string[])[] {
+  const scoped = phraseFamiliesForSection(sectionScope);
+  if (scoped.length > 0) return scoped;
+  return phraseFamiliesForSection(coverageObjective);
+}
+
 /**
  * `search_documents`, optionally restricted to the documents the engineer
  * tagged with @. Tagged scoping is applied server-side so it holds even when
@@ -766,9 +782,26 @@ function buildSearchDocumentsTool(opts: {
   citationRule: string;
   citationLedger: CitationPageLedger;
   onCitedPage?: () => void;
+  searchGate?: SearchGate;
+  sectionScope?: string | null;
+  reviewCoverageObjective?: string | null;
 }) {
-  const { reportId, pinnedAttachmentIds, citationRule, citationLedger, onCitedPage } =
-    opts;
+  const {
+    reportId,
+    pinnedAttachmentIds,
+    citationRule,
+    citationLedger,
+    onCitedPage,
+    searchGate,
+  } = opts;
+  const phraseFamilies = phraseFamiliesForChatSearch(
+    opts.sectionScope,
+    opts.reviewCoverageObjective
+  );
+  const familySection =
+    opts.sectionScope && opts.sectionScope !== "all"
+      ? opts.sectionScope
+      : opts.reviewCoverageObjective;
 
   async function runSearch(input: {
     query?: string;
@@ -778,7 +811,30 @@ function buildSearchDocumentsTool(opts: {
     excludePages?: Array<{ attachmentId: string; pageNumber: number }>;
     attachmentIds?: string[];
   }) {
+    if (searchGate?.closed) {
+      return {
+        status: "search_closed" as const,
+        message: DOCUMENT_SEARCH_CLOSED_MESSAGE,
+        results: [],
+        queriesRun: collectSearchQueries(input),
+        returnedCount: 0,
+        truncated: false,
+        coverageHint: SEARCH_COVERAGE_HINT,
+        citationRule,
+        trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+      };
+    }
     const queryList = collectSearchQueries(input);
+    const queryPlan = queryList.map((query) => {
+      const plan = planDocumentSearchQuery(query, familySection);
+      return {
+        query,
+        phrases: plan.phrases,
+        tsQuery: plan.tsQuery,
+        families: plan.families,
+        tokens: plan.tokens,
+      };
+    });
     const arms = await searchReportDocumentsMany({
       reportId,
       queries: queryList,
@@ -787,6 +843,7 @@ function buildSearchDocumentsTool(opts: {
       backfill: input.attachmentIds === undefined,
       mode: input.mode,
       excludePages: input.excludePages,
+      phraseFamilies,
     });
     const byId = new Map<string, (typeof arms)[number][number]>();
     for (const arm of arms) {
@@ -820,6 +877,8 @@ function buildSearchDocumentsTool(opts: {
       mode: input.mode ?? "hybrid",
       returnedCount: merged.length,
       dividerHits: annotated.dividerHits,
+      dataHits: Math.max(0, annotated.results.length - annotated.dividerHits),
+      queryPlan,
       truncated,
       seenPages: merged.map((hit) => ({
         attachmentId: hit.attachmentId,
@@ -839,7 +898,7 @@ function buildSearchDocumentsTool(opts: {
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 8 strings per call. mode=keyword is lexical grep. truncated=true means keep grepping. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
+        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 8 strings per call. mode=keyword is lexical grep. truncated=true means more matching pages exist — outline or read; do not grep again for the same terms. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
       inputSchema: z.preprocess(
         coerceSearchDocumentsInput,
         z
@@ -854,7 +913,7 @@ function buildSearchDocumentsTool(opts: {
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-        `Grep only the ${tagged} document(s) the engineer tagged with @. Prefer complementary queries for tables (at most 8 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
+        `Grep only the ${tagged} document(s) the engineer tagged with @. Prefer complementary queries for tables (at most 8 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means more matching pages exist — outline or read; do not grep again for the same terms. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
     inputSchema: z.preprocess(
       coerceSearchDocumentsInput,
       z
@@ -978,6 +1037,10 @@ export function buildChatTools(opts: {
   unsupportedFactPolicy?: UnsupportedFactPolicy;
   /** Section/objective digest so review coverage does not leak across sections. */
   reviewCoverageObjective?: string;
+  /** Request-scoped latch so a cited page hides further grep even if the model retries. */
+  searchGate?: SearchGate;
+  /** Stop starting review extract batches after this wall time in one continue. */
+  reviewContinueBudgetMs?: number;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1451,6 +1514,9 @@ export function buildChatTools(opts: {
       citationRule,
       citationLedger,
       onCitedPage: noteCitedRetrieval,
+      searchGate: opts.searchGate,
+      sectionScope: opts.sectionScope,
+      reviewCoverageObjective: opts.reviewCoverageObjective,
     }),
 
     list_attachments: tool({
@@ -1694,6 +1760,7 @@ export function buildChatTools(opts: {
           routeObjective: opts.reviewCoverageObjective,
           toolObjective: objective,
           documentType,
+          sectionScope: opts.sectionScope,
         });
         const started = documentReview.start({
           objective,
@@ -1741,7 +1808,10 @@ export function buildChatTools(opts: {
         "Process the next page batch of the current document review. Returns progress only — not raw page text. Repeat until coverage is complete.",
       inputSchema: z.object({}),
       execute: async (_input, { abortSignal }) =>
-        documentReview.continue({ abortSignal }),
+        documentReview.continue({
+          abortSignal,
+          budgetMs: opts.reviewContinueBudgetMs,
+        }),
     }),
 
     finish_document_review: tool({

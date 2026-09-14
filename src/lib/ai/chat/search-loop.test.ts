@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  documentAskUserDirective,
   searchLoopDirective,
+  withoutAskUserTool,
   withoutSearchTool,
   type SearchLoopStep,
 } from "./search-loop";
@@ -131,5 +133,31 @@ describe("withoutSearchTool", () => {
     expect(
       withoutSearchTool(["read_section", "search_documents", "ask_user"])
     ).toEqual(["read_section", "ask_user"]);
+  });
+});
+
+describe("withoutAskUserTool", () => {
+  it("drops ask_user from an activeTools list", () => {
+    expect(
+      withoutAskUserTool(["read_section", "search_documents", "ask_user"])
+    ).toEqual(["read_section", "search_documents"]);
+  });
+});
+
+describe("documentAskUserDirective", () => {
+  it("hides ask_user after a grep until a page is read", () => {
+    expect(documentAskUserDirective([step(["search_documents"], 3)])).toBe(
+      "hide"
+    );
+    expect(
+      documentAskUserDirective([
+        step(["search_documents"], 3),
+        step(["read_document_page"]),
+      ])
+    ).toBe("continue");
+  });
+
+  it("does not hide ask_user before any grep", () => {
+    expect(documentAskUserDirective([step(["read_section"])])).toBe("continue");
   });
 });

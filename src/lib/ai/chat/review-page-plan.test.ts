@@ -46,7 +46,7 @@ describe("planReviewPages", () => {
     );
   });
 
-  it("fair-shares leftover pages when the safety cap binds", () => {
+  it("does not pad leftover pages once enough objective pages are queued", () => {
     const pages = [
       ...Array.from({ length: 40 }, (_, i) => ({
         attachmentId: "cal",
@@ -64,13 +64,35 @@ describe("planReviewPages", () => {
       })),
     ];
     const selected = planReviewPages(pages, "calibration certificates", 50);
-    expect(selected).toHaveLength(50);
+    expect(selected).toHaveLength(40);
     expect(selected.filter((page) => page.attachmentId === "cal").length).toBe(
       40
     );
     expect(
       selected.filter((page) => page.attachmentId === "other").length
-    ).toBe(10);
+    ).toBe(0);
+  });
+
+  it("fills to the objective floor when almost nothing matches", () => {
+    const pages = [
+      {
+        attachmentId: "cal",
+        filename: "calibration.pdf",
+        transcript: "certificate of calibration",
+        outlineTitle: "Calibration",
+        identifiers: ["CAL-1"],
+      },
+      ...Array.from({ length: 80 }, (_, i) => ({
+        attachmentId: "other",
+        filename: "other.pdf",
+        transcript: `unrelated ${i}`,
+        outlineTitle: "Appendix",
+        identifiers: [] as string[],
+      })),
+    ];
+    const selected = planReviewPages(pages, "elr_calibration", 2500);
+    expect(selected).toHaveLength(40);
+    expect(selected[0]?.attachmentId).toBe("cal");
   });
 
   it("does not silently drop to 300 when under the fetch cap", () => {

@@ -121,17 +121,22 @@ export function scoreReviewPage(
   return score;
 }
 
+/** If almost no pages score, pad with fair-shared leftovers up to this floor. */
+export const REVIEW_OBJECTIVE_PAGE_FLOOR = 40;
+
 /**
- * Prefer pages that match the review objective, then fair-share the rest
- * so one file cannot consume the safety cap.
+ * Queue pages that match the review objective. Do not pad leftovers up to
+ * the listing cap — an objective-filtered finish is complete for that `|obj:`.
+ * When almost nothing matches, fill to `REVIEW_OBJECTIVE_PAGE_FLOOR` so a
+ * sparse heading still has nearby pages.
  */
 export function planReviewPages<T extends ReviewPagePlanInput>(
   pages: readonly T[],
   objective: string,
   cap: number
 ): T[] {
-  if (pages.length <= cap && objectiveTokens(objective).length === 0) {
-    return [...pages];
+  if (objectiveTokens(objective).length === 0) {
+    return selectReviewPages(pages, cap);
   }
   const relevant: T[] = [];
   const rest: T[] = [];
@@ -139,13 +144,15 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
     if (scoreReviewPage(page, objective) > 0) relevant.push(page);
     else rest.push(page);
   }
-  if (pages.length <= cap) {
-    return [...relevant, ...rest];
-  }
   const prioritized = selectReviewPages(relevant, cap);
-  if (prioritized.length >= cap) return prioritized;
-  return [
-    ...prioritized,
-    ...selectReviewPages(rest, cap - prioritized.length),
-  ];
+  if (prioritized.length >= REVIEW_OBJECTIVE_PAGE_FLOOR || rest.length === 0) {
+    return prioritized;
+  }
+  const fill = Math.min(
+    REVIEW_OBJECTIVE_PAGE_FLOOR - prioritized.length,
+    cap - prioritized.length,
+    rest.length
+  );
+  if (fill <= 0) return prioritized;
+  return [...prioritized, ...selectReviewPages(rest, fill)];
 }

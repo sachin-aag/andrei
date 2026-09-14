@@ -129,13 +129,17 @@ import {
   DocumentReviewSession,
   pickPlanModeChatTools,
   prepareDocumentReviewStep,
+  reviewContinueBudgetMs,
 } from "@/lib/ai/chat/document-review";
 import {
   rehydrateDocumentReviewIfCoverageUnchanged,
   retrievalPolicyAfterCoverageDelta,
 } from "@/lib/ai/chat/document-review-rehydrate";
 import {
+  createSearchGate,
+  documentAskUserDirective,
   searchLoopDirective,
+  withoutAskUserTool,
   withoutSearchTool,
 } from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
@@ -427,7 +431,10 @@ async function handleChatPost(
   });
   const documentReview = new DocumentReviewSession();
   const pushback = isRetrievalPushback(userText);
-  const coverageObjective = planCoverageObjective(pendingPlan, userText);
+  const coverageObjective = planCoverageObjective(pendingPlan, userText, {
+    sectionScope,
+    documentType: report.documentType,
+  });
   const coverageRehydrate = rehydrateDocumentReviewIfCoverageUnchanged({
     session: documentReview,
     messages,
@@ -553,6 +560,7 @@ async function handleChatPost(
     pendingPlan,
   });
 
+  const searchGate = createSearchGate();
   const allTools = buildChatTools({
     reportId,
     canEdit,
@@ -567,6 +575,10 @@ async function handleChatPost(
     editPolicy,
     turnEdits,
     reviewCoverageObjective: coverageObjective,
+    searchGate,
+    reviewContinueBudgetMs: reviewContinueBudgetMs(
+      remainingChatAbortMs(turnStartedAtMs)
+    ),
   });
   const scopedTools: ToolSet =
     mode === "plan"
@@ -700,22 +712,36 @@ async function handleChatPost(
             ? false
             : needsInventoryReview,
         });
-        if (!prepared) return undefined;
-        let activeTools = alreadyDraftedActive
-          ? withoutDraftFieldTools(prepared.activeTools)
-          : prepared.activeTools;
-        // Hide search after a cited page / locate / two empty greps — same
-        // latch as Analytics. Skip while a document review is actively
-        // walking pages (prepareDocumentReviewStep already scopes tools).
         const reviewPhase = documentReview.phase();
         const reviewActive =
           reviewPhase === "in_progress" || reviewPhase === "ready_to_finish";
-        if (
-          !reviewActive &&
-          searchLoopDirective(steps) === "read"
-        ) {
-          activeTools = withoutSearchTool(activeTools);
+        const searchDirective = searchLoopDirective(steps);
+        if (searchDirective === "read") {
+          searchGate.closed = true;
         }
+        const hideAskUser =
+          !reviewActive && documentAskUserDirective(steps) === "hide";
+        const applyLoopHides = (tools: readonly string[]): string[] => {
+          let next = [...tools];
+          if (!reviewActive && searchDirective === "read") {
+            next = withoutSearchTool(next);
+          }
+          if (hideAskUser) {
+            next = withoutAskUserTool(next);
+          }
+          return next;
+        };
+        if (!prepared) {
+          let activeTools = applyLoopHides(advertisedTools);
+          if (alreadyDraftedActive) {
+            activeTools = withoutDraftFieldTools(activeTools);
+          }
+          return { activeTools };
+        }
+        let activeTools = alreadyDraftedActive
+          ? withoutDraftFieldTools(prepared.activeTools)
+          : prepared.activeTools;
+        activeTools = applyLoopHides(activeTools);
         return {
           activeTools,
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
