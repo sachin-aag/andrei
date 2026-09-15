@@ -166,6 +166,11 @@ import {
   useDocumentUploadingNotice,
 } from "@/components/report/document-uploading-notice";
 import {
+  buildPendingChatUserMessage,
+  mergePendingChatUserMessage,
+  pendingChatUserMessageIsRepresented,
+} from "@/components/report/chat-pending-send";
+import {
   CHAT_VISIBLE_TAIL,
   nextVisibleCount,
   shouldLoadOlderMessages,
@@ -786,6 +791,11 @@ export function ChatPanel({
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
   const lastSendTargetRef = useRef<WorkProductView>("report");
   const [lastSendTarget, setLastSendTarget] = useState<WorkProductView>("report");
+  const pendingSendRef = useRef<UIMessage | null>(null);
+  const pendingRestoreRef = useRef<(() => void) | null>(null);
+  const pendingSendStartedRef = useRef(false);
+  const sendEpochRef = useRef(0);
+  const [pendingSend, setPendingSend] = useState<UIMessage | null>(null);
   const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
@@ -802,12 +812,36 @@ export function ChatPanel({
     pendingPlan,
     planChaining,
   } = runtime;
+  const pendingForDisplay =
+    pendingSend != null &&
+    !pendingChatUserMessageIsRepresented(messages, pendingSend)
+      ? pendingSend
+      : null;
+  const threadBusy = busy || pendingForDisplay != null;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
+  const abortPendingSend = useCallback((restoreComposer: boolean) => {
+    sendEpochRef.current += 1;
+    if (
+      restoreComposer &&
+      pendingSendRef.current &&
+      !pendingSendStartedRef.current
+    ) {
+      pendingRestoreRef.current?.();
+    }
+    pendingSendRef.current = null;
+    pendingRestoreRef.current = null;
+    pendingSendStartedRef.current = false;
+    setPendingSend(null);
+  }, []);
+  const stopPendingOrTurn = useCallback(() => {
+    abortPendingSend(true);
+    stopTurn();
+  }, [abortPendingSend, stopTurn]);
   const voice = useVoiceDictation({
     reportId: report.id,
     getPrefix: () => input,
     onComposerValue: setInput,
-    disabled: busy || initializing || attaching || !hostReady,
+    disabled: threadBusy || initializing || attaching || !hostReady,
   });
   const voiceLock = voice.locked;
   const voiceLockRef = useRef(voiceLock);
@@ -822,7 +856,7 @@ export function ChatPanel({
   const runningSessionIds = runningChatSessionIds(
     backgroundSessionIds,
     currentSessionId,
-    busy
+    threadBusy
   );
 
   const persistedEditCount = useMemo(
@@ -835,13 +869,13 @@ export function ChatPanel({
   );
   const persistedEditCountRef = useRef(0);
   useEffect(() => {
-    if (!busy) {
+    if (!threadBusy) {
       setAgentCommitInFlight(false);
     }
-  }, [busy, setAgentCommitInFlight]);
+  }, [threadBusy, setAgentCommitInFlight]);
   useEffect(() => {
-    onAgentBusyChange?.(busy && lastSendTargetRef.current === "analytics");
-  }, [busy, onAgentBusyChange]);
+    onAgentBusyChange?.(threadBusy && lastSendTargetRef.current === "analytics");
+  }, [threadBusy, onAgentBusyChange]);
   useEffect(() => {
     return () => onAgentBusyChange?.(false);
   }, [onAgentBusyChange]);
@@ -1132,7 +1166,7 @@ export function ChatPanel({
 
   const openSession = useCallback(
     (sessionId: string) => {
-      if (sessionId !== currentSessionId && currentSessionId && busy) {
+      if (sessionId !== currentSessionId && currentSessionId && threadBusy) {
         setBackgroundSessionIds((prev) =>
           rememberBackgroundSession(prev, currentSessionId)
         );
@@ -1143,7 +1177,7 @@ export function ChatPanel({
       setCurrentSessionId(sessionId);
       setHistoryOpen(false);
     },
-    [busy, currentSessionId, mountSession]
+    [threadBusy, currentSessionId, mountSession]
   );
 
   const createSession = useCallback(async (): Promise<string | null> => {
@@ -1160,6 +1194,7 @@ export function ChatPanel({
 
   const startBlankChat = useCallback(async () => {
     setHistoryOpen(false);
+    abortPendingSend(false);
     const id = await createSession();
     if (!id) {
       toast.error("Could not start a new chat.");
@@ -1173,16 +1208,16 @@ export function ChatPanel({
     setPendingImages([]);
     setMentions([]);
     setMentionRange(null);
-  }, [createSession, mountSession]);
+  }, [abortPendingSend, createSession, mountSession]);
 
   const newChat = useCallback(async () => {
-    if (currentSessionId && busy) {
+    if (currentSessionId && threadBusy) {
       setBackgroundSessionIds((prev) =>
         rememberBackgroundSession(prev, currentSessionId)
       );
     }
     await startBlankChat();
-  }, [busy, currentSessionId, startBlankChat]);
+  }, [threadBusy, currentSessionId, startBlankChat]);
 
   const closeChatTab = useCallback(
     (sessionId: string) => {
@@ -1243,23 +1278,27 @@ export function ChatPanel({
     []
   );
 
+  const displayMessages = useMemo(
+    () => mergePendingChatUserMessage(messages, pendingForDisplay),
+    [messages, pendingForDisplay]
+  );
   const visibleStartIndex = visibleMessageStartIndex(
-    messages.length,
+    displayMessages.length,
     visibleCount
   );
   const taggedMessages = useMemo(
     () =>
-      tagChatMessages(messages, {
-        inFlightTarget: busy ? lastSendTarget : null,
+      tagChatMessages(displayMessages, {
+        inFlightTarget: threadBusy ? lastSendTarget : null,
       }),
-    [busy, lastSendTarget, messages]
+    [lastSendTarget, displayMessages, threadBusy]
   );
   const visibleMessages = taggedMessages.slice(visibleStartIndex);
   const hiddenCount = visibleStartIndex;
 
   const loadOlderMessages = useCallback(() => {
     if (loadingOlderRef.current) return;
-    if (visibleCount >= messages.length) return;
+    if (visibleCount >= displayMessages.length) return;
     const el = scrollRef.current;
     if (el) {
       olderScrollRestoreRef.current = {
@@ -1268,8 +1307,10 @@ export function ChatPanel({
       };
     }
     loadingOlderRef.current = true;
-    setVisibleCount((current) => nextVisibleCount(current, messages.length));
-  }, [messages.length, visibleCount]);
+    setVisibleCount((current) =>
+      nextVisibleCount(current, displayMessages.length)
+    );
+  }, [displayMessages.length, visibleCount]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -1297,11 +1338,11 @@ export function ChatPanel({
     if (!visibleRef.current || restoringScrollRef.current) return;
     captureVisibleScroll();
     if (
-      shouldLoadOlderMessages(el.scrollTop, visibleCount, messages.length)
+      shouldLoadOlderMessages(el.scrollTop, visibleCount, displayMessages.length)
     ) {
       loadOlderMessages();
     }
-  }, [captureVisibleScroll, loadOlderMessages, messages.length, visibleCount]);
+  }, [captureVisibleScroll, displayMessages.length, loadOlderMessages, visibleCount]);
 
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
@@ -1355,7 +1396,7 @@ export function ChatPanel({
     if (!shouldStickChatToBottom(savedScrollRef.current)) return;
     pinChatScrollerToBottom(el);
     savedScrollRef.current = { kind: "bottom" };
-  }, [messages, status]);
+  }, [displayMessages, status]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -1482,10 +1523,11 @@ export function ChatPanel({
       const sendTarget = target ?? chatTarget;
       if (
         (!trimmed && files.length === 0) ||
-        busy ||
+        threadBusy ||
         initializing ||
         attaching ||
-        voiceLockRef.current
+        voiceLockRef.current ||
+        pendingSendRef.current
       ) {
         return;
       }
@@ -1496,9 +1538,22 @@ export function ChatPanel({
       if (agentDonePrefs.notifications) {
         void requestAgentDoneNotificationPermission();
       }
+      const epoch = ++sendEpochRef.current;
+      const metadata = {
+        chatTarget: sendTarget,
+        ...(options?.autoContinue ? { autoContinue: true } : {}),
+      };
+      const pending = buildPendingChatUserMessage({
+        text: trimmed,
+        files,
+        metadata,
+      });
+      pendingSendRef.current = pending;
+      pendingSendStartedRef.current = false;
+      setPendingSend(pending);
       const tagsForRequest = mentions;
-      // Clear the composer before awaiting section saves so Enter does not
-      // sit on the typed text while ELR (and other types) persist.
+      // Composer clears in the same tick as the optimistic bubble so Enter
+      // never sits on the typed text while section saves flush.
       setInput("");
       setPendingImages([]);
       setMentionRange(null);
@@ -1508,50 +1563,7 @@ export function ChatPanel({
         setPendingImages(attached);
         setMentions(tagsForRequest);
       };
-      try {
-        const flushPromise = flushPendingSectionSaves();
-        let sessionId = currentSessionId;
-        if (!sessionId) {
-          const [, created] = await Promise.all([flushPromise, createSession()]);
-          sessionId = created;
-        } else {
-          await flushPromise;
-        }
-        if (!sessionId) {
-          restoreComposer();
-          toast.error("Could not start a chat session.");
-          return;
-        }
-        currentSessionIdRef.current = sessionId;
-        if (!currentSessionId) {
-          mountSession(sessionId, false);
-          setCurrentSessionId(sessionId);
-        }
-      } catch {
-        restoreComposer();
-        toast.error(
-          "Could not save your latest edits before the assistant ran."
-        );
-        return;
-      }
-      const sessionId = currentSessionIdRef.current;
-      if (!sessionId) {
-        restoreComposer();
-        toast.error("Could not start a chat session.");
-        return;
-      }
-      const sessionRuntime = await waitForValue(() =>
-        runtimeBySessionRef.current.get(sessionId)
-      );
-      if (!sessionRuntime) {
-        restoreComposer();
-        toast.error("Could not start a chat session.");
-        return;
-      }
-      if (sessionRuntime.busy) {
-        restoreComposer();
-        return;
-      }
+      pendingRestoreRef.current = restoreComposer;
       lastSendTargetRef.current = sendTarget;
       setLastSendTarget(sendTarget);
       savedScrollRef.current = { kind: "bottom" };
@@ -1561,6 +1573,53 @@ export function ChatPanel({
         sendTarget !== "analytics"
       ) {
         setAgentCommitInFlight(true);
+      }
+      const sendWasCancelled = () => sendEpochRef.current !== epoch;
+      const failBeforeRequest = (message?: string) => {
+        if (sendWasCancelled()) return;
+        pendingSendRef.current = null;
+        pendingRestoreRef.current = null;
+        pendingSendStartedRef.current = false;
+        setPendingSend(null);
+        restoreComposer();
+        if (message) toast.error(message);
+      };
+      let sessionId = currentSessionId;
+      try {
+        const flushPromise = flushPendingSectionSaves();
+        if (!sessionId) {
+          const [, created] = await Promise.all([flushPromise, createSession()]);
+          sessionId = created;
+        } else {
+          await flushPromise;
+        }
+      } catch {
+        failBeforeRequest(
+          "Could not save your latest edits before the assistant ran."
+        );
+        return;
+      }
+      if (sendWasCancelled()) return;
+      if (!sessionId) {
+        failBeforeRequest("Could not start a chat session.");
+        return;
+      }
+      currentSessionIdRef.current = sessionId;
+      if (!currentSessionId) {
+        mountSession(sessionId, false);
+        setCurrentSessionId(sessionId);
+      }
+      const sessionRuntime = await waitForValue(() =>
+        runtimeBySessionRef.current.get(sessionId)
+      );
+      if (sendWasCancelled()) return;
+      if (!sessionRuntime) {
+        failBeforeRequest("Could not start a chat session.");
+        return;
+      }
+      if (sessionRuntime.busy) {
+        failBeforeRequest();
+        return;
       }
       for (const mention of tagsForRequest) {
         applyMentionFocus(mention);
@@ -1578,24 +1637,21 @@ export function ChatPanel({
           id: mention.id,
         }));
       }
-      const metadata = {
-        chatTarget: sendTarget,
-        ...(options?.autoContinue ? { autoContinue: true } : {}),
-      };
-      if (trimmed && files.length > 0) {
-        void sessionRuntime.sendMessage(
-          { text: trimmed, files, metadata },
-          { body }
-        );
-      } else if (files.length > 0) {
-        void sessionRuntime.sendMessage({ files, metadata }, { body });
-      } else {
-        void sessionRuntime.sendMessage({ text: trimmed, metadata }, { body });
-      }
+      pendingSendStartedRef.current = true;
+      pendingSendRef.current = null;
+      void sessionRuntime.sendMessage(
+        {
+          id: pending.id,
+          role: "user",
+          parts: pending.parts,
+          metadata,
+        },
+        { body }
+      );
     },
     [
       attaching,
-      busy,
+      threadBusy,
       initializing,
       currentSessionId,
       createSession,
@@ -1749,7 +1805,7 @@ export function ChatPanel({
             </button>
           </div>
         ) : null}
-        {messages.length === 0 ? (
+        {displayMessages.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
               {emptyChatIntro({
@@ -1767,7 +1823,7 @@ export function ChatPanel({
                 <button
                   key={p}
                   type="button"
-                  disabled={busy || initializing || voiceLock || !hostReady}
+                  disabled={threadBusy || initializing || voiceLock || !hostReady}
                   title={voiceLock ? "Stop voice input to send" : undefined}
                   onClick={() => void send(p, [])}
                   className="w-full rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 text-left text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] disabled:opacity-50"
@@ -1794,15 +1850,15 @@ export function ChatPanel({
               filenameByAttachmentId={filenameByAttachmentId}
               onOpenCitation={onOpenCitation}
               askUserActive={
-                visibleStartIndex + i === messages.length - 1 &&
-                !busy &&
+                visibleStartIndex + i === displayMessages.length - 1 &&
+                !threadBusy &&
                 !initializing &&
                 !voiceLock
               }
               onAnswerQuestions={(answerText) => void send(answerText, [])}
               streaming={
                 busy &&
-                visibleStartIndex + i === messages.length - 1 &&
+                visibleStartIndex + i === displayMessages.length - 1 &&
                 m.role === "assistant"
               }
               showAnalyticsSwitch={
@@ -1823,7 +1879,7 @@ export function ChatPanel({
             />
           ))
         )}
-        {busy ? (
+        {threadBusy ? (
           <ChatBusyStatus
             mode={mode}
             stale={watchdog === "stale" || watchdog === "give_up"}
@@ -1832,7 +1888,7 @@ export function ChatPanel({
               notifications: readAgentDonePrefs(currentUserId).notifications,
               elapsedMs,
             })}
-            onCancel={stopTurn}
+            onCancel={stopPendingOrTurn}
           />
         ) : planHasRemainingWork(pendingPlan) && !planChaining ? (
           <div className="flex justify-center">
@@ -1850,7 +1906,7 @@ export function ChatPanel({
             </button>
           </div>
         ) : null}
-        {shouldShowChatClientError({ error, busy }) ? (
+        {shouldShowChatClientError({ error, busy: threadBusy }) ? (
           <p className="text-xs text-red-500" data-testid="chat-client-error">
             {CHAT_ASSISTANT_ERROR_MESSAGE}
           </p>
@@ -1872,7 +1928,7 @@ export function ChatPanel({
               value={composerChatTarget}
               options={CHAT_WORK_PRODUCT_OPTIONS}
               onChange={setComposerChatTarget}
-              disabled={busy}
+              disabled={threadBusy}
               ariaLabel="Work product"
               className="w-[7.5rem]"
               testId="chat-work-product-target"
@@ -2065,7 +2121,7 @@ export function ChatPanel({
                     value={mode}
                     options={modeOptions}
                     onChange={setMode}
-                    disabled={busy}
+                    disabled={threadBusy}
                     ariaLabel="Assistant mode"
                     variant="pill"
                     testId={targetingAnalytics ? "analytics-chat-mode" : undefined}
@@ -2074,7 +2130,7 @@ export function ChatPanel({
                     value={pace}
                     options={CHAT_PACE_OPTIONS}
                     onChange={setPace}
-                    disabled={busy}
+                    disabled={threadBusy}
                     ariaLabel="Answer depth"
                     variant="ghost"
                     showIcon={false}
@@ -2086,7 +2142,7 @@ export function ChatPanel({
             <div className="flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                disabled={busy || initializing || attaching || voiceLock || !hostReady}
+                disabled={threadBusy || initializing || attaching || voiceLock || !hostReady}
                 aria-label="Attach image"
                 title="Attach image"
                 data-testid={targetingAnalytics ? "analytics-chat-attach-image" : undefined}
@@ -2104,14 +2160,14 @@ export function ChatPanel({
                 requesting={voice.status === "requesting"}
                 transcribing={voice.status === "stopping"}
                 level={voice.level}
-                disabled={busy || initializing || attaching || !hostReady}
+                disabled={threadBusy || initializing || attaching || !hostReady}
                 targetingAnalytics={targetingAnalytics}
                 onToggle={voice.toggle}
               />
-              {busy ? (
+              {threadBusy ? (
                 <button
                   type="button"
-                  onClick={stopTurn}
+                  onClick={stopPendingOrTurn}
                   aria-label="Stop generating"
                   title="Stop generating"
                   className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90"
