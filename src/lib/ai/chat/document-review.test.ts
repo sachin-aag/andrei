@@ -15,6 +15,7 @@ import {
   pickPlanModeChatTools,
   PLAN_MODE_CHAT_TOOL_NAMES,
   prepareDocumentReviewStep,
+  REVIEW_ALREADY_COMPLETE_MESSAGE,
   REVIEW_EXTRACT_CONCURRENCY,
   REVIEW_FINISH_FINDINGS_CAP,
   reviewBatchNeedsLlmExtract,
@@ -422,7 +423,9 @@ describe("prepareDocumentReviewStep", () => {
         phase: "complete",
         availableTools: available,
       })
-    ).toBeUndefined();
+    ).toEqual({
+      activeTools: ["draft_field", "search_documents", "ask_user"],
+    });
   });
 
   it("forces start on adaptive idle when an empty inventory still needs a matching review", () => {
@@ -451,6 +454,17 @@ describe("prepareDocumentReviewStep", () => {
       activeTools: ["start_document_review"],
       toolChoice: { type: "tool", toolName: "start_document_review" },
     });
+  });
+
+  it("hides review tools after a matching finish so drafting can run", () => {
+    expect(
+      prepareDocumentReviewStep({
+        policy: "adaptive",
+        phase: "complete",
+        availableTools: available,
+        requireInventoryReview: false,
+      })?.activeTools
+    ).toEqual(["draft_field", "search_documents", "ask_user"]);
   });
 });
 
@@ -586,6 +600,61 @@ describe("DocumentReviewSession coverage identity", () => {
     expect(finished.coverageKey).toContain("att_a:400:");
     expect(finished.coverageKey).toContain("att_b:80:");
     expect(finished.coverageKey).toContain("|obj:ids");
+  });
+
+  it("refuses a second start for the same inventory after finish", async () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const sources = [
+      { attachmentId: "att_a", pageCount: 1, ingestRunId: "run" },
+    ];
+    session.start({
+      objective: "monitoring parameters",
+      pages: [page(1, "non-viable viable particle Pass", "att_a")],
+      coverageSources: sources,
+      coverageObjective: "elr_monitoring",
+    });
+    await session.continue();
+    expect(session.finish().status).toBe("complete");
+
+    const again = session.start({
+      objective: "extract sampling connections and ports",
+      pages: [page(1, "non-viable viable particle Pass", "att_a")],
+      coverageSources: sources,
+      coverageObjective: "elr_monitoring",
+    });
+    expect(again).toMatchObject({
+      status: "already_complete",
+      message: REVIEW_ALREADY_COMPLETE_MESSAGE,
+    });
+    expect(session.phase()).toBe("complete");
+  });
+
+  it("starts a new walk when complete coverage is a different inventory", async () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const sources = [
+      { attachmentId: "att_a", pageCount: 1, ingestRunId: "run" },
+    ];
+    session.start({
+      objective: "calibration certificates",
+      pages: [page(1, "certificate Pass", "att_a")],
+      coverageSources: sources,
+      coverageObjective: "elr_calibration",
+    });
+    await session.continue();
+    expect(session.finish().status).toBe("complete");
+
+    const next = session.start({
+      objective: "monitoring parameters",
+      pages: [page(1, "non-viable viable particle Pass", "att_a")],
+      coverageSources: sources,
+      coverageObjective: "elr_monitoring",
+    });
+    expect(next.status).toBe("started");
+    expect(session.phase()).toBe("in_progress");
   });
 
   it("does not reuse a finished walk when the coverage objective changes", () => {

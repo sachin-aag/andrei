@@ -1688,7 +1688,7 @@ export function buildChatTools(opts: {
 
     start_document_review: tool({
       description:
-        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. Returns page counts only — call continue_document_review next.",
+        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call once per section. After finish_document_review reports complete, do not start again with a rephrased objective or another file — fill the table from those findings. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. Returns page counts only — call continue_document_review next.",
       inputSchema: z.object({
         objective: z
           .string()
@@ -1783,7 +1783,7 @@ export function buildChatTools(opts: {
         return {
           status: started.status,
           totalPages: started.totalPages,
-          reviewedPages: 0,
+          reviewedPages: started.reviewedPages,
           findingCount: 0,
           remainingBatches: started.remainingBatches,
           documentCount: started.documentCount,
@@ -1795,10 +1795,13 @@ export function buildChatTools(opts: {
           queuedPages: started.totalPages,
           inputPageCount: started.inputPageCount,
           truncated:
-            started.totalPages < selectedPageTotal || skippedDocuments.length > 0,
+            started.status === "already_complete"
+              ? false
+              : started.totalPages < selectedPageTotal || skippedDocuments.length > 0,
           skippedDocuments,
           documents: selectedDocs.map(reviewDocumentIndexItem),
           nextAction: started.nextAction,
+          ...(started.message ? { message: started.message } : {}),
         };
       },
     }),

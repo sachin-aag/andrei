@@ -255,7 +255,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   on `|obj:`). `isFinished()` after a qualification walk does not unlock
   Associated Instruments. Adaptive idle with an empty in-scope
   inventory still forces `start_document_review`
-  (`requireInventoryReview`). Gate empty tables only — filling missing
+  (`requireInventoryReview`). Recompute that flag from the live
+  `finishedCoverageKey` in `prepareStep` — a matching finish this turn
+  must not force another start because the table is still empty. Hide
+  review tools after that finish and draft. `start_document_review`
+  returns `already_complete` for the same `|obj:` instead of resetting.
+  Gate empty tables only — filling missing
   cells on a partial table is not another full walk. `draft_field` of
   those `table` fields returns `use_edit_table`. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if

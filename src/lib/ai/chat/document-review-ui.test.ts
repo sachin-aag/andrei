@@ -100,6 +100,31 @@ describe("summarizeDocumentReviewProgress", () => {
     expect(snapshot?.pending).toBe(false);
   });
 
+  it("treats a refused second start as complete, not planning", () => {
+    const snapshot = summarizeDocumentReviewProgress([
+      {
+        toolName: "finish_document_review",
+        state: "output-available",
+        output: {
+          status: "complete",
+          totalPages: 8,
+          reviewedPages: 8,
+        },
+      },
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: {
+          status: "already_complete",
+          totalPages: 8,
+          reviewedPages: 8,
+        },
+      },
+    ]);
+    expect(snapshot?.phase).toBe("complete");
+    expect(snapshot?.label).toBe("Complete: reviewed 8/8 pages");
+  });
+
   it("names the reviewed files on the complete line", () => {
     const snapshot = summarizeDocumentReviewProgress([
       {

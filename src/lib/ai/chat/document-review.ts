@@ -27,6 +27,7 @@ import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-genera
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import {
   coverageObjectiveDigest,
+  coverageKeySatisfiesObjective,
   planReviewPages,
 } from "@/lib/ai/chat/review-page-plan";
 
@@ -41,6 +42,9 @@ export const REVIEW_PAGE_TEXT_LIMIT = 12_000;
 export const REVIEW_PAGE_FETCH_CAP = 2500;
 /** In-flight extract calls inside one continue_document_review. */
 export const REVIEW_EXTRACT_CONCURRENCY = 8;
+/** Returned when start is called again after a matching finish this turn. */
+export const REVIEW_ALREADY_COMPLETE_MESSAGE =
+  "This section's document review is already finished. Fill the empty inventory from those findings with edit_table. Do not start another review with a rephrased objective or a different file.";
 const REVIEW_DRAIN_MAX_EXTRACTS = 800;
 /** Stop starting new extract batches after this wall time in one continue. */
 export const REVIEW_CONTINUE_BUDGET_MS = 60_000;
@@ -287,23 +291,44 @@ export class DocumentReviewSession {
     coverageSources?: DocumentReviewCoverageSource[];
     coverageObjective?: string;
   }): {
-    status: "started" | "no_pages" | "already_in_progress";
+    status: "started" | "no_pages" | "already_in_progress" | "already_complete";
     totalPages: number;
+    reviewedPages: number;
     documentCount: number;
     remainingBatches: number;
     nextAction: "continue_document_review" | null;
     queuedAttachmentIds: string[];
     inputPageCount: number;
+    message?: string;
   } {
     if (this.phaseState === "in_progress" || this.phaseState === "ready_to_finish") {
       return {
         status: "already_in_progress",
         totalPages: this.totalPages,
+        reviewedPages: this.reviewedPageKeys.size,
         documentCount: uniqueDocuments(input.pages),
         remainingBatches: this.queue.length,
         nextAction: this.phaseState === "ready_to_finish" ? null : "continue_document_review",
         queuedAttachmentIds: [...new Set(input.pages.map((page) => page.attachmentId))],
         inputPageCount: input.pages.length,
+      };
+    }
+    const nextObjective = input.coverageObjective ?? input.objective;
+    if (
+      this.phaseState === "complete" &&
+      this.coverageKey &&
+      coverageKeySatisfiesObjective(this.coverageKey, nextObjective)
+    ) {
+      return {
+        status: "already_complete",
+        totalPages: this.totalPages,
+        reviewedPages: this.reviewedPageKeys.size,
+        documentCount: uniqueDocuments(input.pages),
+        remainingBatches: 0,
+        nextAction: null,
+        queuedAttachmentIds: [],
+        inputPageCount: input.pages.length,
+        message: REVIEW_ALREADY_COMPLETE_MESSAGE,
       };
     }
 
@@ -318,6 +343,7 @@ export class DocumentReviewSession {
       return {
         status: "no_pages",
         totalPages: 0,
+        reviewedPages: 0,
         documentCount: 0,
         remainingBatches: 0,
         nextAction: null,
@@ -353,6 +379,7 @@ export class DocumentReviewSession {
     return {
       status: "started",
       totalPages: this.totalPages,
+      reviewedPages: 0,
       documentCount: uniqueDocuments(pages),
       remainingBatches: this.queue.length,
       nextAction:
@@ -865,8 +892,16 @@ export function prepareDocumentReviewStep(input: {
         toolChoice: { type: "tool", toolName: "finish_document_review" },
       };
     case "complete":
+      // A leftover finish for a *different* inventory (rehydrated
+      // qualification while drafting monitoring) still needs a walk.
+      // A matching finish this turn must not restart — the empty table is
+      // why we reviewed; the next step is edit_table, not another start.
       if (input.requireInventoryReview) return forceStart();
-      return undefined;
+      return {
+        activeTools: input.availableTools.filter(
+          (name) => !isDocumentReviewToolName(name)
+        ),
+      };
     default: {
       const _exhaustive: never = input.phase;
       throw new Error(`Unhandled document-review phase: ${String(_exhaustive)}`);

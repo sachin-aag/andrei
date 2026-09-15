@@ -708,9 +708,16 @@ async function handleChatPost(
           policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
           availableTools: advertisedTools,
+          // Recompute from the live session. A stale request-start flag
+          // would force another walk after finish while the table is still empty.
           requireInventoryReview: alreadyDraftedActive
             ? false
-            : needsInventoryReview,
+            : inScopeEmptyInventoryNeedsReview({
+                documentType: report.documentType,
+                sections: mergedSections,
+                sectionKeys: inventoryTurnSections,
+                finishedCoverageKey: documentReview.finishedCoverageKey(),
+              }),
         });
         const reviewPhase = documentReview.phase();
         const reviewActive =

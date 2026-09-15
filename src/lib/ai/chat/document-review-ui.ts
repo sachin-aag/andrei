@@ -112,7 +112,9 @@ function resolvePhase(input: {
   if (input.toolName === "finish_document_review" && !input.pending) {
     return "complete";
   }
-  if (input.status === "complete") return "complete";
+  if (input.status === "complete" || input.status === "already_complete") {
+    return "complete";
+  }
   if (
     input.status === "ready_to_finish" ||
     input.toolName === "finish_document_review"

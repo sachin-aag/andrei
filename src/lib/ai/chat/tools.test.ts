@@ -1274,6 +1274,15 @@ describe("buildChatTools document review", () => {
       ])
     );
     expect(session.isFinished()).toBe(true);
+
+    const again = await tools.start_document_review!.execute!(
+      { objective: "requirements and results, sampling ports" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(again).toMatchObject({
+      status: "already_complete",
+    });
+    expect(session.isFinished()).toBe(true);
   });
 
   describe("Convergent Results inventory gate", () => {

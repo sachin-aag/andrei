@@ -200,7 +200,10 @@ client POSTs `Continue the remaining sections.` with `autoContinue` (progress
 chip, not a user bubble). Cancel pauses the queue; a new typed prompt also
 pauses it. Reopening the thread does not auto-chain — Resume continues.
 Coverage identity for document review includes the current objective so a
-finished calibration walk does not satisfy monitoring. When the 270s abort
+finished calibration walk does not satisfy monitoring. After a matching
+finish this turn, do not force another `start_document_review` because the
+inventory table is still empty — hide the review tools and draft
+(`edit_table`). When the 270s abort
 fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`.
 Do not tell the engineer they ran out of steps or to re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
 on write turns whose in-scope section already has a table, and Analytics
