@@ -14,6 +14,10 @@ import {
   stripInlineMarkdown,
 } from "@/lib/tiptap/markdown-to-doc";
 import {
+  tableRefDisplayText,
+  TABLE_REF_NODE_TYPE,
+} from "@/lib/tiptap/table-ref-markdown";
+import {
   collapseWhitespace,
   normalizeUnicodeForAnchor,
 } from "@/lib/text/normalize-for-anchor";
@@ -437,6 +441,14 @@ export function flattenForAnchor(doc: JSONContent): AnchorIndex {
           flatEnd: start + text.length,
         });
       }
+      return;
+    }
+
+    if (node.type === TABLE_REF_NODE_TYPE) {
+      const label = tableRefDisplayText({
+        n: typeof node.attrs?.n === "number" ? node.attrs.n : null,
+      });
+      flat += label;
       return;
     }
 

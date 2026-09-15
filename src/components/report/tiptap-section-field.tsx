@@ -13,6 +13,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { BulletListWithStyle } from "@/lib/tiptap/bullet-list-with-style";
 import { ImageInline } from "@/lib/tiptap/image-inline";
 import { MathBlock, MathInline } from "@/lib/tiptap/math-nodes";
+import { TableRef } from "@/lib/tiptap/table-ref";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCellWithVerticalAlign, TableHeaderWithVerticalAlign } from "@/lib/tiptap/table-cell-vertical-align";
 import { TableWithColumnWidths } from "@/lib/tiptap/table-column-widths";
@@ -55,6 +56,7 @@ import {
 } from "@/lib/tiptap/citation-highlights";
 import { openCitedDocumentOrToast } from "@/lib/citations/open-cited-document";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
+import { TableRefFieldContext } from "@/providers/table-ref-numbers";
 import {
   createPlaceholderHighlightExtension,
   isSelectionOverPlaceholder,
@@ -107,6 +109,7 @@ import {
 } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
+  applyRelatedSectionUpdates,
   dismissSuggestion,
   CommentPersistError,
   PLACEHOLDER_CONFLICT_MESSAGE,
@@ -116,6 +119,7 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { documentContentsFromReportState } from "@/lib/suggestions/document-table-number";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
 import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
@@ -521,6 +525,7 @@ export function TiptapSectionField({
         ImageInline,
         MathInline,
         MathBlock,
+        TableRef,
         Placeholder.configure({ placeholder }),
         TableWithColumnWidths.configure({ resizable: false }),
         TableRow,
@@ -702,6 +707,8 @@ export function TiptapSectionField({
                 openComments: comments.filter(
                   (c) => c.status === "open" && !c.parentId
                 ),
+                documentType: report.documentType,
+                reportSections: sections,
               })
             : await dismissSuggestion({
                 reportId: report.id,
@@ -732,15 +739,14 @@ export function TiptapSectionField({
           throw new Error("Suggestion could not be located");
         }
 
-        const dismissedSiblings =
+        const accepted =
           mode === "accept"
-            ? (
-                result as Extract<
-                  Awaited<ReturnType<typeof acceptSuggestion>>,
-                  { ok: true }
-                >
-              ).dismissed
-            : [];
+            ? (result as Extract<
+                Awaited<ReturnType<typeof acceptSuggestion>>,
+                { ok: true }
+              >)
+            : null;
+        const dismissedSiblings = accepted?.dismissed ?? [];
 
         // Paint the applied result immediately. Preview marks live in the
         // editor, not provider state, so dismiss often has no nextSection.
@@ -750,6 +756,12 @@ export function TiptapSectionField({
         // disappeared.
         if (result.nextSection) {
           replaceSection(section, result.nextSection as unknown);
+          if (accepted) {
+            applyRelatedSectionUpdates(
+              replaceSection,
+              accepted.nextRelatedSections
+            );
+          }
         }
         if (editor && !editor.isDestroyed && isRichField) {
           const pin: {
@@ -814,6 +826,7 @@ export function TiptapSectionField({
     [
       comments,
       report.id,
+      report.documentType,
       section,
       contentPath,
       sections,
@@ -1109,6 +1122,17 @@ export function TiptapSectionField({
               {
                 section,
                 targetField: contentPath,
+                documentContents: documentContentsFromReportState({
+                  documentType: report.documentType,
+                  sections: {
+                    ...sections,
+                    [section]: sectionContent as Record<string, unknown>,
+                  },
+                  comments: comments.filter(
+                    (c) => c.status === "open" && !c.parentId
+                  ),
+                  exceptCommentId: activeSuggestionId,
+                }),
               }
             );
             if (preview.ok) {
@@ -1206,6 +1230,8 @@ export function TiptapSectionField({
     previewHeld,
     section,
     sectionContent,
+    sections,
+    report.documentType,
     suggestionApplyTransition,
     value,
     richFieldOptions,
@@ -1455,7 +1481,11 @@ export function TiptapSectionField({
           data-suggestion-preview-held={previewHeldMode}
           {...(chrome === "page" ? { "aria-label": "Document body" } : {})}
         >
-          {editor ? <EditorContent editor={editor} /> : null}
+          {editor ? (
+            <TableRefFieldContext value={{ section, targetField: contentPath }}>
+              <EditorContent editor={editor} />
+            </TableRefFieldContext>
+          ) : null}
         </div>
       </TiptapEditorContextMenu>
 

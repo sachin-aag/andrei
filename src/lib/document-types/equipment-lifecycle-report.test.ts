@@ -173,7 +173,14 @@ describe("equipment lifecycle report definition", () => {
   });
 
   it("seeds a starter glossary that no criterion enforces", () => {
-    const rows = EMPTY_ELR_CONTENT.elr_abbreviations.table.content?.[0]?.content ?? [];
+    const nodes = EMPTY_ELR_CONTENT.elr_abbreviations.table.content ?? [];
+    const table = nodes.find((node) => node.type === "table");
+    const caption = nodes.find((node) => node.type === "paragraph");
+    const rows = table?.content ?? [];
+    expect(caption?.content?.[0]).toMatchObject({
+      type: "text",
+      text: "Table 1. Abbreviations",
+    });
     expect(rows.length).toBeGreaterThan(1);
     expect(getCriteria(TYPE, "elr_abbreviations")).toHaveLength(0);
   });

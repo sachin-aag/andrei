@@ -360,15 +360,22 @@ describe("partsForPersistedAssistantTurn", () => {
     });
   });
 
-  it("keeps aborted tool progress and appends the interrupted line", () => {
+  it("closes aborted tool chips so the next turn is not missing a tool result", () => {
     const parts = [
-      { type: "tool-search_documents", toolCallId: "call_1" },
+      { type: "tool-search_documents", toolCallId: "call_1", state: "input-available" },
     ] as unknown as UIMessage["parts"];
     expect(
       partsForPersistedAssistantTurn({ parts, isAborted: true })
     ).toEqual({
       parts: [
-        parts[0],
+        {
+          type: "tool-search_documents",
+          toolCallId: "call_1",
+          state: "output-error",
+          errorText:
+            "This tool call was interrupted before it finished.",
+          output: { status: "interrupted", reason: "incomplete" },
+        },
         { type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE },
       ],
       emptyFailure: false,
@@ -434,9 +441,9 @@ describe("partsForPersistedAssistantTurn", () => {
     });
   });
 
-  it("does not append wrap-up copy when tool-calls stop after a search chip", () => {
+  it("closes an unfinished search chip when the model stops on tool-calls", () => {
     const parts = [
-      { type: "tool-search_documents", toolCallId: "call_1" },
+      { type: "tool-search_documents", toolCallId: "call_1", state: "input-available" },
     ] as unknown as UIMessage["parts"];
     expect(
       partsForPersistedAssistantTurn({
@@ -445,7 +452,16 @@ describe("partsForPersistedAssistantTurn", () => {
         finishReason: "tool-calls",
       })
     ).toEqual({
-      parts,
+      parts: [
+        {
+          type: "tool-search_documents",
+          toolCallId: "call_1",
+          state: "output-error",
+          errorText:
+            "This tool call was interrupted before it finished.",
+          output: { status: "interrupted", reason: "incomplete" },
+        },
+      ],
       emptyFailure: false,
       interrupted: false,
       incomplete: true,

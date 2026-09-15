@@ -10,6 +10,7 @@ import {
   SEARCH_DOCUMENTS_MAX_LIMIT,
   SEARCH_DOCUMENTS_MAX_QUERIES,
   SEARCH_EXCLUDE_PAGES_MAX,
+  SEARCH_COVERAGE_HINT,
 } from "@/lib/ai/chat/tools";
 import {
   parseAiFixCommentContent,
@@ -337,6 +338,10 @@ describe("buildChatTools search_documents scoping", () => {
       "missing or ambiguous"
     );
     expect(tools.search_documents?.description).toContain("Grep only");
+    expect(tools.search_documents?.description).not.toContain(
+      "truncated=true means keep grepping"
+    );
+    expect(SEARCH_COVERAGE_HINT).not.toContain("If truncated=true, grep again");
   });
 });
 
@@ -979,6 +984,134 @@ describe("buildChatTools document review", () => {
     ).toContain("att_a:400:");
   });
 
+  it("walks every ready file for ELR inventory instead of asking for one protocol", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        description: null,
+        pageCount: 22,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        description: null,
+        pageCount: 18,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        pageNumber: 1,
+        transcript: "Approval page for performance qualification",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        pageNumber: 9,
+        transcript:
+          "Non-Viable Particulate Monitoring (Grade A LAF) period 23/07/2024",
+        pageContext: "Environmental monitoring",
+        printedPageLabel: "9",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      reviewCoverageObjective: "elr_monitoring",
+    });
+    const result = await tools.start_document_review!.execute!(
+      {
+        objective: "elr_monitoring",
+        attachmentIds: ["att_pqp"],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_pqp", "att_prqr"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_pqp", "att_prqr"],
+    });
+    expect(
+      (result as { queuedPages?: number; skippedDocuments?: unknown[] })
+        .queuedPages
+    ).toBe(1);
+  });
+
+  it("walks every ready file for ELR Calibration with the same column filter", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        description: null,
+        pageCount: 22,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_cal",
+        filename: "CAL-E-PR-070.pdf",
+        description: null,
+        pageCount: 4,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        pageNumber: 1,
+        transcript: "Approval page for performance qualification",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+      {
+        attachmentId: "att_cal",
+        filename: "CAL-E-PR-070.pdf",
+        pageNumber: 1,
+        transcript: "Certificate of calibration CAL-12 as found / as left",
+        pageContext: "Calibration certificates",
+        printedPageLabel: "1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      reviewCoverageObjective: "elr_calibration",
+    });
+    const result = await tools.start_document_review!.execute!(
+      {
+        objective: "elr_calibration",
+        attachmentIds: ["att_pqp"],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_pqp", "att_cal"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_pqp", "att_cal"],
+    });
+    expect(
+      (result as { queuedPages?: number }).queuedPages
+    ).toBe(1);
+  });
+
   it("asks which attachment to review when several ready documents are untagged", async () => {
     listReadyDocumentsForReportMock.mockResolvedValueOnce([
       {
@@ -1216,7 +1349,7 @@ describe("buildChatTools document review", () => {
         attachmentId: "att_b",
         filename: "Appendix-B.pdf",
         pageNumber,
-        transcript: families[(pageNumber - 1) % families.length]!,
+        transcript: `TABLE 4 SOFTWARE REQUIREMENTS\n${families[(pageNumber - 1) % families.length]!} results`,
         pageContext: null,
         printedPageLabel: String(pageNumber),
       };
@@ -1268,6 +1401,15 @@ describe("buildChatTools document review", () => {
         "SW-SDT-3",
       ])
     );
+    expect(session.isFinished()).toBe(true);
+
+    const again = await tools.start_document_review!.execute!(
+      { objective: "requirements and results, sampling ports" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(again).toMatchObject({
+      status: "already_complete",
+    });
     expect(session.isFinished()).toBe(true);
   });
 

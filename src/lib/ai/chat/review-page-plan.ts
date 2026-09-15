@@ -1,3 +1,9 @@
+import {
+  inventorySectionForObjective,
+  scoreInventoryReviewPage,
+} from "@/lib/ai/chat/inventory-review-schema";
+import { phraseFamiliesForReviewObjective } from "@/lib/ai/chat/search-phrase-families";
+
 const STOPWORDS = new Set([
   "a",
   "an",
@@ -20,6 +26,7 @@ export type ReviewPagePlanInput = {
   pageContext?: string | null;
   outlineTitle?: string | null;
   identifiers?: readonly string[] | null;
+  pageNumber?: number | null;
 };
 
 /**
@@ -99,8 +106,13 @@ export function scoreReviewPage(
   page: ReviewPagePlanInput,
   objective: string
 ): number {
+  const inventoryScore = scoreInventoryReviewPage(page, objective);
+  if (inventoryScore !== null) return inventoryScore;
   const tokens = objectiveTokens(objective);
-  if (tokens.length === 0) return 0;
+  const familyTerms = phraseFamiliesForReviewObjective(objective).flatMap(
+    (family) => [...family]
+  );
+  if (tokens.length === 0 && familyTerms.length === 0) return 0;
   const identifiers = (page.identifiers ?? []).map((id) => id.toLowerCase());
   const haystack = [
     page.outlineTitle ?? "",
@@ -111,41 +123,116 @@ export function scoreReviewPage(
     .join(" ")
     .toLowerCase();
   let score = 0;
+  for (const term of familyTerms) {
+    const needle = term.toLowerCase();
+    if (needle.length >= 3 && haystack.includes(needle)) score += 4;
+  }
   for (const token of tokens) {
     if (identifiers.some((id) => id.includes(token) || token.includes(id))) {
       score += 8;
       continue;
     }
-    if (haystack.includes(token)) score += 2;
+    if (familyTerms.length === 0 && haystack.includes(token)) score += 2;
   }
   return score;
 }
 
 /**
- * Prefer pages that match the review objective, then fair-share the rest
- * so one file cannot consume the safety cap.
+ * If almost no pages score, keep nearby pages from the same file (or a
+ * small fair-share sample when nothing matched). Do not pad 40 leftover
+ * pages from other attachments.
+ */
+export const REVIEW_OBJECTIVE_PAGE_FLOOR = 8;
+
+function pageOrdinal<T extends ReviewPagePlanInput>(
+  page: T,
+  indexInAttachment: number
+): number {
+  return typeof page.pageNumber === "number" && Number.isFinite(page.pageNumber)
+    ? page.pageNumber
+    : indexInAttachment;
+}
+
+/**
+ * Same-attachment pages closest to scored hits (page ±1, then ±2, …).
+ * Does not pull unrelated files.
+ */
+export function neighborFillPages<T extends ReviewPagePlanInput>(
+  all: readonly T[],
+  hits: readonly T[],
+  fill: number
+): T[] {
+  if (fill <= 0 || hits.length === 0) return [];
+  const hitSet = new Set<T>(hits);
+  const byAttachment = new Map<string, T[]>();
+  for (const page of all) {
+    const existing = byAttachment.get(page.attachmentId);
+    if (existing) {
+      existing.push(page);
+      continue;
+    }
+    byAttachment.set(page.attachmentId, [page]);
+  }
+
+  const ranked: { dist: number; page: T }[] = [];
+  for (const hit of hits) {
+    const siblings = byAttachment.get(hit.attachmentId) ?? [];
+    const hitAt = siblings.indexOf(hit);
+    const hitNo = pageOrdinal(hit, hitAt);
+    for (const [sibAt, sib] of siblings.entries()) {
+      if (hitSet.has(sib)) continue;
+      ranked.push({
+        dist: Math.abs(pageOrdinal(sib, sibAt) - hitNo),
+        page: sib,
+      });
+    }
+  }
+  ranked.sort((a, b) => a.dist - b.dist);
+  const out: T[] = [];
+  const seen = new Set<T>(hits);
+  for (const row of ranked) {
+    if (seen.has(row.page)) continue;
+    seen.add(row.page);
+    out.push(row.page);
+    if (out.length >= fill) break;
+  }
+  return out;
+}
+
+/**
+ * Queue pages that match the review objective. Do not pad leftovers up to
+ * the listing cap — an objective-filtered finish is complete for that `|obj:`.
+ * When few pages score, keep nearby pages in the same file up to
+ * `REVIEW_OBJECTIVE_PAGE_FLOOR`. When nothing scores, take that many
+ * fair-shared pages so the walk is not empty.
  */
 export function planReviewPages<T extends ReviewPagePlanInput>(
   pages: readonly T[],
   objective: string,
   cap: number
 ): T[] {
-  if (pages.length <= cap && objectiveTokens(objective).length === 0) {
-    return [...pages];
+  if (
+    objectiveTokens(objective).length === 0 &&
+    phraseFamiliesForReviewObjective(objective).length === 0 &&
+    inventorySectionForObjective(objective) === null
+  ) {
+    return selectReviewPages(pages, cap);
   }
   const relevant: T[] = [];
-  const rest: T[] = [];
   for (const page of pages) {
     if (scoreReviewPage(page, objective) > 0) relevant.push(page);
-    else rest.push(page);
   }
-  if (pages.length <= cap) {
-    return [...relevant, ...rest];
+  if (relevant.length === 0) {
+    return selectReviewPages(pages, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap));
   }
   const prioritized = selectReviewPages(relevant, cap);
-  if (prioritized.length >= cap) return prioritized;
-  return [
-    ...prioritized,
-    ...selectReviewPages(rest, cap - prioritized.length),
-  ];
+  if (prioritized.length >= REVIEW_OBJECTIVE_PAGE_FLOOR) {
+    return prioritized;
+  }
+  const fill = Math.min(
+    REVIEW_OBJECTIVE_PAGE_FLOOR - prioritized.length,
+    cap - prioritized.length
+  );
+  if (fill <= 0) return prioritized;
+  return [...prioritized, ...neighborFillPages(pages, prioritized, fill)];
 }

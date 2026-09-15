@@ -10,6 +10,11 @@ import {
   type CommitEditFailureStatus,
   type CommitEditInput,
 } from "@/lib/suggestions/apply-commit-content";
+import {
+  cascadeFilledTableCaptionsInSections,
+  relatedSectionContentsAfterCascade,
+} from "@/lib/suggestions/document-table-number";
+import { loadDocumentContentsForTableNumber } from "@/lib/suggestions/load-document-table-contents";
 import { extractFieldContent } from "@/lib/suggestions/suggestion-record";
 import { mergeField } from "@/lib/suggestions/three-way-merge";
 import { setPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
@@ -57,6 +62,10 @@ export async function commitChatEdit(args: {
   reasoning: string;
   input: CommitEditInput;
 }): Promise<CommitEditResult> {
+  const documentContents = await loadDocumentContentsForTableNumber({
+    reportId: args.reportId,
+    documentType: args.documentType,
+  });
   const applied = await db.transaction(async (tx) => {
     const [row] = await tx
       .select()
@@ -79,6 +88,7 @@ export async function commitChatEdit(args: {
       targetField: args.targetField,
       documentType: args.documentType,
       input: args.input,
+      documentContents,
     });
     if (!next.ok) return next;
 
@@ -104,6 +114,32 @@ export async function commitChatEdit(args: {
       );
     }
 
+    const sectionRows = await tx
+      .select({
+        section: reportSections.section,
+        content: reportSections.content,
+      })
+      .from(reportSections)
+      .where(eq(reportSections.reportId, args.reportId));
+    const liveSections: Partial<Record<string, unknown>> = {};
+    for (const row of sectionRows) {
+      liveSections[row.section] = mergeSection(row.section, row.content);
+    }
+    liveSections[args.section] = content;
+    const cascaded = cascadeFilledTableCaptionsInSections({
+      documentType: args.documentType,
+      sections: liveSections,
+    });
+    const primary = cascaded.sections[args.section];
+    if (primary && typeof primary === "object") {
+      content = primary as Record<string, unknown>;
+    }
+    const related = relatedSectionContentsAfterCascade({
+      primarySection: args.section,
+      changedSections: cascaded.changedSections,
+      sections: cascaded.sections,
+    });
+
     await persistSectionContent({
       actor: args.actor,
       reportId: args.reportId,
@@ -111,6 +147,16 @@ export async function commitChatEdit(args: {
       content,
       executor: tx,
     });
+    for (const [section, relatedContent] of Object.entries(related)) {
+      if (!relatedContent) continue;
+      await persistSectionContent({
+        actor: args.actor,
+        reportId: args.reportId,
+        section: section as SectionType,
+        content: relatedContent,
+        executor: tx,
+      });
+    }
     return { ok: true as const, content };
   });
 

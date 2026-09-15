@@ -53,6 +53,7 @@ import {
 } from "@/lib/suggestions/apply-transition";
 import {
   acceptSuggestion,
+  applyRelatedSectionUpdates,
   dismissSuggestion,
   CommentPersistError,
   PLACEHOLDER_CONFLICT_MESSAGE,
@@ -856,6 +857,8 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         sectionContent: sections[section] as Record<string, unknown>,
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
         openComments: comments.filter((c) => c.status === "open" && !c.parentId),
+        documentType: report.documentType,
+        reportSections: sections,
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -878,6 +881,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         throw new Error("Suggestion could not be located");
       }
       replaceSection(section, result.nextSection as unknown);
+      applyRelatedSectionUpdates(replaceSection, result.nextRelatedSections);
 
       setComments((prev) =>
         prev

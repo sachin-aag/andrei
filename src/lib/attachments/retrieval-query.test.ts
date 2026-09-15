@@ -61,6 +61,25 @@ describe("lexicalMatchScore", () => {
     );
     expect(phrase).toBeGreaterThan(single);
   });
+
+  it("does not treat filling or ASEPTIC PROCESSING as a Media Fill hit", () => {
+    const buried = lexicalMatchScore(
+      "Media fill / APS run MF/DP/25/001 completed with zero contaminated units.",
+      "Media Fill"
+    );
+    const magnet = lexicalMatchScore(
+      "STERILINE ASEPTIC PROCESSING IQ filter certification filling line.",
+      "Media Fill"
+    );
+    expect(buried).toBeGreaterThan(magnet);
+    expect(magnet).toBe(0);
+  });
+
+  it("does not match MF as a substring of S.No MF Project ID", () => {
+    expect(
+      lexicalMatchScore("S.No MF Project ID alarm log", "APS")
+    ).toBe(0);
+  });
 });
 
 describe("buildMatchCenteredSnippet", () => {

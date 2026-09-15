@@ -214,6 +214,72 @@ describe("rehydrateDocumentReviewIfCoverageUnchanged", () => {
     expect(result.restored).toBe(false);
     expect(session.isFinished()).toBe(false);
   });
+
+  it("does not restore an incomplete or truncated finish", () => {
+    const session = new DocumentReviewSession();
+    const incomplete: UIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "f1",
+            state: "output-available",
+            input: {},
+            output: {
+              status: "incomplete",
+              coverageComplete: true,
+              reviewedPages: 3,
+              totalPages: 3,
+              coverageKey: "att_a:3:unknown",
+            },
+          },
+        ],
+      },
+    ];
+    expect(
+      rehydrateDocumentReviewIfCoverageUnchanged({
+        session,
+        messages: incomplete,
+        readyDocuments: [
+          { attachmentId: "att_a", pageCount: 3, ingestRunId: null },
+        ],
+      }).restored
+    ).toBe(false);
+
+    const truncated: UIMessage[] = [
+      {
+        id: "a2",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "f1",
+            state: "output-available",
+            input: {},
+            output: {
+              status: "complete",
+              truncated: true,
+              coverageKey: "att_a:3:unknown",
+              coverageComplete: true,
+              reviewedPages: 3,
+              totalPages: 3,
+            },
+          },
+        ],
+      },
+    ];
+    expect(
+      rehydrateDocumentReviewIfCoverageUnchanged({
+        session: new DocumentReviewSession(),
+        messages: truncated,
+        readyDocuments: [
+          { attachmentId: "att_a", pageCount: 3, ingestRunId: null },
+        ],
+      }).restored
+    ).toBe(false);
+  });
 });
 
 describe("retrievalPolicyAfterCoverageDelta", () => {

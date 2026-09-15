@@ -5,6 +5,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db";
 import { comments, reportSections, reports } from "@/db/schema";
 import type {
+  DocumentType,
   InvestigationReportMetadata,
   ReportMetadata,
   SectionType,
@@ -111,13 +112,15 @@ import {
   applyTableOperation,
   captureTableOperationSnapshots,
   coerceTableOperationInput,
+  countFilledTablesInDocument,
   defaultTableCaptionTitle,
-  existingTableCountFromContents,
+  filledTableNumberInDocument,
   parseTableOperation,
   prefixTableCaptionMarkdown,
   summarizeTableOperation,
   tableOperationInvalidHint,
 } from "@/lib/suggestions/table-operation";
+import { loadDocumentContentsForTableNumber } from "@/lib/suggestions/load-document-table-contents";
 import {
   createSameTurnBlockPairing,
   isAppendBlock,
@@ -224,6 +227,14 @@ import {
   DocumentReviewSession,
   documentReviewCoverageKey,
 } from "@/lib/ai/chat/document-review";
+import type { SearchGate } from "@/lib/ai/chat/search-loop";
+import {
+  isElrInventoryReviewObjective,
+} from "@/lib/ai/chat/inventory-review-schema";
+import {
+  planDocumentSearchQuery,
+  phraseFamiliesForSection,
+} from "@/lib/ai/chat/search-phrase-families";
 import {
   CitationPageLedger,
 } from "@/lib/ai/chat/citation-grounding";
@@ -518,7 +529,7 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
       .min(1)
       .optional()
       .describe(
-        "Caption title. The server inserts `Table N. {title}` above the table and returns tableNumber. Refer to Table N in the lead-in sentence."
+        "Caption title. The server inserts `Table N. {title}` above the table. In lead-in/assessment prose write `[[table]]` (never the integer)."
       ),
     afterAnchor: z
       .string()
@@ -544,7 +555,9 @@ export const SEARCH_QUERY_MAX_CHARS = 500;
 export const SEARCH_EXCLUDE_PAGES_MAX = 80;
 const SEARCH_SCOPES = ["tagged", "all"] as const;
 export const SEARCH_COVERAGE_HINT =
-  "Grep loop: this list is ranked, not complete. Pass nextExcludePages as excludePages on the next call. For tables, grep complementary objects (UUT vs equipment, fixtures, serials) before drafting. Use mode=keyword for exact protocol terms. If truncated=true, grep again. Hits with divider=true are attachment cover/title pages, not the data table — read p. N+1 before drafting. They do not count as a cited data page.";
+  "Grep loop: this list is ranked, not complete. Pass nextExcludePages as excludePages on the next complementary grep (sibling objects you have not searched), not because truncated=true. truncated=true means more matching pages exist — outline or read the cited page. For tables, grep complementary objects (UUT vs equipment, fixtures, serials) before drafting. Use mode=keyword for exact protocol terms. Hits with divider=true are attachment cover/title pages, not the data table — read p. N+1 before drafting. They do not count as a cited data page.";
+export const DOCUMENT_SEARCH_CLOSED_MESSAGE =
+  "Search is closed for this turn. Read a cited page or document_outline — do not grep again because truncated=true, and do not ask_user which page to read.";
 
 function clampSearchQueryText(value: string): string {
   const query = value.replace(/\s+/g, " ").trim();
@@ -755,6 +768,15 @@ function hasSearchQuery(value: {
   return collectSearchQueries(value).length > 0;
 }
 
+function phraseFamiliesForChatSearch(
+  sectionScope?: string | null,
+  coverageObjective?: string | null
+): readonly (readonly string[])[] {
+  const scoped = phraseFamiliesForSection(sectionScope);
+  if (scoped.length > 0) return scoped;
+  return phraseFamiliesForSection(coverageObjective);
+}
+
 /**
  * `search_documents`, optionally restricted to the documents the engineer
  * tagged with @. Tagged scoping is applied server-side so it holds even when
@@ -766,9 +788,26 @@ function buildSearchDocumentsTool(opts: {
   citationRule: string;
   citationLedger: CitationPageLedger;
   onCitedPage?: () => void;
+  searchGate?: SearchGate;
+  sectionScope?: string | null;
+  reviewCoverageObjective?: string | null;
 }) {
-  const { reportId, pinnedAttachmentIds, citationRule, citationLedger, onCitedPage } =
-    opts;
+  const {
+    reportId,
+    pinnedAttachmentIds,
+    citationRule,
+    citationLedger,
+    onCitedPage,
+    searchGate,
+  } = opts;
+  const phraseFamilies = phraseFamiliesForChatSearch(
+    opts.sectionScope,
+    opts.reviewCoverageObjective
+  );
+  const familySection =
+    opts.sectionScope && opts.sectionScope !== "all"
+      ? opts.sectionScope
+      : opts.reviewCoverageObjective;
 
   async function runSearch(input: {
     query?: string;
@@ -778,7 +817,30 @@ function buildSearchDocumentsTool(opts: {
     excludePages?: Array<{ attachmentId: string; pageNumber: number }>;
     attachmentIds?: string[];
   }) {
+    if (searchGate?.closed) {
+      return {
+        status: "search_closed" as const,
+        message: DOCUMENT_SEARCH_CLOSED_MESSAGE,
+        results: [],
+        queriesRun: collectSearchQueries(input),
+        returnedCount: 0,
+        truncated: false,
+        coverageHint: SEARCH_COVERAGE_HINT,
+        citationRule,
+        trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+      };
+    }
     const queryList = collectSearchQueries(input);
+    const queryPlan = queryList.map((query) => {
+      const plan = planDocumentSearchQuery(query, familySection);
+      return {
+        query,
+        phrases: plan.phrases,
+        tsQuery: plan.tsQuery,
+        families: plan.families,
+        tokens: plan.tokens,
+      };
+    });
     const arms = await searchReportDocumentsMany({
       reportId,
       queries: queryList,
@@ -787,6 +849,7 @@ function buildSearchDocumentsTool(opts: {
       backfill: input.attachmentIds === undefined,
       mode: input.mode,
       excludePages: input.excludePages,
+      phraseFamilies,
     });
     const byId = new Map<string, (typeof arms)[number][number]>();
     for (const arm of arms) {
@@ -820,6 +883,8 @@ function buildSearchDocumentsTool(opts: {
       mode: input.mode ?? "hybrid",
       returnedCount: merged.length,
       dividerHits: annotated.dividerHits,
+      dataHits: Math.max(0, annotated.results.length - annotated.dividerHits),
+      queryPlan,
       truncated,
       seenPages: merged.map((hit) => ({
         attachmentId: hit.attachmentId,
@@ -839,7 +904,7 @@ function buildSearchDocumentsTool(opts: {
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 8 strings per call. mode=keyword is lexical grep. truncated=true means keep grepping. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
+        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 8 strings per call. mode=keyword is lexical grep. truncated=true means more matching pages exist — outline or read; do not grep again for the same terms. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
       inputSchema: z.preprocess(
         coerceSearchDocumentsInput,
         z
@@ -854,7 +919,7 @@ function buildSearchDocumentsTool(opts: {
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-        `Grep only the ${tagged} document(s) the engineer tagged with @. Prefer complementary queries for tables (at most 8 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
+        `Grep only the ${tagged} document(s) the engineer tagged with @. Prefer complementary queries for tables (at most 8 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means more matching pages exist — outline or read; do not grep again for the same terms. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
     inputSchema: z.preprocess(
       coerceSearchDocumentsInput,
       z
@@ -893,17 +958,11 @@ async function loadMergedSection(
   };
 }
 
-async function existingTableCountForReport(reportId: string): Promise<number> {
-  const rows = await db
-    .select({
-      section: reportSections.section,
-      content: reportSections.content,
-    })
-    .from(reportSections)
-    .where(eq(reportSections.reportId, reportId));
-  return existingTableCountFromContents(
-    rows.map((row) => mergeSection(row.section, row.content))
-  );
+async function documentContentsForReport(
+  reportId: string,
+  documentType: DocumentType
+) {
+  return loadDocumentContentsForTableNumber({ reportId, documentType });
 }
 
 function fieldSnapshotKey(section: SectionType, targetField: string): string {
@@ -978,6 +1037,10 @@ export function buildChatTools(opts: {
   unsupportedFactPolicy?: UnsupportedFactPolicy;
   /** Section/objective digest so review coverage does not leak across sections. */
   reviewCoverageObjective?: string;
+  /** Request-scoped latch so a cited page hides further grep even if the model retries. */
+  searchGate?: SearchGate;
+  /** Stop starting review extract batches after this wall time in one continue. */
+  reviewContinueBudgetMs?: number;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1451,6 +1514,9 @@ export function buildChatTools(opts: {
       citationRule,
       citationLedger,
       onCitedPage: noteCitedRetrieval,
+      searchGate: opts.searchGate,
+      sectionScope: opts.sectionScope,
+      reviewCoverageObjective: opts.reviewCoverageObjective,
     }),
 
     list_attachments: tool({
@@ -1622,7 +1688,7 @@ export function buildChatTools(opts: {
 
     start_document_review: tool({
       description:
-        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. Returns page counts only — call continue_document_review next.",
+        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call once per section. After finish_document_review reports complete, do not start again with a rephrased objective or another file — fill the table from those findings. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. For ELR inventory tables, omit attachmentIds so every ready file is listed; the review keeps pages that match that table's columns. Returns page counts only — call continue_document_review next.",
       inputSchema: z.object({
         objective: z
           .string()
@@ -1634,7 +1700,7 @@ export function buildChatTools(opts: {
           .max(12)
           .optional()
           .describe(
-            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists."
+            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so every ready file is column-filtered)."
           ),
       }),
       execute: async ({ objective, attachmentIds }) => {
@@ -1646,12 +1712,25 @@ export function buildChatTools(opts: {
           pinnedReady.length > 0
             ? requested.filter((id) => pinnedAttachmentIdSet.has(id))
             : requested;
+        const coverageObjective = resolveReviewCoverageObjective({
+          routeObjective: opts.reviewCoverageObjective,
+          toolObjective: objective,
+          documentType,
+          sectionScope: opts.sectionScope,
+        });
+        const inventoryScoped =
+          documentType === "equipment_lifecycle_report" &&
+          isElrInventoryReviewObjective(coverageObjective, objective);
         const selected =
-          requestedInScope.length > 0
-            ? requestedInScope.filter((id) => allowed.has(id))
-            : pinnedReady.length > 0
-              ? pinnedReady
-              : ready.map((doc) => doc.attachmentId);
+          pinnedReady.length > 0
+            ? requestedInScope.length > 0
+              ? requestedInScope.filter((id) => allowed.has(id))
+              : pinnedReady
+            : inventoryScoped
+              ? ready.map((doc) => doc.attachmentId)
+              : requestedInScope.length > 0
+                ? requestedInScope.filter((id) => allowed.has(id))
+                : ready.map((doc) => doc.attachmentId);
         if (selected.length === 0) {
           return {
             status: "no_documents" as const,
@@ -1663,6 +1742,7 @@ export function buildChatTools(opts: {
           };
         }
         if (
+          !inventoryScoped &&
           requested.length === 0 &&
           pinnedReady.length === 0 &&
           ready.length > 1
@@ -1690,11 +1770,6 @@ export function buildChatTools(opts: {
           pageCount: doc.pageCount ?? 0,
           ingestRunId: doc.ingestRunId,
         }));
-        const coverageObjective = resolveReviewCoverageObjective({
-          routeObjective: opts.reviewCoverageObjective,
-          toolObjective: objective,
-          documentType,
-        });
         const started = documentReview.start({
           objective,
           pages,
@@ -1716,7 +1791,7 @@ export function buildChatTools(opts: {
         return {
           status: started.status,
           totalPages: started.totalPages,
-          reviewedPages: 0,
+          reviewedPages: started.reviewedPages,
           findingCount: 0,
           remainingBatches: started.remainingBatches,
           documentCount: started.documentCount,
@@ -1728,10 +1803,13 @@ export function buildChatTools(opts: {
           queuedPages: started.totalPages,
           inputPageCount: started.inputPageCount,
           truncated:
-            started.totalPages < selectedPageTotal || skippedDocuments.length > 0,
+            started.status === "already_complete"
+              ? false
+              : started.totalPages < selectedPageTotal || skippedDocuments.length > 0,
           skippedDocuments,
           documents: selectedDocs.map(reviewDocumentIndexItem),
           nextAction: started.nextAction,
+          ...(started.message ? { message: started.message } : {}),
         };
       },
     }),
@@ -1741,7 +1819,10 @@ export function buildChatTools(opts: {
         "Process the next page batch of the current document review. Returns progress only — not raw page text. Repeat until coverage is complete.",
       inputSchema: z.object({}),
       execute: async (_input, { abortSignal }) =>
-        documentReview.continue({ abortSignal }),
+        documentReview.continue({
+          abortSignal,
+          budgetMs: opts.reviewContinueBudgetMs,
+        }),
     }),
 
     finish_document_review: tool({
@@ -2977,7 +3058,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, delete_table (remove the whole table; keeps surrounding prose, figures, and citations), insert_column (optional per-row values; omit afterCol to append as the last column), delete_column, and create_table (headers plus rows, plus title) to add a NEW table in a rich field. Pass title so the server inserts \`Table N. {title}\` above the table and returns tableNumber; refer to Table N in the same-turn lead-in. Filling an existing or seeded table (edit_cells / insert_rows) also inserts Table N. {title} when data lands and returns tableNumber — do not create_table a second grid. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section FIRST and copy tableIndex plus [row,col] / header text from tables[] / structuredText when editing an existing table. To add an example to a table, edit_cells (or insert_column) — never propose_edit a bullet list. Row 0 is the header and cannot be deleted; the first data row is row 1. To delete the whole table, use kind delete_table with tableIndex — do not delete every data row (that leaves an empty header) and do not rewrite the field with draft_field. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. edit_cells may omit expectedText (server captures it). When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create, incrementally edit, or remove a table.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, delete_table (remove the whole table; keeps surrounding prose, figures, and citations), insert_column (optional per-row values; omit afterCol to append as the last column), delete_column, and create_table (headers plus rows, plus title) to add a NEW table in a rich field. Pass title so the server inserts \`Table N. {title}\` above the table and returns tableNumber for display only; write \`[[table]]\` in the same-turn lead-in (never type Table N). Filling an existing or seeded table (edit_cells / insert_rows) also inserts Table N. {title} when data lands and returns tableNumber — do not create_table a second grid. N is server-owned: inserting, filling, or deleting a table renumbers later filled captions automatically. Do not propose_edit the caption number; you may edit the title after \`Table N. \`. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section FIRST and copy tableIndex plus [row,col] / header text from tables[] / structuredText when editing an existing table. To add an example to a table, edit_cells (or insert_column) — never propose_edit a bullet list. Row 0 is the header and cannot be deleted; the first data row is row 1. To delete the whole table, use kind delete_table with tableIndex — do not delete every data row (that leaves an empty header) and do not rewrite the field with draft_field. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. edit_cells may omit expectedText (server captures it). When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create, incrementally edit, or remove a table.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3105,11 +3186,14 @@ export function buildChatTools(opts: {
           : { operation: capturedOp, citations: [] as string[] };
         let applied;
         try {
-          const existingTableCount = await existingTableCountForReport(reportId);
+          const documentContents = await documentContentsForReport(
+            reportId,
+            documentType
+          );
           applied = applyTableOperation(fieldDoc, stripped.operation, {
             section,
             targetField: resolvedField,
-            existingTableCount,
+            documentContents,
           });
         } catch (err) {
           console.error("edit_table failed", err);
@@ -3414,10 +3498,24 @@ export function buildChatTools(opts: {
         let markdownForDraft = markdown;
         let tableNumber: number | undefined;
         if (resolvedField === "table" && markdownHasTable(markdown)) {
+          const documentContents = await documentContentsForReport(
+            reportId,
+            documentType
+          );
+          const tableOrdinal =
+            filledTableNumberInDocument({
+              contents: documentContents,
+              target: {
+                section,
+                targetField: resolvedField,
+                tableIndex: 0,
+              },
+            }) ?? countFilledTablesInDocument(documentContents) + 1;
           const prefixed = prefixTableCaptionMarkdown(
             markdown,
-            await existingTableCountForReport(reportId),
-            defaultTableCaptionTitle(section)
+            0,
+            defaultTableCaptionTitle(section),
+            tableOrdinal
           );
           markdownForDraft = prefixed.markdown;
           tableNumber = prefixed.tableNumber;

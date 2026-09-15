@@ -5,6 +5,7 @@ import {
   sectionFillState,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
+import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import { coverageKeySatisfiesObjective } from "@/lib/ai/chat/review-page-plan";
 import { getDocumentType } from "@/lib/document-types";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
@@ -432,8 +433,19 @@ export function persistablePendingPlan(
 
 export function planCoverageObjective(
   plan: ChatPendingPlan | null,
-  userText: string
+  userText: string,
+  options?: {
+    sectionScope?: string | null;
+    documentType?: DocumentType;
+  }
 ): string {
+  const documentType = options?.documentType ?? "investigation_report";
+  const scope = options?.sectionScope?.trim() ?? "";
+  if (scope && scope !== "all" && isChatEditableSection(scope, documentType)) {
+    return scope;
+  }
+  const detected = detectSectionIntentFromText(userText, documentType);
+  if (detected) return detected;
   if (plan && !plan.paused) {
     const current = plan.items.find((item) => item.state === "in_progress");
     if (current?.sectionKey) return current.sectionKey;
@@ -442,20 +454,37 @@ export function planCoverageObjective(
 }
 
 /**
- * Prefer the in-progress section key from the route. Bare user text
- * ("draft remaining report") must not overwrite a tool objective such as
- * calibration, or a later start is still keyed as the remaining-report walk.
+ * Stamp coverage from the section being drafted this turn, not a leftover
+ * plan pointer. `@` scope, then the latest user message, then a section-key
+ * tool objective, then the route/plan key.
  */
 export function resolveReviewCoverageObjective(input: {
   routeObjective?: string | null;
   toolObjective: string;
   documentType: DocumentType;
+  userText?: string;
+  sectionScope?: string | null;
 }): string {
+  const scope = input.sectionScope?.trim() ?? "";
+  if (
+    scope &&
+    scope !== "all" &&
+    isChatEditableSection(scope, input.documentType)
+  ) {
+    return scope;
+  }
+  const fromUser = input.userText
+    ? detectSectionIntentFromText(input.userText, input.documentType)
+    : null;
+  if (fromUser) return fromUser;
+  const tool = input.toolObjective.trim();
+  if (tool && isChatEditableSection(tool, input.documentType)) {
+    return tool;
+  }
   const route = input.routeObjective?.trim() ?? "";
   if (route && isChatEditableSection(route, input.documentType)) {
     return route;
   }
-  const tool = input.toolObjective.trim();
   return tool || route;
 }
 

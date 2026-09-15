@@ -9,12 +9,19 @@ import {
   applyTableOperation,
   captureTableOperationSnapshots,
   existingTableCountFromContents,
+  filledTableNumberInDocument,
   parseTableOperation,
   prefixTableCaptionMarkdown,
+  renumberFilledTableCaptions,
   summarizeTableOperation,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
-import { ELR_RESPONSIBILITIES_HEADERS } from "@/lib/document-types/elr/sections";
+import {
+  ELR_MEDIA_FILL_HEADERS,
+  ELR_MONITORING_HEADERS,
+  ELR_RESPONSIBILITIES_HEADERS,
+  EMPTY_ELR_CONTENT,
+} from "@/lib/document-types/elr/sections";
 
 function textCell(
   type: "tableHeader" | "tableCell",
@@ -399,6 +406,73 @@ describe("applyTableOperation", () => {
       expectedRowAtAfter: ["first", "row"],
     });
     expect(applyTableOperation(doc, captured).ok).toBe(true);
+  });
+
+  it("still inserts after a sibling fill of a previously empty anchor row", () => {
+    const empty = tableDoc(
+      [...ELR_RESPONSIBILITIES_HEADERS],
+      [["", "", ""]]
+    );
+    const filled = applyTableOperation(empty, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, expectedText: "", insertText: "1" },
+        { row: 1, col: 1, expectedText: "", insertText: "QA" },
+        { row: 1, col: 2, expectedText: "", insertText: "Approve the report" },
+      ],
+    });
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+
+    const inserted = applyTableOperation(filled.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      rows: [
+        ["2", "Engineering", "Maintain the line"],
+        ["3", "Production", "Operate the filling line"],
+      ],
+      expectedRowAtAfter: ["", "", ""],
+    });
+    expect(inserted.ok).toBe(true);
+    if (!inserted.ok) return;
+    expect(rowCount(inserted.doc)).toBe(4);
+    expect(cellText(inserted.doc, 1, 1)).toBe("QA");
+    expect(cellText(inserted.doc, 2, 1)).toBe("Engineering");
+    expect(cellText(inserted.doc, 3, 1)).toBe("Production");
+  });
+
+  it("still inserts when previously empty snapshot cells were filled", () => {
+    const result = applyTableOperation(
+      tableDoc(["H1", "H2"], [["QA", "Approves"]]),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [["2", "Engineering"]],
+        expectedRowAtAfter: ["QA", ""],
+      }
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 2, 1)).toBe("Engineering");
+  });
+
+  it("still rejects insert_rows when a filled snapshot cell changed", () => {
+    const result = applyTableOperation(
+      tableDoc(["H1", "H2"], [["changed", "row"]]),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [["x", "y"]],
+        expectedRowAtAfter: ["first", "row"],
+      }
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("stale");
   });
 
   it("captures omitted expectedText and appends a column when afterCol is omitted", () => {
@@ -787,6 +861,242 @@ describe("applyTableOperation", () => {
     ).toHaveLength(1);
   });
 
+  it("numbers Monitoring as Table 2 when Abbreviations already has data", () => {
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "1" },
+          { row: 1, col: 1, insertText: "Viable air" },
+        ],
+      },
+      {
+        section: "elr_monitoring",
+        targetField: "table",
+        documentContents: [
+          {
+            section: "elr_abbreviations",
+            content: EMPTY_ELR_CONTENT.elr_abbreviations,
+          },
+          {
+            section: "elr_monitoring",
+            content: EMPTY_ELR_CONTENT.elr_monitoring,
+          },
+        ],
+      }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(2);
+    expect(flattenForAnchor(result.doc.content![0]!).text).toBe(
+      "Table 2. Monitoring records"
+    );
+  });
+
+  it("rewrites a stale Table 1 caption when a preceding table is filled", () => {
+    const monitoring: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 1. Monitoring records" }],
+        },
+        seededTableDoc([...ELR_MONITORING_HEADERS]).content![0]!,
+      ],
+    };
+    const filled = applyTableOperation(
+      monitoring,
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "1" },
+          { row: 1, col: 1, insertText: "Viable air" },
+        ],
+      },
+      {
+        section: "elr_monitoring",
+        targetField: "table",
+        documentContents: [
+          {
+            section: "elr_abbreviations",
+            content: EMPTY_ELR_CONTENT.elr_abbreviations,
+          },
+          { section: "elr_monitoring", content: { table: monitoring } },
+        ],
+      }
+    );
+    expect(filled.status).toBe("ok");
+    if (!filled.ok) return;
+    expect(filled.tableNumber).toBe(2);
+    expect(flattenForAnchor(filled.doc.content![0]!).text).toBe(
+      "Table 2. Monitoring records"
+    );
+  });
+
+  it("numbers Monitoring as Table 3 when Abbreviations and Media Fill are filled", () => {
+    const mediaFill = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_media_fill", targetField: "table", existingTableCount: 0 }
+    );
+    expect(mediaFill.ok).toBe(true);
+    if (!mediaFill.ok) return;
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      {
+        section: "elr_monitoring",
+        targetField: "table",
+        documentContents: [
+          {
+            section: "elr_abbreviations",
+            content: EMPTY_ELR_CONTENT.elr_abbreviations,
+          },
+          { section: "elr_media_fill", content: { table: mediaFill.doc } },
+          {
+            section: "elr_monitoring",
+            content: EMPTY_ELR_CONTENT.elr_monitoring,
+          },
+        ],
+      }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(3);
+    expect(
+      filledTableNumberInDocument({
+        contents: [
+          {
+            section: "elr_abbreviations",
+            content: EMPTY_ELR_CONTENT.elr_abbreviations,
+          },
+        ],
+        target: {
+          section: "elr_abbreviations",
+          targetField: "table",
+          tableIndex: 0,
+        },
+      })
+    ).toBe(1);
+  });
+
+  it("numbers a lone filled table as Table 1", () => {
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      {
+        section: "elr_monitoring",
+        targetField: "table",
+        documentContents: [
+          {
+            section: "elr_monitoring",
+            content: EMPTY_ELR_CONTENT.elr_monitoring,
+          },
+        ],
+      }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(1);
+  });
+
+  it("bumps later captions when a table is filled mid-document", () => {
+    const monitoringFilled = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoringFilled.ok).toBe(true);
+    if (!monitoringFilled.ok) return;
+    const mediaFillFilled = applyTableOperation(
+      seededTableDoc([...ELR_MEDIA_FILL_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "APS-1" }],
+      },
+      { section: "elr_media_fill", targetField: "table", existingTableCount: 0 }
+    );
+    expect(mediaFillFilled.ok).toBe(true);
+    if (!mediaFillFilled.ok) return;
+
+    const { contents, changedSections } = renumberFilledTableCaptions([
+      {
+        section: "elr_abbreviations",
+        content: EMPTY_ELR_CONTENT.elr_abbreviations,
+      },
+      { section: "elr_media_fill", content: { table: mediaFillFilled.doc } },
+      { section: "elr_monitoring", content: { table: monitoringFilled.doc } },
+    ]);
+    expect(changedSections).toContain("elr_media_fill");
+    expect(changedSections).toContain("elr_monitoring");
+    const mediaDoc = (contents[1]?.content as { table: JSONContent }).table;
+    const monitoringDoc = (contents[2]?.content as { table: JSONContent }).table;
+    expect(flattenForAnchor(mediaDoc.content![0]!).text).toBe(
+      "Table 2. Media fill / aseptic process simulation"
+    );
+    expect(flattenForAnchor(monitoringDoc.content![0]!).text).toBe(
+      "Table 3. Monitoring records"
+    );
+  });
+
+  it("strips a leftover caption on an emptied grid and decrements later tables", () => {
+    const monitoringFilled = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoringFilled.ok).toBe(true);
+    if (!monitoringFilled.ok) return;
+    const emptyMedia: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 2. Media fill / APS" }],
+        },
+        seededTableDoc([...ELR_MEDIA_FILL_HEADERS]).content![0]!,
+      ],
+    };
+    const { contents } = renumberFilledTableCaptions([
+      {
+        section: "elr_abbreviations",
+        content: EMPTY_ELR_CONTENT.elr_abbreviations,
+      },
+      { section: "elr_media_fill", content: { table: emptyMedia } },
+      { section: "elr_monitoring", content: { table: monitoringFilled.doc } },
+    ]);
+    const mediaDoc = (contents[1]?.content as { table: JSONContent }).table;
+    const monitoringDoc = (contents[2]?.content as { table: JSONContent }).table;
+    expect(flattenForAnchor(mediaDoc).text).not.toMatch(/Table\s+2\./i);
+    expect(flattenForAnchor(monitoringDoc.content![0]!).text).toBe(
+      "Table 2. Monitoring records"
+    );
+  });
+
   it("refuses create_table on a seeded ELR matrix field", () => {
     const result = applyTableOperation(
       seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
@@ -840,6 +1150,18 @@ describe("applyTableOperation", () => {
       markdown:
         "Table 4. Monitoring records\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
       tableNumber: 4,
+    });
+    expect(
+      prefixTableCaptionMarkdown(
+        "Table 1. Monitoring records\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+        0,
+        "Monitoring records",
+        2
+      )
+    ).toEqual({
+      markdown:
+        "Table 2. Monitoring records\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+      tableNumber: 2,
     });
     expect(
       prefixTableCaptionMarkdown(

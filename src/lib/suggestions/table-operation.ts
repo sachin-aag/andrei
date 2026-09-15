@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
+import { RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
 import { dvTableHeadersForSection } from "@/lib/document-types/design-verification/sections";
 import {
   ELR_TABLE_CAPTION_TITLES,
@@ -13,6 +14,7 @@ import {
   insertNodesIntoFieldBody,
 } from "@/lib/suggestions/block-insert";
 import { normalizeTrailingCitationBlockInDoc } from "@/lib/suggestions/citations-at-end";
+import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { displaySectionLabel } from "@/types/sections";
 
 /** Structured table mutation proposed via `edit_table` and stored on an `ai_fix`. */
@@ -84,11 +86,26 @@ export type TableRowDelete = {
   expectedCells: string[];
 };
 
+/** One section's JSON, in document order, used to assign `Table N`. */
+export type DocumentTableContent = {
+  section: string;
+  content: unknown;
+};
+
 export type TableOperationContext = {
   section: SectionType;
   targetField: string;
-  /** Document-wide count of existing tables/captions; next caption is N+1. */
+  /**
+   * Legacy fallback: `maxCaption + 1` among already-published `Table N.`
+   * captions. Used only when `documentContents` is omitted.
+   */
   existingTableCount?: number;
+  /**
+   * Filled tables in document order. `Table N` is this table's 1-based
+   * ordinal among data-bearing grids (empty unused shells do not count).
+   * The target is treated as filled even if it is still a shell.
+   */
+  documentContents?: readonly DocumentTableContent[];
 };
 
 export type TableOperationStatus =
@@ -158,6 +175,8 @@ export function countNumberedTablesInContent(value: unknown): {
 
 /**
  * Next `Table N` is `maxCaption + 1`. Uncaptioned seeded shells do not consume N.
+ * Prefer `filledTableNumberInDocument` when assigning a caption — fill order
+ * among published captions is not document order.
  */
 export function existingTableCountFromContents(
   contents: readonly unknown[]
@@ -170,6 +189,119 @@ export function existingTableCountFromContents(
     );
   }
   return maxCaption;
+}
+
+function isTipTapDoc(value: unknown): value is JSONContent {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      (value as JSONContent).type === "doc"
+  );
+}
+
+function richFieldDocsInSection(
+  section: string,
+  content: unknown
+): { field: string; doc: JSONContent }[] {
+  if (!content || typeof content !== "object") return [];
+  const paths = RICH_FIELD_PATHS[section];
+  if (paths && paths.length > 0 && !isTipTapDoc(content)) {
+    return paths.map((field) => ({
+      field,
+      doc: getRichFieldValue(content as Record<string, unknown>, field),
+    }));
+  }
+  if (isTipTapDoc(content)) {
+    return [{ field: "", doc: content }];
+  }
+  return [];
+}
+
+function walkFilledTablesInDocument(
+  contents: readonly DocumentTableContent[],
+  visit: (args: {
+    section: string;
+    field: string;
+    tableIndex: number;
+    table: JSONContent;
+  }) => boolean | void
+): void {
+  for (const row of contents) {
+    for (const { field, doc } of richFieldDocsInSection(row.section, row.content)) {
+      const tables = collectTables(doc);
+      for (let tableIndex = 0; tableIndex < tables.length; tableIndex += 1) {
+        const table = tables[tableIndex];
+        if (!table) continue;
+        if (visit({ section: row.section, field, tableIndex, table }) === false) {
+          return;
+        }
+      }
+    }
+  }
+}
+
+/** Count data-bearing tables in document order. Empty unused shells do not count. */
+export function countFilledTablesInDocument(
+  contents: readonly DocumentTableContent[]
+): number {
+  let count = 0;
+  walkFilledTablesInDocument(contents, ({ table }) => {
+    if (tableHasData(table)) count += 1;
+  });
+  return count;
+}
+
+/**
+ * 1-based ordinal of the target table among filled grids in document order.
+ * The target counts even if it is still an empty shell. Missing target → undefined.
+ */
+export function filledTableNumberInDocument(args: {
+  contents: readonly DocumentTableContent[];
+  target: { section: string; targetField: string; tableIndex: number };
+}): number | undefined {
+  let ordinal = 0;
+  let found: number | undefined;
+  walkFilledTablesInDocument(args.contents, ({ section, field, tableIndex, table }) => {
+    const fieldMatches =
+      field === args.target.targetField ||
+      (field === "" &&
+        (args.target.targetField === "" ||
+          args.target.targetField === "narrative" ||
+          args.target.targetField === "table"));
+    const matched =
+      section === args.target.section &&
+      fieldMatches &&
+      tableIndex === args.target.tableIndex;
+    if (!tableHasData(table) && !matched) return;
+    ordinal += 1;
+    if (matched) {
+      found = ordinal;
+      return false;
+    }
+  });
+  return found;
+}
+
+function expectedTableNumber(
+  doc: JSONContent,
+  tableIndex: number,
+  context?: TableOperationContext
+): number {
+  if (context?.documentContents) {
+    return (
+      filledTableNumberInDocument({
+        contents: context.documentContents,
+        target: {
+          section: context.section,
+          targetField: context.targetField,
+          tableIndex,
+        },
+      }) ?? countFilledTablesInDocument(context.documentContents) + 1
+    );
+  }
+  return (
+    (context?.existingTableCount ?? existingTableCountFromContents([doc])) + 1
+  );
 }
 
 const EMPTY_CELL_LABEL = "(empty)";
@@ -227,8 +359,26 @@ function tableHasData(table: JSONContent): boolean {
   return false;
 }
 
+function captionTitleFromParagraph(node: JSONContent): string {
+  const text = flattenForAnchor(node).text.trim();
+  const match = TABLE_CAPTION_RE.exec(text);
+  if (!match) return "";
+  return text.slice(match[0].length).trim();
+}
+
+function writeCaptionParagraph(
+  node: JSONContent,
+  number: number,
+  title: string
+): void {
+  node.type = "paragraph";
+  node.content = [{ type: "text", text: `Table ${number}. ${title.trim()}` }];
+}
+
 /**
- * Insert `Table N. {title}` immediately above a filled table if it has no caption.
+ * Insert or rewrite `Table N. {title}` immediately above a filled table.
+ * With `documentContents`, N is the filled-grid ordinal and a stale caption
+ * is rewritten. Without it, an existing caption is kept (fill-order fallback).
  */
 export function ensureCaptionOnFilledTable(
   doc: JSONContent,
@@ -238,22 +388,106 @@ export function ensureCaptionOnFilledTable(
   const tables = collectTables(doc);
   const table = tables[tableIndex];
   if (!table || !tableHasData(table)) return { doc };
-  const existingCaption = captionNumberAboveTable(doc, tableIndex);
-  if (existingCaption !== null) {
-    return { doc, tableNumber: existingCaption };
-  }
   const location = collectTableLocations(doc)[tableIndex];
   if (!location?.parent.content) return { doc };
-  const title = defaultTableCaptionTitle(context?.section ?? "");
-  const existing =
-    context?.existingTableCount ?? existingTableCountFromContents([doc]);
-  const tableNumber = existing + 1;
+  const defaultTitle = defaultTableCaptionTitle(context?.section ?? "");
+  const existingCaption = captionNumberAboveTable(doc, tableIndex);
+  const useDocumentOrder = Boolean(context?.documentContents);
+  const tableNumber = expectedTableNumber(doc, tableIndex, context);
+  if (existingCaption !== null) {
+    if (!useDocumentOrder || existingCaption === tableNumber) {
+      return { doc, tableNumber: useDocumentOrder ? tableNumber : existingCaption };
+    }
+    const captionNode = location.parent.content[location.index - 1];
+    if (captionNode) {
+      const title =
+        captionTitleFromParagraph(captionNode) || defaultTitle;
+      writeCaptionParagraph(captionNode, tableNumber, title);
+    }
+    return { doc, tableNumber };
+  }
   location.parent.content.splice(
     location.index,
     0,
-    tableCaptionParagraph(tableNumber, title)
+    tableCaptionParagraph(tableNumber, defaultTitle)
   );
   return { doc, tableNumber };
+}
+
+/** Drop a leftover `Table N.` paragraph above an empty unused grid. */
+function stripCaptionAboveEmptyTable(
+  doc: JSONContent,
+  tableIndex: number
+): boolean {
+  const table = collectTables(doc)[tableIndex];
+  if (!table || tableHasData(table)) return false;
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return false;
+  if (captionMatch(location.parent.content[location.index - 1]) === null) {
+    return false;
+  }
+  location.parent.content.splice(location.index - 1, 1);
+  return true;
+}
+
+/**
+ * Word-style SEQ: rewrite every filled-grid caption to 1..N in document
+ * order (keep the title after `Table N. `) and strip captions on empty shells.
+ */
+export function renumberFilledTableCaptions(
+  contents: readonly DocumentTableContent[]
+): {
+  contents: DocumentTableContent[];
+  changedSections: string[];
+} {
+  const next: DocumentTableContent[] = contents.map((row) => ({
+    section: row.section,
+    content: structuredClone(row.content),
+  }));
+
+  for (const row of next) {
+    if (!row.content || typeof row.content !== "object") continue;
+    for (const { field, doc } of richFieldDocsInSection(
+      row.section,
+      row.content
+    )) {
+      const working = structuredClone(doc);
+      const tableCount = collectTables(working).length;
+      for (let tableIndex = 0; tableIndex < tableCount; tableIndex += 1) {
+        const table = collectTables(working)[tableIndex];
+        if (!table) continue;
+        if (tableHasData(table)) {
+          ensureCaptionOnFilledTable(working, tableIndex, {
+            section: row.section,
+            targetField: field || "narrative",
+            documentContents: next,
+          });
+        } else {
+          stripCaptionAboveEmptyTable(working, tableIndex);
+        }
+      }
+      if (field === "") {
+        row.content = working;
+      } else {
+        row.content = setRichFieldValue(
+          row.content as Record<string, unknown>,
+          field,
+          working
+        );
+      }
+    }
+  }
+
+  const changedSections: string[] = [];
+  for (let index = 0; index < contents.length; index += 1) {
+    const before = contents[index];
+    const after = next[index];
+    if (!before || !after) continue;
+    if (JSON.stringify(before.content) !== JSON.stringify(after.content)) {
+      changedSections.push(after.section);
+    }
+  }
+  return { contents: next, changedSections };
 }
 
 function markdownTableHasData(markdown: string): boolean {
@@ -272,27 +506,38 @@ function markdownTableHasData(markdown: string): boolean {
   return false;
 }
 
-/** Prepend `Table N. {title}` to GFM when rewriting a filled table field. */
+/** Prepend or rewrite `Table N. {title}` on GFM when rewriting a filled table field. */
 export function prefixTableCaptionMarkdown(
   markdown: string,
   existingTableCount: number,
-  title: string
+  title: string,
+  tableNumber?: number
 ): { markdown: string; tableNumber?: number } {
-  const firstLine = markdown.trimStart().split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const leading = markdown.match(/^\s*/)?.[0] ?? "";
+  const trimmed = markdown.replace(/^\s+/, "");
+  const lines = trimmed.split(/\r?\n/);
+  const firstLine = lines[0]?.trim() ?? "";
   const match = TABLE_CAPTION_RE.exec(firstLine);
+  const expected = tableNumber ?? existingTableCount + 1;
   if (match) {
     const n = Number(match[1]);
+    if (tableNumber === undefined || !Number.isFinite(n) || n === tableNumber) {
+      return {
+        markdown,
+        tableNumber: Number.isFinite(n) ? n : undefined,
+      };
+    }
+    const restTitle = firstLine.slice(match[0].length).trim() || title.trim();
+    lines[0] = `Table ${tableNumber}. ${restTitle}`;
     return {
-      markdown,
-      tableNumber: Number.isFinite(n) ? n : undefined,
+      markdown: `${leading}${lines.join("\n")}`,
+      tableNumber,
     };
   }
   if (!markdownTableHasData(markdown)) return { markdown };
-  const tableNumber = existingTableCount + 1;
-  const trimmed = markdown.replace(/^\s+/, "");
   return {
-    markdown: `Table ${tableNumber}. ${title.trim()}\n\n${trimmed}`,
-    tableNumber,
+    markdown: `Table ${expected}. ${title.trim()}\n\n${trimmed}`,
+    tableNumber: expected,
   };
 }
 
@@ -427,6 +672,27 @@ function cellsMatch(
   return actual.every(
     (cell, i) => cell === normalizeTableCellText(expected[i] ?? "")
   );
+}
+
+/**
+ * `insert_rows` snapshots the live anchor row at persist. Apply-all (and
+ * sequential Apply) may fill that empty seeded row first via a sibling
+ * `edit_cells`. Previously empty snapshot cells may now have text; filled
+ * snapshot cells must still match or the insert is stale.
+ */
+function expectedRowAtAfterStillValid(
+  actual: readonly string[],
+  expected: readonly string[] | undefined
+): boolean {
+  if (!expected) return true;
+  if (actual.length !== expected.length) return false;
+  if (cellsMatch(actual, expected)) return true;
+  for (let i = 0; i < expected.length; i++) {
+    const exp = normalizeTableCellText(expected[i] ?? "");
+    if (exp.length === 0) continue;
+    if ((actual[i] ?? "") !== exp) return false;
+  }
+  return true;
 }
 
 function cellParagraphFromText(text: string): JSONContent {
@@ -578,9 +844,9 @@ function applyCreateTable(
     ],
   };
   const title = operation.title?.trim() ?? "";
-  const existing =
-    context?.existingTableCount ??
-    existingTableCountFromContents([doc]);
+  const existing = context?.documentContents
+    ? countFilledTablesInDocument(context.documentContents)
+    : (context?.existingTableCount ?? existingTableCountFromContents([doc]));
   const tableNumber = title ? existing + 1 : undefined;
   const nodes: JSONContent[] =
     title && tableNumber !== undefined
@@ -761,7 +1027,7 @@ function applyInsertRows(
     );
   }
   const anchor = rows[afterRow]!;
-  if (!cellsMatch(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
+  if (!expectedRowAtAfterStillValid(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
     return fail(
       "stale",
       `Row ${operation.afterRow} no longer matches the expected snapshot. Re-read with read_section.`

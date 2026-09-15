@@ -136,14 +136,8 @@ export function findPriorFinishedDocumentReview(
 
       if (name !== "finish_document_review") continue;
       const status = output.status;
-      const coverageComplete = output.coverageComplete;
-      const finished =
-        status === "complete" ||
-        coverageComplete === true ||
-        (typeof output.reviewedPages === "number" &&
-          typeof output.totalPages === "number" &&
-          output.reviewedPages === output.totalPages);
-      if (!finished) continue;
+      const truncated = output.truncated;
+      if (status !== "complete" || truncated === true) continue;
 
       const coverageKey =
         (typeof output.coverageKey === "string" && output.coverageKey) ||

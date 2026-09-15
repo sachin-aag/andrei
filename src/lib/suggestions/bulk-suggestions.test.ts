@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
+import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
+import { ELR_RESPONSIBILITIES_HEADERS } from "@/lib/document-types/elr/sections";
 import {
   acceptAllSuggestions,
   acceptAllSuggestionsInReport,
@@ -309,6 +311,81 @@ describe("acceptAllSuggestions", () => {
     expect(previews).toHaveLength(2);
     expect(JSON.stringify(previews[0])).toContain("on line FL-02");
     expect(previews[1]).toBe(original);
+  });
+
+  it("applies complementary edit_cells, insert_rows, and a paragraph together", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const rowFill = comment("t1", "", "Fill row 1", "elr_responsibilities");
+    rowFill.contentPath = "table";
+    rowFill.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "row-1",
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, expectedText: "", insertText: "1" },
+          { row: 1, col: 1, expectedText: "", insertText: "QA" },
+          { row: 1, col: 2, expectedText: "", insertText: "Approve the report" },
+        ],
+      },
+    });
+
+    const extraRows = comment("t2", "", "Insert rows 2–3", "elr_responsibilities");
+    extraRows.contentPath = "table";
+    extraRows.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "rows-2-3",
+      tableOperation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [
+          ["2", "Engineering", "Maintain the line"],
+          ["3", "Production", "Operate the filling line"],
+        ],
+        expectedRowAtAfter: ["", "", ""],
+      },
+    });
+
+    const assessment = comment(
+      "t3",
+      " Two further departments share line ownership.",
+      "QA owns the report.",
+      "elr_responsibilities"
+    );
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [rowFill, extraRows, assessment],
+      sectionContent: {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "QA owns the report." }],
+            },
+          ],
+        },
+        table: seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      },
+    });
+
+    expect(result.appliedIds).toEqual(["t1", "t2", "t3"]);
+    expect(result.skippedIds).toEqual([]);
+    const text = JSON.stringify(result.nextSection);
+    expect(text).toContain("QA");
+    expect(text).toContain("Engineering");
+    expect(text).toContain("Production");
+    expect(text).toContain("Two further departments share line ownership.");
   });
 });
 

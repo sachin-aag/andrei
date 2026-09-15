@@ -1,5 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
 import {
+  parseTableRefSpec,
+  TABLE_REF_TOKEN_RE,
+  tableRefNode,
+} from "@/lib/tiptap/table-ref-markdown";
+import {
   quantityLatexToPlainText,
   quantityLatexToTextNodes,
   shouldFlattenDollarLatex,
@@ -83,6 +88,34 @@ function appendLiteralWithMath(
   extraMarks: JSONContent["marks"] | undefined,
   nodes: JSONContent[]
 ): void {
+  TABLE_REF_TOKEN_RE.lastIndex = 0;
+  let lastRef = 0;
+  let sawRef = false;
+  for (const match of text.matchAll(TABLE_REF_TOKEN_RE)) {
+    sawRef = true;
+    const start = match.index ?? 0;
+    if (start > lastRef) {
+      appendLiteralWithMathOnly(text.slice(lastRef, start), extraMarks, nodes);
+    }
+    nodes.push(
+      tableRefNode(parseTableRefSpec(match[1]), extraMarks)
+    );
+    lastRef = start + match[0].length;
+  }
+  if (sawRef) {
+    if (lastRef < text.length) {
+      appendLiteralWithMathOnly(text.slice(lastRef), extraMarks, nodes);
+    }
+    return;
+  }
+  appendLiteralWithMathOnly(text, extraMarks, nodes);
+}
+
+function appendLiteralWithMathOnly(
+  text: string,
+  extraMarks: JSONContent["marks"] | undefined,
+  nodes: JSONContent[]
+): void {
   INLINE_LATEX_DOLLAR_RE.lastIndex = 0;
   let last = 0;
   for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
@@ -114,6 +147,7 @@ export function hasInlineTexDollars(text: string): boolean {
 
 export function stripInlineMarkdown(text: string): string {
   return text
+    .replace(/\[\[table(?::[^\]]+)?\]\]/gi, "the table")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
     .replace(UNDERSCORE_ITALIC_RE, "$1")
@@ -325,6 +359,7 @@ function paragraphHasSuggestionMarks(node: JSONContent): boolean {
 export function looksLikeLiteralMarkdown(text: string): boolean {
   if (ATX_HEADING_RE.test(text.trim())) return true;
   if (/\*\*[^*]+\*\*/.test(text)) return true;
+  if (/\[\[table(?::[^\]]+)?\]\]/i.test(text)) return true;
   if (hasInlineTexDollars(text)) return true;
   return text.split("\n").some((line) => parseListItemLine(line.trim()) != null);
 }
@@ -510,7 +545,10 @@ function splitTableRow(trimmed: string): string[] {
     .map((cell) => cell.replace(/\\\|/g, "|").trim());
 }
 
-function tableCellNode(type: "tableHeader" | "tableCell", text: string): JSONContent {
+function tableCellNode(
+  type: "tableHeader" | "tableCell",
+  text: string
+): JSONContent {
   return {
     type,
     attrs: { colspan: 1, rowspan: 1 },

@@ -43,6 +43,7 @@ import type { Placeholder } from "@/lib/placeholders/find";
 import { canMutateAttachments } from "@/lib/reports/access";
 import type { UserRole } from "@/lib/auth/roles";
 import { ReportAttachmentsProvider } from "@/providers/report-attachments-provider";
+import { TableRefNumbersProvider } from "@/providers/table-ref-numbers";
 
 type SectionContents = Partial<SectionContentMap> & Record<string, unknown>;
 
@@ -1294,7 +1295,13 @@ export function ReportProvider({
                                   canMutateAttachments={canMutateAttachments}
                                   isWorkspaceAdmin={currentUserRole === "admin"}
                                 >
-                                  {children}
+                                  <TableRefNumbersProvider
+                                    documentType={report.documentType}
+                                    sections={sections}
+                                    comments={comments}
+                                  >
+                                    {children}
+                                  </TableRefNumbersProvider>
                                 </ReportAttachmentsProvider>
                               </ReportEditorsContext.Provider>
                             </ReportCommentsContext.Provider>

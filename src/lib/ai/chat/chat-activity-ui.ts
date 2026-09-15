@@ -911,7 +911,12 @@ export function buildChatActivityBlocks(
 
     const reasoning = readReasoningPart(part);
     if (reasoning) {
-      flushReview();
+      // Keep start → continue → finish as one chip. Gemini thinking between
+      // continues used to flush a new "Reviewed N/total" line each wave.
+      if (reviewBuffer.length > 0) {
+        index += 1;
+        continue;
+      }
       flushSectionReads();
       blocks.push({
         kind: "activity",

@@ -76,11 +76,19 @@ not a silent 300-page prefix); comprehensive retrieval does not force another wa
 coverage delta unless the latest message is explicit pushback
 (`you missed`, `look again`, `re-check`, a test-family code). Pushback
 skips rehydrate so a finished session does not hide
-`start_document_review`. `planReviewPages` scores pages to the current
-objective, then fair-shares leftover pages up to `REVIEW_PAGE_FETCH_CAP`
-(2500) so an earlier file cannot starve later ones. `start_document_review`
+`start_document_review`. `planReviewPages` queues pages that score on the current
+objective (floor 8; nearby same-file pages if almost nothing matches). ELR
+inventory tables score against the live column schema (headers / aliases, plus
+a typed `{modifier} {section noun}` that is not URS language such as
+`monitoring systems`), not the bare section token, and `start_document_review`
+walks every ready file unless the engineer tagged one. Complementary grep ORs
+those column phrases. `REVIEW_PAGE_FETCH_CAP`
+(2500) is listing safety only — there is no 300-page walk cap.
+`continue_document_review` stops starting batches after ~60s and round-robins
+batches across attachments. `start_document_review`
 reports `truncated` / `skippedDocuments`. Call `list_attachments` first
-when the file set is unknown.
+when the file set is unknown. Rehydrate only a finish with `status=complete`
+and `truncated !== true`.
 
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
 against the citation ledger's served quotes (`groundDraftText`). Finish
@@ -252,7 +260,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   on `|obj:`). `isFinished()` after a qualification walk does not unlock
   Associated Instruments. Adaptive idle with an empty in-scope
   inventory still forces `start_document_review`
-  (`requireInventoryReview`). Gate empty tables only — filling missing
+  (`requireInventoryReview`). Recompute that flag from the live
+  `finishedCoverageKey` in `prepareStep` — a matching finish this turn
+  must not force another start because the table is still empty. Hide
+  review tools after that finish and draft. `start_document_review`
+  returns `already_complete` for the same `|obj:` instead of resetting.
+  Gate empty tables only — filling missing
   cells on a partial table is not another full walk. `draft_field` of
   those `table` fields returns `use_edit_table`. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if
@@ -275,8 +288,8 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   empty in-scope ELR inventory still needs a matching review
   (`requireInventoryReview`). Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
-  worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
-  on extract). `finish_document_review` caps the findings sample;
+  worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (transcript-backed
+  batches skip the extract LLM; no thought summaries on extract). `finish_document_review` caps the findings sample;
   follow-up turns strip prior findings arrays before the model call.
   `search_documents` `queries[]` is at most 8 and `limit` at most 16;
   `coerceSearchDocumentsInput` normalizes oversized model JSON, and

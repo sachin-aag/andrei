@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { closeIncompleteChatToolParts } from "@/lib/ai/chat/tool-part-repair";
 import {
   isUnavailableToolStreamError,
   unavailableToolNameFromError,
@@ -237,7 +238,7 @@ export function partsForPersistedAssistantTurn(options: {
   interrupted: boolean;
   incomplete: boolean;
 } {
-  const parts = options.parts ?? [];
+  const parts = closeIncompleteChatToolParts(options.parts ?? []);
   const visible = assistantPartsHaveVisibleContent(parts);
   const hasVisibleText = parts.some((part) => partHasVisibleText(part));
 

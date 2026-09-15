@@ -351,12 +351,45 @@ describe("plan prompt and metadata", () => {
           { sectionKey: "elr_calibration", label: "Calibration", state: "in_progress" },
           { sectionKey: "elr_monitoring", label: "Monitoring", state: "queued" },
         ]),
-        "Continue the remaining sections."
+        "Continue the remaining sections.",
+        { documentType: "equipment_lifecycle_report" }
       )
     ).toBe("elr_calibration");
-    expect(planCoverageObjective(null, "Fill monitoring from the certificates")).toBe(
-      "Fill monitoring from the certificates"
-    );
+    expect(planCoverageObjective(null, "Fill monitoring from the certificates", {
+      documentType: "equipment_lifecycle_report",
+    })).toBe("elr_monitoring");
+  });
+
+  it("stamps the section being drafted, not a leftover plan pointer", () => {
+    expect(
+      planCoverageObjective(
+        plan([
+          {
+            sectionKey: "elr_system_description",
+            label: "System Description",
+            state: "in_progress",
+          },
+        ]),
+        "go on to fill Media Fill / Aseptic Process Simulation",
+        { documentType: "equipment_lifecycle_report" }
+      )
+    ).toBe("elr_media_fill");
+    expect(
+      planCoverageObjective(
+        plan([
+          {
+            sectionKey: "elr_system_description",
+            label: "System Description",
+            state: "in_progress",
+          },
+        ]),
+        "Continue the remaining sections.",
+        {
+          documentType: "equipment_lifecycle_report",
+          sectionScope: "elr_qualification",
+        }
+      )
+    ).toBe("elr_qualification");
   });
 
   it("prefers a section-key route objective over user text when starting a review", () => {
@@ -374,6 +407,14 @@ describe("plan prompt and metadata", () => {
         documentType: "equipment_lifecycle_report",
       })
     ).toBe("calibration certificates");
+    expect(
+      resolveReviewCoverageObjective({
+        routeObjective: "elr_system_description",
+        toolObjective: "every attached record",
+        documentType: "equipment_lifecycle_report",
+        userText: "fill Qualification history",
+      })
+    ).toBe("elr_qualification");
   });
 
   it("refuses draft_field only for ELR inventory tables, not DV Results", () => {

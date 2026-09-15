@@ -11,12 +11,15 @@ import {
   DocumentReviewSession,
   documentReviewCoverageKey,
   extractReviewFindingsFromPages,
+  interleaveReviewBatchesByAttachment,
   pickPlanModeChatTools,
   PLAN_MODE_CHAT_TOOL_NAMES,
   prepareDocumentReviewStep,
+  REVIEW_ALREADY_COMPLETE_MESSAGE,
   REVIEW_EXTRACT_CONCURRENCY,
   REVIEW_FINISH_FINDINGS_CAP,
-  REVIEW_PAGE_CAP,
+  reviewBatchNeedsLlmExtract,
+  reviewContinueBudgetMs,
   selectReviewPages,
   capFindingsForFinish,
   type ReviewPageSource,
@@ -102,6 +105,33 @@ describe("buildReviewBatches", () => {
       true
     );
   });
+
+  it("does not mix attachments in one batch", () => {
+    const batches = buildReviewBatches([
+      page(1, "SW-SST-1 short", "att_a"),
+      page(2, "SW-SIB-1 short", "att_b"),
+    ]);
+    expect(batches).toHaveLength(2);
+    expect(batches[0]?.[0]?.attachmentId).toBe("att_a");
+    expect(batches[1]?.[0]?.attachmentId).toBe("att_b");
+  });
+});
+
+describe("interleaveReviewBatchesByAttachment", () => {
+  it("round-robins batches so one file cannot occupy every slot", () => {
+    const interleaved = interleaveReviewBatchesByAttachment([
+      [page(1, "a1", "att_a"), page(2, "a2", "att_a")],
+      [page(3, "a3", "att_a")],
+      [page(1, "b1", "att_b")],
+      [page(2, "b2", "att_b")],
+    ]);
+    expect(interleaved.map((batch) => batch[0]?.attachmentId)).toEqual([
+      "att_a",
+      "att_b",
+      "att_a",
+      "att_b",
+    ]);
+  });
 });
 
 describe("DocumentReviewSession", () => {
@@ -114,15 +144,16 @@ describe("DocumentReviewSession", () => {
       pages: appendixBPages(),
     });
     expect(started.status).toBe("started");
-    expect(started.totalPages).toBe(62);
+    expect(started.totalPages).toBe(61);
 
     const continued = await session.continue();
     expect(continued.status).toBe("ready_to_finish");
     expect(session.phase()).toBe("ready_to_finish");
     const finished = session.finish();
     expect(finished.status).toBe("complete");
-    expect(finished.reviewedPages).toBe(62);
-    expect(finished.reviewedEvidence).toHaveLength(62);
+    expect(finished.truncated).toBe(false);
+    expect(finished.reviewedPages).toBe(61);
+    expect(finished.reviewedEvidence).toHaveLength(61);
     expect(finished.reviewedEvidence[0]).toMatchObject({
       attachmentId: expect.any(String),
       filename: expect.any(String),
@@ -211,14 +242,26 @@ describe("DocumentReviewSession", () => {
       },
     });
     const manyPages = Array.from({ length: 24 }, (_, index) =>
-      page(index + 1, `${"x".repeat(7_000)} SW-SST-${index + 1} Pass`)
+      page(index + 1, `SW-SST-${index + 1} Pass ${"x".repeat(7_000)}`)
     );
-    session.start({ objective: "ids", pages: manyPages });
+    session.start({ objective: "SW-SST", pages: manyPages });
     const first = await session.continue();
     expect(first.status).toBe("ready_to_finish");
     expect(first.reviewedPages).toBe(24);
     expect(calls).toBe(24);
     expect(maxInflight).toBe(REVIEW_EXTRACT_CONCURRENCY);
+  });
+
+  it("skips the extract LLM when every page already has a transcript", () => {
+    expect(
+      reviewBatchNeedsLlmExtract([
+        page(1, `${"x".repeat(200)} SW-SST-1 Pass`),
+        page(2, `${"y".repeat(200)} SW-SIB-1 Pass`),
+      ])
+    ).toBe(false);
+    expect(
+      reviewBatchNeedsLlmExtract([page(1, "short OCR miss")])
+    ).toBe(true);
   });
 
   it("stops draining when the turn abort fires and leaves remaining batches", async () => {
@@ -233,14 +276,30 @@ describe("DocumentReviewSession", () => {
       },
     });
     const manyPages = Array.from({ length: 24 }, (_, index) =>
-      page(index + 1, `${"x".repeat(7_000)} SW-SST-${index + 1} Pass`)
+      page(index + 1, `SW-SST-${index + 1} Pass ${"x".repeat(7_000)}`)
     );
-    session.start({ objective: "ids", pages: manyPages });
+    session.start({ objective: "SW-SST", pages: manyPages });
     const first = await session.continue({ abortSignal: abort.signal });
     expect(first.status).toBe("in_progress");
     expect(first.remainingBatches).toBeGreaterThan(0);
     expect(first.reviewedPages).toBeLessThan(24);
     expect(calls).toBeLessThan(24);
+  });
+
+  it("stops starting batches when the continue budget is exhausted", async () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const manyPages = Array.from({ length: 24 }, (_, index) =>
+      page(index + 1, `SW-SST-${index + 1} Pass ${"x".repeat(7_000)}`)
+    );
+    session.start({ objective: "SW-SST", pages: manyPages });
+    const first = await session.continue({ budgetMs: 0 });
+    expect(first.status).toBe("in_progress");
+    expect(first.budgetExhausted).toBe(true);
+    expect(first.remainingBatches).toBeGreaterThan(0);
+    expect(first.reviewedPages).toBe(0);
+    expect(first.byAttachment.length).toBeGreaterThan(0);
   });
 
   it("recommends the 14-row Requirements Verified inventory, not protocol mentions", async () => {
@@ -364,7 +423,9 @@ describe("prepareDocumentReviewStep", () => {
         phase: "complete",
         availableTools: available,
       })
-    ).toBeUndefined();
+    ).toEqual({
+      activeTools: ["draft_field", "search_documents", "ask_user"],
+    });
   });
 
   it("forces start on adaptive idle when an empty inventory still needs a matching review", () => {
@@ -393,6 +454,17 @@ describe("prepareDocumentReviewStep", () => {
       activeTools: ["start_document_review"],
       toolChoice: { type: "tool", toolName: "start_document_review" },
     });
+  });
+
+  it("hides review tools after a matching finish so drafting can run", () => {
+    expect(
+      prepareDocumentReviewStep({
+        policy: "adaptive",
+        phase: "complete",
+        availableTools: available,
+        requireInventoryReview: false,
+      })?.activeTools
+    ).toEqual(["draft_field", "search_documents", "ask_user"]);
   });
 });
 
@@ -479,6 +551,14 @@ describe("capFindingsForFinish", () => {
   });
 });
 
+describe("reviewContinueBudgetMs", () => {
+  it("caps at 60s and leaves abort margin", () => {
+    expect(reviewContinueBudgetMs(270_000)).toBe(60_000);
+    expect(reviewContinueBudgetMs(70_000)).toBe(50_000);
+    expect(reviewContinueBudgetMs(5_000)).toBe(1_000);
+  });
+});
+
 describe("selectReviewPages", () => {
   it("round-robins so an earlier attachment cannot consume the cap", () => {
     const pages = [
@@ -489,8 +569,9 @@ describe("selectReviewPages", () => {
         page(i + 1, `later ${i + 1}`, "att_b")
       ),
     ];
-    const selected = selectReviewPages(pages, REVIEW_PAGE_CAP);
-    expect(selected).toHaveLength(REVIEW_PAGE_CAP);
+    // Binding test cap — not a walk-size limit. Production listing uses REVIEW_PAGE_FETCH_CAP.
+    const selected = selectReviewPages(pages, 300);
+    expect(selected).toHaveLength(300);
     const byAttachment = selected.reduce<Record<string, number>>((acc, row) => {
       acc[row.attachmentId] = (acc[row.attachmentId] ?? 0) + 1;
       return acc;
@@ -519,6 +600,61 @@ describe("DocumentReviewSession coverage identity", () => {
     expect(finished.coverageKey).toContain("att_a:400:");
     expect(finished.coverageKey).toContain("att_b:80:");
     expect(finished.coverageKey).toContain("|obj:ids");
+  });
+
+  it("refuses a second start for the same inventory after finish", async () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const sources = [
+      { attachmentId: "att_a", pageCount: 1, ingestRunId: "run" },
+    ];
+    session.start({
+      objective: "monitoring parameters",
+      pages: [page(1, "non-viable viable particle Pass", "att_a")],
+      coverageSources: sources,
+      coverageObjective: "elr_monitoring",
+    });
+    await session.continue();
+    expect(session.finish().status).toBe("complete");
+
+    const again = session.start({
+      objective: "extract sampling connections and ports",
+      pages: [page(1, "non-viable viable particle Pass", "att_a")],
+      coverageSources: sources,
+      coverageObjective: "elr_monitoring",
+    });
+    expect(again).toMatchObject({
+      status: "already_complete",
+      message: REVIEW_ALREADY_COMPLETE_MESSAGE,
+    });
+    expect(session.phase()).toBe("complete");
+  });
+
+  it("starts a new walk when complete coverage is a different inventory", async () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const sources = [
+      { attachmentId: "att_a", pageCount: 1, ingestRunId: "run" },
+    ];
+    session.start({
+      objective: "calibration certificates",
+      pages: [page(1, "certificate Pass", "att_a")],
+      coverageSources: sources,
+      coverageObjective: "elr_calibration",
+    });
+    await session.continue();
+    expect(session.finish().status).toBe("complete");
+
+    const next = session.start({
+      objective: "monitoring parameters",
+      pages: [page(1, "non-viable viable particle Pass", "att_a")],
+      coverageSources: sources,
+      coverageObjective: "elr_monitoring",
+    });
+    expect(next.status).toBe("started");
+    expect(session.phase()).toBe("in_progress");
   });
 
   it("does not reuse a finished walk when the coverage objective changes", () => {

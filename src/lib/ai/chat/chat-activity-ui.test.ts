@@ -216,6 +216,31 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0]?.kind).toBe("document-review");
   });
 
+  it("keeps start and continue as one review chip across thinking pauses", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart("start_document_review", "output-available", undefined, {
+        status: "started",
+        totalPages: 12,
+      }),
+      { type: "reasoning", text: "Walking remaining pages.", state: "done" },
+      toolPart("continue_document_review", "output-available", undefined, {
+        status: "in_progress",
+        totalPages: 12,
+        reviewedPages: 8,
+      }),
+      { type: "reasoning", text: "Still extracting.", state: "done" },
+      toolPart("continue_document_review", "output-available", undefined, {
+        status: "ready_to_finish",
+        totalPages: 12,
+        reviewedPages: 12,
+      }),
+    ] as never);
+
+    const reviewBlocks = blocks.filter((block) => block.kind === "document-review");
+    expect(reviewBlocks).toHaveLength(1);
+    expect(blocks.some((block) => block.kind === "activity")).toBe(false);
+  });
+
   it("does not show a fatal error chip for a remapped unavailable tool", () => {
     const blocks = buildChatActivityBlocks([
       toolPart(

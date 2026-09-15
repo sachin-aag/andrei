@@ -39,6 +39,11 @@ import {
   type RetrievalQueryKind,
 } from "@/lib/attachments/retrieval-query";
 import {
+  buildKeywordTsQuery,
+  lexicalSearchNeedles,
+  planSearchQuery,
+} from "@/lib/attachments/search-query";
+import {
   routeSearchTargets,
   routedAttachmentIds,
   type RouteableDocument,
@@ -58,6 +63,7 @@ export {
   rerankHitsForQuery,
   searchPageKey,
 };
+export { buildKeywordTsQuery, planSearchQuery } from "@/lib/attachments/search-query";
 export type { RetrievalQueryKind } from "@/lib/attachments/retrieval-query";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
@@ -75,7 +81,6 @@ const PAGE_TEXT_LIMIT = 12_000;
 const OUTLINE_PAGE_CAP = 2500;
 const REVIEW_PAGE_FETCH_CAP = 2500;
 const OUTLINE_CONTEXT_CHARS = 400;
-const KEYWORD_TOKEN_RE = /[A-Za-z0-9]/;
 
 export type RetrievalTiming = {
   embedMs: number;
@@ -258,19 +263,6 @@ export function truncateSnippet(text: string, maxChars = DEFAULT_SNIPPET_CHARS):
   const cleaned = text.replace(/\s+/g, " ").trim();
   if (cleaned.length <= maxChars) return cleaned;
   return `${cleaned.slice(0, maxChars).trimEnd()}...`;
-}
-
-/**
- * Tokenize a retrieval query for `websearch_to_tsquery` with OR semantics.
- * Returns null when nothing searchable remains (skip the keyword arm).
- */
-export function buildKeywordTsQuery(trimmed: string): string | null {
-  const tokens = trimmed
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0 && KEYWORD_TOKEN_RE.test(token));
-  if (tokens.length === 0) return null;
-  return tokens.join(" or ");
 }
 
 export function reciprocalRankFusion<T extends { chunkId: string }>(
@@ -615,6 +607,7 @@ async function fusedChunkSearch({
   includeAttachmentIds = [],
   excludeAttachmentIds = [],
   routeTargets,
+  phraseFamilies,
 }: {
   reportId: string;
   trimmed: string;
@@ -623,6 +616,7 @@ async function fusedChunkSearch({
   includeAttachmentIds?: string[];
   excludeAttachmentIds?: string[];
   routeTargets?: RoutedSearchTarget[];
+  phraseFamilies?: readonly (readonly string[])[];
 }): Promise<CandidateRow[]> {
   const candidateLimit = Math.max(limit * 5, DEFAULT_CANDIDATE_LIMIT);
 
@@ -648,7 +642,7 @@ async function fusedChunkSearch({
         .limit(candidateLimit)
     : [];
 
-  const keywordQuery = buildKeywordTsQuery(trimmed);
+  const keywordQuery = buildKeywordTsQuery(trimmed, phraseFamilies);
   const keywordRows = keywordQuery
     ? await db
         .select(candidateSelect())
@@ -746,6 +740,14 @@ function lexicalIlikeOnChunkColumn(
   return sql`(${column} ILIKE ${pattern} ESCAPE '\\')`;
 }
 
+function lexicalWordBoundaryOnChunkColumn(
+  column: typeof documentChunks.contextualText | typeof documentChunks.rawText,
+  token: string
+) {
+  const pattern = `(^|[^A-Za-z0-9])${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^A-Za-z0-9]|$)`;
+  return sql`(${column} ~* ${pattern})`;
+}
+
 async function lexicalChunkSearch({
   reportId,
   trimmed,
@@ -753,6 +755,7 @@ async function lexicalChunkSearch({
   includeAttachmentIds = [],
   excludeAttachmentIds = [],
   routeTargets,
+  phraseFamilies,
 }: {
   reportId: string;
   trimmed: string;
@@ -760,9 +763,13 @@ async function lexicalChunkSearch({
   includeAttachmentIds?: string[];
   excludeAttachmentIds?: string[];
   routeTargets?: RoutedSearchTarget[];
+  phraseFamilies?: readonly (readonly string[])[];
 }): Promise<CandidateRow[]> {
-  const tokens = lexicalQueryTokens(trimmed);
-  if (tokens.length === 0) return [];
+  const plan = planSearchQuery(trimmed, { families: phraseFamilies });
+  const needles = lexicalSearchNeedles(plan);
+  if (needles.phrases.length === 0 && needles.tokens.length === 0) {
+    return [];
+  }
 
   const candidateLimit = Math.max(limit * 5, DEFAULT_CANDIDATE_LIMIT);
   const activeScope = and(
@@ -778,8 +785,9 @@ async function lexicalChunkSearch({
   );
 
   const matchConditions = [];
-  if (trimmed.length >= 3) {
-    const phrasePattern = `%${escapeIlike(trimmed)}%`;
+  const phrases = needles.phrases;
+  for (const phrase of phrases) {
+    const phrasePattern = `%${escapeIlike(phrase)}%`;
     matchConditions.push(
       or(
         lexicalIlikeOnChunkColumn(documentChunks.contextualText, phrasePattern),
@@ -787,17 +795,29 @@ async function lexicalChunkSearch({
       )
     );
   }
-  if (tokens.length > 0) {
-    const tokenAnd = and(
-      ...tokens.map((token) => {
-        const pattern = `%${escapeIlike(token)}%`;
-        return or(
-          lexicalIlikeOnChunkColumn(documentChunks.contextualText, pattern),
-          lexicalIlikeOnChunkColumn(documentChunks.rawText, pattern)
-        );
-      })
-    );
-    if (tokenAnd) matchConditions.push(tokenAnd);
+  if (phrases.length === 0) {
+    for (const token of needles.tokens) {
+      const tokenMatch =
+        token.length <= 4
+          ? or(
+              lexicalWordBoundaryOnChunkColumn(
+                documentChunks.contextualText,
+                token
+              ),
+              lexicalWordBoundaryOnChunkColumn(documentChunks.rawText, token)
+            )
+          : or(
+              lexicalIlikeOnChunkColumn(
+                documentChunks.contextualText,
+                `%${escapeIlike(token)}%`
+              ),
+              lexicalIlikeOnChunkColumn(
+                documentChunks.rawText,
+                `%${escapeIlike(token)}%`
+              )
+            );
+      matchConditions.push(tokenMatch);
+    }
   }
   if (matchConditions.length === 0) return [];
 
@@ -841,6 +861,7 @@ export async function searchReportDocuments({
   mode = "hybrid",
   excludePages,
   queryEmbedding,
+  phraseFamilies,
 }: {
   reportId: string;
   query: string;
@@ -851,6 +872,7 @@ export async function searchReportDocuments({
   mode?: DocumentSearchMode;
   excludePages?: readonly { attachmentId: string; pageNumber: number }[];
   queryEmbedding?: readonly number[];
+  phraseFamilies?: readonly (readonly string[])[];
 }): Promise<DocumentSearchResult[]> {
   const { results } = await searchReportDocumentsDetailed({
     reportId,
@@ -862,6 +884,7 @@ export async function searchReportDocuments({
     mode,
     excludePages,
     queryEmbedding,
+    phraseFamilies,
   });
   return results;
 }
@@ -879,6 +902,7 @@ export async function searchReportDocumentsMany({
   backfill = true,
   mode = "hybrid",
   excludePages,
+  phraseFamilies,
 }: {
   reportId: string;
   queries: readonly string[];
@@ -888,6 +912,7 @@ export async function searchReportDocumentsMany({
   backfill?: boolean;
   mode?: DocumentSearchMode;
   excludePages?: readonly { attachmentId: string; pageNumber: number }[];
+  phraseFamilies?: readonly (readonly string[])[];
 }): Promise<DocumentSearchResult[][]> {
   const normalized = queries.map((query) => query.replace(/\s+/g, " ").trim());
   const unique: string[] = [];
@@ -909,6 +934,7 @@ export async function searchReportDocumentsMany({
     backfill,
     mode,
     excludePages,
+    phraseFamilies,
   };
 
   if (unique.length === 1) {
@@ -957,6 +983,7 @@ export async function searchReportDocumentsDetailed({
   mode = "hybrid",
   excludePages,
   queryEmbedding,
+  phraseFamilies,
 }: {
   reportId: string;
   query: string;
@@ -967,6 +994,7 @@ export async function searchReportDocumentsDetailed({
   mode?: DocumentSearchMode;
   excludePages?: readonly { attachmentId: string; pageNumber: number }[];
   queryEmbedding?: readonly number[];
+  phraseFamilies?: readonly (readonly string[])[];
 }): Promise<{ results: DocumentSearchResult[]; timing: RetrievalTiming }> {
   const totalStarted = Date.now();
   let embedMs = 0;
@@ -1070,6 +1098,7 @@ export async function searchReportDocumentsDetailed({
         trimmed,
         queryVector: queryVec,
         limit: fusionLimit,
+        phraseFamilies,
         ...scope,
       })
     );
@@ -1099,6 +1128,7 @@ export async function searchReportDocumentsDetailed({
             reportId,
             trimmed,
             limit: fusionLimit,
+            phraseFamilies,
             ...scope,
           })
         );
