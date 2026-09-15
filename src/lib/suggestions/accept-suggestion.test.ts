@@ -12,6 +12,14 @@ import {
   stripPendingSuggestionsExcept,
 } from "@/lib/tiptap/suggestion-inject";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
+import { serializeAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
+import {
+  ELR_MONITORING_HEADERS,
+  EMPTY_ELR_CONTENT,
+} from "@/lib/document-types/elr/sections";
+import { applyTableOperation } from "@/lib/suggestions/table-operation";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 
 const reportId = "report-1";
 const comment: CommentRecord = {
@@ -624,6 +632,83 @@ describe("acceptSuggestion same-turn table pair", () => {
     expect(result.ok).toBe(true);
     expect(JSON.stringify(result.ok ? result.nextSection : null)).not.toContain(
       "The VCS mapping follows."
+    );
+  });
+});
+
+describe("acceptSuggestion table caption cascade", () => {
+  it("PATCHes later tables when a mid-document grid is filled", async () => {
+    const fetches: Array<{ url: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        fetches.push({ url: String(url) });
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const monitoring = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoring.ok).toBe(true);
+    if (!monitoring.ok) return;
+
+    const fillComment: CommentRecord = {
+      ...comment,
+      id: "media-fill-fill",
+      section: "elr_media_fill",
+      contentPath: "table",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "",
+        reasoning: "Fill media fill",
+        tableOperation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 1, col: 0, insertText: "APS-1" }],
+        },
+      }),
+      anchorText: "fill",
+    };
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "elr_media_fill",
+      comment: fillComment,
+      sectionContent: EMPTY_ELR_CONTENT.elr_media_fill as Record<string, unknown>,
+      documentType: "equipment_lifecycle_report",
+      reportSections: {
+        elr_abbreviations: EMPTY_ELR_CONTENT.elr_abbreviations,
+        elr_media_fill: EMPTY_ELR_CONTENT.elr_media_fill,
+        elr_monitoring: { table: monitoring.doc },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(flattenForAnchor(getRichFieldValue(result.nextSection, "table")).text).toContain(
+      "Table 2."
+    );
+    expect(result.nextRelatedSections?.elr_monitoring).toBeDefined();
+    expect(
+      flattenForAnchor(
+        getRichFieldValue(
+          result.nextRelatedSections!.elr_monitoring!,
+          "table"
+        )
+      ).text
+    ).toContain("Table 3. Monitoring records");
+    expect(fetches.some((row) => row.url.includes("/sections/elr_media_fill"))).toBe(
+      true
+    );
+    expect(fetches.some((row) => row.url.includes("/sections/elr_monitoring"))).toBe(
+      true
     );
   });
 });

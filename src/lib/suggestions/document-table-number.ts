@@ -1,10 +1,11 @@
-import type { DocumentType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { getWorkspaceSections } from "@/lib/document-types";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import {
   applyTableOperation,
+  renumberFilledTableCaptions,
   type DocumentTableContent,
 } from "@/lib/suggestions/table-operation";
 import type { CommentRecord } from "@/types/report";
@@ -108,4 +109,45 @@ export function documentContentsFromReportState(args: {
     comments: args.comments,
     exceptCommentId: args.exceptCommentId,
   });
+}
+
+/**
+ * Live filled-grid SEQ: rewrite captions in workspace order. Pending
+ * suggestion overlays are not applied — N follows persisted (plus just-applied)
+ * grids, like Word after Insert Caption.
+ */
+export function cascadeFilledTableCaptionsInSections(args: {
+  documentType: DocumentType;
+  sections: Readonly<Partial<Record<string, unknown>>>;
+}): {
+  sections: Partial<Record<string, unknown>>;
+  changedSections: string[];
+} {
+  const { contents, changedSections } = renumberFilledTableCaptions(
+    orderedSectionContents({
+      documentType: args.documentType,
+      sections: args.sections,
+    })
+  );
+  const sections: Partial<Record<string, unknown>> = { ...args.sections };
+  for (const row of contents) {
+    sections[row.section] = row.content;
+  }
+  return { sections, changedSections };
+}
+
+export function relatedSectionContentsAfterCascade(args: {
+  primarySection: string;
+  changedSections: readonly string[];
+  sections: Readonly<Partial<Record<string, unknown>>>;
+}): Partial<Record<SectionType, Record<string, unknown>>> {
+  const related: Partial<Record<SectionType, Record<string, unknown>>> = {};
+  for (const key of args.changedSections) {
+    if (key === args.primarySection) continue;
+    const content = args.sections[key];
+    if (content && typeof content === "object" && !Array.isArray(content)) {
+      related[key as SectionType] = content as Record<string, unknown>;
+    }
+  }
+  return related;
 }

@@ -6,7 +6,7 @@ import {
   EMPTY_ELR_CONTENT,
 } from "@/lib/document-types/elr/sections";
 import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
-import { documentContentsFromReportState } from "@/lib/suggestions/document-table-number";
+import { documentContentsFromReportState, cascadeFilledTableCaptionsInSections } from "@/lib/suggestions/document-table-number";
 import {
   applyTableOperation,
   filledTableNumberInDocument,
@@ -113,5 +113,47 @@ describe("documentContentsFromReportState", () => {
     expect(fill.ok).toBe(true);
     if (!fill.ok) return;
     expect(fill.tableNumber).toBe(2);
+  });
+});
+
+describe("cascadeFilledTableCaptionsInSections", () => {
+  it("rewrites Monitoring from Table 2 to Table 3 after Media Fill is filled", () => {
+    const monitoring = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoring.ok).toBe(true);
+    if (!monitoring.ok) return;
+    const mediaFill = applyTableOperation(
+      seededTableDoc([...ELR_MEDIA_FILL_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "APS-1" }],
+      },
+      { section: "elr_media_fill", targetField: "table", existingTableCount: 0 }
+    );
+    expect(mediaFill.ok).toBe(true);
+    if (!mediaFill.ok) return;
+
+    const cascaded = cascadeFilledTableCaptionsInSections({
+      documentType: "equipment_lifecycle_report",
+      sections: {
+        elr_abbreviations: EMPTY_ELR_CONTENT.elr_abbreviations,
+        elr_media_fill: { table: mediaFill.doc },
+        elr_monitoring: { table: monitoring.doc },
+      },
+    });
+    expect(cascaded.changedSections).toContain("elr_monitoring");
+    const monitoringContent = cascaded.sections.elr_monitoring as {
+      table: { content?: { type?: string }[] };
+    };
+    const caption = monitoringContent.table.content?.[0];
+    expect(JSON.stringify(caption)).toContain("Table 3. Monitoring records");
   });
 });

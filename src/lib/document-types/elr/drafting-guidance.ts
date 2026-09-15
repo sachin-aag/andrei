@@ -164,7 +164,11 @@ Seeded matrices already exist as empty grids. Filling them inserts
 \`Table N. {title}\` above the grid when data lands. Empty unused grids stay
 unnumbered. N is the 1-based ordinal among **filled** tables in document order
 (starter abbreviation rows occupy Table 1). Empty unused grids do not reserve
-a number, and fill order among published captions is not used.
+a number, and fill order among published captions is not used. The integer is
+server-owned (Word SEQ): inserting, filling, or deleting a table renumbers
+later filled captions automatically. Do not propose_edit the caption
+digits; you may change the title after \`Table N. \`. Use the returned
+tableNumber when the assessment says "see Table N".
 
 Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.11.1)
 for grouping failure modes / whether the trended alarm set is still

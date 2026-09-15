@@ -107,6 +107,7 @@ import {
 } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
+  applyRelatedSectionUpdates,
   dismissSuggestion,
   CommentPersistError,
   PLACEHOLDER_CONFLICT_MESSAGE,
@@ -753,6 +754,12 @@ export function TiptapSectionField({
         // disappeared.
         if (result.nextSection) {
           replaceSection(section, result.nextSection as unknown);
+          if (mode === "accept" && "nextRelatedSections" in result) {
+            applyRelatedSectionUpdates(
+              replaceSection,
+              result.nextRelatedSections
+            );
+          }
         }
         if (editor && !editor.isDestroyed && isRichField) {
           const pin: {

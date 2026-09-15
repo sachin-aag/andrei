@@ -53,6 +53,7 @@ import {
 } from "@/lib/suggestions/apply-transition";
 import {
   acceptSuggestion,
+  applyRelatedSectionUpdates,
   dismissSuggestion,
   CommentPersistError,
   PLACEHOLDER_CONFLICT_MESSAGE,
@@ -880,6 +881,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         throw new Error("Suggestion could not be located");
       }
       replaceSection(section, result.nextSection as unknown);
+      applyRelatedSectionUpdates(replaceSection, result.nextRelatedSections);
 
       setComments((prev) =>
         prev

@@ -18,7 +18,11 @@ import {
   sortedOpenSuggestionsForSection,
 } from "@/lib/ai/suggestion-gating";
 import { sortCommentsForPairedApply } from "@/lib/suggestions/same-turn-block-pair";
-import { documentContentsFromReportState } from "@/lib/suggestions/document-table-number";
+import {
+  cascadeFilledTableCaptionsInSections,
+  documentContentsFromReportState,
+  relatedSectionContentsAfterCascade,
+} from "@/lib/suggestions/document-table-number";
 import { getWorkspaceSections } from "@/lib/document-types";
 import type { DocumentTableContent } from "@/lib/suggestions/table-operation";
 
@@ -29,6 +33,7 @@ export type BulkSuggestionResult = {
   dismissedIds: string[];
   dismissedContent: Record<string, string>;
   nextSection: Record<string, unknown>;
+  relatedSections?: Partial<Record<SectionType, Record<string, unknown>>>;
 };
 
 export type ReportBulkSuggestionResult = {
@@ -109,6 +114,11 @@ export async function acceptAllSuggestions(args: {
   applyMode?: SuggestionApplyMode;
   /** Fired with in-memory applied content before the section PATCH. */
   onPreview?: (nextSection: Record<string, unknown>) => void;
+  /** Caption cascade on later tables — persist + paint those sections too. */
+  onRelatedSectionSettled?: (
+    section: SectionType,
+    nextSection: Record<string, unknown>
+  ) => void;
   documentType?: DocumentType;
   allSectionContent?: Readonly<Partial<Record<string, unknown>>>;
   tableNumberComments?: readonly CommentRecord[];
@@ -213,15 +223,51 @@ export async function acceptAllSuggestions(args: {
     };
   }
 
+  let relatedSections: Partial<Record<SectionType, Record<string, unknown>>> =
+    {};
+  if (appliedIds.length > 0 && args.documentType) {
+    const cascaded = cascadeFilledTableCaptionsInSections({
+      documentType: args.documentType,
+      sections: {
+        ...args.allSectionContent,
+        [args.section]: current,
+      },
+    });
+    const primary = cascaded.sections[args.section];
+    if (primary && typeof primary === "object") {
+      current = primary as Record<string, unknown>;
+    }
+    relatedSections = relatedSectionContentsAfterCascade({
+      primarySection: args.section,
+      changedSections: cascaded.changedSections,
+      sections: cascaded.sections,
+    });
+  }
+
   // Push the applied wording into the editor before the network round-trip
   // so insert text does not vanish while the section PATCH is in flight.
   if (appliedIds.length > 0) {
     args.onPreview?.(current);
+    for (const [section, content] of Object.entries(relatedSections)) {
+      args.onRelatedSectionSettled?.(section as SectionType, content);
+    }
 
     try {
       await patchSection(args.reportId, args.section, current);
+      for (const [section, content] of Object.entries(relatedSections)) {
+        await patchSection(args.reportId, section as SectionType, content);
+      }
     } catch {
       args.onPreview?.(args.sectionContent);
+      for (const section of Object.keys(relatedSections)) {
+        const original = args.allSectionContent?.[section];
+        if (original && typeof original === "object") {
+          args.onRelatedSectionSettled?.(
+            section as SectionType,
+            original as Record<string, unknown>
+          );
+        }
+      }
       return {
         appliedIds: [],
         skippedIds,
@@ -268,6 +314,7 @@ export async function acceptAllSuggestions(args: {
     dismissedIds,
     dismissedContent: dismissContent,
     nextSection: current,
+    relatedSections,
   };
 }
 
@@ -368,6 +415,10 @@ export async function acceptAllSuggestionsInReport(
       sectionContent,
       applyMode: args.applyMode,
       onPreview,
+      onRelatedSectionSettled: (section, next) => {
+        live[section] = next;
+        args.onSectionSettled?.(section, next);
+      },
       documentType: args.documentType,
       allSectionContent: live,
       tableNumberComments: args.comments,
@@ -446,6 +497,11 @@ async function runReportBulk(
       Object.assign(dismissedContent, result.dismissedContent);
       if (result.appliedIds.length > 0) {
         changedSections.push(queue.section);
+      }
+      for (const section of Object.keys(result.relatedSections ?? {})) {
+        if (!changedSections.includes(section as SectionType)) {
+          changedSections.push(section as SectionType);
+        }
       }
     } finally {
       args.onSectionEnd?.(queue.section);

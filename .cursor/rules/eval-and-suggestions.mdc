@@ -56,7 +56,10 @@ DV mixes LLM criteria with deterministic `check()` functions.
   (starter abbreviation rows occupy Table 1; empty unused shells stay
   unnumbered). Apply and preview must not number from the current field
   only, and a stale `Table 1.` caption is rewritten when a preceding table
-  already occupies that ordinal.
+  already occupies that ordinal. Inserting, filling, or deleting a table
+  cascades later filled captions in the same turn (Word SEQ — the server
+  owns N; do not let propose_edit change the digits). Body "see Table N"
+  text is not rewritten.
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits
   persist as one section PATCH. Preview applied wording before that PATCH

@@ -12,10 +12,12 @@ import {
   filledTableNumberInDocument,
   parseTableOperation,
   prefixTableCaptionMarkdown,
+  renumberFilledTableCaptions,
   summarizeTableOperation,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
 import {
+  ELR_MEDIA_FILL_HEADERS,
   ELR_MONITORING_HEADERS,
   ELR_RESPONSIBILITIES_HEADERS,
   EMPTY_ELR_CONTENT,
@@ -1011,6 +1013,88 @@ describe("applyTableOperation", () => {
     expect(result.status).toBe("ok");
     if (!result.ok) return;
     expect(result.tableNumber).toBe(1);
+  });
+
+  it("bumps later captions when a table is filled mid-document", () => {
+    const monitoringFilled = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoringFilled.ok).toBe(true);
+    if (!monitoringFilled.ok) return;
+    const mediaFillFilled = applyTableOperation(
+      seededTableDoc([...ELR_MEDIA_FILL_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "APS-1" }],
+      },
+      { section: "elr_media_fill", targetField: "table", existingTableCount: 0 }
+    );
+    expect(mediaFillFilled.ok).toBe(true);
+    if (!mediaFillFilled.ok) return;
+
+    const { contents, changedSections } = renumberFilledTableCaptions([
+      {
+        section: "elr_abbreviations",
+        content: EMPTY_ELR_CONTENT.elr_abbreviations,
+      },
+      { section: "elr_media_fill", content: { table: mediaFillFilled.doc } },
+      { section: "elr_monitoring", content: { table: monitoringFilled.doc } },
+    ]);
+    expect(changedSections).toContain("elr_media_fill");
+    expect(changedSections).toContain("elr_monitoring");
+    const mediaDoc = (contents[1]?.content as { table: JSONContent }).table;
+    const monitoringDoc = (contents[2]?.content as { table: JSONContent }).table;
+    expect(flattenForAnchor(mediaDoc.content![0]!).text).toBe(
+      "Table 2. Media fill / aseptic process simulation"
+    );
+    expect(flattenForAnchor(monitoringDoc.content![0]!).text).toBe(
+      "Table 3. Monitoring records"
+    );
+  });
+
+  it("strips a leftover caption on an emptied grid and decrements later tables", () => {
+    const monitoringFilled = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoringFilled.ok).toBe(true);
+    if (!monitoringFilled.ok) return;
+    const emptyMedia: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 2. Media fill / APS" }],
+        },
+        seededTableDoc([...ELR_MEDIA_FILL_HEADERS]).content![0]!,
+      ],
+    };
+    const { contents } = renumberFilledTableCaptions([
+      {
+        section: "elr_abbreviations",
+        content: EMPTY_ELR_CONTENT.elr_abbreviations,
+      },
+      { section: "elr_media_fill", content: { table: emptyMedia } },
+      { section: "elr_monitoring", content: { table: monitoringFilled.doc } },
+    ]);
+    const mediaDoc = (contents[1]?.content as { table: JSONContent }).table;
+    const monitoringDoc = (contents[2]?.content as { table: JSONContent }).table;
+    expect(flattenForAnchor(mediaDoc).text).not.toMatch(/Table\s+2\./i);
+    expect(flattenForAnchor(monitoringDoc.content![0]!).text).toBe(
+      "Table 2. Monitoring records"
+    );
   });
 
   it("refuses create_table on a seeded ELR matrix field", () => {

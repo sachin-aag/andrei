@@ -14,7 +14,7 @@ import {
   insertNodesIntoFieldBody,
 } from "@/lib/suggestions/block-insert";
 import { normalizeTrailingCitationBlockInDoc } from "@/lib/suggestions/citations-at-end";
-import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { displaySectionLabel } from "@/types/sections";
 
 /** Structured table mutation proposed via `edit_table` and stored on an `ai_fix`. */
@@ -412,6 +412,82 @@ export function ensureCaptionOnFilledTable(
     tableCaptionParagraph(tableNumber, defaultTitle)
   );
   return { doc, tableNumber };
+}
+
+/** Drop a leftover `Table N.` paragraph above an empty unused grid. */
+function stripCaptionAboveEmptyTable(
+  doc: JSONContent,
+  tableIndex: number
+): boolean {
+  const table = collectTables(doc)[tableIndex];
+  if (!table || tableHasData(table)) return false;
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return false;
+  if (captionMatch(location.parent.content[location.index - 1]) === null) {
+    return false;
+  }
+  location.parent.content.splice(location.index - 1, 1);
+  return true;
+}
+
+/**
+ * Word-style SEQ: rewrite every filled-grid caption to 1..N in document
+ * order (keep the title after `Table N. `) and strip captions on empty shells.
+ */
+export function renumberFilledTableCaptions(
+  contents: readonly DocumentTableContent[]
+): {
+  contents: DocumentTableContent[];
+  changedSections: string[];
+} {
+  const next: DocumentTableContent[] = contents.map((row) => ({
+    section: row.section,
+    content: structuredClone(row.content),
+  }));
+
+  for (const row of next) {
+    if (!row.content || typeof row.content !== "object") continue;
+    for (const { field, doc } of richFieldDocsInSection(
+      row.section,
+      row.content
+    )) {
+      const working = structuredClone(doc);
+      const tableCount = collectTables(working).length;
+      for (let tableIndex = 0; tableIndex < tableCount; tableIndex += 1) {
+        const table = collectTables(working)[tableIndex];
+        if (!table) continue;
+        if (tableHasData(table)) {
+          ensureCaptionOnFilledTable(working, tableIndex, {
+            section: row.section,
+            targetField: field || "narrative",
+            documentContents: next,
+          });
+        } else {
+          stripCaptionAboveEmptyTable(working, tableIndex);
+        }
+      }
+      if (field === "") {
+        row.content = working;
+      } else {
+        row.content = setRichFieldValue(
+          row.content as Record<string, unknown>,
+          field,
+          working
+        );
+      }
+    }
+  }
+
+  const changedSections: string[] = [];
+  for (let index = 0; index < contents.length; index += 1) {
+    const before = contents[index];
+    const after = next[index];
+    if (!before || !after) continue;
+    if (JSON.stringify(before.content) !== JSON.stringify(after.content)) {
+      changedSections.push(after.section);
+    }
+  }
+  return { contents: next, changedSections };
 }
 
 function markdownTableHasData(markdown: string): boolean {
