@@ -58,8 +58,10 @@ DV mixes LLM criteria with deterministic `check()` functions.
   only, and a stale `Table 1.` caption is rewritten when a preceding table
   already occupies that ordinal. Inserting, filling, or deleting a table
   cascades later filled captions in the same turn (Word SEQ — the server
-  owns N; do not let propose_edit change the digits). Body "see Table N"
-  text is not rewritten.
+  owns N; do not let propose_edit change the digits). Body mentions are
+  Word REF: chat writes `[[table]]` / `[[table:Section]]`, stored as a
+  `tableRef` atom bound to table identity; display N updates on cascade.
+  Do not regex-replace frozen "Table N" digits in existing prose.
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits
   persist as one section PATCH. Preview applied wording before that PATCH

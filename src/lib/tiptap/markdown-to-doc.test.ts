@@ -297,6 +297,62 @@ describe("markdownToDoc", () => {
       { type: "text", text: "Some `code` and [link](http://x)" },
     ]);
   });
+
+  it("turns [[table]] into a tableRef atom", () => {
+    const doc = markdownToDoc("See [[table]] for the records.");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "See " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: " for the records." },
+    ]);
+  });
+
+  it("stores [[table:Monitoring]] as a label spec until cascade", () => {
+    const doc = markdownToDoc("See [[table:Monitoring]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "Monitoring",
+      targetField: "",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("stores [[table:elr_monitoring]] as a section key", () => {
+    const doc = markdownToDoc("See [[table:elr_monitoring]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "elr_monitoring",
+      targetField: "",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("stores [[table:elr_monitoring.table#0]] as a dotted path", () => {
+    const doc = markdownToDoc("See [[table:elr_monitoring.table#0]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "elr_monitoring",
+      targetField: "table",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("stores [[table:table]] as this field's table", () => {
+    const doc = markdownToDoc("See [[table:table]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "",
+      targetField: "table",
+      tableIndex: 0,
+      n: null,
+    });
+  });
 });
 
 describe("markdownHasTable", () => {
@@ -316,6 +372,9 @@ describe("markdownToPlainText", () => {
       "Title\n\nBold and italic text"
     );
     expect(markdownToPlainText("Nitrogen ($N_2$)")).toBe("Nitrogen (N₂)");
+    expect(markdownToPlainText("See [[table]] above.")).toBe(
+      "See the table above."
+    );
   });
 });
 

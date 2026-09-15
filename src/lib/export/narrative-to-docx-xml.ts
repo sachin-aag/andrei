@@ -15,6 +15,7 @@ import { quantityLatexToPlainText } from "@/lib/math/quantity-math";
 import { simpleLatexToPlainText } from "@/lib/math/simple-latex";
 import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
 import { linesToDoc } from "@/lib/tiptap/rich-text";
+import { tableRefDisplayText } from "@/lib/tiptap/table-ref-markdown";
 import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
@@ -428,6 +429,14 @@ function inlineNodesToRuns(
       }
     } else if (child.type === "mathInline") {
       parts.push(mathInlineToRun(child, ctx));
+    } else if (child.type === "tableRef") {
+      const label = tableRefDisplayText({
+        n: typeof child.attrs?.n === "number" ? child.attrs.n : null,
+      });
+      const revision = suggestionRevisionFromMarks(child.marks);
+      const rPr = runProperties({ sizeHalfPoints: runSizeOverride }, ctx);
+      const runXml = `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(label)}</w:t></w:r>`;
+      parts.push(revision && runXml ? revisionWrapper(revision, runXml) : runXml);
     }
   }
 

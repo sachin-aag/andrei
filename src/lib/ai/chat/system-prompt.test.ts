@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v105-table-cascade");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v106-table-xref");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -324,6 +324,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("retry with kind delete_table");
     expect(prompt).toContain("not `{ create_table: { headers, rows } }`");
     expect(prompt).toContain("Table N.");
+    expect(prompt).toContain("[[table]]");
     expect(prompt).toContain("Empty unused seeded grids stay unnumbered");
     expect(prompt).toContain("sibling narrative / assessment");
     expect(prompt).toContain("Adding a table under existing bullets is create_table");

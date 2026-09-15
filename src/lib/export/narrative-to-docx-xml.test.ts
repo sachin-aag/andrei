@@ -995,6 +995,32 @@ describe("narrativeToDocxXml advanced formatting", () => {
     expect(ctx.media).toHaveLength(1);
   });
 
+  it("exports tableRef as the live Table N label", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "See " },
+            {
+              type: "tableRef",
+              attrs: {
+                section: "elr_monitoring",
+                targetField: "table",
+                tableIndex: 0,
+                n: 2,
+              },
+            },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    });
+    expect(xml).toContain("Table 2");
+    expect(xml).not.toContain("tableRef");
+  });
+
   it("exports inline math as OMML", () => {
     const mathml =
       '<math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mn>2</mn><mo>+</mo><mn>2</mn></mrow></math>';

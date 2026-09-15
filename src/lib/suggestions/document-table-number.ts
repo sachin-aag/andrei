@@ -8,6 +8,7 @@ import {
   renumberFilledTableCaptions,
   type DocumentTableContent,
 } from "@/lib/suggestions/table-operation";
+import { syncTableRefsInContents } from "@/lib/suggestions/table-ref";
 import type { CommentRecord } from "@/types/report";
 
 export type TableNumberComment = Pick<
@@ -123,16 +124,20 @@ export function cascadeFilledTableCaptionsInSections(args: {
   sections: Partial<Record<string, unknown>>;
   changedSections: string[];
 } {
-  const { contents, changedSections } = renumberFilledTableCaptions(
+  const captioned = renumberFilledTableCaptions(
     orderedSectionContents({
       documentType: args.documentType,
       sections: args.sections,
     })
   );
+  const synced = syncTableRefsInContents(captioned.contents, args.documentType);
   const sections: Partial<Record<string, unknown>> = { ...args.sections };
-  for (const row of contents) {
+  for (const row of synced.contents) {
     sections[row.section] = row.content;
   }
+  const changedSections = [
+    ...new Set([...captioned.changedSections, ...synced.changedSections]),
+  ];
   return { sections, changedSections };
 }
 

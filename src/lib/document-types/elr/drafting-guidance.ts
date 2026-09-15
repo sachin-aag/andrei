@@ -141,8 +141,8 @@ These pairings are checked. Draft them consistently:
 ## Assessment above every evidence table
 
 Write a brief assessment in the section's \`narrative\` field, above the table,
-and refer to it as Table N (use the tableNumber returned when the grid was
-filled). Do not recap that the section was reviewed. Reason from the rows:
+and refer to it with \`[[table]]\` (never type "Table N" or copy tableNumber).
+Do not recap that the section was reviewed. Reason from the rows:
 
 - Counts (how many events, which codes, how many repeats).
 - What happened.
@@ -156,7 +156,7 @@ of a noisy table is a failure.
 
 Responsibilities: the table is a seeded matrix. Fill it with edit_cells /
 insert_rows (do not create_table a second grid). In the same turn, draft a short
-narrative that summarises who does what and refers to Table N.
+narrative that summarises who does what and uses \`[[table]]\`.
 
 ## Table numbers
 
@@ -167,8 +167,10 @@ unnumbered. N is the 1-based ordinal among **filled** tables in document order
 a number, and fill order among published captions is not used. The integer is
 server-owned (Word SEQ): inserting, filling, or deleting a table renumbers
 later filled captions automatically. Do not propose_edit the caption
-digits; you may change the title after \`Table N. \`. Use the returned
-tableNumber when the assessment says "see Table N".
+digits; you may change the title after \`Table N. \`. In the assessment
+write \`[[table]]\` (this section) or \`[[table:Section]]\` (another
+section key or label). Those display as Table N and update when a table
+is inserted above (Word REF). Do not type the returned tableNumber.
 
 Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.11.1)
 for grouping failure modes / whether the trended alarm set is still

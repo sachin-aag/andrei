@@ -1,5 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
 import {
+  parseTableRefSpec,
+  TABLE_REF_TOKEN_RE,
+  tableRefNode,
+} from "@/lib/tiptap/table-ref-markdown";
+import {
   quantityLatexToPlainText,
   quantityLatexToTextNodes,
   shouldFlattenDollarLatex,
@@ -83,6 +88,34 @@ function appendLiteralWithMath(
   extraMarks: JSONContent["marks"] | undefined,
   nodes: JSONContent[]
 ): void {
+  TABLE_REF_TOKEN_RE.lastIndex = 0;
+  let lastRef = 0;
+  let sawRef = false;
+  for (const match of text.matchAll(TABLE_REF_TOKEN_RE)) {
+    sawRef = true;
+    const start = match.index ?? 0;
+    if (start > lastRef) {
+      appendLiteralWithMathOnly(text.slice(lastRef, start), extraMarks, nodes);
+    }
+    nodes.push(
+      tableRefNode(parseTableRefSpec(match[1]), extraMarks)
+    );
+    lastRef = start + match[0].length;
+  }
+  if (sawRef) {
+    if (lastRef < text.length) {
+      appendLiteralWithMathOnly(text.slice(lastRef), extraMarks, nodes);
+    }
+    return;
+  }
+  appendLiteralWithMathOnly(text, extraMarks, nodes);
+}
+
+function appendLiteralWithMathOnly(
+  text: string,
+  extraMarks: JSONContent["marks"] | undefined,
+  nodes: JSONContent[]
+): void {
   INLINE_LATEX_DOLLAR_RE.lastIndex = 0;
   let last = 0;
   for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
@@ -114,6 +147,7 @@ export function hasInlineTexDollars(text: string): boolean {
 
 export function stripInlineMarkdown(text: string): string {
   return text
+    .replace(/\[\[table(?::[^\]]+)?\]\]/gi, "the table")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
     .replace(UNDERSCORE_ITALIC_RE, "$1")
@@ -224,7 +258,7 @@ export function markdownToDoc(
         tableLines.push(lines[i]!.trim());
         i++;
       }
-      const table = parseTable(tableLines);
+      const table = parseTable(tableLines, options);
       if (table) content.push(table);
       continue;
     }
@@ -245,7 +279,7 @@ export function markdownToDoc(
         if (!next || next.kind !== kind) break;
         items.push({
           type: "listItem",
-          content: [{ type: "paragraph", content: parseInline(next.text) }],
+          content: [{ type: "paragraph", content: parseInline(next.text, options) }],
         });
         i++;
       }
@@ -263,7 +297,7 @@ export function markdownToDoc(
         content.push({ type: "paragraph" });
       }
     }
-    content.push({ type: "paragraph", content: parseInline(trimmed) });
+    content.push({ type: "paragraph", content: parseInline(trimmed, options) });
     i++;
   }
 
@@ -325,6 +359,7 @@ function paragraphHasSuggestionMarks(node: JSONContent): boolean {
 export function looksLikeLiteralMarkdown(text: string): boolean {
   if (ATX_HEADING_RE.test(text.trim())) return true;
   if (/\*\*[^*]+\*\*/.test(text)) return true;
+  if (/\[\[table(?::[^\]]+)?\]\]/i.test(text)) return true;
   if (hasInlineTexDollars(text)) return true;
   return text.split("\n").some((line) => parseListItemLine(line.trim()) != null);
 }
@@ -424,7 +459,8 @@ function withExtraMarks(
  */
 export function inlineMarkdownToTextNodes(
   text: string,
-  extraMarks?: JSONContent["marks"]
+  extraMarks?: JSONContent["marks"],
+  options?: MarkdownToDocOptions
 ): JSONContent[] {
   const nodes: JSONContent[] = [];
   const parts = text.split(INLINE_MARKDOWN_SPLIT_RE);
@@ -468,7 +504,8 @@ export function inlineMarkdownToTextNodes(
  */
 export function inlineMarkdownToTextNodesWithBreaks(
   text: string,
-  extraMarks?: JSONContent["marks"]
+  extraMarks?: JSONContent["marks"],
+  options?: MarkdownToDocOptions
 ): JSONContent[] {
   const segments = text.split(HTML_BR_SPLIT_RE);
   const nodes: JSONContent[] = [];
@@ -478,7 +515,7 @@ export function inlineMarkdownToTextNodesWithBreaks(
     const lineParts = segment.split("\n");
     for (let j = 0; j < lineParts.length; j++) {
       if (j > 0) nodes.push({ type: "hardBreak" });
-      nodes.push(...inlineMarkdownToTextNodes(lineParts[j]!, extraMarks));
+      nodes.push(...inlineMarkdownToTextNodes(lineParts[j]!, extraMarks, options));
     }
   }
   if (nodes.at(-1)?.type === "hardBreak") nodes.pop();
@@ -486,8 +523,8 @@ export function inlineMarkdownToTextNodesWithBreaks(
 }
 
 /** `**bold**` / `*italic*` / `_italic_` → marked text nodes; everything else literal. */
-function parseInline(text: string): JSONContent[] {
-  return inlineMarkdownToTextNodesWithBreaks(text);
+function parseInline(text: string, options?: MarkdownToDocOptions): JSONContent[] {
+  return inlineMarkdownToTextNodesWithBreaks(text, undefined, options);
 }
 
 function isTableRow(trimmed: string): boolean {
@@ -510,15 +547,22 @@ function splitTableRow(trimmed: string): string[] {
     .map((cell) => cell.replace(/\\\|/g, "|").trim());
 }
 
-function tableCellNode(type: "tableHeader" | "tableCell", text: string): JSONContent {
+function tableCellNode(
+  type: "tableHeader" | "tableCell",
+  text: string,
+  options?: MarkdownToDocOptions
+): JSONContent {
   return {
     type,
     attrs: { colspan: 1, rowspan: 1 },
-    content: [{ type: "paragraph", content: parseInline(text) }],
+    content: [{ type: "paragraph", content: parseInline(text, options) }],
   };
 }
 
-function parseTable(tableLines: string[]): JSONContent | null {
+function parseTable(
+  tableLines: string[],
+  options?: MarkdownToDocOptions
+): JSONContent | null {
   // tableLines[1] is the header separator; drop it.
   const dataLines = tableLines.filter((_, idx) => idx !== 1);
   if (dataLines.length === 0) return null;
@@ -533,7 +577,7 @@ function parseTable(tableLines: string[]): JSONContent | null {
     while (padded.length < colCount) padded.push("");
     return {
       type: "tableRow",
-      content: padded.map((cell) => tableCellNode(type, cell)),
+      content: padded.map((cell) => tableCellNode(type, cell, options)),
     };
   });
 

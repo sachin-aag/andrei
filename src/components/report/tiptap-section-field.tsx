@@ -13,6 +13,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { BulletListWithStyle } from "@/lib/tiptap/bullet-list-with-style";
 import { ImageInline } from "@/lib/tiptap/image-inline";
 import { MathBlock, MathInline } from "@/lib/tiptap/math-nodes";
+import { TableRef } from "@/lib/tiptap/table-ref";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCellWithVerticalAlign, TableHeaderWithVerticalAlign } from "@/lib/tiptap/table-cell-vertical-align";
 import { TableWithColumnWidths } from "@/lib/tiptap/table-column-widths";
@@ -55,6 +56,7 @@ import {
 } from "@/lib/tiptap/citation-highlights";
 import { openCitedDocumentOrToast } from "@/lib/citations/open-cited-document";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
+import { TableRefFieldContext } from "@/providers/table-ref-numbers";
 import {
   createPlaceholderHighlightExtension,
   isSelectionOverPlaceholder,
@@ -523,6 +525,7 @@ export function TiptapSectionField({
         ImageInline,
         MathInline,
         MathBlock,
+        TableRef,
         Placeholder.configure({ placeholder }),
         TableWithColumnWidths.configure({ resizable: false }),
         TableRow,
@@ -1479,7 +1482,11 @@ export function TiptapSectionField({
           data-suggestion-preview-held={previewHeldMode}
           {...(chrome === "page" ? { "aria-label": "Document body" } : {})}
         >
-          {editor ? <EditorContent editor={editor} /> : null}
+          {editor ? (
+            <TableRefFieldContext value={{ section, targetField: contentPath }}>
+              <EditorContent editor={editor} />
+            </TableRefFieldContext>
+          ) : null}
         </div>
       </TiptapEditorContextMenu>
 
