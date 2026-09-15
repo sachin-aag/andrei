@@ -48,7 +48,7 @@ describe("buildPendingChatUserMessage", () => {
 });
 
 describe("pendingChatUserMessageIsRepresented", () => {
-  it("matches the live useChat row by id or by text and images", () => {
+  it("matches the live useChat row by id immediately", () => {
     const pending = userMessage("pending-1", "hello");
     expect(
       pendingChatUserMessageIsRepresented(
@@ -56,38 +56,52 @@ describe("pendingChatUserMessageIsRepresented", () => {
         pending
       )
     ).toBe(true);
+  });
+
+  it("does not treat a prior same-text user turn as this send until the request starts", () => {
+    const pending = userMessage("pending-1", "hello");
     expect(
       pendingChatUserMessageIsRepresented(
         [userMessage("live-1", "hello")],
         pending
       )
+    ).toBe(false);
+    expect(
+      pendingChatUserMessageIsRepresented(
+        [userMessage("live-1", "hello")],
+        pending,
+        { allowTextMatch: true }
+      )
     ).toBe(true);
     expect(
       pendingChatUserMessageIsRepresented(
         [userMessage("live-1", "hello there")],
-        pending
+        pending,
+        { allowTextMatch: true }
       )
     ).toBe(false);
-    expect(
-      pendingChatUserMessageIsRepresented(
-        [userMessage("a1", "hi"), userMessage("a2", "hello")],
-        pending
-      )
-    ).toBe(true);
   });
 
-  it("does not match an earlier user turn of the same text", () => {
+  it("does not match an earlier user turn of the same text before the request starts", () => {
     const pending = userMessage("pending-2", "hello", [image]);
     expect(
       pendingChatUserMessageIsRepresented(
         [userMessage("old", "hello", [image])],
         pending
       )
+    ).toBe(false);
+    expect(
+      pendingChatUserMessageIsRepresented(
+        [userMessage("old", "hello", [image])],
+        pending,
+        { allowTextMatch: true }
+      )
     ).toBe(true);
     expect(
       pendingChatUserMessageIsRepresented(
         [userMessage("old", "hello")],
-        pending
+        pending,
+        { allowTextMatch: true }
       )
     ).toBe(false);
   });
@@ -103,10 +117,22 @@ describe("mergePendingChatUserMessage", () => {
     ]);
     expect(
       mergePendingChatUserMessage(
-        [...existing, userMessage("live", "hello")],
+        [...existing, userMessage("pending-1", "hello")],
         pending
       )
-    ).toEqual([...existing, userMessage("live", "hello")]);
+    ).toEqual([...existing, userMessage("pending-1", "hello")]);
+  });
+
+  it("keeps a second send of the same wording visible until the live row uses the pending id", () => {
+    const existing = [userMessage("old", "hello")];
+    const pending = userMessage("pending-2", "hello");
+    expect(mergePendingChatUserMessage(existing, pending)).toEqual([
+      existing[0],
+      pending,
+    ]);
+    expect(
+      mergePendingChatUserMessage(existing, pending, { allowTextMatch: true })
+    ).toEqual(existing);
   });
 
   it("leaves the thread unchanged when nothing is pending", () => {

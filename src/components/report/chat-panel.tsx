@@ -796,6 +796,7 @@ export function ChatPanel({
   const pendingSendStartedRef = useRef(false);
   const sendEpochRef = useRef(0);
   const [pendingSend, setPendingSend] = useState<UIMessage | null>(null);
+  const [pendingRequestStarted, setPendingRequestStarted] = useState(false);
   const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
@@ -814,7 +815,9 @@ export function ChatPanel({
   } = runtime;
   const pendingForDisplay =
     pendingSend != null &&
-    !pendingChatUserMessageIsRepresented(messages, pendingSend)
+    !pendingChatUserMessageIsRepresented(messages, pendingSend, {
+      allowTextMatch: pendingRequestStarted,
+    })
       ? pendingSend
       : null;
   const threadBusy = busy || pendingForDisplay != null;
@@ -832,6 +835,7 @@ export function ChatPanel({
     pendingRestoreRef.current = null;
     pendingSendStartedRef.current = false;
     setPendingSend(null);
+    setPendingRequestStarted(false);
   }, []);
   const stopPendingOrTurn = useCallback(() => {
     abortPendingSend(true);
@@ -1279,8 +1283,11 @@ export function ChatPanel({
   );
 
   const displayMessages = useMemo(
-    () => mergePendingChatUserMessage(messages, pendingForDisplay),
-    [messages, pendingForDisplay]
+    () =>
+      mergePendingChatUserMessage(messages, pendingForDisplay, {
+        allowTextMatch: pendingRequestStarted,
+      }),
+    [messages, pendingForDisplay, pendingRequestStarted]
   );
   const visibleStartIndex = visibleMessageStartIndex(
     displayMessages.length,
@@ -1550,6 +1557,7 @@ export function ChatPanel({
       });
       pendingSendRef.current = pending;
       pendingSendStartedRef.current = false;
+      setPendingRequestStarted(false);
       setPendingSend(pending);
       const tagsForRequest = mentions;
       // Composer clears in the same tick as the optimistic bubble so Enter
@@ -1581,6 +1589,7 @@ export function ChatPanel({
         pendingRestoreRef.current = null;
         pendingSendStartedRef.current = false;
         setPendingSend(null);
+        setPendingRequestStarted(false);
         restoreComposer();
         if (message) toast.error(message);
       };
@@ -1639,6 +1648,7 @@ export function ChatPanel({
       }
       pendingSendStartedRef.current = true;
       pendingSendRef.current = null;
+      setPendingRequestStarted(true);
       void sessionRuntime.sendMessage(
         {
           id: pending.id,

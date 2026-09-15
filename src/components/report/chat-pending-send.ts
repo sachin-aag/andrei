@@ -39,14 +39,16 @@ function userMessageFileUrls(message: UIMessage): string[] {
     .map((part) => part.url);
 }
 
-/** True when `useChat` has already appended the same user turn. */
+/** True when `useChat` has already appended this optimistic user turn. */
 export function pendingChatUserMessageIsRepresented(
   messages: readonly UIMessage[],
-  pending: UIMessage
+  pending: UIMessage,
+  opts?: { allowTextMatch?: boolean }
 ): boolean {
   const last = messages[messages.length - 1];
   if (!last || last.role !== "user") return false;
   if (last.id === pending.id) return true;
+  if (!opts?.allowTextMatch) return false;
   if (userMessageText(last) !== userMessageText(pending)) return false;
   const pendingUrls = userMessageFileUrls(pending);
   const lastUrls = userMessageFileUrls(last);
@@ -56,10 +58,11 @@ export function pendingChatUserMessageIsRepresented(
 
 export function mergePendingChatUserMessage(
   messages: readonly UIMessage[],
-  pending: UIMessage | null
+  pending: UIMessage | null,
+  opts?: { allowTextMatch?: boolean }
 ): UIMessage[] {
   if (!pending) return [...messages];
-  if (pendingChatUserMessageIsRepresented(messages, pending)) {
+  if (pendingChatUserMessageIsRepresented(messages, pending, opts)) {
     return [...messages];
   }
   return [...messages, pending];
