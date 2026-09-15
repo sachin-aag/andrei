@@ -24,6 +24,7 @@ import {
 } from "@/lib/reports/document-no";
 import {
   investigationMetadataFromImport,
+  sectionKeysToSnapshotOnCreate,
   sectionRowsForCreate,
 } from "@/lib/reports/create-report-from-docx";
 import { persistImportedWordComments } from "@/lib/reports/persist-imported-word-comments";
@@ -396,21 +397,28 @@ export async function POST(req: Request) {
       },
     });
 
-    const sectionRows = await db
-      .select()
-      .from(reportSections)
-      .where(eq(reportSections.reportId, report.id));
+    const snapshotKeys = sectionKeysToSnapshotOnCreate(
+      importedContent,
+      genericImported ? { narrative: genericImported.narrative } : null
+    );
+    if (snapshotKeys.size > 0) {
+      const sectionRows = await db
+        .select()
+        .from(reportSections)
+        .where(eq(reportSections.reportId, report.id));
 
-    for (const sectionRow of sectionRows) {
-      await recordSectionVersion({
-        actor,
-        reportId: report.id,
-        sectionId: sectionRow.id,
-        section: sectionRow.section,
-        previousContent: {},
-        newContent: sectionRow.content,
-        forceSnapshot: true,
-      });
+      for (const sectionRow of sectionRows) {
+        if (!snapshotKeys.has(sectionRow.section)) continue;
+        await recordSectionVersion({
+          actor,
+          reportId: report.id,
+          sectionId: sectionRow.id,
+          section: sectionRow.section,
+          previousContent: {},
+          newContent: sectionRow.content,
+          forceSnapshot: true,
+        });
+      }
     }
 
     return NextResponse.json({

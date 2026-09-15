@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { FileText, Loader2, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -36,12 +36,12 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const [managerIds, setManagerIds] = useState<string[]>([]);
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [creating, setCreating] = useState(false);
   const docxInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
   const showWordImport = isWordImportAvailable(documentType);
-  const busy = pending || previewLoading;
+  const busy = creating || previewLoading;
   const selectedType =
     availableTypes.find((type) => type.key === documentType) ?? availableTypes[0];
   const documentNoLabel = selectedType?.documentNoLabel ?? "Deviation Number";
@@ -121,49 +121,60 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
       toast.error(`${documentNoLabel} is required`);
       return;
     }
-    startTransition(async () => {
-      const importedFile = draftFile;
-      const useMultipart = showWordImport && importedFile !== null;
-      const res = useMultipart
-        ? await fetch("/api/reports", {
-            method: "POST",
-            body: (() => {
-              const fd = new FormData();
-              fd.append("documentType", documentType);
-              fd.append("documentNo", documentNo.trim());
-              for (const managerId of managerIds) {
-                fd.append("assignedManagerIds", managerId);
-              }
-              fd.append("file", importedFile);
-              return fd;
-            })(),
-          })
-        : await fetch("/api/reports", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              documentType,
-              documentNo: documentNo.trim(),
-              assignedManagerIds: managerIds,
-            }),
-          });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(body.error ?? "Failed to create report");
-        return;
-      }
-      const data = (await res.json()) as { id: string };
-      captureEvent("report_created", {
-        reportId: data.id,
-        fromDocx: useMultipart,
-      });
-      toast.success("Report created");
+    if (creating) return;
+    const importedFile = draftFile;
+    const useMultipart = showWordImport && importedFile !== null;
+    const type = documentType;
+    const number = documentNo.trim();
+    const reviewers = managerIds;
+    setCreating(true);
+    void (async () => {
+      try {
+        const res = useMultipart
+          ? await fetch("/api/reports", {
+              method: "POST",
+              body: (() => {
+                const fd = new FormData();
+                fd.append("documentType", type);
+                fd.append("documentNo", number);
+                for (const managerId of reviewers) {
+                  fd.append("assignedManagerIds", managerId);
+                }
+                fd.append("file", importedFile);
+                return fd;
+              })(),
+            })
+          : await fetch("/api/reports", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                documentType: type,
+                documentNo: number,
+                assignedManagerIds: reviewers,
+              }),
+            });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          toast.error(body.error ?? "Failed to create report");
+          return;
+        }
+        const data = (await res.json()) as { id: string };
+        captureEvent("report_created", {
+          reportId: data.id,
+          fromDocx: useMultipart,
+        });
+        toast.success("Report created");
 
-      setOpen(false);
-      resetForm();
-      router.push(`/reports/${data.id}/edit`);
-      router.refresh();
-    });
+        setOpen(false);
+        resetForm();
+        router.push(`/reports/${data.id}/edit`);
+        router.refresh();
+      } catch {
+        toast.error("Failed to create report");
+      } finally {
+        setCreating(false);
+      }
+    })();
   };
 
   return (

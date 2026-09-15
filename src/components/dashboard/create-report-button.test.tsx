@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
@@ -42,6 +42,7 @@ const managers = [
 describe("CreateReportButton", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
   });
 
@@ -143,5 +144,25 @@ describe("CreateReportButton", () => {
     expect(
       screen.queryByRole("option", { name: /investigation/i })
     ).not.toBeInTheDocument();
+  });
+
+  it("toasts when creating a report fails to reach the server", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("Failed to fetch"))
+    );
+    const user = userEvent.setup();
+    render(<CreateReportButton managers={managers} />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+    await user.type(screen.getByLabelText(/deviation number/i), "DEV-1");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Failed to create report");
+    });
+    expect(
+      screen.getByRole("heading", { name: /create investigation report/i })
+    ).toBeInTheDocument();
   });
 });
