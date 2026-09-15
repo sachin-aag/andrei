@@ -30,9 +30,7 @@ type CreateReportButtonProps = {
 export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const availableTypes = listDocumentTypes();
   const [open, setOpen] = useState(false);
-  const [documentType, setDocumentType] = useState<DocumentType>(
-    () => availableTypes[0]?.key ?? "investigation_report"
-  );
+  const [documentType, setDocumentType] = useState<DocumentType | "">("");
   const [documentNo, setDocumentNo] = useState("");
   const [managerIds, setManagerIds] = useState<string[]>([]);
   const [draftFile, setDraftFile] = useState<File | null>(null);
@@ -41,28 +39,30 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const docxInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  const showWordImport = isWordImportAvailable(documentType);
+  const selectedType =
+    availableTypes.find((type) => type.key === documentType) ?? null;
+  const showWordImport = selectedType
+    ? isWordImportAvailable(selectedType.key)
+    : false;
   const busy = creating || previewLoading;
   const { takeForFinalize, releaseWithoutDiscard } = useReportCreatePreload({
-    enabled: open && !draftFile,
-    documentType,
+    enabled: open && !draftFile && Boolean(documentType),
+    documentType: selectedType?.key ?? null,
   });
-  const selectedType =
-    availableTypes.find((type) => type.key === documentType) ?? availableTypes[0];
-  const documentNoLabel = selectedType?.documentNoLabel ?? "Deviation Number";
+  const documentNoLabel = selectedType?.documentNoLabel ?? "Document Number";
   const dialogTitle = selectedType
     ? `Create ${selectedType.label.toLowerCase()}`
-    : "Create investigation report";
-  const dialogDescription = showWordImport
-    ? selectedType?.key === "generic_document"
-      ? "Starts a new document as a draft. Optionally upload an existing Word file to fill the body. Some Word features (SmartArt, text boxes, headers) are dropped on import."
-      : "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document to fill Define through Control."
-    : selectedType
-      ? `Starts a new ${selectedType.label.toLowerCase()} as a draft.`
-      : "Starts a new deviation investigation report as a draft.";
+    : "Create report";
+  const dialogDescription = !selectedType
+    ? "Choose a document type to start a new draft."
+    : showWordImport
+      ? selectedType.key === "generic_document"
+        ? "Starts a new document as a draft. Optionally upload an existing Word file to fill the body. Some Word features (SmartArt, text boxes, headers) are dropped on import."
+        : "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document to fill Define through Control."
+      : `Starts a new ${selectedType.label.toLowerCase()} as a draft.`;
 
   const resetForm = () => {
-    setDocumentType(availableTypes[0]?.key ?? "investigation_report");
+    setDocumentType("");
     setDocumentNo("");
     setManagerIds([]);
     setDraftFile(null);
@@ -87,6 +87,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
       clearDraftFile();
       return;
     }
+    if (!documentType) return;
 
     setPreviewLoading(true);
     try {
@@ -122,6 +123,10 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   };
 
   const submit = () => {
+    if (!documentType) {
+      toast.error("Document type is required");
+      return;
+    }
     if (!documentNo.trim()) {
       toast.error(`${documentNoLabel} is required`);
       return;
@@ -237,59 +242,65 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
             <DialogDescription>{dialogDescription}</DialogDescription>
           </DialogHeader>
           <div className="grid min-w-0 gap-4 py-2">
-            {availableTypes.length > 1 ? (
-              <div className="grid gap-2">
-                <Label htmlFor="documentType">Document type</Label>
-                <select
-                  id="documentType"
-                  className="h-9 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 text-sm"
-                  value={documentType}
-                  disabled={busy}
-                  onChange={(e) =>
-                    handleDocumentTypeChange(e.target.value as DocumentType)
-                  }
-                >
-                  {availableTypes.map((type) => (
-                    <option key={type.key} value={type.key}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
             <div className="grid gap-2">
-              <Label htmlFor="documentNo">{documentNoLabel}</Label>
-              <div className="relative">
-                <Input
-                  id="documentNo"
-                  placeholder={
-                    selectedType?.documentNoPlaceholder ??
-                    (documentType === "design_verification"
-                      ? "e.g. DVR-2026-001"
-                      : documentType === "mechanical_design_verification"
-                        ? "e.g. 825-00101"
-                        : documentType === "quality_risk_assessment"
-                          ? "e.g. RA/DP/QA/26/001"
-                          : "e.g. DEV/PK/26/001")
-                  }
-                  value={documentNo}
-                  disabled={busy}
-                  className={previewLoading ? "pr-9" : undefined}
-                  onChange={(e) => setDocumentNo(e.target.value)}
-                />
-                {previewLoading ? (
-                  <Loader2
-                    className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--muted-foreground)]"
-                    aria-hidden="true"
+              <Label htmlFor="documentType">Document type</Label>
+              <select
+                id="documentType"
+                className="h-9 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 text-sm"
+                value={documentType}
+                disabled={busy}
+                required
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (!availableTypes.some((type) => type.key === next)) return;
+                  handleDocumentTypeChange(next as DocumentType);
+                }}
+              >
+                <option value="" disabled>
+                  Select a document type
+                </option>
+                {availableTypes.map((type) => (
+                  <option key={type.key} value={type.key}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedType ? (
+              <div className="grid gap-2">
+                <Label htmlFor="documentNo">{documentNoLabel}</Label>
+                <div className="relative">
+                  <Input
+                    id="documentNo"
+                    placeholder={
+                      selectedType.documentNoPlaceholder ??
+                      (documentType === "design_verification"
+                        ? "e.g. DVR-2026-001"
+                        : documentType === "mechanical_design_verification"
+                          ? "e.g. 825-00101"
+                          : documentType === "quality_risk_assessment"
+                            ? "e.g. RA/DP/QA/26/001"
+                            : "e.g. DEV/PK/26/001")
+                    }
+                    value={documentNo}
+                    disabled={busy}
+                    className={previewLoading ? "pr-9" : undefined}
+                    onChange={(e) => setDocumentNo(e.target.value)}
                   />
+                  {previewLoading ? (
+                    <Loader2
+                      className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--muted-foreground)]"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </div>
+                {previewLoading ? (
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Reading deviation number from Word file…
+                  </p>
                 ) : null}
               </div>
-              {previewLoading ? (
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  Reading deviation number from Word file…
-                </p>
-              ) : null}
-            </div>
+            ) : null}
             {showWordImport ? (
               <div className="grid gap-2">
                 <Label htmlFor="report-upload">

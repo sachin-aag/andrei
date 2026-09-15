@@ -44,6 +44,13 @@ const managers = [
   { id: "manager-1", name: "Test Manager", title: "QA Manager" },
 ];
 
+async function pickDocumentType(
+  user: ReturnType<typeof userEvent.setup>,
+  key: string
+) {
+  await user.selectOptions(screen.getByLabelText(/document type/i), key);
+}
+
 function jsonResponse(body: unknown, ok = true) {
   return {
     ok,
@@ -87,23 +94,46 @@ describe("CreateReportButton", () => {
     fetchMock = mockFetchApi();
   });
 
-  it("opens the create dialog", async () => {
+  it("opens the create dialog with no document type selected", async () => {
     const user = userEvent.setup();
     render(<CreateReportButton managers={managers} />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
 
     expect(
-      screen.getByRole("heading", { name: /create investigation report/i })
+      screen.getByRole("heading", { name: /^create report$/i })
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/deviation number/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/document type/i)).toHaveValue("");
+    expect(screen.queryByLabelText(/deviation number/i)).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("preloads a blank draft when the dialog opens", async () => {
+  it.each([
+    ["demo", DEMO_PACK],
+    ["MJ", MJ_PACK],
+    ["Convergent", CONVERGENT_PACK],
+  ] as const)("starts with no document type on %s", async (_name, pack) => {
+    vi.mocked(getCustomerPack).mockReturnValue(pack);
     const user = userEvent.setup();
     render(<CreateReportButton managers={managers} />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
+
+    expect(screen.getByLabelText(/document type/i)).toHaveValue("");
+    expect(
+      screen.getByRole("option", { name: /select a document type/i })
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/deviation number/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/document number/i)).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("preloads a blank draft when a document type is selected", async () => {
+    const user = userEvent.setup();
+    render(<CreateReportButton managers={managers} />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+    await pickDocumentType(user, "investigation_report");
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -120,6 +150,10 @@ describe("CreateReportButton", () => {
     await waitFor(() => {
       expect(prefetch).toHaveBeenCalledWith("/reports/preload-1/edit");
     });
+    expect(
+      screen.getByRole("heading", { name: /create investigation report/i })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/deviation number/i)).toBeInTheDocument();
   });
 
   it("discards the preload when the document type changes", async () => {
@@ -127,14 +161,12 @@ describe("CreateReportButton", () => {
     render(<CreateReportButton managers={managers} />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
+    await pickDocumentType(user, "investigation_report");
     await waitFor(() => {
       expect(prefetch).toHaveBeenCalledWith("/reports/preload-1/edit");
     });
 
-    await user.selectOptions(
-      screen.getByLabelText(/document type/i),
-      "generic_document"
-    );
+    await pickDocumentType(user, "generic_document");
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -161,6 +193,7 @@ describe("CreateReportButton", () => {
     render(<CreateReportButton managers={managers} />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
+    await pickDocumentType(user, "investigation_report");
     await waitFor(() => {
       expect(prefetch).toHaveBeenCalledWith("/reports/preload-1/edit");
     });
@@ -190,6 +223,7 @@ describe("CreateReportButton", () => {
     render(<CreateReportButton managers={managers} />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
+    await pickDocumentType(user, "investigation_report");
     await waitFor(() => {
       expect(prefetch).toHaveBeenCalledWith("/reports/preload-1/edit");
     });
@@ -202,8 +236,18 @@ describe("CreateReportButton", () => {
       );
     });
     expect(
-      screen.queryByRole("heading", { name: /create investigation report/i })
+      screen.queryByRole("heading", { name: /^create report$/i })
     ).not.toBeInTheDocument();
+  });
+
+  it("shows toast when document type is empty", async () => {
+    const user = userEvent.setup();
+    render(<CreateReportButton managers={managers} />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    expect(toast.error).toHaveBeenCalledWith("Document type is required");
   });
 
   it("shows toast when deviation number is empty", async () => {
@@ -211,6 +255,7 @@ describe("CreateReportButton", () => {
     render(<CreateReportButton managers={managers} />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
+    await pickDocumentType(user, "investigation_report");
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
     expect(toast.error).toHaveBeenCalledWith("Deviation Number is required");
@@ -224,7 +269,7 @@ describe("CreateReportButton", () => {
     await user.click(screen.getByRole("button", { name: /^cancel$/i }));
 
     expect(
-      screen.queryByRole("heading", { name: /create investigation report/i })
+      screen.queryByRole("heading", { name: /^create report$/i })
     ).not.toBeInTheDocument();
   });
 
@@ -266,6 +311,8 @@ describe("CreateReportButton", () => {
     render(<CreateReportButton managers={managers} />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
+    expect(screen.queryByLabelText(/existing report/i)).not.toBeInTheDocument();
+    await pickDocumentType(user, "investigation_report");
 
     expect(screen.getByLabelText(/existing report/i)).toBeInTheDocument();
     expect(screen.queryByText(/documents \(optional\)/i)).not.toBeInTheDocument();
@@ -282,7 +329,7 @@ describe("CreateReportButton", () => {
     await user.click(screen.getByRole("button", { name: /new report/i }));
 
     const typeSelect = screen.getByLabelText(/document type/i);
-    expect(typeSelect).toHaveValue("design_verification");
+    expect(typeSelect).toHaveValue("");
     expect(
       screen.getByRole("option", { name: /design verification report/i })
     ).toBeInTheDocument();
@@ -303,6 +350,7 @@ describe("CreateReportButton", () => {
     render(<CreateReportButton managers={managers} />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
+    await pickDocumentType(user, "investigation_report");
     await user.type(screen.getByLabelText(/deviation number/i), "DEV-1");
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 

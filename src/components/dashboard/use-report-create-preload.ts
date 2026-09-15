@@ -20,7 +20,7 @@ function discardReport(id: string, keepalive = false): void {
 
 export function useReportCreatePreload(opts: {
   enabled: boolean;
-  documentType: DocumentType;
+  documentType: DocumentType | null;
 }) {
   const router = useRouter();
   const routerRef = useRef(router);
@@ -96,7 +96,7 @@ export function useReportCreatePreload(opts: {
   }, []);
 
   useEffect(() => {
-    if (!opts.enabled) return;
+    if (!opts.enabled || !opts.documentType) return;
     start(opts.documentType);
     return () => discard();
   }, [opts.enabled, opts.documentType, start, discard]);
