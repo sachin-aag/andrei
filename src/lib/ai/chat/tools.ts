@@ -226,8 +226,10 @@ import {
 } from "@/lib/ai/chat/document-review";
 import type { SearchGate } from "@/lib/ai/chat/search-loop";
 import {
+  isElrInventoryReviewObjective,
+} from "@/lib/ai/chat/inventory-review-schema";
+import {
   planDocumentSearchQuery,
-  phraseFamiliesForReviewObjective,
   phraseFamiliesForSection,
 } from "@/lib/ai/chat/search-phrase-families";
 import {
@@ -1689,7 +1691,7 @@ export function buildChatTools(opts: {
 
     start_document_review: tool({
       description:
-        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call once per section. After finish_document_review reports complete, do not start again with a rephrased objective or another file — fill the table from those findings. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. For ELR Monitoring, omit attachmentIds so phrase-matching pages in every ready file are queued (do not pick one protocol). Returns page counts only — call continue_document_review next.",
+        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call once per section. After finish_document_review reports complete, do not start again with a rephrased objective or another file — fill the table from those findings. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. For ELR inventory tables, omit attachmentIds so every ready file is listed; the review keeps pages that match that table's columns. Returns page counts only — call continue_document_review next.",
       inputSchema: z.object({
         objective: z
           .string()
@@ -1701,7 +1703,7 @@ export function buildChatTools(opts: {
           .max(12)
           .optional()
           .describe(
-            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR Monitoring (omit so every ready file is phrase-filtered)."
+            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so every ready file is column-filtered)."
           ),
       }),
       execute: async ({ objective, attachmentIds }) => {
@@ -1719,15 +1721,15 @@ export function buildChatTools(opts: {
           documentType,
           sectionScope: opts.sectionScope,
         });
-        const phraseScoped =
-          phraseFamiliesForReviewObjective(coverageObjective).length > 0 ||
-          phraseFamiliesForReviewObjective(objective).length > 0;
+        const inventoryScoped =
+          documentType === "equipment_lifecycle_report" &&
+          isElrInventoryReviewObjective(coverageObjective, objective);
         const selected =
           pinnedReady.length > 0
             ? requestedInScope.length > 0
               ? requestedInScope.filter((id) => allowed.has(id))
               : pinnedReady
-            : phraseScoped
+            : inventoryScoped
               ? ready.map((doc) => doc.attachmentId)
               : requestedInScope.length > 0
                 ? requestedInScope.filter((id) => allowed.has(id))
@@ -1743,7 +1745,7 @@ export function buildChatTools(opts: {
           };
         }
         if (
-          !phraseScoped &&
+          !inventoryScoped &&
           requested.length === 0 &&
           pinnedReady.length === 0 &&
           ready.length > 1

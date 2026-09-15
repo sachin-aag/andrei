@@ -90,7 +90,7 @@ export function familyTouchesQuery(
     const needle = normalizeFamilyTerm(term).toLowerCase();
     if (!needle) return false;
     if (haystack.includes(needle)) return true;
-    // Query "monitoring" should expand "environmental monitoring" without
+    // Query "monitoring" should expand "monitoring parameter" without
     // letting short stems (`fill`) unlock an unrelated family.
     const words = needle.split(/[^a-z0-9]+/).filter(Boolean);
     return tokens.some(

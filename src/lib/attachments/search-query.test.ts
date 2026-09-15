@@ -4,7 +4,8 @@ import {
   lexicalSearchNeedles,
   planSearchQuery,
 } from "./search-query";
-import { MEDIA_FILL_PHRASE_FAMILY, MONITORING_PHRASE_FAMILY } from "@/lib/ai/chat/search-phrase-families";
+import { MEDIA_FILL_PHRASE_FAMILY } from "@/lib/ai/chat/search-phrase-families";
+import { inventoryColumnNeedles } from "@/lib/ai/chat/inventory-review-schema";
 
 describe("buildKeywordTsQuery", () => {
   it("keeps a two-word query as a phrase instead of OR-splitting Fill", () => {
@@ -42,11 +43,14 @@ describe("buildKeywordTsQuery", () => {
     expect(tsQuery).not.toMatch(/\bprocessing\b/i);
   });
 
-  it("ORs monitoring family alternatives from the section noun", () => {
-    const tsQuery = buildKeywordTsQuery("monitoring", [MONITORING_PHRASE_FAMILY]);
-    expect(tsQuery).toContain('"environmental monitoring"');
-    expect(tsQuery).toContain("non-viable");
-    expect(tsQuery).toContain('"glove monitoring"');
+  it("ORs inventory column phrases from the section noun", () => {
+    const tsQuery = buildKeywordTsQuery("monitoring", [
+      inventoryColumnNeedles("elr_monitoring"),
+    ]);
+    expect(tsQuery).toContain('"monitoring parameter"');
+    expect(tsQuery).toContain('"period covered"');
+    expect(tsQuery).toContain("excursion");
+    expect(tsQuery).not.toContain("glove monitoring");
     expect(tsQuery).not.toMatch(/(^|or )\s*fill(\s|$)/i);
   });
 });

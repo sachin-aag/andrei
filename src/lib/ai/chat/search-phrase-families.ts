@@ -1,5 +1,9 @@
 import type { SectionType } from "@/db/schema";
 import {
+  inventoryPhraseFamilyForSection,
+  inventorySectionForObjective,
+} from "@/lib/ai/chat/inventory-review-schema";
+import {
   familyTouchesQuery,
   type SearchQueryPlan,
   planSearchQuery,
@@ -16,39 +20,26 @@ export const MEDIA_FILL_PHRASE_FAMILY = [
   "aseptic process simulation",
 ] as const;
 
-/**
- * Environmental / personnel monitoring results — not URS "monitoring
- * systems" ports and not the bare token `monitoring`.
- */
-export const MONITORING_PHRASE_FAMILY = [
-  "environmental monitoring",
-  "non-viable",
-  "non viable",
-  "particulate monitoring",
-  "viable environmental",
-  "viable monitoring",
-  "glove monitoring",
-  "personnel hygiene",
-  "settle plate",
-  "active air",
-] as const;
-
-const FAMILIES_BY_SECTION: Partial<Record<SectionType, readonly (readonly string[])[]>> =
-  {
-    elr_media_fill: [MEDIA_FILL_PHRASE_FAMILY],
-    elr_monitoring: [MONITORING_PHRASE_FAMILY],
-  };
+const STEM_FAMILIES_BY_SECTION: Partial<
+  Record<SectionType, readonly (readonly string[])[]>
+> = {
+  elr_media_fill: [MEDIA_FILL_PHRASE_FAMILY],
+};
 
 export function phraseFamiliesForSection(
   section: string | null | undefined
 ): readonly (readonly string[])[] {
   if (!section || section === "all") return [];
-  return FAMILIES_BY_SECTION[section as SectionType] ?? [];
+  const stemming = STEM_FAMILIES_BY_SECTION[section as SectionType] ?? [];
+  const schemaFamily = inventoryPhraseFamilyForSection(section);
+  if (schemaFamily.length === 0) return stemming;
+  return [...stemming, schemaFamily];
 }
 
 /**
- * Section key, or a tool objective that names monitoring so a review
- * started as "extract monitoring records" still greps the family.
+ * Section key, or a tool objective that names an inventory table so a
+ * review started as "extract monitoring records" still greps that
+ * table's column phrases.
  */
 export function phraseFamiliesForReviewObjective(
   objective: string | null | undefined
@@ -56,9 +47,8 @@ export function phraseFamiliesForReviewObjective(
   if (!objective) return [];
   const direct = phraseFamiliesForSection(objective);
   if (direct.length > 0) return direct;
-  if (/\bmonitoring\b/i.test(objective)) {
-    return phraseFamiliesForSection("elr_monitoring");
-  }
+  const mapped = inventorySectionForObjective(objective);
+  if (mapped) return phraseFamiliesForSection(mapped);
   return [];
 }
 

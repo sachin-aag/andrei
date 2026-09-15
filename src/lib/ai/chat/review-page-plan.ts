@@ -1,3 +1,7 @@
+import {
+  inventorySectionForObjective,
+  scoreInventoryReviewPage,
+} from "@/lib/ai/chat/inventory-review-schema";
 import { phraseFamiliesForReviewObjective } from "@/lib/ai/chat/search-phrase-families";
 
 const STOPWORDS = new Set([
@@ -102,6 +106,8 @@ export function scoreReviewPage(
   page: ReviewPagePlanInput,
   objective: string
 ): number {
+  const inventoryScore = scoreInventoryReviewPage(page, objective);
+  if (inventoryScore !== null) return inventoryScore;
   const tokens = objectiveTokens(objective);
   const familyTerms = phraseFamiliesForReviewObjective(objective).flatMap(
     (family) => [...family]
@@ -126,8 +132,6 @@ export function scoreReviewPage(
       score += 8;
       continue;
     }
-    // Bare "monitoring" matches URS ports and protocol running headers.
-    // When the section has a phrase family, only those phrases count.
     if (familyTerms.length === 0 && haystack.includes(token)) score += 2;
   }
   return score;
@@ -209,7 +213,8 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
 ): T[] {
   if (
     objectiveTokens(objective).length === 0 &&
-    phraseFamiliesForReviewObjective(objective).length === 0
+    phraseFamiliesForReviewObjective(objective).length === 0 &&
+    inventorySectionForObjective(objective) === null
   ) {
     return selectReviewPages(pages, cap);
   }

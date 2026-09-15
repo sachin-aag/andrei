@@ -151,7 +151,7 @@ describe("planReviewPages", () => {
     );
   });
 
-  it("queues phrase-matching monitoring pages across files, not a protocol that only says monitoring", () => {
+  it("queues schema-matching monitoring pages across files, not a protocol that only says monitoring", () => {
     const pages = [
       {
         attachmentId: "pqp",
@@ -195,6 +195,31 @@ describe("planReviewPages", () => {
     ]);
     expect(scoreReviewPage(pages[0]!, "elr_monitoring")).toBe(0);
     expect(scoreReviewPage(pages[1]!, "elr_monitoring")).toBeGreaterThan(0);
+    expect(scoreReviewPage(pages[2]!, "elr_monitoring")).toBeGreaterThan(0);
+  });
+
+  it("queues a differential-pressure monitoring row from column hits", () => {
+    const pages = [
+      {
+        attachmentId: "pqp",
+        pageNumber: 11,
+        filename: "PQP-24-PR-097.pdf",
+        transcript: "connections for monitoring systems NV / V sampling ports",
+        outlineTitle: "URS",
+        identifiers: [] as string[],
+      },
+      {
+        attachmentId: "prqr",
+        pageNumber: 14,
+        filename: "PRQR-25-PR-005 Report.pdf",
+        transcript:
+          "Differential pressure Grade A LAF 23/07/2024 – 23/07/2025 Excursion N",
+        outlineTitle: "LAF",
+        identifiers: ["PRQR-25-PR-005"],
+      },
+    ];
+    const selected = planReviewPages(pages, "elr_monitoring", 2500);
+    expect(selected.map((page) => page.attachmentId)).toEqual(["prqr"]);
   });
 });
 

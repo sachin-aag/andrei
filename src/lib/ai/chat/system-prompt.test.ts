@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v102-monitoring-phrases");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v103-inventory-schema");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -434,6 +434,9 @@ describe("buildChatSystemPrompt", () => {
     expect(plan).toContain("ECO/DCR");
     expect(plan).toContain("Do not start a document review");
     expect(plan).toContain("do not grep again because truncated=true");
+    expect(plan).toContain(
+      "Complementary terms come from the other live table columns"
+    );
     expect(plan).not.toContain("If truncated=true or nextExcludePages grew, grep again");
     expect(plan).not.toContain("Escalate to start_document_review");
     expect(plan).toContain("The document index (filenames/topics) is not enough information by itself");
@@ -473,7 +476,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "list_attachments if you have not already, then start_document_review"
     );
-    expect(prompt).toContain("For ELR Monitoring, omit attachmentIds");
+    expect(prompt).toContain("For ELR inventory tables");
+    expect(prompt).toContain("omit attachmentIds");
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("One review per section this turn");
     expect(prompt).toContain(

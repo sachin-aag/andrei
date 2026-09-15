@@ -984,7 +984,7 @@ describe("buildChatTools document review", () => {
     ).toContain("att_a:400:");
   });
 
-  it("walks every ready file for ELR Monitoring instead of asking for one protocol", async () => {
+  it("walks every ready file for ELR inventory instead of asking for one protocol", async () => {
     listReadyDocumentsForReportMock.mockResolvedValueOnce([
       {
         attachmentId: "att_pqp",
@@ -1046,6 +1046,69 @@ describe("buildChatTools document review", () => {
     expect(
       (result as { queuedPages?: number; skippedDocuments?: unknown[] })
         .queuedPages
+    ).toBe(1);
+  });
+
+  it("walks every ready file for ELR Calibration with the same column filter", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        description: null,
+        pageCount: 22,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_cal",
+        filename: "CAL-E-PR-070.pdf",
+        description: null,
+        pageCount: 4,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        pageNumber: 1,
+        transcript: "Approval page for performance qualification",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+      {
+        attachmentId: "att_cal",
+        filename: "CAL-E-PR-070.pdf",
+        pageNumber: 1,
+        transcript: "Certificate of calibration CAL-12 as found / as left",
+        pageContext: "Calibration certificates",
+        printedPageLabel: "1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      reviewCoverageObjective: "elr_calibration",
+    });
+    const result = await tools.start_document_review!.execute!(
+      {
+        objective: "elr_calibration",
+        attachmentIds: ["att_pqp"],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_pqp", "att_cal"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_pqp", "att_cal"],
+    });
+    expect(
+      (result as { queuedPages?: number }).queuedPages
     ).toBe(1);
   });
 
