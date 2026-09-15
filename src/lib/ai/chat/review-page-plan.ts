@@ -1,3 +1,5 @@
+import { phraseFamiliesForReviewObjective } from "@/lib/ai/chat/search-phrase-families";
+
 const STOPWORDS = new Set([
   "a",
   "an",
@@ -101,7 +103,10 @@ export function scoreReviewPage(
   objective: string
 ): number {
   const tokens = objectiveTokens(objective);
-  if (tokens.length === 0) return 0;
+  const familyTerms = phraseFamiliesForReviewObjective(objective).flatMap(
+    (family) => [...family]
+  );
+  if (tokens.length === 0 && familyTerms.length === 0) return 0;
   const identifiers = (page.identifiers ?? []).map((id) => id.toLowerCase());
   const haystack = [
     page.outlineTitle ?? "",
@@ -112,12 +117,18 @@ export function scoreReviewPage(
     .join(" ")
     .toLowerCase();
   let score = 0;
+  for (const term of familyTerms) {
+    const needle = term.toLowerCase();
+    if (needle.length >= 3 && haystack.includes(needle)) score += 4;
+  }
   for (const token of tokens) {
     if (identifiers.some((id) => id.includes(token) || token.includes(id))) {
       score += 8;
       continue;
     }
-    if (haystack.includes(token)) score += 2;
+    // Bare "monitoring" matches URS ports and protocol running headers.
+    // When the section has a phrase family, only those phrases count.
+    if (familyTerms.length === 0 && haystack.includes(token)) score += 2;
   }
   return score;
 }
@@ -196,7 +207,10 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
   objective: string,
   cap: number
 ): T[] {
-  if (objectiveTokens(objective).length === 0) {
+  if (
+    objectiveTokens(objective).length === 0 &&
+    phraseFamiliesForReviewObjective(objective).length === 0
+  ) {
     return selectReviewPages(pages, cap);
   }
   const relevant: T[] = [];

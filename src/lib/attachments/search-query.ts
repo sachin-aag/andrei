@@ -85,9 +85,17 @@ export function familyTouchesQuery(
   family: readonly string[]
 ): boolean {
   const haystack = query.toLowerCase();
+  const tokens = searchContentTokens(query).map((token) => token.toLowerCase());
   return family.some((term) => {
     const needle = normalizeFamilyTerm(term).toLowerCase();
-    return needle.length > 0 && haystack.includes(needle);
+    if (!needle) return false;
+    if (haystack.includes(needle)) return true;
+    // Query "monitoring" should expand "environmental monitoring" without
+    // letting short stems (`fill`) unlock an unrelated family.
+    const words = needle.split(/[^a-z0-9]+/).filter(Boolean);
+    return tokens.some(
+      (token) => token.length >= 8 && words.includes(token)
+    );
   });
 }
 

@@ -984,6 +984,71 @@ describe("buildChatTools document review", () => {
     ).toContain("att_a:400:");
   });
 
+  it("walks every ready file for ELR Monitoring instead of asking for one protocol", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        description: null,
+        pageCount: 22,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        description: null,
+        pageCount: 18,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        pageNumber: 1,
+        transcript: "Approval page for performance qualification",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        pageNumber: 9,
+        transcript:
+          "Non-Viable Particulate Monitoring (Grade A LAF) period 23/07/2024",
+        pageContext: "Environmental monitoring",
+        printedPageLabel: "9",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      reviewCoverageObjective: "elr_monitoring",
+    });
+    const result = await tools.start_document_review!.execute!(
+      {
+        objective: "elr_monitoring",
+        attachmentIds: ["att_pqp"],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_pqp", "att_prqr"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_pqp", "att_prqr"],
+    });
+    expect(
+      (result as { queuedPages?: number; skippedDocuments?: unknown[] })
+        .queuedPages
+    ).toBe(1);
+  });
+
   it("asks which attachment to review when several ready documents are untagged", async () => {
     listReadyDocumentsForReportMock.mockResolvedValueOnce([
       {

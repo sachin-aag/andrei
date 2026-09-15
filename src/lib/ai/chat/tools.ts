@@ -227,6 +227,7 @@ import {
 import type { SearchGate } from "@/lib/ai/chat/search-loop";
 import {
   planDocumentSearchQuery,
+  phraseFamiliesForReviewObjective,
   phraseFamiliesForSection,
 } from "@/lib/ai/chat/search-phrase-families";
 import {
@@ -1688,7 +1689,7 @@ export function buildChatTools(opts: {
 
     start_document_review: tool({
       description:
-        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call once per section. After finish_document_review reports complete, do not start again with a rephrased objective or another file — fill the table from those findings. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. Returns page counts only — call continue_document_review next.",
+        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call once per section. After finish_document_review reports complete, do not start again with a rephrased objective or another file — fill the table from those findings. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. For ELR Monitoring, omit attachmentIds so phrase-matching pages in every ready file are queued (do not pick one protocol). Returns page counts only — call continue_document_review next.",
       inputSchema: z.object({
         objective: z
           .string()
@@ -1700,7 +1701,7 @@ export function buildChatTools(opts: {
           .max(12)
           .optional()
           .describe(
-            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists."
+            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR Monitoring (omit so every ready file is phrase-filtered)."
           ),
       }),
       execute: async ({ objective, attachmentIds }) => {
@@ -1712,12 +1713,25 @@ export function buildChatTools(opts: {
           pinnedReady.length > 0
             ? requested.filter((id) => pinnedAttachmentIdSet.has(id))
             : requested;
+        const coverageObjective = resolveReviewCoverageObjective({
+          routeObjective: opts.reviewCoverageObjective,
+          toolObjective: objective,
+          documentType,
+          sectionScope: opts.sectionScope,
+        });
+        const phraseScoped =
+          phraseFamiliesForReviewObjective(coverageObjective).length > 0 ||
+          phraseFamiliesForReviewObjective(objective).length > 0;
         const selected =
-          requestedInScope.length > 0
-            ? requestedInScope.filter((id) => allowed.has(id))
-            : pinnedReady.length > 0
-              ? pinnedReady
-              : ready.map((doc) => doc.attachmentId);
+          pinnedReady.length > 0
+            ? requestedInScope.length > 0
+              ? requestedInScope.filter((id) => allowed.has(id))
+              : pinnedReady
+            : phraseScoped
+              ? ready.map((doc) => doc.attachmentId)
+              : requestedInScope.length > 0
+                ? requestedInScope.filter((id) => allowed.has(id))
+                : ready.map((doc) => doc.attachmentId);
         if (selected.length === 0) {
           return {
             status: "no_documents" as const,
@@ -1729,6 +1743,7 @@ export function buildChatTools(opts: {
           };
         }
         if (
+          !phraseScoped &&
           requested.length === 0 &&
           pinnedReady.length === 0 &&
           ready.length > 1
@@ -1756,12 +1771,6 @@ export function buildChatTools(opts: {
           pageCount: doc.pageCount ?? 0,
           ingestRunId: doc.ingestRunId,
         }));
-        const coverageObjective = resolveReviewCoverageObjective({
-          routeObjective: opts.reviewCoverageObjective,
-          toolObjective: objective,
-          documentType,
-          sectionScope: opts.sectionScope,
-        });
         const started = documentReview.start({
           objective,
           pages,

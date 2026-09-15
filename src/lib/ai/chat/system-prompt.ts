@@ -20,7 +20,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v101-review-once";
+export const CHAT_PROMPT_VERSION = "chat-v102-monitoring-phrases";
 
 export type ChatMode = "plan" | "agent";
 
@@ -118,7 +118,7 @@ function documentRules(
     case "comprehensive":
       retrievalMode = `## Document evidence
 - Retrieval mode: COMPREHENSIVE. The engineer asked for a complete inventory, matrix, full-document review, or an open set over a multi-page catalog (for example drafting the report when Results must list every executed test) — not a handful of search hits.
-- Reply with ONE short sentence that you are starting a complete review, then call list_attachments if you have not already, then start_document_review. Prefer tagged (@) documents. If several ready documents are untagged, pass attachmentIds for the evidence file rather than walking every file.
+- Reply with ONE short sentence that you are starting a complete review, then call list_attachments if you have not already, then start_document_review. Prefer tagged (@) documents. If several ready documents are untagged, pass attachmentIds for the evidence file rather than walking every file. For ELR Monitoring, omit attachmentIds — those rows are split across PRQR / PRQP / PQR / linked PRs; the review keeps only phrase-matching pages (environmental / non-viable / viable / glove) in every ready file.
 - Call continue_document_review until the tool reports coverage is complete. Do not stop after a few batches. Do not draft from search_documents snippets or the evidence preview.
 - Call finish_document_review before draft_field, edit_table, propose_edit, or claiming completeness. finish_document_review returns allIdentifiers (every mention found — diagnostic only), recommendedInventory (design-verification Requirements Verified / executed-test rows to publish — not an ELR calibration or qualification matrix), and a short findings sample (not every page). If findingsOmitted > 0, the sample is incomplete — do not treat it as every instrument or record. Read the cited certificate/record pages before filling dates and IDs; do not persist a matrix of <date>/<identifier>/<number> instead of that pass. On design-verification Results, draft the matrix from recommendedInventory only. On an Equipment Lifecycle Report, inventory tables are seeded matrices: read the cited certificate/record pages, then fill them with edit_table (edit_cells / insert_rows); do not rewrite the grid with draft_field. Copy that section's live table headers from read_section / the context map (demo Traceability is not Convergent Results). Preserve each requirement ID exactly, including its family prefix and any dotted suffix (M3-SYS-FN-037 is not SYS-FN-037; SW-SST-5.1.1 is not SW-SST-5). Do not dump allIdentifiers into the matrix. Cite [filename, p. N] when the finding has a page; [filename] only if the page is missing or ambiguous.
 - One review per section this turn. After finish_document_review returns status complete, do not call start_document_review again — not with a rephrased objective, another attachment, or "checking citations". Fill the empty inventory from those findings. search_documents is for later fact checks, not a second walk.

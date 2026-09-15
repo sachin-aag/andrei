@@ -77,7 +77,10 @@ coverage delta unless the latest message is explicit pushback
 (`you missed`, `look again`, `re-check`, a test-family code). Pushback
 skips rehydrate so a finished session does not hide
 `start_document_review`. `planReviewPages` queues pages that score on the current
-objective (floor 8; nearby same-file pages if almost nothing matches). `REVIEW_PAGE_FETCH_CAP`
+objective (floor 8; nearby same-file pages if almost nothing matches). ELR
+Monitoring scores phrase-family hits (environmental / non-viable / viable /
+glove), not the bare token `monitoring`, and `start_document_review`
+walks every ready file unless the engineer tagged one. `REVIEW_PAGE_FETCH_CAP`
 (2500) is listing safety only — there is no 300-page walk cap.
 `continue_document_review` stops starting batches after ~60s and round-robins
 batches across attachments. `start_document_review`

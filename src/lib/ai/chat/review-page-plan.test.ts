@@ -150,6 +150,52 @@ describe("planReviewPages", () => {
       "calibration walk"
     );
   });
+
+  it("queues phrase-matching monitoring pages across files, not a protocol that only says monitoring", () => {
+    const pages = [
+      {
+        attachmentId: "pqp",
+        pageNumber: 11,
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        transcript:
+          "The machine is equipped with the following connections for monitoring systems",
+        outlineTitle: "Protocol",
+        identifiers: [] as string[],
+      },
+      {
+        attachmentId: "prqr",
+        pageNumber: 9,
+        filename: "PRQR-25-PR-005 Report.pdf",
+        transcript:
+          "Non-Viable Particulate Monitoring (Grade A LAF) 23/07/2024 – 23/07/2025",
+        outlineTitle: "Environmental monitoring",
+        identifiers: ["PRQR-25-PR-005"],
+      },
+      {
+        attachmentId: "prqp",
+        pageNumber: 12,
+        filename: "PRQP-24-PR-057 Protocol.pdf",
+        transcript: "Viable Environmental Monitoring (Air & Surface)",
+        outlineTitle: "EM",
+        identifiers: ["PRQP-24-PR-057"],
+      },
+      {
+        attachmentId: "epr",
+        pageNumber: 1,
+        filename: "E-PR-068 and E-PR-071.pdf",
+        transcript: "Equipment identity filling and capping machine E/PR/070",
+        outlineTitle: "Name plate",
+        identifiers: ["E/PR/070"],
+      },
+    ];
+    const selected = planReviewPages(pages, "elr_monitoring", 2500);
+    expect(selected.map((page) => page.attachmentId).sort()).toEqual([
+      "prqp",
+      "prqr",
+    ]);
+    expect(scoreReviewPage(pages[0]!, "elr_monitoring")).toBe(0);
+    expect(scoreReviewPage(pages[1]!, "elr_monitoring")).toBeGreaterThan(0);
+  });
 });
 
 describe("neighborFillPages", () => {

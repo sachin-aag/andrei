@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v101-review-once");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v102-monitoring-phrases");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -473,6 +473,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "list_attachments if you have not already, then start_document_review"
     );
+    expect(prompt).toContain("For ELR Monitoring, omit attachmentIds");
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("One review per section this turn");
     expect(prompt).toContain(
