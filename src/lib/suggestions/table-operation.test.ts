@@ -401,6 +401,73 @@ describe("applyTableOperation", () => {
     expect(applyTableOperation(doc, captured).ok).toBe(true);
   });
 
+  it("still inserts after a sibling fill of a previously empty anchor row", () => {
+    const empty = tableDoc(
+      [...ELR_RESPONSIBILITIES_HEADERS],
+      [["", "", ""]]
+    );
+    const filled = applyTableOperation(empty, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, expectedText: "", insertText: "1" },
+        { row: 1, col: 1, expectedText: "", insertText: "QA" },
+        { row: 1, col: 2, expectedText: "", insertText: "Approve the report" },
+      ],
+    });
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+
+    const inserted = applyTableOperation(filled.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      rows: [
+        ["2", "Engineering", "Maintain the line"],
+        ["3", "Production", "Operate the filling line"],
+      ],
+      expectedRowAtAfter: ["", "", ""],
+    });
+    expect(inserted.ok).toBe(true);
+    if (!inserted.ok) return;
+    expect(rowCount(inserted.doc)).toBe(4);
+    expect(cellText(inserted.doc, 1, 1)).toBe("QA");
+    expect(cellText(inserted.doc, 2, 1)).toBe("Engineering");
+    expect(cellText(inserted.doc, 3, 1)).toBe("Production");
+  });
+
+  it("still inserts when previously empty snapshot cells were filled", () => {
+    const result = applyTableOperation(
+      tableDoc(["H1", "H2"], [["QA", "Approves"]]),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [["2", "Engineering"]],
+        expectedRowAtAfter: ["QA", ""],
+      }
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 2, 1)).toBe("Engineering");
+  });
+
+  it("still rejects insert_rows when a filled snapshot cell changed", () => {
+    const result = applyTableOperation(
+      tableDoc(["H1", "H2"], [["changed", "row"]]),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [["x", "y"]],
+        expectedRowAtAfter: ["first", "row"],
+      }
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("stale");
+  });
+
   it("captures omitted expectedText and appends a column when afterCol is omitted", () => {
     const doc = tableDoc(
       ["Component", "Description"],

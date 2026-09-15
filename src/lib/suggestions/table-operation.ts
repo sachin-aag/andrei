@@ -429,6 +429,27 @@ function cellsMatch(
   );
 }
 
+/**
+ * `insert_rows` snapshots the live anchor row at persist. Apply-all (and
+ * sequential Apply) may fill that empty seeded row first via a sibling
+ * `edit_cells`. Previously empty snapshot cells may now have text; filled
+ * snapshot cells must still match or the insert is stale.
+ */
+function expectedRowAtAfterStillValid(
+  actual: readonly string[],
+  expected: readonly string[] | undefined
+): boolean {
+  if (!expected) return true;
+  if (actual.length !== expected.length) return false;
+  if (cellsMatch(actual, expected)) return true;
+  for (let i = 0; i < expected.length; i++) {
+    const exp = normalizeTableCellText(expected[i] ?? "");
+    if (exp.length === 0) continue;
+    if ((actual[i] ?? "") !== exp) return false;
+  }
+  return true;
+}
+
 function cellParagraphFromText(text: string): JSONContent {
   const normalized = normalizeSuggestionInsertText(text);
   if (!normalized) return { type: "paragraph" };
@@ -761,7 +782,7 @@ function applyInsertRows(
     );
   }
   const anchor = rows[afterRow]!;
-  if (!cellsMatch(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
+  if (!expectedRowAtAfterStillValid(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
     return fail(
       "stale",
       `Row ${operation.afterRow} no longer matches the expected snapshot. Re-read with read_section.`

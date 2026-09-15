@@ -49,6 +49,9 @@ DV mixes LLM criteria with deterministic `check()` functions.
   Table ops on the same table supersede only when the later op covers or
   invalidates the earlier coordinates (`insert_rows` after the header shifts
   row 1; an append does not dismiss a disjoint `edit_cells` of row 1).
+  Sequential / Apply-all apply of that pair must not treat a filled empty
+  `expectedRowAtAfter` as stale — only changed snapshot cells that already
+  had text.
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits
   persist as one section PATCH. Preview applied wording before that PATCH
