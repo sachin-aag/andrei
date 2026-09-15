@@ -109,7 +109,7 @@ import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections
 import { docxBufferToGenericDocument } from "@/lib/import/docx-to-generic-document";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
-import { recordSectionVersion } from "@/lib/audit";
+import { recordAuditEvent, recordSectionVersion } from "@/lib/audit";
 
 const engineer = {
   id: "engineer-1",
@@ -158,6 +158,12 @@ function mockManagerValidation(managerIds: string[]) {
     const from = vi.fn().mockReturnValue({ where });
     vi.mocked(db.select).mockReturnValueOnce({ from } as never);
   }
+}
+
+function mockDeleteOnce() {
+  const where = vi.fn().mockResolvedValueOnce(undefined);
+  vi.mocked(db.delete).mockReturnValueOnce({ where } as never);
+  return { where };
 }
 
 describe("/api/reports", () => {
@@ -589,5 +595,67 @@ describe("/api/reports", () => {
       error: "Word import is not supported for this document type.",
     });
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("creates a hidden preload without a document number or audit snapshot", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockDeleteOnce();
+    const { values } = mockSuccessfulCreate("preload-1");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "investigation_report",
+          preload: true,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      id: "preload-1",
+      preloaded: true,
+    });
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "investigation_report",
+        metadata: expect.objectContaining({ createPreload: true }),
+      })
+    );
+    expect(isDocumentNoTaken).not.toHaveBeenCalled();
+    expect(recordAuditEvent).not.toHaveBeenCalled();
+    expect(recordSectionVersion).not.toHaveBeenCalled();
+  });
+
+  it("preloads an equipment lifecycle report without section snapshots", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
+    mockDeleteOnce();
+    const { values } = mockSuccessfulCreate("preload-elr");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "equipment_lifecycle_report",
+          preload: true,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "equipment_lifecycle_report",
+        metadata: expect.objectContaining({ createPreload: true }),
+      })
+    );
+    expect(recordAuditEvent).not.toHaveBeenCalled();
+    expect(recordSectionVersion).not.toHaveBeenCalled();
   });
 });

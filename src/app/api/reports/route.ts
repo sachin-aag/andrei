@@ -57,6 +57,10 @@ import {
   validateAssignedManagerIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
+import { insertBlankReportPreload } from "@/lib/reports/insert-create-preload";
+import {
+  isCreatePreloadDocumentNo,
+} from "@/lib/reports/create-preload";
 import { visibleReportsFilter } from "@/lib/reports/tombstone";
 
 export const runtime = "nodejs";
@@ -132,6 +136,7 @@ const createSchema = z.object({
   deviationNo: z.string().min(1).optional(), // alias for investigation
   assignedManagerId: z.string().nullable().optional(),
   assignedManagerIds: z.array(z.string()).optional(),
+  preload: z.boolean().optional(),
 });
 
 function documentTypeFromForm(value: FormDataEntryValue | null): DocumentType {
@@ -179,6 +184,7 @@ export async function POST(req: Request) {
     let importedContent: ImportedReportContent | null = null;
     let genericImported: GenericImportedDocument | null = null;
     let sourceUpload: { buffer: Buffer; filename: string } | null = null;
+    let preload = false;
 
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
@@ -282,6 +288,7 @@ export async function POST(req: Request) {
       assignedManagerIds = parse.data.assignedManagerIds
         ? normalizeAssignedManagerIds(parse.data.assignedManagerIds)
         : normalizeAssignedManagerIds([parse.data.assignedManagerId ?? null]);
+      preload = parse.data.preload === true;
     }
 
     if (!isDocumentTypeEnabled(documentType, getCustomerPack())) {
@@ -292,12 +299,32 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    if (preload) {
+      if (importedContent || genericImported || sourceUpload) {
+        return NextResponse.json(
+          { error: "Word import cannot be preloaded" },
+          { status: 400 }
+        );
+      }
+      const preloaded = await insertBlankReportPreload({
+        authorId: user.id,
+        documentType,
+      });
+      createdReportId = preloaded.id;
+      return NextResponse.json({ id: preloaded.id, preloaded: true });
+    }
     const def = getDocumentType(documentType);
     const finalDocumentNo = normalizeDocumentNo(rawDocumentNo ?? "");
 
     if (!finalDocumentNo) {
       return NextResponse.json(
         { error: `${def.documentNoLabel} is required` },
+        { status: 400 }
+      );
+    }
+    if (isCreatePreloadDocumentNo(finalDocumentNo)) {
+      return NextResponse.json(
+        { error: "That document number is reserved" },
         { status: 400 }
       );
     }

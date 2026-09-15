@@ -21,6 +21,7 @@ import { captureEvent } from "@/lib/analytics/events";
 import { ManagerSelector } from "@/components/report/manager-selector";
 import type { DocumentType } from "@/db/schema";
 import { isWordImportAvailable, listDocumentTypes } from "@/lib/document-types";
+import { useReportCreatePreload } from "@/components/dashboard/use-report-create-preload";
 
 type CreateReportButtonProps = {
   managers: Pick<WorkspaceUser, "id" | "name" | "title">[];
@@ -42,6 +43,10 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
 
   const showWordImport = isWordImportAvailable(documentType);
   const busy = creating || previewLoading;
+  const { takeForFinalize, releaseWithoutDiscard } = useReportCreatePreload({
+    enabled: open && !draftFile,
+    documentType,
+  });
   const selectedType =
     availableTypes.find((type) => type.key === documentType) ?? availableTypes[0];
   const documentNoLabel = selectedType?.documentNoLabel ?? "Deviation Number";
@@ -130,6 +135,9 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     setCreating(true);
     void (async () => {
       try {
+        const finalizePreloadId = useMultipart
+          ? null
+          : await takeForFinalize(type);
         const res = useMultipart
           ? await fetch("/api/reports", {
               method: "POST",
@@ -144,30 +152,45 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 return fd;
               })(),
             })
-          : await fetch("/api/reports", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                documentType: type,
-                documentNo: number,
-                assignedManagerIds: reviewers,
-              }),
-            });
+          : finalizePreloadId
+            ? await fetch(`/api/reports/${finalizePreloadId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  documentNo: number,
+                  assignedManagerIds: reviewers,
+                }),
+              })
+            : await fetch("/api/reports", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  documentType: type,
+                  documentNo: number,
+                  assignedManagerIds: reviewers,
+                }),
+              });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
           toast.error(body.error ?? "Failed to create report");
           return;
         }
-        const data = (await res.json()) as { id: string };
+        const data = (await res.json()) as { id?: string; report?: { id: string } };
+        const reportId = data.id ?? data.report?.id;
+        if (!reportId) {
+          toast.error("Failed to create report");
+          return;
+        }
+        releaseWithoutDiscard();
         captureEvent("report_created", {
-          reportId: data.id,
+          reportId,
           fromDocx: useMultipart,
         });
         toast.success("Report created");
 
         setOpen(false);
         resetForm();
-        router.push(`/reports/${data.id}/edit`);
+        router.push(`/reports/${reportId}/edit`);
         router.refresh();
       } catch {
         toast.error("Failed to create report");
