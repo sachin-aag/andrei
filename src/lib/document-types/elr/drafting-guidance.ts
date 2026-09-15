@@ -1,4 +1,5 @@
 import {
+  ELR_ACCESS_CONTROL_HEADERS,
   ELR_ALARM_HEADERS,
   ELR_AUDIT_TRAIL_HEADERS,
   ELR_BREAKDOWN_HEADERS,
@@ -10,7 +11,9 @@ import {
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
   ELR_QMS_HEADERS,
   ELR_QUALIFICATION_HEADERS,
+  ELR_RISK_ACTION_HEADERS,
   ELR_SECTION_LABELS,
+  ELR_SYSTEM_TRENDS_HEADERS,
 } from "./sections";
 
 const TABLE_SCHEMAS: readonly (readonly [string, readonly string[]])[] = [
@@ -22,8 +25,11 @@ const TABLE_SCHEMAS: readonly (readonly [string, readonly string[]])[] = [
   ["elr_breakdowns", ELR_BREAKDOWN_HEADERS],
   ["elr_qms", ELR_QMS_HEADERS],
   ["elr_alarms", ELR_ALARM_HEADERS],
+  ["elr_access_control", ELR_ACCESS_CONTROL_HEADERS],
   ["elr_audit_trail", ELR_AUDIT_TRAIL_HEADERS],
   ["elr_csv_status", ELR_CSV_STATUS_HEADERS],
+  ["elr_system_trends", ELR_SYSTEM_TRENDS_HEADERS],
+  ["elr_risk_actions", ELR_RISK_ACTION_HEADERS],
 ];
 
 export const ELR_DRAFTING_GUIDANCE = `## Report shape
@@ -90,7 +96,20 @@ Open or unresolved items carry forward regardless of date.
 ## Container format — this report covers one format
 
 The equipment is qualified separately per container format. A separate ELR is
-compiled for each. Mark every qualification and QMS row with one of:
+compiled for each. The title-page container format is the source of truth for
+which ELR this is.
+
+- If that field is set (Vial or Cartridge), use it. Do not switch based on
+  attachments and do not ask to confirm.
+- If it is unset and attachments name only one of Vial or Cartridge, use that
+  one and say so.
+- If it is unset and attachments name **both** Vial and Cartridge, stop.
+  Call ask_user which format this ELR covers before draft_field on Scope or
+  any format-scoped table. Two PRQR lineages is not permission to pick the
+  first PRQR.
+- After they answer, draft only that format. Counterpart-format rows stay out.
+
+Mark every qualification and QMS row with one of:
 ${ELR_FORMAT_APPLICABILITY.join(" | ")}
 
 "Line-common" means the record belongs to the equipment or the line rather than
@@ -119,18 +138,87 @@ These pairings are checked. Draft them consistently:
 - A QMS record marked as affecting the qualified state (Y) must be referenced
   in the qualification history.
 
+## Assessment above every evidence table
+
+Write a brief assessment in the section's \`narrative\` field, above the table,
+and refer to it with \`[[table]]\` (never type "Table N" or copy tableNumber).
+Do not recap that the section was reviewed. Reason from the rows:
+
+- Counts (how many events, which codes, how many repeats).
+- What happened.
+- Implication for the qualified state.
+- What was done (CA / CAPA / deviation / change control).
+- Whether product was scrapped or runtime was lost.
+
+Suggest only actions that follow from these rows. If the table is empty, say
+none occurred. The assessment is the quality of the report — a cheerful recap
+of a noisy table is a failure.
+
+Responsibilities: the table is a seeded matrix. Fill it with edit_cells /
+insert_rows (do not create_table a second grid). In the same turn, draft a short
+narrative that summarises who does what and uses \`[[table]]\`.
+
+## Table numbers
+
+Seeded matrices already exist as empty grids. Filling them inserts
+\`Table N. {title}\` above the grid when data lands. Empty unused grids stay
+unnumbered. N is the 1-based ordinal among **filled** tables in document order
+(starter abbreviation rows occupy Table 1). Empty unused grids do not reserve
+a number, and fill order among published captions is not used. The integer is
+server-owned (Word SEQ): inserting, filling, or deleting a table renumbers
+later filled captions automatically. Do not propose_edit the caption
+digits; you may change the title after \`Table N. \`. In the assessment
+write \`[[table]]\` (this section) or \`[[table:Section]]\` (another
+section key or label). Those display as Table N and update when a table
+is inserted above (Word REF). Do not type the returned tableNumber.
+
+Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.11.1)
+for grouping failure modes / whether the trended alarm set is still
+appropriate. That is not a substitute for the assessment above the table.
+
+Access control: separate initial qualification of access (21 CFR Part 11) from
+periodic verification this period (admin holders, privilege changes, leavers).
+
+## System trends
+
+\`elr_system_trends\` is a synthesis over the evidence sections, not a new
+inventory. Look for themes that cut across sections: the same sensor causing
+breakdowns and Direct Impact alarms; PM that is out of sync with the failure
+mode; a part that recurrently malfunctions. State downtime, uptime or
+availability for the period from the breakdown hours. Carry each theme that
+needs action into the risk-actions table via the Risk ID column.
+
+## Risk assessment and actions
+
+\`elr_risk_actions\` is the owned action list that follows from the trends.
+Prioritize by occurrence, frequency and severity. Product scrap and lost
+runtime are High. Each action must be a specific, owned, dated step (raise a
+CAPA, revise a PM checklist, file a change control) — not "monitor closely".
+Around ten actions is a working size; do not list every event. Select an
+overall report risk grade (Low / Medium / High) that matches the highest-priority
+rows.
+
 ## Conclusion
 
 State whether the equipment remains in its qualified state for this container
 format. Where a section carries an unresolved finding, the recommendation has
 to account for it — do not conclude "no action required" over an open gap.
 
+## Limits and counts
+
+Write limits, tolerances, particle counts and CFU values as ordinary Unicode
+prose (\`<1 CFU/plate\`, \`≤ 3,520 particles/m³\`, \`±0.5%\`, \`18 of 18\`). Do not
+wrap them in \`$...$\` or TeX (\`\\le\`, \`\\pm\`, \`\\text{...}\`). Those become math
+atoms that Word cannot open when they contain \`<\`. Keep \`$...$\` for real
+equations only (\`\\frac\`, \`\\sum\`).
+
 ## Verbosity
 
 - Short: Objective, Scope, Responsibilities narrative.
-- Packed paragraph: Equipment description, each section's narrative lead-in,
-  trend summaries, conclusion.
-- Tables carry the evidence. Prefer a row over a sentence.
+- Packed paragraph: Equipment description, each section's assessment,
+  trend summaries, system-trends narrative, risk-actions narrative, conclusion.
+- Tables carry the evidence. Prefer a row over a sentence in the table;
+  the assessment above it is where you interpret.
 
 ## Evidence
 
@@ -148,7 +236,18 @@ citations because the section is short. Do not start a complete page-by-page
 review to draft Objective, Scope, Responsibilities, or Equipment description;
 grep for the procedure language instead. Full-document review is for the
 inventory tables (qualification history, monitoring, calibration, QMS, alarms,
-CSV).
+CSV). An empty inventory table (header-only seeded grid) is not draftable
+until that section's review has finished — a finished qualification walk does
+not unlock Associated Instruments. Attachment cover sheets
+(ATTACHMENT NO. / "CALIBRATION CERTIFICATE OF …") are locators: read the
+following pages, then fill the seeded matrix with edit_cells / insert_rows.
+Do not rewrite the table with draft_field. recommendedInventory is for
+design-verification Results, not ELR cert rows. If finish_document_review
+reports findingsOmitted, the sample is incomplete — read the cited
+certificate/record pages (p. N+1 after a cover sheet) before filling dates
+and IDs. Do not persist a grid of <date>/<identifier>/<number> instead of
+that pass. Never claim 100% on-time,
+none overdue, or no OOT while required cells are still <placeholders>.
 
 ## Section keys
 

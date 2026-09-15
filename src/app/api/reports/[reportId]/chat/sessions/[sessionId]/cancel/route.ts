@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
 import { requestAssistantTurnCancel } from "@/lib/ai/chat/background-turn";
-import { findChatSession } from "@/lib/ai/chat/sessions";
+import {
+  parseChatPendingPlan,
+  pauseChatPendingPlan,
+} from "@/lib/ai/chat/pending-plan";
+import { findChatSession, saveChatPendingPlan } from "@/lib/ai/chat/sessions";
 
 export async function POST(
   _req: Request,
@@ -17,6 +21,14 @@ export async function POST(
 
   const session = await findChatSession(reportId, sessionId);
   if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const plan = parseChatPendingPlan(session.pendingPlan);
+  if (plan && !plan.paused) {
+    await saveChatPendingPlan(
+      sessionId,
+      pauseChatPendingPlan(plan, "cancelled")
+    );
+  }
 
   const requested = await requestAssistantTurnCancel(sessionId);
   return NextResponse.json({ cancelled: requested });

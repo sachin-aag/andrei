@@ -59,4 +59,14 @@ describe("resolveCitedAttachment", () => {
       status: "ambiguous",
     });
   });
+
+  it("opens a document-number cite against a download-stamped stored name", () => {
+    const stamped = [
+      { id: "att_pqr", filename: "PQR-24-PR-102_20250320092518.pdf" },
+    ];
+    expect(resolveCitedAttachment(stamped, "PQR-24-PR-102.pdf")).toEqual({
+      status: "found",
+      attachment: stamped[0],
+    });
+  });
 });

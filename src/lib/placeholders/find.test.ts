@@ -411,4 +411,25 @@ describe("findPlaceholders", () => {
       "<last PRQ number>",
     ]);
   });
+
+  it("does not treat comparison inequalities as placeholders", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Grade A (< 1 CFU/plate>) and particles < 0.5 µm>; fill <batch number> and <12>.",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative").map((p) => p.text)).toEqual([
+      "<batch number>",
+      "<12>",
+    ]);
+  });
 });

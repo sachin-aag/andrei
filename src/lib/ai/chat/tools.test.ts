@@ -10,8 +10,13 @@ import {
   SEARCH_DOCUMENTS_MAX_LIMIT,
   SEARCH_DOCUMENTS_MAX_QUERIES,
   SEARCH_EXCLUDE_PAGES_MAX,
+  SEARCH_COVERAGE_HINT,
 } from "@/lib/ai/chat/tools";
-import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import {
+  parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
+} from "@/lib/ai/suggestion-gating";
+import type { PageEvidenceRow } from "@/lib/ai/chat/citation-grounding";
 import {
   DocumentReviewSession,
   extractReviewFindingsFromPages,
@@ -19,8 +24,10 @@ import {
 
 const {
   readDocumentOutlineMock,
+  readDocumentPageMock,
   listReadyDocumentsForReportMock,
   listDocumentPagesForReviewMock,
+  loadDocumentPageEvidenceMock,
   listActiveAttachmentsMock,
   listAttachmentFoldersMock,
   dbSelectMock,
@@ -30,8 +37,12 @@ const {
   getReportAnalyticsMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
+  readDocumentPageMock: vi.fn(),
   listReadyDocumentsForReportMock: vi.fn(),
   listDocumentPagesForReviewMock: vi.fn(),
+  loadDocumentPageEvidenceMock: vi.fn(
+    async (): Promise<PageEvidenceRow[]> => []
+  ),
   listActiveAttachmentsMock: vi.fn(),
   listAttachmentFoldersMock: vi.fn(),
   dbSelectMock: vi.fn(),
@@ -77,10 +88,14 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
     ...actual,
     readDocumentOutline: (...args: unknown[]) =>
       readDocumentOutlineMock(...(args as [])),
+    readDocumentPage: (...args: unknown[]) =>
+      readDocumentPageMock(...(args as [])),
     listReadyDocumentsForReport: (...args: unknown[]) =>
       listReadyDocumentsForReportMock(...(args as [])),
     listDocumentPagesForReview: (...args: unknown[]) =>
       listDocumentPagesForReviewMock(...(args as [])),
+    loadDocumentPageEvidence: (...args: unknown[]) =>
+      loadDocumentPageEvidenceMock(...(args as [])),
   };
 });
 
@@ -323,6 +338,10 @@ describe("buildChatTools search_documents scoping", () => {
       "missing or ambiguous"
     );
     expect(tools.search_documents?.description).toContain("Grep only");
+    expect(tools.search_documents?.description).not.toContain(
+      "truncated=true means keep grepping"
+    );
+    expect(SEARCH_COVERAGE_HINT).not.toContain("If truncated=true, grep again");
   });
 });
 
@@ -857,6 +876,10 @@ describe("buildChatTools document review", () => {
   beforeEach(() => {
     listReadyDocumentsForReportMock.mockReset();
     listDocumentPagesForReviewMock.mockReset();
+    loadDocumentPageEvidenceMock.mockReset();
+    loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    dbInsertMock.mockReset();
+    dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
   });
 
   it("registers review tools", () => {
@@ -917,6 +940,176 @@ describe("buildChatTools document review", () => {
       attachmentIds: ["att_b"],
       documents: [{ attachmentId: "att_b", filename: "Appendix-B.pdf" }],
     });
+  });
+
+  it("reports truncated coverage when selected documents have more pages than the review cap", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_a",
+        filename: "early.pdf",
+        description: null,
+        pageCount: 400,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_a",
+        filename: "early.pdf",
+        pageNumber: 1,
+        transcript: "Purpose",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      pinnedAttachmentIds: ["att_a"],
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "inventory" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "started",
+      truncated: true,
+      queuedPages: 1,
+      inputPageCount: 1,
+      skippedDocuments: [],
+    });
+    expect(
+      (result as { coverageKey?: string }).coverageKey
+    ).toContain("att_a:400:");
+  });
+
+  it("walks every ready file for ELR inventory instead of asking for one protocol", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        description: null,
+        pageCount: 22,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        description: null,
+        pageCount: 18,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        pageNumber: 1,
+        transcript: "Approval page for performance qualification",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        pageNumber: 9,
+        transcript:
+          "Non-Viable Particulate Monitoring (Grade A LAF) period 23/07/2024",
+        pageContext: "Environmental monitoring",
+        printedPageLabel: "9",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      reviewCoverageObjective: "elr_monitoring",
+    });
+    const result = await tools.start_document_review!.execute!(
+      {
+        objective: "elr_monitoring",
+        attachmentIds: ["att_pqp"],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_pqp", "att_prqr"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_pqp", "att_prqr"],
+    });
+    expect(
+      (result as { queuedPages?: number; skippedDocuments?: unknown[] })
+        .queuedPages
+    ).toBe(1);
+  });
+
+  it("walks every ready file for ELR Calibration with the same column filter", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        description: null,
+        pageCount: 22,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_cal",
+        filename: "CAL-E-PR-070.pdf",
+        description: null,
+        pageCount: 4,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_pqp",
+        filename: "PQP-24-PR-097-Rev.no-01.pdf",
+        pageNumber: 1,
+        transcript: "Approval page for performance qualification",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+      {
+        attachmentId: "att_cal",
+        filename: "CAL-E-PR-070.pdf",
+        pageNumber: 1,
+        transcript: "Certificate of calibration CAL-12 as found / as left",
+        pageContext: "Calibration certificates",
+        printedPageLabel: "1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      reviewCoverageObjective: "elr_calibration",
+    });
+    const result = await tools.start_document_review!.execute!(
+      {
+        objective: "elr_calibration",
+        attachmentIds: ["att_pqp"],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_pqp", "att_cal"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_pqp", "att_cal"],
+    });
+    expect(
+      (result as { queuedPages?: number }).queuedPages
+    ).toBe(1);
   });
 
   it("asks which attachment to review when several ready documents are untagged", async () => {
@@ -980,6 +1173,122 @@ describe("buildChatTools document review", () => {
     expect(blocked).toMatchObject({ status: "review_incomplete" });
   });
 
+  it("refuses draft_field of an ELR inventory table in favor of edit_table", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-cal",
+                  reportId: "report-1",
+                  section: "elr_calibration",
+                  content: { narrative: { type: "doc", content: [] }, table: { type: "doc", content: [] } },
+                },
+              ]
+        ),
+      }),
+    }));
+    const session = new DocumentReviewSession();
+    session.restoreFromFinishedReview({
+      coverageKey: "att:1:run|obj:elr_calibration",
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "adaptive",
+      documentReview: session,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_calibration",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "elr_calibration",
+        targetField: "table",
+        markdown: "| a | b |",
+        reasoning: "Fill Associated Instruments.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "use_edit_table" });
+  });
+
+  it("blocks an empty ELR inventory fill until a matching review has finished", async () => {
+    const { EMPTY_ELR_CONTENT } = await import(
+      "@/lib/document-types/elr/sections"
+    );
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-cal",
+                  reportId: "report-1",
+                  section: "elr_calibration",
+                  content: EMPTY_ELR_CONTENT.elr_calibration,
+                },
+              ]
+        ),
+      }),
+    }));
+    const mismatched = new DocumentReviewSession();
+    mismatched.restoreFromFinishedReview({
+      coverageKey: "att:1:run|obj:elr_qualification",
+    });
+    const blockedTools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "adaptive",
+      documentReview: mismatched,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_calibration",
+    });
+    const blocked = await blockedTools.edit_table!.execute!(
+      {
+        section: "elr_calibration",
+        targetField: "table",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 1, col: 0, insertText: "1" }],
+        },
+        reasoning: "Fill the first row.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(blocked).toMatchObject({ status: "review_incomplete" });
+
+    const matched = new DocumentReviewSession();
+    matched.restoreFromFinishedReview({
+      coverageKey: "att:1:run|obj:elr_calibration",
+    });
+    const allowedTools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "adaptive",
+      documentReview: matched,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_calibration",
+    });
+    const allowed = await allowedTools.edit_table!.execute!(
+      {
+        section: "elr_calibration",
+        targetField: "table",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 1, col: 0, insertText: "1" }],
+        },
+        reasoning: "Fill the first row.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(allowed).not.toMatchObject({ status: "review_incomplete" });
+  });
+
   it("rejects markdown image syntax instead of drafting a fake figure", async () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
     const result = await tools.draft_field!.execute!(
@@ -1040,7 +1349,7 @@ describe("buildChatTools document review", () => {
         attachmentId: "att_b",
         filename: "Appendix-B.pdf",
         pageNumber,
-        transcript: families[(pageNumber - 1) % families.length]!,
+        transcript: `TABLE 4 SOFTWARE REQUIREMENTS\n${families[(pageNumber - 1) % families.length]!} results`,
         pageContext: null,
         printedPageLabel: String(pageNumber),
       };
@@ -1092,6 +1401,15 @@ describe("buildChatTools document review", () => {
         "SW-SDT-3",
       ])
     );
+    expect(session.isFinished()).toBe(true);
+
+    const again = await tools.start_document_review!.execute!(
+      { objective: "requirements and results, sampling ports" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(again).toMatchObject({
+      status: "already_complete",
+    });
     expect(session.isFinished()).toBe(true);
   });
 
@@ -1257,6 +1575,9 @@ describe("buildChatTools propose vs commit", () => {
     commitChatEditMock.mockReset();
     getReportAnalyticsMock.mockReset();
     getReportAnalyticsMock.mockResolvedValue(null);
+    loadDocumentPageEvidenceMock.mockReset();
+    loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    readDocumentPageMock.mockReset();
     mockDefineSectionSelect();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
     dbUpdateMock.mockReturnValue({
@@ -1526,6 +1847,212 @@ describe("buildChatTools propose vs commit", () => {
     expect(inserted).toHaveLength(1);
     expect(inserted[0]?.content).toContain("[protocol.pdf]");
     expect(inserted[0]?.content).not.toContain("p. 104");
+  });
+
+  it("grounds a mis-cited SOP then parks [n] (does not leave filename + [1])", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const protocol = "PRQP-25-PR-001 Protocol.pdf";
+    const report = "PRQR-25-PR-005 Report.pdf";
+    const sop = "SOP/DP/QA/014";
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      unsupportedFactPolicy: "block",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: sop },
+              output: {
+                results: [
+                  {
+                    filename: protocol,
+                    pageNumber: 21,
+                    attachmentId: "att-protocol",
+                    citation: `[${protocol}, p. 21]`,
+                    quote:
+                      "Periodic Re-Qualification protocol for isolator filling. Scope of testing only.",
+                  },
+                  {
+                    filename: report,
+                    pageNumber: 2,
+                    attachmentId: "att-report",
+                    citation: `[${report}, p. 2]`,
+                    quote: `This review is performed in accordance with Validation/Qualification Procedure ${sop}.`,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: `In accordance with Validation/Qualification Procedure ${sop} [${protocol}, p. 21].`,
+        reasoning: "Draft Objective.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    const markdown = parseAiRedraftCommentContent(
+      String(inserted[0]?.content)
+    ).markdown;
+    expect(markdown).toMatch(/SOP\/DP\/QA\/014 \[1\]/);
+    expect(markdown).toContain(`1. [${report}, p. 2]`);
+    expect(markdown).not.toMatch(/\[PRQR-25-PR-005 Report\.pdf, p\. 2\] \[1\]/);
+    expect(markdown).not.toContain(`[${protocol}, p. 21]`);
+  });
+
+  it("refuses MJ <date> dumps until a page is read this turn", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      unsupportedFactPolicy: "block",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Due date <date>. Instrument <identifier>.",
+        reasoning: "Fill calibration.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({
+      status: "unsupported_facts",
+      keepSearchOpen: true,
+    });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("persists leftover MJ placeholders after a same-turn page read", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: "att-cert",
+      filename: "Cert.pdf",
+      pageNumber: 33,
+      transcript: "Certificate 2025/014 due 12/03/2026 as found 0.1",
+      visualInterpretation: "",
+      pageContext: null,
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      unsupportedFactPolicy: "block",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: "att-cert", pageNumber: 33 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Due date 12/03/2026. Spare slot <date>.",
+        reasoning: "Fill known date; leave one gap.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("grounds a date from a reviewed page that was omitted from the findings sample", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    loadDocumentPageEvidenceMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att-cert",
+        filename: "Cert.pdf",
+        pageNumber: 33,
+        quote: "Certificate 2025/014 due 12/03/2026 as found 0.1",
+        ingestRunId: "run-1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+      unsupportedFactPolicy: "block",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-finish_document_review",
+              toolCallId: "call_finish",
+              state: "output-available",
+              input: {},
+              output: {
+                status: "complete",
+                findings: [
+                  {
+                    filename: "Cert.pdf",
+                    pageNumber: 1,
+                    summary: "Cover sheet ATTACHMENT NO. 3",
+                  },
+                ],
+                reviewedEvidence: [
+                  {
+                    attachmentId: "att-cert",
+                    filename: "Cert.pdf",
+                    pageNumber: 1,
+                  },
+                  {
+                    attachmentId: "att-cert",
+                    filename: "Cert.pdf",
+                    pageNumber: 33,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Due 12/03/2026 [Cert.pdf, p. 33].",
+        reasoning: "Fill from cert table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted[0]?.content).toContain("12/03/2026");
+    expect(inserted[0]?.content).not.toContain("<date>");
   });
 
   it("refuses draft_field on a filled field unless replaceFilledField is true", async () => {

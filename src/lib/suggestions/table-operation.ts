@@ -1,6 +1,11 @@
 import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
+import { RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
 import { dvTableHeadersForSection } from "@/lib/document-types/design-verification/sections";
+import {
+  ELR_TABLE_CAPTION_TITLES,
+  elrTableHeadersForSection,
+} from "@/lib/document-types/elr/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
@@ -9,6 +14,8 @@ import {
   insertNodesIntoFieldBody,
 } from "@/lib/suggestions/block-insert";
 import { normalizeTrailingCitationBlockInDoc } from "@/lib/suggestions/citations-at-end";
+import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import { displaySectionLabel } from "@/types/sections";
 
 /** Structured table mutation proposed via `edit_table` and stored on an `ai_fix`. */
 export type TableOperation =
@@ -62,6 +69,8 @@ export type TableOperation =
        * block that contains it. Omit to append before a trailing Citations list.
        */
       afterAnchor?: string;
+      /** Caption title. The server inserts `Table N. {title}` above the table. */
+      title?: string;
     };
 
 export type TableCellEdit = {
@@ -77,9 +86,26 @@ export type TableRowDelete = {
   expectedCells: string[];
 };
 
+/** One section's JSON, in document order, used to assign `Table N`. */
+export type DocumentTableContent = {
+  section: string;
+  content: unknown;
+};
+
 export type TableOperationContext = {
   section: SectionType;
   targetField: string;
+  /**
+   * Legacy fallback: `maxCaption + 1` among already-published `Table N.`
+   * captions. Used only when `documentContents` is omitted.
+   */
+  existingTableCount?: number;
+  /**
+   * Filled tables in document order. `Table N` is this table's 1-based
+   * ordinal among data-bearing grids (empty unused shells do not count).
+   * The target is treated as filled even if it is still a shell.
+   */
+  documentContents?: readonly DocumentTableContent[];
 };
 
 export type TableOperationStatus =
@@ -91,8 +117,192 @@ export type TableOperationStatus =
   | "invalid";
 
 export type TableOperationResult =
-  | { ok: true; status: "ok"; doc: JSONContent }
+  | { ok: true; status: "ok"; doc: JSONContent; tableNumber?: number }
   | { ok: false; status: Exclude<TableOperationStatus, "ok">; hint: string };
+
+export const TABLE_CAPTION_RE = /^Table\s+(\d+)\.\s+/i;
+
+function tableCaptionParagraph(number: number, title: string): JSONContent {
+  return {
+    type: "paragraph",
+    content: [{ type: "text", text: `Table ${number}. ${title.trim()}` }],
+  };
+}
+
+function walkJsonContent(
+  value: unknown,
+  visit: (node: JSONContent) => void
+): void {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const child of value) walkJsonContent(child, visit);
+    return;
+  }
+  const node = value as JSONContent;
+  visit(node);
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) walkJsonContent(child, visit);
+    return;
+  }
+  if (!node.type) {
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      walkJsonContent(child, visit);
+    }
+  }
+}
+
+/** Count tables and `Table N. …` captions in a TipTap doc or section JSON. */
+export function countNumberedTablesInContent(value: unknown): {
+  tableCount: number;
+  maxCaption: number;
+} {
+  let tableCount = 0;
+  let maxCaption = 0;
+  walkJsonContent(value, (node) => {
+    if (node.type === "table") {
+      tableCount += 1;
+      return;
+    }
+    if (node.type !== "paragraph") return;
+    const match = TABLE_CAPTION_RE.exec(flattenForAnchor(node).text.trim());
+    if (match) {
+      const n = Number(match[1]);
+      if (Number.isFinite(n)) maxCaption = Math.max(maxCaption, n);
+    }
+  });
+  return { tableCount, maxCaption };
+}
+
+/**
+ * Next `Table N` is `maxCaption + 1`. Uncaptioned seeded shells do not consume N.
+ * Prefer `filledTableNumberInDocument` when assigning a caption — fill order
+ * among published captions is not document order.
+ */
+export function existingTableCountFromContents(
+  contents: readonly unknown[]
+): number {
+  let maxCaption = 0;
+  for (const content of contents) {
+    maxCaption = Math.max(
+      maxCaption,
+      countNumberedTablesInContent(content).maxCaption
+    );
+  }
+  return maxCaption;
+}
+
+function isTipTapDoc(value: unknown): value is JSONContent {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      (value as JSONContent).type === "doc"
+  );
+}
+
+function richFieldDocsInSection(
+  section: string,
+  content: unknown
+): { field: string; doc: JSONContent }[] {
+  if (!content || typeof content !== "object") return [];
+  const paths = RICH_FIELD_PATHS[section];
+  if (paths && paths.length > 0 && !isTipTapDoc(content)) {
+    return paths.map((field) => ({
+      field,
+      doc: getRichFieldValue(content as Record<string, unknown>, field),
+    }));
+  }
+  if (isTipTapDoc(content)) {
+    return [{ field: "", doc: content }];
+  }
+  return [];
+}
+
+function walkFilledTablesInDocument(
+  contents: readonly DocumentTableContent[],
+  visit: (args: {
+    section: string;
+    field: string;
+    tableIndex: number;
+    table: JSONContent;
+  }) => boolean | void
+): void {
+  for (const row of contents) {
+    for (const { field, doc } of richFieldDocsInSection(row.section, row.content)) {
+      const tables = collectTables(doc);
+      for (let tableIndex = 0; tableIndex < tables.length; tableIndex += 1) {
+        const table = tables[tableIndex];
+        if (!table) continue;
+        if (visit({ section: row.section, field, tableIndex, table }) === false) {
+          return;
+        }
+      }
+    }
+  }
+}
+
+/** Count data-bearing tables in document order. Empty unused shells do not count. */
+export function countFilledTablesInDocument(
+  contents: readonly DocumentTableContent[]
+): number {
+  let count = 0;
+  walkFilledTablesInDocument(contents, ({ table }) => {
+    if (tableHasData(table)) count += 1;
+  });
+  return count;
+}
+
+/**
+ * 1-based ordinal of the target table among filled grids in document order.
+ * The target counts even if it is still an empty shell. Missing target → undefined.
+ */
+export function filledTableNumberInDocument(args: {
+  contents: readonly DocumentTableContent[];
+  target: { section: string; targetField: string; tableIndex: number };
+}): number | undefined {
+  let ordinal = 0;
+  let found: number | undefined;
+  walkFilledTablesInDocument(args.contents, ({ section, field, tableIndex, table }) => {
+    const fieldMatches =
+      field === args.target.targetField ||
+      (field === "" &&
+        (args.target.targetField === "" ||
+          args.target.targetField === "narrative" ||
+          args.target.targetField === "table"));
+    const matched =
+      section === args.target.section &&
+      fieldMatches &&
+      tableIndex === args.target.tableIndex;
+    if (!tableHasData(table) && !matched) return;
+    ordinal += 1;
+    if (matched) {
+      found = ordinal;
+      return false;
+    }
+  });
+  return found;
+}
+
+function expectedTableNumber(
+  doc: JSONContent,
+  tableIndex: number,
+  context?: TableOperationContext
+): number {
+  if (context?.documentContents) {
+    return (
+      filledTableNumberInDocument({
+        contents: context.documentContents,
+        target: {
+          section: context.section,
+          targetField: context.targetField,
+          tableIndex,
+        },
+      }) ?? countFilledTablesInDocument(context.documentContents) + 1
+    );
+  }
+  return (
+    (context?.existingTableCount ?? existingTableCountFromContents([doc])) + 1
+  );
+}
 
 const EMPTY_CELL_LABEL = "(empty)";
 
@@ -102,12 +312,254 @@ const DEFAULT_CELL_ATTRS = {
   colwidth: null,
 } as const;
 
-/** True when this field is a seeded DV matrix with a locked column schema. */
+/** True when this field is a seeded matrix with a locked column schema. */
 export function isFixedColumnTable(
   section: string,
   targetField: string
 ): boolean {
-  return targetField === "table" && dvTableHeadersForSection(section).length > 0;
+  if (targetField !== "table") return false;
+  return (
+    dvTableHeadersForSection(section).length > 0 ||
+    elrTableHeadersForSection(section).length > 0
+  );
+}
+
+export function defaultTableCaptionTitle(section: string): string {
+  const elrTitle =
+    ELR_TABLE_CAPTION_TITLES[section as keyof typeof ELR_TABLE_CAPTION_TITLES];
+  return elrTitle ?? displaySectionLabel(section);
+}
+
+function captionMatch(node: JSONContent | undefined): number | null {
+  if (!node || node.type !== "paragraph") return null;
+  const match = TABLE_CAPTION_RE.exec(flattenForAnchor(node).text.trim());
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Caption number sitting immediately above this table, if any. */
+export function captionNumberAboveTable(
+  doc: JSONContent | null | undefined,
+  tableIndex: number
+): number | null {
+  if (!doc) return null;
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return null;
+  return captionMatch(location.parent.content[location.index - 1]);
+}
+
+function tableHasData(table: JSONContent): boolean {
+  const rows = tableRows(table);
+  for (let i = 1; i < rows.length; i += 1) {
+    for (const cell of rowCells(rows[i]!)) {
+      if (cellPlainText(cell)) return true;
+    }
+  }
+  return false;
+}
+
+function captionTitleFromParagraph(node: JSONContent): string {
+  const text = flattenForAnchor(node).text.trim();
+  const match = TABLE_CAPTION_RE.exec(text);
+  if (!match) return "";
+  return text.slice(match[0].length).trim();
+}
+
+function writeCaptionParagraph(
+  node: JSONContent,
+  number: number,
+  title: string
+): void {
+  node.type = "paragraph";
+  node.content = [{ type: "text", text: `Table ${number}. ${title.trim()}` }];
+}
+
+/**
+ * Insert or rewrite `Table N. {title}` immediately above a filled table.
+ * With `documentContents`, N is the filled-grid ordinal and a stale caption
+ * is rewritten. Without it, an existing caption is kept (fill-order fallback).
+ */
+export function ensureCaptionOnFilledTable(
+  doc: JSONContent,
+  tableIndex: number,
+  context?: TableOperationContext
+): { doc: JSONContent; tableNumber?: number } {
+  const tables = collectTables(doc);
+  const table = tables[tableIndex];
+  if (!table || !tableHasData(table)) return { doc };
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return { doc };
+  const defaultTitle = defaultTableCaptionTitle(context?.section ?? "");
+  const existingCaption = captionNumberAboveTable(doc, tableIndex);
+  const useDocumentOrder = Boolean(context?.documentContents);
+  const tableNumber = expectedTableNumber(doc, tableIndex, context);
+  if (existingCaption !== null) {
+    if (!useDocumentOrder || existingCaption === tableNumber) {
+      return { doc, tableNumber: useDocumentOrder ? tableNumber : existingCaption };
+    }
+    const captionNode = location.parent.content[location.index - 1];
+    if (captionNode) {
+      const title =
+        captionTitleFromParagraph(captionNode) || defaultTitle;
+      writeCaptionParagraph(captionNode, tableNumber, title);
+    }
+    return { doc, tableNumber };
+  }
+  location.parent.content.splice(
+    location.index,
+    0,
+    tableCaptionParagraph(tableNumber, defaultTitle)
+  );
+  return { doc, tableNumber };
+}
+
+/** Drop a leftover `Table N.` paragraph above an empty unused grid. */
+function stripCaptionAboveEmptyTable(
+  doc: JSONContent,
+  tableIndex: number
+): boolean {
+  const table = collectTables(doc)[tableIndex];
+  if (!table || tableHasData(table)) return false;
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return false;
+  if (captionMatch(location.parent.content[location.index - 1]) === null) {
+    return false;
+  }
+  location.parent.content.splice(location.index - 1, 1);
+  return true;
+}
+
+/**
+ * Word-style SEQ: rewrite every filled-grid caption to 1..N in document
+ * order (keep the title after `Table N. `) and strip captions on empty shells.
+ */
+export function renumberFilledTableCaptions(
+  contents: readonly DocumentTableContent[]
+): {
+  contents: DocumentTableContent[];
+  changedSections: string[];
+} {
+  const next: DocumentTableContent[] = contents.map((row) => ({
+    section: row.section,
+    content: structuredClone(row.content),
+  }));
+
+  for (const row of next) {
+    if (!row.content || typeof row.content !== "object") continue;
+    for (const { field, doc } of richFieldDocsInSection(
+      row.section,
+      row.content
+    )) {
+      const working = structuredClone(doc);
+      const tableCount = collectTables(working).length;
+      for (let tableIndex = 0; tableIndex < tableCount; tableIndex += 1) {
+        const table = collectTables(working)[tableIndex];
+        if (!table) continue;
+        if (tableHasData(table)) {
+          ensureCaptionOnFilledTable(working, tableIndex, {
+            section: row.section,
+            targetField: field || "narrative",
+            documentContents: next,
+          });
+        } else {
+          stripCaptionAboveEmptyTable(working, tableIndex);
+        }
+      }
+      if (field === "") {
+        row.content = working;
+      } else {
+        row.content = setRichFieldValue(
+          row.content as Record<string, unknown>,
+          field,
+          working
+        );
+      }
+    }
+  }
+
+  const changedSections: string[] = [];
+  for (let index = 0; index < contents.length; index += 1) {
+    const before = contents[index];
+    const after = next[index];
+    if (!before || !after) continue;
+    if (JSON.stringify(before.content) !== JSON.stringify(after.content)) {
+      changedSections.push(after.section);
+    }
+  }
+  return { contents: next, changedSections };
+}
+
+function markdownTableHasData(markdown: string): boolean {
+  const rows = markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("|"));
+  for (const line of rows.slice(2)) {
+    const cells = line
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim())
+      .filter((cell) => cell.length > 0 && !/^:?-{3,}:?$/.test(cell));
+    if (cells.length > 0) return true;
+  }
+  return false;
+}
+
+/** Prepend or rewrite `Table N. {title}` on GFM when rewriting a filled table field. */
+export function prefixTableCaptionMarkdown(
+  markdown: string,
+  existingTableCount: number,
+  title: string,
+  tableNumber?: number
+): { markdown: string; tableNumber?: number } {
+  const leading = markdown.match(/^\s*/)?.[0] ?? "";
+  const trimmed = markdown.replace(/^\s+/, "");
+  const lines = trimmed.split(/\r?\n/);
+  const firstLine = lines[0]?.trim() ?? "";
+  const match = TABLE_CAPTION_RE.exec(firstLine);
+  const expected = tableNumber ?? existingTableCount + 1;
+  if (match) {
+    const n = Number(match[1]);
+    if (tableNumber === undefined || !Number.isFinite(n) || n === tableNumber) {
+      return {
+        markdown,
+        tableNumber: Number.isFinite(n) ? n : undefined,
+      };
+    }
+    const restTitle = firstLine.slice(match[0].length).trim() || title.trim();
+    lines[0] = `Table ${tableNumber}. ${restTitle}`;
+    return {
+      markdown: `${leading}${lines.join("\n")}`,
+      tableNumber,
+    };
+  }
+  if (!markdownTableHasData(markdown)) return { markdown };
+  return {
+    markdown: `Table ${expected}. ${title.trim()}\n\n${trimmed}`,
+    tableNumber: expected,
+  };
+}
+
+function captionAfterFill(
+  result: TableOperationResult,
+  tableIndex: number,
+  context?: TableOperationContext
+): TableOperationResult {
+  if (!result.ok) return result;
+  const captioned = ensureCaptionOnFilledTable(
+    result.doc,
+    tableIndex,
+    context
+  );
+  return {
+    ok: true,
+    status: "ok",
+    doc: captioned.doc,
+    ...(captioned.tableNumber !== undefined
+      ? { tableNumber: captioned.tableNumber }
+      : {}),
+  };
 }
 
 export function normalizeTableCellText(text: string): string {
@@ -220,6 +672,27 @@ function cellsMatch(
   return actual.every(
     (cell, i) => cell === normalizeTableCellText(expected[i] ?? "")
   );
+}
+
+/**
+ * `insert_rows` snapshots the live anchor row at persist. Apply-all (and
+ * sequential Apply) may fill that empty seeded row first via a sibling
+ * `edit_cells`. Previously empty snapshot cells may now have text; filled
+ * snapshot cells must still match or the insert is stale.
+ */
+function expectedRowAtAfterStillValid(
+  actual: readonly string[],
+  expected: readonly string[] | undefined
+): boolean {
+  if (!expected) return true;
+  if (actual.length !== expected.length) return false;
+  if (cellsMatch(actual, expected)) return true;
+  for (let i = 0; i < expected.length; i++) {
+    const exp = normalizeTableCellText(expected[i] ?? "");
+    if (exp.length === 0) continue;
+    if ((actual[i] ?? "") !== exp) return false;
+  }
+  return true;
 }
 
 function cellParagraphFromText(text: string): JSONContent {
@@ -370,6 +843,15 @@ function applyCreateTable(
       })),
     ],
   };
+  const title = operation.title?.trim() ?? "";
+  const existing = context?.documentContents
+    ? countFilledTablesInDocument(context.documentContents)
+    : (context?.existingTableCount ?? existingTableCountFromContents([doc]));
+  const tableNumber = title ? existing + 1 : undefined;
+  const nodes: JSONContent[] =
+    title && tableNumber !== undefined
+      ? [tableCaptionParagraph(tableNumber, title), table]
+      : [table];
   const afterAnchor = operation.afterAnchor?.trim() ?? "";
   if (afterAnchor) {
     const located = topLevelIndexAfterAnchor(doc, afterAnchor);
@@ -381,11 +863,11 @@ function applyCreateTable(
           : "afterAnchor was not found in the field. Call read_section and quote a unique span, or omit afterAnchor to append before Citations."
       );
     }
-    insertNodesAfterTopLevelIndex(doc, located.index, [table]);
-    return { ok: true, status: "ok", doc };
+    insertNodesAfterTopLevelIndex(doc, located.index, nodes);
+    return { ok: true, status: "ok", doc, tableNumber };
   }
-  insertNodesIntoFieldBody(doc, [table]);
-  return { ok: true, status: "ok", doc };
+  insertNodesIntoFieldBody(doc, nodes);
+  return { ok: true, status: "ok", doc, tableNumber };
 }
 
 export function applyTableOperation(
@@ -419,9 +901,17 @@ export function applyTableOperation(
 
   switch (operation.kind) {
     case "edit_cells":
-      return applyEditCells(next, table, operation, fixedColumns);
+      return captionAfterFill(
+        applyEditCells(next, table, operation, fixedColumns),
+        operation.tableIndex,
+        context
+      );
     case "insert_rows":
-      return applyInsertRows(next, table, operation);
+      return captionAfterFill(
+        applyInsertRows(next, table, operation),
+        operation.tableIndex,
+        context
+      );
     case "delete_rows":
       return applyDeleteRows(next, table, operation);
     case "delete_table":
@@ -439,7 +929,11 @@ export function applyTableOperation(
           "This matrix has a fixed column schema. Do not add columns. Edit cells or insert rows instead."
         );
       }
-      return applyInsertColumn(next, table, operation);
+      return captionAfterFill(
+        applyInsertColumn(next, table, operation),
+        operation.tableIndex,
+        context
+      );
     case "delete_column":
       if (fixedColumns) {
         return fail(
@@ -533,7 +1027,7 @@ function applyInsertRows(
     );
   }
   const anchor = rows[afterRow]!;
-  if (!cellsMatch(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
+  if (!expectedRowAtAfterStillValid(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
     return fail(
       "stale",
       `Row ${operation.afterRow} no longer matches the expected snapshot. Re-read with read_section.`
@@ -643,8 +1137,12 @@ function applyDeleteTable(
   if (!location.parent.content) {
     return fail("invalid", "Cannot remove this table.");
   }
+  const remove = new Set([location.index]);
+  if (captionMatch(location.parent.content[location.index - 1]) !== null) {
+    remove.add(location.index - 1);
+  }
   location.parent.content = location.parent.content.filter(
-    (_, index) => index !== location.index
+    (_, index) => !remove.has(index)
   );
   return {
     ok: true,
@@ -1170,7 +1668,11 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         typeof coerced.afterAnchor === "string" && coerced.afterAnchor.trim()
           ? coerced.afterAnchor.trim()
           : undefined;
-      return { kind: "create_table", headers, rows, afterAnchor };
+      const title =
+        typeof coerced.title === "string" && coerced.title.trim()
+          ? coerced.title.trim()
+          : undefined;
+      return { kind: "create_table", headers, rows, afterAnchor, title };
     }
     default:
       return undefined;
@@ -1188,7 +1690,7 @@ export function tableOperationInvalidHint(raw: unknown): string {
     return `delete_table needs tableIndex from read_section (0 for the first table). ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "create_table") {
-    return `create_table needs kind: "create_table" with headers (and optional rows, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. ${TABLE_EDIT_RECOVERY}`;
+    return `create_table needs kind: "create_table" with headers (and optional rows, title, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "edit_cells") {
     return `edit_cells needs kind: "edit_cells" with cells: [{ row, col, insertText }]. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
@@ -1253,9 +1755,12 @@ export function summarizeTableOperation(operation: TableOperation): string {
     case "create_table": {
       const n = (operation.rows ?? []).length;
       const cols = operation.headers.length;
+      const titled = operation.title?.trim()
+        ? ` “${operation.title.trim()}”`
+        : "";
       return n === 0
-        ? `Create a ${cols}-column table`
-        : `Create a ${cols}-column table with ${n} row${n === 1 ? "" : "s"}`;
+        ? `Create a ${cols}-column table${titled}`
+        : `Create a ${cols}-column table${titled} with ${n} row${n === 1 ? "" : "s"}`;
     }
     default: {
       const _exhaustive: never = operation;
@@ -1300,6 +1805,9 @@ export function tableOperationDetailLines(operation: TableOperation): string[] {
       return [`Column ${operation.col}: ${operation.expectedHeaderText}`];
     case "create_table":
       return [
+        ...(operation.title?.trim()
+          ? [`Title: ${operation.title.trim()}`]
+          : []),
         `Headers: ${operation.headers.map((h) => h || EMPTY_CELL_LABEL).join(" | ")}`,
         ...(operation.rows ?? []).map(
           (row, i) =>

@@ -22,6 +22,12 @@ import {
   type SuggestionImageInsert,
   type SuggestionImageRemove,
 } from "@/lib/suggestions/image-insert";
+import type {
+  ClaimProvenance,
+  ClaimProvenanceRecord,
+  ClaimProvenanceStatus,
+  HardFactKind,
+} from "@/lib/ai/chat/claim-facts";
 
 /** Validate an untrusted structural scope from persisted / model JSON. */
 export function parseEditScope(raw: unknown): EditScope | undefined {
@@ -88,7 +94,7 @@ export function isFailingStatus(status: CriterionStatus): boolean {
   return FAILING.includes(status);
 }
 
-/** Failing criteria with no open ai_fix linked to their evaluation row. */
+/** Failing criteria with no open AI suggestion linked to their evaluation row. */
 export function gapCriteriaForSection(
   section: SectionType,
   evaluations: EvaluationRecord[],
@@ -102,7 +108,10 @@ export function gapCriteriaForSection(
   );
   const openFixEvalIds = new Set(
     comments
-      .filter((c) => c.kind === "ai_fix" && c.status === "open" && c.evaluationId)
+      .filter(
+        (c) =>
+          isAiSuggestionKind(c.kind) && c.status === "open" && c.evaluationId
+      )
       .map((c) => c.evaluationId as string)
   );
   const hash = sectionContentHash(section, sectionContent, {
@@ -222,6 +231,8 @@ export type ParsedAiFixPayload = {
     quote: string;
     ingestRunId: string;
   }>;
+  /** Apply-boundary traceability for hard facts vs retrieved pages. */
+  claimProvenance?: ClaimProvenance;
 };
 
 export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
@@ -302,6 +313,7 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
               ];
             })
           : undefined,
+        claimProvenance: parseClaimProvenance(parsed.claimProvenance),
       };
     }
   } catch {
@@ -320,6 +332,80 @@ function parseStringIdList(raw: unknown): string[] | undefined {
     ),
   ];
   return ids.length > 0 ? ids : undefined;
+}
+
+function isHardFactKind(value: unknown): value is HardFactKind {
+  return (
+    value === "date" ||
+    value === "duration" ||
+    value === "temperature" ||
+    value === "identifier" ||
+    value === "number"
+  );
+}
+
+function isClaimProvenanceStatus(value: unknown): value is ClaimProvenanceStatus {
+  return (
+    value === "verified" ||
+    value === "unsourced" ||
+    value === "citation_moved"
+  );
+}
+
+function parseClaimProvenance(raw: unknown): ClaimProvenance | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const rec = raw as Record<string, unknown>;
+  const policy = rec.policy === "block" || rec.policy === "flag" ? rec.policy : null;
+  if (!policy || !Array.isArray(rec.claims)) return undefined;
+  const claims: ClaimProvenanceRecord[] = rec.claims.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const claim = item as Record<string, unknown>;
+    if (typeof claim.text !== "string") return [];
+    if (!isHardFactKind(claim.kind) || !isClaimProvenanceStatus(claim.status)) {
+      return [];
+    }
+    const parsed: ClaimProvenanceRecord = {
+      text: claim.text,
+      kind: claim.kind,
+      status: claim.status,
+      cited:
+        claim.cited && typeof claim.cited === "object"
+          ? parseCitedPage(claim.cited)
+          : null,
+      source:
+        claim.source && typeof claim.source === "object"
+          ? parseProvenanceSource(claim.source)
+          : null,
+    };
+    return [parsed];
+  });
+  return { claims, policy };
+}
+
+function parseCitedPage(raw: unknown): { filename: string; page: number } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  if (typeof rec.filename !== "string" || typeof rec.page !== "number") return null;
+  return { filename: rec.filename, page: rec.page };
+}
+
+function parseProvenanceSource(
+  raw: unknown
+): { filename: string; page: number; attachmentId: string } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  if (
+    typeof rec.filename !== "string" ||
+    typeof rec.page !== "number" ||
+    typeof rec.attachmentId !== "string"
+  ) {
+    return null;
+  }
+  return {
+    filename: rec.filename,
+    page: rec.page,
+    attachmentId: rec.attachmentId,
+  };
 }
 
 function parsePairedBlockKind(
@@ -361,6 +447,7 @@ export type ParsedAiRedraftPayload = {
   supersededSuggestionIds?: string[];
   suggestionBase?: unknown;
   suggestionIntent?: unknown;
+  claimProvenance?: ClaimProvenance;
 };
 
 export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPayload {
@@ -377,6 +464,9 @@ export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPa
         supersededSuggestionIds: parseStringIdList(parsed.supersededSuggestionIds),
         suggestionBase: parsed.suggestionBase,
         suggestionIntent: parsed.suggestionIntent,
+        claimProvenance: parseClaimProvenance(
+          (parsed as { claimProvenance?: unknown }).claimProvenance
+        ),
       };
     }
   } catch {

@@ -30,6 +30,8 @@ export const ELR_SECTION_KEYS = [
   "elr_audit_trail",
   "elr_csv_status",
   "elr_discrepancies",
+  "elr_system_trends",
+  "elr_risk_actions",
   "elr_conclusion",
   "elr_attachments",
   "elr_revision_history",
@@ -197,6 +199,78 @@ export const ELR_REVISION_HISTORY_HEADERS = [
   "Change Control No.",
 ] as const;
 
+export const ELR_SYSTEM_TRENDS_HEADERS = [
+  "Sr. No.",
+  "Theme",
+  "Where seen (sections / record nos.)",
+  "Occurrences in period",
+  "Trend (increasing / stable / decreasing)",
+  "Product or runtime impact",
+  "Carried to risk (Risk ID)",
+] as const;
+
+export const ELR_RISK_ACTION_HEADERS = [
+  "Sr. No.",
+  "Risk",
+  "Source (section / records)",
+  "Occurrence in period",
+  "Severity",
+  "Priority (High / Medium / Low)",
+  "Recommended action",
+  "Action type (CAPA / PM revision / change control / monitoring)",
+  "Owner",
+  "Target date",
+  "Reference",
+] as const;
+
+/** Soft cap on the risk-actions table — consolidate related rows rather than list every event. */
+export const ELR_RISK_ACTION_MAX_ROWS = 15;
+
+/** Caption titles — keep identical to the editor table labels. */
+export const ELR_TABLE_CAPTION_TITLES = {
+  elr_responsibilities: "Departments and responsibilities",
+  elr_abbreviations: "Abbreviations",
+  elr_qualification: "Qualification and periodic re-qualification history",
+  elr_media_fill: "Media fill / aseptic process simulation",
+  elr_monitoring: "Monitoring records",
+  elr_calibration: "Associated instruments",
+  elr_preventive_maintenance: "Preventive maintenance",
+  elr_breakdowns: "Breakdown events",
+  elr_qms: "Change control / deviation / CAPA / OOS / OOT",
+  elr_alarms: "Alarm records",
+  elr_access_control: "Access control",
+  elr_audit_trail: "Audit trail review",
+  elr_csv_status: "Validation status",
+  elr_system_trends: "Recurring themes",
+  elr_risk_actions: "Prioritized actions",
+  elr_attachments: "Attachments",
+  elr_revision_history: "Revision history",
+} as const satisfies Partial<Record<ElrSectionKey, string>>;
+
+const ELR_TABLE_HEADERS: Partial<Record<ElrSectionKey, readonly string[]>> = {
+  elr_responsibilities: ELR_RESPONSIBILITIES_HEADERS,
+  elr_abbreviations: ELR_ABBREVIATIONS_HEADERS,
+  elr_qualification: ELR_QUALIFICATION_HEADERS,
+  elr_media_fill: ELR_MEDIA_FILL_HEADERS,
+  elr_monitoring: ELR_MONITORING_HEADERS,
+  elr_calibration: ELR_CALIBRATION_HEADERS,
+  elr_preventive_maintenance: ELR_PREVENTIVE_MAINTENANCE_HEADERS,
+  elr_breakdowns: ELR_BREAKDOWN_HEADERS,
+  elr_qms: ELR_QMS_HEADERS,
+  elr_alarms: ELR_ALARM_HEADERS,
+  elr_access_control: ELR_ACCESS_CONTROL_HEADERS,
+  elr_audit_trail: ELR_AUDIT_TRAIL_HEADERS,
+  elr_csv_status: ELR_CSV_STATUS_HEADERS,
+  elr_system_trends: ELR_SYSTEM_TRENDS_HEADERS,
+  elr_risk_actions: ELR_RISK_ACTION_HEADERS,
+  elr_attachments: ELR_ATTACHMENTS_HEADERS,
+  elr_revision_history: ELR_REVISION_HISTORY_HEADERS,
+};
+
+export function elrTableHeadersForSection(section: string): readonly string[] {
+  return ELR_TABLE_HEADERS[section as ElrSectionKey] ?? [];
+}
+
 // ---------------------------------------------------------------- content shapes
 
 export type ElrNarrativeSection = { narrative: JSONContent };
@@ -237,6 +311,25 @@ export type ElrConclusionSection = {
   recommendationNarrative: JSONContent;
 };
 
+export const ELR_RISK_GRADES = ["low", "medium", "high"] as const;
+
+export type ElrRiskGrade = (typeof ELR_RISK_GRADES)[number] | "";
+
+export const ELR_RISK_GRADE_LABELS: Record<
+  (typeof ELR_RISK_GRADES)[number],
+  string
+> = {
+  low: "Low risk",
+  medium: "Medium risk",
+  high: "High risk",
+};
+
+export type ElrRiskActionsSection = {
+  narrative: JSONContent;
+  table: JSONContent;
+  overallGrade: ElrRiskGrade;
+};
+
 export type ElrSectionMap = {
   elr_objective: ElrNarrativeSection;
   elr_scope: ElrNarrativeSection;
@@ -251,10 +344,12 @@ export type ElrSectionMap = {
   elr_breakdowns: ElrTrendSection;
   elr_qms: ElrNarrativeTableSection;
   elr_alarms: ElrTrendSection;
-  elr_access_control: ElrTableSection;
-  elr_audit_trail: ElrTableSection;
+  elr_access_control: ElrNarrativeTableSection;
+  elr_audit_trail: ElrNarrativeTableSection;
   elr_csv_status: ElrNarrativeTableSection;
   elr_discrepancies: ElrNarrativeSection;
+  elr_system_trends: ElrNarrativeTableSection;
+  elr_risk_actions: ElrRiskActionsSection;
   elr_conclusion: ElrConclusionSection;
   elr_attachments: ElrTableSection;
   elr_revision_history: ElrTableSection;
@@ -279,6 +374,8 @@ export const ELR_SECTION_LABELS: Record<ElrSectionKey, string> = {
   elr_audit_trail: "Audit Trail Review",
   elr_csv_status: "Computerized System Validation Status",
   elr_discrepancies: "Discrepancy / Deviations",
+  elr_system_trends: "System Trends and Patterns",
+  elr_risk_actions: "Risk Assessment and Prioritized Actions",
   elr_conclusion: "Summary, Conclusion and Recommendation",
   elr_attachments: "Attachments",
   elr_revision_history: "Revision History",
@@ -327,7 +424,16 @@ function seededAbbreviations(): JSONContent {
       content: [textCell(term), textCell(expansion)],
     })),
   ];
-  return doc;
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Table 1. Abbreviations" }],
+      },
+      table,
+    ],
+  };
 }
 
 export const EMPTY_ELR_CONTENT: ElrSectionMap = {
@@ -374,14 +480,27 @@ export const EMPTY_ELR_CONTENT: ElrSectionMap = {
     trend: emptyDoc(),
   },
   elr_access_control: {
+    narrative: emptyDoc(),
     table: seededTableDoc(ELR_ACCESS_CONTROL_HEADERS),
   },
-  elr_audit_trail: { table: seededTableDoc(ELR_AUDIT_TRAIL_HEADERS) },
+  elr_audit_trail: {
+    narrative: emptyDoc(),
+    table: seededTableDoc(ELR_AUDIT_TRAIL_HEADERS),
+  },
   elr_csv_status: {
     narrative: emptyDoc(),
     table: seededTableDoc(ELR_CSV_STATUS_HEADERS),
   },
   elr_discrepancies: { narrative: emptyDoc() },
+  elr_system_trends: {
+    narrative: emptyDoc(),
+    table: seededTableDoc(ELR_SYSTEM_TRENDS_HEADERS),
+  },
+  elr_risk_actions: {
+    narrative: emptyDoc(),
+    table: seededTableDoc(ELR_RISK_ACTION_HEADERS),
+    overallGrade: "",
+  },
   elr_conclusion: {
     narrative: emptyDoc(),
     recommendation: "",

@@ -34,6 +34,7 @@ import {
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
+import type { ClaimProvenance } from "@/lib/ai/chat/claim-facts";
 import {
   getDocumentType,
   resolveSection,
@@ -52,6 +53,7 @@ import {
 } from "@/lib/suggestions/apply-transition";
 import {
   acceptSuggestion,
+  applyRelatedSectionUpdates,
   dismissSuggestion,
   CommentPersistError,
   PLACEHOLDER_CONFLICT_MESSAGE,
@@ -137,6 +139,31 @@ function buildFrozenCard(
   };
 }
 
+function SuggestionTraceability({
+  provenance,
+}: {
+  provenance: ClaimProvenance;
+}) {
+  const verified = provenance.claims.filter((c) => c.status === "verified").length;
+  const unsourced = provenance.claims.filter((c) => c.status === "unsourced").length;
+  const moved = provenance.claims.filter((c) => c.status === "citation_moved").length;
+  return (
+    <div
+      className="text-[10px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2 space-y-0.5"
+      data-testid="suggestion-traceability"
+    >
+      <p className="font-medium text-[var(--foreground)]">Traceability</p>
+      <p>
+        {verified > 0 ? `Verified ${verified}` : null}
+        {verified > 0 && (unsourced > 0 || moved > 0) ? " · " : null}
+        {unsourced > 0 ? `Unsourced ${unsourced}` : null}
+        {unsourced > 0 && moved > 0 ? " · " : null}
+        {moved > 0 ? `Citation moved ${moved}` : null}
+      </p>
+    </div>
+  );
+}
+
 function figureChangeSummary(payload: ParsedAiFixPayload): string | null {
   const insert = payload.insertImage;
   const remove = payload.removeImage;
@@ -186,6 +213,10 @@ export function SuggestionCardFace({
   const reasoning = card.kind === "fix" ? card.payload.reasoning : card.redraft.reasoning;
   const evidenceSources =
     card.kind === "fix" ? (card.payload.evidenceSources ?? []) : [];
+  const claimProvenance =
+    card.kind === "fix"
+      ? card.payload.claimProvenance
+      : card.redraft.claimProvenance;
   const figureSummary =
     card.kind === "fix" ? figureChangeSummary(card.payload) : null;
 
@@ -325,6 +356,10 @@ export function SuggestionCardFace({
             >
               {reasoning}
             </p>
+          ) : null}
+
+          {claimProvenance && claimProvenance.claims.length > 0 ? (
+            <SuggestionTraceability provenance={claimProvenance} />
           ) : null}
 
           {evidenceSources.length > 0 ? (
@@ -822,6 +857,8 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         sectionContent: sections[section] as Record<string, unknown>,
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
         openComments: comments.filter((c) => c.status === "open" && !c.parentId),
+        documentType: report.documentType,
+        reportSections: sections,
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -844,6 +881,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         throw new Error("Suggestion could not be located");
       }
       replaceSection(section, result.nextSection as unknown);
+      applyRelatedSectionUpdates(replaceSection, result.nextRelatedSections);
 
       setComments((prev) =>
         prev

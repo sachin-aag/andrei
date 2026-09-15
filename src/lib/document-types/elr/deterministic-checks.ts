@@ -1,5 +1,9 @@
 import type { CriterionStatus } from "@/db/schema";
+import { textHasSourceCitation } from "@/lib/citations/cell-has-source";
 import type { EvaluationContext } from "@/lib/document-types/types";
+import { findDirectedContradictions } from "@/lib/eval/contradictions";
+import { recordTypeReferenceMismatch } from "@/lib/eval/record-type";
+import { collectQuantityMathSamples } from "@/lib/math/quantity-math";
 import {
   hasReference,
   isDelayed,
@@ -20,10 +24,18 @@ import {
   parseQmsMatrix,
   parseQualificationMatrix,
   parseResponsibilitiesMatrix,
+  parseRiskActionMatrix,
+  parseSystemTrendsMatrix,
 } from "./matrix-parser";
+import { extractRawRows } from "@/lib/document-types/design-verification/matrix-parser";
+import { tableFieldDoc } from "@/lib/document-types/qra/matrix-parser";
+import { captionNumberAboveTable } from "@/lib/suggestions/table-operation";
 import {
   ELR_FORMAT_APPLICABILITY,
+  ELR_RISK_ACTION_MAX_ROWS,
+  ELR_RISK_GRADES,
   type ElrRecommendation,
+  type ElrRiskGrade,
 } from "./sections";
 
 function verdict(
@@ -100,11 +112,49 @@ export function checkNarrativePresent(ctx: EvaluationContext) {
   return verdict("met", "Narrative is present");
 }
 
+/**
+ * Limits/counts in math atoms (`$<1 CFU/plate$`) become OMML that Word
+ * refuses when `m:t` contains a raw `<`. Flatten them to Unicode prose.
+ */
+export function checkQuantityMathAsProse(ctx: EvaluationContext) {
+  const samples = collectQuantityMathSamples(ctx.content);
+  if (samples.length === 0) {
+    return verdict("met", "Limits and counts are written as ordinary text");
+  }
+  const shown = samples
+    .slice(0, 4)
+    .map((latex) => `$${latex}$`)
+    .join("; ");
+  const more =
+    samples.length > 4 ? ` (+${samples.length - 4} more)` : "";
+  return verdict(
+    "not_met",
+    `Limits/counts sit in math atoms that can break Word export: ${shown}${more}`
+  );
+}
+
 export function checkResponsibilitiesTable(ctx: EvaluationContext) {
   const parsed = parseResponsibilitiesMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
   if (parsed.rows.length === 0) {
     return verdict("not_met", "No responsibilities are listed");
+  }
+  const problems: string[] = [];
+  if (captionNumberAboveTable(tableFieldDoc(ctx.content, "table"), 0) === null) {
+    problems.push(
+      "The table is missing a Table N. caption immediately above it"
+    );
+  }
+  if (narrativeText(ctx.content).length < 20) {
+    problems.push(
+      "Write a short summary of departmental responsibilities above the table and refer to Table N"
+    );
+  }
+  if (problems.length > 0) {
+    return listProblems(
+      problems,
+      `${parsed.rows.length} department(s) listed`
+    );
   }
   const incomplete = parsed.rows.filter(
     (r) => !r.department.trim() || !r.responsibility.trim()
@@ -244,6 +294,20 @@ export function checkMediaFillTable(ctx: EvaluationContext) {
     if (isOutOfTolerance(row.result) && !hasReference(row.deviationRef)) {
       problems.push(`${label} failed but has no linked deviation`);
     }
+    const sourcedCells: Array<[string, string]> = [
+      ["media fill number", row.mediaFillNo],
+      ["date", row.date],
+      ["units filled", row.unitsFilled],
+      ["contaminated units", row.contaminatedUnits],
+    ];
+    for (const [cellLabel, value] of sourcedCells) {
+      if (!value.trim()) continue;
+      if (!textHasSourceCitation(value)) {
+        problems.push(
+          `${label} ${cellLabel} has no source citation ([filename] or [n])`
+        );
+      }
+    }
   });
   return listProblems(problems, `${parsed.rows.length} media fill(s) recorded`);
 }
@@ -379,6 +443,30 @@ export function checkQmsRecords(ctx: EvaluationContext) {
 }
 
 /**
+ * A typed QMS row must cite a document number of the same class
+ * (CAPA → CAPA-…, deviation → DEV-…, not a CAPA row citing DEV-).
+ */
+export function checkRecordTypeMatchesReference(ctx: EvaluationContext) {
+  const parsed = parseQmsMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No QMS rows to bind");
+  }
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const mismatch = recordTypeReferenceMismatch(row.type, row.documentRef);
+    if (!mismatch) return;
+    problems.push(
+      `${rowLabel(row.serial, index)} is typed ${mismatch.typeClass} but cites a ${mismatch.refClass} number (${row.documentRef.trim()})`
+    );
+  });
+  return listProblems(
+    problems,
+    "Each typed QMS row cites a matching document number"
+  );
+}
+
+/**
  * A QMS record marked as affecting the qualified state has to show up in the
  * qualification history — an executed change control with no follow-up
  * qualification activity is the gap this report exists to catch.
@@ -456,6 +544,134 @@ export function checkAccessControlRows(ctx: EvaluationContext) {
     if (!row.role.trim()) problems.push(`${label} has no privilege level`);
   });
   return listProblems(problems, `${parsed.rows.length} access record(s)`);
+}
+
+/**
+ * Access-control assessment must cover the period: last review date,
+ * recertification of Level 4 / admin holders, and 21 CFR Part 11.
+ */
+export function checkAccessControlPeriodCompleteness(ctx: EvaluationContext) {
+  const parsed = parseAccessControlMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No access-control rows requiring a period statement");
+  }
+  const text = narrativeText(ctx.content);
+  const problems: string[] = [];
+  if (
+    !/last (?:review|verification|recertif)|reviewed on|review date|last performed|period(?:ic)? verification/i.test(
+      text
+    )
+  ) {
+    problems.push(
+      "The assessment does not state when access control was last reviewed this period"
+    );
+  }
+  const adminHolders = parsed.rows.some((row) =>
+    /level\s*4|\badmin\b|administrator/i.test(row.role)
+  );
+  if (adminHolders && !/recertif/i.test(text)) {
+    problems.push(
+      "Level 4 / admin holders require a recertification statement"
+    );
+  }
+  if (!/21\s*c\.?f\.?r\.?|part\s*11/i.test(text)) {
+    problems.push(
+      "The assessment does not confirm 21 CFR Part 11 access, audit-trail and authority checks remain in force"
+    );
+  }
+  return listProblems(
+    problems,
+    "Access-control period completeness is stated"
+  );
+}
+
+const CALIBRATION_CONTRADICTION_RULES = [
+  {
+    when: /\boot\b|out of tolerance|expired|overdue/i,
+    contradicts:
+      /within calibration|in tolerance|\bvalid\b|all instruments remain/i,
+    message:
+      "The table has an out-of-tolerance or overdue result but the assessment says instruments remain within calibration",
+  },
+] as const;
+
+const REPEAT_ISOLATED_RULES = [
+  {
+    when: /\by\b|\byes\b|repeat/i,
+    contradicts:
+      /\bisolated\b|one-off|first occurrence|first time|single event/i,
+    message:
+      "A repeat failure is recorded but the assessment treats it as isolated / one-off",
+  },
+] as const;
+
+const PRIVILEGE_DRIFT_RULES = [
+  {
+    when: /granted|modified|revoked/i,
+    contradicts: /no change|unchanged|no privilege/i,
+    message:
+      "Privilege grants, modifications or revocations are recorded but the assessment says access is unchanged",
+  },
+] as const;
+
+export function checkCalibrationValidityNotContradicted(
+  ctx: EvaluationContext
+) {
+  const parsed = parseCalibrationMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No calibration rows");
+  }
+  const source = parsed.rows
+    .map((row) => `${row.result} ${row.dueDate} ${row.doneDate}`)
+    .join("\n");
+  return listProblems(
+    findDirectedContradictions(
+      source,
+      narrativeText(ctx.content),
+      CALIBRATION_CONTRADICTION_RULES
+    ),
+    "Calibration assessment does not contradict table results"
+  );
+}
+
+export function checkBreakdownRepeatNotIsolated(ctx: EvaluationContext) {
+  const parsed = parseBreakdownMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  const repeats = parsed.rows.filter((row) => isYes(row.repeat));
+  if (repeats.length === 0) {
+    return verdict("met", "No repeat failures to contradict");
+  }
+  const source = repeats.map((row) => `repeat ${row.repeat}`).join("\n");
+  return listProblems(
+    findDirectedContradictions(
+      source,
+      narrativeText(ctx.content),
+      REPEAT_ISOLATED_RULES
+    ),
+    "Repeat failures are not described as isolated"
+  );
+}
+
+export function checkAccessControlPrivilegeDrift(ctx: EvaluationContext) {
+  const parsed = parseAccessControlMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  const drifted = parsed.rows.filter((row) =>
+    /granted|modified|revoked/i.test(row.action)
+  );
+  if (drifted.length === 0) {
+    return verdict("met", "No privilege changes recorded");
+  }
+  const source = drifted.map((row) => row.action).join("\n");
+  return listProblems(
+    findDirectedContradictions(
+      source,
+      narrativeText(ctx.content),
+      PRIVILEGE_DRIFT_RULES
+    ),
+    "Privilege changes are not described as unchanged"
+  );
 }
 
 export function checkAuditTrailReviewed(ctx: EvaluationContext) {
@@ -559,6 +775,331 @@ export function checkElrRevisionHistory(ctx: EvaluationContext) {
     );
   }
   return verdict("met", `${parsed.rows.length} revision(s) recorded`);
+}
+
+function countFilledTableRows(content: unknown, field = "table"): number {
+  const raw = extractRawRows(tableFieldDoc(content, field));
+  if ("error" in raw) return 0;
+  return raw.dataRows.filter((cells) => cells.some((c) => c.trim())).length;
+}
+
+const QUALIFIED_STATE_RE =
+  /qualified state|remain(?:s)? qualified|still qualified|not in (?:its )?qualified|requalif/i;
+
+function filledCellText(content: unknown, field = "table"): string {
+  const raw = extractRawRows(tableFieldDoc(content, field));
+  if ("error" in raw) return "";
+  return raw.dataRows.flat().join(" ");
+}
+
+function parseHours(cell: string): number {
+  const match = cell.replace(/,/g, "").match(/(-?\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function totalBreakdownDowntime(content: unknown): number {
+  const parsed = parseBreakdownMatrix(content);
+  if (!parsed.ok) return 0;
+  return parsed.rows.reduce((sum, row) => sum + parseHours(row.downtime), 0);
+}
+
+function contentMentionsScrap(content: unknown): boolean {
+  return /scrap|discard/i.test(filledCellText(content));
+}
+
+function sectionHasFlaggedFindings(ctx: EvaluationContext): boolean {
+  if (ctx.section === "elr_monitoring") {
+    const parsed = parseMonitoringMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isYes(row.excursion));
+  }
+  if (ctx.section === "elr_calibration") {
+    const parsed = parseCalibrationMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isOutOfTolerance(row.result));
+  }
+  if (ctx.section === "elr_breakdowns") {
+    const parsed = parseBreakdownMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isYes(row.repeat));
+  }
+  if (ctx.section === "elr_alarms") {
+    const parsed = parseAlarmMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isDirectImpact(row.criticality));
+  }
+  if (ctx.section === "elr_preventive_maintenance") {
+    const parsed = parsePreventiveMaintenanceMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isDelayed(row.status));
+  }
+  if (ctx.section === "elr_qms") {
+    const parsed = parseQmsMatrix(ctx.content);
+    return parsed.ok && parsed.rows.some((row) => isYes(row.qualificationImpact));
+  }
+  return false;
+}
+
+/**
+ * Floor for the assessment above an evidence table: if there are events, the
+ * narrative has to interpret them (a count, not a "section was reviewed" recap).
+ * Empty tables do not require an assessment.
+ */
+export function checkAssessmentInterpretsTable(ctx: EvaluationContext) {
+  const rows = countFilledTableRows(ctx.content);
+  if (rows === 0) {
+    return verdict("met", "No table rows to interpret");
+  }
+  const missingCaption =
+    captionNumberAboveTable(tableFieldDoc(ctx.content, "table"), 0) === null;
+  const text = narrativeText(ctx.content);
+  if (text.length < 40) {
+    const captionNote = missingCaption
+      ? " The table is also missing a Table N. caption immediately above it."
+      : "";
+    return verdict(
+      "not_met",
+      `The table has ${rows} row(s) but the assessment is empty or a one-liner — interpret the counts, implication, and any product or runtime impact.${captionNote}`
+    );
+  }
+  if (!/\d/.test(text)) {
+    return verdict(
+      "not_met",
+      "The assessment does not state a count from the table"
+    );
+  }
+  const gaps: string[] = [];
+  if (missingCaption) {
+    gaps.push(
+      "The filled table is missing a Table N. caption immediately above it"
+    );
+  }
+  const downtime = totalBreakdownDowntime(ctx.content);
+  if (
+    downtime > 0 &&
+    !/downtime|hours|runtime|availability/i.test(text)
+  ) {
+    gaps.push(
+      `The table records ${downtime} downtime hour(s) but the assessment does not mention downtime, hours, runtime or availability`
+    );
+  }
+  const cells = filledCellText(ctx.content);
+  if (/scrap|discard/i.test(cells) && !/scrap/i.test(text)) {
+    gaps.push("The table mentions scrap or discard but the assessment does not");
+  }
+  if (/\bcapa[-/]/i.test(cells) && !/\bcapa\b/i.test(text)) {
+    gaps.push(
+      "The table cites a CAPA number but the assessment does not mention CAPA"
+    );
+  }
+  if (sectionHasFlaggedFindings(ctx) && !QUALIFIED_STATE_RE.test(text)) {
+    gaps.push(
+      "Flagged findings are present — the assessment must state whether the equipment remains in its qualified state"
+    );
+  }
+  if (gaps.length > 0) {
+    return listProblems(gaps, "Assessment interprets the table");
+  }
+  return verdict("met", "Assessment is present and includes a count");
+}
+
+function flaggedFindings(dependencies: Record<string, unknown>): string[] {
+  const flags: string[] = [];
+
+  const breakdowns = parseBreakdownMatrix(dependencies.elr_breakdowns ?? {});
+  if (breakdowns.ok) {
+    const n = breakdowns.rows.filter((r) => isYes(r.repeat)).length;
+    if (n > 0) flags.push(`${n} repeat breakdown(s)`);
+  }
+
+  const alarms = parseAlarmMatrix(dependencies.elr_alarms ?? {});
+  if (alarms.ok) {
+    const n = alarms.rows.filter((r) => isDirectImpact(r.criticality)).length;
+    if (n > 0) flags.push(`${n} Direct Impact alarm(s)`);
+  }
+
+  const monitoring = parseMonitoringMatrix(dependencies.elr_monitoring ?? {});
+  if (monitoring.ok) {
+    const n = monitoring.rows.filter((r) => isYes(r.excursion)).length;
+    if (n > 0) flags.push(`${n} monitoring excursion(s)`);
+  }
+
+  const calibration = parseCalibrationMatrix(dependencies.elr_calibration ?? {});
+  if (calibration.ok) {
+    const n = calibration.rows.filter((r) => isOutOfTolerance(r.result)).length;
+    if (n > 0) flags.push(`${n} out-of-tolerance calibration(s)`);
+  }
+
+  const pm = parsePreventiveMaintenanceMatrix(
+    dependencies.elr_preventive_maintenance ?? {}
+  );
+  if (pm.ok) {
+    const n = pm.rows.filter((r) => isDelayed(r.status)).length;
+    if (n > 0) flags.push(`${n} delayed PM(s)`);
+  }
+
+  const qms = parseQmsMatrix(dependencies.elr_qms ?? {});
+  if (qms.ok) {
+    const n = qms.rows.filter((r) => isYes(r.qualificationImpact)).length;
+    if (n > 0) flags.push(`${n} qualification-impacting QMS record(s)`);
+  }
+
+  return flags;
+}
+
+export function checkSystemTrendRows(ctx: EvaluationContext) {
+  const parsed = parseSystemTrendsMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No system trends recorded");
+  }
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const label = rowLabel(row.serial, index);
+    if (!row.theme.trim()) problems.push(`${label} has no theme`);
+    if (!row.whereSeen.trim()) {
+      problems.push(`${label} does not say where the theme was seen`);
+    }
+    if (!row.occurrences.trim()) {
+      problems.push(`${label} has no occurrence count`);
+    }
+    if (!row.impact.trim()) {
+      problems.push(`${label} has no product or runtime impact`);
+    }
+  });
+  return listProblems(problems, `${parsed.rows.length} system trend(s) recorded`);
+}
+
+export function checkSystemTrendsCoverFlaggedFindings(ctx: EvaluationContext) {
+  const flags = flaggedFindings(ctx.dependencies);
+  if (flags.length === 0) {
+    return verdict("met", "No flagged findings that require a system-trend row");
+  }
+  const parsed = parseSystemTrendsMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict(
+      "not_met",
+      `Flagged findings are present (${flags.join("; ")}) but the system-trends table is empty`
+    );
+  }
+  return verdict(
+    "met",
+    `${parsed.rows.length} trend theme(s) against ${flags.length} flagged finding group(s)`
+  );
+}
+
+function isPriorityCell(cell: string): boolean {
+  return /^(high|medium|low|h|m|l)\b/i.test(cell.trim());
+}
+
+function isHighPriority(cell: string): boolean {
+  return /^h(igh)?\b/i.test(cell.trim());
+}
+
+export function checkRiskActionRows(ctx: EvaluationContext) {
+  const parsed = parseRiskActionMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No recommended actions recorded");
+  }
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const label = rowLabel(row.serial, index);
+    if (!row.risk.trim()) problems.push(`${label} has no risk description`);
+    if (!row.source.trim()) problems.push(`${label} has no source`);
+    if (!row.occurrence.trim()) {
+      problems.push(`${label} has no occurrence`);
+    }
+    if (!row.severity.trim()) problems.push(`${label} has no severity`);
+    if (!isPriorityCell(row.priority)) {
+      problems.push(`${label} priority must be High, Medium or Low`);
+    }
+    if (!row.action.trim()) problems.push(`${label} has no recommended action`);
+    if (!row.owner.trim()) problems.push(`${label} has no owner`);
+    if (!row.targetDate.trim()) problems.push(`${label} has no target date`);
+  });
+  return listProblems(
+    problems,
+    `${parsed.rows.length} recommended action(s) recorded`
+  );
+}
+
+const GRADE_RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
+
+function increasingHighImpactThemes(content: unknown): boolean {
+  const parsed = parseSystemTrendsMatrix(content);
+  if (!parsed.ok) return false;
+  return parsed.rows.some(
+    (row) =>
+      /increas/i.test(row.trend) &&
+      /high|scrap|discard|runtime|downtime|lost|availability/i.test(row.impact)
+  );
+}
+
+function riskGradeFloor(ctx: EvaluationContext): ElrRiskGrade | null {
+  const breakdowns = ctx.dependencies.elr_breakdowns ?? {};
+  const trends = ctx.dependencies.elr_system_trends ?? {};
+  const downtime = totalBreakdownDowntime(breakdowns);
+  const scrap =
+    contentMentionsScrap(breakdowns) ||
+    contentMentionsScrap(trends) ||
+    contentMentionsScrap(ctx.content);
+  if (scrap || downtime >= 8) return "high";
+  if (downtime > 0 || increasingHighImpactThemes(trends)) return "medium";
+  return null;
+}
+
+export function checkRiskGradeConsistent(ctx: EvaluationContext) {
+  const content = ctx.content as
+    | { overallGrade?: ElrRiskGrade }
+    | null
+    | undefined;
+  const grade = (content?.overallGrade ?? "").trim();
+  if (!grade) {
+    return verdict("not_met", "No overall report risk grade selected");
+  }
+  if (
+    !(ELR_RISK_GRADES as readonly string[]).includes(grade)
+  ) {
+    return verdict("not_met", `Unknown risk grade (${grade})`);
+  }
+  const parsed = parseRiskActionMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  const highCount = parsed.rows.filter((r) => isHighPriority(r.priority)).length;
+  if (grade === "low" && highCount > 0) {
+    return verdict(
+      "not_met",
+      `${highCount} High-priority action(s) recorded — overall grade cannot be Low`
+    );
+  }
+  const floor = riskGradeFloor(ctx);
+  if (floor && (GRADE_RANK[grade] ?? 0) < GRADE_RANK[floor]) {
+    return verdict(
+      "not_met",
+      `Overall grade ${grade} is below the floor (${floor}) from downtime, scrap or increasing high-impact themes`
+    );
+  }
+  return verdict("met", `Overall grade recorded (${grade})`);
+}
+
+export function checkRiskActionsNotBloated(ctx: EvaluationContext) {
+  const parsed = parseRiskActionMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  const flags = flaggedFindings(ctx.dependencies);
+  if (parsed.rows.length === 0 && flags.length > 0) {
+    return verdict(
+      "not_met",
+      `Flagged findings are present (${flags.join("; ")}) but no recommended actions are recorded`
+    );
+  }
+  if (parsed.rows.length > ELR_RISK_ACTION_MAX_ROWS) {
+    return verdict(
+      "partially_met",
+      `${parsed.rows.length} actions — consolidate related risks; ${ELR_RISK_ACTION_MAX_ROWS} is a working ceiling`
+    );
+  }
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No flagged findings requiring an action");
+  }
+  return verdict("met", `${parsed.rows.length} recommended action(s)`);
 }
 
 /** Exported for tests that assert the Y/N helpers behave on real MJ phrasing. */

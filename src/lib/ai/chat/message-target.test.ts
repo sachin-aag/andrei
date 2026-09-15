@@ -24,6 +24,16 @@ describe("chatUserTurnMetadata", () => {
       chatTarget: "analytics",
     });
   });
+
+  it("stamps autoContinue for chained remaining-section turns", () => {
+    expect(chatUserTurnMetadata("report", { autoContinue: true })).toEqual({
+      chatTarget: "report",
+      autoContinue: true,
+    });
+    expect(
+      chatUserTurnMetadata("report", { autoContinue: false }).autoContinue
+    ).toBeUndefined();
+  });
 });
 
 describe("assistantOffersAnalyticsSwitch", () => {

@@ -35,6 +35,8 @@ DV mixes LLM criteria with deterministic `check()` functions.
 
 - Entry: `generateSuggestionsForSection()`. Gate ≡ apply via
   `probeRichEdit` / `probePlainEdit` in `src/lib/suggestions/locator.ts`.
+  ELR `math.quantity_as_prose` is a deterministic repair: skip the LLM and
+  persist a whole-field `ai_redraft` that flattens leftover quantity math.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
 - Accept/dismiss: three-way merge when `suggestionBase`/`suggestionIntent`
   are stored (`mergeField` in `three-way-merge.ts`); otherwise locate the
@@ -44,6 +46,22 @@ DV mixes LLM criteria with deterministic `check()` functions.
   section → flip comment. Never resolve without a successful apply. Zero-ops
   dismiss (`already_present`), not resolve. A superseded sibling is
   `dismissed` with `resolutionReason: "superseded_by:<id>"`, never `resolved`.
+  Table ops on the same table supersede only when the later op covers or
+  invalidates the earlier coordinates (`insert_rows` after the header shifts
+  row 1; an append does not dismiss a disjoint `edit_cells` of row 1).
+  Sequential / Apply-all apply of that pair must not treat a filled empty
+  `expectedRowAtAfter` as stale — only changed snapshot cells that already
+  had text.
+  Table N is the 1-based ordinal among filled grids in document order
+  (starter abbreviation rows occupy Table 1; empty unused shells stay
+  unnumbered). Apply and preview must not number from the current field
+  only, and a stale `Table 1.` caption is rewritten when a preceding table
+  already occupies that ordinal. Inserting, filling, or deleting a table
+  cascades later filled captions in the same turn (Word SEQ — the server
+  owns N; do not let propose_edit change the digits). Body mentions are
+  Word REF: chat writes `[[table]]` / `[[table:Section]]`, stored as a
+  `tableRef` atom bound to table identity; display N updates on cascade.
+  Do not regex-replace frozen "Table N" digits in existing prose.
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits
   persist as one section PATCH. Preview applied wording before that PATCH

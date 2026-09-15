@@ -20,4 +20,5 @@ export {
   type CustomerPack,
   type CustomerBranding,
   type LogoLayout,
+  type UnsupportedFactPolicy,
 } from "./packs";

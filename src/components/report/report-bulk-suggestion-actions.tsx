@@ -68,6 +68,7 @@ export function ReportBulkSuggestionActions() {
       sectionOrder,
       comments,
       evaluations,
+      documentType: report.documentType,
       sectionContentFor: (section: SectionType) =>
         sections[section] as Record<string, unknown> | undefined,
       onSectionStart: (section: SectionType, firstCommentId: string) => {
@@ -84,6 +85,7 @@ export function ReportBulkSuggestionActions() {
     }),
     [
       report.id,
+      report.documentType,
       sectionOrder,
       comments,
       evaluations,

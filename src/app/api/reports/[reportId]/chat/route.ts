@@ -72,8 +72,21 @@ import {
 import {
   createChatSession,
   findChatSession,
+  saveChatPendingPlan,
   touchChatSession,
 } from "@/lib/ai/chat/sessions";
+import {
+  advancePlanAfterTurn,
+  chatUserTurnIsAutoContinue,
+  currentPlanTurnSections,
+  inScopeEmptyInventoryNeedsReview,
+  parseChatPendingPlan,
+  persistablePendingPlan,
+  planCoverageObjective,
+  planKeepsComprehensive,
+  resolvePlanAtTurnStart,
+  type ChatPendingPlan,
+} from "@/lib/ai/chat/pending-plan";
 import {
   clearAssistantTurn,
   drainSseStream,
@@ -116,13 +129,17 @@ import {
   DocumentReviewSession,
   pickPlanModeChatTools,
   prepareDocumentReviewStep,
+  reviewContinueBudgetMs,
 } from "@/lib/ai/chat/document-review";
 import {
   rehydrateDocumentReviewIfCoverageUnchanged,
   retrievalPolicyAfterCoverageDelta,
 } from "@/lib/ai/chat/document-review-rehydrate";
 import {
+  createSearchGate,
+  documentAskUserDirective,
   searchLoopDirective,
+  withoutAskUserTool,
   withoutSearchTool,
 } from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
@@ -240,10 +257,15 @@ async function handleChatPost(
   const turnEdits: TurnEditItem[] = [];
 
   // Resolve the session (create one if the client didn't supply a valid id).
+  let existingPlan: ChatPendingPlan | null = null;
   let sessionId = body.sessionId?.trim() || "";
   if (sessionId) {
     const found = await findChatSession(reportId, sessionId);
-    if (!found) sessionId = "";
+    if (!found) {
+      sessionId = "";
+    } else {
+      existingPlan = parseChatPendingPlan(found.pendingPlan);
+    }
   }
   if (!sessionId) {
     sessionId = (await createChatSession(reportId, "report")).id;
@@ -263,6 +285,7 @@ async function handleChatPost(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const autoContinue = chatUserTurnIsAutoContinue(userMsg?.metadata);
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -270,7 +293,7 @@ async function handleChatPost(
         sessionId,
         role: "user",
         parts: userMsg.parts ?? [],
-        metadata: chatUserTurnMetadata("report"),
+        metadata: chatUserTurnMetadata("report", { autoContinue }),
         authorId: user.id,
       });
       await touchChatSession(sessionId, userText || null);
@@ -338,7 +361,7 @@ async function handleChatPost(
     documentType: report.documentType,
     sections: mergedSections,
   });
-  const userIntent = await resolveChatUserIntent({
+  let userIntent = await resolveChatUserIntent({
     userText,
     recentAssistantTexts: recentAssistantMessageTexts(messages),
     hasChatImages: messageHasChatImage(userMsg?.parts),
@@ -351,6 +374,29 @@ async function handleChatPost(
     userId: user.id,
   });
   const switchToAnalytics = userIntent.switchToAnalytics === true;
+  let pendingPlan: ChatPendingPlan | null = existingPlan;
+  if (mode === "agent") {
+    pendingPlan = resolvePlanAtTurnStart({
+      existing: existingPlan,
+      userText,
+      autoContinue,
+      writeIntent: userIntent.kind === "write",
+      documentType: report.documentType,
+      sections: mergedSections,
+      promptVersion: CHAT_PROMPT_VERSION,
+    });
+    const toSave = persistablePendingPlan(pendingPlan);
+    if (JSON.stringify(toSave) !== JSON.stringify(existingPlan)) {
+      try {
+        await saveChatPendingPlan(sessionId, toSave);
+      } catch (err) {
+        console.error("chat: failed to save pending plan", err);
+      }
+    }
+    if (pendingPlan && !pendingPlan.paused && userIntent.kind !== "write") {
+      userIntent = { ...userIntent, kind: "write", reason: "pending_section_plan" };
+    }
+  }
 
   // Detect course correction — user contradicting or overriding prior LLM output.
   const recentTexts = recentAssistantMessageTexts(messages);
@@ -385,6 +431,10 @@ async function handleChatPost(
   });
   const documentReview = new DocumentReviewSession();
   const pushback = isRetrievalPushback(userText);
+  const coverageObjective = planCoverageObjective(pendingPlan, userText, {
+    sectionScope,
+    documentType: report.documentType,
+  });
   const coverageRehydrate = rehydrateDocumentReviewIfCoverageUnchanged({
     session: documentReview,
     messages,
@@ -394,13 +444,40 @@ async function handleChatPost(
       ingestRunId: doc.ingestRunId,
     })),
     skipRestore: pushback,
+    coverageObjective,
+  });
+  const inventoryTurnSections =
+    pendingPlan && !pendingPlan.paused
+      ? currentPlanTurnSections(pendingPlan, report.documentType).map(
+          (item) => item.sectionKey as SectionType
+        )
+      : sectionScope && sectionScope !== "all"
+        ? [sectionScope]
+        : (() => {
+            const detected = detectSectionIntentFromText(
+              userText,
+              report.documentType
+            );
+            return detected ? [detected] : [];
+          })();
+  const needsInventoryReview = inScopeEmptyInventoryNeedsReview({
+    documentType: report.documentType,
+    sections: mergedSections,
+    sectionKeys: inventoryTurnSections,
+    finishedCoverageKey: documentReview.finishedCoverageKey(),
   });
   // Coverage growth or explicit pushback can start a fresh comprehensive walk.
-  const retrievalPolicy = retrievalPolicyAfterCoverageDelta({
+  // Queued ELR inventory and empty inventory fills keep comprehensive so a
+  // finished qualification walk cannot downgrade the next calibration turn.
+  let retrievalPolicy = retrievalPolicyAfterCoverageDelta({
     policy: retrievalDecision.policy,
     coverageUnchanged: coverageRehydrate.restored,
-    keepComprehensive: pushback,
+    keepComprehensive:
+      pushback || planKeepsComprehensive(pendingPlan, report.documentType),
   });
+  if (needsInventoryReview && retrievalPolicy !== "comprehensive") {
+    retrievalPolicy = "comprehensive";
+  }
   const retrieval = {
     ...retrievalDecision,
     policy: retrievalPolicy,
@@ -436,6 +513,12 @@ async function handleChatPost(
     })),
     documents,
     documentType: report.documentType,
+    metadata:
+      report.metadata &&
+      typeof report.metadata === "object" &&
+      !Array.isArray(report.metadata)
+        ? (report.metadata as Record<string, unknown>)
+        : undefined,
     analyticsPlots: analytics?.analyses ?? [],
   });
 
@@ -474,8 +557,10 @@ async function handleChatPost(
     editPolicy,
     intent: userIntent.kind,
     switchToAnalytics,
+    pendingPlan,
   });
 
+  const searchGate = createSearchGate();
   const allTools = buildChatTools({
     reportId,
     canEdit,
@@ -489,6 +574,11 @@ async function handleChatPost(
     messages,
     editPolicy,
     turnEdits,
+    reviewCoverageObjective: coverageObjective,
+    searchGate,
+    reviewContinueBudgetMs: reviewContinueBudgetMs(
+      remainingChatAbortMs(turnStartedAtMs)
+    ),
   });
   const scopedTools: ToolSet =
     mode === "plan"
@@ -618,23 +708,47 @@ async function handleChatPost(
           policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
           availableTools: advertisedTools,
+          // Recompute from the live session. A stale request-start flag
+          // would force another walk after finish while the table is still empty.
+          requireInventoryReview: alreadyDraftedActive
+            ? false
+            : inScopeEmptyInventoryNeedsReview({
+                documentType: report.documentType,
+                sections: mergedSections,
+                sectionKeys: inventoryTurnSections,
+                finishedCoverageKey: documentReview.finishedCoverageKey(),
+              }),
         });
-        if (!prepared) return undefined;
-        let activeTools = alreadyDraftedActive
-          ? withoutDraftFieldTools(prepared.activeTools)
-          : prepared.activeTools;
-        // Hide search after a cited page / locate / two empty greps — same
-        // latch as Analytics. Skip while a document review is actively
-        // walking pages (prepareDocumentReviewStep already scopes tools).
         const reviewPhase = documentReview.phase();
         const reviewActive =
           reviewPhase === "in_progress" || reviewPhase === "ready_to_finish";
-        if (
-          !reviewActive &&
-          searchLoopDirective(steps) === "read"
-        ) {
-          activeTools = withoutSearchTool(activeTools);
+        const searchDirective = searchLoopDirective(steps);
+        if (searchDirective === "read") {
+          searchGate.closed = true;
         }
+        const hideAskUser =
+          !reviewActive && documentAskUserDirective(steps) === "hide";
+        const applyLoopHides = (tools: readonly string[]): string[] => {
+          let next = [...tools];
+          if (!reviewActive && searchDirective === "read") {
+            next = withoutSearchTool(next);
+          }
+          if (hideAskUser) {
+            next = withoutAskUserTool(next);
+          }
+          return next;
+        };
+        if (!prepared) {
+          let activeTools = applyLoopHides(advertisedTools);
+          if (alreadyDraftedActive) {
+            activeTools = withoutDraftFieldTools(activeTools);
+          }
+          return { activeTools };
+        }
+        let activeTools = alreadyDraftedActive
+          ? withoutDraftFieldTools(prepared.activeTools)
+          : prepared.activeTools;
+        activeTools = applyLoopHides(activeTools);
         return {
           activeTools,
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
@@ -865,6 +979,40 @@ async function handleChatPost(
           targetField: item.targetField,
           reasoning: item.reasoning,
         }));
+        const advanced =
+          mode === "agent" && pendingPlan && !pendingPlan.paused
+            ? advancePlanAfterTurn({
+                plan: pendingPlan,
+                documentType: report.documentType,
+                draftedSectionKeys: [
+                  ...new Set(turnEdits.map((item) => item.section)),
+                ],
+                parts: persisted.parts,
+              })
+            : null;
+        if (advanced) {
+          try {
+            await saveChatPendingPlan(
+              sessionId,
+              persistablePendingPlan(advanced.plan)
+            );
+          } catch (err) {
+            console.error("chat: failed to save pending plan", err);
+          }
+        }
+        const assistantMetadata = (changeSummary?: {
+          items: typeof changeItems;
+          revisionNo?: number;
+        }) =>
+          chatAssistantTurnMetadata({
+            pace,
+            mode,
+            promptVersion: CHAT_PROMPT_VERSION,
+            chatTarget: "report",
+            switchToAnalytics,
+            changeSummary,
+            continuation: advanced?.continuation ?? undefined,
+          });
         const [inserted] = await db
           .insert(chatMessages)
           .values({
@@ -872,15 +1020,9 @@ async function handleChatPost(
             sessionId,
             role: "assistant",
             parts: persisted.parts,
-            metadata: chatAssistantTurnMetadata({
-              pace,
-              mode,
-              promptVersion: CHAT_PROMPT_VERSION,
-              chatTarget: "report",
-              switchToAnalytics,
-              changeSummary:
-                changeItems.length > 0 ? { items: changeItems } : undefined,
-            }),
+            metadata: assistantMetadata(
+              changeItems.length > 0 ? { items: changeItems } : undefined
+            ),
             authorId: null,
           })
           .returning({ id: chatMessages.id });
@@ -898,16 +1040,9 @@ async function handleChatPost(
             await db
               .update(chatMessages)
               .set({
-                metadata: chatAssistantTurnMetadata({
-                  pace,
-                  mode,
-                  promptVersion: CHAT_PROMPT_VERSION,
-                  chatTarget: "report",
-                  switchToAnalytics,
-                  changeSummary: {
-                    items: changeItems,
-                    revisionNo: revision.revisionNo,
-                  },
+                metadata: assistantMetadata({
+                  items: changeItems,
+                  revisionNo: revision.revisionNo,
                 }),
               })
               .where(eq(chatMessages.id, inserted.id));

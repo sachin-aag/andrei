@@ -250,14 +250,11 @@ describe("markdownToDoc", () => {
     expect(richJsonToPlainText(doc)).not.toContain("$");
   });
 
-  it("turns $\\pm 20\\%$ into an inline math node", () => {
+  it("turns $\\pm 20\\%$ into Unicode tolerance prose", () => {
     const doc = markdownToDoc(String.raw`tolerance $\pm 20\%$`);
     expect(doc.content![0]!.content).toEqual([
       { type: "text", text: "tolerance " },
-      {
-        type: "mathInline",
-        attrs: { mathml: "", latex: String.raw`\pm 20\%`, omml: null, ommlDirty: true },
-      },
+      { type: "text", text: "± 20%" },
     ]);
   });
 
@@ -268,14 +265,30 @@ describe("markdownToDoc", () => {
     ]);
   });
 
-  it("parses math inside bold", () => {
+  it("parses quantity TeX inside bold as Unicode, not a math atom", () => {
     const doc = markdownToDoc(String.raw`**$\pm 20\%$**`);
     expect(doc.content![0]!.content).toEqual([
       {
-        type: "mathInline",
-        attrs: { mathml: "", latex: String.raw`\pm 20\%`, omml: null, ommlDirty: true },
+        type: "text",
+        text: "± 20%",
+        marks: [{ type: "bold" }],
       },
     ]);
+  });
+
+  it("flattens the Langfuse Monitoring $<1 CFU/plate$ dollar span", () => {
+    const doc = markdownToDoc(
+      String.raw`settle plates $<1\text{ CFU/plate}$ on every location`
+    );
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "settle plates " },
+      { type: "text", text: "<1 CFU/plate" },
+      { type: "text", text: " on every location" },
+    ]);
+    expect(richJsonToPlainText(doc)).toContain("<1 CFU/plate");
+    expect(doc.content![0]!.content!.some((n) => n.type === "mathInline")).toBe(
+      false
+    );
   });
 
   it("keeps unsupported markdown as literal text", () => {
@@ -283,6 +296,62 @@ describe("markdownToDoc", () => {
     expect(doc.content![0]!.content).toEqual([
       { type: "text", text: "Some `code` and [link](http://x)" },
     ]);
+  });
+
+  it("turns [[table]] into a tableRef atom", () => {
+    const doc = markdownToDoc("See [[table]] for the records.");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "See " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: " for the records." },
+    ]);
+  });
+
+  it("stores [[table:Monitoring]] as a label spec until cascade", () => {
+    const doc = markdownToDoc("See [[table:Monitoring]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "Monitoring",
+      targetField: "",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("stores [[table:elr_monitoring]] as a section key", () => {
+    const doc = markdownToDoc("See [[table:elr_monitoring]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "elr_monitoring",
+      targetField: "",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("stores [[table:elr_monitoring.table#0]] as a dotted path", () => {
+    const doc = markdownToDoc("See [[table:elr_monitoring.table#0]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "elr_monitoring",
+      targetField: "table",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("stores [[table:table]] as this field's table", () => {
+    const doc = markdownToDoc("See [[table:table]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "",
+      targetField: "table",
+      tableIndex: 0,
+      n: null,
+    });
   });
 });
 
@@ -303,6 +372,9 @@ describe("markdownToPlainText", () => {
       "Title\n\nBold and italic text"
     );
     expect(markdownToPlainText("Nitrogen ($N_2$)")).toBe("Nitrogen (N₂)");
+    expect(markdownToPlainText("See [[table]] above.")).toBe(
+      "See the table above."
+    );
   });
 });
 

@@ -243,6 +243,19 @@ describe("getReportTableOfContents", () => {
       label: "3.9.1 Breakdown Trend Summary",
       sectionKey: "elr_breakdowns",
     });
+    const summary = toc.find((e) => e.label === "5. Summary and Conclusion");
+    expect(summary?.sectionKey).toBeUndefined();
+    expect(summary?.children).toEqual([
+      {
+        label: "5.1 System Trends and Patterns",
+        sectionKey: "elr_system_trends",
+      },
+      {
+        label: "5.2 Risk Assessment and Prioritized Actions",
+        sectionKey: "elr_risk_actions",
+      },
+      { label: "5.3 Conclusion", sectionKey: "elr_conclusion" },
+    ]);
     expect(toc.find((e) => e.label === "6. Recommendation")?.sectionKey).toBe(
       "elr_conclusion"
     );

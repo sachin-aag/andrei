@@ -104,6 +104,51 @@ describe("rehydrateDocumentReviewIfCoverageUnchanged", () => {
     expect(session.isFinished()).toBe(true);
   });
 
+  it("does not restore a finished walk for a different coverage objective", () => {
+    const session = new DocumentReviewSession();
+    const messages: UIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-start_document_review",
+            toolCallId: "s1",
+            state: "output-available",
+            input: { objective: "elr_calibration" },
+            output: {
+              status: "started",
+              attachmentIds: ["att_a"],
+              documents: [{ attachmentId: "att_a", pageCount: 3 }],
+              coverageKey: "att_a:3:unknown|obj:elr_calibration",
+            },
+          },
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "f1",
+            state: "output-available",
+            input: {},
+            output: {
+              status: "complete",
+              coverageComplete: true,
+              coverageKey: "att_a:3:unknown|obj:elr_calibration",
+            },
+          },
+        ],
+      },
+    ];
+    const result = rehydrateDocumentReviewIfCoverageUnchanged({
+      session,
+      messages,
+      readyDocuments: [
+        { attachmentId: "att_a", pageCount: 3, ingestRunId: null },
+      ],
+      coverageObjective: "elr_monitoring",
+    });
+    expect(result.restored).toBe(false);
+    expect(session.isFinished()).toBe(false);
+  });
+
   it("does not restore when skipRestore is set (pushback re-review)", () => {
     const session = new DocumentReviewSession();
     const messages: UIMessage[] = [
@@ -168,6 +213,72 @@ describe("rehydrateDocumentReviewIfCoverageUnchanged", () => {
     });
     expect(result.restored).toBe(false);
     expect(session.isFinished()).toBe(false);
+  });
+
+  it("does not restore an incomplete or truncated finish", () => {
+    const session = new DocumentReviewSession();
+    const incomplete: UIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "f1",
+            state: "output-available",
+            input: {},
+            output: {
+              status: "incomplete",
+              coverageComplete: true,
+              reviewedPages: 3,
+              totalPages: 3,
+              coverageKey: "att_a:3:unknown",
+            },
+          },
+        ],
+      },
+    ];
+    expect(
+      rehydrateDocumentReviewIfCoverageUnchanged({
+        session,
+        messages: incomplete,
+        readyDocuments: [
+          { attachmentId: "att_a", pageCount: 3, ingestRunId: null },
+        ],
+      }).restored
+    ).toBe(false);
+
+    const truncated: UIMessage[] = [
+      {
+        id: "a2",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "f1",
+            state: "output-available",
+            input: {},
+            output: {
+              status: "complete",
+              truncated: true,
+              coverageKey: "att_a:3:unknown",
+              coverageComplete: true,
+              reviewedPages: 3,
+              totalPages: 3,
+            },
+          },
+        ],
+      },
+    ];
+    expect(
+      rehydrateDocumentReviewIfCoverageUnchanged({
+        session: new DocumentReviewSession(),
+        messages: truncated,
+        readyDocuments: [
+          { attachmentId: "att_a", pageCount: 3, ingestRunId: null },
+        ],
+      }).restored
+    ).toBe(false);
   });
 });
 

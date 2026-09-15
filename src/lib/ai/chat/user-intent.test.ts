@@ -64,6 +64,76 @@ describe("classifyChatUserIntent", () => {
           "Hello! How can I help you with your statistical analysis today?",
         ],
       })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        mode: "plan",
+        recentAssistantTexts: [
+          "The caliper is on page 46 of the SAT protocol.",
+        ],
+      })
+    ).toEqual({ kind: "social", reason: "ack_without_task" });
+  });
+
+  it("sends do-the-same and leftover can-you to Flash-Lite, not a lookup", () => {
+    expect(
+      classifyChatUserIntent({
+        userText: "can you do the same for @Preventive Maintenance",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "ambiguous_polite_request" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "can you do the same for @Preventive Maintenance",
+          mode: "agent",
+        })
+      )
+    ).toBe(true);
+    expect(
+      classifyChatUserIntent({
+        userText: "do the same for Preventive Maintenance",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "ambiguous_polite_request" });
+    expect(
+      classifyChatUserIntent({
+        userText: "can you do the same for @Preventive Maintenance",
+        mode: "plan",
+      })
+    ).toEqual({ kind: "read", reason: "ambiguous_polite_request" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "do you have the protocol?",
+          mode: "agent",
+        })
+      )
+    ).toBe(false);
+    expect(
+      classifyChatUserIntent({
+        userText: "do you have the protocol?",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "read", reason: "question_or_lookup" });
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        mode: "agent",
+        recentAssistantTexts: [
+          "Based on Master PMC-PR-014-R03, here are the retrieved preventive maintenance records.",
+        ],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "yes",
+        mode: "agent",
+        recentAssistantTexts: [
+          "Based on Master PMC-PR-014-R03, here are the retrieved preventive maintenance records.",
+        ],
+      })
     ).toEqual({ kind: "social", reason: "ack_without_task" });
   });
 
@@ -146,6 +216,14 @@ describe("classifyChatUserIntent", () => {
     expect(
       needsLlmIntentClassification(
         classifyChatUserIntent({ userText: "draft Purpose" })
+      )
+    ).toBe(false);
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "what is in the equipment table?",
+          mode: "agent",
+        })
       )
     ).toBe(false);
   });

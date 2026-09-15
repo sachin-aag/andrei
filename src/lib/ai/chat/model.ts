@@ -1,6 +1,7 @@
 import type { LanguageModel } from "ai";
 import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
 import type { ChatMessageTarget } from "@/lib/ai/chat/message-target";
+import type { ChatTurnContinuation } from "@/lib/ai/chat/pending-plan";
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 import { DEFAULT_CHAT_PACE, type ChatPace } from "@/lib/ai/chat/pace";
 import type { EvalEffort } from "@/lib/eval/eval-generation-options";
@@ -84,6 +85,7 @@ export type ChatAssistantTurnMetadata = ChatPaceConfig & {
   chatTarget: ChatMessageTarget;
   changeSummary?: ChatTurnChangeSummary;
   switchToAnalytics?: true;
+  continuation?: ChatTurnContinuation;
 };
 
 export function chatAssistantTurnMetadata(input: {
@@ -93,8 +95,9 @@ export function chatAssistantTurnMetadata(input: {
   chatTarget: ChatMessageTarget;
   changeSummary?: ChatTurnChangeSummary;
   switchToAnalytics?: boolean;
+  continuation?: ChatTurnContinuation;
 }): ChatAssistantTurnMetadata {
-  const { changeSummary, switchToAnalytics, ...rest } = input;
+  const { changeSummary, switchToAnalytics, continuation, ...rest } = input;
   return {
     ...chatPaceConfig(input.pace),
     ...rest,
@@ -102,5 +105,6 @@ export function chatAssistantTurnMetadata(input: {
       ? { changeSummary }
       : {}),
     ...(switchToAnalytics ? { switchToAnalytics: true as const } : {}),
+    ...(continuation ? { continuation } : {}),
   };
 }

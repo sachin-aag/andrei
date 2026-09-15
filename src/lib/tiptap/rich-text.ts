@@ -8,6 +8,7 @@ import {
   hydrateLiteralMarkdownInDoc,
   inlineMarkdownToTextNodesWithBreaks,
 } from "@/lib/tiptap/markdown-to-doc";
+import { tableRefDisplayText } from "@/lib/tiptap/table-ref-markdown";
 import {
   listItemParagraph,
   listItemParagraphs,
@@ -334,6 +335,14 @@ export function richJsonToPlainText(
     }
     if (node.type === "mathInline" || node.type === "mathBlock") {
       parts.push("[equation]");
+      return;
+    }
+    if (node.type === "tableRef") {
+      parts.push(
+        tableRefDisplayText({
+          n: typeof node.attrs?.n === "number" ? node.attrs.n : null,
+        })
+      );
       return;
     }
     const inner = node.content;

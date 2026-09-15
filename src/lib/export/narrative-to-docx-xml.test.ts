@@ -995,6 +995,32 @@ describe("narrativeToDocxXml advanced formatting", () => {
     expect(ctx.media).toHaveLength(1);
   });
 
+  it("exports tableRef as the live Table N label", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "See " },
+            {
+              type: "tableRef",
+              attrs: {
+                section: "elr_monitoring",
+                targetField: "table",
+                tableIndex: 0,
+                n: 2,
+              },
+            },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    });
+    expect(xml).toContain("Table 2");
+    expect(xml).not.toContain("tableRef");
+  });
+
   it("exports inline math as OMML", () => {
     const mathml =
       '<math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mn>2</mn><mo>+</mo><mn>2</mn></mrow></math>';
@@ -1041,6 +1067,63 @@ describe("narrativeToDocxXml advanced formatting", () => {
 
     const xml = narrativeToDocxXml(doc);
     expect(xml).toContain("<m:oMath");
+  });
+
+  it("flattens quantity mathInline to escaped Unicode so Word can open <1 CFU/plate", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "settle plates " },
+            {
+              type: "mathInline",
+              attrs: {
+                mathml: "",
+                latex: String.raw`<1\text{ CFU/plate}`,
+                omml: '<m:oMath><m:r><m:t xml:space="preserve"><1 CFU/plate</m:t></m:r></m:oMath>',
+                ommlDirty: false,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain("&lt;1 CFU/plate");
+    expect(xml).not.toContain("<m:oMath");
+    expect(xml).not.toMatch(/<m:t[^>]*><1/);
+  });
+
+  it("never drops leftover math that cannot convert to OMML", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "March 2027 (" },
+            {
+              type: "mathInline",
+              attrs: {
+                mathml: "",
+                latex: String.raw`\pm 30`,
+                omml: null,
+                ommlDirty: true,
+              },
+            },
+            { type: "text", text: " days)" },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain("± 30");
+    expect(xml).toContain("March 2027");
+    expect(xml).toContain("days)");
   });
 });
 

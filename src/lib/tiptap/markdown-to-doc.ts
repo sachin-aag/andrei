@@ -1,5 +1,15 @@
 import type { JSONContent } from "@tiptap/core";
 import {
+  parseTableRefSpec,
+  TABLE_REF_TOKEN_RE,
+  tableRefNode,
+} from "@/lib/tiptap/table-ref-markdown";
+import {
+  quantityLatexToPlainText,
+  quantityLatexToTextNodes,
+  shouldFlattenDollarLatex,
+} from "@/lib/math/quantity-math";
+import {
   looksLikeTexFormula,
   simpleLatexToPlainText,
   simpleLatexToTextNodes,
@@ -64,10 +74,44 @@ function latexToInlineNodes(
 ): JSONContent[] {
   const simple = simpleLatexToTextNodes(latex, extraMarks);
   if (simple) return simple;
+  const quantity = quantityLatexToTextNodes(latex, extraMarks);
+  if (quantity) return quantity;
   return [mathInlineNode(latex)];
 }
 
+function shouldConvertDollarInner(inner: string): boolean {
+  return looksLikeTexFormula(inner) || shouldFlattenDollarLatex(inner);
+}
+
 function appendLiteralWithMath(
+  text: string,
+  extraMarks: JSONContent["marks"] | undefined,
+  nodes: JSONContent[]
+): void {
+  TABLE_REF_TOKEN_RE.lastIndex = 0;
+  let lastRef = 0;
+  let sawRef = false;
+  for (const match of text.matchAll(TABLE_REF_TOKEN_RE)) {
+    sawRef = true;
+    const start = match.index ?? 0;
+    if (start > lastRef) {
+      appendLiteralWithMathOnly(text.slice(lastRef, start), extraMarks, nodes);
+    }
+    nodes.push(
+      tableRefNode(parseTableRefSpec(match[1]), extraMarks)
+    );
+    lastRef = start + match[0].length;
+  }
+  if (sawRef) {
+    if (lastRef < text.length) {
+      appendLiteralWithMathOnly(text.slice(lastRef), extraMarks, nodes);
+    }
+    return;
+  }
+  appendLiteralWithMathOnly(text, extraMarks, nodes);
+}
+
+function appendLiteralWithMathOnly(
   text: string,
   extraMarks: JSONContent["marks"] | undefined,
   nodes: JSONContent[]
@@ -76,7 +120,7 @@ function appendLiteralWithMath(
   let last = 0;
   for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
     const inner = match[1]!;
-    if (!looksLikeTexFormula(inner)) continue;
+    if (!shouldConvertDollarInner(inner)) continue;
     const start = match.index ?? 0;
     if (start > last) {
       nodes.push(textNode(text.slice(last, start), extraMarks));
@@ -96,18 +140,23 @@ function appendLiteralWithMath(
 export function hasInlineTexDollars(text: string): boolean {
   INLINE_LATEX_DOLLAR_RE.lastIndex = 0;
   for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
-    if (looksLikeTexFormula(match[1]!)) return true;
+    if (shouldConvertDollarInner(match[1]!)) return true;
   }
   return false;
 }
 
 export function stripInlineMarkdown(text: string): string {
   return text
+    .replace(/\[\[table(?::[^\]]+)?\]\]/gi, "the table")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
     .replace(UNDERSCORE_ITALIC_RE, "$1")
     .replace(INLINE_LATEX_DOLLAR_RE, (_match, inner: string) =>
-      looksLikeTexFormula(inner) ? (simpleLatexToPlainText(inner) ?? inner) : _match
+      shouldConvertDollarInner(inner)
+        ? (simpleLatexToPlainText(inner) ??
+          quantityLatexToPlainText(inner) ??
+          inner)
+        : _match
     );
 }
 
@@ -310,6 +359,7 @@ function paragraphHasSuggestionMarks(node: JSONContent): boolean {
 export function looksLikeLiteralMarkdown(text: string): boolean {
   if (ATX_HEADING_RE.test(text.trim())) return true;
   if (/\*\*[^*]+\*\*/.test(text)) return true;
+  if (/\[\[table(?::[^\]]+)?\]\]/i.test(text)) return true;
   if (hasInlineTexDollars(text)) return true;
   return text.split("\n").some((line) => parseListItemLine(line.trim()) != null);
 }
@@ -495,7 +545,10 @@ function splitTableRow(trimmed: string): string[] {
     .map((cell) => cell.replace(/\\\|/g, "|").trim());
 }
 
-function tableCellNode(type: "tableHeader" | "tableCell", text: string): JSONContent {
+function tableCellNode(
+  type: "tableHeader" | "tableCell",
+  text: string
+): JSONContent {
   return {
     type,
     attrs: { colspan: 1, rowspan: 1 },

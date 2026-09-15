@@ -6,11 +6,13 @@ import {
   callToolName,
   collectToolCalls,
   contentToolName,
+  createSearchGate,
   searchLoopDirective,
   stepSearchHitCount,
   toolPayload,
   unwrapToolPayload,
   withoutSearchTool,
+  type SearchGate,
   type SearchLoopDirective,
   type SearchLoopStep,
 } from "@/lib/ai/chat/search-loop";
@@ -45,13 +47,9 @@ export type AnalyticsChatStep = SearchLoopStep;
 export type AnalyticsSearchLoopDirective = SearchLoopDirective;
 
 /** Per-request latch: once search is closed, execute refuses further greps. */
-export type AnalyticsSearchGate = {
-  closed: boolean;
-};
+export type AnalyticsSearchGate = SearchGate;
 
-export function createAnalyticsSearchGate(): AnalyticsSearchGate {
-  return { closed: false };
-}
+export const createAnalyticsSearchGate = createSearchGate;
 
 /**
  * Flash-Lite greps forever on a named table (wrong title, stale chunk

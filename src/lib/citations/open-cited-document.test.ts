@@ -71,6 +71,23 @@ describe("openCitedDocument", () => {
     ).toEqual({ status: "opened", attachmentId: "att_csv", page: 5 });
   });
 
+  it("opens a short citation against a QMS download-stamped stored filename", () => {
+    const openDocument = vi.fn();
+    expect(
+      openCitedDocument({
+        raw: "[PQR-24-PR-102.pdf, p. 1]",
+        attachments: [
+          {
+            id: "att_pqr",
+            filename: "PQR-24-PR-102_20250320092518.pdf",
+          },
+        ],
+        openDocument,
+      })
+    ).toEqual({ status: "opened", attachmentId: "att_pqr", page: 1 });
+    expect(openDocument).toHaveBeenCalledWith("att_pqr", 1);
+  });
+
   it("does not open when the file is not on the report", () => {
     const openDocument = vi.fn();
     expect(

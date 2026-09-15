@@ -131,6 +131,17 @@ export function isLikelyHtmlTag(inner: string): boolean {
   return HTML_TAG_NAMES.has(name);
 }
 
+/**
+ * Comparison copy such as `(< 1 CFU/plate>)` or `< 0.5 µm>` — not a fill-in.
+ * Bare `<12>` stays a placeholder (digits only, no leading space or unit).
+ */
+export function isComparisonInequalityAngle(inner: string): boolean {
+  if (/^\s+\d/.test(inner)) return true;
+  return /^\d+(?:\.\d+)?\s*(?:%|cfu\b|µm|um\b|ppm|ppb|iu\b|cfu\/)/i.test(
+    inner.trim()
+  );
+}
+
 type TextSpan = { fromRel: number; toRel: number; text: string };
 
 /**
@@ -153,7 +164,10 @@ export function isActionablePlaceholderBracket(match: string): boolean {
  */
 export function isActionablePlaceholderAngle(match: string): boolean {
   if (!/^<[^<>]+>$/.test(match)) return false;
-  return !isLikelyHtmlTag(match.slice(1, -1));
+  const inner = match.slice(1, -1);
+  if (isLikelyHtmlTag(inner)) return false;
+  if (isComparisonInequalityAngle(inner)) return false;
+  return true;
 }
 
 export function collectPlaceholderSpans(text: string): TextSpan[] {

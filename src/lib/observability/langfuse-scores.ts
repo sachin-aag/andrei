@@ -20,6 +20,15 @@ import {
  * `promptVersion`). Linking those is a follow-up, not required for these scores.
  */
 
+function langfuseScoreTarget(
+  traceId?: string,
+  sessionId?: string
+): { traceId: string } | { sessionId: string } | null {
+  if (traceId) return { traceId };
+  if (sessionId) return { sessionId };
+  return null;
+}
+
 let langfuseClient: LangfuseClient | null = null;
 
 function getLangfuseClient(): LangfuseClient | null {
@@ -126,10 +135,6 @@ export async function recordUserCourseCorrectScore(
   if (!client) return;
 
   const traceId = params.traceId ?? getActiveTraceId() ?? undefined;
-  if (!traceId && !params.sessionId) {
-    console.warn("langfuse: no trace or session for user_course_corrected score");
-    return;
-  }
 
   const comment = [
     `Course correction detected: ${params.reason}`,
@@ -145,9 +150,13 @@ export async function recordUserCourseCorrectScore(
     .join("; ");
 
   try {
+    const target = langfuseScoreTarget(traceId, params.sessionId);
+    if (!target) {
+      console.warn("langfuse: no trace or session for user_course_corrected score");
+      return;
+    }
     client.score.create({
-      ...(traceId ? { traceId } : {}),
-      sessionId: params.sessionId,
+      ...target,
       name: "user_course_corrected",
       value: 1,
       dataType: "BOOLEAN",
@@ -203,10 +212,11 @@ export async function recordUserEditedAfterScore(
   ].join("; ");
 
   try {
+    const target = langfuseScoreTarget(traceId, sessionId);
+    if (!target) return;
     client.score.create({
       id: scoreId,
-      ...(traceId ? { traceId } : {}),
-      sessionId,
+      ...target,
       name: "user_edited_after",
       value: 1,
       dataType: "BOOLEAN",
@@ -220,6 +230,45 @@ export async function recordUserEditedAfterScore(
     await client.flush();
   } catch (err) {
     console.error("langfuse: failed to record user_edited_after score", err);
+  }
+}
+
+export interface GroundednessScoreParams {
+  reportId?: string;
+  value: number;
+  comment?: string;
+}
+
+/**
+ * Numeric 0–1 groundedness of a chat draft against retrieved pages.
+ * Attaches to the active chat trace when one exists.
+ */
+export async function recordGroundednessScore(
+  params: GroundednessScoreParams
+): Promise<void> {
+  const client = getLangfuseClient();
+  if (!client) return;
+  const traceId = getActiveTraceId() ?? undefined;
+  const sessionId = params.reportId;
+  const target = langfuseScoreTarget(traceId, sessionId);
+  if (!target) return;
+  const value = Math.min(1, Math.max(0, params.value));
+  try {
+    client.score.create({
+      ...target,
+      name: "groundedness",
+      value,
+      dataType: "NUMERIC",
+      comment: params.comment
+        ? clipLangfuseAttribute(params.comment)
+        : undefined,
+      metadata: observationMetadata({
+        reportId: params.reportId,
+      }),
+    });
+    await client.flush();
+  } catch (err) {
+    console.error("langfuse: failed to record groundedness score", err);
   }
 }
 

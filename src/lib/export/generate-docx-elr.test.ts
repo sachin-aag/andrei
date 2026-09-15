@@ -7,7 +7,10 @@ import type { reports } from "@/db/schema";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { docxParagraphPlainText } from "@/lib/export/docx-toc-headings";
 import {
+  ELR_ALARM_HEADERS,
+  ELR_BREAKDOWN_HEADERS,
   ELR_DEFAULT_METADATA,
+  ELR_MONITORING_HEADERS,
   ELR_QUALIFICATION_HEADERS,
   ELR_SECTION_KEYS,
   EMPTY_ELR_CONTENT,
@@ -96,6 +99,37 @@ function qualificationTableSlice(xml: string): string {
   return xml.slice(start, end);
 }
 
+function monitoringSlice(xml: string): string {
+  const start = xml.indexOf("3.6 MONITORING");
+  const end = xml.indexOf("3.7 CALIBRATION");
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return xml.slice(start, end);
+}
+
+function breakdownSlice(xml: string): string {
+  const start = xml.indexOf("3.9 BREAKDOWNS");
+  const end = xml.indexOf("3.10 QMS");
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return xml.slice(start, end);
+}
+
+function alarmSlice(xml: string): string {
+  const start = xml.indexOf("3.11 ALARM TRENDS");
+  const end = xml.indexOf("3.12 ACCESS CONTROL");
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return xml.slice(start, end);
+}
+
+function narrative(text: string): JSONContent {
+  return {
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  };
+}
+
 function paragraphStyle(xml: string, text: string): string | null {
   const paras = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? [];
   const para = paras.find((p) => docxParagraphPlainText(p) === text);
@@ -168,7 +202,12 @@ describe("ELR DOCX export", () => {
   it("marks section titles as Word headings and omits a static TOC", async () => {
     const buf = await generateReportDocx({
       report: elrReport(),
-      sections: elrSections(),
+      sections: elrSections({
+        elr_risk_actions: {
+          ...EMPTY_ELR_CONTENT.elr_risk_actions,
+          overallGrade: "high",
+        },
+      }),
     });
     const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
     expect(xml).not.toContain("TABLE OF CONTENTS");
@@ -176,7 +215,156 @@ describe("ELR DOCX export", () => {
     expect(paragraphStyle(xml, "3.0 OBSERVATIONS AND RESULTS")).toBe("Heading1");
     expect(paragraphStyle(xml, "3.1 RESPONSIBILITY")).toBe("Heading2");
     expect(paragraphStyle(xml, "3.9.1 BREAKDOWN TREND SUMMARY")).toBe("Heading3");
+    expect(paragraphStyle(xml, "5.0 SUMMARY AND CONCLUSION")).toBe("Heading1");
+    expect(paragraphStyle(xml, "5.1 SYSTEM TRENDS AND PATTERNS")).toBe("Heading2");
+    expect(paragraphStyle(xml, "5.2 RISK ASSESSMENT AND PRIORITIZED ACTIONS")).toBe(
+      "Heading2"
+    );
+    expect(paragraphStyle(xml, "5.3 CONCLUSION")).toBe("Heading2");
     expect(paragraphStyle(xml, "9.0 APPROVAL PAGE")).toBe("Heading1");
+    expect(xml).toContain("High risk");
+  });
+
+  it("prints the monitoring assessment before the evidence table", async () => {
+    const assessment =
+      "Period recorded 3 monitoring parameters. One excursion on particles was closed under DEV-26-011 and did not affect product.";
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections({
+        elr_monitoring: {
+          ...EMPTY_ELR_CONTENT.elr_monitoring,
+          narrative: narrative(assessment),
+          table: tableDoc(
+            [...ELR_MONITORING_HEADERS],
+            [
+              [
+                "1",
+                "Non-viable particle count",
+                "Oct 2025 – Sep 2026",
+                "EM-26-014",
+                "Within alert limits except 12-Nov",
+                "Y",
+                "DEV-26-011",
+              ],
+            ]
+          ),
+        },
+      }),
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+    const slice = monitoringSlice(xml);
+    const assessmentAt = slice.indexOf("Period recorded 3 monitoring parameters");
+    const tableAt = slice.indexOf("<w:tbl");
+    const headerAt = slice.indexOf("Monitoring Parameter");
+    expect(assessmentAt).toBeGreaterThan(-1);
+    expect(tableAt).toBeGreaterThan(-1);
+    expect(headerAt).toBeGreaterThan(tableAt);
+    expect(assessmentAt).toBeLessThan(tableAt);
+  });
+
+  it("prints breakdown and alarm trend summaries between narrative and table", async () => {
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections({
+        elr_breakdowns: {
+          ...EMPTY_ELR_CONTENT.elr_breakdowns,
+          narrative: narrative(
+            "Two breakdowns this period; 4.5 hours of downtime on the filling pump."
+          ),
+          trend: narrative(
+            "Recurring peristaltic pump dosing faults imply a PM frequency review."
+          ),
+          table: tableDoc(
+            [...ELR_BREAKDOWN_HEADERS],
+            [
+              [
+                "1",
+                "12-Nov-2025",
+                "BD-26-003",
+                "Peristaltic pump 3 dosing fault",
+                "4.5",
+                "Tubing replaced",
+                "Vial",
+                "Y",
+                "CAPA-26-014",
+              ],
+            ]
+          ),
+        },
+        elr_alarms: {
+          ...EMPTY_ELR_CONTENT.elr_alarms,
+          narrative: narrative(
+            "Alarm 1951 repeated on Direct Impact filling stop."
+          ),
+          trend: narrative(
+            "The trended alarm set still covers direct-impact filling stops."
+          ),
+          table: tableDoc(
+            [...ELR_ALARM_HEADERS],
+            [
+              [
+                "1",
+                "1951",
+                "Filling stop",
+                "DI",
+                "4",
+                "ATR-26-011",
+                "CAPA-26-014",
+                "DEV-26-011",
+              ],
+            ]
+          ),
+        },
+      }),
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+
+    const breakdown = breakdownSlice(xml);
+    const breakdownNarrative = breakdown.indexOf("Two breakdowns this period");
+    const breakdownHeading = breakdown.indexOf("3.9.1 BREAKDOWN TREND SUMMARY");
+    const breakdownTrend = breakdown.indexOf("Recurring peristaltic pump");
+    const breakdownTable = breakdown.indexOf("<w:tbl");
+    expect(breakdownNarrative).toBeGreaterThan(-1);
+    expect(breakdownHeading).toBeGreaterThan(breakdownNarrative);
+    expect(breakdownTrend).toBeGreaterThan(breakdownHeading);
+    expect(breakdownTable).toBeGreaterThan(breakdownTrend);
+
+    const alarms = alarmSlice(xml);
+    const alarmNarrative = alarms.indexOf("Alarm 1951 repeated");
+    const alarmHeading = alarms.indexOf("3.11.1 ALARM TREND SUMMARY");
+    const alarmTrend = alarms.indexOf("The trended alarm set still covers");
+    const alarmTable = alarms.indexOf("<w:tbl");
+    expect(alarmNarrative).toBeGreaterThan(-1);
+    expect(alarmHeading).toBeGreaterThan(alarmNarrative);
+    expect(alarmTrend).toBeGreaterThan(alarmHeading);
+    expect(alarmTable).toBeGreaterThan(alarmTrend);
+  });
+
+  it("prints the proposed F22 format number on the title page", async () => {
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections(),
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+    expect(xml).toContain("SOP/DP/QA/014/F22-R00 (proposed)");
+  });
+
+  it("does not print instructional template leftovers into the report", async () => {
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections(),
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+    expect(xml).not.toContain("Cumulative for the full life of the equipment");
+    expect(xml).not.toContain("Aseptic process simulations covering this equipment");
+    expect(xml).not.toContain(
+      "Environmental, process-parameter and utility monitoring"
+    );
+    expect(xml).not.toContain("Record PM compliance for the period");
+    expect(xml).not.toContain("Compiled from the approved alarm trend reports");
+    expect(xml).not.toContain(
+      "State whether the equipment remains in its qualified state"
+    );
   });
 
   it("exports the 3.4 Qualification table on a landscape page", async () => {

@@ -38,6 +38,9 @@ importers:
       '@langfuse/tracing':
         specifier: ^5.11.0
         version: 5.11.0(@opentelemetry/api@1.9.1)
+      '@leeoniya/ufuzzy':
+        specifier: ^1.0.19
+        version: 1.0.19
       '@napi-rs/canvas':
         specifier: ^1.0.0
         version: 1.0.0
@@ -1602,6 +1605,9 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
+
+  '@leeoniya/ufuzzy@1.0.19':
+    resolution: {integrity: sha512-0pikDeYt0IHEUPza5RTCDXc/17S1pTrYnReEMp8Aa6k1ovzw5QdZLwicW8TjljwEZRb6oYag0xmALohrcq/yOQ==}
 
   '@lukeed/csprng@1.1.0':
     resolution: {integrity: sha512-Z7C/xXCiGWsg0KuKsHTKJxbWhpI3Vs5GwLfOean7MGyVFGqdRgBbAjOCh6u4bbjPc/8MJ2pZmK/0DLdCbivLDA==}
@@ -9142,6 +9148,8 @@ snapshots:
     dependencies:
       '@langfuse/core': 5.11.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
+
+  '@leeoniya/ufuzzy@1.0.19': {}
 
   '@lukeed/csprng@1.1.0': {}
 

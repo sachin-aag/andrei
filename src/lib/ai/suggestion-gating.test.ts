@@ -84,6 +84,15 @@ describe("suggestion-gating", () => {
     expect(gap.map((g) => g.criterionKey)).toEqual(["define.location"]);
   });
 
+  it("gap criteria excludes rows with an open ai_redraft", () => {
+    const evaluations = [baseEval({})];
+    const comments = [baseComment({ kind: "ai_redraft" })];
+    const gap = gapCriteriaForSection("define", evaluations, comments, {
+      narrative: { type: "doc", content: [] },
+    });
+    expect(gap).toHaveLength(0);
+  });
+
   it("includes partially_met criteria in the gap set", () => {
     const evaluations = [
       baseEval({
@@ -529,5 +538,47 @@ describe("parseAiFixCommentContent supersededSuggestionIds", () => {
     expect(parsed.supersededSuggestionIds).toEqual(["old-edit"]);
     expect(parsed.suggestionBase).toBe("old");
     expect(parsed.suggestionIntent).toBe("new");
+  });
+});
+
+describe("parseAiFixCommentContent claimProvenance", () => {
+  it("round-trips verified and unsourced claims", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "E/PR/070",
+      reasoning: "Name the machine",
+      claimProvenance: {
+        policy: "block",
+        claims: [
+          {
+            text: "E/PR/070",
+            kind: "identifier",
+            status: "verified",
+            cited: { filename: "PQR-24-PR-102.pdf", page: 2 },
+            source: {
+              filename: "PQR-24-PR-102.pdf",
+              page: 2,
+              attachmentId: "att-pqr",
+            },
+          },
+        ],
+      },
+    });
+    expect(parseAiFixCommentContent(json).claimProvenance).toEqual({
+      policy: "block",
+      claims: [
+        {
+          text: "E/PR/070",
+          kind: "identifier",
+          status: "verified",
+          cited: { filename: "PQR-24-PR-102.pdf", page: 2 },
+          source: {
+            filename: "PQR-24-PR-102.pdf",
+            page: 2,
+            attachmentId: "att-pqr",
+          },
+        },
+      ],
+    });
   });
 });

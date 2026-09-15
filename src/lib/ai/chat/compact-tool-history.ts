@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { closeIncompleteChatToolHistory } from "@/lib/ai/chat/tool-part-repair";
 import { sourceCitationBracket } from "@/lib/suggestions/citations-at-end";
 
 /**
@@ -134,8 +135,10 @@ function compactFinishOutput(output: unknown): unknown {
     findings: [],
     findingsOmitted: findings.length,
     citationDigest,
+    // Keep every reviewed page pointer so later drafts can hydrate quotes.
+    // Do not cap reviewedEvidence — it is ids only, not finding text.
     citationDigestNote:
-      "Page-cited pointers only — copy [filename, p. N] from citationDigest when drafting. Full finding text was omitted to keep history small.",
+      "Page-cited pointers only — copy [filename, p. N] from citationDigest when drafting. Full finding text was omitted to keep history small. reviewedEvidence lists every page the review walked so the server can ground facts that were not in the 60-finding sample.",
   };
   return emitOutput(output, next, parsed.asString);
 }
@@ -305,7 +308,7 @@ function compactToolPart<T extends ToolPartRecord>(part: T): T {
 export function compactChatToolHistoryForModel(
   messages: UIMessage[]
 ): UIMessage[] {
-  return messages.map((message) => {
+  return closeIncompleteChatToolHistory(messages).map((message) => {
     const parts = message.parts;
     if (!parts || parts.length === 0) return message;
     let changed = false;

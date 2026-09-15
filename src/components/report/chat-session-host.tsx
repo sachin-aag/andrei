@@ -34,6 +34,14 @@ import {
   reportChatInstanceId,
 } from "@/lib/ai/chat/session-runtime";
 import type { ChatSessionView } from "@/lib/ai/chat/sessions";
+import {
+  CHAT_AUTO_CONTINUE_TEXT,
+  chatUserTurnIsAutoContinue,
+  continuationFromMetadata,
+  planHasRemainingWork,
+  shouldAutoContinuePlan,
+  type ChatPendingPlan,
+} from "@/lib/ai/chat/pending-plan";
 
 export type ChatSessionSend = (
   message: {
@@ -56,6 +64,8 @@ export type ChatSessionRuntime = {
   busy: boolean;
   elapsedMs: number;
   silentMs: number;
+  pendingPlan: ChatPendingPlan | null;
+  planChaining: boolean;
 };
 
 export const IDLE_CHAT_RUNTIME: ChatSessionRuntime = {
@@ -70,6 +80,8 @@ export const IDLE_CHAT_RUNTIME: ChatSessionRuntime = {
   busy: false,
   elapsedMs: 0,
   silentMs: 0,
+  pendingPlan: null,
+  planChaining: false,
 };
 
 /**
@@ -102,22 +114,32 @@ export function ChatSessionHost({
   const statusRef = useRef<ChatStatus>("ready");
   const setMessagesRef = useRef<(messages: UIMessage[]) => void>(() => {});
   const clearErrorRef = useRef<() => void>(() => {});
+  const sendMessageRef = useRef<ChatSessionSend | null>(null);
   const agentRunStartedAtRef = useRef<number | null>(null);
+  const lastSendBodyRef = useRef<Record<string, unknown>>({});
+  const cancelPlanRef = useRef(false);
   const [backgroundTurn, setBackgroundTurn] = useState(false);
+  const [pendingPlan, setPendingPlan] = useState<ChatPendingPlan | null>(null);
+  const [planChaining, setPlanChaining] = useState(false);
   const surfaceRef = useRef<WorkProductView>("report");
 
-  const hydrateFromServer = useCallback(async () => {
-    if (isChatTurnBusy(statusRef.current)) return;
+  const hydrateFromServer = useCallback(async (opts?: {
+    force?: boolean;
+  }): Promise<ChatSessionView | null> => {
+    if (!opts?.force && isChatTurnBusy(statusRef.current)) return null;
     try {
       const res = await fetch(`${api}/sessions/${sessionId}`);
       if (!res.ok) {
         if (!isChatTurnBusy(statusRef.current)) setMessagesRef.current([]);
         setBackgroundTurn(false);
-        return;
+        setPendingPlan(null);
+        setPlanChaining(false);
+        return null;
       }
       const data = (await res.json()) as ChatSessionView;
-      if (isChatTurnBusy(statusRef.current)) return;
+      if (!opts?.force && isChatTurnBusy(statusRef.current)) return data;
       setMessagesRef.current(data.messages ?? []);
+      setPendingPlan(data.pendingPlan ?? null);
       const next = backgroundTurnFromSessionView(data);
       if (next.startedAt != null) {
         agentRunStartedAtRef.current = next.startedAt;
@@ -125,7 +147,7 @@ export function ChatSessionHost({
       setBackgroundTurn(next.backgroundTurn);
       if (next.backgroundTurn) {
         clearErrorRef.current();
-        return;
+        return data;
       }
       const last = data.messages?.[data.messages.length - 1];
       if (
@@ -134,11 +156,61 @@ export function ChatSessionHost({
       ) {
         clearErrorRef.current();
       }
+      return data;
     } catch {
       if (!isChatTurnBusy(statusRef.current)) setMessagesRef.current([]);
       setBackgroundTurn(false);
+      setPendingPlan(null);
+      setPlanChaining(false);
+      return null;
     }
   }, [api, sessionId]);
+
+  const maybeAutoContinue = useCallback(
+    (view: ChatSessionView, options?: { fromMount?: boolean }) => {
+      if (options?.fromMount) {
+        setPlanChaining(false);
+        return;
+      }
+      if (cancelPlanRef.current) {
+        setPlanChaining(false);
+        return;
+      }
+      if (isChatTurnBusy(statusRef.current)) return;
+      const last = view.messages?.[view.messages.length - 1];
+      const continuation =
+        last?.role === "assistant"
+          ? continuationFromMetadata(last.metadata)
+          : null;
+      if (
+        !shouldAutoContinuePlan(continuation, {
+          cancelled: cancelPlanRef.current,
+        }) ||
+        !planHasRemainingWork(view.pendingPlan) ||
+        view.pendingPlan?.paused
+      ) {
+        setPlanChaining(false);
+        return;
+      }
+      const body = lastSendBodyRef.current;
+      if (typeof body.sessionId !== "string" || !body.sessionId) {
+        setPlanChaining(false);
+        return;
+      }
+      setPlanChaining(true);
+      void sendMessageRef.current?.(
+        {
+          text: CHAT_AUTO_CONTINUE_TEXT,
+          metadata: {
+            autoContinue: true,
+            chatTarget: body.chatTarget ?? "report",
+          },
+        },
+        { body }
+      );
+    },
+    []
+  );
 
   const reportClientChatFailure = useCallback(
     (site: "empty_turn" | "client_error", error: unknown) => {
@@ -170,6 +242,7 @@ export function ChatSessionHost({
       if (isAbort) {
         agentRunStartedAtRef.current = null;
         setBackgroundTurn(false);
+        setPlanChaining(false);
         void hydrateFromServer();
         return;
       }
@@ -179,6 +252,7 @@ export function ChatSessionHost({
         // “hit an error” next to “still working in the background”.
         clearErrorRef.current();
         setBackgroundTurn(true);
+        setPlanChaining(false);
         return;
       }
       if (isError) {
@@ -196,6 +270,7 @@ export function ChatSessionHost({
         toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
         agentRunStartedAtRef.current = null;
         setBackgroundTurn(false);
+        setPlanChaining(false);
         return;
       }
       if (
@@ -210,7 +285,9 @@ export function ChatSessionHost({
       setBackgroundTurn(false);
       onTurnCompletedRef.current(startedAt);
       // Pick up persisted metadata (change summary / document version).
-      void hydrateFromServer();
+      void hydrateFromServer({ force: true }).then((view) => {
+        if (view) maybeAutoContinue(view);
+      });
     },
     onError: (err) => {
       console.error("chat error", err);
@@ -226,6 +303,11 @@ export function ChatSessionHost({
         body: options?.body,
         metadata: message.metadata,
       });
+      if (!chatUserTurnIsAutoContinue(message.metadata)) {
+        cancelPlanRef.current = false;
+        setPlanChaining(false);
+      }
+      if (options?.body) lastSendBodyRef.current = options.body;
       return (sendMessage as ChatSessionSend)(message, options);
     },
     [sendMessage]
@@ -251,8 +333,8 @@ export function ChatSessionHost({
   }, [setMessages]);
 
   useEffect(() => {
-    clearErrorRef.current = clearError;
-  }, [clearError]);
+    sendMessageRef.current = sendSessionMessage;
+  }, [sendSessionMessage]);
 
   useEffect(() => {
     if (backgroundTurn) clearError();
@@ -288,6 +370,8 @@ export function ChatSessionHost({
         const data = (await res.json()) as ChatSessionView;
         if (cancelled || isChatTurnBusy(statusRef.current)) return;
         setMessagesRef.current(data.messages ?? []);
+        setPendingPlan(data.pendingPlan ?? null);
+        setPlanChaining(false);
         const next = backgroundTurnFromSessionView(data);
         if (next.startedAt != null) {
           agentRunStartedAtRef.current = next.startedAt;
@@ -316,11 +400,13 @@ export function ChatSessionHost({
         const next = backgroundTurnFromSessionView(view);
         if (next.backgroundTurn) return;
         setMessages(view.messages ?? []);
+        setPendingPlan(view.pendingPlan ?? null);
         setBackgroundTurn(false);
         const startedAt = agentRunStartedAtRef.current;
         agentRunStartedAtRef.current = null;
         onTurnCompletedRef.current(startedAt);
         finishTurnRef.current();
+        maybeAutoContinue(view);
       } catch {
         // Keep polling until the turn row is readable.
       }
@@ -336,6 +422,8 @@ export function ChatSessionHost({
   }, [api, backgroundTurn, sessionId, setMessages, streamBusy]);
 
   const stopTurn = useCallback(() => {
+    cancelPlanRef.current = true;
+    setPlanChaining(false);
     void fetch(`${api}/sessions/${sessionId}/cancel`, { method: "POST" });
     agentRunStartedAtRef.current = null;
     setBackgroundTurn(false);
@@ -361,6 +449,8 @@ export function ChatSessionHost({
       busy,
       elapsedMs,
       silentMs,
+      pendingPlan,
+      planChaining,
     });
   }, [
     backgroundTurn,
@@ -369,6 +459,8 @@ export function ChatSessionHost({
     error,
     messages,
     onRuntime,
+    pendingPlan,
+    planChaining,
     sendSessionMessage,
     sessionId,
     silentMs,

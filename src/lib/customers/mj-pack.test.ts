@@ -51,6 +51,11 @@ describe("MJ customer pack content", () => {
     expect(demo.prompts.perSection.conclusion).toBeTruthy();
   });
 
+  it("blocks unsupported hard facts on MJ instead of flagging them", () => {
+    expect(MJ_PACK.unsupportedFactPolicy).toBe("block");
+    expect(DEMO_PACK.unsupportedFactPolicy).toBe("flag");
+  });
+
   it("hides conclusion from sections, criteria, chat, and evaluable section list", () => {
     const def = buildInvestigationReportDefinition(MJ_PACK);
     expect(def.sections.map((s) => s.key)).not.toContain("conclusion");

@@ -1,3 +1,5 @@
+import { citationDisplayFilename } from "@/lib/citations/citation-filename";
+
 export type RetrievalGoldHit = {
   filename: string;
   page: number;
@@ -57,7 +59,12 @@ export function filenameMatches(actual: string, gold: string): boolean {
   const left = normalizeFilename(actual);
   const right = normalizeFilename(gold);
   if (!left || !right) return false;
-  return left === right || left.includes(right) || right.includes(left);
+  if (left === right || left.includes(right) || right.includes(left)) {
+    return true;
+  }
+  const leftDisplay = normalizeFilename(citationDisplayFilename(actual));
+  const rightDisplay = normalizeFilename(citationDisplayFilename(gold));
+  return leftDisplay === rightDisplay;
 }
 
 export function goldHitRank(

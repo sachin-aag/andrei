@@ -23,8 +23,9 @@ Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Document `draft_field` / Analytics `write_column`). Classifier:
 `classifyChatUserIntent` in `src/lib/ai/chat/user-intent.ts` (rules) plus
 `resolveChatUserIntent` in `src/lib/ai/chat/resolve-user-intent.ts`
-(Flash-Lite when rules would emit `ambiguous_agent_mode`, and on Document
-chat when the text looks like a worksheet dump). The same call may set
+(Flash-Lite when rules would emit `ambiguous_agent_mode` or
+`ambiguous_polite_request` such as "can you do the same for X", and on
+Document chat when the text looks like a worksheet dump). The same call may set
 `switchToAnalytics` when Lite is ≥0.75 sure the destination is the Analytics
 grid — Report chat then shows a Switch to Analytics button; clicking it
 sets Analytics and resends the original request. A yes / go for it after
@@ -32,7 +33,11 @@ that copy is a write. Stub chat,
 timeout, and parse failures keep the rules decision with no widget.
 Retrieval maps those turns to focused (`reason: no_task`) and skips
 kickoff evidence. A yes after the assistant offered to draft is a write
-request.
+request. Agent-mode "go for it" / "do it" is write even when the prior
+turn dumped findings instead of matching the offer regex. Polite leftovers
+(`can you` without a produce verb, "do the same") go to Lite — they are
+not `question_or_lookup`. Real lookups (`what` / `who` / `do you`) stay
+on rules.
 
 Search attachments **before** `ask_user`, `draft_field`, or a `<placeholder>`
 for report facts (batch, date, result, equipment ID, requirement ID, design
@@ -45,6 +50,10 @@ change. Explicit rewrite language is the escape hatch. If there are gaps,
 make a targeted edit. Do not pad length or invent gaps. If a gap conflicts
 with an omit-if rule, ask once whether to include it. Do not quiz
 them for facts already in the section or that you would put in `hint`.
+An unset title-page identity field with two mutually exclusive answers in
+the attachments (ELR: both Vial and Cartridge, `formatScope` unset) is a
+fork: `ask_user` once before drafting. That is not a fact already in
+retrieved evidence. Type-owned `chat.contextIdentity` surfaces those fields.
 `prepareStep` hides `draft_field` while that gate is active. The document
 index (filename/topics) is not evidence. Evidence preview is already in the
 system prompt when kickoff retrieval hits.
@@ -52,15 +61,44 @@ system prompt when kickoff retrieval hits.
 After a cited search hit, a locate/read (`read_document_page` /
 `document_outline` / Analytics scan-extract), or two empty greps, hide
 `search_documents` for the rest of the turn (`searchLoopDirective` shared
-with Analytics). Do not hide search while a document review is
-`in_progress` / `ready_to_finish`. Prior-turn tool JSON is compacted before
+with Analytics). Document-chat attachment cover sheets (ATTACHMENT NO. /
+certificate-of locators, `divider=true`) are not a cited data page: they
+set `keepSearchOpen` and `searchHitCount` treats `dividerHits >=
+returnedCount` as 0 so the following page can be read. Analytics still
+hides after a real cited page. Do not hide search while a document review is
+`in_progress` / `ready_to_finish`, or when a tool result sets
+`keepSearchOpen` / `status: unsupported_facts`. Prior-turn tool JSON is compacted before
 `convertToModelMessages` (page transcripts, finish findings, write
 payloads). Finished document-review coverage is rehydrated across turns
-when the ready-attachment coverage key is unchanged; comprehensive
-retrieval does not force another walk on a zero coverage delta unless the
-latest message is explicit pushback (`you missed`, `look again`,
-`re-check`, a test-family code). Pushback skips rehydrate so a finished
-session does not hide `start_document_review`.
+when the ready-attachment coverage key is unchanged (the key is the
+selected documents' **full** page counts plus the current section/objective,
+not a silent 300-page prefix); comprehensive retrieval does not force another walk on a zero
+coverage delta unless the latest message is explicit pushback
+(`you missed`, `look again`, `re-check`, a test-family code). Pushback
+skips rehydrate so a finished session does not hide
+`start_document_review`. `planReviewPages` queues pages that score on the current
+objective (floor 8; nearby same-file pages if almost nothing matches). ELR
+inventory tables score against the live column schema (headers / aliases, plus
+a typed `{modifier} {section noun}` that is not URS language such as
+`monitoring systems`), not the bare section token, and `start_document_review`
+walks every ready file unless the engineer tagged one. Complementary grep ORs
+those column phrases. `REVIEW_PAGE_FETCH_CAP`
+(2500) is listing safety only — there is no 300-page walk cap.
+`continue_document_review` stops starting batches after ~60s and round-robins
+batches across attachments. `start_document_review`
+reports `truncated` / `skippedDocuments`. Call `list_attachments` first
+when the file set is unknown. Rehydrate only a finish with `status=complete`
+and `truncated !== true`.
+
+Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
+against the citation ledger's served quotes (`groundDraftText`). Finish
+seeds `reviewedEvidence` (every walked page, not the 60-finding sample)
+so those transcripts can hydrate. Empty ledger or pages with no quotes
+fail open. MJ `unsupportedFactPolicy: block` (no persist;
+`unsupported_facts`). MJ also refuses `<date>` / `<identifier>` /
+`<number>` until a same-turn `read_document_page` or non-divider search.
+Demo/Convergent `flag` (persist with Traceability). Analytics `write_column`
+stays ungated. Pack identity, not a feature flag.
 
 ## Spectrum
 
@@ -154,7 +192,11 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 - Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
   (`CHAT_SERVER_ABORT_MS` from request start, not from `streamText`).
   Do not add a tool-step cap — users must never hit one. Do not persist
-  a “ran out of steps / ask me to continue” notice. When the 270s abort
+  a “ran out of steps / ask me to continue” notice. Multi-section Agent
+  drafts persist a `pending_plan` on the chat session. After each turn
+  the client POSTs `Continue the remaining sections.` with `autoContinue`
+  (progress chip). Cancel pauses the queue; a new typed prompt pauses it;
+  reopening the thread does not auto-chain. When the 270s abort
   fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`
   so we can count it. Loop guards live in
   `prepareStep`
@@ -212,7 +254,20 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   the adaptive path). Inventory-section scope needs latest-turn inventory
   language or open-set produce before comprehensive. Header-only seeded
   tables (blank data cells, no surrounding prose) are empty, not partial
-  — `sectionHasTable` still sees them. Search hits include `citation`
+  — `sectionHasTable` still sees them. Empty ELR inventory fills
+  (`chat.inventorySections` table fields) require a finished review
+  whose coverage key matches that section (`coverageKeySatisfiesObjective`
+  on `|obj:`). `isFinished()` after a qualification walk does not unlock
+  Associated Instruments. Adaptive idle with an empty in-scope
+  inventory still forces `start_document_review`
+  (`requireInventoryReview`). Recompute that flag from the live
+  `finishedCoverageKey` in `prepareStep` — a matching finish this turn
+  must not force another start because the table is still empty. Hide
+  review tools after that finish and draft. `start_document_review`
+  returns `already_complete` for the same `|obj:` instead of resetting.
+  Gate empty tables only — filling missing
+  cells on a partial table is not another full walk. `draft_field` of
+  those `table` fields returns `use_edit_table`. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if
   missing or ambiguous). The saved field converts those to numbered `[n]`
   markers plus a trailing Citations: list on every pack — there is no
@@ -229,10 +284,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   or the tab X) unmounts the preview and restores the last canvas tab that
   was active before that file. **Focused** is an explicit skim.
   Adaptive turns skip auto-evidence so the model must grep.
-  Adaptive/focused turns do not expose `start_document_review`. Comprehensive
+  Adaptive/focused turns do not expose `start_document_review` unless an
+  empty in-scope ELR inventory still needs a matching review
+  (`requireInventoryReview`). Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
-  worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
-  on extract). `finish_document_review` caps the findings sample;
+  worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (transcript-backed
+  batches skip the extract LLM; no thought summaries on extract). `finish_document_review` caps the findings sample;
   follow-up turns strip prior findings arrays before the model call.
   `search_documents` `queries[]` is at most 8 and `limit` at most 16;
   `coerceSearchDocumentsInput` normalizes oversized model JSON, and

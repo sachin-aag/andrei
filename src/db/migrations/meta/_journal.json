@@ -449,6 +449,20 @@
       "when": 1788691200000,
       "tag": "0062_equipment_lifecycle_report_type",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1788777600000,
+      "tag": "0063_claim_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1788900000000,
+      "tag": "0064_chat_pending_plan",
+      "breakpoints": true
     }
   ]
 }

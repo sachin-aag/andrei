@@ -27,6 +27,24 @@ describe("summarizeDocumentReviewProgress", () => {
     expect(snapshot?.label).toBe("Planning a complete review of 62 pages…");
   });
 
+  it("shows reviewing, not planning, while the first continue is in flight", () => {
+    const snapshot = summarizeDocumentReviewProgress([
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: { status: "started", totalPages: 12, remainingBatches: 3 },
+      },
+      {
+        toolName: "continue_document_review",
+        state: "input-available",
+      },
+    ]);
+    expect(snapshot?.phase).toBe("reviewing");
+    expect(snapshot?.label).toBe(
+      "Reviewing pages in parallel · 0/12 done"
+    );
+  });
+
   it("shows page and finding counts while continuing", () => {
     const snapshot = summarizeDocumentReviewProgress([
       {
@@ -80,6 +98,31 @@ describe("summarizeDocumentReviewProgress", () => {
     expect(snapshot?.phase).toBe("complete");
     expect(snapshot?.label).toBe("Complete: reviewed 62/62 pages");
     expect(snapshot?.pending).toBe(false);
+  });
+
+  it("treats a refused second start as complete, not planning", () => {
+    const snapshot = summarizeDocumentReviewProgress([
+      {
+        toolName: "finish_document_review",
+        state: "output-available",
+        output: {
+          status: "complete",
+          totalPages: 8,
+          reviewedPages: 8,
+        },
+      },
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: {
+          status: "already_complete",
+          totalPages: 8,
+          reviewedPages: 8,
+        },
+      },
+    ]);
+    expect(snapshot?.phase).toBe("complete");
+    expect(snapshot?.label).toBe("Complete: reviewed 8/8 pages");
   });
 
   it("names the reviewed files on the complete line", () => {

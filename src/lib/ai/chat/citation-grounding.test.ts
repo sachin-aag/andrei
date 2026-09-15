@@ -80,6 +80,48 @@ describe("CitationPageLedger", () => {
     expect(ledger.decision("Protocol.pdf", 104)).toBe("drop");
   });
 
+  it("seeds every reviewedEvidence page, not only the findings sample", () => {
+    const ledger = new CitationPageLedger();
+    ledger.seedFromMessages([
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "call_finish",
+            state: "output-available",
+            input: {},
+            output: {
+              findings: [
+                {
+                  filename: "Cert.pdf",
+                  pageNumber: 1,
+                  citation: "[Cert.pdf, p. 1]",
+                },
+              ],
+              reviewedEvidence: [
+                {
+                  attachmentId: "att-cert",
+                  filename: "Cert.pdf",
+                  pageNumber: 1,
+                },
+                {
+                  attachmentId: "att-cert",
+                  filename: "Cert.pdf",
+                  pageNumber: 33,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+    expect(ledger.decision("Cert.pdf", 1)).toBe("keep");
+    expect(ledger.decision("Cert.pdf", 33)).toBe("keep");
+    expect(ledger.decision("Cert.pdf", 99)).toBe("drop");
+  });
+
   it("does not treat document_outline pages as evidence", () => {
     const ledger = new CitationPageLedger();
     ledger.seedFromMessages([
@@ -101,6 +143,24 @@ describe("CitationPageLedger", () => {
       },
     ]);
     expect(ledger.decision("protocol.pdf", 104)).toBe("unknown");
+  });
+
+  it("hydrates missing quotes from document_pages", async () => {
+    const ledger = new CitationPageLedger();
+    ledger.record("protocol.pdf", 12, "att-1");
+    expect(ledger.pagesMissingQuotes()).toEqual([
+      { attachmentId: "att-1", pageNumber: 12 },
+    ]);
+    await ledger.hydrateQuotes(async () => [
+      {
+        attachmentId: "att-1",
+        filename: "protocol.pdf",
+        pageNumber: 12,
+        quote: "E/PR/070 Purpose",
+      },
+    ]);
+    expect(ledger.recordedPages()[0]?.quote).toContain("E/PR/070");
+    expect(ledger.pagesMissingQuotes()).toEqual([]);
   });
 });
 
@@ -142,6 +202,29 @@ describe("rewriteCitationPagesInText", () => {
     expect(
       rewriteCitationPagesInText("See [Appendix B, p. 104].", ledger)
     ).toBe("See [Appendix B, p. 104].");
+  });
+
+  it("drops a never-retrieved attachment filename once any page was served", () => {
+    const ledger = ledgerWithSearchHit("protocol.pdf", 12);
+    expect(
+      rewriteCitationPagesInText(
+        "The APS result [invented-aps.pdf, p. 4] is missing.",
+        ledger
+      )
+    ).toBe("The APS result is missing.");
+  });
+
+  it("strips a QMS download stamp from a rewritten citation filename", () => {
+    const ledger = ledgerWithSearchHit(
+      "PQR-24-PR-102_20250320092518.pdf",
+      1
+    );
+    expect(
+      rewriteCitationPagesInText(
+        "See [PQR-24-PR-102_20250320092518.pdf, p. 1].",
+        ledger
+      )
+    ).toBe("See [PQR-24-PR-102.pdf, p. 1].");
   });
 });
 

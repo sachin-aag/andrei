@@ -45,6 +45,13 @@ import {
   type ChatMessageTarget,
 } from "@/lib/ai/chat/message-target";
 import {
+  CHAT_AUTO_CONTINUE_TEXT,
+  chatUserTurnIsAutoContinue,
+  continuationFromMetadata,
+  planHasRemainingWork,
+  planProgressChipLabel,
+} from "@/lib/ai/chat/pending-plan";
+import {
   isRedundantInsertImageChip,
 } from "@/components/report/chat-insert-image-chips";
 import {
@@ -355,6 +362,7 @@ function textFromChatMessage(message: UIMessage | undefined): string {
 const MessageTurn = memo(function MessageTurn({
   message,
   chatTarget,
+  previousMetadata,
   askUserActive,
   onAnswerQuestions,
   streaming = false,
@@ -366,6 +374,7 @@ const MessageTurn = memo(function MessageTurn({
 }: {
   message: UIMessage;
   chatTarget: ChatMessageTarget | null;
+  previousMetadata?: unknown;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
@@ -377,8 +386,32 @@ const MessageTurn = memo(function MessageTurn({
 }) {
   const isUser = message.role === "user";
   const targetLabel = chatTarget ? chatMessageTargetLabel(chatTarget) : null;
+  const messageMetadata =
+    "metadata" in message
+      ? (message as { metadata?: unknown }).metadata
+      : undefined;
 
   if (isUser) {
+    const autoContinue = chatUserTurnIsAutoContinue(messageMetadata);
+    const continuation =
+      continuationFromMetadata(messageMetadata) ??
+      continuationFromMetadata(previousMetadata);
+    if (autoContinue) {
+      const chip = continuation
+        ? planProgressChipLabel(continuation)
+        : "Continuing remaining sections";
+      return (
+        <div
+          className="flex justify-center"
+          aria-label={chip}
+          data-testid="chat-plan-progress"
+        >
+          <div className="rounded-full border border-[var(--border)] bg-[var(--secondary)]/60 px-2.5 py-0.5 text-[11px] text-[var(--muted-foreground)]">
+            {chip}
+          </div>
+        </div>
+      );
+    }
     const parts = message.parts ?? [];
     const text = parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -487,11 +520,7 @@ const MessageTurn = memo(function MessageTurn({
       ) : null}
       <TurnChangeSummary
         parts={parts}
-        metadata={
-          "metadata" in message
-            ? (message as { metadata?: unknown }).metadata
-            : undefined
-        }
+        metadata={messageMetadata}
       />
     </div>
   );
@@ -770,6 +799,8 @@ export function ChatPanel({
     busy,
     elapsedMs,
     silentMs,
+    pendingPlan,
+    planChaining,
   } = runtime;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
   const voice = useVoiceDictation({
@@ -1442,7 +1473,8 @@ export function ChatPanel({
     async (
       text: string,
       images?: PendingChatImage[],
-      target?: WorkProductView
+      target?: WorkProductView,
+      options?: { autoContinue?: boolean }
     ) => {
       const attached = images ?? pendingImages;
       const trimmed = text.trim();
@@ -1464,25 +1496,62 @@ export function ChatPanel({
       if (agentDonePrefs.notifications) {
         void requestAgentDoneNotificationPermission();
       }
-      let sessionId = currentSessionId;
-      if (!sessionId) {
-        sessionId = await createSession();
+      const tagsForRequest = mentions;
+      // Clear the composer before awaiting section saves so Enter does not
+      // sit on the typed text while ELR (and other types) persist.
+      setInput("");
+      setPendingImages([]);
+      setMentionRange(null);
+      setMentions([]);
+      const restoreComposer = () => {
+        setInput(text);
+        setPendingImages(attached);
+        setMentions(tagsForRequest);
+      };
+      try {
+        const flushPromise = flushPendingSectionSaves();
+        let sessionId = currentSessionId;
         if (!sessionId) {
+          const [, created] = await Promise.all([flushPromise, createSession()]);
+          sessionId = created;
+        } else {
+          await flushPromise;
+        }
+        if (!sessionId) {
+          restoreComposer();
           toast.error("Could not start a chat session.");
           return;
         }
         currentSessionIdRef.current = sessionId;
-        mountSession(sessionId, false);
-        setCurrentSessionId(sessionId);
+        if (!currentSessionId) {
+          mountSession(sessionId, false);
+          setCurrentSessionId(sessionId);
+        }
+      } catch {
+        restoreComposer();
+        toast.error(
+          "Could not save your latest edits before the assistant ran."
+        );
+        return;
+      }
+      const sessionId = currentSessionIdRef.current;
+      if (!sessionId) {
+        restoreComposer();
+        toast.error("Could not start a chat session.");
+        return;
       }
       const sessionRuntime = await waitForValue(() =>
         runtimeBySessionRef.current.get(sessionId)
       );
       if (!sessionRuntime) {
+        restoreComposer();
         toast.error("Could not start a chat session.");
         return;
       }
-      if (sessionRuntime.busy) return;
+      if (sessionRuntime.busy) {
+        restoreComposer();
+        return;
+      }
       lastSendTargetRef.current = sendTarget;
       setLastSendTarget(sendTarget);
       savedScrollRef.current = { kind: "bottom" };
@@ -1491,21 +1560,8 @@ export function ChatPanel({
         mode === "agent" &&
         sendTarget !== "analytics"
       ) {
-        try {
-          await flushPendingSectionSaves();
-        } catch {
-          toast.error(
-            "Could not save your latest edits before the assistant ran."
-          );
-          return;
-        }
         setAgentCommitInFlight(true);
       }
-      setInput("");
-      setPendingImages([]);
-      setMentionRange(null);
-      const tagsForRequest = mentions;
-      setMentions([]);
       for (const mention of tagsForRequest) {
         applyMentionFocus(mention);
       }
@@ -1522,7 +1578,10 @@ export function ChatPanel({
           id: mention.id,
         }));
       }
-      const metadata = { chatTarget: sendTarget };
+      const metadata = {
+        chatTarget: sendTarget,
+        ...(options?.autoContinue ? { autoContinue: true } : {}),
+      };
       if (trimmed && files.length > 0) {
         void sessionRuntime.sendMessage(
           { text: trimmed, files, metadata },
@@ -1724,6 +1783,14 @@ export function ChatPanel({
               key={m.id}
               message={m}
               chatTarget={m.chatTarget}
+              previousMetadata={
+                taggedMessages[visibleStartIndex + i - 1] &&
+                "metadata" in taggedMessages[visibleStartIndex + i - 1]!
+                  ? (taggedMessages[visibleStartIndex + i - 1] as {
+                      metadata?: unknown;
+                    }).metadata
+                  : undefined
+              }
               filenameByAttachmentId={filenameByAttachmentId}
               onOpenCitation={onOpenCitation}
               askUserActive={
@@ -1767,6 +1834,21 @@ export function ChatPanel({
             })}
             onCancel={stopTurn}
           />
+        ) : planHasRemainingWork(pendingPlan) && !planChaining ? (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              data-testid="chat-plan-resume"
+              onClick={() =>
+                void send(CHAT_AUTO_CONTINUE_TEXT, [], "report", {
+                  autoContinue: true,
+                })
+              }
+              className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 px-2.5 py-1 text-[11px] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+            >
+              Resume remaining sections
+            </button>
+          </div>
         ) : null}
         {shouldShowChatClientError({ error, busy }) ? (
           <p className="text-xs text-red-500" data-testid="chat-client-error">

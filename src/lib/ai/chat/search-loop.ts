@@ -37,6 +37,14 @@ export type SearchLoopStep = {
 
 export type SearchLoopDirective = "continue" | "read";
 
+export type SearchGate = {
+  closed: boolean;
+};
+
+export function createSearchGate(): SearchGate {
+  return { closed: false };
+}
+
 export type SearchLoopOptions = {
   searchTool?: string;
   locateTools?: ReadonlySet<string>;
@@ -104,10 +112,14 @@ function searchHitCount(output: unknown): number {
     typeof record.requirementIndexHits === "number"
       ? record.requirementIndexHits
       : 0;
+  const dividerHits =
+    typeof record.dividerHits === "number" ? record.dividerHits : 0;
   if (typeof record.returnedCount === "number" && record.returnedCount > 0) {
-    // TOC / running-header laundry lists are not a data sheet. Keep search
-    // open so the model can grep again (or scan) instead of asking for a page.
+    // TOC / running-header laundry lists and attachment cover sheets are
+    // not a data page. Keep search open so the model can grep again or read
+    // the following page instead of drafting from the divider.
     if (indexHits >= record.returnedCount) return 0;
+    if (dividerHits >= record.returnedCount) return 0;
     return record.returnedCount;
   }
   if (Array.isArray(record.seenPages) && record.seenPages.length > 0) {
@@ -159,6 +171,30 @@ function stepLocatedAttachment(
  * `emptyLimit` empty greps have already run. Shared by Document and Analytics
  * chat. `read_section` / `read_worksheet` are not progress.
  */
+function payloadKeepSearchOpen(output: unknown): boolean {
+  const payload = unwrapToolPayload(output);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.keepSearchOpen === true) return true;
+  return record.status === "unsupported_facts";
+}
+
+function stepKeepSearchOpen(step: SearchLoopStep): boolean {
+  for (const result of step.toolResults ?? []) {
+    if (payloadKeepSearchOpen(toolPayload(result))) return true;
+  }
+  for (const part of step.content ?? []) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    const record = part as Record<string, unknown>;
+    if (payloadKeepSearchOpen(unwrapToolPayload(record.output ?? record.result))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function searchLoopDirective(
   steps: readonly SearchLoopStep[],
   options: SearchLoopOptions = {}
@@ -166,6 +202,10 @@ export function searchLoopDirective(
   const searchTool = options.searchTool ?? DEFAULT_SEARCH_TOOL;
   const locateTools = options.locateTools ?? DEFAULT_ATTACHMENT_LOCATE_TOOLS;
   const emptyLimit = options.emptyLimit ?? SEARCH_LOOP_EMPTY_LIMIT;
+
+  if (steps.some((step) => stepKeepSearchOpen(step))) {
+    return "continue";
+  }
 
   let emptySearches = 0;
   for (const step of steps) {
@@ -182,11 +222,37 @@ export function searchLoopDirective(
   return emptySearches >= emptyLimit ? "read" : "continue";
 }
 
+function stepReadDocumentPage(step: SearchLoopStep): boolean {
+  return collectToolCalls(step).some(
+    (call) => callToolName(call) === "read_document_page"
+  );
+}
+
+/**
+ * After any grep this turn, hide ask_user until a page is actually read.
+ * Outline locates; it does not unlock a quiz.
+ */
+export function documentAskUserDirective(
+  steps: readonly SearchLoopStep[]
+): "continue" | "hide" {
+  let searched = false;
+  let readPage = false;
+  for (const step of steps) {
+    if (stepCalledSearch(step, DEFAULT_SEARCH_TOOL)) searched = true;
+    if (stepReadDocumentPage(step)) readPage = true;
+  }
+  return searched && !readPage ? "hide" : "continue";
+}
+
 /** Drop search from an activeTools list when the loop directive says read. */
 export function withoutSearchTool(
   activeTools: readonly string[],
   searchTool: string = DEFAULT_SEARCH_TOOL
 ): string[] {
   return activeTools.filter((name) => name !== searchTool);
+}
+
+export function withoutAskUserTool(activeTools: readonly string[]): string[] {
+  return activeTools.filter((name) => name !== "ask_user");
 }
 

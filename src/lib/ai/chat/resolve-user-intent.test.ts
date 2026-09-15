@@ -57,13 +57,31 @@ describe("resolveChatUserIntent", () => {
     vi.mocked(recordAiUsage).mockClear();
   });
 
-  it("skips Flash-Lite for greetings and explicit produce verbs", async () => {
+  it("does not call Lite for greetings, explicit writes, or real lookups", async () => {
     await expect(
       resolveChatUserIntent({ userText: "hi", mode: "agent" })
     ).resolves.toEqual({ kind: "social", reason: "greeting" });
     await expect(
       resolveChatUserIntent({ userText: "draft Purpose", mode: "agent" })
     ).resolves.toEqual({ kind: "write", reason: "produce_request" });
+    await expect(
+      resolveChatUserIntent({
+        userText: "what is in the equipment table?",
+        mode: "agent",
+      })
+    ).resolves.toEqual({ kind: "read", reason: "question_or_lookup" });
+    await expect(
+      resolveChatUserIntent({
+        userText: "do you have the protocol?",
+        mode: "agent",
+      })
+    ).resolves.toEqual({ kind: "read", reason: "question_or_lookup" });
+    await expect(
+      resolveChatUserIntent({
+        userText: "can you tell me what is in the table?",
+        mode: "agent",
+      })
+    ).resolves.toEqual({ kind: "read", reason: "question_or_lookup" });
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 
@@ -109,6 +127,42 @@ describe("resolveChatUserIntent", () => {
         }),
       })
     );
+  });
+
+  it("runs Lite for can-you-do-the-same instead of treating it as a lookup", async () => {
+    mockIntent("write");
+    await expect(
+      resolveChatUserIntent({
+        userText: "can you do the same for @Preventive Maintenance",
+        mode: "agent",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "llm_write" });
+    expect(generateTextMock).toHaveBeenCalledOnce();
+    const prompt = String(
+      (generateTextMock.mock.calls[0]?.[0] as { prompt?: string }).prompt ?? ""
+    );
+    expect(prompt).toContain("Can you do the same for X");
+    expect(prompt).toContain("can you do the same for @Preventive Maintenance");
+  });
+
+  it("falls back to Agent write when Lite fails on a polite leftover", async () => {
+    generateTextMock.mockRejectedValueOnce(new Error("timeout"));
+    await expect(
+      resolveChatUserIntent({
+        userText: "can you do the same for @Preventive Maintenance",
+        mode: "agent",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "ambiguous_polite_request" });
+  });
+
+  it("Ask mode: do-the-same timeout falls back to read", async () => {
+    generateTextMock.mockRejectedValueOnce(new Error("timeout"));
+    await expect(
+      resolveChatUserIntent({
+        userText: "can you do the same for Preventive Maintenance",
+        mode: "plan",
+      })
+    ).resolves.toEqual({ kind: "read", reason: "ambiguous_polite_request" });
   });
 
   it("keeps a pasted Agent-mode row as write when Lite says write", async () => {

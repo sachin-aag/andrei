@@ -87,7 +87,9 @@ export function ChatActivityLine({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const elapsed = useElapsedSeconds(node.pending && node.kind === "thought");
-  const showChevron = node.expandable && node.children.length > 0;
+  const showChevron =
+    (node.expandable && node.children.length > 0) ||
+    Boolean(node.kind === "thought" && node.thoughtText);
   const active = node.pending;
 
   const label =
@@ -134,10 +136,11 @@ export function ChatActivityLine({
             <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--muted-foreground)]">
               {node.thoughtText}
             </p>
-          ) : null}
-          {node.children.map((child, index) => (
-            <ActivityChildRow key={index} child={child} nested />
-          ))}
+          ) : (
+            node.children.map((child, index) => (
+              <ActivityChildRow key={index} child={child} nested />
+            ))
+          )}
         </div>
       ) : null}
     </div>

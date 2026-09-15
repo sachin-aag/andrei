@@ -76,5 +76,17 @@ describe("detectSectionIntentFromText", () => {
         "equipment_lifecycle_report"
       )
     ).toBe("elr_access_control");
+    expect(
+      detectSectionIntentFromText(
+        "Identify system trends across the evidence tables",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_system_trends");
+    expect(
+      detectSectionIntentFromText(
+        "Propose prioritized actions for this ELR",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_risk_actions");
   });
 });

@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import {
@@ -41,7 +41,12 @@ import {
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
-import { applyTableOperation } from "@/lib/suggestions/table-operation";
+import { applyTableOperation, type DocumentTableContent } from "@/lib/suggestions/table-operation";
+import {
+  cascadeFilledTableCaptionsInSections,
+  documentContentsFromReportState,
+  relatedSectionContentsAfterCascade,
+} from "@/lib/suggestions/document-table-number";
 import { suggestionEditFromComment, frozenPayloadStillPending } from "@/lib/suggestions/validate-suggestion";
 import type { PlannedOperation } from "@/lib/suggestions/diff-plan";
 import {
@@ -56,6 +61,7 @@ export type AcceptSuggestionResult =
   | {
       ok: true;
       nextSection: Record<string, unknown>;
+      nextRelatedSections?: Partial<Record<SectionType, Record<string, unknown>>>;
       remainder?: "conflict";
       dismissed: CommentRecord[];
     }
@@ -90,6 +96,8 @@ export type ApplySuggestionToContentArgs = {
    * lead-in must body-append rather than jump in front of an existing table.
    */
   ignorePlaceBeforePairedBlock?: boolean;
+  /** Filled tables in document order — used to assign `Table N` on apply. */
+  documentContents?: readonly DocumentTableContent[];
 };
 
 export type ApplySuggestionToContentResult =
@@ -229,6 +237,7 @@ export function applySuggestionToContent(
     const result = applyTableOperation(doc, payload.tableOperation, {
       section,
       targetField: path,
+      documentContents: args.documentContents,
     });
     if (!result.ok) {
       return { ok: false, reason: "not_found" };
@@ -360,6 +369,68 @@ export async function patchSection(
   );
 }
 
+function applyCaptionCascadeToAppliedSection(args: {
+  documentType?: DocumentType;
+  reportSections?: Readonly<Partial<Record<string, unknown>>>;
+  section: SectionType;
+  content: Record<string, unknown>;
+}): {
+  content: Record<string, unknown>;
+  related: Partial<Record<SectionType, Record<string, unknown>>>;
+} {
+  if (!args.documentType || !args.reportSections) {
+    return { content: args.content, related: {} };
+  }
+  const cascaded = cascadeFilledTableCaptionsInSections({
+    documentType: args.documentType,
+    sections: {
+      ...args.reportSections,
+      [args.section]: args.content,
+    },
+  });
+  const primary = cascaded.sections[args.section];
+  const content =
+    primary && typeof primary === "object"
+      ? (primary as Record<string, unknown>)
+      : args.content;
+  return {
+    content,
+    related: relatedSectionContentsAfterCascade({
+      primarySection: args.section,
+      changedSections: cascaded.changedSections,
+      sections: cascaded.sections,
+    }),
+  };
+}
+
+export function applyRelatedSectionUpdates(
+  replaceSection: (section: SectionType, content: unknown) => void,
+  related: Partial<Record<SectionType, Record<string, unknown>>> | undefined
+): void {
+  if (!related) return;
+  for (const [section, content] of Object.entries(related)) {
+    if (!content) continue;
+    replaceSection(section as SectionType, content);
+  }
+}
+
+async function patchSectionAndRelated(
+  reportId: string,
+  section: SectionType,
+  content: Record<string, unknown>,
+  related: Partial<Record<SectionType, Record<string, unknown>>>
+): Promise<void> {
+  await patchSection(reportId, section, content);
+  for (const [relatedSection, relatedContent] of Object.entries(related)) {
+    if (!relatedContent) continue;
+    await patchSection(
+      reportId,
+      relatedSection as SectionType,
+      relatedContent
+    );
+  }
+}
+
 /**
  * Single writer for accepting an AI suggestion from any UI surface.
  * Order: locate → apply → PATCH section → flip comment status.
@@ -376,6 +447,8 @@ export async function acceptSuggestion(args: {
   applyMode?: SuggestionApplyMode;
   /** Open siblings used to compute range-containment supersession. */
   openComments?: readonly CommentRecord[];
+  documentType?: DocumentType;
+  reportSections?: Readonly<Partial<Record<string, unknown>>>;
 }): Promise<AcceptSuggestionResult> {
   const pair = findOpenBlockPair(args.comment, args.openComments ?? []);
   const sequence =
@@ -390,10 +463,23 @@ export async function acceptSuggestion(args: {
   const operationsById = new Map<string, PlannedOperation[]>();
   let remainder: "conflict" | undefined;
   for (const item of uniqueSequence) {
+    const documentContents =
+      args.documentType && args.reportSections
+        ? documentContentsFromReportState({
+            documentType: args.documentType,
+            sections: {
+              ...args.reportSections,
+              [args.section]: content,
+            },
+            comments: args.openComments ?? [],
+            exceptCommentId: item.id,
+          })
+        : undefined;
     const next = applySuggestionToContent({
       ...args,
       comment: item,
       sectionContent: content,
+      documentContents,
       ignorePlaceBeforePairedBlock:
         uniqueSequence.length > 1 && item.id === uniqueSequence[0]?.id,
     });
@@ -430,6 +516,13 @@ export async function acceptSuggestion(args: {
   if (resolved.length === 0 && remainder !== "conflict") {
     return { ok: false, reason: "not_found" };
   }
+  const cascaded = applyCaptionCascadeToAppliedSection({
+    documentType: args.documentType,
+    reportSections: args.reportSections,
+    section: args.section,
+    content,
+  });
+  content = cascaded.content;
   const resolvedIds = new Set(resolved.map((item) => item.id));
   const superseded = suggestionsSupersededBy(args.comment, {
     section: args.section,
@@ -437,7 +530,12 @@ export async function acceptSuggestion(args: {
     sectionContent: args.sectionContent,
   }).filter((sibling) => !resolvedIds.has(sibling.id));
   try {
-    await patchSection(args.reportId, args.section, content);
+    await patchSectionAndRelated(
+      args.reportId,
+      args.section,
+      content,
+      cascaded.related
+    );
   } catch (error) {
     return { ok: false, reason: "save_failed", error };
   }
@@ -456,6 +554,7 @@ export async function acceptSuggestion(args: {
     return {
       ok: true,
       nextSection: content,
+      nextRelatedSections: cascaded.related,
       remainder: "conflict",
       dismissed,
     };
@@ -486,7 +585,13 @@ export async function acceptSuggestion(args: {
   } catch (error) {
     return { ok: false, reason: "status_failed", error };
   }
-  return { ok: true, nextSection: content, remainder, dismissed };
+  return {
+    ok: true,
+    nextSection: content,
+    nextRelatedSections: cascaded.related,
+    remainder,
+    dismissed,
+  };
 }
 
 /**

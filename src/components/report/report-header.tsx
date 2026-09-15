@@ -192,9 +192,10 @@ function ElrIdentityForm({
       <CardContent className="space-y-4 p-5">
         <div className="flex items-start justify-between gap-4">
           <p className="text-sm text-[var(--muted-foreground)]">
-            Identity fields print on the Word title page. A separate ELR is
-            compiled for each container format; line-level records are reported
-            in both and marked Line-common.
+            Identity fields print on the Word title page. Format No.
+            SOP/DP/QA/014/F22-R00 is proposed — the SOP does not yet assign an
+            ELR form number. A separate ELR is compiled for each container format;
+            line-level records are reported in both and marked Line-common.
           </p>
           {!readOnly && <SaveStatus status={status} lastSavedAt={lastSavedAt} />}
         </div>

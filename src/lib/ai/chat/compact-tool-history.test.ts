@@ -65,6 +65,51 @@ describe("compactChatToolHistoryForModel", () => {
     );
   });
 
+  it("keeps reviewedEvidence page pointers when compacting finish findings", () => {
+    const reviewedEvidence = Array.from({ length: 80 }, (_, i) => ({
+      attachmentId: "att-1",
+      filename: "Protocol.pdf",
+      pageNumber: i + 1,
+    }));
+    const findings = Array.from({ length: 80 }, (_, i) => ({
+      id: `d${i + 1}`,
+      filename: "Protocol.pdf",
+      pageNumber: i + 1,
+      identifiers: [],
+      summary: `Finding ${i + 1}`,
+    }));
+    const messages: UIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "call_finish",
+            state: "output-available",
+            input: {},
+            output: {
+              status: "complete",
+              reviewedPages: 80,
+              findings,
+              reviewedEvidence,
+            },
+          },
+        ],
+      },
+    ];
+    const compacted = compactChatToolHistoryForModel(messages);
+    const part = compacted[0]?.parts[0] as {
+      output?: {
+        findings?: unknown[];
+        reviewedEvidence?: Array<{ pageNumber: number }>;
+      };
+    };
+    expect(part.output?.findings).toEqual([]);
+    expect(part.output?.reviewedEvidence).toHaveLength(80);
+    expect(part.output?.reviewedEvidence?.[79]?.pageNumber).toBe(80);
+  });
+
   it("strips transcripts from a prior read_document_page part", () => {
     const messages: UIMessage[] = [
       {

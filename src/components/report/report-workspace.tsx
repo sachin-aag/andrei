@@ -181,8 +181,10 @@ import {
   ElrQualificationEditor,
   ElrResponsibilitiesEditor,
   ElrRevisionHistoryEditor,
+  ElrRiskActionsEditor,
   ElrScopeEditor,
   ElrSystemDescriptionEditor,
+  ElrSystemTrendsEditor,
 } from "./sections/elr/elr-section-editors";
 
 export type { WorkspaceMode };
@@ -278,6 +280,8 @@ const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
   elr_audit_trail: ElrAuditTrailEditor,
   elr_csv_status: ElrCsvStatusEditor,
   elr_discrepancies: ElrDiscrepanciesEditor,
+  elr_system_trends: ElrSystemTrendsEditor,
+  elr_risk_actions: ElrRiskActionsEditor,
   elr_conclusion: ElrConclusionEditor,
   elr_attachments: ElrAttachmentsEditor,
   elr_revision_history: ElrRevisionHistoryEditor,

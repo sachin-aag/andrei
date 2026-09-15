@@ -23,6 +23,8 @@ import {
   QMS_COLUMN_SCHEMA,
   QUALIFICATION_COLUMN_SCHEMA,
   RESPONSIBILITIES_COLUMN_SCHEMA,
+  RISK_ACTION_COLUMN_SCHEMA,
+  SYSTEM_TRENDS_COLUMN_SCHEMA,
   type AccessControlColumnId,
   type AlarmColumnId,
   type AuditTrailColumnId,
@@ -36,6 +38,8 @@ import {
   type QmsColumnId,
   type QualificationColumnId,
   type ResponsibilitiesColumnId,
+  type RiskActionColumnId,
+  type SystemTrendsColumnId,
 } from "./matrix-columns";
 
 export type QualificationRow = Record<QualificationColumnId, string>;
@@ -54,6 +58,8 @@ export type AuditTrailRow = Record<AuditTrailColumnId, string>;
 export type CsvStatusRow = Record<CsvStatusColumnId, string>;
 export type ResponsibilitiesRow = Record<ResponsibilitiesColumnId, string>;
 export type ElrRevisionHistoryRow = Record<ElrRevisionHistoryColumnId, string>;
+export type SystemTrendsRow = Record<SystemTrendsColumnId, string>;
+export type RiskActionRow = Record<RiskActionColumnId, string>;
 
 function nonemptyRow(values: readonly string[]): boolean {
   return values.some((v) => v.trim().length > 0);
@@ -136,6 +142,14 @@ export function parseResponsibilitiesMatrix(content: unknown) {
 
 export function parseElrRevisionHistoryMatrix(content: unknown) {
   return parseElrMatrix(content, ELR_REVISION_HISTORY_COLUMN_SCHEMA);
+}
+
+export function parseSystemTrendsMatrix(content: unknown) {
+  return parseElrMatrix(content, SYSTEM_TRENDS_COLUMN_SCHEMA);
+}
+
+export function parseRiskActionMatrix(content: unknown) {
+  return parseElrMatrix(content, RISK_ACTION_COLUMN_SCHEMA);
 }
 
 // ------------------------------------------------------------- cell semantics

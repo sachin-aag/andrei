@@ -15,10 +15,14 @@ export function isChatMessageTarget(
   return value === "report" || value === "analytics";
 }
 
-export function chatUserTurnMetadata(chatTarget: ChatMessageTarget): {
-  chatTarget: ChatMessageTarget;
-} {
-  return { chatTarget };
+export function chatUserTurnMetadata(
+  chatTarget: ChatMessageTarget,
+  extra?: { autoContinue?: boolean }
+): { chatTarget: ChatMessageTarget; autoContinue?: true } {
+  return {
+    chatTarget,
+    ...(extra?.autoContinue ? { autoContinue: true as const } : {}),
+  };
 }
 
 export function assistantOffersAnalyticsSwitch(metadata: unknown): boolean {

@@ -3,6 +3,7 @@ import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-sugg
 import {
   applyTableOperation,
   cellPlainText,
+  ensureCaptionOnFilledTable,
   normalizeTableCellText,
   type TableCellEdit,
   type TableOperation,
@@ -332,7 +333,12 @@ export function buildTableOperationPreviewDoc(
         const node = rowCells(originalRows[cell.row] ?? {})[cell.col];
         if (node) paintCellEditPreview(node, cell, attrs);
       }
-      return { ok: true, status: "ok", doc: preview };
+      const captioned = ensureCaptionOnFilledTable(
+        preview,
+        operation.tableIndex,
+        context
+      );
+      return { ok: true, status: "ok", doc: captioned.doc };
     }
     case "insert_rows": {
       const afterRow = operation.afterRow ?? 0;

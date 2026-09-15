@@ -13,6 +13,14 @@ import { resolveCustomerId, type CustomerId } from "./resolve";
 
 export type LogoLayout = "icon" | "wordmark";
 
+/**
+ * What chat does when a draft states a hard fact that was not on any
+ * retrieved page. Shared gate; only the disposition is pack-owned.
+ * MJ blocks (placeholders + tool failure). Demo and Convergent persist
+ * and flag the claim as unsourced.
+ */
+export type UnsupportedFactPolicy = "block" | "flag";
+
 export type CustomerBranding = {
   productName: string;
   productNameShort: string;
@@ -79,6 +87,11 @@ export type CustomerPack = {
    * fine). The assistant still replies in English.
    */
   voiceInputLanguageCodes: readonly string[];
+  /**
+   * Chat apply-boundary policy for hard facts that retrieval did not
+   * serve. Not a feature flag — pack identity.
+   */
+  unsupportedFactPolicy: UnsupportedFactPolicy;
   branding: CustomerBranding;
 };
 
@@ -177,13 +190,14 @@ export const DEMO_PACK: CustomerPack = {
   statisticalAnalysisEnabled: true,
   insightsEnabled: true,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
+  unsupportedFactPolicy: "flag",
   branding: ANDREI_BRANDING,
 };
 
 export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v7";
 export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v2";
 export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
-export const ELR_PROMPT_VERSION = "mj-elr-sop-014-r04-v1";
+export const ELR_PROMPT_VERSION = "mj-elr-sop-014-r04-v6";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
@@ -200,6 +214,7 @@ export const CONVERGENT_PACK: CustomerPack = {
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
+  unsupportedFactPolicy: "flag",
   branding: CONVERGENT_BRANDING,
 };
 
@@ -222,6 +237,7 @@ export const MJ_PACK: CustomerPack = {
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_MJ_CODES,
+  unsupportedFactPolicy: "block",
   branding: MJ_BRANDING,
 };
 

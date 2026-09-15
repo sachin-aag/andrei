@@ -224,7 +224,7 @@ describe("findSupersededSuggestions", () => {
     ).toEqual([]);
   });
 
-  it("supersedes an older table op on the same table with a later table op", () => {
+  it("supersedes edit_cells when a later insert_column shifts those columns", () => {
     const older = comment("edit-cells", {
       tableOperation: {
         kind: "edit_cells",
@@ -238,7 +238,7 @@ describe("findSupersededSuggestions", () => {
       tableOperation: {
         kind: "insert_column",
         tableIndex: 0,
-        afterCol: 1,
+        afterCol: 0,
         header: "Example",
         values: ["example A"],
       },
@@ -252,6 +252,157 @@ describe("findSupersededSuggestions", () => {
         sectionContent,
       })
     ).toEqual([{ supersededId: "edit-cells", supersededBy: "insert-col" }]);
+  });
+
+  it("does not let an appending insert_rows supersede a disjoint fill of row 1", () => {
+    const fillQa = comment("edit-cells", {
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, expectedText: "", insertText: "1" },
+          { row: 1, col: 1, expectedText: "", insertText: "Quality Assurance (QA)" },
+        ],
+      },
+      anchor: "edit cells",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const appendDepartments = comment("insert-rows", {
+      tableOperation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          ["2", "Production", "Operate the line"],
+          ["3", "Engineering (EU)", "Maintain the line"],
+        ],
+      },
+      anchor: "insert rows",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    });
+    expect(
+      findSupersededSuggestions({
+        section: "define",
+        comments: [fillQa, appendDepartments],
+        sectionContent,
+      })
+    ).toEqual([]);
+  });
+
+  it("does not let insert_rows after the filled row supersede that edit_cells", () => {
+    const fillQa = comment("edit-cells", {
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 1, expectedText: "", insertText: "Quality Assurance (QA)" }],
+      },
+      anchor: "edit cells",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const appendAfterRow1 = comment("insert-rows", {
+      tableOperation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [["2", "Production", "Operate the line"]],
+      },
+      anchor: "insert rows",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    });
+    expect(
+      findSupersededSuggestions({
+        section: "define",
+        comments: [fillQa, appendAfterRow1],
+        sectionContent,
+      })
+    ).toEqual([]);
+  });
+
+  it("supersedes edit_cells when insert_rows after the header shifts those rows", () => {
+    const fillQa = comment("edit-cells", {
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 1, expectedText: "", insertText: "Quality Assurance (QA)" }],
+      },
+      anchor: "edit cells",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const insertAfterHeader = comment("insert-rows", {
+      tableOperation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 0,
+        rows: [["1", "Production", "Operate the line"]],
+      },
+      anchor: "insert rows",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    });
+    expect(
+      findSupersededSuggestions({
+        section: "define",
+        comments: [fillQa, insertAfterHeader],
+        sectionContent,
+      })
+    ).toEqual([{ supersededId: "edit-cells", supersededBy: "insert-rows" }]);
+  });
+
+  it("does not supersede disjoint edit_cells on the same table", () => {
+    const row1 = comment("row-1", {
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 1, expectedText: "", insertText: "QA" }],
+      },
+      anchor: "edit cells",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const row2 = comment("row-2", {
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 2, col: 1, expectedText: "", insertText: "Production" }],
+      },
+      anchor: "edit cells",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    });
+    expect(
+      findSupersededSuggestions({
+        section: "define",
+        comments: [row1, row2],
+        sectionContent,
+      })
+    ).toEqual([]);
+  });
+
+  it("supersedes an older edit_cells when a later edit_cells covers those cells", () => {
+    const older = comment("old-cells", {
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 1, expectedText: "", insertText: "QA" }],
+      },
+      anchor: "edit cells",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const newer = comment("new-cells", {
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 1, expectedText: "", insertText: "Quality Assurance (QA)" },
+          { row: 1, col: 2, expectedText: "", insertText: "Own the review" },
+        ],
+      },
+      anchor: "edit cells",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    });
+    expect(
+      findSupersededSuggestions({
+        section: "define",
+        comments: [older, newer],
+        sectionContent,
+      })
+    ).toEqual([{ supersededId: "old-cells", supersededBy: "new-cells" }]);
   });
 
   it("does not supersede table ops on different tableIndex values", () => {
@@ -370,7 +521,7 @@ describe("findSupersededSuggestions", () => {
     ).toEqual([]);
   });
 
-  it("lets the newest same-table op supersede every older table op", () => {
+  it("lets delete_table supersede every older op on that table", () => {
     const first = comment("a", {
       tableOperation: {
         kind: "edit_cells",
@@ -382,21 +533,19 @@ describe("findSupersededSuggestions", () => {
     });
     const second = comment("b", {
       tableOperation: {
-        kind: "insert_column",
+        kind: "insert_rows",
         tableIndex: 0,
-        afterCol: 1,
-        header: "Example",
+        rows: [["2", "Production"]],
       },
-      anchor: "insert column",
+      anchor: "insert rows",
       createdAt: "2026-01-01T00:01:00.000Z",
     });
     const third = comment("c", {
       tableOperation: {
-        kind: "edit_cells",
+        kind: "delete_table",
         tableIndex: 0,
-        cells: [{ row: 1, col: 2, expectedText: "", insertText: "example A" }],
       },
-      anchor: "edit cells",
+      anchor: "delete table",
       createdAt: "2026-01-01T00:02:00.000Z",
     });
     expect(

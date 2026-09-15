@@ -3,6 +3,7 @@ import {
   CHAT_IMAGE_MAX_DATA_URL_CHARS,
   isAllowedChatImageMediaType,
 } from "@/lib/ai/chat/image-parts";
+import { tableRefDisplayText } from "@/lib/tiptap/table-ref-markdown";
 
 /** Cap vision images returned from one read_section call. */
 export const CHAT_SECTION_IMAGES_MAX = 4;
@@ -145,6 +146,14 @@ export function flattenDocForChat(
     if (node.type === "mathInline" || node.type === "mathBlock") {
       text += " ";
       readingText += " ";
+      return;
+    }
+    if (node.type === "tableRef") {
+      const label = tableRefDisplayText({
+        n: typeof node.attrs?.n === "number" ? node.attrs.n : null,
+      });
+      text += label;
+      readingText += label;
       return;
     }
 
