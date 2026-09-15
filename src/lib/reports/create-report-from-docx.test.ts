@@ -3,6 +3,7 @@ import { EMPTY_CONTENT } from "@/types/sections";
 import { DEMO_PACK, getCustomerPack, MJ_PACK } from "@/lib/customers/packs";
 import {
   investigationMetadataFromImport,
+  sectionKeysToSnapshotOnCreate,
   sectionRowsForCreate,
 } from "@/lib/reports/create-report-from-docx";
 import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
@@ -47,5 +48,21 @@ describe("create-report-from-docx", () => {
     const rows = sectionRowsForCreate("investigation_report", imported);
     expect(rows.map((row) => row.section)).not.toContain("conclusion");
     expect(rows.map((row) => row.section)).toContain("define");
+  });
+
+  it("does not snapshot blank templates, including ELR", () => {
+    expect(sectionKeysToSnapshotOnCreate(null).size).toBe(0);
+    expect(sectionKeysToSnapshotOnCreate(null, null).size).toBe(0);
+  });
+
+  it("snapshots imported investigation sections and a generic Word body", () => {
+    expect([...sectionKeysToSnapshotOnCreate(imported)].sort()).toEqual(
+      Object.keys(EMPTY_CONTENT).sort()
+    );
+    expect(
+      sectionKeysToSnapshotOnCreate(null, {
+        narrative: { type: "doc", content: [] },
+      })
+    ).toEqual(new Set(["body"]));
   });
 });

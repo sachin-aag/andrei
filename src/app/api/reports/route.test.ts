@@ -109,6 +109,7 @@ import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections
 import { docxBufferToGenericDocument } from "@/lib/import/docx-to-generic-document";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
+import { recordAuditEvent, recordSectionVersion } from "@/lib/audit";
 
 const engineer = {
   id: "engineer-1",
@@ -133,13 +134,16 @@ function mockSuccessfulCreate(reportId = "report-1") {
   return { returning, values };
 }
 
-function mockSectionRowsSelect(reportId: string) {
+function mockSectionRowsSelect(
+  reportId: string,
+  sections: readonly string[] = REPORT_SECTION_ROW_ORDER
+) {
   const where = vi.fn().mockResolvedValueOnce(
-    REPORT_SECTION_ROW_ORDER.map((section, index) => ({
+    sections.map((section, index) => ({
       id: `section-${index}`,
       reportId,
       section,
-      content: EMPTY_CONTENT[section],
+      content: {},
     }))
   );
   const from = vi.fn().mockReturnValue({ where });
@@ -154,6 +158,12 @@ function mockManagerValidation(managerIds: string[]) {
     const from = vi.fn().mockReturnValue({ where });
     vi.mocked(db.select).mockReturnValueOnce({ from } as never);
   }
+}
+
+function mockDeleteOnce() {
+  const where = vi.fn().mockResolvedValueOnce(undefined);
+  vi.mocked(db.delete).mockReturnValueOnce({ where } as never);
+  return { where };
 }
 
 describe("/api/reports", () => {
@@ -279,7 +289,6 @@ describe("/api/reports", () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
     mockSuccessfulCreate();
-    mockSectionRowsSelect("report-1");
 
     const response = await POST(
       new Request("http://localhost/api/reports", {
@@ -290,6 +299,7 @@ describe("/api/reports", () => {
 
     expect(response.status).toBe(200);
     expect(db.transaction).not.toHaveBeenCalled();
+    expect(recordSectionVersion).not.toHaveBeenCalled();
   });
 
   it("creates a mechanical DV report from JSON payload", async () => {
@@ -297,7 +307,6 @@ describe("/api/reports", () => {
     vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
     vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
     const { values } = mockSuccessfulCreate("report-mechanical");
-    mockSectionRowsSelect("report-mechanical");
 
     const response = await POST(
       new Request("http://localhost/api/reports", {
@@ -324,6 +333,35 @@ describe("/api/reports", () => {
       engineer.id,
       "mechanical_design_verification"
     );
+    expect(recordSectionVersion).not.toHaveBeenCalled();
+  });
+
+  it("creates a blank equipment lifecycle report without section version snapshots", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
+    const { values } = mockSuccessfulCreate("report-elr");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "equipment_lifecycle_report",
+          documentNo: "dev 6",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "equipment_lifecycle_report",
+        documentNo: "dev 6",
+      })
+    );
+    expect(recordSectionVersion).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown document type as an invalid payload", async () => {
@@ -350,7 +388,6 @@ describe("/api/reports", () => {
     vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
     mockManagerValidation(["manager-1", "manager-2"]);
     const { values } = mockSuccessfulCreate("report-multi-manager");
-    mockSectionRowsSelect("report-multi-manager");
 
     const response = await POST(
       new Request("http://localhost/api/reports", {
@@ -426,7 +463,7 @@ describe("/api/reports", () => {
       ],
     });
     const { values } = mockSuccessfulCreate("report-generic");
-    mockSectionRowsSelect("report-generic");
+    mockSectionRowsSelect("report-generic", ["body"]);
 
     const form = new FormData();
     form.append("documentType", "generic_document");
@@ -462,6 +499,14 @@ describe("/api/reports", () => {
         reportId: "report-generic",
         filename: "memo.docx",
         uploadedById: engineer.id,
+      })
+    );
+    expect(recordSectionVersion).toHaveBeenCalledTimes(1);
+    expect(recordSectionVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportId: "report-generic",
+        section: "body",
+        forceSnapshot: true,
       })
     );
   });
@@ -518,6 +563,7 @@ describe("/api/reports", () => {
         uploadedById: engineer.id,
       })
     );
+    expect(recordSectionVersion).toHaveBeenCalled();
   });
 
   it("rejects a Word upload for design verification", async () => {
@@ -549,5 +595,67 @@ describe("/api/reports", () => {
       error: "Word import is not supported for this document type.",
     });
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("creates a hidden preload without a document number or audit snapshot", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockDeleteOnce();
+    const { values } = mockSuccessfulCreate("preload-1");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "investigation_report",
+          preload: true,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      id: "preload-1",
+      preloaded: true,
+    });
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "investigation_report",
+        metadata: expect.objectContaining({ createPreload: true }),
+      })
+    );
+    expect(isDocumentNoTaken).not.toHaveBeenCalled();
+    expect(recordAuditEvent).not.toHaveBeenCalled();
+    expect(recordSectionVersion).not.toHaveBeenCalled();
+  });
+
+  it("preloads an equipment lifecycle report without section snapshots", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
+    mockDeleteOnce();
+    const { values } = mockSuccessfulCreate("preload-elr");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "equipment_lifecycle_report",
+          preload: true,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "equipment_lifecycle_report",
+        metadata: expect.objectContaining({ createPreload: true }),
+      })
+    );
+    expect(recordAuditEvent).not.toHaveBeenCalled();
+    expect(recordSectionVersion).not.toHaveBeenCalled();
   });
 });
