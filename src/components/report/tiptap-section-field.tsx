@@ -739,15 +739,14 @@ export function TiptapSectionField({
           throw new Error("Suggestion could not be located");
         }
 
-        const dismissedSiblings =
+        const accepted =
           mode === "accept"
-            ? (
-                result as Extract<
-                  Awaited<ReturnType<typeof acceptSuggestion>>,
-                  { ok: true }
-                >
-              ).dismissed
-            : [];
+            ? (result as Extract<
+                Awaited<ReturnType<typeof acceptSuggestion>>,
+                { ok: true }
+              >)
+            : null;
+        const dismissedSiblings = accepted?.dismissed ?? [];
 
         // Paint the applied result immediately. Preview marks live in the
         // editor, not provider state, so dismiss often has no nextSection.
@@ -757,10 +756,10 @@ export function TiptapSectionField({
         // disappeared.
         if (result.nextSection) {
           replaceSection(section, result.nextSection as unknown);
-          if (mode === "accept" && "nextRelatedSections" in result) {
+          if (accepted) {
             applyRelatedSectionUpdates(
               replaceSection,
-              result.nextRelatedSections
+              accepted.nextRelatedSections
             );
           }
         }

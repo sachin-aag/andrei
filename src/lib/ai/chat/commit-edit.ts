@@ -148,6 +148,7 @@ export async function commitChatEdit(args: {
       executor: tx,
     });
     for (const [section, relatedContent] of Object.entries(related)) {
+      if (!relatedContent) continue;
       await persistSectionContent({
         actor: args.actor,
         reportId: args.reportId,

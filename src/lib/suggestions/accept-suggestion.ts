@@ -409,6 +409,7 @@ export function applyRelatedSectionUpdates(
 ): void {
   if (!related) return;
   for (const [section, content] of Object.entries(related)) {
+    if (!content) continue;
     replaceSection(section as SectionType, content);
   }
 }
@@ -421,6 +422,7 @@ async function patchSectionAndRelated(
 ): Promise<void> {
   await patchSection(reportId, section, content);
   for (const [relatedSection, relatedContent] of Object.entries(related)) {
+    if (!relatedContent) continue;
     await patchSection(
       reportId,
       relatedSection as SectionType,

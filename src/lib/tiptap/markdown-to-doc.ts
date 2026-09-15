@@ -258,7 +258,7 @@ export function markdownToDoc(
         tableLines.push(lines[i]!.trim());
         i++;
       }
-      const table = parseTable(tableLines, options);
+      const table = parseTable(tableLines);
       if (table) content.push(table);
       continue;
     }
@@ -279,7 +279,7 @@ export function markdownToDoc(
         if (!next || next.kind !== kind) break;
         items.push({
           type: "listItem",
-          content: [{ type: "paragraph", content: parseInline(next.text, options) }],
+          content: [{ type: "paragraph", content: parseInline(next.text) }],
         });
         i++;
       }
@@ -297,7 +297,7 @@ export function markdownToDoc(
         content.push({ type: "paragraph" });
       }
     }
-    content.push({ type: "paragraph", content: parseInline(trimmed, options) });
+    content.push({ type: "paragraph", content: parseInline(trimmed) });
     i++;
   }
 
@@ -459,8 +459,7 @@ function withExtraMarks(
  */
 export function inlineMarkdownToTextNodes(
   text: string,
-  extraMarks?: JSONContent["marks"],
-  options?: MarkdownToDocOptions
+  extraMarks?: JSONContent["marks"]
 ): JSONContent[] {
   const nodes: JSONContent[] = [];
   const parts = text.split(INLINE_MARKDOWN_SPLIT_RE);
@@ -504,8 +503,7 @@ export function inlineMarkdownToTextNodes(
  */
 export function inlineMarkdownToTextNodesWithBreaks(
   text: string,
-  extraMarks?: JSONContent["marks"],
-  options?: MarkdownToDocOptions
+  extraMarks?: JSONContent["marks"]
 ): JSONContent[] {
   const segments = text.split(HTML_BR_SPLIT_RE);
   const nodes: JSONContent[] = [];
@@ -515,7 +513,7 @@ export function inlineMarkdownToTextNodesWithBreaks(
     const lineParts = segment.split("\n");
     for (let j = 0; j < lineParts.length; j++) {
       if (j > 0) nodes.push({ type: "hardBreak" });
-      nodes.push(...inlineMarkdownToTextNodes(lineParts[j]!, extraMarks, options));
+      nodes.push(...inlineMarkdownToTextNodes(lineParts[j]!, extraMarks));
     }
   }
   if (nodes.at(-1)?.type === "hardBreak") nodes.pop();
@@ -523,8 +521,8 @@ export function inlineMarkdownToTextNodesWithBreaks(
 }
 
 /** `**bold**` / `*italic*` / `_italic_` → marked text nodes; everything else literal. */
-function parseInline(text: string, options?: MarkdownToDocOptions): JSONContent[] {
-  return inlineMarkdownToTextNodesWithBreaks(text, undefined, options);
+function parseInline(text: string): JSONContent[] {
+  return inlineMarkdownToTextNodesWithBreaks(text);
 }
 
 function isTableRow(trimmed: string): boolean {
@@ -549,20 +547,16 @@ function splitTableRow(trimmed: string): string[] {
 
 function tableCellNode(
   type: "tableHeader" | "tableCell",
-  text: string,
-  options?: MarkdownToDocOptions
+  text: string
 ): JSONContent {
   return {
     type,
     attrs: { colspan: 1, rowspan: 1 },
-    content: [{ type: "paragraph", content: parseInline(text, options) }],
+    content: [{ type: "paragraph", content: parseInline(text) }],
   };
 }
 
-function parseTable(
-  tableLines: string[],
-  options?: MarkdownToDocOptions
-): JSONContent | null {
+function parseTable(tableLines: string[]): JSONContent | null {
   // tableLines[1] is the header separator; drop it.
   const dataLines = tableLines.filter((_, idx) => idx !== 1);
   if (dataLines.length === 0) return null;
@@ -577,7 +571,7 @@ function parseTable(
     while (padded.length < colCount) padded.push("");
     return {
       type: "tableRow",
-      content: padded.map((cell) => tableCellNode(type, cell, options)),
+      content: padded.map((cell) => tableCellNode(type, cell)),
     };
   });
 

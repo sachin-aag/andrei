@@ -249,12 +249,14 @@ export async function acceptAllSuggestions(args: {
   if (appliedIds.length > 0) {
     args.onPreview?.(current);
     for (const [section, content] of Object.entries(relatedSections)) {
+      if (!content) continue;
       args.onRelatedSectionSettled?.(section as SectionType, content);
     }
 
     try {
       await patchSection(args.reportId, args.section, current);
       for (const [section, content] of Object.entries(relatedSections)) {
+        if (!content) continue;
         await patchSection(args.reportId, section as SectionType, content);
       }
     } catch {
