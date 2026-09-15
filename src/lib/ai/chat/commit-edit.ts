@@ -10,6 +10,7 @@ import {
   type CommitEditFailureStatus,
   type CommitEditInput,
 } from "@/lib/suggestions/apply-commit-content";
+import { loadDocumentContentsForTableNumber } from "@/lib/suggestions/load-document-table-contents";
 import { extractFieldContent } from "@/lib/suggestions/suggestion-record";
 import { mergeField } from "@/lib/suggestions/three-way-merge";
 import { setPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
@@ -57,6 +58,10 @@ export async function commitChatEdit(args: {
   reasoning: string;
   input: CommitEditInput;
 }): Promise<CommitEditResult> {
+  const documentContents = await loadDocumentContentsForTableNumber({
+    reportId: args.reportId,
+    documentType: args.documentType,
+  });
   const applied = await db.transaction(async (tx) => {
     const [row] = await tx
       .select()
@@ -79,6 +84,7 @@ export async function commitChatEdit(args: {
       targetField: args.targetField,
       documentType: args.documentType,
       input: args.input,
+      documentContents,
     });
     if (!next.ok) return next;
 

@@ -162,8 +162,9 @@ narrative that summarises who does what and refers to Table N.
 
 Seeded matrices already exist as empty grids. Filling them inserts
 \`Table N. {title}\` above the grid when data lands. Empty unused grids stay
-unnumbered. N is document-wide among published captions, not reserved by empty
-shells.
+unnumbered. N is the 1-based ordinal among **filled** tables in document order
+(starter abbreviation rows occupy Table 1). Empty unused grids do not reserve
+a number, and fill order among published captions is not used.
 
 Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.11.1)
 for grouping failure modes / whether the trended alarm set is still

@@ -5,6 +5,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db";
 import { comments, reportSections, reports } from "@/db/schema";
 import type {
+  DocumentType,
   InvestigationReportMetadata,
   ReportMetadata,
   SectionType,
@@ -111,13 +112,15 @@ import {
   applyTableOperation,
   captureTableOperationSnapshots,
   coerceTableOperationInput,
+  countFilledTablesInDocument,
   defaultTableCaptionTitle,
-  existingTableCountFromContents,
+  filledTableNumberInDocument,
   parseTableOperation,
   prefixTableCaptionMarkdown,
   summarizeTableOperation,
   tableOperationInvalidHint,
 } from "@/lib/suggestions/table-operation";
+import { loadDocumentContentsForTableNumber } from "@/lib/suggestions/load-document-table-contents";
 import {
   createSameTurnBlockPairing,
   isAppendBlock,
@@ -955,17 +958,11 @@ async function loadMergedSection(
   };
 }
 
-async function existingTableCountForReport(reportId: string): Promise<number> {
-  const rows = await db
-    .select({
-      section: reportSections.section,
-      content: reportSections.content,
-    })
-    .from(reportSections)
-    .where(eq(reportSections.reportId, reportId));
-  return existingTableCountFromContents(
-    rows.map((row) => mergeSection(row.section, row.content))
-  );
+async function documentContentsForReport(
+  reportId: string,
+  documentType: DocumentType
+) {
+  return loadDocumentContentsForTableNumber({ reportId, documentType });
 }
 
 function fieldSnapshotKey(section: SectionType, targetField: string): string {
@@ -3189,11 +3186,14 @@ export function buildChatTools(opts: {
           : { operation: capturedOp, citations: [] as string[] };
         let applied;
         try {
-          const existingTableCount = await existingTableCountForReport(reportId);
+          const documentContents = await documentContentsForReport(
+            reportId,
+            documentType
+          );
           applied = applyTableOperation(fieldDoc, stripped.operation, {
             section,
             targetField: resolvedField,
-            existingTableCount,
+            documentContents,
           });
         } catch (err) {
           console.error("edit_table failed", err);
@@ -3498,10 +3498,24 @@ export function buildChatTools(opts: {
         let markdownForDraft = markdown;
         let tableNumber: number | undefined;
         if (resolvedField === "table" && markdownHasTable(markdown)) {
+          const documentContents = await documentContentsForReport(
+            reportId,
+            documentType
+          );
+          const tableOrdinal =
+            filledTableNumberInDocument({
+              contents: documentContents,
+              target: {
+                section,
+                targetField: resolvedField,
+                tableIndex: 0,
+              },
+            }) ?? countFilledTablesInDocument(documentContents) + 1;
           const prefixed = prefixTableCaptionMarkdown(
             markdown,
-            await existingTableCountForReport(reportId),
-            defaultTableCaptionTitle(section)
+            0,
+            defaultTableCaptionTitle(section),
+            tableOrdinal
           );
           markdownForDraft = prefixed.markdown;
           tableNumber = prefixed.tableNumber;

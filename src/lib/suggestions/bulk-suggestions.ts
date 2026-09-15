@@ -1,4 +1,4 @@
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import type { SuggestionApplyMode } from "@/lib/document-types";
 import {
@@ -18,6 +18,9 @@ import {
   sortedOpenSuggestionsForSection,
 } from "@/lib/ai/suggestion-gating";
 import { sortCommentsForPairedApply } from "@/lib/suggestions/same-turn-block-pair";
+import { documentContentsFromReportState } from "@/lib/suggestions/document-table-number";
+import { getWorkspaceSections } from "@/lib/document-types";
+import type { DocumentTableContent } from "@/lib/suggestions/table-operation";
 
 export type BulkSuggestionResult = {
   appliedIds: string[];
@@ -44,6 +47,7 @@ type ReportBulkArgs = {
   comments: readonly CommentRecord[];
   evaluations: readonly EvaluationRecord[];
   sectionContentFor: (section: SectionType) => Record<string, unknown> | undefined;
+  documentType?: DocumentType;
   /** Called before a section's batch so the caller can pause its auto-save. */
   onSectionStart?: (section: SectionType, firstCommentId: string) => void;
   /** Called with the section's next content before persist, so the editor can
@@ -66,6 +70,7 @@ function applyOneInMemory(args: {
   appliedIds: string[];
   skippedIds: string[];
   ignorePlaceBeforePairedBlock?: boolean;
+  documentContents?: readonly DocumentTableContent[];
 }): Record<string, unknown> {
   if (args.applied.has(args.comment.id)) return args.sectionContent;
   args.applied.add(args.comment.id);
@@ -75,6 +80,7 @@ function applyOneInMemory(args: {
     sectionContent: args.sectionContent,
     applyMode: args.applyMode,
     ignorePlaceBeforePairedBlock: args.ignorePlaceBeforePairedBlock,
+    documentContents: args.documentContents,
   });
   if (!result.ok) {
     args.skippedIds.push(args.comment.id);
@@ -103,6 +109,9 @@ export async function acceptAllSuggestions(args: {
   applyMode?: SuggestionApplyMode;
   /** Fired with in-memory applied content before the section PATCH. */
   onPreview?: (nextSection: Record<string, unknown>) => void;
+  documentType?: DocumentType;
+  allSectionContent?: Readonly<Partial<Record<string, unknown>>>;
+  tableNumberComments?: readonly CommentRecord[];
 }): Promise<BulkSuggestionResult> {
   const partition = partitionBulkApplies({
     section: args.section,
@@ -131,6 +140,22 @@ export async function acceptAllSuggestions(args: {
     partition.overlapping.flatMap((group) => group.map((c) => c.id))
   );
 
+  const contentsFor = (
+    commentId: string,
+    sectionContent: Record<string, unknown>
+  ) =>
+    args.documentType
+      ? documentContentsFromReportState({
+          documentType: args.documentType,
+          sections: {
+            ...args.allSectionContent,
+            [args.section]: sectionContent,
+          },
+          comments: args.tableNumberComments ?? args.comments,
+          exceptCommentId: commentId,
+        })
+      : undefined;
+
   for (const comment of args.comments) {
     if (applied.has(comment.id)) continue;
     if (overlappingIds.has(comment.id)) {
@@ -155,6 +180,7 @@ export async function acceptAllSuggestions(args: {
             payload.pairedBlockSuggestionId &&
               clusterIds.has(payload.pairedBlockSuggestionId)
           ),
+          documentContents: contentsFor(member.id, current),
         });
       }
       continue;
@@ -167,6 +193,7 @@ export async function acceptAllSuggestions(args: {
       applied,
       appliedIds,
       skippedIds,
+      documentContents: contentsFor(comment.id, current),
     });
   }
 
@@ -333,7 +360,7 @@ export function reportSuggestionQueues(
 export async function acceptAllSuggestionsInReport(
   args: ReportBulkArgs & { applyMode?: SuggestionApplyMode }
 ): Promise<ReportBulkSuggestionResult> {
-  return runReportBulk(args, (queue, sectionContent, onPreview) =>
+  return runReportBulk(args, (queue, sectionContent, onPreview, live) =>
     acceptAllSuggestions({
       reportId: args.reportId,
       section: queue.section,
@@ -341,6 +368,9 @@ export async function acceptAllSuggestionsInReport(
       sectionContent,
       applyMode: args.applyMode,
       onPreview,
+      documentType: args.documentType,
+      allSectionContent: live,
+      tableNumberComments: args.comments,
     })
   );
 }
@@ -364,7 +394,8 @@ async function runReportBulk(
   runSection: (
     queue: { section: SectionType; comments: CommentRecord[] },
     sectionContent: Record<string, unknown>,
-    onPreview: (nextSection: Record<string, unknown>) => void
+    onPreview: (nextSection: Record<string, unknown>) => void,
+    live: Partial<Record<string, unknown>>
   ) => Promise<BulkSuggestionResult>
 ): Promise<ReportBulkSuggestionResult> {
   const appliedIds: string[] = [];
@@ -373,6 +404,14 @@ async function runReportBulk(
   const dismissedIds: string[] = [];
   const dismissedContent: Record<string, string> = {};
   const changedSections: SectionType[] = [];
+
+  const live: Partial<Record<string, unknown>> = {};
+  if (args.documentType) {
+    for (const section of getWorkspaceSections(args.documentType)) {
+      const content = args.sectionContentFor(section.key);
+      if (content) live[section.key] = content;
+    }
+  }
 
   const queues = reportSuggestionQueues(
     args.sectionOrder,
@@ -386,12 +425,19 @@ async function runReportBulk(
       skippedIds.push(...queue.comments.map((c) => c.id));
       continue;
     }
+    live[queue.section] = sectionContent;
 
     args.onSectionStart?.(queue.section, queue.comments[0].id);
     try {
-      const result = await runSection(queue, sectionContent, (next) => {
-        args.onSectionSettled?.(queue.section, next);
-      });
+      const result = await runSection(
+        queue,
+        sectionContent,
+        (next) => {
+          live[queue.section] = next;
+          args.onSectionSettled?.(queue.section, next);
+        },
+        live
+      );
 
       appliedIds.push(...result.appliedIds);
       skippedIds.push(...result.skippedIds);

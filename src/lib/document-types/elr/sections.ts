@@ -424,7 +424,16 @@ function seededAbbreviations(): JSONContent {
       content: [textCell(term), textCell(expansion)],
     })),
   ];
-  return doc;
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Table 1. Abbreviations" }],
+      },
+      table,
+    ],
+  };
 }
 
 export const EMPTY_ELR_CONTENT: ElrSectionMap = {

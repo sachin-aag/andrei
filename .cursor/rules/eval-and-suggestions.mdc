@@ -52,6 +52,11 @@ DV mixes LLM criteria with deterministic `check()` functions.
   Sequential / Apply-all apply of that pair must not treat a filled empty
   `expectedRowAtAfter` as stale — only changed snapshot cells that already
   had text.
+  Table N is the 1-based ordinal among filled grids in document order
+  (starter abbreviation rows occupy Table 1; empty unused shells stay
+  unnumbered). Apply and preview must not number from the current field
+  only, and a stale `Table 1.` caption is rewritten when a preceding table
+  already occupies that ordinal.
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits
   persist as one section PATCH. Preview applied wording before that PATCH

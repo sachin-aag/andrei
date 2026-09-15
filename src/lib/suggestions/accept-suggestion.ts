@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import {
@@ -41,7 +41,8 @@ import {
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
-import { applyTableOperation } from "@/lib/suggestions/table-operation";
+import { applyTableOperation, type DocumentTableContent } from "@/lib/suggestions/table-operation";
+import { documentContentsFromReportState } from "@/lib/suggestions/document-table-number";
 import { suggestionEditFromComment, frozenPayloadStillPending } from "@/lib/suggestions/validate-suggestion";
 import type { PlannedOperation } from "@/lib/suggestions/diff-plan";
 import {
@@ -90,6 +91,8 @@ export type ApplySuggestionToContentArgs = {
    * lead-in must body-append rather than jump in front of an existing table.
    */
   ignorePlaceBeforePairedBlock?: boolean;
+  /** Filled tables in document order — used to assign `Table N` on apply. */
+  documentContents?: readonly DocumentTableContent[];
 };
 
 export type ApplySuggestionToContentResult =
@@ -229,6 +232,7 @@ export function applySuggestionToContent(
     const result = applyTableOperation(doc, payload.tableOperation, {
       section,
       targetField: path,
+      documentContents: args.documentContents,
     });
     if (!result.ok) {
       return { ok: false, reason: "not_found" };
@@ -376,6 +380,8 @@ export async function acceptSuggestion(args: {
   applyMode?: SuggestionApplyMode;
   /** Open siblings used to compute range-containment supersession. */
   openComments?: readonly CommentRecord[];
+  documentType?: DocumentType;
+  reportSections?: Readonly<Partial<Record<string, unknown>>>;
 }): Promise<AcceptSuggestionResult> {
   const pair = findOpenBlockPair(args.comment, args.openComments ?? []);
   const sequence =
@@ -390,10 +396,23 @@ export async function acceptSuggestion(args: {
   const operationsById = new Map<string, PlannedOperation[]>();
   let remainder: "conflict" | undefined;
   for (const item of uniqueSequence) {
+    const documentContents =
+      args.documentType && args.reportSections
+        ? documentContentsFromReportState({
+            documentType: args.documentType,
+            sections: {
+              ...args.reportSections,
+              [args.section]: content,
+            },
+            comments: args.openComments ?? [],
+            exceptCommentId: item.id,
+          })
+        : undefined;
     const next = applySuggestionToContent({
       ...args,
       comment: item,
       sectionContent: content,
+      documentContents,
       ignorePlaceBeforePairedBlock:
         uniqueSequence.length > 1 && item.id === uniqueSequence[0]?.id,
     });

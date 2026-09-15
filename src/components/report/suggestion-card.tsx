@@ -856,6 +856,8 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         sectionContent: sections[section] as Record<string, unknown>,
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
         openComments: comments.filter((c) => c.status === "open" && !c.parentId),
+        documentType: report.documentType,
+        reportSections: sections,
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {

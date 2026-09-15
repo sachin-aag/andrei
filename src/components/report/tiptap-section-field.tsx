@@ -116,6 +116,7 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { documentContentsFromReportState } from "@/lib/suggestions/document-table-number";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
 import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
@@ -702,6 +703,8 @@ export function TiptapSectionField({
                 openComments: comments.filter(
                   (c) => c.status === "open" && !c.parentId
                 ),
+                documentType: report.documentType,
+                reportSections: sections,
               })
             : await dismissSuggestion({
                 reportId: report.id,
@@ -814,6 +817,7 @@ export function TiptapSectionField({
     [
       comments,
       report.id,
+      report.documentType,
       section,
       contentPath,
       sections,
@@ -1109,6 +1113,17 @@ export function TiptapSectionField({
               {
                 section,
                 targetField: contentPath,
+                documentContents: documentContentsFromReportState({
+                  documentType: report.documentType,
+                  sections: {
+                    ...sections,
+                    [section]: sectionContent as Record<string, unknown>,
+                  },
+                  comments: comments.filter(
+                    (c) => c.status === "open" && !c.parentId
+                  ),
+                  exceptCommentId: activeSuggestionId,
+                }),
               }
             );
             if (preview.ok) {
@@ -1206,6 +1221,8 @@ export function TiptapSectionField({
     previewHeld,
     section,
     sectionContent,
+    sections,
+    report.documentType,
     suggestionApplyTransition,
     value,
     richFieldOptions,

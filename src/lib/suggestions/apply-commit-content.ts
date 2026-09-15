@@ -12,6 +12,7 @@ import { getPlainTextFieldValue, setPlainTextFieldValue } from "@/lib/suggestion
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import {
   applyTableOperation,
+  type DocumentTableContent,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
 
@@ -49,6 +50,7 @@ export function applyCommitToSectionContent(args: {
   targetField: string;
   documentType: DocumentType;
   input: CommitEditInput;
+  documentContents?: readonly DocumentTableContent[];
 }):
   | { ok: true; content: Record<string, unknown> }
   | { ok: false; status: CommitEditFailureStatus; hint?: string } {
@@ -109,6 +111,7 @@ export function applyCommitToSectionContent(args: {
       const applied = applyTableOperation(fieldDoc, input.operation, {
         section,
         targetField,
+        documentContents: args.documentContents,
       });
       if (!applied.ok) {
         return { ok: false, status: applied.status, hint: applied.hint };
