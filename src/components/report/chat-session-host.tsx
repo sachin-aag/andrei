@@ -45,8 +45,11 @@ import {
 
 export type ChatSessionSend = (
   message: {
+    id?: string;
     text?: string;
     files?: FileUIPart[];
+    parts?: UIMessage["parts"];
+    role?: "user";
     metadata?: Record<string, unknown>;
   },
   options?: { body?: Record<string, unknown> }

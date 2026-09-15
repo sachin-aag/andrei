@@ -255,7 +255,7 @@ export function ChatBusyStatus({
   onCancel: () => void;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-1" data-testid="chat-busy-status">
       <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
         <Loader2 className="size-3.5 animate-spin" />
         <span>
