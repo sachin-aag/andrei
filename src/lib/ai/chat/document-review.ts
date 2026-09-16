@@ -30,6 +30,7 @@ import {
   coverageKeySatisfiesObjective,
   planReviewPages,
 } from "@/lib/ai/chat/review-page-plan";
+import { TOOL_RESULT_BUDGET, toolResultBudget } from "@/lib/ai/chat/tool-result-budget";
 
 export { DOCUMENT_REVIEW_TOOL_NAMES, type DocumentReviewToolName };
 export { selectReviewPages } from "@/lib/ai/chat/review-page-plan";
@@ -37,7 +38,7 @@ export { selectReviewPages } from "@/lib/ai/chat/review-page-plan";
 export const REVIEW_TARGET_BATCH_CHARS = 8_000;
 export const REVIEW_MAX_PAGES_PER_BATCH = 6;
 export const REVIEW_DENSE_PAGE_CHARS = 6_000;
-export const REVIEW_PAGE_TEXT_LIMIT = 12_000;
+export const REVIEW_PAGE_TEXT_LIMIT = TOOL_RESULT_BUDGET.pageTranscriptChars;
 /** Safety cap when listing pages so one file cannot starve others. Not a walk cap. */
 export const REVIEW_PAGE_FETCH_CAP = 2500;
 /** In-flight extract calls inside one continue_document_review. */
@@ -62,7 +63,7 @@ export function reviewContinueBudgetMs(remainingAbortMs: number): number {
  * sample. A 273-page catalog produced ~1.3k findings / 530KB and the next
  * user turn failed before Gemini started.
  */
-export const REVIEW_FINISH_FINDINGS_CAP = 60;
+export const REVIEW_FINISH_FINDINGS_CAP = TOOL_RESULT_BUDGET.finishFindings;
 
 export type DocumentReviewPhase =
   | "idle"
@@ -776,7 +777,7 @@ export function extractReviewFindingsFromPages(
   const findings: DocumentReviewFinding[] = [];
   let seq = 0;
   for (const page of pages) {
-    const text = page.transcript.slice(0, REVIEW_PAGE_TEXT_LIMIT);
+    const text = toolResultBudget("pageTranscript", page.transcript);
     const identifiers = requirementIds(text);
     const heading =
       derivePageOutlineDigest(text).split(" — ")[0]?.trim() ||
@@ -964,7 +965,7 @@ async function extractReviewBatchWithLlm(input: {
 }): Promise<DocumentReviewFinding[]> {
   const pageBlock = input.pages
     .map((page) => {
-      const body = page.transcript.slice(0, REVIEW_PAGE_TEXT_LIMIT);
+      const body = toolResultBudget("pageTranscript", page.transcript);
       return `--- ${page.filename} p.${page.pageNumber} ---\n${body}`;
     })
     .join("\n\n");

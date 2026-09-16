@@ -1,6 +1,10 @@
 import type { UIMessage } from "ai";
 import { closeIncompleteChatToolHistory } from "@/lib/ai/chat/tool-part-repair";
 import { sourceCitationBracket } from "@/lib/suggestions/citations-at-end";
+import {
+  TOOL_RESULT_BUDGET,
+  toolResultBudget,
+} from "@/lib/ai/chat/tool-result-budget";
 
 /**
  * Prior tool rows can be hundreds of KB (page transcripts, finish findings,
@@ -57,8 +61,7 @@ function emitOutput(
 }
 
 /** Cap so a 273-page finish sample stays small across later turns. */
-const FINISH_CITATION_DIGEST_CAP = 60;
-const FINISH_CITATION_SUMMARY_CHARS = 160;
+const FINISH_CITATION_DIGEST_CAP = TOOL_RESULT_BUDGET.finishFindings;
 
 /**
  * Keep page-cited pointers for later draft turns. Full finding payloads are
@@ -105,10 +108,7 @@ function citationDigestFromFindings(
         : typeof row.heading === "string"
           ? row.heading.trim()
           : "";
-    const summary =
-      summaryRaw.length > FINISH_CITATION_SUMMARY_CHARS
-        ? `${summaryRaw.slice(0, FINISH_CITATION_SUMMARY_CHARS - 1)}…`
-        : summaryRaw;
+    const summary = toolResultBudget("finishSummary", summaryRaw);
     digest.push({
       filename,
       pageNumber,

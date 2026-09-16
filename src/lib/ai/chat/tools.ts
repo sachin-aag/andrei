@@ -231,6 +231,11 @@ import {
   CitationPageLedger,
 } from "@/lib/ai/chat/citation-grounding";
 import {
+  TOOL_RESULT_BUDGET,
+  budgetSearchHit,
+  toolResultBudget,
+} from "@/lib/ai/chat/tool-result-budget";
+import {
   containsGatedFactPlaceholders,
   groundDraftText,
   groundTableOperation,
@@ -534,7 +539,7 @@ const tableOperationSchema = z.preprocess(
 export const SEARCH_DOCUMENTS_DEFAULT_LIMIT = 8;
 export const SEARCH_DOCUMENTS_MAX_LIMIT = 16;
 export const SEARCH_DOCUMENTS_MAX_QUERIES = 8;
-export const SEARCH_DOCUMENTS_RESULT_CAP = 16;
+export const SEARCH_DOCUMENTS_RESULT_CAP = TOOL_RESULT_BUDGET.searchHits;
 export const SEARCH_QUERY_MAX_CHARS = 500;
 /** Also caps `nextExcludePages`, which the model is told to pass straight back. */
 export const SEARCH_EXCLUDE_PAGES_MAX = 80;
@@ -857,7 +862,9 @@ function buildSearchDocumentsTool(opts: {
       merged.length >= SEARCH_DOCUMENTS_RESULT_CAP ||
       arms.some((arm) => arm.length >= input.limit);
     const nextExcludePages = mergeExcludePages(input.excludePages, merged);
-    const cited = toClientDocumentSearchResults(merged).map(withSourceCitation);
+    const cited = toClientDocumentSearchResults(merged)
+      .map(budgetSearchHit)
+      .map(withSourceCitation);
     const annotated = annotateDividerSearchHits(cited);
     if (merged.length > 0 && !annotated.keepSearchOpen) {
       onCitedPage?.();
@@ -1604,8 +1611,11 @@ export function buildChatTools(opts: {
             attachmentId: page.attachmentId,
             filename: page.filename,
             pageNumber: page.pageNumber,
-            transcript: page.transcript,
-            visualInterpretation: page.visualInterpretation,
+            transcript: toolResultBudget("pageTranscript", page.transcript),
+            visualInterpretation: toolResultBudget(
+              "pageTranscript",
+              page.visualInterpretation
+            ),
             pageContext: page.pageContext,
           },
           citation: sourceCitationBracket(page.filename, page.pageNumber),

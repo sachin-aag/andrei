@@ -19,6 +19,7 @@ import {
   type DocumentSearchResult,
 } from "@/lib/attachments/retrieval";
 import { withSourceCitation } from "@/lib/suggestions/citations-at-end";
+import { budgetSearchHit } from "@/lib/ai/chat/tool-result-budget";
 import { isRequirementIndexText } from "./scan-attachments";
 import type { AnalyticsSearchGate } from "./search-loop";
 
@@ -81,7 +82,7 @@ export function partitionAnalyticsSearchHits<
 
 function toAnalyticsClientSearchResults(hits: readonly DocumentSearchResult[]) {
   return toClientDocumentSearchResults([...hits]).map((hit) => {
-    const cited = withSourceCitation(hit);
+    const cited = withSourceCitation(budgetSearchHit(hit));
     return isAnalyticsRequirementIndexHit(hit)
       ? { ...cited, requirementIndex: true as const }
       : cited;
