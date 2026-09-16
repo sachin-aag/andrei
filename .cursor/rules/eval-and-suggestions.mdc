@@ -61,7 +61,11 @@ DV mixes LLM criteria with deterministic `check()` functions.
   owns N; do not let propose_edit change the digits). Body mentions are
   Word REF: chat writes `[[table]]` / `[[table:Section]]`, stored as a
   `tableRef` atom bound to table identity; display N updates on cascade.
-  Do not regex-replace frozen "Table N" digits in existing prose.
+  Flatten and merge treat the live label (`Table N` / `the table`) as field
+  text, so a typed "Table 8" that already matches a REF is identity — not a
+  green-only insert beside the atom. Locator paints the whole atom when a
+  delete overlaps it. Do not regex-replace frozen "Table N" digits in
+  existing prose.
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits
   persist as one section PATCH. Preview applied wording before that PATCH

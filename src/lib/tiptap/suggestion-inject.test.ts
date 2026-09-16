@@ -129,6 +129,43 @@ describe("stripPendingSuggestionsExcept", () => {
     expect(collectPendingSuggestionMarkIds(stripped, "ai")).toEqual([]);
     expect(stripped).toEqual(doc);
   });
+
+  it("collects pending marks on tableRef atoms", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "See " },
+            {
+              type: "tableRef",
+              attrs: {
+                section: "elr_monitoring",
+                targetField: "table",
+                tableIndex: 0,
+                n: 2,
+              },
+              marks: [
+                {
+                  type: "suggestionInsert",
+                  attrs: {
+                    id: "ref-sug-1",
+                    authorId: "ai",
+                    status: "pending",
+                    createdAt: "2026-01-01T00:00:00.000Z",
+                    kind: "fix",
+                  },
+                },
+              ],
+            },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    };
+    expect(collectPendingSuggestionMarkIds(doc, "ai")).toEqual(["ref-sug-1"]);
+  });
 });
 
 describe("richDocsMatchIgnoringAiPreview", () => {

@@ -108,7 +108,7 @@ export function collectPendingSuggestionMarkIds(
   const ids = new Set<string>();
 
   function visit(node: JSONContent) {
-    if (node.type === "text" && node.marks?.length) {
+    if (node.marks?.length) {
       for (const mark of node.marks) {
         if (
           mark.type !== "suggestionInsert" &&
