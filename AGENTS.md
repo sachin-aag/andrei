@@ -196,8 +196,9 @@ abort still apply). Do not add a tool-call count limit. Report Agent may
 persist a remaining-section queue on `chat_sessions.pending_plan` when the
 engineer asks to fill several empty `draftOrder` sections. Each turn drafts
 the current item (or two adjacent non-inventory sections). After persist the
-client POSTs `Continue the remaining sections.` with `autoContinue` (progress
-chip, not a user bubble). Cancel pauses the queue; a new typed prompt also
+client POSTs `Continue the remaining sections.` with `autoContinue` (one
+live remaining-section widget, not a user bubble; collapsed is `N of M —
+current`, expand lists done / running / pending). Cancel pauses the queue; a new typed prompt also
 pauses it. Reopening the thread does not auto-chain — Resume continues.
 Coverage identity for document review includes the current objective so a
 finished calibration walk does not satisfy monitoring. After a matching

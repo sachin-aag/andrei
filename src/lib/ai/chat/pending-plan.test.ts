@@ -3,6 +3,7 @@ import { EMPTY_ELR_CONTENT } from "@/lib/document-types/elr/sections";
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   advancePlanAfterTurn,
+  chatPlanProgressView,
   chatUserTurnIsAutoContinue,
   continuationFromMetadata,
   currentPlanTurnSections,
@@ -10,6 +11,7 @@ import {
   isElrInventoryTableField,
   isMultiSectionDraftRequest,
   isPlanResumeRequest,
+  livePlanProgressFromParts,
   parseChatPendingPlan,
   pauseChatPendingPlan,
   persistablePendingPlan,
@@ -329,6 +331,109 @@ describe("plan prompt and metadata", () => {
         total: 10,
       })
     ).toBe("4 of 10 — Monitoring");
+  });
+
+  it("groups live plan progress into done, current, and pending", () => {
+    const started = plan([
+      { sectionKey: "elr_objective", label: "Objective", state: "done" },
+      {
+        sectionKey: "elr_media_fill",
+        label: "Media Fill / Aseptic Process Simulation",
+        state: "in_progress",
+      },
+      {
+        sectionKey: "elr_qualification",
+        label: "Qualification",
+        state: "queued",
+      },
+    ]);
+    const view = chatPlanProgressView(started, "equipment_lifecycle_report");
+    expect(view.chipLabel).toBe(
+      "2 of 3 — Media Fill / Aseptic Process Simulation"
+    );
+    expect(view.done.map((item) => item.sectionKey)).toEqual(["elr_objective"]);
+    expect(view.current.map((item) => item.sectionKey)).toEqual([
+      "elr_media_fill",
+    ]);
+    expect(view.pending.map((item) => item.sectionKey)).toEqual([
+      "elr_qualification",
+    ]);
+  });
+
+  it("moves the chip when the current turn drafts the next section", () => {
+    const started = plan([
+      {
+        sectionKey: "elr_media_fill",
+        label: "Media Fill / Aseptic Process Simulation",
+        state: "in_progress",
+      },
+      {
+        sectionKey: "elr_qualification",
+        label: "Qualification",
+        state: "queued",
+      },
+      { sectionKey: "elr_calibration", label: "Calibration", state: "queued" },
+    ]);
+    const live = livePlanProgressFromParts([
+      {
+        type: "tool-edit_table",
+        state: "output-available",
+        input: { section: "elr_media_fill" },
+      },
+      {
+        type: "tool-edit_table",
+        state: "input-available",
+        input: { section: "elr_qualification" },
+      },
+    ]);
+    expect(live).toEqual({
+      draftedSectionKeys: ["elr_media_fill"],
+      inFlightSectionKey: "elr_qualification",
+    });
+    const view = chatPlanProgressView(
+      started,
+      "equipment_lifecycle_report",
+      live
+    );
+    expect(view.chipLabel).toBe("2 of 3 — Qualification");
+    expect(view.done.map((item) => item.label)).toEqual([
+      "Media Fill / Aseptic Process Simulation",
+    ]);
+    expect(view.current.map((item) => item.sectionKey)).toEqual([
+      "elr_qualification",
+    ]);
+    expect(view.pending.map((item) => item.sectionKey)).toEqual([
+      "elr_calibration",
+    ]);
+  });
+
+  it("treats a paused queue as pending after the done items", () => {
+    const paused = pauseChatPendingPlan(
+      plan([
+        { sectionKey: "elr_objective", label: "Objective", state: "done" },
+        {
+          sectionKey: "elr_media_fill",
+          label: "Media Fill / Aseptic Process Simulation",
+          state: "in_progress",
+        },
+        {
+          sectionKey: "elr_qualification",
+          label: "Qualification",
+          state: "queued",
+        },
+      ]),
+      "cancelled"
+    );
+    const view = chatPlanProgressView(paused, "equipment_lifecycle_report");
+    expect(view.paused).toBe(true);
+    expect(view.chipLabel).toBe(
+      "2 of 3 — Media Fill / Aseptic Process Simulation"
+    );
+    expect(view.current).toEqual([]);
+    expect(view.pending.map((item) => item.sectionKey)).toEqual([
+      "elr_media_fill",
+      "elr_qualification",
+    ]);
   });
 
   it("rejects malformed plan JSON", () => {
