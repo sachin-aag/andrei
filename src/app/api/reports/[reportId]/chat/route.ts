@@ -51,9 +51,7 @@ import {
   primaryFieldForSection,
   sectionHasTable,
 } from "@/lib/ai/chat/fields";
-import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import { getDocumentType } from "@/lib/document-types";
-import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
   messageHasChatImage,
   recentAssistantMessageTexts,
@@ -63,12 +61,7 @@ import {
   documentIntentFocus,
   resolveChatUserIntent,
 } from "@/lib/ai/chat/resolve-user-intent";
-import {
-  alreadyDraftedGapHints,
-  detectAlreadyDraftedSection,
-  alreadyDraftedReadStep,
-  withoutDraftFieldTools,
-} from "@/lib/ai/chat/already-drafted";
+import { alreadyDraftedGapHints } from "@/lib/ai/chat/already-drafted";
 import {
   createChatSession,
   findChatSession,
@@ -121,27 +114,19 @@ import { isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
 import { getReportAnalytics } from "@/lib/statistical-analysis/store";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import {
-  classifyRetrievalPolicy,
   isRetrievalPushback,
   recentUserMessageTexts,
 } from "@/lib/ai/chat/retrieval-policy";
 import {
   DocumentReviewSession,
   pickPlanModeChatTools,
-  prepareDocumentReviewStep,
   reviewContinueBudgetMs,
 } from "@/lib/ai/chat/document-review";
 import {
   rehydrateDocumentReviewIfCoverageUnchanged,
   retrievalPolicyAfterCoverageDelta,
 } from "@/lib/ai/chat/document-review-rehydrate";
-import {
-  createSearchGate,
-  documentAskUserDirective,
-  searchLoopDirective,
-  withoutAskUserTool,
-  withoutSearchTool,
-} from "@/lib/ai/chat/search-loop";
+import { createSearchGate } from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
@@ -161,7 +146,8 @@ import {
   remainingChatAbortMs,
   scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
-import { tableEditLoopDirective } from "@/lib/ai/chat/table-edit-loop";
+import { prepareReportChatStep } from "@/lib/ai/chat/step-policy";
+import { assembleChatTurnPlan } from "@/lib/ai/chat/turn-plan";
 import {
   advertisedChatToolNames,
   withUnsupportedChatToolFallback,
@@ -420,15 +406,21 @@ async function handleChatPost(
     });
   }
 
-  const retrievalDecision = classifyRetrievalPolicy({
+  const turnPlan = assembleChatTurnPlan({
     userText,
-    recentUserTexts: recentUserMessageTexts(messages),
+    userIntent,
     sectionScope,
     documentType: report.documentType,
+    recentUserTexts: recentUserMessageTexts(messages),
     mentionedPageCount,
     totalReadyPages,
     hasDocuments: documents.length > 0,
+    sections: mergedSections,
   });
+  const retrievalDecision = {
+    policy: turnPlan.retrievalPolicy,
+    reason: turnPlan.retrievalReason,
+  };
   const documentReview = new DocumentReviewSession();
   const pushback = isRetrievalPushback(userText);
   const coverageObjective = planCoverageObjective(pendingPlan, userText, {
@@ -453,13 +445,9 @@ async function handleChatPost(
         )
       : sectionScope && sectionScope !== "all"
         ? [sectionScope]
-        : (() => {
-            const detected = detectSectionIntentFromText(
-              userText,
-              report.documentType
-            );
-            return detected ? [detected] : [];
-          })();
+        : turnPlan.sectionIntent
+          ? [turnPlan.sectionIntent]
+          : [];
   const needsInventoryReview = inScopeEmptyInventoryNeedsReview({
     documentType: report.documentType,
     sections: mergedSections,
@@ -483,13 +471,7 @@ async function handleChatPost(
     policy: retrievalPolicy,
   };
 
-  const alreadyDrafted = detectAlreadyDraftedSection({
-    userText,
-    userIntentKind: userIntent.kind,
-    sectionScope,
-    documentType: report.documentType,
-    sections: mergedSections,
-  });
+  const alreadyDrafted = turnPlan.alreadyDrafted;
   const alreadyDraftedGapHintsForPrompt = alreadyDrafted
     ? alreadyDraftedGapHints(alreadyDrafted.section, evaluations)
     : undefined;
@@ -669,90 +651,29 @@ async function handleChatPost(
         return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps }) => {
-        if (userIntent.kind === "social") {
-          return { activeTools: [] };
-        }
-        const tableEditDirective = tableEditLoopDirective(steps);
-        if (tableEditDirective === "finish") {
-          // Force a plain-language explanation after the second failed table
-          // edit instead of allowing a costly retry loop.
-          return { activeTools: [] };
-        }
-        if (tableEditDirective === "reread" && tools.read_section) {
-          return {
-            activeTools: ["read_section"],
-            toolChoice: { type: "tool", toolName: "read_section" },
-          };
-        }
-
-        const alreadyDraftedActive = alreadyDrafted != null;
-        const alreadyDraftedStep = alreadyDraftedReadStep({
-          stepsTaken: steps.length,
-          alreadyDrafted: alreadyDraftedActive,
-          hasReadSectionTool: Boolean(tools.read_section),
-        });
-        if (alreadyDraftedStep) return alreadyDraftedStep;
-
-        const schemaStep = tableSchemaReadStep({
-          stepsTaken: steps.length,
-          isWrite: userIntent.kind === "write",
+        return prepareReportChatStep({
+          advertisedTools,
+          steps,
+          userIntentKind: userIntent.kind,
+          alreadyDrafted: alreadyDrafted != null,
           hasReadSectionTool: Boolean(tools.read_section),
           inScopeHasTable: chatSectionsInScope(
             sectionScope ?? "all",
             report.documentType
           ).some((section) => sectionHasTable(mergedSections[section], section)),
+          retrievalPolicy: retrieval.policy,
+          reviewPhase: documentReview.phase(),
+          requireInventoryReview:
+            alreadyDrafted != null
+              ? false
+              : inScopeEmptyInventoryNeedsReview({
+                  documentType: report.documentType,
+                  sections: mergedSections,
+                  sectionKeys: inventoryTurnSections,
+                  finishedCoverageKey: documentReview.finishedCoverageKey(),
+                }),
+          searchGate,
         });
-        if (schemaStep) return schemaStep;
-
-        const prepared = prepareDocumentReviewStep({
-          policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
-          phase: documentReview.phase(),
-          availableTools: advertisedTools,
-          // Recompute from the live session. A stale request-start flag
-          // would force another walk after finish while the table is still empty.
-          requireInventoryReview: alreadyDraftedActive
-            ? false
-            : inScopeEmptyInventoryNeedsReview({
-                documentType: report.documentType,
-                sections: mergedSections,
-                sectionKeys: inventoryTurnSections,
-                finishedCoverageKey: documentReview.finishedCoverageKey(),
-              }),
-        });
-        const reviewPhase = documentReview.phase();
-        const reviewActive =
-          reviewPhase === "in_progress" || reviewPhase === "ready_to_finish";
-        const searchDirective = searchLoopDirective(steps);
-        if (searchDirective === "read") {
-          searchGate.closed = true;
-        }
-        const hideAskUser =
-          !reviewActive && documentAskUserDirective(steps) === "hide";
-        const applyLoopHides = (tools: readonly string[]): string[] => {
-          let next = [...tools];
-          if (!reviewActive && searchDirective === "read") {
-            next = withoutSearchTool(next);
-          }
-          if (hideAskUser) {
-            next = withoutAskUserTool(next);
-          }
-          return next;
-        };
-        if (!prepared) {
-          let activeTools = applyLoopHides(advertisedTools);
-          if (alreadyDraftedActive) {
-            activeTools = withoutDraftFieldTools(activeTools);
-          }
-          return { activeTools };
-        }
-        let activeTools = alreadyDraftedActive
-          ? withoutDraftFieldTools(prepared.activeTools)
-          : prepared.activeTools;
-        activeTools = applyLoopHides(activeTools);
-        return {
-          activeTools,
-          ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
-        };
       },
       abortSignal: turnAbort.signal,
       // Remaining time from request start so persist still runs.
