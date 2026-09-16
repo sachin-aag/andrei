@@ -73,10 +73,7 @@ import {
   sectionFieldForChat,
   sectionFieldPlainText,
 } from "@/lib/ai/chat/fields";
-import {
-  annotateDividerSearchHits,
-  DIVIDER_SEARCH_HINT,
-} from "@/lib/ai/chat/attachment-divider";
+import { annotateDividerSearchHits } from "@/lib/ai/chat/attachment-divider";
 import {
   emptyInventoryNeedsMatchingReview,
   isElrInventoryTableField,
@@ -543,9 +540,9 @@ export const SEARCH_QUERY_MAX_CHARS = 500;
 export const SEARCH_EXCLUDE_PAGES_MAX = 80;
 const SEARCH_SCOPES = ["tagged", "all"] as const;
 export const SEARCH_COVERAGE_HINT =
-  "Grep loop: this list is ranked, not complete. Pass nextExcludePages as excludePages on the next complementary grep (sibling objects you have not searched), not because truncated=true. truncated=true means more matching pages exist — outline or read the cited page. For tables, grep complementary objects (UUT vs equipment, fixtures, serials) before drafting. Use mode=keyword for exact protocol terms. Hits with divider=true are attachment cover/title pages, not the data table — read p. N+1 before drafting. They do not count as a cited data page.";
+  "Ranked grep hits, not complete coverage. truncated=true means more matching pages exist — outline or read. divider=true hits are cover sheets, not data pages.";
 export const DOCUMENT_SEARCH_CLOSED_MESSAGE =
-  "Search is closed for this turn. Read a cited page or document_outline — do not grep again because truncated=true, and do not ask_user which page to read.";
+  "Search is closed for this turn. Read a cited page or document_outline.";
 
 function clampSearchQueryText(value: string): string {
   const query = value.replace(/\s+/g, " ").trim();
@@ -880,9 +877,7 @@ function buildSearchDocumentsTool(opts: {
         filename: hit.filename,
       })),
       nextExcludePages,
-      coverageHint: annotated.keepSearchOpen
-        ? `${SEARCH_COVERAGE_HINT} ${DIVIDER_SEARCH_HINT}`
-        : SEARCH_COVERAGE_HINT,
+      coverageHint: SEARCH_COVERAGE_HINT,
       citationRule,
       trustBoundary: DOCUMENT_TRUST_BOUNDARY,
       ...(annotated.keepSearchOpen ? { keepSearchOpen: true as const } : {}),
@@ -892,7 +887,7 @@ function buildSearchDocumentsTool(opts: {
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT); at most 8 strings per call. mode=keyword is lexical grep. truncated=true means more matching pages exist — outline or read; do not grep again for the same terms. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
+        "Grep ready attachments. Returns ranked hits with citation [filename, p. N] when the page is known; [filename] only if missing or ambiguous. Also returns truncated and nextExcludePages.",
       inputSchema: z.preprocess(
         coerceSearchDocumentsInput,
         z
@@ -907,7 +902,7 @@ function buildSearchDocumentsTool(opts: {
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-        `Grep only the ${tagged} document(s) the engineer tagged with @. Prefer complementary queries for tables (at most 8 strings per call). Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means more matching pages exist — outline or read; do not grep again for the same terms. Each hit includes citation: [filename, p. N] when the page is known; [filename] only if the page is missing or ambiguous. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
+        `Grep only the ${tagged} document(s) the engineer tagged with @. Returns ranked hits with citation [filename, p. N] when the page is known; [filename] only if missing or ambiguous.`,
     inputSchema: z.preprocess(
       coerceSearchDocumentsInput,
       z
@@ -1259,7 +1254,7 @@ export function buildChatTools(opts: {
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section so you can quote exact anchors. Inline images are returned as vision parts (see readingText [image:N] markers). Optionally pass specific field paths; otherwise all editable fields are returned. When the engineer asked to draft a section the context map marks filled or partial, call this FIRST — before search_documents or ask_user. When they asked to change a table, this is also the first call: fields[].tables[] lists tableIndex and headers; copy tableIndex and [row,col] from structuredText into edit_table.${scopeHint}` +
+        `Read the current text of an editable section. Returns text, readingText ([image:N] markers), structuredText (tables[] with tableIndex and [row,col]), and fillState.${scopeHint}` +
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
@@ -1455,8 +1450,8 @@ export function buildChatTools(opts: {
     list_attachments: tool({
       description:
         pinnedAttachmentIds.length > 0
-          ? `Walk the ${pinnedAttachmentIds.length} file(s) the engineer tagged with @. Use folders[] / fileTypes[] for which files sit in which folder and how many PDF vs Word. query matches filename, folder, user note, or ingest summary. Facts inside a PDF still use search_documents.`
-          : "Walk this report's Attachments tree: how many files, which files in which folder, PDF vs Word counts, ready vs still ingesting. Read folders[] and fileTypes[] for those answers — do not recount files[]. Includes uploading/queued/processing/failed. query matches filename, folder, user note, or ingest summary (not page text). Paginate files with offset when nextOffset is set. search_documents greps page text and is the wrong tool for a file inventory. Do not guess from the Documents index.",
+          ? `Walk the ${pinnedAttachmentIds.length} file(s) the engineer tagged with @. Returns folders[] / fileTypes[] and file status. query matches filename, folder, user note, or ingest summary — not page text.`
+          : "Walk this report's Attachments tree: counts, folders[], fileTypes[], ready vs still ingesting. query matches filename, folder, user note, or ingest summary — not page text. search_documents is the wrong tool for a file inventory.",
       inputSchema: z.object({
         query: z
           .string()
@@ -1621,7 +1616,7 @@ export function buildChatTools(opts: {
 
     start_document_review: tool({
       description:
-        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Call once per section. After finish_document_review reports complete, do not start again with a rephrased objective or another file — fill the table from those findings. Call list_attachments first when the file set is unknown. Prefer tagged documents. If several ready documents are untagged, pass attachmentIds for the evidence file instead of walking every file. For ELR inventory tables, omit attachmentIds so every ready file is listed; the review keeps pages that match that table's columns. Returns page counts only — call continue_document_review next.",
+        "Start a coverage-tracked review of ready attachments for a complete inventory or matrix. Returns page counts — call continue_document_review next.",
       inputSchema: z.object({
         objective: z
           .string()
@@ -1776,9 +1771,9 @@ export function buildChatTools(opts: {
 
     propose_edit: tool({
       description:
-        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table. Do not rewrite an existing table as a bulleted list; that is edit_table (edit_cells / insert_column).${
+        `Propose ONE targeted edit to a single field. ${reviewableCopy} Quote exact anchorText from read_section. Use edit_table for tables.${
           citationsAtEndOfSection
-            ? " Put document citations as [filename, p. N] immediately after the claim in insertText when the page is known; [filename] only if the page is missing or ambiguous. The server converts them to numbered markers and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
+            ? " Put source citations as [filename, p. N] in insertText."
             : ""
         }${scopeHint}`,
       inputSchema: z.object({
@@ -2179,7 +2174,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. source=chat uses an attached photo (index). source=section copies a figure already in a report field (image.section + image.id from read_section). Same-field source=section with a non-empty anchorText MOVES that figure (one suggestion) — do not also call remove_image. source=analytics copies a saved Analytics plot (analysisId from the context map or a tagged @ plot). If they asked to insert "the plot" / "that one" / "yes" and only one Analytics plot exists, pass that analysisId — do not call this tool repeatedly to list plots (the context map already lists them). If they named a plot that is not in Analytics, this tool returns available_plots and lists titles once — that is NOT a proposal; nothing was written; relay those titles in prose, say they can create additional plots in Analytics, and do not tell them a figure was proposed. Do not insert a different plot and do not call insert_image again this turn. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a NEW chart from attachments, not to recreate a plot already in Analytics" : ""}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends before a trailing Citations heading. After a same-turn empty-anchor propose_edit lead-in, the figure lands immediately after that intro.${scopeHint}`,
+        `Insert one existing image into a rich narrative field. ${reviewableCopy} source=chat (index on the latest user message), source=section (image.id from read_section), or source=analytics (analysisId). Empty anchorText appends before Citations.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -2600,7 +2595,7 @@ export function buildChatTools(opts: {
 
     plot_measurements: tool({
       description:
-        `Extract cited numeric measurements from attachments, render a scatter plot, and propose it as a reviewable figure. Call this only when the engineer asked in words for a chart. Query must name one series or requirement ID — not two assays joined with or. Never invent data points — the tool extracts and validates number tokens from page transcripts. Restyle reuses the stored chartSpec; do not extract again. Empty anchorText appends before a trailing Citations heading.${scopeHint}`,
+        `Extract cited numeric measurements from attachments and propose a scatter plot. Only when the engineer asked for a chart. Empty anchorText appends before Citations.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -2905,7 +2900,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, delete_table (remove the whole table; keeps surrounding prose, figures, and citations), insert_column (optional per-row values; omit afterCol to append as the last column), delete_column, and create_table (headers plus rows, plus title) to add a NEW table in a rich field. Pass title so the server inserts \`Table N. {title}\` above the table and returns tableNumber for display only; write \`[[table]]\` in the same-turn lead-in (never type Table N). Filling an existing or seeded table (edit_cells / insert_rows) also inserts Table N. {title} when data lands and returns tableNumber — do not create_table a second grid. N is server-owned: inserting, filling, or deleting a table renumbers later filled captions automatically. Do not propose_edit the caption number; you may edit the title after \`Table N. \`. Omit create_table afterAnchor to append before a trailing Citations heading; a same-turn empty-anchor propose_edit lead-in lands immediately above that table. Call read_section FIRST and copy tableIndex plus [row,col] / header text from tables[] / structuredText when editing an existing table. To add an example to a table, edit_cells (or insert_column) — never propose_edit a bullet list. Row 0 is the header and cannot be deleted; the first data row is row 1. To delete the whole table, use kind delete_table with tableIndex — do not delete every data row (that leaves an empty header) and do not rewrite the field with draft_field. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. edit_cells may omit expectedText (server captures it). When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create, incrementally edit, or remove a table.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3146,7 +3141,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables only when rewriting a field that already is a table. Use angle-bracket placeholders like <batch number> for facts you do not know — never invent facts, and never wrap a document id as [id: <to be filled>]. ${reviewableCopy} Use this for empty prose fields, or a genuine rewrite of a filled field (replaceFilledField: true). To add a NEW table, use edit_table create_table — not this tool. To remove a table, use edit_table delete_table — not this tool. The tool refuses a filled field unless replaceFilledField is true. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit for targeted prose, list, or heading edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3417,7 +3412,7 @@ export function buildChatTools(opts: {
 
     ask_user: tool({
       description:
-        "Ask the engineer for facts still missing AFTER searching ready attachments (search_documents or the evidence preview). Do not ask for facts that are likely in a listed document (requirement IDs, design outputs, verification objective, ECO/DCR, batch/date/equipment), already in the current section, or that you would put in hint. If you know the answer, use it — do not quiz them to confirm. Exception: an unset title-page identity field with two mutually exclusive answers in the attachments (for example both Vial and Cartridge on an ELR) is a fork — ask which report this is, then draft only that value; do not pick the first hit. hint is an expected format (e.g. 'e.g. B-2024-117'), never the answer itself. The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
+        "Ask the engineer for facts still missing after searching attachments. hint is an expected format, never the answer. Batch questions into one call, then wait.",
       inputSchema: z.object({
         questions: z
           .array(

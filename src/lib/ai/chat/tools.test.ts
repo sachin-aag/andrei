@@ -333,6 +333,7 @@ describe("buildChatTools search_documents scoping", () => {
       "truncated=true means keep grepping"
     );
     expect(SEARCH_COVERAGE_HINT).not.toContain("If truncated=true, grep again");
+    expect(SEARCH_COVERAGE_HINT).not.toContain("Pass nextExcludePages");
   });
 });
 
@@ -541,9 +542,7 @@ describe("buildChatTools tagged sections", () => {
 
     expect(accepts(tools, "read_section", { section: "control" })).toBe(true);
     expect(tools.read_section?.description).toContain("tagged control");
-    expect(tools.read_section?.description).toContain(
-      "call this FIRST — before search_documents or ask_user"
-    );
+    expect(tools.read_section?.description).toContain("structuredText");
   });
 
   it("does not let a tagged section become editable", () => {
