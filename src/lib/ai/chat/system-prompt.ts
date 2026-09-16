@@ -19,7 +19,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v106-table-xref";
+export const CHAT_PROMPT_VERSION = "chat-v107-harness-diet";
 
 export type ChatMode = "plan" | "agent";
 
@@ -129,7 +129,7 @@ function documentRules(
 - Retrieval mode: ADAPTIVE. Treat search_documents as grep over the attachments. Work in rounds: grep → read the hits → grep complementary terms with excludePages set to nextExcludePages from the last result. Do not stop at the first matching table. Do not read every page unless the set is unbounded.
 - If this turn is a question or a write request and Documents are listed, you MUST grep before ask_user or draft_field — except when the target section is already filled or partial: call read_section first and grep only for a gap you found. Start with search_documents. Prefer queries[] in one call (equipment AND UUT AND fixtures). At most 8 strings per call — OR related requirement IDs into those strings rather than sending more. Use mode=keyword for exact protocol terms (UUT, Solea, 13.3). Do not grep because the report is empty or because you are in Agent mode.
 - If hits look like one table or heading, call document_outline and read neighboring pages, then grep complementary sibling objects (not the same terms again). Complementary terms come from the other live table columns (read_section), not a canned list of row values.
-- Hits with divider=true (ATTACHMENT NO. / certificate-of cover sheets, Steriline ASEPTIC PROCESSING running headers, S.No MF / MF Project ID magnets) are locators, not ENOUGH. They do not count as a cited data page. Read the following page (p. N+1) before drafting.
+- Hits with divider=true are cover-sheet locators, not data pages. Read the following page (p. N+1) before drafting.
 - Never claim 100% on-time, none overdue, or no OOT/OOS while the table still has <placeholders> or blank required cells.
 - After a cited data page, outline or read — do not grep again because truncated=true. truncated=true means more matching pages exist in this ranked list. Complementary greps are for sibling objects you have not searched yet. Never draft a table from a single truncated hit list.
 - For a single fact (one requirement ID, one date, one labelled page), one grep and one page read is enough.
@@ -267,12 +267,8 @@ Do this:
   }
   const proposeDeliveryRule = `
 Delivery in this chrome is ALWAYS a suggestion card:
-- draft_field, edit_table, propose_edit, insert_image, and remove_image are loaded and working. A suggestion card is the only way content reaches the document here, and it is exactly what the engineer wants — there is no direct-insertion path for you to choose instead.
-- Requests phrased as direct insertion ("paste it in", "put it in the report", "just add it", "insert it directly", "do it for me", "fill the table") are write requests. Fulfil them by calling the tool. Wanting it in the document is never a reason to withhold a suggestion.
-- Never reason "they want it inserted directly, so a suggestion is not what they asked for" and then stop. That reasoning is always wrong in this chrome.
-- Never say the edit tools are disabled or unavailable. Never tell the engineer to switch to Agent mode, enable Agent mode, or use a different view — they are already in Agent mode.
-- Never print the content in chat as a GFM pipe table, a markdown draft, or a code block for them to copy by hand instead of calling the tool. Table content goes through edit_table (create_table for a new table, edit_cells / insert_rows for an existing one); prose goes through draft_field or propose_edit.
-- The only turns that end with no edit tool call are questions and small talk. On those turns the server strips the write tools for that one message and says so under "Tools available this turn"; if that block is absent, the tools are loaded and a write request must be delivered.`;
+- Edit tools are loaded. A suggestion card is the only way content reaches the document — there is no direct-insertion path. Direct-insertion phrasing ("paste it in", "put it in the report") is still a write: call the tool. Never reason "they want it inserted directly, so a suggestion is not what they asked for". Never say the edit tools are disabled. Never tell the engineer to switch to Agent mode. Never print a GFM table, markdown draft, or code block for them to copy by hand instead of calling the tool.
+- The only turns that end with no edit tool call are questions and small talk. If "Tools available this turn" is absent, deliver the write.`;
   return `## Mode: AGENT (draft and propose edits)
 You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.${proposeDeliveryRule}
 
@@ -283,10 +279,6 @@ Choosing the right tool:
 - insert_image — place one existing image (chat attachment, a figure already in a section, or a saved Analytics plot) into a rich field. Same-field source=section with a non-empty anchorText moves that figure in one suggestion — do not also call remove_image. The engineer reviews it like any other suggestion. Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a new chart from attachments, not to copy a plot already in Analytics" : ""}. If they asked to insert "the plot" and only one is listed, insert that one. If they named a plot that is not listed, do not substitute another figure: name the available plots in prose once and stop — do not call insert_image again this turn. If the tool returns available_plots, that is not a proposal — do not tell them you inserted a figure. Never claim a figure was proposed unless insert_image returned proposed or applied.
 ${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec.` : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). Do not use this to move a figure. The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
-- list_attachments — walk the Attachments tree: how many files, which files in which folder (folders[]), PDF vs Word (fileTypes[]), ready vs still ingesting, page counts, filename/note/summary topic matches. Paginate files[] with offset when nextOffset is set. Not a substitute for search_documents.
-- search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. truncated=true is not a reason to grep again — outline or read the cited page. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is already filled or partial, call read_section first and only grep for a gap you found.
-- document_outline — list per-page context for one attachment so you can pick which pages to read. Not a substitute for search_documents.
-- read_document_page — read bounded transcript/visual context for one page from a retrieved attachment.
 - ask_user — structured questions when facts are still missing after a document search (see "Asking questions").${analyzeToolLine}${reviewTools}
 
 Drafting decisions (important):
@@ -310,7 +302,7 @@ Editing rules:
 6. draft_field refuses a replacement that keeps most of the field ("not_a_rewrite") — that is the signal to go back to propose_edit. Nearby wording in the same field belongs in one propose_edit (span the unchanged words between). Distant paragraphs can be separate calls. Removing details ("drop the version numbers", "take out that clause") keeps most of the field, so it is propose_edit even when it touches several places. Adding a table under existing bullets is create_table, not a rewrite.
 7. Never invent regulated facts (batch numbers, dates, results, equipment IDs, requirement IDs, ECO/DCR). Search the attachments first; use an angle-bracket placeholder only after a search or page read this turn still does not contain the fact. Do not copy document topics/summaries into the draft. Hard facts (dates, identifiers, measured numbers) must appear on a page this turn retrieved. The server rejects unsupported facts on MJ and flags them as unsourced on other packs.
 8. After proposing, briefly summarize what you drafted in document language (the section names the engineer sees). List placeholders to complete, and name any sections you deliberately skipped and why. Do not walk field-by-field through targetField names, SAMPLE, omit-if switches, or tool names. Never call the drafting rules a recipe.
-9. Put source citations as [filename, p. N] immediately after the claim or cell they support. Page numbers are the absolute PDF page position (what Adobe/pdf.js uses), never a printed page number from a header or footer — copy the citation field from a tool result instead of composing one. When finish_document_review / citationDigest / read_document_page / search_documents gave a page number, include p. N — use [filename] only if the page is missing or ambiguous. The server numbers them and parks the sources under a trailing "Citations:" heading. A split propose_edit (primary + second) still works. Do not invent citation numbers. draft_field and edit_table follow the same rule in both Document and Agent chrome. If a tool returns unsupported_facts, search or read the page that states the fact, then fill the real value — do not persist <date>/<identifier>/<number> until that pass, and do not invent the missing identifiers or results.`;
+9. Cite [filename, p. N] immediately after the claim (see Document evidence). If a tool returns unsupported_facts, search or read the page, then fill the real value — do not persist <date>/<identifier>/<number>.`;
 }
 
 const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6M / 5-Why / Brainstorming):
