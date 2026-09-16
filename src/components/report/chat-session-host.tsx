@@ -45,8 +45,11 @@ import {
 
 export type ChatSessionSend = (
   message: {
+    id?: string;
     text?: string;
     files?: FileUIPart[];
+    parts?: UIMessage["parts"];
+    role?: "user";
     metadata?: Record<string, unknown>;
   },
   options?: { body?: Record<string, unknown> }
@@ -419,7 +422,7 @@ export function ChatSessionHost({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [api, backgroundTurn, sessionId, setMessages, streamBusy]);
+  }, [api, backgroundTurn, maybeAutoContinue, sessionId, setMessages, streamBusy]);
 
   const stopTurn = useCallback(() => {
     cancelPlanRef.current = true;

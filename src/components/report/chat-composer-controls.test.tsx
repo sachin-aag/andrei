@@ -69,8 +69,8 @@ describe("ChatBusyStatus with a leftover stream error", () => {
     );
 
     expect(
-      screen.getByText("Still working in the background…")
-    ).toBeInTheDocument();
+      screen.getByTestId("chat-busy-status")
+    ).toHaveTextContent("Still working in the background…");
     expect(
       screen.getByText("We'll notify you when this is complete.")
     ).toBeInTheDocument();
