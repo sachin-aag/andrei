@@ -1,8 +1,18 @@
-import { Node, mergeAttributes } from "@tiptap/core";
+import {
+  InputRule,
+  Node,
+  mergeAttributes,
+  nodePasteRule,
+  type Editor,
+} from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { TableRefNodeView } from "@/components/report/tiptap/table-ref-node-view";
 import {
+  TABLE_REF_INPUT_RE,
   TABLE_REF_NODE_TYPE,
+  TABLE_REF_TOKEN_RE,
+  parseTableRefSpec,
+  tableRefAttrsFromNode,
   tableRefDisplayText,
 } from "@/lib/tiptap/table-ref-markdown";
 
@@ -66,6 +76,12 @@ export const TableRef = Node.create({
     return ReactNodeViewRenderer(TableRefNodeView);
   },
 
+  renderText({ node }) {
+    return tableRefDisplayText(
+      tableRefAttrsFromNode({ type: TABLE_REF_NODE_TYPE, attrs: node.attrs })
+    );
+  },
+
   addCommands() {
     return {
       insertTableRef:
@@ -82,4 +98,53 @@ export const TableRef = Node.create({
           }),
     };
   },
+
+  addInputRules() {
+    return [
+      new InputRule({
+        find: TABLE_REF_INPUT_RE,
+        handler: ({ state, range, match }) => {
+          const parsed = parseTableRefSpec(match[1]);
+          const node = this.type.create({
+            section: parsed.section,
+            targetField: parsed.targetField,
+            tableIndex: parsed.tableIndex,
+            n: parsed.n,
+          });
+          state.tr.replaceWith(range.from, range.to, node);
+        },
+      }),
+    ];
+  },
+
+  addPasteRules() {
+    return [
+      nodePasteRule({
+        find: new RegExp(TABLE_REF_TOKEN_RE.source, "gi"),
+        type: this.type,
+        getAttributes: (match) => parseTableRefSpec(match[1]),
+      }),
+    ];
+  },
 });
+
+export function insertTableRefFromPicker(
+  editor: Editor,
+  attrs: {
+    section: string;
+    targetField: string;
+    tableIndex: number;
+    n?: number | null;
+  }
+): boolean {
+  return editor
+    .chain()
+    .focus()
+    .insertTableRef({
+      section: attrs.section,
+      targetField: attrs.targetField,
+      tableIndex: attrs.tableIndex,
+      n: attrs.n ?? null,
+    })
+    .run();
+}

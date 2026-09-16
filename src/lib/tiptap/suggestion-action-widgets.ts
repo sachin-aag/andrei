@@ -6,6 +6,7 @@ import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
+import { TABLE_REF_NODE_TYPE } from "@/lib/tiptap/table-ref-markdown";
 import { extendPosPastOpenBracketClose } from "@/lib/text/bracket-span";
 
 export const suggestionActionWidgetsRefreshMeta = "suggestionActionWidgetsRefresh";
@@ -128,6 +129,21 @@ export function collectSuggestionActionWidgetPositions(
           suggestionId,
           Math.max(insertEnds.get(suggestionId) ?? 0, pos + node.nodeSize)
         );
+      }
+      return true;
+    }
+    if (node.type.name === TABLE_REF_NODE_TYPE) {
+      const end = pos + node.nodeSize;
+      for (const mark of node.marks) {
+        if (mark.type !== insertType && mark.type !== deleteType) continue;
+        const attrs = mark.attrs as { id?: string | null; authorId?: string };
+        if (!attrs.id || attrs.authorId !== "ai") continue;
+        if (!actionableEvaluationIds.has(attrs.id)) continue;
+        if (mark.type === insertType) {
+          insertEnds.set(attrs.id, Math.max(insertEnds.get(attrs.id) ?? 0, end));
+        } else {
+          deleteEnds.set(attrs.id, Math.max(deleteEnds.get(attrs.id) ?? 0, end));
+        }
       }
       return true;
     }

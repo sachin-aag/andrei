@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { use, useCallback, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import { toast } from "sonner";
 import {
@@ -31,6 +31,9 @@ import {
 import { analysisListSubtitle } from "@/lib/statistical-analysis/stale";
 import { listInsertableGraphAnalyses } from "@/lib/statistical-analysis/insertable-graphs";
 import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
+import { tableRefMapKey } from "@/lib/suggestions/table-ref";
+import { insertTableRefFromPicker } from "@/lib/tiptap/table-ref";
+import { TableRefNumbersContext } from "@/providers/table-ref-numbers";
 
 type TiptapEditorContextMenuProps = {
   editor: Editor | null;
@@ -46,6 +49,7 @@ export function TiptapEditorContextMenu({
   children,
 }: TiptapEditorContextMenuProps) {
   const statsEnabled = isStatisticalAnalysisEnabled();
+  const { insertable: tableRefs } = use(TableRefNumbersContext);
   const [hasSelection, setHasSelection] = useState(false);
   const [graphs, setGraphs] = useState<StatisticalAnalysisSummary[] | null>(
     null
@@ -159,6 +163,17 @@ export function TiptapEditorContextMenu({
   const selectionActionsDisabled = !editable || !hasSelection;
   const pasteDisabled = !editable;
   const graphMenuDisabled = !editable || !statsEnabled;
+  const tableRefMenuDisabled = !editable || !editor;
+
+  const handleInsertTableRef = useCallback(
+    (item: (typeof tableRefs)[number]) => {
+      if (!editor || !editable) return;
+      if (!insertTableRefFromPicker(editor, item)) {
+        toast.error("Could not insert the table reference.");
+      }
+    },
+    [editable, editor]
+  );
 
   return (
     <ContextMenu onOpenChange={handleOpenChange}>
@@ -240,6 +255,42 @@ export function TiptapEditorContextMenu({
             </ContextMenuSub>
           </>
         ) : null}
+
+        <ContextMenuSeparator />
+        <ContextMenuSub>
+          <ContextMenuSubTrigger
+            data-testid="tiptap-context-insert-table-ref"
+            disabled={tableRefMenuDisabled}
+          >
+            Insert table reference
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent data-testid="tiptap-context-table-ref-list">
+            {tableRefs.length > 0 ? (
+              tableRefs.map((item) => (
+                <ContextMenuItem
+                  key={tableRefMapKey(item)}
+                  data-testid={`tiptap-context-table-ref-${item.section}-${item.tableIndex}`}
+                  disabled={tableRefMenuDisabled}
+                  onSelect={() => handleInsertTableRef(item)}
+                >
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate font-medium">
+                      Table {item.n}. {item.title}
+                    </span>
+                    <span className="truncate text-xs text-[var(--muted-foreground)]">
+                      {item.sectionLabel}
+                    </span>
+                  </span>
+                </ContextMenuItem>
+              ))
+            ) : (
+              <ContextMenuLabel className="max-w-[18rem] whitespace-normal font-normal text-[var(--muted-foreground)]">
+                No tables to reference yet. Insert a table and fill a row —
+                then pick it here, or type [[table]].
+              </ContextMenuLabel>
+            )}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
       </ContextMenuContent>
     </ContextMenu>
   );

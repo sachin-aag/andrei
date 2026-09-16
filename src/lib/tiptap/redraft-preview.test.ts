@@ -166,4 +166,35 @@ describe("stripSuggestionMarksById — appended paragraph cleanup", () => {
     expect((stripped.content ?? []).length).toBe(1);
     expect(richJsonToPlainText(stripped).trim()).toBe("Kept.");
   });
+
+  it("marks tableRef atoms so accept drops a deleted REF", () => {
+    const current: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "See " },
+            {
+              type: "tableRef",
+              attrs: {
+                section: "elr_monitoring",
+                targetField: "table",
+                tableIndex: 0,
+                n: 2,
+              },
+            },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    };
+    const replacement = markdownToDoc("See the attached table.");
+    const preview = buildRedraftPreviewDoc(current, replacement, ATTRS);
+    const ref = preview.content![0]!.content!.find((n) => n.type === "tableRef");
+    expect(ref?.marks?.map((m) => m.type)).toEqual(["suggestionDelete"]);
+    const accepted = acceptSuggestionMarksById(preview, ATTRS.id);
+    expect(JSON.stringify(accepted)).not.toContain("tableRef");
+    expect(richJsonToPlainText(accepted).trim()).toBe("See the attached table.");
+  });
 });

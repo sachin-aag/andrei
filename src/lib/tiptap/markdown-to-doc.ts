@@ -1,6 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 import {
+  collapseRedundantTableLabels,
   parseTableRefSpec,
+  stripRedundantTableLabelBeforeRef,
   TABLE_REF_TOKEN_RE,
   tableRefNode,
 } from "@/lib/tiptap/table-ref-markdown";
@@ -88,6 +90,7 @@ function appendLiteralWithMath(
   extraMarks: JSONContent["marks"] | undefined,
   nodes: JSONContent[]
 ): void {
+  text = stripRedundantTableLabelBeforeRef(text);
   TABLE_REF_TOKEN_RE.lastIndex = 0;
   let lastRef = 0;
   let sawRef = false;
@@ -146,7 +149,7 @@ export function hasInlineTexDollars(text: string): boolean {
 }
 
 export function stripInlineMarkdown(text: string): string {
-  return text
+  return stripRedundantTableLabelBeforeRef(text)
     .replace(/\[\[table(?::[^\]]+)?\]\]/gi, "the table")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
@@ -494,7 +497,7 @@ export function inlineMarkdownToTextNodes(
     }
     appendLiteralWithMath(part, extraMarks, nodes);
   }
-  return nodes;
+  return collapseRedundantTableLabels(nodes);
 }
 
 /**
