@@ -371,6 +371,24 @@ function messageIsAutoContinue(message: UIMessage): boolean {
   );
 }
 
+function latestAutoContinueMessageId(messages: UIMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message && messageIsAutoContinue(message)) return message.id;
+  }
+  return null;
+}
+
+function livePlanProgressFromMessages(messages: UIMessage[]) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === "assistant") {
+      return livePlanProgressFromParts(message.parts);
+    }
+  }
+  return null;
+}
+
 const MessageTurn = memo(function MessageTurn({
   message,
   chatTarget,
@@ -1247,25 +1265,11 @@ export function ChatPanel({
   );
   const visibleMessages = taggedMessages.slice(visibleStartIndex);
   const hiddenCount = visibleStartIndex;
-  const latestAutoContinueId = useMemo(() => {
-    for (let i = taggedMessages.length - 1; i >= 0; i--) {
-      const message = taggedMessages[i];
-      if (message && messageIsAutoContinue(message)) return message.id;
-    }
-    return null;
-  }, [taggedMessages]);
+  const latestAutoContinueId = latestAutoContinueMessageId(taggedMessages);
   const latestAutoContinueVisible = visibleMessages.some(
     (message) => message.id === latestAutoContinueId
   );
-  const livePlanProgress = useMemo(() => {
-    for (let i = taggedMessages.length - 1; i >= 0; i--) {
-      const message = taggedMessages[i];
-      if (message?.role === "assistant") {
-        return livePlanProgressFromParts(message.parts);
-      }
-    }
-    return null;
-  }, [taggedMessages]);
+  const livePlanProgress = livePlanProgressFromMessages(taggedMessages);
   const planProgress =
     pendingPlan && planHasRemainingWork(pendingPlan) ? (
       <ChatPlanProgress
