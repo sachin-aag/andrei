@@ -89,16 +89,11 @@ import {
 } from "@/lib/ai/chat/section-images";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
-import {
-  commitChatEdit,
-  type CommitEditInput,
-  type TurnEditItem,
-} from "@/lib/ai/chat/commit-edit";
+import type { CommitEditInput } from "@/lib/suggestions/apply-commit-content";
 import {
   buildSuggestionRecord,
   withSuggestionRecord,
 } from "@/lib/suggestions/suggestion-record";
-import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 import {
   citationAppendPart,
   documentCitationRule,
@@ -257,13 +252,6 @@ import { parseResultsMatrix } from "@/lib/document-types/convergent/matrix-parse
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 type AgentCommitOutcome =
-  | {
-      status: "applied";
-      section: SectionType;
-      targetField: string;
-      summary: string;
-      tableNumber?: number;
-    }
   | { status: "not_editable"; message: string }
   | { status: "section_not_found"; message: string }
   | { status: "not_found"; hint: string }
@@ -1013,14 +1001,6 @@ export function buildChatTools(opts: {
   documentType?: import("@/db/schema").DocumentType;
   /** Acting user for audit events (e.g. select_analyze_method). */
   actor?: AuditActorSnapshot;
-  /**
-   * Server-derived. `commit` writes `report_sections` and never inserts
-   * suggestion comments. Default `propose` is the live path for both
-   * Document and Agent chrome (red/green review, then accept/dismiss).
-   */
-  editPolicy?: ChatEditPolicy;
-  /** Mutable per-turn log; successful commits push here for the change summary. */
-  turnEdits?: TurnEditItem[];
   /** Attachments the engineer tagged with @; biases search_documents. */
   pinnedAttachmentIds?: readonly string[];
   /** Sections the engineer tagged with @; readable even when out of scope. */
@@ -1061,9 +1041,6 @@ export function buildChatTools(opts: {
         input,
       })
     );
-  const editPolicy: ChatEditPolicy = opts.editPolicy ?? "propose";
-  const turnEdits = opts.turnEdits;
-  const committing = editPolicy === "commit";
   const blockPairing = createSameTurnBlockPairing();
   const imageOps = createSameTurnImageOps();
   const nearbyEdits = createSameTurnNearbyEdits();
@@ -1109,13 +1086,6 @@ export function buildChatTools(opts: {
     if (fieldValuesEqual(snap, live)) return null;
     return { status: "section_changed", message: SECTION_CHANGED_MESSAGE };
   };
-  const recaptureAfterCommit = async (
-    section: SectionType,
-    targetField: string
-  ) => {
-    const after = await loadMergedSection(reportId, section);
-    if (after) captureFieldSnapshot(section, targetField, after.content);
-  };
   const dismissCovered = async (args: {
     section: SectionType;
     sectionContent: Record<string, unknown>;
@@ -1151,60 +1121,7 @@ export function buildChatTools(opts: {
   const patchFixPayload = async (id: string, payload: ParsedAiFixPayload) => {
     await patchFixComment(id, payload);
   };
-  const recordTurnEdit = (
-    section: SectionType,
-    targetField: string,
-    reasoning: string
-  ) => {
-    turnEdits?.push({ section, targetField, reasoning });
-  };
-  const commitFieldEdit = async (args: {
-    section: SectionType;
-    targetField: string;
-    reasoning: string;
-    input: CommitEditInput;
-  }): Promise<AgentCommitOutcome> => {
-    if (!actor) {
-      return {
-        status: "not_editable" as const,
-        message:
-          "This report is not editable in its current state, so edits cannot be applied.",
-      };
-    }
-    const result = await commitChatEdit({
-      reportId,
-      actor,
-      documentType,
-      section: args.section,
-      targetField: args.targetField,
-      reasoning: args.reasoning,
-      input: args.input,
-    });
-    if (result.status === "applied") {
-      recordTurnEdit(result.section, result.targetField, args.reasoning);
-      await recaptureAfterCommit(result.section, result.targetField);
-      return result;
-    }
-    if (result.status === "placeholder_conflict") {
-      return {
-        status: "placeholder_conflict" as const,
-        hint: result.hint ?? FIELD_FILLED_MESSAGE,
-      };
-    }
-    if (result.status === "section_not_found") {
-      return {
-        status: "section_not_found" as const,
-        message: result.message,
-      };
-    }
-    return {
-      status: result.status,
-      hint: result.hint ?? "Could not apply this edit.",
-    };
-  };
-  const reviewableCopy = committing
-    ? "The change is written to the document immediately."
-    : "The engineer accepts or rejects it.";
+  const reviewableCopy = "The engineer accepts or rejects it.";
   const sectionScope = opts.sectionScope ?? "all";
   const retrievalPolicy = opts.retrievalPolicy ?? "adaptive";
   const documentReview = opts.documentReview ?? new DocumentReviewSession();
@@ -2080,40 +1997,6 @@ export function buildChatTools(opts: {
           deleteText: prepared.deleteText,
           insertText: normalizedInsert,
         });
-        if (committing) {
-          const pairBlock = leadIn
-            ? takeUnusedBlock(blockPairing, section, resolvedField)
-            : undefined;
-          const result = await commitFieldEdit({
-            section,
-            targetField: resolvedField,
-            reasoning,
-            input: {
-              kind: "located",
-              edit: {
-                anchorText: prepared.anchorText,
-                deleteText: prepared.deleteText,
-                insertText: normalizedInsert,
-                scope: prepared.scope,
-                second,
-                placeBeforePairedBlock: pairBlock?.kind,
-              },
-            },
-          });
-          if (result.status === "applied" && leadIn && !pairBlock) {
-            recordLeadIn(blockPairing, {
-              suggestionId: "committed",
-              section,
-              targetField: resolvedField,
-              payload: {
-                deleteText: prepared.deleteText,
-                insertText: normalizedInsert,
-                reasoning,
-              },
-            });
-          }
-          return result;
-        }
         return enqueueProposeEdit(async (): Promise<ProposeEditResult> => {
           const proposedEdit: SuggestionEdit = {
             anchorText: prepared.anchorText,
@@ -2570,39 +2453,6 @@ export function buildChatTools(opts: {
         }
 
         const appendBlock = isAppendBlock({ anchorText: anchorText ?? "" });
-        if (committing) {
-          const result = await commitFieldEdit({
-            section,
-            targetField: resolvedField,
-            reasoning,
-            input: {
-              kind: "located",
-              edit: {
-                anchorText: trimmedAnchor,
-                deleteText: "",
-                insertText: "",
-                insertImage,
-                removeImage,
-              },
-            },
-          });
-          if (result.status === "applied" && appendBlock) {
-            recordBlock(blockPairing, {
-              suggestionId: "committed",
-              section,
-              targetField: resolvedField,
-              kind: "image",
-              payload: {
-                deleteText: "",
-                insertText: "",
-                insertImage,
-                reasoning,
-              },
-            });
-          }
-          return result;
-        }
-
         const existingOp = findImageOpForMove(imageOps, {
           section,
           targetField: resolvedField,
@@ -2773,9 +2623,6 @@ export function buildChatTools(opts: {
           documentType,
           retrievalPolicy,
           documentReview,
-          editPolicy,
-          actor,
-          turnEdits,
           blockPairing,
         }),
     }),
@@ -2924,23 +2771,6 @@ export function buildChatTools(opts: {
                 fieldDoc,
               }),
             } as InsertImageResult;
-          }
-
-          if (committing) {
-            return commitFieldEdit({
-              section,
-              targetField: resolvedField,
-              reasoning,
-              input: {
-                kind: "located",
-                edit: {
-                  anchorText: "",
-                  deleteText: "",
-                  insertText: "",
-                  removeImage,
-                },
-              },
-            });
           }
 
           const existingOp = findImageOpForRemove(imageOps, {
@@ -3215,48 +3045,6 @@ export function buildChatTools(opts: {
         const appendTable = Boolean(
           createTable && isAppendBlock({ afterAnchor: createTable.afterAnchor })
         );
-        if (committing) {
-          const tableResult = await commitFieldEdit({
-            section,
-            targetField: resolvedField,
-            reasoning,
-            input: { kind: "table", operation: stripped.operation },
-          });
-          if (tableResult.status === "applied" && appendTable) {
-            recordBlock(blockPairing, {
-              suggestionId: "committed",
-              section,
-              targetField: resolvedField,
-              kind: "table",
-              payload: {
-                deleteText: "",
-                insertText: "",
-                tableOperation: stripped.operation,
-                reasoning,
-              },
-            });
-          }
-          if (tableResult.status !== "applied" || !second) {
-            return tableResult.status === "applied" &&
-              applied.tableNumber !== undefined
-              ? { ...tableResult, tableNumber: applied.tableNumber }
-              : tableResult;
-          }
-          return commitFieldEdit({
-            section,
-            targetField: resolvedField,
-            reasoning,
-            input: {
-              kind: "located",
-              edit: {
-                anchorText: second.anchorText,
-                deleteText: second.deleteText,
-                insertText: second.insertText,
-                scope: second.scope,
-              },
-            },
-          });
-        }
         let payload: ParsedAiFixPayload = {
           deleteText: "",
           insertText: "",
@@ -3552,22 +3340,6 @@ export function buildChatTools(opts: {
         const draftMarkdown = citationsAtEndOfSection
           ? moveCitationsToEndOfText(groundedDraft.text)
           : groundedDraft.text;
-        if (committing) {
-          const drafted = await commitFieldEdit({
-            section,
-            targetField: resolvedField,
-            reasoning,
-            input: {
-              kind: "redraft",
-              markdown: draftMarkdown,
-              allowDropFilledPlaceholders: replaceFilledField === true,
-            },
-          });
-          if (drafted.status === "applied" && tableNumber !== undefined) {
-            return { ...drafted, tableNumber };
-          }
-          return drafted;
-        }
         await db.insert(comments).values({
           id: suggestionId,
           reportId,
@@ -3730,9 +3502,6 @@ export function buildChatTools(opts: {
         }
 
         const plan = analyzeMethodPlan(method);
-        if (committing) {
-          recordTurnEdit("analyze", "toolsUsed", rationale);
-        }
         return {
           status: "selected",
           method,

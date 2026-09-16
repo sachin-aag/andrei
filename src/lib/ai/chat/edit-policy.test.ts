@@ -1,22 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveChatEditPolicy, isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
-
-describe("deriveChatEditPolicy", () => {
-  it("always proposes, including agent chrome when the report is writable", () => {
-    expect(
-      deriveChatEditPolicy({ workspaceChrome: "agent", canEdit: true })
-    ).toBe("propose");
-    expect(
-      deriveChatEditPolicy({ workspaceChrome: "document", canEdit: true })
-    ).toBe("propose");
-  });
-
-  it("never commits on a locked report", () => {
-    expect(
-      deriveChatEditPolicy({ workspaceChrome: "agent", canEdit: false })
-    ).toBe("propose");
-  });
-});
+import { isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
 
 describe("isWorkspaceChrome", () => {
   it("accepts only document and agent", () => {

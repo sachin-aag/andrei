@@ -601,22 +601,10 @@ describe("buildChatSystemPrompt", () => {
     expect(planDefine).not.toContain("## Analyze questions");
   });
 
-  it("tells the model edits apply immediately when editPolicy is commit", () => {
+  it("keeps propose-and-review copy in Agent chrome", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
-      editPolicy: "commit",
-    });
-    expect(prompt).toContain("apply edits immediately");
-    expect(prompt).toContain("written to the document immediately");
-    expect(prompt).not.toContain("nothing is applied until they accept it");
-  });
-
-  it("keeps propose-and-review copy when editPolicy is propose", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "agent",
-      editPolicy: "propose",
     });
     expect(prompt).toContain("nothing lands until they accept it");
     expect(prompt).toContain("Delivery in this chrome is ALWAYS a suggestion card");
@@ -636,7 +624,6 @@ describe("buildChatSystemPrompt", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
-      editPolicy: "propose",
     });
     expect(prompt).toContain("there is no direct-insertion path");
     expect(prompt).toContain(
@@ -648,17 +635,6 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "The only turns that end with no edit tool call are questions and small talk"
     );
-  });
-
-  it("omits propose-only delivery guidance when editPolicy is commit", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "agent",
-      editPolicy: "commit",
-    });
-    expect(prompt).not.toContain("Delivery in this chrome is ALWAYS a suggestion card");
-    expect(prompt).not.toContain("there is no direct-insertion path");
-    expect(prompt).not.toContain("Never tell the engineer to switch to Agent mode");
   });
 
   it("tells ELR Agent to ask when attachments name both container formats", () => {

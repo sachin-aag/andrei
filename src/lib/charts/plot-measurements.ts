@@ -21,15 +21,9 @@ import {
 } from "@/lib/ai/chat/fields";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import {
-  commitChatEdit,
-  type TurnEditItem,
-} from "@/lib/ai/chat/commit-edit";
-import {
   buildSuggestionRecord,
   withSuggestionRecord,
 } from "@/lib/suggestions/suggestion-record";
-import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
-import type { AuditActorSnapshot } from "@/lib/audit";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { DocumentReviewSession } from "@/lib/ai/chat/document-review";
 import {
@@ -99,7 +93,7 @@ export type PlotMeasurementsInput = {
 
 export type PlotMeasurementsResult =
   | {
-      status: "proposed" | "replaced" | "applied";
+      status: "proposed" | "replaced";
       suggestionId: string;
       suggestionIds: string[];
       section: SectionType;
@@ -357,9 +351,6 @@ async function persistChartEdit(args: {
   ctx: {
     reportId: string;
     documentType: DocumentType;
-    editPolicy?: ChatEditPolicy;
-    actor?: AuditActorSnapshot;
-    turnEdits?: TurnEditItem[];
     blockPairing?: SameTurnBlockPairing;
   };
   deps: PlotMeasurementsDeps;
@@ -375,68 +366,6 @@ async function persistChartEdit(args: {
       !args.removeImage &&
       isAppendBlock({ anchorText: args.anchorText })
   );
-  if (args.ctx.editPolicy === "commit") {
-    if (!args.ctx.actor) {
-      return {
-        status: "not_editable",
-        message:
-          "This report is not editable in its current state, so charts cannot be applied.",
-      };
-    }
-    const result = await commitChatEdit({
-      reportId: args.ctx.reportId,
-      actor: args.ctx.actor,
-      documentType: args.ctx.documentType,
-      section: args.input.section,
-      targetField: args.resolvedField,
-      reasoning: args.input.reasoning,
-      input: {
-        kind: "located",
-        edit: {
-          anchorText: args.anchorText,
-          deleteText: "",
-          insertText: "",
-          insertImage: args.insertImage,
-          removeImage: args.removeImage,
-        },
-      },
-    });
-    if (result.status === "applied") {
-      args.ctx.turnEdits?.push({
-        section: result.section,
-        targetField: result.targetField,
-        reasoning: args.input.reasoning,
-      });
-      if (appendImage && args.ctx.blockPairing) {
-        recordBlock(args.ctx.blockPairing, {
-          suggestionId: "committed",
-          section: args.input.section,
-          targetField: args.resolvedField,
-          kind: "image",
-          payload: {
-            deleteText: "",
-            insertText: "",
-            insertImage: args.insertImage,
-            reasoning: args.input.reasoning,
-          },
-        });
-      }
-      return { ok: true, id: "applied" };
-    }
-    if (result.status === "section_not_found") {
-      return { status: "section_not_found", message: result.message };
-    }
-    if (result.status === "not_found") {
-      return {
-        status: "not_found_anchor",
-        hint: result.hint ?? "Could not place this chart.",
-      };
-    }
-    return {
-      status: result.status,
-      hint: result.hint ?? "Could not apply this chart.",
-    } as PlotMeasurementsResult;
-  }
 
   const id = args.deps.createId();
   let payload: ParsedAiFixPayload = {
@@ -510,9 +439,6 @@ export async function executePlotMeasurements(
     documentType: DocumentType;
     retrievalPolicy: RetrievalPolicy;
     documentReview: DocumentReviewSession;
-    editPolicy?: ChatEditPolicy;
-    actor?: AuditActorSnapshot;
-    turnEdits?: TurnEditItem[];
     blockPairing?: SameTurnBlockPairing;
   },
   deps: PlotMeasurementsDeps = DEFAULT_DEPS
@@ -562,10 +488,7 @@ export async function executePlotMeasurements(
     reportId: ctx.reportId,
     section: input.section,
   });
-  const pending =
-    ctx.editPolicy === "commit"
-      ? []
-      : pendingChartsForQuery(open, query, resolvedField);
+  const pending = pendingChartsForQuery(open, query, resolvedField);
   const accepted = acceptedChartsForQuery(listed, query);
 
   let specs: ChartSpec[];
@@ -745,7 +668,7 @@ export async function executePlotMeasurements(
       suggestionIds.push(persisted.id);
     }
     return {
-      status: ctx.editPolicy === "commit" ? "applied" : "replaced",
+      status: "replaced",
       suggestionId: suggestionIds[0]!,
       suggestionIds,
       section: input.section,
@@ -782,7 +705,7 @@ export async function executePlotMeasurements(
     suggestionIds.push(persisted.id);
   }
   return {
-    status: ctx.editPolicy === "commit" ? "applied" : "proposed",
+    status: "proposed",
     suggestionId: suggestionIds[0]!,
     suggestionIds,
     section: input.section,

@@ -33,7 +33,6 @@ const {
   dbSelectMock,
   dbInsertMock,
   dbUpdateMock,
-  commitChatEditMock,
   getReportAnalyticsMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
@@ -48,7 +47,6 @@ const {
   dbSelectMock: vi.fn(),
   dbInsertMock: vi.fn(),
   dbUpdateMock: vi.fn(),
-  commitChatEditMock: vi.fn(),
   getReportAnalyticsMock: vi.fn(),
 }));
 
@@ -60,13 +58,6 @@ vi.mock("@/db", () => ({
   },
 }));
 
-vi.mock("@/lib/ai/chat/commit-edit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/ai/chat/commit-edit")>();
-  return {
-    ...actual,
-    commitChatEdit: (...args: unknown[]) => commitChatEditMock(...args),
-  };
-});
 
 vi.mock("@/lib/attachments/list-active", () => ({
   listActiveAttachments: (...args: unknown[]) =>
@@ -1561,7 +1552,7 @@ function mockDefineSectionSelect(narrative: unknown = DEFINE_NARRATIVE) {
   }));
 }
 
-describe("buildChatTools propose vs commit", () => {
+describe("buildChatTools propose edits", () => {
   const actor = {
     id: "engineer-1",
     name: "Engineer",
@@ -1572,7 +1563,6 @@ describe("buildChatTools propose vs commit", () => {
     dbSelectMock.mockReset();
     dbInsertMock.mockReset();
     dbUpdateMock.mockReset();
-    commitChatEditMock.mockReset();
     getReportAnalyticsMock.mockReset();
     getReportAnalyticsMock.mockResolvedValue(null);
     loadDocumentPageEvidenceMock.mockReset();
@@ -1582,12 +1572,6 @@ describe("buildChatTools propose vs commit", () => {
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
     dbUpdateMock.mockReturnValue({
       set: () => ({ where: vi.fn().mockResolvedValue([]) }),
-    });
-    commitChatEditMock.mockResolvedValue({
-      status: "applied",
-      section: "define",
-      targetField: "narrative",
-      summary: "Name the actual cause.",
     });
   });
 
@@ -1600,12 +1584,11 @@ describe("buildChatTools propose vs commit", () => {
     reasoning: "Name the actual cause.",
   };
 
-  it("inserts an ai_fix comment in propose mode and does not commit", async () => {
+  it("inserts an ai_fix comment and does not write the section", async () => {
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
     expect(result).toMatchObject({
@@ -1614,38 +1597,8 @@ describe("buildChatTools propose vs commit", () => {
       targetField: "narrative",
     });
     expect(dbInsertMock).toHaveBeenCalled();
-    expect(commitChatEditMock).not.toHaveBeenCalled();
   });
 
-  it("commits in agent chrome and never inserts a suggestion comment", async () => {
-    const turnEdits: Array<{
-      section: string;
-      targetField: string;
-      reasoning: string;
-    }> = [];
-    const tools = buildChatTools({
-      reportId: "report-1",
-      canEdit: true,
-      actor,
-      editPolicy: "commit",
-      turnEdits,
-    });
-    const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
-    expect(result).toMatchObject({
-      status: "applied",
-      section: "define",
-      targetField: "narrative",
-    });
-    expect(commitChatEditMock).toHaveBeenCalledTimes(1);
-    expect(dbInsertMock).not.toHaveBeenCalled();
-    expect(turnEdits).toEqual([
-      {
-        section: "define",
-        targetField: "narrative",
-        reasoning: "Name the actual cause.",
-      },
-    ]);
-  });
 
   it("folds a second nearby propose_edit into the same card", async () => {
     const nearbyNarrative =
@@ -1677,7 +1630,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const first = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
     const second = await tools.propose_edit!.execute!(
@@ -1705,7 +1657,6 @@ describe("buildChatTools propose vs commit", () => {
     expect(folded.deleteText).toContain("batch was released");
     expect(folded.insertText).toContain("humidity excursion");
     expect(folded.insertText).toContain("batch remained in quarantine");
-    expect(commitChatEditMock).not.toHaveBeenCalled();
   });
 
   it("keeps distant propose_edit spans as separate cards", async () => {
@@ -1731,7 +1682,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const first = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
     const second = await tools.propose_edit!.execute!(
@@ -1766,7 +1716,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const leadIn = await tools.propose_edit!.execute!(
       {
@@ -1801,7 +1750,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "a1",
@@ -1865,7 +1813,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       unsupportedFactPolicy: "block",
       messages: [
         {
@@ -1926,7 +1873,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       unsupportedFactPolicy: "block",
     });
     const refused = await tools.draft_field!.execute!(
@@ -1959,7 +1905,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       unsupportedFactPolicy: "block",
     });
     const read = await tools.read_document_page!.execute!(
@@ -2002,7 +1947,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       unsupportedFactPolicy: "block",
       messages: [
         {
@@ -2071,7 +2015,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const refused = await tools.draft_field!.execute!(
       {
@@ -2114,7 +2057,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const refused = await tools.draft_field!.execute!(
       {
@@ -2128,7 +2070,6 @@ describe("buildChatTools propose vs commit", () => {
     );
     expect(refused).toMatchObject({ status: "not_a_rewrite" });
     expect(dbInsertMock).not.toHaveBeenCalled();
-    expect(commitChatEditMock).not.toHaveBeenCalled();
   });
 
   it("refuses draft_field that adds a table while keeping the surrounding prose", async () => {
@@ -2142,7 +2083,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const refused = await tools.draft_field!.execute!(
       {
@@ -2169,7 +2109,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.propose_edit!.execute!(
       {
@@ -2227,7 +2166,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.propose_edit!.execute!(
       {
@@ -2251,7 +2189,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2279,7 +2216,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2346,7 +2282,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2405,7 +2340,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2457,7 +2391,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = (await tools.read_section!.execute!(
       { section: "define" },
@@ -2521,7 +2454,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2592,7 +2524,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2621,7 +2552,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2643,7 +2573,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     await tools.read_section!.execute!(
       { section: "define" },
@@ -2711,7 +2640,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.insert_image!.execute!(
       {
@@ -2765,7 +2693,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.insert_image!.execute!(
       {
@@ -2819,7 +2746,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -2904,7 +2830,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -2979,7 +2904,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3054,7 +2978,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3132,7 +3055,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3197,7 +3119,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3276,7 +3197,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3361,7 +3281,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3410,7 +3329,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     await tools.propose_edit!.execute!(
       {
@@ -3465,7 +3383,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     await tools.edit_table!.execute!(
       {
@@ -3557,7 +3474,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     await tools.propose_edit!.execute!(
       {
@@ -3639,7 +3555,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
 
     const removeOnce = await tools.remove_image!.execute!(
@@ -3728,7 +3643,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.insert_image!.execute!(
       {
