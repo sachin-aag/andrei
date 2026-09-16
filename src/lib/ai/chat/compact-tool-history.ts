@@ -275,7 +275,74 @@ function compactScanAttachmentsOutput(output: unknown): unknown {
   return emitOutput(output, { ...record, pages: nextPages }, parsed.asString);
 }
 
-function compactToolPart<T extends ToolPartRecord>(part: T): T {
+function compactSearchDocumentsOutput(output: unknown): unknown {
+  const parsed = parseToolOutput(output);
+  if (!parsed || !parsed.parsed || typeof parsed.parsed !== "object") {
+    return output;
+  }
+  if (Array.isArray(parsed.parsed)) return output;
+  const record = parsed.parsed as Record<string, unknown>;
+  const results = record.results;
+  if (!Array.isArray(results) || results.length === 0) return output;
+  let changed = false;
+  const nextResults = results.map((hit) => {
+    if (!hit || typeof hit !== "object" || Array.isArray(hit)) return hit;
+    const row = hit as Record<string, unknown>;
+    const excerpt = row.excerpt ?? row.text ?? row.quote;
+    if (typeof excerpt !== "string" || excerpt.length === 0) return hit;
+    changed = true;
+    return {
+      filename: row.filename,
+      pageNumber: row.pageNumber,
+      citation: row.citation,
+      attachmentId: row.attachmentId,
+      divider: row.divider,
+    };
+  });
+  if (!changed && record.coverageHint == null) return output;
+  const next: Record<string, unknown> = {
+    ...record,
+    results: nextResults,
+    excerptsOmitted: true,
+  };
+  delete next.coverageHint;
+  return emitOutput(output, next, parsed.asString);
+}
+
+function compactReadPageKeepQuote(output: unknown, quoteChars = 400): unknown {
+  const parsed = parseToolOutput(output);
+  if (!parsed || !parsed.parsed || typeof parsed.parsed !== "object") {
+    return output;
+  }
+  if (Array.isArray(parsed.parsed)) return output;
+  const record = parsed.parsed as Record<string, unknown>;
+  const page = record.page;
+  if (!page || typeof page !== "object" || Array.isArray(page)) return output;
+  const pageRecord = page as Record<string, unknown>;
+  const transcript =
+    typeof pageRecord.transcript === "string" ? pageRecord.transcript : "";
+  const visual =
+    typeof pageRecord.visualInterpretation === "string"
+      ? pageRecord.visualInterpretation
+      : "";
+  if (transcript.length <= quoteChars && visual.length === 0) return output;
+  const quote = transcript.slice(0, quoteChars);
+  const nextPage = {
+    ...pageRecord,
+    transcript: quote,
+    visualInterpretation: "",
+    transcriptOmittedChars: Math.max(0, transcript.length - quote.length),
+    visualOmittedChars: visual.length,
+  };
+  return emitOutput(output, { ...record, page: nextPage }, parsed.asString);
+}
+
+type CompactToolMode = "history" | "in-turn-stale-search" | "in-turn-stale-page";
+
+function compactToolPart<T extends ToolPartRecord>(
+  part: T,
+  mode: CompactToolMode = "history"
+): T {
   const name = toolNameFromPart(part);
   if (!name || !("output" in part)) return part;
 
@@ -284,8 +351,18 @@ function compactToolPart<T extends ToolPartRecord>(part: T): T {
     case "finish_document_review":
       nextOutput = compactFinishOutput(part.output);
       break;
+    case "search_documents":
+      if (mode === "in-turn-stale-search") {
+        nextOutput = compactSearchDocumentsOutput(part.output);
+      } else {
+        return part;
+      }
+      break;
     case "read_document_page":
-      nextOutput = compactReadPageOutput(part.output);
+      nextOutput =
+        mode === "in-turn-stale-page"
+          ? compactReadPageKeepQuote(part.output)
+          : compactReadPageOutput(part.output);
       break;
     case "write_column":
     case "extract_sheet":
@@ -302,6 +379,132 @@ function compactToolPart<T extends ToolPartRecord>(part: T): T {
   }
   if (nextOutput === part.output) return part;
   return { ...part, output: nextOutput };
+}
+
+const KEEP_RECENT_SEARCH_RESULTS = 2;
+const KEEP_RECENT_PAGE_READS = 1;
+
+function jsonToolOutputValue(output: unknown): unknown {
+  if (
+    output &&
+    typeof output === "object" &&
+    !Array.isArray(output) &&
+    "type" in output &&
+    (output as { type?: unknown }).type === "json" &&
+    "value" in output
+  ) {
+    return (output as { value: unknown }).value;
+  }
+  return output;
+}
+
+function wrapJsonToolOutput(original: unknown, nextValue: unknown): unknown {
+  if (
+    original &&
+    typeof original === "object" &&
+    !Array.isArray(original) &&
+    "type" in original &&
+    (original as { type?: unknown }).type === "json"
+  ) {
+    return { ...original, value: nextValue };
+  }
+  return nextValue;
+}
+
+type LocatedToolOutput = {
+  name: string;
+  getOutput: () => unknown;
+  setOutput: (next: unknown) => void;
+};
+
+function locateToolOutputs(message: unknown): LocatedToolOutput[] {
+  if (!message || typeof message !== "object") return [];
+  const rec = message as { parts?: unknown; content?: unknown };
+  const found: LocatedToolOutput[] = [];
+
+  const visitPart = (part: unknown) => {
+    if (!part || typeof part !== "object") return;
+    const row = part as Record<string, unknown>;
+    const name = toolNameFromPart(row);
+    if (!name || !("output" in row)) return;
+    found.push({
+      name,
+      getOutput: () => row.output,
+      setOutput: (next) => {
+        row.output = next;
+      },
+    });
+  };
+
+  if (Array.isArray(rec.parts)) {
+    for (const part of rec.parts) visitPart(part);
+  }
+
+  if (Array.isArray(rec.content)) {
+    for (const part of rec.content) {
+      if (!part || typeof part !== "object") continue;
+      const row = part as Record<string, unknown>;
+      const name =
+        typeof row.toolName === "string" ? row.toolName : toolNameFromPart(row);
+      if (!name) continue;
+      if (!("output" in row) && !("result" in row)) continue;
+      const key = "output" in row ? "output" : "result";
+      found.push({
+        name,
+        getOutput: () => jsonToolOutputValue(row[key]),
+        setOutput: (next) => {
+          row[key] = wrapJsonToolOutput(row[key], next);
+        },
+      });
+    }
+  }
+
+  return found;
+}
+
+/**
+ * Same digest rules as persisted history, applied to the current turn's
+ * model messages. Recent search_documents / read_document_page stay full so
+ * the next draft can still quote them; older ones become citation lists /
+ * quoted spans. finish_document_review is always a citation digest.
+ */
+export function compactInTurnModelMessages<T>(messages: T[]): T[] {
+  const searchIndexes: number[] = [];
+  const pageIndexes: number[] = [];
+  const located = messages.map((message) => locateToolOutputs(message));
+  located.forEach((outputs, messageIndex) => {
+    for (const output of outputs) {
+      if (output.name === "search_documents") searchIndexes.push(messageIndex);
+      if (output.name === "read_document_page") pageIndexes.push(messageIndex);
+    }
+  });
+  const keepSearch = new Set(searchIndexes.slice(-KEEP_RECENT_SEARCH_RESULTS));
+  const keepPages = new Set(pageIndexes.slice(-KEEP_RECENT_PAGE_READS));
+
+  return messages.map((message, messageIndex) => {
+    const outputs = located[messageIndex] ?? [];
+    if (outputs.length === 0) return message;
+    const clone = structuredClone(message);
+    for (const output of locateToolOutputs(clone)) {
+      let mode: CompactToolMode | null = null;
+      if (output.name === "search_documents") {
+        mode = keepSearch.has(messageIndex) ? null : "in-turn-stale-search";
+      } else if (output.name === "read_document_page") {
+        mode = keepPages.has(messageIndex) ? null : "in-turn-stale-page";
+      } else if (output.name === "finish_document_review") {
+        mode = "history";
+      }
+      if (mode == null) continue;
+      const compacted = compactToolPart(
+        { toolName: output.name, output: output.getOutput() },
+        mode
+      );
+      if (compacted.output !== output.getOutput()) {
+        output.setOutput(compacted.output);
+      }
+    }
+    return clone;
+  });
 }
 
 /** Shrink persisted bulky tool JSON before `convertToModelMessages`. */

@@ -126,7 +126,7 @@ import {
 } from "@/lib/ai/chat/document-review-rehydrate";
 import { createSearchGate } from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
-import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
+import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   captureChatAssistantFailure,
@@ -643,8 +643,8 @@ async function handleChatPost(
         if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
         return isAssistantTurnCancelRequested(sessionId);
       },
-      prepareStep: ({ steps }) => {
-        return prepareReportChatStep({
+      prepareStep: ({ steps, messages }) => {
+        const decision = prepareReportChatStep({
           advertisedTools,
           steps,
           userIntentKind: userIntent.kind,
@@ -667,6 +667,10 @@ async function handleChatPost(
                 }),
           searchGate,
         });
+        return {
+          ...decision,
+          messages: compactInTurnModelMessages(messages),
+        };
       },
       abortSignal: turnAbort.signal,
       // Remaining time from request start so persist still runs.
