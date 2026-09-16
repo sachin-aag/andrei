@@ -80,6 +80,10 @@ them. Every incident has added one of each, plus a test.
 5. **Bounded payloads beat clever prompts.** A tool result that cannot
    exceed N tokens removes the need for prose telling the model to ignore
    most of it.
+6. **Quality is a floor, cost is a ceiling.** A cheaper turn that cites
+   the wrong page, leaves more placeholders, or returns more
+   `unsupported_facts` is a fail. §13 is the merge gate; §11 is not
+   enough.
 
 ## 4. Workstream A — Context diet (the biggest lever; mostly subtraction)
 
@@ -222,32 +226,48 @@ The retrieval eval answers "did we return the right page." Nothing today
 answers "did the turn cost $3.10." Add a turn-level harness:
 
 - **F1. Scenario runs** over a handful of recorded turns (placeholder
-  fill, inventory draft, single-sentence rewrite, greeting) reporting
-  **steps, tool calls, input tokens, and cost**, with budgets that fail
-  when a change regresses them.
+  fill, inventory draft, single-sentence rewrite, greeting). Each run
+  reports **steps, tool calls, input tokens, and cost**, plus the quality
+  floor in §13 (`unsupported_facts` count, remaining placeholders, cited
+  file+page vs gold, search on a greeting). A cheaper run that misses
+  gold pages is a fail.
 - **F2. Replay cases from `dev 6`** in the gitignored overlay — MJ
-  documents never enter the public corpus or CI.
-- **F3. Every item above names its metric.** A1/A2 → tokens per step.
-  B1–B5 → lines deleted and gates removed. C → steps per fill turn.
-  D → case pass + cover-page rate. E → aborted turns, false "complete".
+  documents never enter the public corpus or CI. Replay is two layers:
+  (a) deterministic tool-trace replay that asserts `activeTools` and
+  compacted payloads, no LLM; (b) a small live-LLM set that asserts the
+  quality floor. (a) is the merge gate for B2/B3/A1. (b) is the merge
+  gate for A4/C/D.
+- **F3. Every item above names its metric.** A1/A2 → tokens per step
+  *and* grounding quotes retained. B1–B5 → lines deleted, gates removed,
+  *and* characterization equality. C → steps per fill turn *and* remaining
+  placeholders. D → case pass + cover-page rate *and* existing nine
+  synthetic cases still pass. E → aborted turns, false "complete".
 
 ## 10. Sequencing
 
-**Stage 1 — measure and subtract (no new behavior).**
-F1 harness, A3 cache verification, B1 dead-code deletion, B2/B3
-consolidation skeletons, A1 in-turn compaction. Expected: large cost drop,
-smaller diff to reason about afterward.
+**Stage 1 — measure, snapshot, then subtract.**
+Land F1 + §13 characterization fixtures *first* (before-picture of
+`activeTools` / `TurnPlan` / compaction invariants on recorded traces).
+Then B1 (`commit` deletion — grep-safe). Then B2/B3 only while layer 1
+stays equal. Then A1 compaction behind those invariants. A3 cache
+verification can run in parallel. Expected: large cost drop with
+identical tool availability.
 
 **Stage 2 — the expensive path.** C1–C3 placeholder fill (retires the
-escalation branch), E1–E3, A4/A5 prompt and schema diet.
+escalation branch), E1–E3, A5 schema diet, then A4 prompt diet last
+(layer 3 only; independently revertible via `CHAT_PROMPT_VERSION`).
 
 **Stage 3 — ranking and retirements.** D1–D3, then B4/B5 deletions that
 D2 makes possible.
 
 Stage 1 must land before Stage 3: without F1 we cannot tell whether a
-ranking change paid for itself.
+ranking change paid for itself. Stage 1 also lands the §13
+characterization fixtures *before* any deletion, so B2/B3 have a
+before-picture to match.
 
 ## 11. Definition of done
+
+Cost and size (ceiling — cheaper / smaller is the goal):
 
 | Metric | Now | Target |
 |---|---|---|
@@ -260,6 +280,9 @@ ranking change paid for itself.
 | Turn classifiers | 5 | 1 |
 | Turns lost to the 270s abort | 2 / 35 | 0 |
 
+Quality (floor — must not get worse; see §13). A PR that beats the
+ceiling and misses the floor does not merge.
+
 ## 12. Locked non-goals
 
 - No new classifier, regex, or scorer without a retirement **and** a case.
@@ -269,3 +292,115 @@ ranking change paid for itself.
   Recall@5 trend as a merge gate.
 - Not a rewrite. Each item is independently shippable and independently
   reversible.
+
+## 13. How we know this did not get worse
+
+We cannot be sure from §11. Those numbers can all improve while the
+assistant cites the wrong PDF, leaves `<date>` in the table, or walks
+pages on a greeting. Today's tests also do not cover the plan:
+
+| What exists | What it actually gates |
+|---|---|
+| ~15k lines of colocated Vitest | One function, one fixture string. `classifyRetrievalPolicy` and `searchLoopDirective` stay stable on those strings. They do not know if a real turn still finds the calibration cert. |
+| `pnpm retrieval-eval` (nine synthetic cases) | Right page / right excerpt on two born-digital PDFs. No MJ documents, no placeholder fill, no tool loop, no cost. CI is path-gated and skipped without Vertex. |
+| Playwright `e2e/report-chat.spec.ts` | Stream + persist under stub chat. Stub chat cannot assert tool selection. |
+| Langfuse on `dev 6` | A post-hoc autopsy, not a merge gate. |
+
+So the plan needs a **quality floor** that is measured the same way cost
+is. Three layers. A change uses the cheapest layer that can catch its
+failure mode; it does not skip to a live LLM to hide a deterministic
+break.
+
+### Layer 1 — Characterization (no LLM; merge-blocking for subtraction)
+
+Before deleting or folding anything, snapshot the current behavior
+against recorded step traces (the `dev 6` overlay plus a few synthetic
+turns). The replacement must produce the **same** answer.
+
+- **B2 (seven gates → one).** For each recorded step, `activeTools` and
+  `toolChoice` must equal today's chain. A merge that "simplifies" by
+  leaving `search_documents` on after a cited hit, or that stops forcing
+  `read_section` on an already-drafted write, is a fail — even if tokens
+  dropped.
+- **B3 (five classifiers → one).** For every existing
+  `user-intent` / `retrieval-policy` / `already-drafted` / `section-intent`
+  fixture, the combined `TurnPlan` must emit the same
+  `{ intent, retrievalPolicy, reviewObjective }`. New fixtures only for
+  disagreements we *intend* to change, listed in the PR.
+- **B1 (`commit` deletion).** Grep + typecheck is enough: nothing in
+  production returns `"commit"`. If a test still names the union, the
+  deletion is incomplete, not a quality risk.
+- **A1 (in-turn compaction).** Invariants, not vibes:
+  1. Every `[filename, p. N]` that `groundDraftText` used this turn is
+     still in the compacted messages (citation digest or quoted span).
+  2. The `CitationPageLedger` after compact contains at least the pages
+     the uncompacted turn contained.
+  3. A greeting / social turn still has `activeTools: []`.
+  Compaction that drops a quote the MJ `block` policy needs will show up
+  as `unsupported_facts` in layer 3; layer 1 must catch the dropped
+  quote before that.
+
+If layer 1 is red, do not run a live model to "see if it's fine."
+
+### Layer 2 — Retrieval eval (existing + new cases)
+
+The nine public cases are a **non-regression floor** for any ranking
+change (D1–D3). They must stay green. They are not proof that MJ got
+better.
+
+Additions that land *with* the ranking PR, not after:
+
+- Identifier slash-forms (`PMC/PR/014`) — public synthetic PDF, so CI
+  can fail a D1 regression without the MJ overlay.
+- A cover-page magnet query ("equipment system report") whose gold is
+  *not* page 1 of the longest file.
+- The existing `equipment-required-instrument` excerpt case — D2/D3
+  must not snap excerpts back to header-only slices.
+
+The private overlay (F2) holds the MJ-shaped documents. CI never merges
+it. A ranking PR that cannot show overlay pass on a laptop does not
+claim "ELR retrieval is fixed."
+
+### Layer 3 — Turn quality floor (live LLM, small N)
+
+This is F1's second half. Same scenarios every time, budgets that fail
+closed. Dual metric: cost may fall; quality may not.
+
+| Scenario | Quality floor (must not worsen) | Cost ceiling (may improve) |
+|---|---|---|
+| Greeting ("hi") | No search, no review, no write tools | 1 step |
+| Sentence rewrite of a filled section | `alreadyDrafted` still forces `read_section`; no `start_document_review` | ≤ 3 steps |
+| Placeholder fill on a populated table | Remaining `<date>`/`<identifier>`/`<number>` ≤ baseline; every filled cell cites a gold file+page; `unsupported_facts` ≤ baseline; **no** `start_document_review` | ≤ 4 steps, < 60k tokens/step |
+| Empty ELR inventory draft | Review still runs; finish is not `complete` if documents were skipped | no 270s abort |
+| Single identifier lookup (`SW-EVAL-7` analogue) | Top hit is the gold file+page; no page walk | ≤ 3 steps |
+
+Baselines are recorded from `main` before the PR, not guessed. A PR
+that is quieter on Langfuse and red on this table does not merge.
+
+Pack matrix: at least one demo case and one MJ overlay case in the
+placeholder-fill and inventory rows. Convergent ranking stays on the
+public nine until we add a Convergent overlay case.
+
+### What this still cannot catch
+
+- Taste: whether the filled row *reads* like an engineer wrote it.
+  That stays a **CEO** item on the implementing PR, on a real ELR, not a
+  metric.
+- Incidents we have not recorded. Characterization only protects the
+  traces we snapshotted. New failure modes still need a case before a
+  new heuristic — rule 3.
+- Prompt diet (A4) is the riskiest subtraction because it is not
+  characterizable. It ships last inside Stage 2, behind layer 3, and
+  behind a `CHAT_PROMPT_VERSION` bump so it is independently revertible.
+
+### Merge rule
+
+An implementing PR names the layer it satisfied:
+
+1. Layer 1 green (or N/A for a docs/ranking-only change).
+2. Layer 2 green if `searchReportDocuments` / ranking / identifier
+   parsing changed.
+3. Layer 3 green if prompt copy, tool availability, compaction, or the
+   fill/review path changed.
+4. Cost numbers from §11 are reported, not substituted for 1–3.
+
