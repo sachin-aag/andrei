@@ -39,21 +39,48 @@ function userMessageFileUrls(message: UIMessage): string[] {
     .map((part) => part.url);
 }
 
+function userTurnsMatch(left: UIMessage, right: UIMessage): boolean {
+  if (userMessageText(left) !== userMessageText(right)) return false;
+  const leftUrls = userMessageFileUrls(left);
+  const rightUrls = userMessageFileUrls(right);
+  if (leftUrls.length !== rightUrls.length) return false;
+  return leftUrls.every((url, index) => rightUrls[index] === url);
+}
+
+function lastUserMessage(
+  messages: readonly UIMessage[]
+): UIMessage | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === "user") return message;
+  }
+  return undefined;
+}
+
 /** True when `useChat` has already appended this optimistic user turn. */
 export function pendingChatUserMessageIsRepresented(
   messages: readonly UIMessage[],
   pending: UIMessage,
   opts?: { allowTextMatch?: boolean }
 ): boolean {
-  const last = messages[messages.length - 1];
-  if (!last || last.role !== "user") return false;
-  if (last.id === pending.id) return true;
+  if (
+    messages.some(
+      (message) => message.role === "user" && message.id === pending.id
+    )
+  ) {
+    return true;
+  }
   if (!opts?.allowTextMatch) return false;
-  if (userMessageText(last) !== userMessageText(pending)) return false;
-  const pendingUrls = userMessageFileUrls(pending);
-  const lastUrls = userMessageFileUrls(last);
-  if (pendingUrls.length !== lastUrls.length) return false;
-  return pendingUrls.every((url, index) => lastUrls[index] === url);
+  const lastUser = lastUserMessage(messages);
+  return lastUser != null && userTurnsMatch(lastUser, pending);
+}
+
+/** Overlay belongs only to the thread that submitted it. */
+export function pendingChatSendBelongsToSession(
+  pendingSessionId: string | null,
+  currentSessionId: string | null
+): boolean {
+  return pendingSessionId === currentSessionId;
 }
 
 export function mergePendingChatUserMessage(

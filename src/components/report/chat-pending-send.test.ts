@@ -3,6 +3,7 @@ import type { FileUIPart, UIMessage } from "ai";
 import {
   buildPendingChatUserMessage,
   mergePendingChatUserMessage,
+  pendingChatSendBelongsToSession,
   pendingChatUserMessageIsRepresented,
 } from "./chat-pending-send";
 
@@ -19,6 +20,14 @@ function userMessage(
   files: FileUIPart[] = []
 ): UIMessage {
   return buildPendingChatUserMessage({ id, text, files });
+}
+
+function assistantMessage(id: string, text: string): UIMessage {
+  return {
+    id,
+    role: "assistant",
+    parts: [{ type: "text", text }],
+  };
 }
 
 describe("buildPendingChatUserMessage", () => {
@@ -105,6 +114,47 @@ describe("pendingChatUserMessageIsRepresented", () => {
       )
     ).toBe(false);
   });
+
+  it("matches the live user row by id after the assistant reply arrives", () => {
+    const pending = userMessage("pending-1", "hello");
+    expect(
+      pendingChatUserMessageIsRepresented(
+        [
+          userMessage("pending-1", "hello"),
+          assistantMessage("a1", "stub reply"),
+        ],
+        pending
+      )
+    ).toBe(true);
+  });
+
+  it("matches the live user row by text after the request starts even when an assistant follows", () => {
+    const pending = userMessage("pending-1", "hello");
+    const live = [
+      userMessage("live-1", "hello"),
+      assistantMessage("a1", "stub reply"),
+    ];
+    expect(pendingChatUserMessageIsRepresented(live, pending)).toBe(false);
+    expect(
+      pendingChatUserMessageIsRepresented(live, pending, {
+        allowTextMatch: true,
+      })
+    ).toBe(true);
+  });
+});
+
+describe("pendingChatSendBelongsToSession", () => {
+  it("keeps an unsaved send on the blank thread and drops it on another tab", () => {
+    expect(pendingChatSendBelongsToSession(null, null)).toBe(true);
+    expect(pendingChatSendBelongsToSession("session-1", "session-1")).toBe(
+      true
+    );
+    expect(pendingChatSendBelongsToSession("session-1", "session-2")).toBe(
+      false
+    );
+    expect(pendingChatSendBelongsToSession("session-1", null)).toBe(false);
+    expect(pendingChatSendBelongsToSession(null, "session-2")).toBe(false);
+  });
 });
 
 describe("mergePendingChatUserMessage", () => {
@@ -143,5 +193,15 @@ describe("mergePendingChatUserMessage", () => {
   it("shows the typed turn on an empty thread before useChat catches up", () => {
     const pending = userMessage("pending-1", "hello");
     expect(mergePendingChatUserMessage([], pending)).toEqual([pending]);
+  });
+
+  it("does not append a second user bubble after the assistant reply lands", () => {
+    const pending = userMessage("pending-1", "hello");
+    const live = userMessage("pending-1", "hello");
+    const assistant = assistantMessage("a1", "stub reply");
+    expect(mergePendingChatUserMessage([live, assistant], pending)).toEqual([
+      live,
+      assistant,
+    ]);
   });
 });

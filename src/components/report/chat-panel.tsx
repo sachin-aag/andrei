@@ -168,6 +168,7 @@ import {
 import {
   buildPendingChatUserMessage,
   mergePendingChatUserMessage,
+  pendingChatSendBelongsToSession,
   pendingChatUserMessageIsRepresented,
 } from "@/components/report/chat-pending-send";
 import {
@@ -796,6 +797,7 @@ export function ChatPanel({
   const pendingSendStartedRef = useRef(false);
   const sendEpochRef = useRef(0);
   const [pendingSend, setPendingSend] = useState<UIMessage | null>(null);
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [pendingRequestStarted, setPendingRequestStarted] = useState(false);
   const seenWriteIdsRef = useRef(new Set<string>());
 
@@ -815,6 +817,7 @@ export function ChatPanel({
   } = runtime;
   const pendingForDisplay =
     pendingSend != null &&
+    pendingChatSendBelongsToSession(pendingSessionId, currentSessionId) &&
     !pendingChatUserMessageIsRepresented(messages, pendingSend, {
       allowTextMatch: pendingRequestStarted,
     })
@@ -835,6 +838,7 @@ export function ChatPanel({
     pendingRestoreRef.current = null;
     pendingSendStartedRef.current = false;
     setPendingSend(null);
+    setPendingSessionId(null);
     setPendingRequestStarted(false);
   }, []);
   const stopPendingOrTurn = useCallback(() => {
@@ -1175,13 +1179,16 @@ export function ChatPanel({
           rememberBackgroundSession(prev, currentSessionId)
         );
       }
+      if (sessionId !== currentSessionId) {
+        abortPendingSend(false);
+      }
       currentSessionIdRef.current = sessionId;
       mountSession(sessionId, true);
       setRuntime(runtimeBySessionRef.current.get(sessionId) ?? IDLE_CHAT_RUNTIME);
       setCurrentSessionId(sessionId);
       setHistoryOpen(false);
     },
-    [threadBusy, currentSessionId, mountSession]
+    [abortPendingSend, threadBusy, currentSessionId, mountSession]
   );
 
   const createSession = useCallback(async (): Promise<string | null> => {
@@ -1243,6 +1250,8 @@ export function ChatPanel({
 
       if (!closingCurrent) return;
 
+      abortPendingSend(false);
+
       if (nextId) {
         currentSessionIdRef.current = nextId;
         setRuntime(
@@ -1257,7 +1266,7 @@ export function ChatPanel({
       setRuntime(IDLE_CHAT_RUNTIME);
       void startBlankChat();
     },
-    [currentSessionId, mountedSessions, startBlankChat]
+    [abortPendingSend, currentSessionId, mountedSessions, startBlankChat]
   );
 
   const onSessionSettled = useCallback((sessionId: string) => {
@@ -1559,6 +1568,7 @@ export function ChatPanel({
       pendingSendStartedRef.current = false;
       setPendingRequestStarted(false);
       setPendingSend(pending);
+      setPendingSessionId(currentSessionId);
       const tagsForRequest = mentions;
       // Composer clears in the same tick as the optimistic bubble so Enter
       // never sits on the typed text while section saves flush.
@@ -1589,6 +1599,7 @@ export function ChatPanel({
         pendingRestoreRef.current = null;
         pendingSendStartedRef.current = false;
         setPendingSend(null);
+        setPendingSessionId(null);
         setPendingRequestStarted(false);
         restoreComposer();
         if (message) toast.error(message);
@@ -1614,6 +1625,7 @@ export function ChatPanel({
         return;
       }
       currentSessionIdRef.current = sessionId;
+      setPendingSessionId(sessionId);
       if (!currentSessionId) {
         mountSession(sessionId, false);
         setCurrentSessionId(sessionId);
