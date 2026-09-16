@@ -36,6 +36,7 @@ import {
   rankHitsForQuery,
   rerankHitsForQuery,
   searchPageKey,
+  takeRankedHits,
   type RetrievalQueryKind,
 } from "@/lib/attachments/retrieval-query";
 import {
@@ -62,6 +63,7 @@ export {
   rankHitsForQuery,
   rerankHitsForQuery,
   searchPageKey,
+  takeRankedHits,
 };
 export { buildKeywordTsQuery, planSearchQuery } from "@/lib/attachments/search-query";
 export type { RetrievalQueryKind } from "@/lib/attachments/retrieval-query";
@@ -1044,18 +1046,17 @@ export async function searchReportDocumentsDetailed({
   );
 
   const take = (rows: CandidateRow[], pinned?: boolean): DocumentSearchResult[] =>
-    rerankHitsForQuery(
+    takeRankedHits(
       collapseToBestChunkPerPage(rows, { query: trimmed, textFrom: chunkText }).filter(
         (row) =>
           !excludeKeys.has(searchPageKey(row.attachmentId, row.pageNumber))
       ),
-      trimmed
-    )
-      .slice(0, limit)
-      .map((row) => ({
-        ...toSearchResult(row, { snippetChars, query: trimmed }),
-        ...(pinned === undefined ? {} : { pinned }),
-      }));
+      trimmed,
+      limit
+    ).map((row) => ({
+      ...toSearchResult(row, { snippetChars, query: trimmed }),
+      ...(pinned === undefined ? {} : { pinned }),
+    }));
 
   const lexicalRowsFillLimit = (rows: CandidateRow[]): boolean => {
     if (rows.length === 0) return false;
@@ -1067,9 +1068,9 @@ export async function searchReportDocumentsDetailed({
         !excludeKeys.has(searchPageKey(row.attachmentId, row.pageNumber))
     );
     if (collapsed.length < limit) return false;
-    return collapsed
-      .slice(0, limit)
-      .every((row) => lexicalMatchScore(chunkText(row), trimmed) > 0);
+    const taken = takeRankedHits(collapsed, trimmed, limit);
+    if (taken.length < limit) return false;
+    return taken.every((row) => lexicalMatchScore(chunkText(row), trimmed) > 0);
   };
 
   const timedSql = async <T,>(fn: () => Promise<T>): Promise<T> => {

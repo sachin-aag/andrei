@@ -23,6 +23,10 @@ export const REQUIREMENT_ID_RECALL_PAGE = 31;
 const REQUIREMENT_ID_RE =
   /\b[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)*-\d+(?:\.\d+)*\b/g;
 
+/** MJ-style document numbers (`PMC/PR/014`, `SOP/DP/QA/014`). Query-time only. */
+const SLASH_DOCUMENT_ID_RE =
+  /\b[A-Z]{2,}(?:\/[A-Z]{2,})+\/\d+(?:\.\d+)*\b/g;
+
 const REQUIREMENT_ID_DENY_PREFIX =
   /^(IEC|ISO|CFR|ASTM|ANSI|UL|EN|TABLE|FIG|PAGE|REV)-/i;
 
@@ -85,6 +89,13 @@ export function requirementIds(text: string): string[] {
   for (const match of text.matchAll(REQUIREMENT_ID_RE)) {
     const id = match[0];
     if (!id || REQUIREMENT_ID_DENY_PREFIX.test(id)) continue;
+    seen.add(id);
+  }
+  for (const match of text.matchAll(SLASH_DOCUMENT_ID_RE)) {
+    const id = match[0];
+    if (!id || REQUIREMENT_ID_DENY_PREFIX.test(id.replaceAll("/", "-"))) {
+      continue;
+    }
     seen.add(id);
   }
   return [...seen];

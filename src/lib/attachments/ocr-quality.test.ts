@@ -85,6 +85,20 @@ describe("idRecall", () => {
   });
 });
 
+describe("MJ slash document numbers", () => {
+  it("treats PMC/PR/014 and SOP/DP/QA/014 as identifiers at query time", () => {
+    expect(
+      requirementIds("See PMC/PR/014 and SOP/DP/QA/014 for the procedure.")
+    ).toEqual(["PMC/PR/014", "SOP/DP/QA/014"]);
+    expect(isRequirementId("PMC/PR/014")).toBe(true);
+    expect(isRequirementId("SOP/DP/QA/014")).toBe(true);
+  });
+
+  it("still drops ISO/IEC slash forms via the deny prefix", () => {
+    expect(requirementIds("Conforms to ISO/IEC/1 and IEC/62304/1.")).toEqual([]);
+  });
+});
+
 describe("requirement IDs with an alphanumeric family prefix", () => {
   it("keeps the M3- prefix instead of matching from the second segment", () => {
     expect(requirementIds("Refer to M3-SYS-FN-037 and M3-HRS-BD-011.")).toEqual([

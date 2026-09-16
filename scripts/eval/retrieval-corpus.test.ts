@@ -58,5 +58,7 @@ describe("retrieval eval corpus", () => {
     expect(protocolText).not.toContain(CORPUS_ANCHORS.swEval7);
     expect(softwarePage?.text).toContain(CORPUS_ANCHORS.swEval7);
     expect(softwarePage?.text).toContain(CORPUS_ANCHORS.interlock);
+    expect(softwarePage?.text).toContain(CORPUS_ANCHORS.pmcPr014);
+    expect(protocolText).not.toContain(CORPUS_ANCHORS.pmcPr014);
   });
 });

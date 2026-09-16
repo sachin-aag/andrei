@@ -85,7 +85,11 @@ function hitHaystack(hit: RetrievalHitLike): string {
  * identifier mentions in the excerpt or filename come next; lexical overlap
  * breaks remaining ties. Not a cross-encoder.
  */
-export function hitRelevanceScore(hit: RetrievalHitLike, query: string): number {
+export function hitRelevanceScore(
+  hit: RetrievalHitLike,
+  query: string,
+  tokenWeights?: ReadonlyMap<string, number>
+): number {
   const classified = classifyRetrievalQuery(query);
   const haystack = hitHaystack(hit);
   const lower = haystack.toLowerCase();
@@ -96,8 +100,31 @@ export function hitRelevanceScore(hit: RetrievalHitLike, query: string): number 
       score += 50_000;
     }
   }
-  score += lexicalMatchScore(haystack, query);
+  score += lexicalMatchScore(haystack, query, tokenWeights);
   return score;
+}
+
+/**
+ * Document-frequency damp over the current candidate set. Common cover
+ * tokens (`equipment`, `system`, `report`) weigh less than a rare ID or
+ * vendor so they cannot occupy the top of a semantic ranking.
+ */
+export function localTokenIdfWeights(
+  haystacks: readonly string[],
+  query: string
+): Map<string, number> {
+  const n = haystacks.length;
+  const weights = new Map<string, number>();
+  for (const token of lexicalQueryTokens(query)) {
+    const key = token.toLowerCase();
+    if (weights.has(key)) continue;
+    let df = 0;
+    for (const haystack of haystacks) {
+      if (lexicalTokenMatches(haystack, token)) df += 1;
+    }
+    weights.set(key, Math.log(1 + n / Math.max(df, 1)));
+  }
+  return weights;
 }
 
 /** Reorder candidates before slicing to `limit`. Ties keep original order. */
@@ -105,14 +132,52 @@ export function rerankHitsForQuery<T extends RetrievalHitLike>(
   rows: readonly T[],
   query: string
 ): T[] {
+  const weights = localTokenIdfWeights(rows.map(hitHaystack), query);
   return rows
     .map((hit, index) => ({
       hit,
       index,
-      score: hitRelevanceScore(hit, query),
+      score: hitRelevanceScore(hit, query, weights),
     }))
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .map((row) => row.hit);
+}
+
+/**
+ * At most `maxPerFile` hits per filename in the top `limit`. Later pages of
+ * the same file wait behind other files instead of occupying every slot.
+ * Locator queries skip this — they asked for a specific file.
+ */
+export function diversifyHitsByFile<T extends { filename: string }>(
+  rows: readonly T[],
+  limit: number,
+  maxPerFile = 2
+): T[] {
+  if (limit <= 0) return [];
+  const selected: T[] = [];
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.filename.toLowerCase();
+    const used = counts.get(key) ?? 0;
+    if (used >= maxPerFile) continue;
+    selected.push(row);
+    counts.set(key, used + 1);
+    if (selected.length >= limit) return selected;
+  }
+  return selected;
+}
+
+/** Rank, then apply the per-file cap unless the query is a file/page locator. */
+export function takeRankedHits<T extends RetrievalHitLike>(
+  rows: readonly T[],
+  query: string,
+  limit: number
+): T[] {
+  const ranked = rerankHitsForQuery(rows, query);
+  if (classifyRetrievalQuery(query).kind === "locator") {
+    return ranked.slice(0, limit);
+  }
+  return diversifyHitsByFile(ranked, limit);
 }
 
 /** Locator queries name a file and/or page — those hits belong first. */
@@ -179,7 +244,11 @@ export function lexicalTokenMatches(haystack: string, token: string): boolean {
  * the winning chunk per page and to decide whether a lexical-only pass can
  * skip the query embedding.
  */
-export function lexicalMatchScore(text: string, query: string): number {
+export function lexicalMatchScore(
+  text: string,
+  query: string,
+  tokenWeights?: ReadonlyMap<string, number>
+): number {
   const haystack = text.replace(/\s+/g, " ").toLowerCase();
   const phrase = query.replace(/\s+/g, " ").trim().toLowerCase();
   if (!phrase) return 0;
@@ -190,9 +259,9 @@ export function lexicalMatchScore(text: string, query: string): number {
   }
 
   for (const token of lexicalQueryTokens(query)) {
-    if (lexicalTokenMatches(haystack, token)) {
-      score += 10 + Math.min(token.length, 20);
-    }
+    if (!lexicalTokenMatches(haystack, token)) continue;
+    const weight = tokenWeights?.get(token.toLowerCase()) ?? 1;
+    score += (10 + Math.min(token.length, 20)) * weight;
   }
   return score;
 }

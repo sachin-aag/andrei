@@ -277,7 +277,11 @@ none (legacy ready files).
 **Done.** Hybrid default still used by Document chat (no new tool `mode`).
 Identifier queries run exact-first. Page collapse is on for every mode.
 Keyword-only Analytics grep still skips embeddings; an identifier query
-that already fills `limit` skips embeddings in hybrid too.
+that already fills `limit` skips embeddings in hybrid too. Query-time
+`requirementIds()` also matches MJ slash forms (`PMC/PR/014`,
+`SOP/DP/QA/014`) so ready files do not need a re-ingest; ISO/IEC prefixes
+still drop. Do not bump `PARSER_VERSION` unless the page-column path
+proves necessary.
 
 ## Phase 3.5 — excerpt quality + lexical fast path
 
@@ -334,9 +338,13 @@ queries keep the exact / lexical skip-embed path. There is no new chat
 
 **Done (deterministic).** Candidates are reordered with
 `rerankHitsForQuery()` before slicing to `limit`: locator file/page
-boost, then identifier-in-excerpt / filename, then `lexicalMatchScore`.
-Ties keep original order. Do **not** add a cross-encoder. The synthetic
-nine is not production-scale proof that a learned reranker is needed.
+boost, then identifier-in-excerpt / filename, then `lexicalMatchScore`
+with a local document-frequency damp over the candidate set (common
+cover tokens weigh less than a rare vendor or ID). Semantic and
+identifier takes then apply `diversifyHitsByFile` (at most two hits per
+filename in the top `limit`); locator queries skip the cap. Ties keep
+original order. Do **not** add a cross-encoder. The synthetic public
+set is not production-scale proof that a learned reranker is needed.
 CI already uploads `retrieval-runs/` JSON; a Recall@5 trend series is
 not leftover for this architecture.
 
