@@ -49,6 +49,7 @@ import {
   sectionHasTable,
 } from "@/lib/ai/chat/fields";
 import { getDocumentType } from "@/lib/document-types";
+import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
   messageHasChatImage,
   recentAssistantMessageTexts,

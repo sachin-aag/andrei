@@ -18,12 +18,14 @@ export type ToolCallLike = {
   toolName?: string;
   type?: string;
   tool?: string;
+  toolCallId?: string;
 };
 
 export type ToolResultLike = {
   toolName?: string;
   type?: string;
   tool?: string;
+  toolCallId?: string;
   output?: unknown;
   result?: unknown;
 };
