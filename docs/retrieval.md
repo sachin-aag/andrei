@@ -4,6 +4,10 @@ Living plan for attachment search. Update this file whenever a phase lands
 or a locked decision changes. Architecture that disagrees with code loses —
 fix this file.
 
+The layer above this one — per-step context size, tool availability, and
+the turn classifiers — is [`harness-plan.md`](harness-plan.md). Ranking
+work that only matters because it removes tool steps belongs there.
+
 Chat stays the **control plane**. Do not replace agentic grep
 (`search_documents` / outline / page read / comprehensive review) with a
 standalone search product (Elasticsearch, a hosted vector DB, BM25-only).
