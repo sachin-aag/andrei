@@ -6,6 +6,9 @@ export const TABLE_REF_NODE_TYPE = "tableRef";
 /** `[[table]]` or `[[table:elr_monitoring.table#0]]`. */
 export const TABLE_REF_TOKEN_RE = /\[\[table(?::([^\]]+))?\]\]/gi;
 
+/** Trailing token while typing. No `g` — TipTap InputRules keep `lastIndex`. */
+export const TABLE_REF_INPUT_RE = /\[\[table(?::([^\]]+))?\]\]$/i;
+
 export type TableRefAttrs = {
   /** Empty = the section that contains this node. */
   section: string;
