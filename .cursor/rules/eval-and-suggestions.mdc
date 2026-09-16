@@ -51,7 +51,9 @@ DV mixes LLM criteria with deterministic `check()` functions.
   row 1; an append does not dismiss a disjoint `edit_cells` of row 1).
   Sequential / Apply-all apply of that pair must not treat a filled empty
   `expectedRowAtAfter` as stale — only changed snapshot cells that already
-  had text.
+  had text. Pending table-preview insert marks on a seeded empty row are
+  the live apply of `edit_cells` — commit them (narrative `alreadyMarked`)
+  instead of comparing `expectedText: ""` to the painted cell.
   Table N is the 1-based ordinal among filled grids in document order
   (starter abbreviation rows occupy Table 1; empty unused shells stay
   unnumbered). Apply and preview must not number from the current field

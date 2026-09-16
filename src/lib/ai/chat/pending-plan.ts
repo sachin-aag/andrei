@@ -494,6 +494,120 @@ export function planProgressChipLabel(
   return `${continuation.itemIndex} of ${continuation.total} — ${continuation.nextLabel}`;
 }
 
+const PLAN_EDIT_TOOLS = new Set([
+  "draft_field",
+  "edit_table",
+  "propose_edit",
+]);
+
+export type LivePlanProgress = {
+  draftedSectionKeys: string[];
+  inFlightSectionKey: string | null;
+};
+
+/** Sections the current assistant turn has drafted or is writing. */
+export function livePlanProgressFromParts(parts: unknown): LivePlanProgress {
+  const draftedSectionKeys: string[] = [];
+  let inFlightSectionKey: string | null = null;
+  if (!Array.isArray(parts)) {
+    return { draftedSectionKeys, inFlightSectionKey };
+  }
+  for (const part of parts) {
+    if (!part || typeof part !== "object") continue;
+    const rec = part as {
+      type?: unknown;
+      toolName?: unknown;
+      state?: unknown;
+      input?: unknown;
+    };
+    let name = "";
+    if (typeof rec.toolName === "string" && rec.toolName) {
+      name = rec.toolName;
+    } else if (typeof rec.type === "string" && rec.type.startsWith("tool-")) {
+      name = rec.type.slice("tool-".length);
+    }
+    if (!PLAN_EDIT_TOOLS.has(name)) continue;
+    const input = rec.input;
+    if (!input || typeof input !== "object") continue;
+    const section = (input as { section?: unknown }).section;
+    if (typeof section !== "string" || !section.trim()) continue;
+    const key = section.trim();
+    const state = typeof rec.state === "string" ? rec.state : "";
+    if (state === "output-available") {
+      if (!draftedSectionKeys.includes(key)) draftedSectionKeys.push(key);
+      if (inFlightSectionKey === key) inFlightSectionKey = null;
+      continue;
+    }
+    if (state === "output-error") continue;
+    inFlightSectionKey = key;
+  }
+  return { draftedSectionKeys, inFlightSectionKey };
+}
+
+export type ChatPlanProgressView = {
+  itemIndex: number;
+  total: number;
+  currentLabel: string;
+  chipLabel: string;
+  paused: boolean;
+  done: ChatPlanItem[];
+  current: ChatPlanItem[];
+  pending: ChatPlanItem[];
+};
+
+/**
+ * Live remaining-section progress. `pendingPlan` is the source of truth;
+ * optional live tool parts let the chip move during the current turn.
+ */
+export function chatPlanProgressView(
+  plan: ChatPendingPlan,
+  documentType: DocumentType,
+  live?: LivePlanProgress | null
+): ChatPlanProgressView {
+  const drafted = new Set(live?.draftedSectionKeys ?? []);
+  const inFlight = live?.inFlightSectionKey?.trim() || null;
+  const turnKeys = new Set(
+    currentPlanTurnSections(plan, documentType).map((item) => item.sectionKey)
+  );
+  const done: ChatPlanItem[] = [];
+  const current: ChatPlanItem[] = [];
+  const pending: ChatPlanItem[] = [];
+  for (const item of plan.items) {
+    if (item.state === "done" || drafted.has(item.sectionKey)) {
+      done.push(item);
+      continue;
+    }
+    const running =
+      inFlight === item.sectionKey ||
+      item.state === "in_progress" ||
+      turnKeys.has(item.sectionKey);
+    if (running) {
+      current.push(item);
+      continue;
+    }
+    pending.push(item);
+  }
+  const total = plan.items.length;
+  const focus =
+    (inFlight
+      ? current.find((item) => item.sectionKey === inFlight) ?? current[0]
+      : current[0]) ?? pending[0];
+  const itemIndex = focus
+    ? plan.items.findIndex((item) => item.sectionKey === focus.sectionKey) + 1
+    : Math.min(done.length + 1, Math.max(total, 1));
+  const currentLabel = focus?.label ?? "next section";
+  return {
+    itemIndex,
+    total,
+    currentLabel,
+    chipLabel: `${itemIndex} of ${total} — ${currentLabel}`,
+    paused: plan.paused === true,
+    done,
+    current,
+    pending,
+  };
+}
+
 export function advancePlanAfterTurn(input: {
   plan: ChatPendingPlan;
   documentType: DocumentType;

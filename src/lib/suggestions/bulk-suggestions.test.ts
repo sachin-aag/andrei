@@ -3,6 +3,8 @@ import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
 import { ELR_RESPONSIBILITIES_HEADERS } from "@/lib/document-types/elr/sections";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
   acceptAllSuggestions,
   acceptAllSuggestionsInReport,
@@ -386,6 +388,75 @@ describe("acceptAllSuggestions", () => {
     expect(text).toContain("Engineering");
     expect(text).toContain("Production");
     expect(text).toContain("Two further departments share line ownership.");
+  });
+
+  it("applies a painted edit_cells preview together with insert_rows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const rowFill = comment("t1", "", "Fill row 1", "elr_responsibilities");
+    rowFill.contentPath = "table";
+    const fillOperation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, expectedText: "", insertText: "1" },
+        { row: 1, col: 1, expectedText: "", insertText: "QA" },
+        { row: 1, col: 2, expectedText: "", insertText: "Approve the report" },
+      ],
+    };
+    rowFill.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "row-1",
+      tableOperation: fillOperation,
+    });
+
+    const extraRows = comment("t2", "", "Insert rows 2–3", "elr_responsibilities");
+    extraRows.contentPath = "table";
+    extraRows.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "rows-2-3",
+      tableOperation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [
+          ["2", "Engineering", "Maintain the line"],
+          ["3", "Production", "Operate the filling line"],
+        ],
+        expectedRowAtAfter: ["", "", ""],
+      },
+    });
+
+    const seeded = seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]);
+    const preview = buildTableOperationPreviewDoc(seeded, fillOperation, {
+      id: "t1",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-16T15:30:20.584Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [rowFill, extraRows],
+      sectionContent: { table: preview.doc },
+    });
+
+    expect(result.appliedIds).toEqual(["t1", "t2"]);
+    expect(result.skippedIds).toEqual([]);
+    const text = JSON.stringify(result.nextSection);
+    expect(text).toContain("QA");
+    expect(text).toContain("Engineering");
+    expect(text).toContain("Production");
+    expect(text).not.toContain(suggestionInsertMarkName);
   });
 });
 
