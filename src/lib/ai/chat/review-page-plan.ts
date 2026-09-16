@@ -1,5 +1,6 @@
 import {
   inventorySectionForObjective,
+  pageObjectiveHaystack,
   scoreInventoryReviewPage,
 } from "@/lib/ai/chat/inventory-review-schema";
 import { phraseFamiliesForReviewObjective } from "@/lib/ai/chat/search-phrase-families";
@@ -114,14 +115,7 @@ export function scoreReviewPage(
   );
   if (tokens.length === 0 && familyTerms.length === 0) return 0;
   const identifiers = (page.identifiers ?? []).map((id) => id.toLowerCase());
-  const haystack = [
-    page.outlineTitle ?? "",
-    page.pageContext ?? "",
-    page.filename ?? "",
-    (page.transcript ?? "").slice(0, 800),
-  ]
-    .join(" ")
-    .toLowerCase();
+  const haystack = pageObjectiveHaystack(page);
   let score = 0;
   for (const term of familyTerms) {
     const needle = term.toLowerCase();

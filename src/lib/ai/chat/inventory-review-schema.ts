@@ -114,12 +114,14 @@ const GENERIC_SECTION_NOUN_OTHER = new Set([
 
 const DATE_RE = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/;
 
-type InventoryPageInput = {
+export type PageObjectiveText = {
   filename?: string | null;
   transcript?: string | null;
   pageContext?: string | null;
   outlineTitle?: string | null;
 };
+
+type InventoryPageInput = PageObjectiveText;
 
 function normalizeNeedle(raw: string): string {
   return raw
@@ -233,7 +235,8 @@ export function hasTypedSectionNoun(
   return false;
 }
 
-function pageHaystack(page: InventoryPageInput): string {
+/** Shared haystack for inventory scoring and generic review-page scoring. */
+export function pageObjectiveHaystack(page: PageObjectiveText): string {
   return [
     page.outlineTitle ?? "",
     page.pageContext ?? "",
@@ -270,7 +273,7 @@ export function scoreInventoryReviewPage(
   const schema = ELR_INVENTORY_SCHEMAS[section];
   if (!schema) return null;
 
-  const haystack = pageHaystack(page);
+  const haystack = pageObjectiveHaystack(page);
   let columnHits = 0;
   for (const col of schema) {
     const needles = needlesForColumn(col);
