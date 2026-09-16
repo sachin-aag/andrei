@@ -13,17 +13,17 @@ code. Every item that adds code names what it retires.
 
 Langfuse v2 metrics, observations filtered on `metadata.documentNo = "dev 6"`:
 
-| | Calls | Input tokens | Output tokens | Cost |
+| Leaf generation | Calls | Input tokens | Output tokens | Cost |
 |---|---|---|---|---|
-| `report-chat` orchestrator (`gemini-3.7-flash`) | 319 steps | 53,208,074 | 111,012 | **$20.93** |
-| Page extracts (`gemini-3.5-flash-lite`) | 53 | 84,436 | 17,494 | $0.07 |
+| `report-chat` orchestrator steps | 319 | 53,208,074 | 111,012 | **$20.93** |
+| Document-review page extracts | 53 | 84,436 | 17,494 | $0.07 |
 | Criteria eval | 26 | 50,584 | 4,551 | $0.02 |
 | Suggestions | 7 | 40,349 | 12,557 | $0.23 |
 | Draft entailment | 64 | 35,583 | 2,974 | $0.02 |
-| **Session total** | | | | **$21.78** |
 
-(The `report-chat:ai.streamText` parent span adds another $1.45 of
-double-counted cost — a Langfuse rollup artifact, not real spend.)
+By model the session is $22.83, of which the `report-chat:ai.streamText`
+parent spans are $1.45 of double-counted rollup — call it **~$21.4 of real
+spend, and the orchestrator is $20.93 of it**.
 
 Three numbers drive everything below:
 
