@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -47,10 +48,10 @@ import {
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   chatUserTurnIsAutoContinue,
-  continuationFromMetadata,
+  livePlanProgressFromParts,
   planHasRemainingWork,
-  planProgressChipLabel,
 } from "@/lib/ai/chat/pending-plan";
+import { ChatPlanProgress } from "@/components/report/chat-plan-progress";
 import {
   isRedundantInsertImageChip,
 } from "@/components/report/chat-insert-image-chips";
@@ -359,10 +360,38 @@ function textFromChatMessage(message: UIMessage | undefined): string {
     .trim();
 }
 
+function messageIsAutoContinue(message: UIMessage): boolean {
+  return (
+    message.role === "user" &&
+    chatUserTurnIsAutoContinue(
+      "metadata" in message
+        ? (message as { metadata?: unknown }).metadata
+        : undefined
+    )
+  );
+}
+
+function latestAutoContinueMessageId(messages: UIMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message && messageIsAutoContinue(message)) return message.id;
+  }
+  return null;
+}
+
+function livePlanProgressFromMessages(messages: UIMessage[]) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === "assistant") {
+      return livePlanProgressFromParts(message.parts);
+    }
+  }
+  return null;
+}
+
 const MessageTurn = memo(function MessageTurn({
   message,
   chatTarget,
-  previousMetadata,
   askUserActive,
   onAnswerQuestions,
   streaming = false,
@@ -374,7 +403,6 @@ const MessageTurn = memo(function MessageTurn({
 }: {
   message: UIMessage;
   chatTarget: ChatMessageTarget | null;
-  previousMetadata?: unknown;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
@@ -392,26 +420,7 @@ const MessageTurn = memo(function MessageTurn({
       : undefined;
 
   if (isUser) {
-    const autoContinue = chatUserTurnIsAutoContinue(messageMetadata);
-    const continuation =
-      continuationFromMetadata(messageMetadata) ??
-      continuationFromMetadata(previousMetadata);
-    if (autoContinue) {
-      const chip = continuation
-        ? planProgressChipLabel(continuation)
-        : "Continuing remaining sections";
-      return (
-        <div
-          className="flex justify-center"
-          aria-label={chip}
-          data-testid="chat-plan-progress"
-        >
-          <div className="rounded-full border border-[var(--border)] bg-[var(--secondary)]/60 px-2.5 py-0.5 text-[11px] text-[var(--muted-foreground)]">
-            {chip}
-          </div>
-        </div>
-      );
-    }
+    if (chatUserTurnIsAutoContinue(messageMetadata)) return null;
     const parts = message.parts ?? [];
     const text = parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -1256,6 +1265,19 @@ export function ChatPanel({
   );
   const visibleMessages = taggedMessages.slice(visibleStartIndex);
   const hiddenCount = visibleStartIndex;
+  const latestAutoContinueId = latestAutoContinueMessageId(taggedMessages);
+  const latestAutoContinueVisible = visibleMessages.some(
+    (message) => message.id === latestAutoContinueId
+  );
+  const livePlanProgress = livePlanProgressFromMessages(taggedMessages);
+  const planProgress =
+    pendingPlan && planHasRemainingWork(pendingPlan) ? (
+      <ChatPlanProgress
+        plan={pendingPlan}
+        documentType={report.documentType}
+        live={livePlanProgress}
+      />
+    ) : null;
 
   const loadOlderMessages = useCallback(() => {
     if (loadingOlderRef.current) return;
@@ -1778,51 +1800,51 @@ export function ChatPanel({
             </div>
           </div>
         ) : (
-          visibleMessages.map((m, i) => (
-            <MessageTurn
-              key={m.id}
-              message={m}
-              chatTarget={m.chatTarget}
-              previousMetadata={
-                taggedMessages[visibleStartIndex + i - 1] &&
-                "metadata" in taggedMessages[visibleStartIndex + i - 1]!
-                  ? (taggedMessages[visibleStartIndex + i - 1] as {
-                      metadata?: unknown;
-                    }).metadata
-                  : undefined
-              }
-              filenameByAttachmentId={filenameByAttachmentId}
-              onOpenCitation={onOpenCitation}
-              askUserActive={
-                visibleStartIndex + i === messages.length - 1 &&
-                !busy &&
-                !initializing &&
-                !voiceLock
-              }
-              onAnswerQuestions={(answerText) => void send(answerText, [])}
-              streaming={
-                busy &&
-                visibleStartIndex + i === messages.length - 1 &&
-                m.role === "assistant"
-              }
-              showAnalyticsSwitch={
-                statsEnabled &&
-                m.role === "assistant" &&
-                assistantOffersAnalyticsSwitch(
-                  "metadata" in m
-                    ? (m as { metadata?: unknown }).metadata
-                    : undefined
-                )
-              }
-              onSwitchToAnalytics={() => {
-                const replay = textFromChatMessage(visibleMessages[i - 1]);
-                setComposerChatTarget("analytics");
-                if (replay) void send(replay, [], "analytics");
-              }}
-              composerOnAnalytics={targetingAnalytics}
-            />
-          ))
+          visibleMessages.map((m, i) => {
+            if (messageIsAutoContinue(m)) {
+              return m.id === latestAutoContinueId && planProgress ? (
+                <Fragment key={m.id}>{planProgress}</Fragment>
+              ) : null;
+            }
+            return (
+              <MessageTurn
+                key={m.id}
+                message={m}
+                chatTarget={m.chatTarget}
+                filenameByAttachmentId={filenameByAttachmentId}
+                onOpenCitation={onOpenCitation}
+                askUserActive={
+                  visibleStartIndex + i === messages.length - 1 &&
+                  !busy &&
+                  !initializing &&
+                  !voiceLock
+                }
+                onAnswerQuestions={(answerText) => void send(answerText, [])}
+                streaming={
+                  busy &&
+                  visibleStartIndex + i === messages.length - 1 &&
+                  m.role === "assistant"
+                }
+                showAnalyticsSwitch={
+                  statsEnabled &&
+                  m.role === "assistant" &&
+                  assistantOffersAnalyticsSwitch(
+                    "metadata" in m
+                      ? (m as { metadata?: unknown }).metadata
+                      : undefined
+                  )
+                }
+                onSwitchToAnalytics={() => {
+                  const replay = textFromChatMessage(visibleMessages[i - 1]);
+                  setComposerChatTarget("analytics");
+                  if (replay) void send(replay, [], "analytics");
+                }}
+                composerOnAnalytics={targetingAnalytics}
+              />
+            );
+          })
         )}
+        {!latestAutoContinueVisible ? planProgress : null}
         {busy ? (
           <ChatBusyStatus
             mode={mode}
