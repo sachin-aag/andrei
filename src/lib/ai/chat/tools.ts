@@ -1021,6 +1021,15 @@ export function buildChatTools(opts: {
   searchGate?: SearchGate;
   /** Stop starting review extract batches after this wall time in one continue. */
   reviewContinueBudgetMs?: number;
+  /** C3: pages retrieved by placeholder-fill search before the first step. */
+  seedCitationHits?: readonly {
+    filename: string;
+    pageNumber: number;
+    attachmentId?: string | null;
+    quote?: string;
+    citationId?: string;
+    sourceSha256?: string;
+  }[];
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1130,6 +1139,13 @@ export function buildChatTools(opts: {
   const messages = opts.messages ?? [];
   const citationLedger = new CitationPageLedger();
   citationLedger.seedFromMessages(messages);
+  for (const hit of opts.seedCitationHits ?? []) {
+    citationLedger.record(hit.filename, hit.pageNumber, hit.attachmentId, {
+      quote: hit.quote,
+      citationId: hit.citationId,
+      sourceSha256: hit.sourceSha256,
+    });
+  }
   const unsupportedFactPolicy: UnsupportedFactPolicy =
     opts.unsupportedFactPolicy ?? getCustomerPack().unsupportedFactPolicy;
   let evidenceHydrate: Promise<void> | null = null;
@@ -1715,7 +1731,8 @@ export function buildChatTools(opts: {
           attachmentIds: selected,
           coverageKey: documentReviewCoverageKey(
             coverageSources,
-            coverageObjective
+            coverageObjective,
+            skippedDocuments.map((doc) => doc.attachmentId)
           ),
           queuedPages: started.totalPages,
           inputPageCount: started.inputPageCount,

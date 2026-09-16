@@ -144,8 +144,12 @@ import {
   remainingChatAbortMs,
   scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
-import { prepareReportChatStep } from "@/lib/ai/chat/step-policy";
+import { prepareReportChatStep, lastStartNeedsAttachmentScope } from "@/lib/ai/chat/step-policy";
 import { assembleChatTurnPlan } from "@/lib/ai/chat/turn-plan";
+import {
+  renderPlaceholderFillEvidence,
+} from "@/lib/ai/chat/placeholder-fill";
+import { searchPlaceholderFill } from "@/lib/ai/chat/placeholder-fill-search";
 import {
   advertisedChatToolNames,
   withUnsupportedChatToolFallback,
@@ -500,7 +504,18 @@ async function handleChatPost(
     analyticsPlots: analytics?.analyses ?? [],
   });
 
-  const autoEvidenceBlock =
+  const placeholderFill =
+    retrieval.policy === "adaptive" &&
+    retrieval.reason === "placeholder_fill" &&
+    documents.length > 0
+      ? await searchPlaceholderFill({
+          reportId,
+          sections: mergedSections,
+          attachmentIds:
+            pinnedAttachmentIds.length > 0 ? pinnedAttachmentIds : undefined,
+        })
+      : { queries: [], hits: [] };
+  const focusedEvidence =
     retrieval.policy === "focused" && userIntent.kind !== "social"
       ? await buildAutoEvidence({
     reportId,
@@ -520,6 +535,12 @@ async function handleChatPost(
     hasDocuments: documents.length > 0,
   })
     : "";
+  const autoEvidenceBlock = [
+    focusedEvidence,
+    renderPlaceholderFillEvidence(placeholderFill.hits),
+  ]
+    .filter((block) => block.trim().length > 0)
+    .join("\n\n");
 
   const system = buildChatSystemPrompt({
     contextMap,
@@ -554,6 +575,14 @@ async function handleChatPost(
     reviewContinueBudgetMs: reviewContinueBudgetMs(
       remainingChatAbortMs(turnStartedAtMs)
     ),
+    seedCitationHits: placeholderFill.hits.map((hit) => ({
+      filename: hit.filename,
+      pageNumber: hit.pageNumber,
+      attachmentId: hit.attachmentId,
+      quote: hit.quote || hit.text,
+      citationId: hit.citationId,
+      sourceSha256: hit.sourceSha256,
+    })),
   });
   const scopedTools: ToolSet =
     mode === "plan"
@@ -666,6 +695,9 @@ async function handleChatPost(
                   finishedCoverageKey: documentReview.finishedCoverageKey(),
                 }),
           searchGate,
+          forceListAttachments: lastStartNeedsAttachmentScope(steps),
+          forceFinishReview:
+            reviewContinueBudgetMs(remainingChatAbortMs(turnStartedAtMs)) === 0,
         });
         return {
           ...decision,

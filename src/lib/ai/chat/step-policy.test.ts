@@ -191,6 +191,20 @@ describe("prepareReportChatStep (characterization)", () => {
       toolChoice: { type: "tool", toolName: "list_attachments" },
     });
   });
+
+  it("forces finish_document_review when the continue budget is gone", () => {
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          reviewPhase: "in_progress",
+          forceFinishReview: true,
+        })
+      )
+    ).toEqual({
+      activeTools: ["finish_document_review"],
+      toolChoice: { type: "tool", toolName: "finish_document_review" },
+    });
+  });
 });
 
 describe("lastStartNeedsAttachmentScope", () => {

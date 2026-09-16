@@ -210,6 +210,7 @@ describe("DocumentReviewSession", () => {
     }
     const finished = session.finish();
     expect(finished.coverageComplete).toBe(false);
+    expect(finished.truncated).toBe(true);
     expect(finished.failedPages.map((item) => item.pageNumber)).toContain(2);
     expect(finished.coverageSummary).toMatch(/do not claim completeness/i);
   });
@@ -555,7 +556,12 @@ describe("reviewContinueBudgetMs", () => {
   it("caps at 60s and leaves abort margin", () => {
     expect(reviewContinueBudgetMs(270_000)).toBe(60_000);
     expect(reviewContinueBudgetMs(70_000)).toBe(50_000);
-    expect(reviewContinueBudgetMs(5_000)).toBe(1_000);
+  });
+
+  it("returns 0 when the abort window cannot fit another continue", () => {
+    expect(reviewContinueBudgetMs(5_000)).toBe(0);
+    expect(reviewContinueBudgetMs(20_000)).toBe(0);
+    expect(reviewContinueBudgetMs(21_000)).toBe(1_000);
   });
 });
 
@@ -597,9 +603,13 @@ describe("DocumentReviewSession coverage identity", () => {
     await session.continue();
     const finished = session.finish();
     expect(finished.status).toBe("complete");
+    expect(finished.truncated).toBe(true);
+    expect(finished.coverageComplete).toBe(false);
+    expect(finished.skippedAttachmentIds).toEqual(["att_b"]);
     expect(finished.coverageKey).toContain("att_a:400:");
     expect(finished.coverageKey).toContain("att_b:80:");
     expect(finished.coverageKey).toContain("|obj:ids");
+    expect(finished.coverageKey).toContain("|skip:att_b");
   });
 
   it("refuses a second start for the same inventory after finish", async () => {

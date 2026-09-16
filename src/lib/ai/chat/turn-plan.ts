@@ -10,6 +10,7 @@ import {
   type RetrievalPolicy,
 } from "@/lib/ai/chat/retrieval-policy";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
+import { hasPopulatedTablePlaceholders } from "@/lib/ai/chat/placeholder-fill";
 import type {
   ChatUserIntentDecision,
   ChatUserIntentKind,
@@ -57,6 +58,9 @@ export function assembleChatTurnPlan(
     totalReadyPages: input.totalReadyPages,
     outlineSiblingCount: input.outlineSiblingCount,
     hasDocuments: input.hasDocuments,
+    hasPopulatedPlaceholders: input.sections
+      ? hasPopulatedTablePlaceholders(input.sections)
+      : undefined,
   });
   const sectionIntent = detectSectionIntentFromText(
     input.userText,

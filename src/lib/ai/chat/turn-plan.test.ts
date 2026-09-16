@@ -79,4 +79,75 @@ describe("assembleChatTurnPlan (characterization)", () => {
     expect(plan.retrievalPolicy).toBe("focused");
     expect(plan.retrievalReason).toBe("no_task");
   });
+
+  it("routes a populated placeholder fill through the turn plan, not a page walk", () => {
+    const plan = assembleRulesChatTurnPlan({
+      userText: "fill the placeholders in tables 9–11",
+      documentType: "equipment_lifecycle_report",
+      hasDocuments: true,
+      totalReadyPages: 273,
+      sections: {
+        elr_preventive_maintenance: {
+          table: {
+            type: "doc",
+            content: [
+              {
+                type: "table",
+                content: [
+                  {
+                    type: "tableRow",
+                    content: [
+                      {
+                        type: "tableHeader",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "Document" }],
+                          },
+                        ],
+                      },
+                      {
+                        type: "tableHeader",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "Date" }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    type: "tableRow",
+                    content: [
+                      {
+                        type: "tableCell",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "PM-EL-12" }],
+                          },
+                        ],
+                      },
+                      {
+                        type: "tableCell",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "<date>" }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(plan.retrievalPolicy).toBe("adaptive");
+    expect(plan.retrievalReason).toBe("placeholder_fill");
+  });
 });
