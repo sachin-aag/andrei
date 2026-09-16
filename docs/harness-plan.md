@@ -9,6 +9,27 @@ The rule for this plan: **subtract first**. The harness grew one guard,
 one regex, and one prompt paragraph per incident. Most items below remove
 code. Every item that adds code names what it retires.
 
+## Status (this branch)
+
+Successive commits on `cursor/retrieval-harness-improvement-plan-46ff`.
+Live report creation on the PR is still the layer-3 merge gate.
+
+| Item | Status |
+|---|---|
+| Characterization + TurnPlan + step policy (B2/B3 extract, F1 layer 1) | Landed. Seven gates run inside `prepareReportChatStep`; classifiers assemble into `ChatTurnPlan`. `harness-scenarios.ts` locks greeting / rewrite / placeholder fill / empty inventory / identifier lookup. |
+| B1 `commit` edit-policy deletion | Landed. |
+| A1 in-turn compaction | Landed. |
+| A2 tool-result budget | Landed (`toolResultBudget`). |
+| A3 Vertex implicit-cache check | Not a code change. Confirm cached input tokens on the PR's Langfuse traces; if the prefix is unused, a stable per-turn tool set is still open work. |
+| A4 prompt diet | Landed (`CHAT_PROMPT_VERSION` `chat-v107-harness-diet`). Independently revertible. |
+| A5 tool-schema diet | Landed. |
+| C1–C3 placeholder fill | Landed (`placeholder_fill`, not a page walk). |
+| D1–D3 ranking | Landed (slash IDs, local IDF, per-file diversity). |
+| E1–E3 honest finish / list_attachments / continue budget | Landed. |
+| B4 retire heuristics D2 covers | **Evaluated, not deleted.** IDF + diversity cover the cover-magnet ranking case. Divider regexes (`attachment-divider.ts`) mark locators for `keepSearchOpen` — that is not ranking. Analytics `requirementIndex` TOC demotion and ELR inventory column needles score a different question than token rarity. No new heuristic. |
+| B5 one page-objective scorer | Landed as one haystack (`pageObjectiveHaystack`) shared by inventory scoring and `scoreReviewPage`. `routeSearchTargets` stays file/span routing for identifier queries. |
+| F2 MJ overlay replay / F1 live LLM cost | Not in this repo. User report creation + Langfuse on the PR. |
+
 ## 1. What `dev 6` actually cost (measured, not estimated)
 
 Langfuse v2 metrics, observations filtered on `metadata.documentNo = "dev 6"`:
@@ -47,7 +68,7 @@ through step count.
 | `src/lib/ai/chat/*.test.ts` | ~15,000 lines |
 | `tools.ts` | 3,752 lines, 14 tools |
 | Tool `description` + `.describe()` text | ~14.6 KB ≈ **3.7k tokens every step** |
-| `system-prompt.ts` template literals | ~43.6 KB ≈ **up to 10.9k tokens** (`CHAT_PROMPT_VERSION` is on its 106th named revision) |
+| `system-prompt.ts` template literals | ~43.6 KB ≈ **up to 10.9k tokens** before A4 (`CHAT_PROMPT_VERSION` is now `chat-v107-harness-diet`) |
 | Turn classifiers | `user-intent.ts` (387 lines, 55 regexes), `retrieval-policy.ts` (252 lines, 30 regexes), `resolve-user-intent.ts`, `already-drafted.ts`, `section-intent.ts` |
 | Page/objective scorers | `review-page-plan.ts`, `inventory-review-schema.ts`, `attachment-divider.ts`, `retrieval-route.ts`, `retrieval-query.ts` |
 | `prepareStep` gates in the report chat route | **7** independent gates mutating `activeTools` |
