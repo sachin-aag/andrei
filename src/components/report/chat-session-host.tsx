@@ -422,7 +422,7 @@ export function ChatSessionHost({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [api, backgroundTurn, sessionId, setMessages, streamBusy]);
+  }, [api, backgroundTurn, maybeAutoContinue, sessionId, setMessages, streamBusy]);
 
   const stopTurn = useCallback(() => {
     cancelPlanRef.current = true;
