@@ -6,17 +6,19 @@ import { describe, expect, it, vi } from "vitest";
 import { InsertTableRefButton } from "@/components/report/editor-toolbars";
 import { TableRefNumbersContext } from "@/providers/table-ref-numbers";
 
-function mockEditor(insertTableRef = vi.fn(() => true)) {
+function mockEditor() {
   return {
-    insertTableRef,
     chain() {
       return this;
     },
     focus() {
       return this;
     },
+    insertTableRef() {
+      return this;
+    },
     run() {
-      return insertTableRef();
+      return true;
     },
   };
 }
@@ -43,7 +45,7 @@ describe("InsertTableRefButton", () => {
 
   it("inserts the chosen Table N from the picker", async () => {
     const user = userEvent.setup();
-    const insertTableRef = vi.fn(() => true);
+    const insertSpy = vi.fn();
     const editor = {
       chain() {
         return this;
@@ -52,7 +54,7 @@ describe("InsertTableRefButton", () => {
         return this;
       },
       insertTableRef(attrs: unknown) {
-        insertTableRef(attrs);
+        insertSpy(attrs);
         return this;
       },
       run() {
@@ -83,7 +85,7 @@ describe("InsertTableRefButton", () => {
 
     await user.click(screen.getByTestId("insert-table-ref-button"));
     await user.click(screen.getByText("Table 2. Monitoring records"));
-    expect(insertTableRef).toHaveBeenCalledWith({
+    expect(insertSpy).toHaveBeenCalledWith({
       section: "elr_monitoring",
       targetField: "table",
       tableIndex: 0,

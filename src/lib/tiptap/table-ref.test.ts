@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { Editor } from "@tiptap/core";
+import { Editor, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { describe, expect, it } from "vitest";
 import { TableRef, insertTableRefFromPicker } from "@/lib/tiptap/table-ref";
@@ -10,7 +10,7 @@ import {
   SuggestionInsert,
 } from "@/lib/tiptap/suggestion-marks";
 
-function makeEditor(content?: string) {
+function makeEditor() {
   return new Editor({
     element: document.createElement("div"),
     extensions: [
@@ -19,17 +19,7 @@ function makeEditor(content?: string) {
       SuggestionInsert,
       SuggestionDelete,
     ],
-    content: content
-      ? {
-          type: "doc",
-          content: [
-            {
-              type: "paragraph",
-              content: content ? [{ type: "text", text: content }] : [],
-            },
-          ],
-        }
-      : { type: "doc", content: [{ type: "paragraph" }] },
+    content: { type: "doc", content: [{ type: "paragraph" }] },
   });
 }
 
@@ -37,7 +27,7 @@ function typeText(editor: Editor, text: string) {
   for (const ch of text) {
     const { from, to } = editor.state.selection;
     const handled = editor.view.someProp("handleTextInput", (fn) =>
-      fn(editor.view, from, to, ch)
+      fn(editor.view, from, to, ch, () => editor.state.tr)
     );
     if (!handled) {
       editor.view.dispatch(editor.state.tr.insertText(ch));
@@ -45,16 +35,20 @@ function typeText(editor: Editor, text: string) {
   }
 }
 
-function paragraphNodes(editor: Editor) {
-  return editor.getJSON().content?.[0]?.content ?? [];
+function paragraphNodes(editor: Editor): JSONContent[] {
+  const content = editor.getJSON().content?.[0]?.content;
+  return Array.isArray(content) ? content : [];
+}
+
+function tableRefInEditor(editor: Editor): JSONContent | undefined {
+  return paragraphNodes(editor).find((node) => isTableRefNode(node));
 }
 
 describe("tableRef typing", () => {
   it("turns typed [[table]] into a tableRef atom", () => {
     const editor = makeEditor();
     typeText(editor, "See [[table]] here");
-    const ref = paragraphNodes(editor).find(isTableRefNode);
-    expect(ref?.attrs).toMatchObject({
+    expect(tableRefInEditor(editor)?.attrs).toMatchObject({
       section: "",
       targetField: "",
       tableIndex: 0,
@@ -66,8 +60,7 @@ describe("tableRef typing", () => {
   it("parses [[table:Monitoring]] while typing", () => {
     const editor = makeEditor();
     typeText(editor, "See [[table:Monitoring]].");
-    const ref = paragraphNodes(editor).find(isTableRefNode);
-    expect(ref?.attrs).toMatchObject({
+    expect(tableRefInEditor(editor)?.attrs).toMatchObject({
       section: "Monitoring",
       targetField: "",
       tableIndex: 0,
@@ -78,7 +71,7 @@ describe("tableRef typing", () => {
   it("leaves typed Table 8 as plain text", () => {
     const editor = makeEditor();
     typeText(editor, "See Table 8.");
-    expect(paragraphNodes(editor).some(isTableRefNode)).toBe(false);
+    expect(tableRefInEditor(editor)).toBeUndefined();
     expect(editor.getText()).toBe("See Table 8.");
     editor.destroy();
   });
@@ -93,8 +86,7 @@ describe("tableRef typing", () => {
       n: 2,
     });
     expect(ok).toBe(true);
-    const ref = paragraphNodes(editor).find(isTableRefNode);
-    expect(ref?.attrs).toMatchObject({
+    expect(tableRefInEditor(editor)?.attrs).toMatchObject({
       section: "elr_monitoring",
       targetField: "table",
       tableIndex: 0,
