@@ -41,7 +41,9 @@ vi.mock("@/lib/document-revisions/snapshot", () => ({
 
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
-import { GET, PATCH } from "./route";
+import { recordAuditEvent } from "@/lib/audit";
+import { tryRecordManualDocumentRevision } from "@/lib/document-revisions/snapshot";
+import { DELETE, GET, PATCH } from "./route";
 
 const engineer = {
   id: "engineer-1",
@@ -109,6 +111,13 @@ function mockManagerValidation(managerIds: string[]) {
   for (let i = 0; i < 2; i++) {
     mockSelectOnce(managerIds.map((id) => ({ id })));
   }
+}
+
+function mockSelectWithLimitOnce(rows: unknown[]) {
+  const limit = vi.fn().mockResolvedValueOnce(rows);
+  const where = vi.fn().mockReturnValue({ limit });
+  const from = vi.fn().mockReturnValue({ where });
+  vi.mocked(db.select).mockReturnValueOnce({ from } as never);
 }
 
 function mockUpdateOnce(row: unknown) {
@@ -217,5 +226,76 @@ describe("GET /api/reports/[reportId]", () => {
     await expect(response.json()).resolves.toMatchObject({
       report: { assignedManagerIds: ["manager-2", "manager-3"] },
     });
+  });
+
+  it("finalizes a create preload as report_created", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockSelectOnce([
+      {
+        ...report,
+        documentNo: "__preload_report-1",
+        metadata: { createPreload: true },
+      },
+    ]);
+    mockSelectWithLimitOnce([]);
+    mockOrderedSelectOnce([]);
+    const finalized = {
+      ...report,
+      documentNo: "DEV-1",
+      metadata: {},
+    };
+    const { set } = mockUpdateOnce(finalized);
+    const deleteWhere = vi.fn().mockResolvedValueOnce(undefined);
+    vi.mocked(db.delete).mockReturnValueOnce({ where: deleteWhere } as never);
+
+    const response = await PATCH(
+      new Request("http://localhost/api/reports/report-1", {
+        method: "PATCH",
+        body: JSON.stringify({
+          documentNo: "DEV-1",
+          assignedManagerIds: [],
+        }),
+      }),
+      { params: Promise.resolve({ reportId: report.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentNo: "DEV-1",
+        metadata: {},
+      })
+    );
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "report_created",
+        summary: "Created report DEV-1",
+      })
+    );
+    expect(tryRecordManualDocumentRevision).not.toHaveBeenCalled();
+  });
+
+  it("hard-deletes an unfinished create preload without an audit event", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockSelectOnce([
+      {
+        ...report,
+        documentNo: "__preload_report-1",
+        metadata: { createPreload: true },
+      },
+    ]);
+    const deleteWhere = vi.fn().mockResolvedValueOnce(undefined);
+    vi.mocked(db.delete).mockReturnValueOnce({ where: deleteWhere } as never);
+
+    const response = await DELETE(
+      new Request("http://localhost/api/reports/report-1", {
+        method: "DELETE",
+      }),
+      { params: Promise.resolve({ reportId: report.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(deleteWhere).toHaveBeenCalled();
+    expect(recordAuditEvent).not.toHaveBeenCalled();
   });
 });

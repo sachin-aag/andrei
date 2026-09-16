@@ -5,6 +5,7 @@ import {
   deleteReport,
   newReportButton,
   openNewReportDialog,
+  selectCreateReportType,
   uniqueDeviationNo,
 } from "./helpers/reports";
 import { waitForReportEditor } from "./helpers/workspace";
@@ -27,13 +28,21 @@ test.describe("create report", () => {
 
   test("opens create dialog from New Report button", async ({ page }) => {
     await openNewReportDialog(page);
-    await expect(page.locator("#documentNo")).toBeVisible();
+    await expect(page.locator("#documentType")).toHaveValue("");
+    await expect(page.locator("#documentNo")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^create$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
   });
 
+  test("shows toast when document type is empty", async ({ page }) => {
+    await newReportButton(page).click();
+    await page.getByRole("button", { name: /^create$/i }).click();
+    await expect(page.getByText(/document type is required/i)).toBeVisible();
+  });
+
   test("shows toast when deviation number is empty", async ({ page }) => {
     await newReportButton(page).click();
+    await selectCreateReportType(page, "investigation_report");
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(page.getByText(/deviation number is required/i)).toBeVisible();
   });
@@ -45,6 +54,7 @@ test.describe("create report", () => {
 
     await page.goto("/");
     await newReportButton(page).click();
+    await selectCreateReportType(page, "investigation_report");
     await page.locator("#documentNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(
@@ -55,6 +65,7 @@ test.describe("create report", () => {
   test("creates blank report and navigates to editor", async ({ page }) => {
     const deviationNo = uniqueDeviationNo("NEW");
     await newReportButton(page).click();
+    await selectCreateReportType(page, "investigation_report");
     await page.locator("#documentNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(page).toHaveURL(/\/reports\/[^/]+\/edit/, { timeout: 30_000 });
@@ -67,7 +78,7 @@ test.describe("create report", () => {
     await newReportButton(page).click();
     await page.getByRole("button", { name: /^cancel$/i }).click();
     await expect(
-      page.getByRole("heading", { name: /create investigation report/i })
+      page.getByRole("heading", { name: /^create report$/i })
     ).toHaveCount(0);
     await expect(page.getByText(/my reports/i)).toBeVisible();
   });

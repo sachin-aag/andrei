@@ -24,8 +24,15 @@ export function newReportButton(page: Page) {
 export async function openNewReportDialog(page: Page): Promise<void> {
   await newReportButton(page).click();
   await expect(
-    page.getByRole("heading", { name: /create investigation report/i })
+    page.getByRole("heading", { name: /^create report$/i })
   ).toBeVisible();
+}
+
+export async function selectCreateReportType(
+  page: Page,
+  documentType: string
+): Promise<void> {
+  await page.locator("#documentType").selectOption(documentType);
 }
 
 export async function createReport(

@@ -48,3 +48,27 @@ export function sectionRowsForCreate(
     };
   });
 }
+
+/**
+ * Section keys that should get an audit version snapshot at create time.
+ * Blank templates (including ELR's 22 seeded tables) are not snapshotted —
+ * each snapshot is three sequential DB round-trips through the audit hash
+ * chain (`SELECT … FOR UPDATE`) on a production pool of max 1, which can
+ * stall create until the serverless timeout. Imported Word content is real
+ * history and still gets a snapshot. First human/Agent edit of a blank
+ * section becomes v1.
+ */
+export function sectionKeysToSnapshotOnCreate(
+  imported: ImportedReportContent | null,
+  genericBody?: { narrative: JSONContent } | null
+): ReadonlySet<string> {
+  const keys = new Set<string>();
+  if (genericBody) {
+    keys.add(GENERIC_DOCUMENT_SECTION);
+  }
+  if (!imported) return keys;
+  for (const key of Object.keys(imported.sections)) {
+    if (isImportedSectionKey(key)) keys.add(key);
+  }
+  return keys;
+}

@@ -19,6 +19,11 @@ import {
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 import {
+  isCreatePreloadDocumentNo,
+  isCreatePreloadMetadata,
+  stripCreatePreloadMetadata,
+} from "@/lib/reports/create-preload";
+import {
   assignedManagerIdsForReport,
   listReportManagerIds,
   normalizeAssignedManagerIds,
@@ -123,6 +128,7 @@ export async function PATCH(
   const parsed = parse.data;
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.date) updates.date = new Date(parsed.date);
+  const wasPreload = isCreatePreloadMetadata(existingReport.metadata);
 
   if (parsed.toolsUsed !== undefined || parsed.otherTools !== undefined) {
     const existingMeta = {
@@ -159,6 +165,12 @@ export async function PATCH(
         { status: 400 }
       );
     }
+    if (isCreatePreloadDocumentNo(normalized)) {
+      return NextResponse.json(
+        { error: "That document number is reserved" },
+        { status: 400 }
+      );
+    }
     if (
       await isDocumentNoTaken(
         normalized,
@@ -170,6 +182,18 @@ export async function PATCH(
       return NextResponse.json({ error: DUPLICATE_DOCUMENT_NO_ERROR }, { status: 409 });
     }
     updates.documentNo = normalized;
+  } else if (wasPreload) {
+    return NextResponse.json(
+      { error: "Deviation number is required" },
+      { status: 400 }
+    );
+  }
+
+  if (wasPreload) {
+    updates.metadata = stripCreatePreloadMetadata(
+      (updates.metadata as ReportMetadata | undefined) ??
+        existingReport.metadata
+    );
   }
 
   const managerIdsChanged =
@@ -215,11 +239,13 @@ export async function PATCH(
 
   await recordAuditEvent({
     actor: auditActorFromUser(user),
-    action: "report_updated",
+    action: wasPreload ? "report_created" : "report_updated",
     entityType: "report",
     entityId: reportId,
     reportId,
-    summary: `Updated report metadata`,
+    summary: wasPreload
+      ? `Created report ${updated.documentNo}`
+      : `Updated report metadata`,
     oldValue: {
       documentNo: existingReport.documentNo,
       date: existingReport.date,
@@ -241,12 +267,13 @@ export async function PATCH(
   });
 
   const documentContentChanged =
-    parsed.date !== undefined ||
-    parsed.metadata !== undefined ||
-    parsed.documentNo !== undefined ||
-    parsed.deviationNo !== undefined ||
-    parsed.toolsUsed !== undefined ||
-    parsed.otherTools !== undefined;
+    !wasPreload &&
+    (parsed.date !== undefined ||
+      parsed.metadata !== undefined ||
+      parsed.documentNo !== undefined ||
+      parsed.deviationNo !== undefined ||
+      parsed.toolsUsed !== undefined ||
+      parsed.otherTools !== undefined);
   if (documentContentChanged) {
     await tryRecordManualDocumentRevision({
       reportId,
@@ -285,6 +312,11 @@ export async function DELETE(
     );
   }
   if (existing.deletedAt) {
+    return NextResponse.json({ ok: true });
+  }
+
+  if (isCreatePreloadMetadata(existing.metadata)) {
+    await db.delete(reports).where(eq(reports.id, reportId));
     return NextResponse.json({ ok: true });
   }
 
