@@ -353,6 +353,56 @@ describe("markdownToDoc", () => {
       n: null,
     });
   });
+
+  it("drops typed Table N immediately before [[table]]", () => {
+    const doc = markdownToDoc(
+      "outlined in Table 1 [[table]], which encompasses Quality Assurance."
+    );
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "outlined in " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: ", which encompasses Quality Assurance." },
+    ]);
+  });
+
+  it("drops the table immediately before [[table]]", () => {
+    const doc = markdownToDoc("see the table [[table]] for records.");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "see " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: " for records." },
+    ]);
+  });
+
+  it("keeps a Table N that is not adjacent to the token", () => {
+    const doc = markdownToDoc("as Table 8 detailed in Table 8 [[table]].");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "as Table 8 detailed in " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: "." },
+    ]);
+  });
+
+  it("drops a bold Table N next to [[table]]", () => {
+    const doc = markdownToDoc("See **Table 1** [[table]].");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "See " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: "." },
+    ]);
+  });
 });
 
 describe("markdownHasTable", () => {
@@ -373,6 +423,9 @@ describe("markdownToPlainText", () => {
     );
     expect(markdownToPlainText("Nitrogen ($N_2$)")).toBe("Nitrogen (N₂)");
     expect(markdownToPlainText("See [[table]] above.")).toBe(
+      "See the table above."
+    );
+    expect(markdownToPlainText("See Table 1 [[table]] above.")).toBe(
       "See the table above."
     );
   });

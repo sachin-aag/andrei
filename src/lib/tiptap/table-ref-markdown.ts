@@ -9,6 +9,55 @@ export const TABLE_REF_TOKEN_RE = /\[\[table(?::([^\]]+))?\]\]/gi;
 /** Trailing token while typing. No `g` — TipTap InputRules keep `lastIndex`. */
 export const TABLE_REF_INPUT_RE = /\[\[table(?::([^\]]+))?\]\]$/i;
 
+/** Typed "Table N" / "the table" immediately before a `[[table]]` token. */
+const TABLE_LABEL_BEFORE_REF_RE =
+  /(?:Table\s+\d+|the table)(?:\s*[,;:])?\s*(?=\[\[table(?::[^\]]+)?\]\])/gi;
+
+const TRAILING_TABLE_LABEL_RE = /(?:Table\s+\d+|the table)(?:\s*[,;:])?\s*$/i;
+
+/**
+ * Chat often types the live label and the REF token together
+ * (`Table 1 [[table]]`). The token already displays as Table N — drop the
+ * adjacent prose so preview/apply do not show "Table 1 Table 1".
+ */
+export function stripRedundantTableLabelBeforeRef(text: string): string {
+  TABLE_LABEL_BEFORE_REF_RE.lastIndex = 0;
+  return text.replace(TABLE_LABEL_BEFORE_REF_RE, "");
+}
+
+/** Same collapse after markdown has already become text + tableRef nodes. */
+export function collapseRedundantTableLabels(
+  nodes: JSONContent[]
+): JSONContent[] {
+  const collapsed: JSONContent[] = [];
+  for (const node of nodes) {
+    const next =
+      node.content && node.content.length > 0
+        ? { ...node, content: collapseRedundantTableLabels(node.content) }
+        : node;
+    if (isTableRefNode(next)) {
+      while (collapsed.length > 0) {
+        const gap = collapsed[collapsed.length - 1]!;
+        if (gap.type === "text" && !((gap.text ?? "").trim())) {
+          collapsed.pop();
+          continue;
+        }
+        break;
+      }
+      const prev = collapsed[collapsed.length - 1];
+      if (prev?.type === "text" && typeof prev.text === "string") {
+        const stripped = prev.text.replace(TRAILING_TABLE_LABEL_RE, "");
+        if (stripped !== prev.text) {
+          if (!stripped) collapsed.pop();
+          else collapsed[collapsed.length - 1] = { ...prev, text: stripped };
+        }
+      }
+    }
+    collapsed.push(next);
+  }
+  return collapsed;
+}
+
 export type TableRefAttrs = {
   /** Empty = the section that contains this node. */
   section: string;

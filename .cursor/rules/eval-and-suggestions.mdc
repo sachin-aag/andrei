@@ -64,11 +64,15 @@ DV mixes LLM criteria with deterministic `check()` functions.
   Engineers insert the same atom from **Table ref** in the editor toolbar
   or **Insert table reference** on right-click (Word Cross-reference list
   of numbered tables), or by typing / pasting `[[table]]` /
-  `[[table:Section]]`. Typed "Table 8" stays plain text — do not auto-
-  convert it. Flatten and merge treat the live label (`Table N` / `the table`) as field
+  `[[table:Section]]`.   Typed "Table 8" stays plain text — do not auto-
+  convert it. Markdown conversion strips a typed "Table N" / "the table"
+  immediately before `[[table]]` so chat cannot preview "Table 1 Table 1".
+  Flatten and merge treat the live label (`Table N` / `the table`) as field
   text, so a typed "Table 8" that already matches a REF is identity — not a
   green-only insert beside the atom. Locator paints the whole atom when a
-  delete overlaps it. Do not regex-replace frozen "Table N" digits in
+  delete overlaps it. An insert-only propose_edit that restates the unique
+  sentence (copying it plus `[[table]]`) rewrites that span instead of
+  appending a second copy. Do not regex-replace frozen "Table N" digits in
   existing prose.
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits

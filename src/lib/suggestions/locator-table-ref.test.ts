@@ -131,6 +131,58 @@ describe("locator — tableRef atoms", () => {
     expect(flattenForAnchor(doc).text).toBe("as Table 8 detailed in Table 8.");
   });
 
+  it("does not keep typed Table 1 beside an inserted [[table]] ref", () => {
+    const sentence =
+      "The specific roles and functional responsibilities for the generation, technical review, and approval of this Equipment Lifecycle Report are outlined in Table 1.";
+    const doc = prose({ type: "text", text: sentence });
+    const preview = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: sentence,
+        deleteText: "",
+        insertText: `${sentence.slice(0, -1)} [[table]], which encompasses Quality Assurance.`,
+      },
+      ATTRS
+    );
+    expect(preview.status).toBe("located");
+    const inline = preview.doc.content![0]!.content ?? [];
+    const refs = inline.filter((node) => node.type === "tableRef");
+    const insertedTableOnes = inline.flatMap((node) => {
+      if (node.type !== "text" || !/\bTable 1\b/.test(node.text ?? "")) {
+        return [];
+      }
+      const inserted = (node.marks ?? []).some(
+        (mark) => mark.type === suggestionInsertMarkName
+      );
+      return inserted ? [node.text] : [];
+    });
+    expect(refs).toHaveLength(1);
+    expect(insertedTableOnes).toEqual([]);
+    const accepted = acceptSuggestionMarksById(preview.doc, ATTRS.id);
+    expect(flattenForAnchor(accepted).text).toBe(
+      "The specific roles and functional responsibilities for the generation, technical review, and approval of this Equipment Lifecycle Report are outlined in the table, which encompasses Quality Assurance."
+    );
+  });
+
+  it("still appends a short insert after a unique sentence", () => {
+    const sentence =
+      "The specific roles and functional responsibilities for the generation, technical review, and approval of this Equipment Lifecycle Report are outlined in Table 1.";
+    const doc = prose({ type: "text", text: sentence });
+    const preview = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: sentence,
+        deleteText: "",
+        insertText: " Quality Assurance prepares the report.",
+      },
+      ATTRS
+    );
+    expect(preview.status).toBe("located");
+    expect(flattenForAnchor(preview.doc).text).toBe(
+      `${sentence}Quality Assurance prepares the report.`
+    );
+  });
+
   it("accept keeps an insert-marked REF and strip removes it", () => {
     const inserted = tableRefNode(
       {

@@ -15,6 +15,7 @@ import {
 } from "@/lib/tiptap/markdown-to-doc";
 import {
   isTableRefNode,
+  stripRedundantTableLabelBeforeRef,
   tableRefAttrsFromNode,
   tableRefDisplayText,
 } from "@/lib/tiptap/table-ref-markdown";
@@ -682,6 +683,29 @@ export function locateScopedEdit(
   };
 }
 
+/**
+ * Chat sometimes copies the unique sentence into insertText and adds
+ * `Table N [[table]]` instead of deleting the live span. Treat that as a
+ * rewrite of the unique match, not an append that duplicates the sentence.
+ */
+function tableMentionAgnostic(text: string): string {
+  return collapseWhitespace(
+    stripRedundantTableLabelBeforeRef(text)
+      .replace(/\[\[table(?::[^\]]+)?\]\]/gi, " ")
+      .replace(/\bTable\s+\d+\b/gi, " ")
+      .replace(/\bthe table\b/gi, " ")
+  );
+}
+
+function insertRestatesUniqueAnchor(anchor: string, insert: string): boolean {
+  const a = tableMentionAgnostic(anchor)
+    .replace(/[.,;:]+$/g, "")
+    .trim();
+  const i = tableMentionAgnostic(insert);
+  if (a.length < 24) return false;
+  return i === a || i.startsWith(`${a} `);
+}
+
 export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
   const anchorText = (edit.anchorText ?? "").trim();
   const deleteText = (edit.deleteText ?? "").trim();
@@ -701,11 +725,12 @@ export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
       }
       return { status: "not_found" };
     }
+    const rewriteAnchor = insertRestatesUniqueAnchor(anchorText, insertText);
     return {
       status: "located",
       anchorStart: match.start,
       anchorEnd: match.end,
-      deleteStart: match.end,
+      deleteStart: rewriteAnchor ? match.start : match.end,
       deleteEnd: match.end,
     };
   }
