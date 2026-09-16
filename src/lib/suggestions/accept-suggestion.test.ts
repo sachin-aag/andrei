@@ -3,10 +3,13 @@ import type { JSONContent } from "@tiptap/core";
 import type { CommentRecord } from "@/types/report";
 import {
   acceptSuggestion,
+  applySuggestionToContent,
   dismissSuggestion,
   patchSection,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
   injectSuggestionMarks,
   stripPendingSuggestionsExcept,
@@ -384,6 +387,53 @@ describe("acceptSuggestion table operations", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("not_found");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("commits a painted edit_cells preview instead of treating expectedText as stale", () => {
+    const operation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, expectedText: "", insertText: "1" },
+        { row: 1, col: 1, expectedText: "", insertText: "12/01/25 [1]" },
+      ],
+    };
+    const seeded = seededTableDoc(["Sr. No.", "Date"]);
+    const preview = buildTableOperationPreviewDoc(seeded, operation, {
+      id: "preview-fill",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-16T15:30:20.584Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const fillComment: CommentRecord = {
+      ...comment,
+      id: "preview-fill",
+      section: "elr_breakdowns",
+      contentPath: "table",
+      content: JSON.stringify({
+        deleteText: "",
+        insertText: "",
+        reasoning: "Populate Row 1",
+        tableOperation: operation,
+      }),
+      anchorText: "Update 2 table cells",
+    };
+
+    const result = applySuggestionToContent({
+      section: "elr_breakdowns",
+      comment: fillComment,
+      sectionContent: { table: preview.doc },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const json = JSON.stringify(result.nextSection);
+    expect(json).toContain("12/01/25 [1]");
+    expect(json).not.toContain(suggestionInsertMarkName);
   });
 });
 

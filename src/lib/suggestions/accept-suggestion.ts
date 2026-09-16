@@ -234,6 +234,19 @@ export function applySuggestionToContent(
       return { ok: false, reason: "not_found" };
     }
     const doc = getRichFieldValue(sectionContent, path);
+    // Live/persisted table previews paint pending insert marks into empty
+    // cells (and may already have inserted extra rows). cellPlainText includes
+    // those marks, so expectedText "" looks stale and Apply-all skips the
+    // fill. Commit the preview the same way narrative Apply does.
+    if (narrativeHasSuggestionMarks(doc, comment.id)) {
+      const nextDoc = persistAsTrackedChange
+        ? commitNarrativeSuggestionMarks(doc, comment.id)
+        : acceptPendingNarrativeSuggestion(doc, comment.id);
+      return {
+        ok: true,
+        nextSection: setRichFieldValue(sectionContent, path, nextDoc),
+      };
+    }
     const result = applyTableOperation(doc, payload.tableOperation, {
       section,
       targetField: path,
