@@ -202,7 +202,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   the client POSTs `Continue the remaining sections.` with `autoContinue`
   (auto-continue user rows stay hidden; one live remaining-section widget
   sits **below** the transcript, above Working… / Resume — collapsed
-  `N of M — current`, expand for done / running / pending). Working… hides
+  `N of M — current`, expand for done / running / pending). The N of N chip
+  spins only while the turn is running; it shows Paused on Cancel and hides
+  when every remaining section is drafted. Working… hides
   when the stream is idle even if the optimistic send still has a stale
   pending id after hydrate. The agent-done notice is `Assistant is done
   with {section}`. Do not toast a false “hit an error” between successful

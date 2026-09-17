@@ -42,6 +42,7 @@ import {
   completedPlanSectionLabel,
   continuationFromMetadata,
   livePlanProgressFromParts,
+  pauseChatPendingPlan,
   planHasRemainingWork,
   shouldAutoContinuePlan,
   type ChatPendingPlan,
@@ -536,6 +537,11 @@ export function ChatSessionHost({
   const stopTurn = useCallback(() => {
     cancelPlanRef.current = true;
     setPlanChaining(false);
+    setPendingPlan((current) =>
+      current && !current.paused
+        ? pauseChatPendingPlan(current, "cancelled")
+        : current
+    );
     void fetch(`${api}/sessions/${sessionId}/cancel`, { method: "POST" });
     agentRunStartedAtRef.current = null;
     setBackgroundTurn(false);

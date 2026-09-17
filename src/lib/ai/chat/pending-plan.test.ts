@@ -12,6 +12,7 @@ import {
   isElrInventoryTableField,
   isMultiSectionDraftRequest,
   isPlanResumeRequest,
+  livePlanProgressFromMessages,
   livePlanProgressFromParts,
   parseChatPendingPlan,
   pauseChatPendingPlan,
@@ -461,6 +462,98 @@ describe("plan prompt and metadata", () => {
       "elr_media_fill",
       "elr_qualification",
     ]);
+    expect(view.complete).toBe(false);
+  });
+
+  it("marks the chip complete when live drafts cover every remaining section", () => {
+    const started = plan([
+      { sectionKey: "elr_objective", label: "Objective", state: "done" },
+      {
+        sectionKey: "elr_conclusion",
+        label: "Summary, Conclusion and Recommendation",
+        state: "in_progress",
+      },
+    ]);
+    const live = livePlanProgressFromParts([
+      {
+        type: "tool-draft_field",
+        state: "output-available",
+        input: { section: "elr_conclusion" },
+      },
+    ]);
+    const view = chatPlanProgressView(
+      started,
+      "equipment_lifecycle_report",
+      live
+    );
+    expect(view.complete).toBe(true);
+    expect(view.chipLabel).toBe("2 of 2 — done");
+    expect(view.current).toEqual([]);
+    expect(view.pending).toEqual([]);
+  });
+
+  it("does not keep a cancelled section in progress when a tool is still in flight", () => {
+    const paused = pauseChatPendingPlan(
+      plan([
+        {
+          sectionKey: "elr_media_fill",
+          label: "Media Fill / Aseptic Process Simulation",
+          state: "in_progress",
+        },
+      ]),
+      "cancelled"
+    );
+    const live = livePlanProgressFromParts([
+      {
+        type: "tool-edit_table",
+        state: "input-available",
+        input: { section: "elr_media_fill" },
+      },
+    ]);
+    const view = chatPlanProgressView(
+      paused,
+      "equipment_lifecycle_report",
+      live
+    );
+    expect(view.paused).toBe(true);
+    expect(view.complete).toBe(false);
+    expect(view.current).toEqual([]);
+    expect(view.pending.map((item) => item.sectionKey)).toEqual([
+      "elr_media_fill",
+    ]);
+  });
+
+  it("keeps drafted keys after a wrap-up assistant row with no edit tools", () => {
+    const live = livePlanProgressFromMessages([
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-draft_field",
+            state: "output-available",
+            input: { section: "elr_objective" },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-draft_field",
+            state: "output-available",
+            input: { section: "elr_conclusion" },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        parts: [{ type: "text", text: "Remaining sections are drafted." }],
+      },
+    ]);
+    expect(live).toEqual({
+      draftedSectionKeys: ["elr_objective", "elr_conclusion"],
+      inFlightSectionKey: null,
+    });
   });
 
   it("rejects malformed plan JSON", () => {

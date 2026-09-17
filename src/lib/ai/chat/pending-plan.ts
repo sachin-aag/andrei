@@ -562,12 +562,43 @@ export function livePlanProgressFromParts(parts: unknown): LivePlanProgress {
   return { draftedSectionKeys, inFlightSectionKey };
 }
 
+/**
+ * Remaining-section drafts across the thread, not only the last assistant
+ * row. A wrap-up message after the last `edit_table` must not wipe earlier
+ * drafted keys (that left the N of N chip spinning after the queue finished).
+ */
+export function livePlanProgressFromMessages(
+  messages: ReadonlyArray<{ role?: string; parts?: unknown }>
+): LivePlanProgress | null {
+  const draftedSectionKeys: string[] = [];
+  let inFlightSectionKey: string | null = null;
+  let found = false;
+  for (const message of messages) {
+    if (message?.role !== "assistant") continue;
+    const live = livePlanProgressFromParts(message.parts);
+    if (
+      live.draftedSectionKeys.length === 0 &&
+      live.inFlightSectionKey == null
+    ) {
+      continue;
+    }
+    found = true;
+    for (const key of live.draftedSectionKeys) {
+      if (!draftedSectionKeys.includes(key)) draftedSectionKeys.push(key);
+    }
+    inFlightSectionKey = live.inFlightSectionKey;
+  }
+  if (!found) return null;
+  return { draftedSectionKeys, inFlightSectionKey };
+}
+
 export type ChatPlanProgressView = {
   itemIndex: number;
   total: number;
   currentLabel: string;
   chipLabel: string;
   paused: boolean;
+  complete: boolean;
   done: ChatPlanItem[];
   current: ChatPlanItem[];
   pending: ChatPlanItem[];
@@ -595,6 +626,10 @@ export function chatPlanProgressView(
       done.push(item);
       continue;
     }
+    if (plan.paused === true) {
+      pending.push(item);
+      continue;
+    }
     const running =
       inFlight === item.sectionKey ||
       item.state === "in_progress" ||
@@ -606,6 +641,7 @@ export function chatPlanProgressView(
     pending.push(item);
   }
   const total = plan.items.length;
+  const complete = total > 0 && done.length === total;
   const focus =
     (inFlight
       ? current.find((item) => item.sectionKey === inFlight) ?? current[0]
@@ -613,13 +649,16 @@ export function chatPlanProgressView(
   const itemIndex = focus
     ? plan.items.findIndex((item) => item.sectionKey === focus.sectionKey) + 1
     : Math.min(done.length + 1, Math.max(total, 1));
-  const currentLabel = focus?.label ?? "next section";
+  const currentLabel = complete
+    ? "done"
+    : (focus?.label ?? "next section");
   return {
-    itemIndex,
+    itemIndex: complete ? total : itemIndex,
     total,
     currentLabel,
-    chipLabel: `${itemIndex} of ${total} — ${currentLabel}`,
+    chipLabel: `${complete ? total : itemIndex} of ${total} — ${currentLabel}`,
     paused: plan.paused === true,
+    complete,
     done,
     current,
     pending,

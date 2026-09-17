@@ -48,7 +48,8 @@ import {
   CHAT_AUTO_CONTINUE_TEXT,
   chatUserTurnIsAutoContinue,
   continuationFromMetadata,
-  livePlanProgressFromParts,
+  chatPlanProgressView,
+  livePlanProgressFromMessages,
   planHasRemainingWork,
 } from "@/lib/ai/chat/pending-plan";
 import { ChatPlanProgress } from "@/components/report/chat-plan-progress";
@@ -367,16 +368,6 @@ function textFromChatMessage(message: UIMessage | undefined): string {
     .map((p) => p.text)
     .join("\n")
     .trim();
-}
-
-function livePlanProgressFromMessages(messages: UIMessage[]) {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (message?.role === "assistant") {
-      return livePlanProgressFromParts(message.parts);
-    }
-  }
-  return null;
 }
 
 const MessageTurn = memo(function MessageTurn({
@@ -1342,12 +1333,25 @@ export function ChatPanel({
   const visibleMessages = taggedMessages.slice(visibleStartIndex);
   const hiddenCount = visibleStartIndex;
   const livePlanProgress = livePlanProgressFromMessages(taggedMessages);
+  const planView = pendingPlan
+    ? chatPlanProgressView(
+        pendingPlan,
+        report.documentType,
+        livePlanProgress
+      )
+    : null;
+  const planQueueVisible =
+    pendingPlan != null &&
+    planHasRemainingWork(pendingPlan) &&
+    planView != null &&
+    !planView.complete;
   const planProgress =
-    pendingPlan && planHasRemainingWork(pendingPlan) ? (
+    planQueueVisible && pendingPlan ? (
       <ChatPlanProgress
         plan={pendingPlan}
         documentType={report.documentType}
         live={livePlanProgress}
+        active={threadBusy || planChaining}
       />
     ) : null;
 
@@ -1941,7 +1945,7 @@ export function ChatPanel({
             })}
             onCancel={stopPendingOrTurn}
           />
-        ) : planHasRemainingWork(pendingPlan) && !planChaining ? (
+        ) : planQueueVisible && !planChaining ? (
           <div className="flex justify-center">
             <button
               type="button"

@@ -199,7 +199,9 @@ the current item (or two adjacent non-inventory sections). After persist the
 client POSTs `Continue the remaining sections.` with `autoContinue` (one
 live remaining-section widget **below the transcript**, not a user bubble and
 not in the auto-continue slot; collapsed is `N of M —
-current`, expand lists done / running / pending). Working… hides when the
+current`, expand lists done / running / pending). The chip spins only while
+the turn is running; Cancel shows Paused, and a finished queue hides the
+chip. Working… hides when the
 stream is idle (do not leave a leftover send overlay after hydrate). The
 agent-done popup is `Assistant is done with {section}`. Cancel pauses the queue; a new typed prompt also
 pauses it. Reopening the thread does not auto-chain — Resume continues.

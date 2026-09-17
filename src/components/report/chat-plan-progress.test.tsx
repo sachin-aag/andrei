@@ -129,5 +129,55 @@ describe("ChatPlanProgress", () => {
         name: "1 of 1 — Media Fill / Aseptic Process Simulation",
       })
     ).toBeInTheDocument();
+    expect(document.querySelector(".animate-spin")).toBeNull();
+  });
+
+  it("spins only while the remaining-section turn is active", () => {
+    const running = plan([
+      {
+        sectionKey: "elr_media_fill",
+        label: "Media Fill / Aseptic Process Simulation",
+        state: "in_progress",
+      },
+    ]);
+    const { rerender, container } = render(
+      <ChatPlanProgress
+        plan={running}
+        documentType="equipment_lifecycle_report"
+        active
+      />
+    );
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+
+    rerender(
+      <ChatPlanProgress
+        plan={running}
+        documentType="equipment_lifecycle_report"
+        active={false}
+      />
+    );
+    expect(container.querySelector(".animate-spin")).toBeNull();
+  });
+
+  it("hides the chip when live drafts finish every remaining section", () => {
+    render(
+      <ChatPlanProgress
+        plan={plan([
+          { sectionKey: "elr_objective", label: "Objective", state: "done" },
+          {
+            sectionKey: "elr_conclusion",
+            label: "Summary, Conclusion and Recommendation",
+            state: "in_progress",
+          },
+        ])}
+        documentType="equipment_lifecycle_report"
+        live={{
+          draftedSectionKeys: ["elr_conclusion"],
+          inFlightSectionKey: null,
+        }}
+        active
+      />
+    );
+    expect(screen.queryByTestId("chat-plan-progress")).not.toBeInTheDocument();
   });
 });
