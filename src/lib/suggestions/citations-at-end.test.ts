@@ -118,6 +118,43 @@ describe("moveCitationsToEndOfText", () => {
     );
   });
 
+  it("moves a citation out of bold markdown to the end of the word", () => {
+    const markdown =
+      "Total product scrap or batch loss across all trended themes was **0 [scrap-log.pdf, p. 6]** units. All 4 technical themes remain open.";
+    const parked = moveCitationsToEndOfText(markdown);
+    expect(parked).toContain("was **0** [1] units.");
+    expect(parked).not.toMatch(/\*\*0\s*\[\d+\]/);
+    expect(parked).toContain("1. [scrap-log.pdf, p. 6]");
+  });
+
+  it("keeps a word-end citation instead of pulling it to the period", () => {
+    expect(
+      moveCitationsToEndOfText(
+        "Total product scrap was **0** [scrap-log.pdf, p. 6] units."
+      )
+    ).toBe(
+      [
+        "Total product scrap was **0** [1] units.",
+        "",
+        "Citations:",
+        "1. [scrap-log.pdf, p. 6]",
+      ].join("\n")
+    );
+  });
+
+  it("moves a citation out of the middle of a word", () => {
+    expect(
+      moveCitationsToEndOfText("zero uni[scrap-log.pdf, p. 6]ts remained.")
+    ).toBe(
+      [
+        "zero units [1] remained.",
+        "",
+        "Citations:",
+        "1. [scrap-log.pdf, p. 6]",
+      ].join("\n")
+    );
+  });
+
   it("moves inline citations after the prose and any table, leaving numbered markers", () => {
     const markdown = [
       "Power output met the acceptance limit [protocol.pdf, p. 2].",
@@ -212,14 +249,14 @@ describe("moveCitationsToEndOfText", () => {
     );
   });
 
-  it("emits adjacent markers for multiple sources on one claim", () => {
+  it("emits a combined marker for multiple sources on one claim", () => {
     expect(
       moveCitationsToEndOfText(
         "Met spec [protocol.pdf, p. 2] [datasheet.pdf, p. 4]."
       )
     ).toBe(
       [
-        "Met spec [1][2].",
+        "Met spec [1,2].",
         "",
         "Citations:",
         "1. [protocol.pdf, p. 2]",
@@ -413,7 +450,8 @@ describe("documentCitationRule", () => {
     expect(documentCitationRule(false)).not.toContain("end of the section");
     expect(documentCitationRule(true)).toContain("end of the section field");
     expect(documentCitationRule(true)).toContain("Citations:");
-    expect(documentCitationRule(true)).toContain("split edit");
+    expect(documentCitationRule(true)).toContain("supported word or claim");
+    expect(documentCitationRule(true)).toContain("[1,2]");
     expect(documentCitationRule(false)).toContain("missing or ambiguous");
     expect(documentCitationRule(true)).toContain("missing or ambiguous");
     expect(documentCitationRule(false)).toMatch(/absolute PDF page/i);

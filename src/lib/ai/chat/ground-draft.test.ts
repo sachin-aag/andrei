@@ -133,6 +133,28 @@ describe("groundDraftText citation parking", () => {
     expect((parked.match(/\[\d+\]/g) ?? []).length).toBe(1);
   });
 
+  it("inserts a missing citation after the word, not inside **0**", () => {
+    const draft =
+      "Total product scrap or batch loss across all trended themes was **0** units. All 4 technical themes remain open.";
+    const grounded = groundDraftText({
+      text: draft,
+      ledger: ledgerFromPages([
+        {
+          filename: "scrap-log.pdf",
+          pageNumber: 6,
+          attachmentId: "att-scrap",
+          quote: "Total product scrap or batch loss across all trended themes was 0 units.",
+        },
+      ]),
+      policy: "flag",
+    });
+    expect(grounded.text).toContain("was **0** [scrap-log.pdf, p. 6] units.");
+    expect(grounded.text).not.toMatch(/\*\*0\s*\[/);
+    const parked = moveCitationsToEndOfText(grounded.text);
+    expect(parked).toContain("was **0** [1] units.");
+    expect(parked).toContain("1. [scrap-log.pdf, p. 6]");
+  });
+
   it("rewrites a parked Citations line instead of inserting a filename cite beside [n]", () => {
     const parkedDraft = `The review follows ${SOP} [1].\n\nCitations:\n1. [${PROTOCOL}, p. 21]`;
     const grounded = groundDraftText({

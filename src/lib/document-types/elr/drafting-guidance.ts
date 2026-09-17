@@ -233,7 +233,7 @@ a <label> placeholder and say what document would settle it. Search attached
 evidence before asking.
 
 When a sentence paraphrases an attached SOP, prior ELR, protocol, or record,
-put [filename, p. N] immediately after that sentence (copy the citation field
+put [filename, p. N] immediately after the supported word or sentence — never in the middle of a word (copy the citation field
 from the tool result). Objective and Scope stay short, but they still cite the
 procedure page they rest on — the server converts those brackets to numbered
 [n] markers and parks a Citations: list at the end of the field. Do not omit

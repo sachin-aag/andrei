@@ -204,7 +204,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v7");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v8");
   });
 
   it("asks which container format when attachments name both and the title page is unset", () => {

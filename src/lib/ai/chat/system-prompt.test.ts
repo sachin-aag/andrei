@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v108-elr-access-matrix");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v109-citation-word-end");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -101,7 +101,8 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("END of the section field");
     expect(prompt).toContain("Citations:");
-    expect(prompt).toContain("immediately after the supported statement");
+    expect(prompt).toContain("supported word or claim");
+    expect(prompt).toContain("[1,2]");
     expect(prompt).toContain("cite it as [filename, p. N]");
     expect(prompt).toContain("Do not invent [1]/[2] numbers");
   });

@@ -7,7 +7,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v23-numbered-citations-all-packs");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v24-citation-word-end");
   });
 
   it("includes split-citation rules", () => {
@@ -15,7 +15,7 @@ describe("buildSuggestionSystemPrompt", () => {
       "CITATIONS AT END OF SECTION"
     );
     expect(buildSuggestionSystemPrompt("define")).toContain(
-      "immediately after the claim"
+      "supported word or claim"
     );
     const user = buildSuggestionUserPrompt({
       section: "define",

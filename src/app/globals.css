@@ -1161,6 +1161,14 @@ body:has([data-suggestion-preview-held]) {
   background: var(--brand-100);
 }
 
+.ProseMirror .citation-ref-n {
+  cursor: pointer;
+}
+
+.ProseMirror .citation-ref-n:hover {
+  color: var(--brand-600);
+}
+
 .ProseMirror span.suggestion-insert .citation-ref,
 .ProseMirror span.suggestion-insert-ai .citation-ref,
 .ProseMirror span.suggestion-delete .citation-ref,
