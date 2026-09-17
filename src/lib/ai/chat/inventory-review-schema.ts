@@ -61,6 +61,7 @@ const GENERIC_COLUMN_NEEDLES = new Set([
   "system",
   "user",
   "role",
+  "task",
   "alarm",
   "instrument",
   "failure",

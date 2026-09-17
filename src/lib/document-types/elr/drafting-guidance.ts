@@ -246,8 +246,13 @@ Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.11.1)
 for grouping failure modes / whether the trended alarm set is still
 appropriate. That is not a substitute for the assessment above the table.
 
-Access control: separate initial qualification of access (21 CFR Part 11) from
-periodic verification this period (admin holders, privilege changes, leavers).
+Access control: copy the current privilege matrix from the governing SOP /
+CSV annexure (Task × Operator / Supervisor / Maintenance / Administrator).
+Stamp System Name / ID from the annexure header (equipment / system ID). Copy
+the marks as-is (✓ / ×). Do not reshape it into a user grant/revoke log, and
+do not invent leavers. If several systems have annexures, copy each. The
+assessment still separates initial qualification (21 CFR Part 11) from
+periodic verification this period (last review, admin recertification).
 
 ## System trends
 

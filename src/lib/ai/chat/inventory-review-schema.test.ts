@@ -33,6 +33,17 @@ describe("inventoryColumnNeedles", () => {
     expect(needles).not.toContain("non-viable");
     expect(needles).not.toContain("glove monitoring");
   });
+
+  it("uses Access Control role columns, not a grant/revoke log", () => {
+    const needles = inventoryColumnNeedles("elr_access_control");
+    expect(needles).toContain("operator");
+    expect(needles).toContain("supervisor");
+    expect(needles).toContain("maintenance");
+    expect(needles).toContain("administrator");
+    expect(needles).toContain("privilege matrix");
+    expect(needles).not.toContain("user name");
+    expect(needles).not.toContain("granted");
+  });
 });
 
 describe("hasTypedSectionNoun", () => {
@@ -265,5 +276,30 @@ describe("scoreInventoryReviewPage", () => {
         ["CSV-OQ-PR-055 PART-1.pdf"]
       )
     ).toBe(false);
+  });
+
+  it("queues a SOP task×role annexure and not a user grant/revoke log", () => {
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "SOP-DP-PR-040-R01.pdf",
+          transcript:
+            "Annexure-I Access Matrix Task Operator Supervisor Maintenance Administrator Login",
+          outlineTitle: "User Access Matrix",
+        },
+        "elr_access_control"
+      )
+    ).toBeGreaterThan(0);
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "CSV-OQ-PART-2.pdf",
+          transcript:
+            "User Name Role Action Granted Modified Revoked Date Document Reference",
+          outlineTitle: "User list",
+        },
+        "elr_access_control"
+      )
+    ).toBe(0);
   });
 });

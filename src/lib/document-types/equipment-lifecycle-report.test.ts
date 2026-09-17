@@ -7,7 +7,8 @@ import { getCriteria, getDocumentType, getWorkspaceSections } from ".";
 import type { EvaluationContext } from "./types";
 import {
   checkAccessControlPeriodCompleteness,
-  checkAccessControlPrivilegeDrift,
+  checkAccessControlRoleMarks,
+  checkAccessControlRows,
   checkAlarmDirectImpactAction,
   checkAssessmentInterpretsTable,
   checkBreakdownRepeatCapa,
@@ -33,6 +34,7 @@ import {
 } from "./elr/deterministic-checks";
 import { QUANTITY_MATH_CRITERION_KEY } from "@/lib/math/quantity-math";
 import {
+  ACCESS_CONTROL_COLUMN_SCHEMA,
   RISK_ACTION_COLUMN_SCHEMA,
   SYSTEM_TRENDS_COLUMN_SCHEMA,
 } from "./elr/matrix-columns";
@@ -202,7 +204,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v9");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v10");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -240,6 +242,8 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).toContain("findingsOmitted");
     expect(def.chat.draftingGuidance).toContain("Limits and counts");
     expect(def.chat.draftingGuidance).toContain("<1 CFU/plate");
+    expect(def.chat.draftingGuidance).toContain("privilege matrix");
+    expect(def.chat.draftingGuidance).toContain("Task × Operator");
     expect(def.chat.contextIdentity?.({})).toEqual(
       expect.arrayContaining([
         expect.stringContaining("container format: (unset)"),
@@ -891,12 +895,15 @@ describe("ELR assessment, trends and risk checks", () => {
       Reference: "CAPA-26-014",
     });
 
-  it("keeps system-trend and risk-action headers identical to the column schemas", () => {
+  it("keeps system-trend, risk-action and access-control headers identical to the column schemas", () => {
     expect(SYSTEM_TRENDS_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
       ...ELR_SYSTEM_TRENDS_HEADERS,
     ]);
     expect(RISK_ACTION_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
       ...ELR_RISK_ACTION_HEADERS,
+    ]);
+    expect(ACCESS_CONTROL_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_ACCESS_CONTROL_HEADERS,
     ]);
   });
 
@@ -1151,27 +1158,87 @@ describe("ELR assessment, trends and risk checks", () => {
     expect(result.reasoning).toMatch(/isolated/i);
   });
 
-  it("flags privilege grants described as unchanged", () => {
+  it("evaluates access control as a privilege matrix, not a grant log", () => {
+    const keys = getCriteria(TYPE, "elr_access_control").map(
+      (criterion) => criterion.key
+    );
+    expect(keys).toContain("access_control.role_marks");
+    expect(keys).not.toContain("access_control.privilege_drift");
+  });
+
+  it("asks for the SOP privilege matrix when access control is empty", () => {
+    const result = checkAccessControlRows(
+      ctx(
+        { table: tableDoc([[...ELR_ACCESS_CONTROL_HEADERS]]) },
+        { section: "elr_access_control" }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/privilege matrix|annexure/i);
+  });
+
+  it("requires system and task on each access-control row", () => {
     const table = tableDoc([
       [...ELR_ACCESS_CONTROL_HEADERS],
       row(ELR_ACCESS_CONTROL_HEADERS, {
         "Sr. No.": "1",
-        "System Name / ID": "SCADA",
-        "Role / Privilege Level": "Level 3",
-        "Action (Granted / Modified / Revoked)": "Granted",
+        Operator: "✓",
+        Supervisor: "×",
+        Maintenance: "×",
+        Administrator: "✓",
       }),
     ]);
-    const result = checkAccessControlPrivilegeDrift(
-      ctx(
-        {
-          table,
-          narrative: narrative("Access privileges are unchanged this period."),
-        },
-        { section: "elr_access_control" }
-      )
+    const result = checkAccessControlRows(
+      ctx({ table }, { section: "elr_access_control" })
     );
     expect(result.status).toBe("not_met");
-    expect(result.reasoning).toMatch(/unchanged/i);
+    expect(result.reasoning).toMatch(/system name/i);
+    expect(result.reasoning).toMatch(/task/i);
+  });
+
+  it("flags role cells that are not privilege marks", () => {
+    const table = tableDoc([
+      [...ELR_ACCESS_CONTROL_HEADERS],
+      row(ELR_ACCESS_CONTROL_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA E/PR/077",
+        Task: "Login",
+        Operator: "Granted",
+        Supervisor: "×",
+        Maintenance: "×",
+        Administrator: "✓",
+      }),
+    ]);
+    const result = checkAccessControlRoleMarks(
+      ctx({ table }, { section: "elr_access_control" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/Operator/i);
+    expect(result.reasoning).toMatch(/privilege mark/i);
+  });
+
+  it("accepts a copied SOP privilege-matrix row", () => {
+    const table = tableDoc([
+      [...ELR_ACCESS_CONTROL_HEADERS],
+      row(ELR_ACCESS_CONTROL_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA E/PR/077",
+        Task: "Login",
+        Operator: "✓",
+        Supervisor: "×",
+        Maintenance: "×",
+        Administrator: "✓",
+      }),
+    ]);
+    expect(
+      checkAccessControlRows(ctx({ table }, { section: "elr_access_control" }))
+        .status
+    ).toBe("met");
+    expect(
+      checkAccessControlRoleMarks(
+        ctx({ table }, { section: "elr_access_control" })
+      ).status
+    ).toBe("met");
   });
 
   it("requires last review, admin recertification and Part 11 on access control", () => {
@@ -1179,16 +1246,21 @@ describe("ELR assessment, trends and risk checks", () => {
       [...ELR_ACCESS_CONTROL_HEADERS],
       row(ELR_ACCESS_CONTROL_HEADERS, {
         "Sr. No.": "1",
-        "System Name / ID": "SCADA",
-        "Role / Privilege Level": "Level 4 administrator",
-        "Action (Granted / Modified / Revoked)": "Modified",
+        "System Name / ID": "SCADA E/PR/077",
+        Task: "User Management",
+        Operator: "×",
+        Supervisor: "×",
+        Maintenance: "×",
+        Administrator: "✓",
       }),
     ]);
     const incomplete = checkAccessControlPeriodCompleteness(
       ctx(
         {
           table,
-          narrative: narrative("Two users are listed on the SCADA system."),
+          narrative: narrative(
+            "The SCADA privilege matrix is copied from SOP/DP/PR/040."
+          ),
         },
         { section: "elr_access_control" }
       )
