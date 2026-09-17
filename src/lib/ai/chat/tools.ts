@@ -1805,7 +1805,7 @@ export function buildChatTools(opts: {
           .string()
           .default("")
           .describe(
-            "New text to add, or '' to only delete. Markdown lists (`- `, `1. `) and headings (`## `) become real list/heading blocks. Do not paste a GFM pipe table — use edit_table create_table."
+            "New text to add, or '' to only delete. Markdown lists (`- `, `1. `) and headings (`## `) become real list/heading blocks. Do not paste a GFM pipe table — use edit_table create_table. Table mentions are `[[table]]` (never `Table 1 [[table]]`)."
           ),
         scope: z
           .object({

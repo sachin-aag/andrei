@@ -133,4 +133,36 @@ describe("collectSuggestionActionWidgetPositions", () => {
     expect(positions).toHaveLength(1);
     expect(doc.textBetween(positions[0]! - second.length, positions[0]!)).toBe(second);
   });
+
+  it("anchors widgets after an insert-marked tableRef atom", () => {
+    const schema = new Schema({
+      nodes: {
+        doc: { content: "paragraph" },
+        paragraph: { content: "inline*", group: "block" },
+        text: { group: "inline" },
+        tableRef: {
+          inline: true,
+          group: "inline",
+          atom: true,
+          selectable: true,
+          marks: "suggestionInsert suggestionDelete",
+          toDOM: () => ["span", { "data-table-ref": "true" }],
+          parseDOM: [{ tag: "span[data-table-ref]" }],
+        },
+      },
+      marks: markAttrs,
+    });
+    const { insert } = aiMarks(schema, "eval-ref");
+    const ref = schema.node("tableRef", { n: 8 }, undefined, [insert]);
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("See "),
+        ref,
+        schema.text("."),
+      ]),
+    ]);
+    const positions = positionsFor(doc, "eval-ref");
+    expect(positions).toHaveLength(1);
+    expect(positions[0]).toBe(1 + "See ".length + ref.nodeSize);
+  });
 });

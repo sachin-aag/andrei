@@ -14,8 +14,10 @@ import {
   stripInlineMarkdown,
 } from "@/lib/tiptap/markdown-to-doc";
 import {
+  isTableRefNode,
+  stripRedundantTableLabelBeforeRef,
+  tableRefAttrsFromNode,
   tableRefDisplayText,
-  TABLE_REF_NODE_TYPE,
 } from "@/lib/tiptap/table-ref-markdown";
 import {
   collapseWhitespace,
@@ -54,8 +56,10 @@ import {
  *
  * Canonical string policy (stated once, here, and nowhere else):
  *  - each text node contributes its characters verbatim;
+ *  - a tableRef atom contributes its display label ("Table N" / "the table")
+ *    and is locatable as one slice (the atom cannot be split);
  *  - a single "\n" between block-level siblings;
- *  - a single " " for each inline atom (image, equation);
+ *  - a single " " for each other inline atom (image, equation);
  *  - NO markdown pipes, NO list numbers, NO "[equation]" / "[image]" tokens.
  */
 
@@ -444,11 +448,23 @@ export function flattenForAnchor(doc: JSONContent): AnchorIndex {
       return;
     }
 
-    if (node.type === TABLE_REF_NODE_TYPE) {
-      const label = tableRefDisplayText({
-        n: typeof node.attrs?.n === "number" ? node.attrs.n : null,
-      });
+    if (isTableRefNode(node)) {
+      const label = tableRefDisplayText(tableRefAttrsFromNode(node));
+      const start = flat.length;
       flat += label;
+      if (parentArr) {
+        refs.push({
+          node,
+          parentArr,
+          indexInParent: idx,
+          localStart: 0,
+          localEnd: label.length,
+          blockId,
+          cellId,
+          flatStart: start,
+          flatEnd: start + label.length,
+        });
+      }
       return;
     }
 
@@ -667,6 +683,29 @@ export function locateScopedEdit(
   };
 }
 
+/**
+ * Chat sometimes copies the unique sentence into insertText and adds
+ * `Table N [[table]]` instead of deleting the live span. Treat that as a
+ * rewrite of the unique match, not an append that duplicates the sentence.
+ */
+function tableMentionAgnostic(text: string): string {
+  return collapseWhitespace(
+    stripRedundantTableLabelBeforeRef(text)
+      .replace(/\[\[table(?::[^\]]+)?\]\]/gi, " ")
+      .replace(/\bTable\s+\d+\b/gi, " ")
+      .replace(/\bthe table\b/gi, " ")
+  );
+}
+
+function insertRestatesUniqueAnchor(anchor: string, insert: string): boolean {
+  const a = tableMentionAgnostic(anchor)
+    .replace(/[.,;:]+$/g, "")
+    .trim();
+  const i = tableMentionAgnostic(insert);
+  if (a.length < 24) return false;
+  return i === a || i.startsWith(`${a} `);
+}
+
 export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
   const anchorText = (edit.anchorText ?? "").trim();
   const deleteText = (edit.deleteText ?? "").trim();
@@ -686,11 +725,12 @@ export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
       }
       return { status: "not_found" };
     }
+    const rewriteAnchor = insertRestatesUniqueAnchor(anchorText, insertText);
     return {
       status: "located",
       anchorStart: match.start,
       anchorEnd: match.end,
-      deleteStart: match.end,
+      deleteStart: rewriteAnchor ? match.start : match.end,
       deleteEnd: match.end,
     };
   }
@@ -847,21 +887,51 @@ export function probePlainEdit(
   return sawLocated ? "located" : "append";
 }
 
+function markIdMatches(
+  mark: NonNullable<JSONContent["marks"]>[number],
+  markName: string,
+  markId: string
+): boolean {
+  return (
+    mark.type === markName &&
+    (mark.attrs as { id?: string } | undefined)?.id === markId
+  );
+}
+
+function nodeHasMark(
+  node: JSONContent,
+  markName: string,
+  markId: string
+): boolean {
+  return (node.marks ?? []).some((mark) => markIdMatches(mark, markName, markId));
+}
+
+function isSuggestionMarkHost(node: JSONContent): boolean {
+  return node.type === "text" || isTableRefNode(node);
+}
+
 function splitTextNodeForDelete(
   ref: TextSlice,
   localStart: number,
   localEnd: number,
   attrs: InjectAttrs
 ) {
+  const deleteMark = {
+    type: suggestionDeleteMarkName,
+    attrs: { ...attrs },
+  };
+  if (isTableRefNode(ref.node)) {
+    // Atoms are indivisible: any overlap paints the whole REF.
+    if (localStart >= localEnd) return;
+    if (nodeHasMark(ref.node, suggestionDeleteMarkName, attrs.id)) return;
+    ref.node.marks = [...(ref.node.marks ?? []), deleteMark];
+    return;
+  }
   const original = ref.node.text ?? "";
   const before = original.slice(0, localStart);
   const middle = original.slice(localStart, localEnd);
   const after = original.slice(localEnd);
   const baseMarks = ref.node.marks ?? [];
-  const deleteMark = {
-    type: suggestionDeleteMarkName,
-    attrs: { ...attrs },
-  };
 
   const replacements: JSONContent[] = [];
   if (before.length > 0) {
@@ -896,6 +966,17 @@ function splitTextNodeAt(
   ref: TextSlice,
   localOffset: number
 ): TextSlice {
+  if (isTableRefNode(ref.node)) {
+    if (localOffset <= 0) {
+      return {
+        ...ref,
+        indexInParent: ref.indexInParent - 1,
+        localStart: 0,
+        localEnd: 0,
+      };
+    }
+    return ref;
+  }
   const original = ref.node.text ?? "";
   if (localOffset <= 0) {
     // Insert before this node — return a synthetic "before" by shifting index.
@@ -1075,19 +1156,16 @@ function findLastDeleteMarked(
   idx: number
 ): TextSlice | null {
   let found: TextSlice | null = null;
-  if (node.type === "text" && node.marks?.length && parentArr) {
-    const has = node.marks.some(
-      (m) =>
-        m.type === suggestionDeleteMarkName &&
-        (m.attrs as { id?: string } | undefined)?.id === markId
-    );
-    if (has) {
+  if (isSuggestionMarkHost(node) && node.marks?.length && parentArr) {
+    if (nodeHasMark(node, suggestionDeleteMarkName, markId)) {
       found = {
         node,
         parentArr,
         indexInParent: idx,
         localStart: 0,
-        localEnd: (node.text ?? "").length,
+        localEnd: isTableRefNode(node)
+          ? 0
+          : (node.text ?? "").length,
         blockId: 0,
         cellId: null,
         flatStart: 0,
@@ -1415,13 +1493,7 @@ function hasMarkWithId(
   markName: string,
   markId: string
 ): boolean {
-  if (node.type === "text") {
-    return (node.marks ?? []).some(
-      (m) =>
-        m.type === markName &&
-        (m.attrs as { id?: string } | undefined)?.id === markId
-    );
-  }
+  if (nodeHasMark(node, markName, markId)) return true;
   return (node.content ?? []).some((ch) => hasMarkWithId(ch, markName, markId));
 }
 
@@ -1432,11 +1504,10 @@ function blockHasTextOutsideMark(
 ): boolean {
   if (node.type === "text") {
     if ((node.text ?? "").length === 0) return false;
-    return !(node.marks ?? []).some(
-      (m) =>
-        m.type === markName &&
-        (m.attrs as { id?: string } | undefined)?.id === markId
-    );
+    return !nodeHasMark(node, markName, markId);
+  }
+  if (isTableRefNode(node)) {
+    return !nodeHasMark(node, markName, markId);
   }
   return (node.content ?? []).some((ch) =>
     blockHasTextOutsideMark(ch, markName, markId)
@@ -1493,22 +1564,13 @@ export function acceptSuggestionMarksById(
       for (const ch of node.content) visit(ch);
       node.content = node.content
         .filter((ch) => {
-          if (ch.type !== "text") return true;
-          const marks = ch.marks ?? [];
-          return !marks.some(
-            (m) =>
-              m.type === suggestionDeleteMarkName &&
-              (m.attrs as { id?: string } | undefined)?.id === markId
-          );
+          if (!isSuggestionMarkHost(ch)) return true;
+          return !nodeHasMark(ch, suggestionDeleteMarkName, markId);
         })
         .map((ch) => {
-          if (ch.type !== "text" || !ch.marks?.length) return ch;
+          if (!isSuggestionMarkHost(ch) || !ch.marks?.length) return ch;
           const nextMarks = ch.marks.filter(
-            (m) =>
-              !(
-                m.type === suggestionInsertMarkName &&
-                (m.attrs as { id?: string } | undefined)?.id === markId
-              )
+            (m) => !markIdMatches(m, suggestionInsertMarkName, markId)
           );
           const out: JSONContent = { ...ch };
           if (nextMarks.length > 0) out.marks = nextMarks;
@@ -1546,7 +1608,7 @@ export function commitSuggestionMarksById(
       delete next.suggestionKind;
       node.attrs = next;
     }
-    if (node.type === "text" && node.marks?.length) {
+    if (node.marks?.length) {
       node.marks = node.marks.map((mark) => {
         const attrs = mark.attrs as { id?: string; status?: string } | undefined;
         if (
@@ -1582,22 +1644,13 @@ export function stripSuggestionMarksById(
     if (node.content?.length) {
       for (const ch of node.content) visit(ch);
       node.content = node.content.filter((ch) => {
-        if (ch.type !== "text") return true;
-        const marks = ch.marks ?? [];
-        return !marks.some(
-          (m) =>
-            m.type === suggestionInsertMarkName &&
-            (m.attrs as { id?: string } | undefined)?.id === markId
-        );
+        if (!isSuggestionMarkHost(ch)) return true;
+        return !nodeHasMark(ch, suggestionInsertMarkName, markId);
       });
       for (const ch of node.content) {
-        if (ch.type !== "text" || !ch.marks?.length) continue;
+        if (!isSuggestionMarkHost(ch) || !ch.marks?.length) continue;
         ch.marks = ch.marks.filter(
-          (m) =>
-            !(
-              m.type === suggestionDeleteMarkName &&
-              (m.attrs as { id?: string } | undefined)?.id === markId
-            )
+          (m) => !markIdMatches(m, suggestionDeleteMarkName, markId)
         );
         if (ch.marks.length === 0) delete ch.marks;
       }

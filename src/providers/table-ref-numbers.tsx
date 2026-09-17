@@ -7,9 +7,11 @@ import {
   type TableNumberComment,
 } from "@/lib/suggestions/document-table-number";
 import {
+  listInsertableTableRefs,
   resolveTableRefTarget,
   tableRefMapKey,
   tableRefNumberMap,
+  type InsertableTableRef,
 } from "@/lib/suggestions/table-ref";
 import type { TableRefAttrs } from "@/lib/tiptap/table-ref-markdown";
 
@@ -20,6 +22,7 @@ export type TableRefFieldScope = {
 
 export type TableRefNumbersValue = {
   map: ReadonlyMap<string, number>;
+  insertable: readonly InsertableTableRef[];
   documentType: DocumentType | null;
 };
 
@@ -29,6 +32,7 @@ export const TableRefFieldContext = createContext<TableRefFieldScope | null>(
 
 export const TableRefNumbersContext = createContext<TableRefNumbersValue>({
   map: new Map(),
+  insertable: [],
   documentType: null,
 });
 
@@ -51,6 +55,7 @@ export function TableRefNumbersProvider({
     });
     return {
       map: tableRefNumberMap(contents),
+      insertable: listInsertableTableRefs(contents),
       documentType,
     };
   }, [documentType, sections, comments]);

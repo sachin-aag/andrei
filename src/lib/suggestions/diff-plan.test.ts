@@ -85,3 +85,35 @@ describe("citations are excluded from the diff", () => {
     expect(ops).toEqual([]);
   });
 });
+
+describe("tableRef display is merge identity", () => {
+  it("does not emit inserts when typed Table N already matches live REFs", () => {
+    const live = doc(
+      para("as ", [
+        {
+          type: "tableRef",
+          attrs: {
+            section: "elr_monitoring",
+            targetField: "table",
+            tableIndex: 0,
+            n: 8,
+          },
+        },
+        { type: "text", text: " detailed in " },
+        {
+          type: "tableRef",
+          attrs: {
+            section: "elr_monitoring",
+            targetField: "table",
+            tableIndex: 0,
+            n: 8,
+          },
+        },
+        { type: "text", text: "." },
+      ])
+    );
+    const typed = doc(para("as Table 8 detailed in Table 8."));
+    expect(canonicalField(live)).toBe(canonicalField(typed));
+    expect(planFieldDiff(live, typed)).toEqual([]);
+  });
+});

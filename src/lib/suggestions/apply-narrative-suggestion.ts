@@ -63,7 +63,7 @@ export function narrativeHasSuggestionMarks(
   let found = false;
   const walk = (node: JSONContent) => {
     if (found) return;
-    if (node.type === "text" && node.marks?.length) {
+    if (node.marks?.length) {
       for (const m of node.marks) {
         const attrs = m.attrs as { id?: string } | undefined;
         if (

@@ -6,7 +6,11 @@ import {
   EMPTY_ELR_CONTENT,
 } from "@/lib/document-types/elr/sections";
 import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
-import { cascadeFilledTableCaptionsInSections } from "@/lib/suggestions/document-table-number";
+import {
+  cascadeFilledTableCaptionsInSections,
+  orderedSectionContents,
+} from "@/lib/suggestions/document-table-number";
+import { listInsertableTableRefs } from "@/lib/suggestions/table-ref";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
@@ -199,5 +203,60 @@ describe("tableRef cascade", () => {
       ],
     };
     expect(flattenForAnchor(doc).text).toBe("See Table 2.");
+  });
+});
+
+describe("listInsertableTableRefs", () => {
+  it("lists filled tables with live N and caption title", () => {
+    const monitoring = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoring.ok).toBe(true);
+    if (!monitoring.ok) return;
+
+    const cascaded = cascadeFilledTableCaptionsInSections({
+      documentType: "equipment_lifecycle_report",
+      sections: {
+        elr_abbreviations: EMPTY_ELR_CONTENT.elr_abbreviations,
+        elr_monitoring: { table: monitoring.doc },
+      },
+    });
+    const items = listInsertableTableRefs(
+      orderedSectionContents({
+        documentType: "equipment_lifecycle_report",
+        sections: cascaded.sections,
+      })
+    );
+
+    expect(items.map((item) => item.n)).toEqual([1, 2]);
+    expect(items[0]).toMatchObject({
+      section: "elr_abbreviations",
+      tableIndex: 0,
+      n: 1,
+    });
+    expect(items[1]).toMatchObject({
+      section: "elr_monitoring",
+      targetField: "table",
+      tableIndex: 0,
+      n: 2,
+    });
+    expect(items[1]?.title.length).toBeGreaterThan(0);
+    expect(items[1]?.sectionLabel.toLowerCase()).toContain("monitoring");
+  });
+
+  it("omits empty unused table shells", () => {
+    const items = listInsertableTableRefs([
+      {
+        section: "elr_monitoring",
+        content: { table: seededTableDoc([...ELR_MONITORING_HEADERS]) },
+      },
+    ]);
+    expect(items).toEqual([]);
   });
 });

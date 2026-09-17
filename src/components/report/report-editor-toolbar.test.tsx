@@ -35,6 +35,7 @@ vi.mock("@/components/report/editor-toolbars", () => ({
   FontColorToolbar: () => null,
   InsertImageButton: () => null,
   InsertTableButton: () => null,
+  InsertTableRefButton: () => null,
   ListEditToolbar: () => null,
   TextFormatToolbar: () => null,
   useEditorToolbarState: () => {},
