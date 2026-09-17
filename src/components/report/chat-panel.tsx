@@ -1200,16 +1200,28 @@ export function ChatPanel({
     [abortPendingSend, threadBusy, currentSessionId, mountSession]
   );
 
+  const createSessionInFlightRef = useRef<Promise<string | null> | null>(null);
+
   const createSession = useCallback(async (): Promise<string | null> => {
-    try {
-      const res = await fetch(`${base}/sessions`, { method: "POST" });
-      if (!res.ok) return null;
-      const data = (await res.json()) as { session: ChatSessionSummary };
-      setSessions((prev) => [data.session, ...prev]);
-      return data.session.id;
-    } catch {
-      return null;
-    }
+    const inFlight = createSessionInFlightRef.current;
+    if (inFlight) return inFlight;
+
+    const promise = (async (): Promise<string | null> => {
+      try {
+        const res = await fetch(`${base}/sessions`, { method: "POST" });
+        if (!res.ok) return null;
+        const data = (await res.json()) as { session: ChatSessionSummary };
+        setSessions((prev) => [data.session, ...prev]);
+        return data.session.id;
+      } catch {
+        return null;
+      } finally {
+        createSessionInFlightRef.current = null;
+      }
+    })();
+
+    createSessionInFlightRef.current = promise;
+    return promise;
   }, [base]);
 
   const startBlankChat = useCallback(async () => {
@@ -1758,7 +1770,7 @@ export function ChatPanel({
         )}
         <button
           type="button"
-          onClick={newChat}
+          onClick={() => void newChat()}
           aria-label="New chat"
           title="New chat"
           className="flex size-7 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
