@@ -171,7 +171,7 @@ import {
   buildPendingChatUserMessage,
   mergePendingChatUserMessage,
   pendingChatSendBelongsToSession,
-  pendingChatUserMessageIsRepresented,
+  shouldShowPendingChatUserOverlay,
 } from "@/components/report/chat-pending-send";
 import {
   CHAT_VISIBLE_TAIL,
@@ -799,6 +799,7 @@ export function ChatPanel({
   const [pendingSend, setPendingSend] = useState<UIMessage | null>(null);
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [pendingRequestStarted, setPendingRequestStarted] = useState(false);
+  const [sawStreamBusyForPending, setSawStreamBusyForPending] = useState(false);
   const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
@@ -815,36 +816,64 @@ export function ChatPanel({
     pendingPlan,
     planChaining,
   } = runtime;
-  const pendingForDisplay =
-    pendingSend != null &&
-    pendingChatSendBelongsToSession(pendingSessionId, currentSessionId) &&
-    !pendingChatUserMessageIsRepresented(messages, pendingSend, {
-      allowTextMatch: pendingRequestStarted,
-    })
-      ? pendingSend
-      : null;
+  const pendingForDisplay = shouldShowPendingChatUserOverlay({
+    pending: pendingSend,
+    belongsToSession: pendingChatSendBelongsToSession(
+      pendingSessionId,
+      currentSessionId
+    ),
+    messages,
+    busy,
+    pendingRequestStarted,
+    sawStreamBusy: sawStreamBusyForPending,
+  })
+    ? pendingSend
+    : null;
   const threadBusy = busy || pendingForDisplay != null;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
-  const abortPendingSend = useCallback((restoreComposer: boolean) => {
-    sendEpochRef.current += 1;
-    if (
-      restoreComposer &&
-      pendingSendRef.current &&
-      !pendingSendStartedRef.current
-    ) {
-      pendingRestoreRef.current?.();
-    }
+  const resetPendingSendState = useCallback(() => {
     pendingSendRef.current = null;
     pendingRestoreRef.current = null;
     pendingSendStartedRef.current = false;
     setPendingSend(null);
     setPendingSessionId(null);
     setPendingRequestStarted(false);
+    setSawStreamBusyForPending(false);
   }, []);
+  const abortPendingSend = useCallback(
+    (restoreComposer: boolean) => {
+      sendEpochRef.current += 1;
+      if (
+        restoreComposer &&
+        pendingSendRef.current &&
+        !pendingSendStartedRef.current
+      ) {
+        pendingRestoreRef.current?.();
+      }
+      resetPendingSendState();
+    },
+    [resetPendingSendState]
+  );
   const stopPendingOrTurn = useCallback(() => {
     abortPendingSend(true);
     stopTurn();
   }, [abortPendingSend, stopTurn]);
+  useEffect(() => {
+    if (!pendingSend) return;
+    if (pendingRequestStarted && busy) {
+      setSawStreamBusyForPending(true);
+    }
+  }, [pendingSend, pendingRequestStarted, busy]);
+  useEffect(() => {
+    if (pendingRequestStarted && sawStreamBusyForPending && !busy) {
+      resetPendingSendState();
+    }
+  }, [
+    busy,
+    pendingRequestStarted,
+    resetPendingSendState,
+    sawStreamBusyForPending,
+  ]);
   const voice = useVoiceDictation({
     reportId: report.id,
     getPrefix: () => input,
@@ -1579,6 +1608,7 @@ export function ChatPanel({
       setPendingRequestStarted(false);
       setPendingSend(pending);
       setPendingSessionId(currentSessionId);
+      setSawStreamBusyForPending(false);
       const tagsForRequest = mentions;
       // Composer clears in the same tick as the optimistic bubble so Enter
       // never sits on the typed text while section saves flush.
@@ -1605,12 +1635,7 @@ export function ChatPanel({
       const sendWasCancelled = () => sendEpochRef.current !== epoch;
       const failBeforeRequest = (message?: string) => {
         if (sendWasCancelled()) return;
-        pendingSendRef.current = null;
-        pendingRestoreRef.current = null;
-        pendingSendStartedRef.current = false;
-        setPendingSend(null);
-        setPendingSessionId(null);
-        setPendingRequestStarted(false);
+        resetPendingSendState();
         restoreComposer();
         if (message) toast.error(message);
       };
@@ -1698,6 +1723,7 @@ export function ChatPanel({
       workspaceChrome,
       flushPendingSectionSaves,
       setAgentCommitInFlight,
+      resetPendingSendState,
     ]
   );
 

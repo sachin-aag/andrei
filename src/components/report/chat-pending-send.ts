@@ -1,5 +1,8 @@
 import { isFileUIPart, type FileUIPart, type UIMessage } from "ai";
-import { chatUserTurnIsAutoContinue } from "@/lib/ai/chat/pending-plan";
+import {
+  CHAT_AUTO_CONTINUE_TEXT,
+  chatUserTurnIsAutoContinue,
+} from "@/lib/ai/chat/pending-plan";
 
 export function buildPendingChatUserMessage(input: {
   text: string;
@@ -48,18 +51,24 @@ function userTurnsMatch(left: UIMessage, right: UIMessage): boolean {
   return leftUrls.every((url, index) => rightUrls[index] === url);
 }
 
-function lastUserMessage(
-  messages: readonly UIMessage[]
+function userTurnLooksLikeAutoContinue(message: UIMessage): boolean {
+  const metadata =
+    "metadata" in message
+      ? (message as { metadata?: unknown }).metadata
+      : undefined;
+  if (chatUserTurnIsAutoContinue(metadata)) return true;
+  return userMessageText(message) === CHAT_AUTO_CONTINUE_TEXT;
+}
+
+function matchingNonAutoContinueUser(
+  messages: readonly UIMessage[],
+  pending: UIMessage
 ): UIMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message?.role !== "user") continue;
-    const metadata =
-      "metadata" in message
-        ? (message as { metadata?: unknown }).metadata
-        : undefined;
-    if (chatUserTurnIsAutoContinue(metadata)) continue;
-    return message;
+    if (userTurnLooksLikeAutoContinue(message)) continue;
+    if (userTurnsMatch(message, pending)) return message;
   }
   return undefined;
 }
@@ -78,8 +87,35 @@ export function pendingChatUserMessageIsRepresented(
     return true;
   }
   if (!opts?.allowTextMatch) return false;
-  const lastUser = lastUserMessage(messages);
-  return lastUser != null && userTurnsMatch(lastUser, pending);
+  return matchingNonAutoContinueUser(messages, pending) != null;
+}
+
+/**
+ * Hide the optimistic send overlay (and Working…) once the live user row
+ * exists, or once this send already streamed and went idle. Remaining-section
+ * hydrate replaces the pending UUID; the tab can be done while `pendingSend`
+ * still hangs around.
+ */
+export function shouldShowPendingChatUserOverlay(input: {
+  pending: UIMessage | null;
+  belongsToSession: boolean;
+  messages: readonly UIMessage[];
+  busy: boolean;
+  pendingRequestStarted: boolean;
+  sawStreamBusy: boolean;
+}): boolean {
+  if (input.pending == null || !input.belongsToSession) return false;
+  if (
+    pendingChatUserMessageIsRepresented(input.messages, input.pending, {
+      allowTextMatch: input.pendingRequestStarted,
+    })
+  ) {
+    return false;
+  }
+  if (input.pendingRequestStarted && input.sawStreamBusy && !input.busy) {
+    return false;
+  }
+  return true;
 }
 
 /** Overlay belongs only to the thread that submitted it. */

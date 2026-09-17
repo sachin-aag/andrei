@@ -202,9 +202,11 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   the client POSTs `Continue the remaining sections.` with `autoContinue`
   (auto-continue user rows stay hidden; one live remaining-section widget
   sits **below** the transcript, above Working… / Resume — collapsed
-  `N of M — current`, expand for done / running / pending). The agent-done
-  notice is `Assistant is done with {section}`. Do not toast a false
-  “hit an error” between successful section turns. Cancel pauses the queue; a new typed prompt pauses it;
+  `N of M — current`, expand for done / running / pending). Working… hides
+  when the stream is idle even if the optimistic send still has a stale
+  pending id after hydrate. The agent-done notice is `Assistant is done
+  with {section}`. Do not toast a false “hit an error” between successful
+  section turns. Cancel pauses the queue; a new typed prompt pauses it;
   reopening the thread does not auto-chain. When the 270s abort
   fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`
   so we can count it. Loop guards live in

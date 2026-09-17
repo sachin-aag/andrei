@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { FileUIPart, UIMessage } from "ai";
+import { CHAT_AUTO_CONTINUE_TEXT } from "@/lib/ai/chat/pending-plan";
 import {
   buildPendingChatUserMessage,
   mergePendingChatUserMessage,
   pendingChatSendBelongsToSession,
   pendingChatUserMessageIsRepresented,
+  shouldShowPendingChatUserOverlay,
 } from "./chat-pending-send";
 
 const image: FileUIPart = {
@@ -148,6 +150,39 @@ describe("pendingChatUserMessageIsRepresented", () => {
       mergePendingChatUserMessage(live, pending, { allowTextMatch: true })
     ).toEqual(live);
   });
+
+  it("matches the original prompt when hydrate dropped autoContinue metadata", () => {
+    const pending = userMessage("pending-1", "draft remaining sections");
+    const live = [
+      userMessage("live-1", "draft remaining sections"),
+      assistantMessage("a1", "Drafted Objective."),
+      userMessage("auto-1", CHAT_AUTO_CONTINUE_TEXT),
+      assistantMessage("a2", "Drafted Conclusion."),
+    ];
+    expect(
+      pendingChatUserMessageIsRepresented(live, pending, {
+        allowTextMatch: true,
+      })
+    ).toBe(true);
+    expect(
+      mergePendingChatUserMessage(live, pending, { allowTextMatch: true })
+    ).toEqual(live);
+  });
+
+  it("matches the original prompt when a later user answer is the last turn", () => {
+    const pending = userMessage("pending-1", "draft remaining sections");
+    const live = [
+      userMessage("live-1", "draft remaining sections"),
+      assistantMessage("a1", "Which format?"),
+      userMessage("answer-1", "Cartridge"),
+      assistantMessage("a2", "Drafted Scope."),
+    ];
+    expect(
+      pendingChatUserMessageIsRepresented(live, pending, {
+        allowTextMatch: true,
+      })
+    ).toBe(true);
+  });
 });
 
 describe("pendingChatSendBelongsToSession", () => {
@@ -210,5 +245,81 @@ describe("mergePendingChatUserMessage", () => {
       live,
       assistant,
     ]);
+  });
+});
+
+describe("shouldShowPendingChatUserOverlay", () => {
+  const pending = userMessage("pending-1", "draft remaining sections");
+  const live = [
+    userMessage("live-1", "draft remaining sections"),
+    assistantMessage("a1", "Drafted Conclusion."),
+  ];
+
+  it("shows the optimistic bubble before the request starts", () => {
+    expect(
+      shouldShowPendingChatUserOverlay({
+        pending,
+        belongsToSession: true,
+        messages: [],
+        busy: false,
+        pendingRequestStarted: false,
+        sawStreamBusy: false,
+      })
+    ).toBe(true);
+  });
+
+  it("keeps the overlay until useChat becomes busy after send starts", () => {
+    expect(
+      shouldShowPendingChatUserOverlay({
+        pending,
+        belongsToSession: true,
+        messages: [],
+        busy: false,
+        pendingRequestStarted: true,
+        sawStreamBusy: false,
+      })
+    ).toBe(true);
+  });
+
+  it("hides Working… after this send already streamed and went idle", () => {
+    expect(
+      shouldShowPendingChatUserOverlay({
+        pending,
+        belongsToSession: true,
+        messages: [
+          assistantMessage("a1", "Drafted Conclusion."),
+          userMessage("auto-1", CHAT_AUTO_CONTINUE_TEXT),
+        ],
+        busy: false,
+        pendingRequestStarted: true,
+        sawStreamBusy: true,
+      })
+    ).toBe(false);
+  });
+
+  it("hides the overlay once the original prompt is in the thread", () => {
+    expect(
+      shouldShowPendingChatUserOverlay({
+        pending,
+        belongsToSession: true,
+        messages: live,
+        busy: true,
+        pendingRequestStarted: true,
+        sawStreamBusy: true,
+      })
+    ).toBe(false);
+  });
+
+  it("does not overlay a send from another session", () => {
+    expect(
+      shouldShowPendingChatUserOverlay({
+        pending,
+        belongsToSession: false,
+        messages: [],
+        busy: true,
+        pendingRequestStarted: true,
+        sawStreamBusy: true,
+      })
+    ).toBe(false);
   });
 });
