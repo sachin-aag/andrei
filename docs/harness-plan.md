@@ -31,6 +31,7 @@ Live report creation on the PR is still the layer-3 merge gate.
 | B5 one page-objective scorer | Landed as one haystack (`pageObjectiveHaystack`) shared by inventory scoring and `scoreReviewPage`. `routeSearchTargets` stays file/span routing for identifier queries. |
 | F2 MJ overlay replay / F1 live LLM cost | Not in this repo. User report creation + Langfuse on the PR. |
 | Live QMS vs calibration-planner walk | Landed. ELR inventory start no longer page-lists files typed as a different inventory (a calibration planner is not QMS). Page scoring ignores running-header `document no`. The planning chip names queued files, not the whole vault. |
+| Remaining-sections UI (plan slot, false error, done popup) | Landed. Plan progress sits below the transcript. Auto-continue rows stay hidden and do not resurrect the original user bubble. Successful section turns do not toast “hit an error”. Agent-done notice is `Assistant is done with {section}`. |
 
 ## 1. What `dev 6` actually cost (measured, not estimated)
 

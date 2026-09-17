@@ -1,4 +1,5 @@
 import { isFileUIPart, type FileUIPart, type UIMessage } from "ai";
+import { chatUserTurnIsAutoContinue } from "@/lib/ai/chat/pending-plan";
 
 export function buildPendingChatUserMessage(input: {
   text: string;
@@ -52,7 +53,13 @@ function lastUserMessage(
 ): UIMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message?.role === "user") return message;
+    if (message?.role !== "user") continue;
+    const metadata =
+      "metadata" in message
+        ? (message as { metadata?: unknown }).metadata
+        : undefined;
+    if (chatUserTurnIsAutoContinue(metadata)) continue;
+    return message;
   }
   return undefined;
 }

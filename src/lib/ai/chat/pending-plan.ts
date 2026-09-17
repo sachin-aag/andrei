@@ -494,6 +494,24 @@ export function planProgressChipLabel(
   return `${continuation.itemIndex} of ${continuation.total} — ${continuation.nextLabel}`;
 }
 
+/** Section the finishing turn drafted, or the one still marked in progress. */
+export function completedPlanSectionLabel(
+  plan: ChatPendingPlan | null | undefined,
+  live?: LivePlanProgress | null
+): string | null {
+  if (!plan) return null;
+  const drafted = live?.draftedSectionKeys ?? [];
+  const labels: string[] = [];
+  for (const key of drafted) {
+    const label = plan.items.find((item) => item.sectionKey === key)?.label;
+    if (label && !labels.includes(label)) labels.push(label);
+  }
+  if (labels.length > 0) return labels.join(", ");
+  return (
+    plan.items.find((item) => item.state === "in_progress")?.label ?? null
+  );
+}
+
 const PLAN_EDIT_TOOLS = new Set([
   "draft_field",
   "edit_table",

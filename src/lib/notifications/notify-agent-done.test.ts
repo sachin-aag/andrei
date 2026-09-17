@@ -28,6 +28,32 @@ function deps() {
 }
 
 describe("agentDoneNotificationCopy", () => {
+  it("names the section when a remaining-section turn finishes", () => {
+    expect(
+      agentDoneNotificationCopy({
+        documentNoun: "equipment lifecycle report",
+        documentNo: "ELR-12",
+        sectionLabel: "QMS Records",
+      })
+    ).toEqual({
+      title: "Assistant is done with QMS Records",
+      body: "Finished QMS Records on equipment lifecycle report ELR-12.",
+    });
+  });
+
+  it("names the section when the document number is blank", () => {
+    expect(
+      agentDoneNotificationCopy({
+        documentNoun: "deviation",
+        documentNo: "   ",
+        sectionLabel: "Define",
+      })
+    ).toEqual({
+      title: "Assistant is done with Define",
+      body: "The assistant finished Define.",
+    });
+  });
+
   it("includes the document noun and number when present", () => {
     expect(
       agentDoneNotificationCopy({

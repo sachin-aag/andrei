@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  assistantPartsAreCannedError,
   assistantPartsHaveVisibleContent,
   assistantPartsHaveVisibleText,
   assistantProgressSignature,
@@ -12,6 +13,7 @@ import {
   partsForPersistedAssistantTurn,
   shouldShowChatClientError,
   shouldShowEmptyAssistantError,
+  shouldToastEmptyAssistantTurn,
   CHAT_ASSISTANT_ERROR_MESSAGE,
   CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
   CHAT_CLIENT_GIVE_UP_MS,
@@ -99,6 +101,32 @@ describe("shouldShowEmptyAssistantError", () => {
       })
     ).toBe(false);
   });
+
+  it("hides the empty-turn error when a remaining-section plan is still chaining", () => {
+    expect(
+      shouldShowEmptyAssistantError({
+        parts: [],
+        streaming: false,
+        planContinuing: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldShowEmptyAssistantError({
+        parts: [{ type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE }],
+        streaming: false,
+        planContinuing: true,
+      })
+    ).toBe(false);
+  });
+
+  it("treats the canned empty-turn placeholder as a visible failure", () => {
+    expect(
+      shouldShowEmptyAssistantError({
+        parts: [{ type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE }],
+        streaming: false,
+      })
+    ).toBe(true);
+  });
 });
 
 describe("isChatClientDisconnectError", () => {
@@ -148,6 +176,53 @@ describe("shouldShowChatClientError", () => {
     expect(shouldShowChatClientError({ error: undefined, busy: false })).toBe(
       false
     );
+    expect(
+      shouldShowChatClientError({
+        error: new TypeError("Failed to fetch"),
+        busy: false,
+        planChaining: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("assistantPartsAreCannedError", () => {
+  it("matches only the empty-turn placeholder text", () => {
+    expect(assistantPartsAreCannedError([])).toBe(false);
+    expect(
+      assistantPartsAreCannedError([
+        { type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE },
+      ])
+    ).toBe(true);
+    expect(
+      assistantPartsAreCannedError([
+        { type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE },
+        { type: "tool-edit_table" },
+      ])
+    ).toBe(false);
+  });
+});
+
+describe("shouldToastEmptyAssistantTurn", () => {
+  it("skips the toast when hydrate recovered content or the plan is chaining", () => {
+    expect(
+      shouldToastEmptyAssistantTurn({
+        recoveredVisibleContent: false,
+        planContinuing: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldToastEmptyAssistantTurn({
+        recoveredVisibleContent: true,
+        planContinuing: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldToastEmptyAssistantTurn({
+        recoveredVisibleContent: false,
+        planContinuing: true,
+      })
+    ).toBe(false);
   });
 });
 

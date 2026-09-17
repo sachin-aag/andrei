@@ -18,10 +18,12 @@ import { captureClientException, captureEvent } from "@/lib/analytics/events";
 import { useChatWatchdog } from "@/hooks/use-chat-watchdog";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
+  assistantPartsAreCannedError,
   assistantPartsHaveVisibleContent,
   assistantPartsHaveVisibleText,
   formatChatLlmError,
   isChatClientDisconnectError,
+  shouldToastEmptyAssistantTurn,
 } from "@/lib/ai/chat/assistant-turn";
 import type { WorkProductView } from "@/components/report/workspace-chrome";
 import {
@@ -37,7 +39,9 @@ import type { ChatSessionView } from "@/lib/ai/chat/sessions";
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   chatUserTurnIsAutoContinue,
+  completedPlanSectionLabel,
   continuationFromMetadata,
+  livePlanProgressFromParts,
   planHasRemainingWork,
   shouldAutoContinuePlan,
   type ChatPendingPlan,
@@ -108,7 +112,10 @@ export function ChatSessionHost({
   api: string;
   hydrateOnMount: boolean;
   onFinishTurn: () => void;
-  onTurnCompleted: (startedAt: number | null) => void;
+  onTurnCompleted: (
+    startedAt: number | null,
+    details?: { sectionLabel?: string | null }
+  ) => void;
   onSettled: (sessionId: string) => void;
   onRuntime: (sessionId: string, runtime: ChatSessionRuntime) => void;
 }) {
@@ -121,10 +128,12 @@ export function ChatSessionHost({
   const agentRunStartedAtRef = useRef<number | null>(null);
   const lastSendBodyRef = useRef<Record<string, unknown>>({});
   const cancelPlanRef = useRef(false);
+  const pendingPlanRef = useRef<ChatPendingPlan | null>(null);
   const [backgroundTurn, setBackgroundTurn] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<ChatPendingPlan | null>(null);
   const [planChaining, setPlanChaining] = useState(false);
   const surfaceRef = useRef<WorkProductView>("report");
+  pendingPlanRef.current = pendingPlan;
 
   const hydrateFromServer = useCallback(async (opts?: {
     force?: boolean;
@@ -154,8 +163,11 @@ export function ChatSessionHost({
       }
       const last = data.messages?.[data.messages.length - 1];
       if (
-        last?.role === "assistant" &&
-        assistantPartsHaveVisibleContent(last.parts)
+        next.backgroundTurn ||
+        planHasRemainingWork(data.pendingPlan) ||
+        (last?.role === "assistant" &&
+          assistantPartsHaveVisibleContent(last.parts) &&
+          !assistantPartsAreCannedError(last.parts))
       ) {
         clearErrorRef.current();
       }
@@ -201,6 +213,7 @@ export function ChatSessionHost({
         return;
       }
       setPlanChaining(true);
+      clearErrorRef.current();
       void sendMessageRef.current?.(
         {
           text: CHAT_AUTO_CONTINUE_TEXT,
@@ -229,6 +242,43 @@ export function ChatSessionHost({
     },
     [reportId, sessionId]
   );
+
+  const lastAssistant = (view: ChatSessionView | null | undefined) => {
+    const last = view?.messages?.[view.messages.length - 1];
+    return last?.role === "assistant" ? last : null;
+  };
+
+  const planContinuingFromView = (view: ChatSessionView | null | undefined) => {
+    const last = lastAssistant(view);
+    const continuation = last
+      ? continuationFromMetadata(last.metadata)
+      : null;
+    if (
+      shouldAutoContinuePlan(continuation, {
+        cancelled: cancelPlanRef.current,
+      })
+    ) {
+      return true;
+    }
+    const plan = view?.pendingPlan ?? pendingPlanRef.current;
+    return planHasRemainingWork(plan) && plan?.paused !== true;
+  };
+
+  const announceCompletedTurn = (
+    view: ChatSessionView | null | undefined,
+    parts?: UIMessage["parts"]
+  ) => {
+    const startedAt = agentRunStartedAtRef.current;
+    agentRunStartedAtRef.current = null;
+    const last = lastAssistant(view);
+    const live = livePlanProgressFromParts(parts ?? last?.parts);
+    onTurnCompletedRef.current(startedAt, {
+      sectionLabel: completedPlanSectionLabel(
+        view?.pendingPlan ?? pendingPlanRef.current,
+        live
+      ),
+    });
+  };
 
   const { messages, sendMessage, setMessages, status, error, stop, clearError } =
     useChat({
@@ -261,19 +311,73 @@ export function ChatSessionHost({
       if (isError) {
         // A non-network stream error may still leave the isolate running
         // (Safari “Load failed”, mid-turn parse). Hydrate: if the server
-        // turn is in flight, recover as a background poll.
-        void hydrateFromServer();
+        // turn is in flight, recover as a background poll. If persist
+        // already advanced the remaining-section queue, chain the next
+        // item instead of painting a false error.
+        setPlanChaining(true);
+        void hydrateFromServer({ force: true }).then((view) => {
+          if (!view) {
+            setPlanChaining(false);
+            return;
+          }
+          const next = backgroundTurnFromSessionView(view);
+          if (next.backgroundTurn) {
+            setBackgroundTurn(true);
+            setPlanChaining(false);
+            return;
+          }
+          const last = lastAssistant(view);
+          const recovered =
+            last != null &&
+            assistantPartsHaveVisibleContent(last.parts) &&
+            !assistantPartsAreCannedError(last.parts);
+          if (
+            shouldToastEmptyAssistantTurn({
+              recoveredVisibleContent: recovered,
+              planContinuing: planContinuingFromView(view),
+            })
+          ) {
+            setPlanChaining(false);
+            return;
+          }
+          setBackgroundTurn(false);
+          announceCompletedTurn(view);
+          maybeAutoContinue(view);
+        });
         return;
       }
       if (
         message.role === "assistant" &&
         !assistantPartsHaveVisibleContent(message.parts)
       ) {
-        reportClientChatFailure("empty_turn", new Error("empty assistant turn"));
-        toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
-        agentRunStartedAtRef.current = null;
-        setBackgroundTurn(false);
-        setPlanChaining(false);
+        setPlanChaining(true);
+        void hydrateFromServer({ force: true }).then((view) => {
+          const last = lastAssistant(view);
+          const recovered =
+            last != null &&
+            assistantPartsHaveVisibleContent(last.parts) &&
+            !assistantPartsAreCannedError(last.parts);
+          const continuing = planContinuingFromView(view);
+          if (
+            shouldToastEmptyAssistantTurn({
+              recoveredVisibleContent: recovered,
+              planContinuing: continuing,
+            })
+          ) {
+            reportClientChatFailure(
+              "empty_turn",
+              new Error("empty assistant turn")
+            );
+            toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
+            agentRunStartedAtRef.current = null;
+            setBackgroundTurn(false);
+            setPlanChaining(false);
+            return;
+          }
+          setBackgroundTurn(false);
+          announceCompletedTurn(view, message.parts);
+          if (view) maybeAutoContinue(view);
+        });
         return;
       }
       if (
@@ -283,19 +387,25 @@ export function ChatSessionHost({
         // Tool-only finish: pick up a persisted budget/interrupt notice.
         void hydrateFromServer();
       }
-      const startedAt = agentRunStartedAtRef.current;
-      agentRunStartedAtRef.current = null;
       setBackgroundTurn(false);
-      onTurnCompletedRef.current(startedAt);
+      setPlanChaining(true);
+      announceCompletedTurn(null, message.parts);
       // Pick up persisted metadata (change summary / document version).
       void hydrateFromServer({ force: true }).then((view) => {
         if (view) maybeAutoContinue(view);
+        else setPlanChaining(false);
       });
     },
     onError: (err) => {
       console.error("chat error", err);
       if (isChatClientDisconnectError(err)) return;
       reportClientChatFailure("client_error", err);
+      if (planHasRemainingWork(pendingPlanRef.current)) {
+        // Remaining-section turns often drop the SSE after a long review.
+        // Hydrate/onFinish recovers the persisted row — do not toast a
+        // false "hit an error" between sections.
+        return;
+      }
       toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
     },
   });
@@ -405,9 +515,8 @@ export function ChatSessionHost({
         setMessages(view.messages ?? []);
         setPendingPlan(view.pendingPlan ?? null);
         setBackgroundTurn(false);
-        const startedAt = agentRunStartedAtRef.current;
-        agentRunStartedAtRef.current = null;
-        onTurnCompletedRef.current(startedAt);
+        clearErrorRef.current();
+        announceCompletedTurn(view);
         finishTurnRef.current();
         maybeAutoContinue(view);
       } catch {

@@ -5,6 +5,7 @@ import {
   advancePlanAfterTurn,
   chatPlanProgressView,
   chatUserTurnIsAutoContinue,
+  completedPlanSectionLabel,
   continuationFromMetadata,
   currentPlanTurnSections,
   emptyInventoryNeedsMatchingReview,
@@ -331,6 +332,32 @@ describe("plan prompt and metadata", () => {
         total: 10,
       })
     ).toBe("4 of 10 — Monitoring");
+  });
+
+  it("names the section a remaining-section turn just finished", () => {
+    const started = plan([
+      { sectionKey: "elr_objective", label: "Objective", state: "done" },
+      {
+        sectionKey: "elr_qms",
+        label: "QMS Records",
+        state: "in_progress",
+      },
+      { sectionKey: "elr_attachments", label: "Attachments", state: "queued" },
+    ]);
+    expect(completedPlanSectionLabel(started)).toBe("QMS Records");
+    expect(
+      completedPlanSectionLabel(started, {
+        draftedSectionKeys: ["elr_qms"],
+        inFlightSectionKey: null,
+      })
+    ).toBe("QMS Records");
+    expect(
+      completedPlanSectionLabel(started, {
+        draftedSectionKeys: ["elr_objective", "elr_qms"],
+        inFlightSectionKey: null,
+      })
+    ).toBe("Objective, QMS Records");
+    expect(completedPlanSectionLabel(null)).toBeNull();
   });
 
   it("groups live plan progress into done, current, and pending", () => {

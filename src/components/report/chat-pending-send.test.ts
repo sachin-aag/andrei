@@ -128,11 +128,15 @@ describe("pendingChatUserMessageIsRepresented", () => {
     ).toBe(true);
   });
 
-  it("matches the live user row by text after the request starts even when an assistant follows", () => {
-    const pending = userMessage("pending-1", "hello");
+  it("matches the original prompt after an auto-continue user row is appended", () => {
+    const pending = userMessage("pending-1", "Draft remaining sections");
     const live = [
-      userMessage("live-1", "hello"),
-      assistantMessage("a1", "stub reply"),
+      userMessage("live-1", "Draft remaining sections"),
+      assistantMessage("a1", "Drafted Objective."),
+      {
+        ...userMessage("auto-1", "Continue the remaining sections."),
+        metadata: { autoContinue: true },
+      },
     ];
     expect(pendingChatUserMessageIsRepresented(live, pending)).toBe(false);
     expect(
@@ -140,6 +144,9 @@ describe("pendingChatUserMessageIsRepresented", () => {
         allowTextMatch: true,
       })
     ).toBe(true);
+    expect(
+      mergePendingChatUserMessage(live, pending, { allowTextMatch: true })
+    ).toEqual(live);
   });
 });
 

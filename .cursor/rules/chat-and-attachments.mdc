@@ -200,8 +200,11 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   a “ran out of steps / ask me to continue” notice. Multi-section Agent
   drafts persist a `pending_plan` on the chat session. After each turn
   the client POSTs `Continue the remaining sections.` with `autoContinue`
-  (one live remaining-section widget: collapsed `N of M — current`, expand
-  for done / running / pending). Cancel pauses the queue; a new typed prompt pauses it;
+  (auto-continue user rows stay hidden; one live remaining-section widget
+  sits **below** the transcript, above Working… / Resume — collapsed
+  `N of M — current`, expand for done / running / pending). The agent-done
+  notice is `Assistant is done with {section}`. Do not toast a false
+  “hit an error” between successful section turns. Cancel pauses the queue; a new typed prompt pauses it;
   reopening the thread does not auto-chain. When the 270s abort
   fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`
   so we can count it. Loop guards live in
