@@ -11,7 +11,7 @@ import { elrChatContextIdentity } from "./elr/chat-identity";
 import { ELR_DRAFTING_GUIDANCE } from "./elr/drafting-guidance";
 import {
   checkAccessControlPeriodCompleteness,
-  checkAccessControlPrivilegeDrift,
+  checkAccessControlRoleMarks,
   checkAccessControlRows,
   checkAlarmDirectImpactAction,
   checkAssessmentInterpretsTable,
@@ -389,8 +389,8 @@ const ALARM_CRITERIA: CriterionDefinition[] = [
 const ACCESS_CONTROL_CRITERIA: CriterionDefinition[] = [
   det(
     "access_control.rows",
-    "Access records name the system and privilege level",
-    "Does each access row name the system and the privilege level, or is the section explicitly marked not applicable?",
+    "Access records name the system and the task",
+    "Does each access row name the system and the task, or is the section explicitly marked not applicable?",
     checkAccessControlRows
   ),
   det(
@@ -400,10 +400,10 @@ const ACCESS_CONTROL_CRITERIA: CriterionDefinition[] = [
     checkAccessControlPeriodCompleteness
   ),
   det(
-    "access_control.privilege_drift",
-    "Privilege changes are not described as unchanged",
-    "If any row is Granted, Modified or Revoked, does the assessment avoid saying access is unchanged / no privilege change?",
-    checkAccessControlPrivilegeDrift
+    "access_control.role_marks",
+    "Each task carries Operator / Supervisor / Maintenance / Administrator marks",
+    "Does every role cell use a ✓ / × (or Y/N) privilege mark copied from the SOP / CSV annexure?",
+    checkAccessControlRoleMarks
   ),
   det(
     "access_control.assessment_present",
@@ -414,7 +414,7 @@ const ACCESS_CONTROL_CRITERIA: CriterionDefinition[] = [
   llm(
     "access_control.periodic_vs_qualification",
     "The assessment separates qualification of access control from periodic verification",
-    "Does the assessment say when access control was qualified (initial qualification / CSV) versus what was verified this ELR period — admin holders, privilege changes, leavers removed — and state whether 21 CFR Part 11 access, audit-trail and authority checks remain in force? A user list with no such statement is not enough."
+    "Does the assessment say when access control was qualified (initial qualification / CSV) versus what was verified this ELR period — the current SOP/CSV privilege matrix, last review, admin recertification — and state whether 21 CFR Part 11 access, audit-trail and authority checks remain in force? Copying the annexure with no such statement is not enough."
   ),
 ];
 
@@ -603,7 +603,7 @@ const PER_SECTION_PROMPTS: Record<string, string> = {
   elr_breakdowns: `The assessment above the event table is not the same as the 3.9.1 trend summary. The assessment interprets this period's events (counts, downtime hours, CAPA, product/runtime impact). The trend summary groups failure modes.`,
   elr_qms: `Period is from the last PRQ completion date to the ELR cut-off. Judge whether open items are separated from closed ones and whether qualification impact is reasoned, not whether every field is filled. The assessment must interpret the mix (deviations, CAPA, change controls) rather than recap the register.`,
   elr_alarms: `The assessment above the alarm table interprets this period's codes (counts, Direct Impact, CAPA, lost runtime). The 3.11.1 trend summary is whether the trended set is still appropriate.`,
-  elr_access_control: `Separate initial qualification of access control from periodic verification this period. 21 CFR Part 11 access, authority and audit-trail checks belong here.`,
+  elr_access_control: `Copy the current SOP / CSV privilege matrix (Task × Operator / Supervisor / Maintenance / Administrator), stamping System Name / ID from the annexure header. Separate initial qualification of access control from periodic verification this period. 21 CFR Part 11 access, authority and audit-trail checks belong here. Do not reshape the annexure into a user grant/revoke log.`,
   elr_audit_trail: `The assessment must interpret how many reviews, any anomaly, and the disposition — not that reviews were performed.`,
   elr_csv_status: `The assessment must interpret whether each system remains validated and whether a change since last PRQ triggered revalidation.`,
   elr_system_trends: `This is a synthesis over the evidence sections, not a new inventory. Identify recurring themes that cut across sections. State downtime / uptime / availability. Carry each theme that needs action into the risk-actions table.`,
