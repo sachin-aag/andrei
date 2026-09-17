@@ -10,6 +10,8 @@ import {
   isDirectImpact,
   isNo,
   isOutOfTolerance,
+  isPrivilegeGranted,
+  isPrivilegeMark,
   isYes,
   parseAccessControlMatrix,
   parseAlarmMatrix,
@@ -27,6 +29,7 @@ import {
   parseRiskActionMatrix,
   parseSystemTrendsMatrix,
 } from "./matrix-parser";
+import { ACCESS_CONTROL_ROLE_IDS } from "./matrix-columns";
 import { extractRawRows } from "@/lib/document-types/design-verification/matrix-parser";
 import { tableFieldDoc } from "@/lib/document-types/qra/matrix-parser";
 import { captionNumberAboveTable } from "@/lib/suggestions/table-operation";
@@ -534,14 +537,14 @@ export function checkAccessControlRows(ctx: EvaluationContext) {
   if (parsed.rows.length === 0) {
     return verdict(
       "partially_met",
-      "No access changes listed — state the current user list or mark the section Not Applicable"
+      "No privilege matrix copied — copy the SOP / CSV task×role annexure or mark the section Not Applicable"
     );
   }
   const problems: string[] = [];
   parsed.rows.forEach((row, index) => {
     const label = rowLabel(row.serial, index);
     if (!row.systemName.trim()) problems.push(`${label} has no system name`);
-    if (!row.role.trim()) problems.push(`${label} has no privilege level`);
+    if (!row.task.trim()) problems.push(`${label} has no task`);
   });
   return listProblems(problems, `${parsed.rows.length} access record(s)`);
 }
@@ -568,7 +571,7 @@ export function checkAccessControlPeriodCompleteness(ctx: EvaluationContext) {
     );
   }
   const adminHolders = parsed.rows.some((row) =>
-    /level\s*4|\badmin\b|administrator/i.test(row.role)
+    isPrivilegeGranted(row.administrator)
   );
   if (adminHolders && !/recertif/i.test(text)) {
     problems.push(
@@ -606,14 +609,15 @@ const REPEAT_ISOLATED_RULES = [
   },
 ] as const;
 
-const PRIVILEGE_DRIFT_RULES = [
-  {
-    when: /granted|modified|revoked/i,
-    contradicts: /no change|unchanged|no privilege/i,
-    message:
-      "Privilege grants, modifications or revocations are recorded but the assessment says access is unchanged",
-  },
-] as const;
+const ACCESS_CONTROL_ROLE_LABELS: Record<
+  (typeof ACCESS_CONTROL_ROLE_IDS)[number],
+  string
+> = {
+  operator: "Operator",
+  supervisor: "Supervisor",
+  maintenance: "Maintenance",
+  administrator: "Administrator",
+};
 
 export function checkCalibrationValidityNotContradicted(
   ctx: EvaluationContext
@@ -654,23 +658,25 @@ export function checkBreakdownRepeatNotIsolated(ctx: EvaluationContext) {
   );
 }
 
-export function checkAccessControlPrivilegeDrift(ctx: EvaluationContext) {
+export function checkAccessControlRoleMarks(ctx: EvaluationContext) {
   const parsed = parseAccessControlMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
-  const drifted = parsed.rows.filter((row) =>
-    /granted|modified|revoked/i.test(row.action)
-  );
-  if (drifted.length === 0) {
-    return verdict("met", "No privilege changes recorded");
+  if (parsed.rows.length === 0) {
+    return verdict("met", "No privilege-matrix rows to mark");
   }
-  const source = drifted.map((row) => row.action).join("\n");
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const label = rowLabel(row.serial, index);
+    for (const roleId of ACCESS_CONTROL_ROLE_IDS) {
+      if (isPrivilegeMark(row[roleId])) continue;
+      problems.push(
+        `${label} ${ACCESS_CONTROL_ROLE_LABELS[roleId]} is not a ✓ / × (or Y/N) privilege mark`
+      );
+    }
+  });
   return listProblems(
-    findDirectedContradictions(
-      source,
-      narrativeText(ctx.content),
-      PRIVILEGE_DRIFT_RULES
-    ),
-    "Privilege changes are not described as unchanged"
+    problems,
+    `${parsed.rows.length} task(s) carry Operator / Supervisor / Maintenance / Administrator marks`
   );
 }
 

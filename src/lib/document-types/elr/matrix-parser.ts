@@ -163,6 +163,24 @@ export function isNo(cell: string): boolean {
   return /^(n|no|false|nil|none)\b/i.test(cell.trim());
 }
 
+const PRIVILEGE_GRANTED_MARK = /^[✓✔√☑]$/u;
+const PRIVILEGE_MARK = /^[✓✔√☑×✗✘✕x]$/iu;
+
+/**
+ * SOP privilege-matrix cells (✓ / ×, Y / N). Used by access control, not
+ * by ordinary Yes/No columns — do not treat a lone "x" as `isNo`.
+ */
+export function isPrivilegeMark(cell: string): boolean {
+  const t = cell.trim();
+  if (!t) return false;
+  return isYes(t) || isNo(t) || PRIVILEGE_MARK.test(t);
+}
+
+export function isPrivilegeGranted(cell: string): boolean {
+  const t = cell.trim();
+  return isYes(t) || PRIVILEGE_GRANTED_MARK.test(t);
+}
+
 /** Treat a reference cell as filled only when it is more than a dash or "NA". */
 export function hasReference(cell: string): boolean {
   const t = cell.trim();
