@@ -24,7 +24,15 @@ export type ChatToolPartInfo = {
 
 export type ActivityChildNode =
   | { kind: "thought"; text: string; pending: boolean }
-  | { kind: "detail"; label: string; detail?: string; pending?: boolean };
+  | {
+      kind: "detail";
+      label: string;
+      detail?: string;
+      pending?: boolean;
+      /** Same-file `read_document_page` calls fold into one child. */
+      pageReadKey?: string;
+      pages?: number[];
+    };
 
 export type ActivitySurfaceNode = {
   kind: "thought" | "documents" | "sections" | "edit" | "generic";
@@ -199,6 +207,148 @@ function failureDetail(info: ChatToolPartInfo): string | undefined {
   return fromOutput ?? undefined;
 }
 
+function pageNumberFromTool(info: ChatToolPartInfo): number | null {
+  if (typeof info.input?.pageNumber === "number") return info.input.pageNumber;
+  if (typeof info.output?.pageNumber === "number") return info.output.pageNumber;
+  if (
+    info.output?.page &&
+    typeof info.output.page === "object" &&
+    !Array.isArray(info.output.page) &&
+    typeof (info.output.page as { pageNumber?: unknown }).pageNumber === "number"
+  ) {
+    return (info.output.page as { pageNumber: number }).pageNumber;
+  }
+  return null;
+}
+
+function formatPageList(pages: readonly number[]): string {
+  const unique = [...new Set(pages.filter((page) => Number.isFinite(page)))].sort(
+    (a, b) => a - b
+  );
+  if (unique.length === 0) return "page";
+  const spans: string[] = [];
+  let start = unique[0]!;
+  let prev = unique[0]!;
+  for (let i = 1; i <= unique.length; i++) {
+    const next = unique[i];
+    if (next === prev + 1) {
+      prev = next;
+      continue;
+    }
+    spans.push(start === prev ? `${start}` : `${start}–${prev}`);
+    if (next != null) {
+      start = next;
+      prev = next;
+    }
+  }
+  const joined = spans.join(", ");
+  return unique.length === 1 ? `page ${joined}` : `pages ${joined}`;
+}
+
+function pageReadLabel(
+  named: string | null,
+  pages: readonly number[],
+  pending: boolean
+): string {
+  const pageLabel = formatPageList(pages);
+  if (named) {
+    return pending
+      ? `Reading ${named} · ${pageLabel}…`
+      : `Read ${named} · ${pageLabel}`;
+  }
+  return pending ? `Reading ${pageLabel}…` : `Read ${pageLabel}`;
+}
+
+function pageReadMergeKey(
+  info: ChatToolPartInfo,
+  filenameById?: AttachmentFilenameLookup
+): string {
+  const names = filenamesFromTool(info, filenameById);
+  if (names.length > 0) return `file:${names.join("\0")}`;
+  const attachmentId =
+    stringField(info.input?.attachmentId) ??
+    stringField(info.output?.attachmentId) ??
+    (info.output?.page &&
+    typeof info.output.page === "object" &&
+    !Array.isArray(info.output.page)
+      ? stringField((info.output.page as Record<string, unknown>).attachmentId)
+      : null);
+  if (attachmentId) return `id:${attachmentId}`;
+  return "page";
+}
+
+function pagesFromDocumentChildren(children: ActivityChildNode[]): number[] {
+  const pages: number[] = [];
+  for (const child of children) {
+    if (child.kind !== "detail" || !child.pages) continue;
+    for (const page of child.pages) {
+      if (!pages.includes(page)) pages.push(page);
+    }
+  }
+  return pages;
+}
+
+/**
+ * Empty text, empty reasoning, and SDK step/source markers sit between
+ * sequential `read_document_page` calls and must not start a new chip.
+ */
+function isInertActivityPart(part: UIMessage["parts"][number]): boolean {
+  if (part.type === "text") {
+    const text =
+      "text" in part && typeof part.text === "string" ? part.text.trim() : "";
+    return text.length === 0;
+  }
+  if (part.type === "reasoning") {
+    return readReasoningPart(part) === null;
+  }
+  if (readChatToolPart(part)) return false;
+  return true;
+}
+
+function pushDocumentActivityChild(
+  children: ActivityChildNode[],
+  info: ChatToolPartInfo,
+  filenameById?: AttachmentFilenameLookup
+): void {
+  if (info.toolName === "read_document_page") {
+    const names = filenamesFromTool(info, filenameById);
+    const named = names.length > 0 ? formatNameList(names) : null;
+    const key = pageReadMergeKey(info, filenameById);
+    const page = pageNumberFromTool(info);
+    const pending = isToolPending(info);
+    const existing = children.find(
+      (child) => child.kind === "detail" && child.pageReadKey === key
+    );
+    if (existing && existing.kind === "detail") {
+      if (page != null && !existing.pages?.includes(page)) {
+        existing.pages = [...(existing.pages ?? []), page];
+      }
+      existing.pending = pending || Boolean(existing.pending);
+      const keepNamed =
+        named ??
+        (existing.pageReadKey?.startsWith("file:")
+          ? formatNameList(existing.pageReadKey.slice("file:".length).split("\0"))
+          : null);
+      existing.label = pageReadLabel(
+        keepNamed,
+        existing.pages ?? [],
+        Boolean(existing.pending)
+      );
+      return;
+    }
+    const pages = page != null ? [page] : [];
+    children.push({
+      kind: "detail",
+      label: pageReadLabel(named, pages, pending),
+      pending,
+      pageReadKey: key,
+      pages,
+    });
+    return;
+  }
+  children.push(documentActivityDetail(info, filenameById));
+}
+
 function documentActivityDetail(
   info: ChatToolPartInfo,
   filenameById?: AttachmentFilenameLookup
@@ -250,27 +400,15 @@ function documentActivityDetail(
         pending,
       };
     case "read_document_page": {
-      const page =
-        typeof info.input?.pageNumber === "number"
-          ? info.input.pageNumber
-          : typeof info.output?.pageNumber === "number"
-            ? info.output.pageNumber
-            : info.output?.page &&
-                typeof info.output.page === "object" &&
-                !Array.isArray(info.output.page) &&
-                typeof (info.output.page as { pageNumber?: unknown }).pageNumber ===
-                  "number"
-              ? (info.output.page as { pageNumber: number }).pageNumber
-              : null;
-      const pageLabel = page != null ? `page ${page}` : "page";
-      const label = named
-        ? pending
-          ? `Reading ${named} · ${pageLabel}…`
-          : `Read ${named} · ${pageLabel}`
-        : pending
-          ? "Reading page…"
-          : `Read ${pageLabel}`;
-      return { kind: "detail", label, pending };
+      const page = pageNumberFromTool(info);
+      const pages = page != null ? [page] : [];
+      return {
+        kind: "detail",
+        label: pageReadLabel(named, pages, pending),
+        pending,
+        pageReadKey: pageReadMergeKey(info, filenameById),
+        pages,
+      };
     }
     default:
       return { kind: "detail", label: info.toolName, pending };
@@ -287,6 +425,10 @@ function countDocumentActivity(items: ActivityChildNode[]): {
   let listings = 0;
   for (const item of items) {
     if (item.kind !== "detail") continue;
+    if (item.pages && item.pages.length > 0) {
+      reads += item.pages.length;
+      continue;
+    }
     const label = item.label.toLowerCase();
     if (label.startsWith("list")) {
       listings += 1;
@@ -303,17 +445,26 @@ function documentsSurfaceLabel(input: {
   counts: { reads: number; searches: number; listings: number };
   pending: boolean;
   filenames: readonly string[];
+  pages: readonly number[];
 }): string {
-  const { counts, pending, filenames } = input;
+  const { counts, pending, filenames, pages } = input;
+  const pageSuffix =
+    pages.length > 0 && filenames.length === 1
+      ? ` · ${formatPageList(pages)}`
+      : "";
   if (counts.listings > 0 && counts.reads === 0 && counts.searches === 0) {
     return pending ? "Listing attachments…" : "Listed attachments";
   }
   if (filenames.length > 0 && filenames.length <= 2) {
     const named = formatNameList(filenames);
     if (pending) {
-      return counts.reads > 0 ? `Reading ${named}…` : `Searching ${named}…`;
+      return counts.reads > 0
+        ? `Reading ${named}${pageSuffix}…`
+        : `Searching ${named}…`;
     }
-    return counts.reads > 0 ? `Read ${named}` : `Searched ${named}`;
+    return counts.reads > 0
+      ? `Read ${named}${pageSuffix}`
+      : `Searched ${named}`;
   }
   if (pending) {
     const total =
@@ -360,12 +511,16 @@ function buildDocumentsNode(
       (child.kind === "thought" && child.pending)
   );
   const counts = countDocumentActivity(children);
+  const pages = pagesFromDocumentChildren(children);
+  const label = documentsSurfaceLabel({ counts, pending, filenames, pages });
   return {
     kind: "documents",
-    label: documentsSurfaceLabel({ counts, pending, filenames }),
+    label,
     pending,
     tone: "muted",
-    expandable: children.length > 0,
+    expandable:
+      children.some((child) => child.kind === "thought") ||
+      children.some((child) => child.kind === "detail" && child.label !== label),
     children,
   };
 }
@@ -735,6 +890,7 @@ function startsDocumentActivityRun(
   if (!readReasoningPart(part)) return false;
   for (let i = index + 1; i < parts.length; i++) {
     const inner = parts[i]!;
+    if (isInertActivityPart(inner)) continue;
     if (readReasoningPart(inner)) continue;
     if (inner.type === "text") return false;
     const innerTool = readChatToolPart(inner);
@@ -859,6 +1015,10 @@ export function buildChatActivityBlocks(
       const filenames: string[] = [];
       while (index < parts.length) {
         const inner = parts[index]!;
+        if (isInertActivityPart(inner)) {
+          index += 1;
+          continue;
+        }
         const innerTool = readChatToolPart(inner);
         if (inner.type === "text") break;
         if (innerTool && isDocumentReviewToolName(innerTool.toolName)) break;
@@ -882,7 +1042,7 @@ export function buildChatActivityBlocks(
         }
 
         if (innerTool && isDocumentActivityTool(innerTool.toolName)) {
-          children.push(documentActivityDetail(innerTool, filenameById));
+          pushDocumentActivityChild(children, innerTool, filenameById);
           for (const name of filenamesFromTool(innerTool, filenameById)) {
             if (!filenames.includes(name)) filenames.push(name);
           }
