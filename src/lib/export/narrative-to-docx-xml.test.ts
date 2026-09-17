@@ -1021,6 +1021,33 @@ describe("narrativeToDocxXml advanced formatting", () => {
     expect(xml).not.toContain("tableRef");
   });
 
+  it("exports a bold tableRef as a bold Table N run", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "See " },
+            {
+              type: "tableRef",
+              attrs: {
+                section: "elr_monitoring",
+                targetField: "table",
+                tableIndex: 0,
+                n: 9,
+              },
+              marks: [{ type: "bold" }],
+            },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    });
+    expect(xml).toContain("<w:b/>");
+    expect(xml).toContain("Table 9");
+  });
+
   it("exports inline math as OMML", () => {
     const mathml =
       '<math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mn>2</mn><mo>+</mo><mn>2</mn></mrow></math>';

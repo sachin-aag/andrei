@@ -433,8 +433,17 @@ function inlineNodesToRuns(
       const label = tableRefDisplayText({
         n: typeof child.attrs?.n === "number" ? child.attrs.n : null,
       });
-      const revision = suggestionRevisionFromMarks(child.marks);
-      const rPr = runProperties({ sizeHalfPoints: runSizeOverride }, ctx);
+      const marks = child.marks ?? [];
+      const revision = suggestionRevisionFromMarks(marks);
+      const rPr = runProperties(
+        {
+          bold: forceBold || marks.some((m) => m.type === "bold"),
+          italic: marks.some((m) => m.type === "italic"),
+          underline: marks.some((m) => m.type === "underline"),
+          sizeHalfPoints: runSizeOverride,
+        },
+        ctx
+      );
       const runXml = `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(label)}</w:t></w:r>`;
       parts.push(revision && runXml ? revisionWrapper(revision, runXml) : runXml);
     }

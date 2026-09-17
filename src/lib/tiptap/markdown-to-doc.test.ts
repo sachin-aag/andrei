@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hydrateLiteralMarkdownInDoc,
+  inlineMarkdownToTextNodes,
   markdownHasImage,
   markdownHasTable,
   markdownToDoc,
@@ -392,15 +393,46 @@ describe("markdownToDoc", () => {
     ]);
   });
 
-  it("drops a bold Table N next to [[table]]", () => {
+  it("keeps bold on the live tableRef when dropping a duplicate Table N", () => {
     const doc = markdownToDoc("See **Table 1** [[table]].");
     expect(doc.content![0]!.content).toEqual([
       { type: "text", text: "See " },
       {
         type: "tableRef",
         attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+        marks: [{ type: "bold" }],
       },
       { type: "text", text: "." },
+    ]);
+  });
+
+  it("keeps SOP and equipment-id bold on the same line as a table ref", () => {
+    const doc = markdownToDoc(
+      "pursuant to **SOP/DP/QA/007** for **E/PR/070** as detailed in **Table 9** [[table]]."
+    );
+    const inline = doc.content![0]!.content ?? [];
+    expect(inline).toEqual(
+      expect.arrayContaining([
+        { type: "text", text: "SOP/DP/QA/007", marks: [{ type: "bold" }] },
+        { type: "text", text: "E/PR/070", marks: [{ type: "bold" }] },
+      ])
+    );
+    expect(inline.find((node) => node.type === "tableRef")?.marks).toEqual([
+      { type: "bold" },
+    ]);
+  });
+
+  it("keeps SOP bold when a pending suggestion mark is also applied", () => {
+    const nodes = inlineMarkdownToTextNodes(
+      "pursuant to **SOP/DP/QA/007**.",
+      [{ type: "suggestionInsert", attrs: { id: "sug-1" } }]
+    );
+    const sop = nodes.find(
+      (node) => node.type === "text" && node.text === "SOP/DP/QA/007"
+    );
+    expect(sop?.marks?.map((mark) => mark.type)).toEqual([
+      "suggestionInsert",
+      "bold",
     ]);
   });
 });

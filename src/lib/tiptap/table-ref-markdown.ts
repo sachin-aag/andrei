@@ -3,6 +3,20 @@ import { RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
 
 export const TABLE_REF_NODE_TYPE = "tableRef";
 
+/**
+ * Marks the live Table N atom may carry. Suggestion marks stay for preview;
+ * bold/italic/underline so `**Table 9** [[table]]` does not lose emphasis
+ * when the typed label is collapsed onto the REF.
+ */
+export const TABLE_REF_ALLOWED_MARKS =
+  "bold italic underline suggestionInsert suggestionDelete";
+
+const TABLE_REF_FORMATTING_MARK_TYPES = new Set([
+  "bold",
+  "italic",
+  "underline",
+]);
+
 /** `[[table]]` or `[[table:elr_monitoring.table#0]]`. */
 export const TABLE_REF_TOKEN_RE = /\[\[table(?::([^\]]+))?\]\]/gi;
 
@@ -25,16 +39,34 @@ export function stripRedundantTableLabelBeforeRef(text: string): string {
   return text.replace(TABLE_LABEL_BEFORE_REF_RE, "");
 }
 
+/** Copy bold/italic/underline from a collapsed "Table N" label onto the REF. */
+export function mergeTableRefFormattingMarks(
+  node: JSONContent,
+  fromMarks: JSONContent["marks"] | undefined
+): JSONContent {
+  if (!fromMarks?.length) return node;
+  const extra = fromMarks.filter((mark) =>
+    TABLE_REF_FORMATTING_MARK_TYPES.has(mark.type)
+  );
+  if (extra.length === 0) return node;
+  const existing = node.marks ?? [];
+  const seen = new Set(existing.map((mark) => mark.type));
+  const added = extra.filter((mark) => !seen.has(mark.type));
+  if (added.length === 0) return node;
+  return { ...node, marks: [...existing, ...added] };
+}
+
 /** Same collapse after markdown has already become text + tableRef nodes. */
 export function collapseRedundantTableLabels(
   nodes: JSONContent[]
 ): JSONContent[] {
   const collapsed: JSONContent[] = [];
   for (const node of nodes) {
-    const next =
+    const withChildren =
       node.content && node.content.length > 0
         ? { ...node, content: collapseRedundantTableLabels(node.content) }
         : node;
+    let next = withChildren;
     if (isTableRefNode(next)) {
       while (collapsed.length > 0) {
         const gap = collapsed[collapsed.length - 1]!;
@@ -48,6 +80,7 @@ export function collapseRedundantTableLabels(
       if (prev?.type === "text" && typeof prev.text === "string") {
         const stripped = prev.text.replace(TRAILING_TABLE_LABEL_RE, "");
         if (stripped !== prev.text) {
+          next = mergeTableRefFormattingMarks(next, prev.marks);
           if (!stripped) collapsed.pop();
           else collapsed[collapsed.length - 1] = { ...prev, text: stripped };
         }

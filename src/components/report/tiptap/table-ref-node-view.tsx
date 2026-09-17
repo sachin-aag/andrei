@@ -18,6 +18,18 @@ import {
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
 
+function formattingClassName(
+  marks: NodeViewProps["node"]["marks"]
+): string | undefined {
+  const names = new Set(marks.map((mark) => mark.type.name));
+  return (
+    cn(
+      names.has("bold") && "font-bold",
+      names.has("italic") && "italic"
+    ) || undefined
+  );
+}
+
 function suggestionAppearance(marks: NodeViewProps["node"]["marks"]): {
   className?: string;
   evalId?: string;
@@ -62,6 +74,7 @@ export function TableRefNodeView({ node, selected }: NodeViewProps) {
       as="span"
       className={cn(
         "tiptap-table-ref underline decoration-dotted underline-offset-2",
+        formattingClassName(node.marks),
         suggestion.className,
         selected && "ring-2 ring-[var(--ring)] rounded-sm"
       )}

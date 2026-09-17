@@ -8,6 +8,7 @@ import {
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { TableRefNodeView } from "@/components/report/tiptap/table-ref-node-view";
 import {
+  TABLE_REF_ALLOWED_MARKS,
   TABLE_REF_INPUT_RE,
   TABLE_REF_NODE_TYPE,
   TABLE_REF_TOKEN_RE,
@@ -40,7 +41,7 @@ export const TableRef = Node.create({
 
   selectable: true,
 
-  marks: "suggestionInsert suggestionDelete",
+  marks: TABLE_REF_ALLOWED_MARKS,
 
   addAttributes() {
     return {
