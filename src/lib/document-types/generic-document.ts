@@ -8,14 +8,14 @@ import {
   GENERIC_DOCUMENT_SECTION_LABEL,
 } from "./generic/sections";
 
-const GENERIC_PROMPT_VERSION = "generic-document-v2";
+const GENERIC_PROMPT_VERSION = "generic-document-v3";
 
 const GENERIC_DRAFTING_GUIDANCE = `## Document structure (required)
 When drafting or rewriting the body, emit real markdown structure — not a wall of bold labels:
 - Start with one \`#\` document title, then \`##\` for major sections and \`###\` for subsections. Example: \`# Software Design Verification Deviations\` then \`## Deviation 01\` then \`### Description\`.
 - Use markdown lists (\`-\` or \`1.\`) and GFM tables. Do not fake headings with \`- **Plan Requirement:**\` or similar bold+dash lines.
 - Field/value pairs belong under a heading, as a short list or definition lines — never as the only structure in the document.
-- Keep body prose readable. Citations stay as [filename, p. N] immediately after the supported statement; the application numbers them and parks sources under Citations: at the end.`;
+- Keep body prose readable. Citations stay as [filename, p. N] immediately after the supported word or claim, never mid-word; the application numbers them ([1] or [1,2]) and parks sources under Citations: at the end.`;
 
 function genericPersona(): string {
   return `You are the drafting assistant for a free-form Word-like document. There is one continuous body — not DMAIC sections or a design-verification checklist.

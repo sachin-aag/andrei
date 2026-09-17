@@ -1,4 +1,5 @@
 import { sourceCitationBracket } from "@/lib/suggestions/citations-at-end";
+import { citationSiteOffset } from "@/lib/citations/citation-site";
 import type { TableOperation } from "@/lib/suggestions/table-operation";
 import {
   extractHardFacts,
@@ -88,7 +89,7 @@ function filenamesMatch(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
-const MARKER_AFTER_FACT = /^\s*\[(\d+)\]/;
+const MARKER_AFTER_FACT = /^\s*\[(\d+)(?:\s*,\s*\d+)*\]/;
 
 /** `1. [filename, p. N]` in a trailing Citations: list. */
 function numberedCitationLineRe(n: number): RegExp {
@@ -150,7 +151,10 @@ function applyMovedCitations(
           continue;
         }
       }
-      insertions.push({ at: fact.end, cite: ` ${neu}` });
+      insertions.push({
+        at: citationSiteOffset(text, fact.end),
+        cite: ` ${neu}`,
+      });
     }
   }
   insertions.sort((a, b) => b.at - a.at);

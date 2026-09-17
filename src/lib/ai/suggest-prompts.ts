@@ -6,7 +6,7 @@ import {
   isDvTableSection,
 } from "@/lib/document-types/design-verification/sections";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v23-numbered-citations-all-packs" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v24-citation-word-end" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -82,7 +82,7 @@ OPERATIONS (implicit from deleteText/insertText):
 - delete: insertText empty, deleteText non-empty${tableFormatBlock}
 
 CITATIONS AT END OF SECTION (required):
-- Put [filename, p. N] or [filename] immediately after the claim or table-cell text they support. Do NOT invent numbers such as [1]; the application assigns numbered markers and parks \`1. [filename, p. N]\` under a trailing "Citations:" heading.
+- Put [filename, p. N] or [filename] immediately after the supported word or claim (or table-cell text), never in the middle of a word or inside markdown emphasis such as **bold**. Do NOT invent numbers such as [1]; the application assigns numbered markers ([1], or [1,2] when several sources support the same claim) and parks \`1. [filename, p. N]\` under a trailing "Citations:" heading.
 - Multiple sources on one claim become adjacent source brackets: [file-a.pdf, p. 1][file-b.pdf, p. 2].
 - If the same source already appears in the field's Citations list, still put the source bracket at the new claim so the number can be reused.
 - A split edit is still accepted: primary body change, "second": { "anchorText": "", "deleteText": "", "insertText": "Citations:\\n[filename, p. N]" }. Prefer inline source brackets in insertText.

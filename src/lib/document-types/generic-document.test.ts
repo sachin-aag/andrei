@@ -41,7 +41,7 @@ describe("generic document type", () => {
 
   it("requires ATX headings when the assistant drafts the body", () => {
     const def = getDocumentType("generic_document");
-    expect(def.prompts.promptVersion).toBe("generic-document-v2");
+    expect(def.prompts.promptVersion).toBe("generic-document-v3");
     expect(def.chat.draftingGuidance).toContain("Document structure (required)");
     expect(def.chat.draftingGuidance).toContain("`#` document title");
     expect(def.chat.persona).toContain("Always use markdown headings");

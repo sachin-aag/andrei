@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import {
-  citationNumberFromMarker,
+  citationNumbersFromMarker,
   isNumericCitationMarker,
   sourceCitationLinkSpans,
 } from "@/lib/placeholders/citation-bracket";
@@ -32,18 +32,53 @@ function citationButton(
   );
 }
 
+function parkedOpenRaw(
+  number: number,
+  numbered: ReadonlyMap<number, string>
+): string | null {
+  const parked = numbered.get(number);
+  if (!parked) return null;
+  const parkedSpans = sourceCitationLinkSpans(parked);
+  return parkedSpans[0]?.openRaw ?? parked;
+}
+
+function renderNumericMarker(
+  token: string,
+  onOpen: (raw: string) => void,
+  numbered: ReadonlyMap<number, string>
+): ReactNode {
+  const numbers = citationNumbersFromMarker(token);
+  if (numbers.length === 0) return token;
+  if (numbers.length === 1) {
+    const openRaw = parkedOpenRaw(numbers[0]!, numbered);
+    if (!openRaw) return token;
+    return citationButton("n", token, openRaw, onOpen);
+  }
+
+  const nodes: ReactNode[] = ["["];
+  numbers.forEach((number, idx) => {
+    if (idx > 0) nodes.push(",");
+    const openRaw = parkedOpenRaw(number, numbered);
+    if (!openRaw) {
+      nodes.push(String(number));
+      return;
+    }
+    nodes.push(
+      citationButton(`n-${number}-${idx}`, String(number), openRaw, onOpen)
+    );
+  });
+  nodes.push("]");
+  if (nodes.every((node) => typeof node === "string")) return token;
+  return nodes;
+}
+
 function renderCitationToken(
   token: string,
   onOpen: (raw: string) => void,
   numbered: ReadonlyMap<number, string>
 ): ReactNode {
   if (isNumericCitationMarker(token)) {
-    const number = citationNumberFromMarker(token);
-    const parked = number != null ? numbered.get(number) : undefined;
-    const parkedSpans = parked ? sourceCitationLinkSpans(parked) : [];
-    const openRaw = parkedSpans[0]?.openRaw ?? parked ?? null;
-    if (!openRaw) return token;
-    return citationButton("n", token, openRaw, onOpen);
+    return renderNumericMarker(token, onOpen, numbered);
   }
 
   const spans = sourceCitationLinkSpans(token);

@@ -1,19 +1,74 @@
 import { hasSupportedAttachmentExtension } from "@/lib/attachments/file-types";
 import { citationDisplayFilename } from "@/lib/citations/citation-filename";
 
-/** Citation-style `[12]` — not a fill-in placeholder. */
-export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
+/** Citation-style `[12]` or combined `[1,2,3]` — not a fill-in placeholder. */
+export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+(?:\s*,\s*\d+)*\s*\]$/;
 
-/** True when `[...]` is a numeric citation marker such as `[3]`. */
+/** True when `[...]` is a numeric citation marker such as `[3]` or `[1,2]`. */
 export function isNumericCitationMarker(match: string): boolean {
   return NUMERIC_ONLY_BRACKET.test(match);
 }
 
-/** Number inside `[3]`, or null when the span is not a numeric marker. */
+/** Numbers inside `[3]` / `[1, 2, 3]`, in written order. */
+export function citationNumbersFromMarker(match: string): number[] {
+  if (!isNumericCitationMarker(match)) return [];
+  const seen = new Set<number>();
+  const out: number[] = [];
+  const inner = match.slice(1, -1);
+  for (const part of inner.split(",")) {
+    const n = Number(part.trim());
+    if (!Number.isInteger(n) || n < 1 || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out;
+}
+
+/** First number inside `[3]` / `[1,2]`, or null when not a numeric marker. */
 export function citationNumberFromMarker(match: string): number | null {
-  const matched = /^\[\s*(\d+)\s*\]$/.exec(match);
-  if (!matched) return null;
-  return Number(matched[1]);
+  return citationNumbersFromMarker(match)[0] ?? null;
+}
+
+/** `[1]` or combined `[1,2,3]` (no spaces). Empty when nothing to emit. */
+export function formatNumericCitationMarker(
+  numbers: readonly number[]
+): string {
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const n of numbers) {
+    if (!Number.isInteger(n) || n < 1 || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  if (out.length === 0) return "";
+  return `[${out.join(",")}]`;
+}
+
+/** Click targets for each number inside a numeric marker. */
+export type NumericCitationLinkSpan = {
+  from: number;
+  to: number;
+  number: number;
+};
+
+export function numericCitationLinkSpans(
+  match: string
+): NumericCitationLinkSpan[] {
+  if (!isNumericCitationMarker(match)) return [];
+  const spans: NumericCitationLinkSpan[] = [];
+  const inner = match.slice(1, -1);
+  const re = /\d+/g;
+  let found: RegExpExecArray | null;
+  while ((found = re.exec(inner)) !== null) {
+    const number = Number(found[0]);
+    if (!Number.isInteger(number) || number < 1) continue;
+    spans.push({
+      from: 1 + found.index,
+      to: 1 + found.index + found[0].length,
+      number,
+    });
+  }
+  return spans;
 }
 
 /** Document source cite (`[file.pdf, p. N]`), not a numeric `[3]` marker. */

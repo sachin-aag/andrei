@@ -1842,7 +1842,7 @@ export function buildChatTools(opts: {
       description:
         `Propose ONE targeted edit to a single field. ${reviewableCopy} Quote exact anchorText from read_section. Use edit_table for tables.${
           citationsAtEndOfSection
-            ? " Put source citations as [filename, p. N] in insertText."
+            ? " Put document citations as [filename, p. N] immediately after the supported word or claim in insertText when the page is known; [filename] only if the page is missing or ambiguous. Never mid-word or inside **bold**. The server converts them to numbered markers ([1] or [1,2]) and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
             : ""
         }${scopeHint}`,
       inputSchema: z.object({

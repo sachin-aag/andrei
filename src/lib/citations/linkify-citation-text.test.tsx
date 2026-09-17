@@ -17,6 +17,23 @@ describe("linkifyCitationText", () => {
     expect(onOpen).toHaveBeenCalledWith("[protocol.pdf, p. 3]");
   });
 
+  it("opens each number in a combined [1,2] marker", async () => {
+    const onOpen = vi.fn();
+    const numbered = new Map([
+      [1, "[protocol.pdf, p. 2]"],
+      [2, "[datasheet.pdf, p. 4]"],
+    ]);
+    render(<>{linkifyCitationText("Met spec [1,2].", onOpen, numbered)}</>);
+    const links = screen.getAllByTestId("citation-link");
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveTextContent("1");
+    expect(links[1]).toHaveTextContent("2");
+    await userEvent.click(links[0]!);
+    expect(onOpen).toHaveBeenCalledWith("[protocol.pdf, p. 2]");
+    await userEvent.click(links[1]!);
+    expect(onOpen).toHaveBeenCalledWith("[datasheet.pdf, p. 4]");
+  });
+
   it("opens the parked source when clicking a numbered marker", async () => {
     const onOpen = vi.fn();
     const numbered = new Map([[1, "[protocol.pdf, p. 3]"]]);
