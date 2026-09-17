@@ -227,6 +227,87 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain("Underline");
   });
 
+  it("puts spaces beside bold in a separate run so Word Online cannot collapse them", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "associated " },
+            { type: "text", text: "Tray Loader", marks: [{ type: "bold" }] },
+            { type: "text", text: " (Make:" },
+            { type: "text", text: "Steriline", marks: [{ type: "bold" }] },
+            { type: "text", text: ")" },
+          ],
+        },
+      ],
+    });
+
+    expect(xml).toContain('<w:t xml:space="preserve">associated</w:t>');
+    expect(xml).toContain("<w:noProof/>");
+    expect(xml).toContain('<w:t xml:space="preserve"> </w:t>');
+    expect(xml).toContain('<w:t xml:space="preserve">Tray Loader</w:t>');
+    expect(xml).toContain("<w:b/>");
+    expect(xml).not.toContain("associatedTray");
+    expect(xml).not.toContain('preserve">associated </w:t>');
+  });
+
+  it("peels a leading space off a bold run after a colon label", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Make:", marks: [{ type: "bold" }] },
+            { type: "text", text: " Steriline S.R.L." },
+          ],
+        },
+      ],
+    });
+
+    expect(xml).toContain('<w:t xml:space="preserve">Make:</w:t>');
+    expect(xml).toContain('<w:t xml:space="preserve"> </w:t>');
+    expect(xml).toContain('<w:t xml:space="preserve">Steriline S.R.L.</w:t>');
+    expect(xml).not.toContain("Make:Steriline");
+    expect(xml).not.toContain('preserve"> Steriline');
+  });
+
+  it("does not emit two spaces when both nodes already carry the gap", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "associated " },
+            { type: "text", text: " Tray Loader", marks: [{ type: "bold" }] },
+          ],
+        },
+      ],
+    });
+
+    expect(xml.match(/<w:t xml:space="preserve"> <\/w:t>/g)).toHaveLength(1);
+    expect(xml).toContain('<w:t xml:space="preserve">associated</w:t>');
+    expect(xml).toContain('<w:t xml:space="preserve">Tray Loader</w:t>');
+  });
+
+  it("does not insert noProof runs in an all-plain paragraph", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "hello world" }],
+        },
+      ],
+    });
+
+    expect(xml).toContain('<w:t xml:space="preserve">hello world</w:t>');
+    expect(xml).not.toContain("<w:noProof/>");
+  });
+
   it("exports textStyle color marks to OOXML", () => {
     const doc: JSONContent = {
       type: "doc",
