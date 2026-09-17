@@ -182,4 +182,53 @@ describe("scoreInventoryReviewPage", () => {
       )
     ).toBeGreaterThan(0);
   });
+
+  it("queues nested PRQR methods after GMP header chrome and skips CSV-OQ/RTM URS", () => {
+    const header =
+      "UNCONTROLLED COPY Sign/Date Reviewed By QA Confidential and Proprietary ";
+    const methods =
+      "Non-Viable Particulate Monitoring Settle Plate Surface and Glove LAF Velocity 23/07/2024";
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "PRQR-25-PR-005 Report.pdf",
+          transcript: `${header}${".".repeat(900)}${methods}`,
+          outlineTitle: "9.0 Environmental monitoring",
+        },
+        "elr_monitoring"
+      )
+    ).toBeGreaterThan(0);
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "PRQR-25-PR-005 Report.pdf",
+          transcript: `${header}Approved By 12/01/2025`,
+          outlineTitle: "Signature",
+        },
+        "elr_monitoring"
+      )
+    ).toBe(0);
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "CSV-OQ-PR-055 PART-1.pdf",
+          transcript:
+            "The machine is equipped with connections for environmental monitoring systems 12/01/2025",
+          outlineTitle: "URS",
+        },
+        "elr_monitoring"
+      )
+    ).toBe(0);
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "RTM for E-PR-068.pdf",
+          transcript:
+            "URS environmental monitoring sampling ports Date 01/04/2025",
+          outlineTitle: "RTM",
+        },
+        "elr_monitoring"
+      )
+    ).toBe(0);
+  });
 });

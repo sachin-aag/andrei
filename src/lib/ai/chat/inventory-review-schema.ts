@@ -119,6 +119,126 @@ const GENERIC_SECTION_NOUN_OTHER = new Set([
 
 const DATE_RE = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/;
 
+/** Nested PRQR chapters often start after a GMP header; 800 chars never reached them. */
+export const PAGE_OBJECTIVE_TRANSCRIPT_CHARS = 4000;
+
+const HEADER_ONLY_PHRASES = [
+  "uncontrolled copy",
+  "reviewed by qa",
+  "confidential and proprietary",
+  "sign/date",
+  "sign / date",
+] as const;
+
+/**
+ * Grade A / environmental *methods* — not column headers. Used to score
+ * nested PRQR chapters that never repeat "Monitoring Parameter".
+ */
+const MONITORING_METHOD_PHRASES = [
+  "non-viable",
+  "non viable",
+  "particulate monitoring",
+  "active viable",
+  "settle plate",
+  "glove monitoring",
+  "surface and glove",
+  "differential pressure",
+  "laf velocity",
+  "air velocity",
+  "environmental monitoring",
+] as const;
+
+function methodPhrasesForSection(section: SectionType): readonly string[] {
+  if (section === "elr_monitoring") return MONITORING_METHOD_PHRASES;
+  return [];
+}
+
+function preferredFilenameNeedles(section: SectionType): readonly string[] {
+  switch (section) {
+    case "elr_monitoring":
+      return ["prqr", "prqp", "pqr", "environmental"];
+    case "elr_qms":
+      return ["ccf", "capa", "cpa", "dev/", "qdf", "prqr"];
+    case "elr_breakdowns":
+      return ["pmc", "breakdown", "prqr"];
+    case "elr_qualification":
+      return ["prqr", "prqp", "pqr"];
+    case "elr_alarms":
+      return ["alarm", "aap"];
+    default:
+      return [];
+  }
+}
+
+/** CSV-OQ / RTM / URS pages name "environmental monitoring" without being the EM grid. */
+export function isDemotedInventoryFilename(
+  filename: string | null | undefined
+): boolean {
+  if (!filename) return false;
+  const n = filename.toLowerCase();
+  if (n.includes("csv-oq") || n.includes("csv oq")) return true;
+  if (n.includes("rtm for") || /\brtm\b/.test(n)) return true;
+  if (/\burs\b/.test(n) || n.includes("user requirement")) return true;
+  return false;
+}
+
+export function isPreferredInventoryFilename(
+  filename: string | null | undefined,
+  section: SectionType
+): boolean {
+  if (!filename) return false;
+  const n = filename.toLowerCase();
+  return preferredFilenameNeedles(section).some((needle) => n.includes(needle));
+}
+
+/**
+ * True when a preferred evidence file (PRQR for monitoring, CCF/CAPA for
+ * QMS) was skipped while nothing preferred was queued.
+ */
+export function preferredInventoryEvidenceSkipped(
+  section: SectionType,
+  queuedFilenames: readonly string[],
+  skippedFilenames: readonly string[]
+): boolean {
+  const needles = preferredFilenameNeedles(section);
+  if (needles.length === 0) return false;
+  const hits = (name: string) =>
+    needles.some((needle) => name.toLowerCase().includes(needle));
+  const skippedHasPreferred = skippedFilenames.some(hits);
+  if (!skippedHasPreferred) return false;
+  return !queuedFilenames.some(hits);
+}
+
+function methodPhraseHits(haystack: string, section: SectionType): number {
+  let hits = 0;
+  for (const phrase of methodPhrasesForSection(section)) {
+    if (haystack.includes(phrase)) hits += 1;
+  }
+  return hits;
+}
+
+const SIGN_DATE_RE = /\bsign\s*\/\s*date\b/;
+
+/** Signature / UNCONTROLLED COPY chrome with almost no body — not inventory evidence. */
+export function isInventoryHeaderOnlyPage(page: PageObjectiveText): boolean {
+  const slice = (page.transcript ?? "")
+    .toLowerCase()
+    .slice(0, PAGE_OBJECTIVE_TRANSCRIPT_CHARS);
+  const headerHit =
+    HEADER_ONLY_PHRASES.some((phrase) => slice.includes(phrase)) ||
+    SIGN_DATE_RE.test(slice);
+  if (!headerHit) return false;
+  let stripped = slice.replace(SIGN_DATE_RE, " ");
+  for (const phrase of HEADER_ONLY_PHRASES) {
+    stripped = stripped.split(phrase).join(" ");
+  }
+  const remaining = stripped.replace(/[^a-z0-9]+/g, " ").trim();
+  if (MONITORING_METHOD_PHRASES.some((phrase) => remaining.includes(phrase))) {
+    return false;
+  }
+  return remaining.length < 120;
+}
+
 export type PageObjectiveText = {
   filename?: string | null;
   transcript?: string | null;
@@ -275,7 +395,7 @@ export function pageObjectiveHaystack(page: PageObjectiveText): string {
     page.outlineTitle ?? "",
     page.pageContext ?? "",
     page.filename ?? "",
-    (page.transcript ?? "").slice(0, 800),
+    (page.transcript ?? "").slice(0, PAGE_OBJECTIVE_TRANSCRIPT_CHARS),
   ]
     .join(" ")
     .toLowerCase();
@@ -306,6 +426,7 @@ export function scoreInventoryReviewPage(
   if (!section) return null;
   const schema = ELR_INVENTORY_SCHEMAS[section];
   if (!schema) return null;
+  if (isInventoryHeaderOnlyPage(page)) return 0;
 
   const haystack = pageObjectiveHaystack(page);
   let columnHits = 0;
@@ -318,12 +439,30 @@ export function scoreInventoryReviewPage(
     .split(" ")
     .some((token) => token.length >= 6 && haystack.includes(token));
   const dated = DATE_RE.test(haystack);
+  const methods = methodPhraseHits(haystack, section);
 
-  if (typed) return (columnHits + 1 + (dated ? 1 : 0)) * 8;
-  if (columnHits >= 2) return columnHits * 8;
-  if (columnHits >= 1 && (hasSectionToken || dated)) {
-    return (columnHits + (dated ? 1 : 0)) * 8;
+  let score = 0;
+  if (typed) {
+    score = (columnHits + 1 + (dated ? 1 : 0) + methods) * 8;
+  } else if (columnHits >= 2) {
+    score = (columnHits + methods) * 8;
+  } else if (columnHits >= 1 && (hasSectionToken || dated || methods > 0)) {
+    score = (columnHits + (dated ? 1 : 0) + methods) * 8;
+  } else if (methods > 0) {
+    score = methods * 8;
+  } else if (hasMultiWordColumnPhrase(haystack, schema)) {
+    score = 8;
   }
-  if (hasMultiWordColumnPhrase(haystack, schema)) return 8;
-  return 0;
+
+  if (score > 0 && isPreferredInventoryFilename(page.filename, section)) {
+    score += 8;
+  }
+
+  if (isDemotedInventoryFilename(page.filename)) {
+    // URS / CSV-OQ / RTM may name "environmental monitoring" and carry a
+    // revision date. Require a dated result table (two distinctive columns).
+    if (!(dated && columnHits >= 2)) return 0;
+  }
+
+  return score;
 }

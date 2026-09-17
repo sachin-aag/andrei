@@ -6,7 +6,11 @@ import {
   sectionLabel,
 } from "@/lib/ai/chat/fields";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
-import { coverageKeySatisfiesObjective } from "@/lib/ai/chat/review-page-plan";
+import { coverageKeySatisfiesObjective, REVIEW_OBJECTIVE_PAGE_FLOOR } from "@/lib/ai/chat/review-page-plan";
+import {
+  inventorySectionForObjective,
+  preferredInventoryEvidenceSkipped,
+} from "@/lib/ai/chat/inventory-review-schema";
 import { getDocumentType } from "@/lib/document-types";
 import { elrIncompleteSectionKeysFromParts } from "@/lib/document-types/elr/plan-complete";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
@@ -201,16 +205,52 @@ export function isEmptyInventoryTable(
   return isEmptyTableScaffoldDoc(getRichFieldValue(content ?? {}, "table"));
 }
 
+export function inventoryFinishSatisfiesEmptyTable(input: {
+  reviewedPages: number;
+  skippedAttachmentIds: readonly string[];
+  objective?: string | null;
+  queuedFilenames?: readonly string[];
+  skippedFilenames?: readonly string[];
+}): boolean {
+  if (
+    input.reviewedPages <= REVIEW_OBJECTIVE_PAGE_FLOOR &&
+    input.skippedAttachmentIds.length > 0
+  ) {
+    return false;
+  }
+  const section = inventorySectionForObjective(input.objective);
+  if (
+    section &&
+    preferredInventoryEvidenceSkipped(
+      section,
+      input.queuedFilenames ?? [],
+      input.skippedFilenames ?? []
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function emptyInventoryNeedsMatchingReview(input: {
   documentType: DocumentType;
   section: SectionType;
   content: Record<string, unknown> | undefined;
   finishedCoverageKey: string | null | undefined;
+  /**
+   * Floor-8 + skipped-document finishes still emit a matching `|obj:` key.
+   * Pass false so edit_table stays locked until a real walk (PRQR queued).
+   * Omit to treat a matching key as enough (tests / rehydrated non-truncated).
+   */
+  inventoryFinishSatisfiesDraft?: boolean;
 }): boolean {
   if (!isEmptyInventoryTable(input.documentType, input.section, input.content)) {
     return false;
   }
-  return !coverageKeySatisfiesObjective(input.finishedCoverageKey, input.section);
+  if (!coverageKeySatisfiesObjective(input.finishedCoverageKey, input.section)) {
+    return true;
+  }
+  return input.inventoryFinishSatisfiesDraft === false;
 }
 
 export function inScopeEmptyInventoryNeedsReview(input: {
@@ -218,6 +258,7 @@ export function inScopeEmptyInventoryNeedsReview(input: {
   sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
   sectionKeys: readonly SectionType[];
   finishedCoverageKey: string | null | undefined;
+  inventoryFinishSatisfiesDraft?: boolean;
 }): boolean {
   return input.sectionKeys.some((section) =>
     emptyInventoryNeedsMatchingReview({
@@ -225,6 +266,7 @@ export function inScopeEmptyInventoryNeedsReview(input: {
       section,
       content: input.sections[section],
       finishedCoverageKey: input.finishedCoverageKey,
+      inventoryFinishSatisfiesDraft: input.inventoryFinishSatisfiesDraft,
     })
   );
 }

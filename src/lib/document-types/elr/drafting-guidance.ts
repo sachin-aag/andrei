@@ -83,13 +83,21 @@ system validation SOP/DP/QA/015, alarm categorization SOP/DP/QA/036.
 Qualification discrepancies are raised on form SOP/DP/QA/014/F14 and graded
 Minor / Major / Critical (§7.14.3).
 
-## Period rules — different sections cover different windows
+## Period rules — Indian financial year
+
+The ELR period is always **1 April to 31 March of the following year**
+(Indian FY). Never copy a 3-month SCADA alarm-trend window, a PRQR
+execution span, or an August–July rolling year. Prefer the title-page
+dates when they already are 1 April–31 March; otherwise infer the FY from
+periodFrom, last PRQ date, or document FY digits (\`PRQR-25\` → April 2025–
+March 2026).
 
 - Qualification history (elr_qualification): **cumulative**, the whole life of
   the equipment. No date cut-off.
 - QMS records (elr_qms): from the **completion date of the last PRQ** to the
-  ELR cut-off. Not the rolling window.
-- Everything else: the rolling ELR period on the title page.
+  ELR cut-off (31 March of that FY). Not a quarter.
+- Everything else, including monitoring **Period Covered**: that FY window
+  (1 April–31 March).
 
 Open or unresolved items carry forward regardless of date.
 
@@ -160,6 +168,13 @@ Those cells fail the document-reference check. Omit the row.
 Do not fill Result or Status with Pass or Closed as a stand-in for a
 certificate you have not read. Leave the cell or skip the row until that page
 is read.
+
+Monitoring (elr_monitoring): one row per Grade A / environmental **method**
+(non-viable particles, active viable air, settle plate, surface and glove,
+differential pressure, LAF / air velocity). Do not merge methods into one
+"viable" row. Do not add SCADA process alarms (Nitrogen, compressed air) —
+those belong in alarms. Period Covered is the Indian FY (1 April–31 March),
+not the alarm-trend PDF's date range.
 
 QMS: if a record is still open at the ELR cut-off, say so in the assessment
 (status cell alone is not enough).
@@ -275,7 +290,10 @@ grep for the procedure language instead. Full-document review is for the
 inventory tables (qualification history, monitoring, calibration, QMS, alarms,
 CSV). An empty inventory table (header-only seeded grid) is not draftable
 until that section's review has finished — a finished qualification walk does
-not unlock Associated Instruments. Attachment cover sheets
+not unlock Associated Instruments. A floor-8 finish that skipped selected
+documents (CSV-OQ / RTM headers while the PRQR was skipped) is not finished
+coverage: start_document_review again so the PRQR / method pages are queued.
+Attachment cover sheets
 (ATTACHMENT NO. / "CALIBRATION CERTIFICATE OF …") are locators: read the
 following pages, then fill the seeded matrix with edit_cells / insert_rows.
 Do not rewrite the table with draft_field. recommendedInventory is for

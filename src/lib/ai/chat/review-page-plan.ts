@@ -1,6 +1,8 @@
 import {
   filenameConflictsWithInventoryObjective,
   inventorySectionForObjective,
+  isDemotedInventoryFilename,
+  isPreferredInventoryFilename,
   pageObjectiveHaystack,
   scoreInventoryReviewPage,
 } from "@/lib/ai/chat/inventory-review-schema";
@@ -222,8 +224,22 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
       (page) =>
         !filenameConflictsWithInventoryObjective(page.filename, objective)
     );
-    const pool =
+    let pool =
       withoutForeignInventory.length > 0 ? withoutForeignInventory : pages;
+    const section = inventorySectionForObjective(objective);
+    if (section) {
+      const preferred = pool.filter((page) =>
+        isPreferredInventoryFilename(page.filename, section)
+      );
+      if (preferred.length > 0) {
+        pool = preferred;
+      } else {
+        const notDemoted = pool.filter(
+          (page) => !isDemotedInventoryFilename(page.filename)
+        );
+        if (notDemoted.length > 0) pool = notDemoted;
+      }
+    }
     return selectReviewPages(pool, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap));
   }
   const prioritized = selectReviewPages(relevant, cap);

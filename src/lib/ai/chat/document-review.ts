@@ -30,6 +30,7 @@ import {
   coverageKeySatisfiesObjective,
   planReviewPages,
 } from "@/lib/ai/chat/review-page-plan";
+import { inventoryFinishSatisfiesEmptyTable } from "@/lib/ai/chat/pending-plan";
 import { TOOL_RESULT_BUDGET, toolResultBudget } from "@/lib/ai/chat/tool-result-budget";
 
 export { DOCUMENT_REVIEW_TOOL_NAMES, type DocumentReviewToolName };
@@ -230,6 +231,9 @@ export class DocumentReviewSession {
   private lastContinueStartedAt = 0;
   private lastBudgetExhausted = false;
   private skippedAttachmentIds: string[] = [];
+  private queuedFilenames: string[] = [];
+  private skippedFilenames: string[] = [];
+  private coverageObjective = "";
   private lastFinishTruncated = false;
 
   constructor(options?: { extractBatch?: ExtractReviewBatchFn }) {
@@ -246,6 +250,22 @@ export class DocumentReviewSession {
 
   finishedCoverageKey(): DocumentReviewCoverageKey | null {
     return this.phaseState === "complete" ? this.coverageKey : null;
+  }
+
+  /**
+   * A matching `|obj:` key from a floor-8 skip (CSV-OQ headers, PRQR not
+   * queued) must not unlock edit_table. Calibration walks that reviewed
+   * well past the floor still satisfy even when other files were skipped.
+   */
+  inventoryFinishSatisfiesDraft(): boolean {
+    if (this.phaseState !== "complete") return false;
+    return inventoryFinishSatisfiesEmptyTable({
+      reviewedPages: this.reviewedPageKeys.size,
+      skippedAttachmentIds: this.skippedAttachmentIds,
+      objective: this.coverageObjective || this.objective,
+      queuedFilenames: this.queuedFilenames,
+      skippedFilenames: this.skippedFilenames,
+    });
   }
 
   /**
@@ -267,6 +287,9 @@ export class DocumentReviewSession {
     this.totalPages = 0;
     this.objective = "";
     this.skippedAttachmentIds = [];
+    this.queuedFilenames = [];
+    this.skippedFilenames = [];
+    this.coverageObjective = "";
     this.lastFinishTruncated = false;
     this.lastRecommended =
       input.recommendedInventory ?? this.lastRecommended;
@@ -383,6 +406,19 @@ export class DocumentReviewSession {
     this.skippedAttachmentIds = coverageSources
       .map((source) => source.attachmentId)
       .filter((id) => id && !queuedIds.has(id));
+    this.coverageObjective = (input.coverageObjective ?? input.objective).trim();
+    this.queuedFilenames = [
+      ...new Set(pages.map((page) => page.filename).filter(Boolean)),
+    ];
+    const skippedIdSet = new Set(this.skippedAttachmentIds);
+    this.skippedFilenames = [
+      ...new Set(
+        input.pages
+          .filter((page) => skippedIdSet.has(page.attachmentId))
+          .map((page) => page.filename)
+          .filter(Boolean)
+      ),
+    ];
     this.coverageKey = documentReviewCoverageKey(
       coverageSources,
       input.coverageObjective ?? input.objective,

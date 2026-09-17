@@ -9,6 +9,7 @@ import {
   continuationFromMetadata,
   currentPlanTurnSections,
   emptyInventoryNeedsMatchingReview,
+  inventoryFinishSatisfiesEmptyTable,
   isElrInventoryTableField,
   isMultiSectionDraftRequest,
   isPlanResumeRequest,
@@ -837,6 +838,45 @@ describe("plan prompt and metadata", () => {
         section: "elr_objective",
         content: EMPTY_ELR_CONTENT.elr_objective,
         finishedCoverageKey: null,
+      })
+    ).toBe(false);
+  });
+
+  it("does not treat a floor-8 skipped finish as matching coverage", () => {
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 8,
+        skippedAttachmentIds: ["prqr"],
+        objective: "elr_monitoring",
+        queuedFilenames: ["CSV-OQ-PR-055 PART-1.pdf"],
+        skippedFilenames: ["PRQR-25-PR-005 Report.pdf"],
+      })
+    ).toBe(false);
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 148,
+        skippedAttachmentIds: ["other"],
+        objective: "elr_calibration",
+        queuedFilenames: ["Master Annual Calibration Planner PR.pdf"],
+        skippedFilenames: ["CSV-OQ-PR-055 PART-1.pdf"],
+      })
+    ).toBe(true);
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "equipment_lifecycle_report",
+        section: "elr_monitoring",
+        content: EMPTY_ELR_CONTENT.elr_monitoring,
+        finishedCoverageKey: "att:10:run|obj:elr_monitoring",
+        inventoryFinishSatisfiesDraft: false,
+      })
+    ).toBe(true);
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 20,
+        skippedAttachmentIds: ["prqr"],
+        objective: "elr_monitoring",
+        queuedFilenames: ["CSV-OQ-PR-055 PART-1.pdf"],
+        skippedFilenames: ["PRQR-25-PR-005 Report.pdf"],
       })
     ).toBe(false);
   });

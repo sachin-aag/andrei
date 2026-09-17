@@ -80,7 +80,11 @@ skips rehydrate so a finished session does not hide
 objective (floor 8; nearby same-file pages if almost nothing matches). ELR
 inventory tables score against the live column schema (headers / aliases, plus
 a typed `{modifier} {section noun}` that is not URS language such as
-`monitoring systems`), not the bare section token. `start_document_review`
+`monitoring systems`), nested method names (non-viable / settle plate / glove /
+LAF), and a preferred-filename boost (PRQR/PRQP). CSV-OQ / RTM / URS pages
+score 0 unless they look like a dated result table. Header-only UNCONTROLLED
+COPY / Sign/Date chrome is 0. Haystack uses outline + pageContext + the first
+4000 transcript characters. `start_document_review`
 for an ELR inventory still omits a single-file pin so PRQR / PRQP / PQR
 rows can split, but it does not page-list a file typed as a different
 inventory (a calibration planner is not QMS). Running-header `document no`
@@ -279,7 +283,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   inventory still forces `start_document_review`
   (`requireInventoryReview`). Recompute that flag from the live
   `finishedCoverageKey` in `prepareStep` — a matching finish this turn
-  must not force another start because the table is still empty. Hide
+  must not force another start because the table is still empty, unless the
+  finish was a floor-8 skip (`reviewedPages <= 8` and selected files were
+  not queued) or a preferred evidence file (PRQR) was skipped. Hide
   review tools after that finish and draft. `start_document_review`
   returns `already_complete` for the same `|obj:` instead of resetting.
   Gate empty tables only — filling missing

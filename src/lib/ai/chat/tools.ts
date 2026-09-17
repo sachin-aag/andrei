@@ -1965,6 +1965,8 @@ export function buildChatTools(opts: {
             section,
             content: loaded.content,
             finishedCoverageKey: documentReview.finishedCoverageKey(),
+            inventoryFinishSatisfiesDraft:
+              documentReview.inventoryFinishSatisfiesDraft(),
           })
         ) {
           return {
@@ -3077,6 +3079,8 @@ export function buildChatTools(opts: {
             section,
             content: loaded.content,
             finishedCoverageKey: documentReview.finishedCoverageKey(),
+            inventoryFinishSatisfiesDraft:
+              documentReview.inventoryFinishSatisfiesDraft(),
           })
         ) {
           return {
@@ -3373,6 +3377,8 @@ export function buildChatTools(opts: {
             section,
             content: loaded.content,
             finishedCoverageKey: documentReview.finishedCoverageKey(),
+            inventoryFinishSatisfiesDraft:
+              documentReview.inventoryFinishSatisfiesDraft(),
           })
         ) {
           return {

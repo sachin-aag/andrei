@@ -454,6 +454,7 @@ async function handleChatPost(
     sections: mergedSections,
     sectionKeys: inventoryTurnSections,
     finishedCoverageKey: documentReview.finishedCoverageKey(),
+    inventoryFinishSatisfiesDraft: documentReview.inventoryFinishSatisfiesDraft(),
   });
   // Coverage growth or explicit pushback can start a fresh comprehensive walk.
   // Queued ELR inventory and empty inventory fills keep comprehensive so a
@@ -694,6 +695,8 @@ async function handleChatPost(
                   sections: mergedSections,
                   sectionKeys: inventoryTurnSections,
                   finishedCoverageKey: documentReview.finishedCoverageKey(),
+                  inventoryFinishSatisfiesDraft:
+                    documentReview.inventoryFinishSatisfiesDraft(),
                 }),
           searchGate,
           forceListAttachments: lastStartNeedsAttachmentScope(steps),
