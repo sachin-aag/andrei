@@ -47,6 +47,26 @@ Identity (equipment name, equipment ID, associated system, container format,
 period, cycle number, last/next PRQ) lives in report metadata, not in a drafted
 section. The approval block is a printed placeholder — never invent signatures.
 
+## Equipment description — product-contact MOC
+
+Material of construction (MOC) of product-contact / wetted parts belongs in
+Equipment description (\`elr_system_description\`) **only when the equipment, or
+a named station on it, touches the product**.
+
+- **Needed** — primary packaging / product-contact: filling, stoppering,
+  sealing, hoppers, filling needles, product-contact pumps and tubing. Quote
+  the MOC from the URS / DQ / equipment spec (typically SS 316L, PTFE,
+  silicone). Cite the page. Do not invent a grade.
+- **Not needed** — secondary packaging (cartoning, labelling, leaflet
+  insertion, inspection of already-packed units) and tertiary (case packing,
+  palletizing, stretch wrapping). Do not pad those descriptions with SS 316L
+  or a "MOC: N/A" line. Frame steel is not a lifecycle-review fact.
+- A mixed line: name MOC only for the product-contact stations (the filler,
+  the stoppering head), not for a tray loader or cartoner that shares the
+  line.
+- This is **not** SLIA Direct / Indirect / No Impact. Direct Impact does not
+  by itself require MOC.
+
 ## Re-qualification: two different documents
 
 - **Periodic Re-Qualification** (PRQP protocol / PRQR report, §7.17) — the

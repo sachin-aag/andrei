@@ -202,7 +202,24 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v8");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v9");
+  });
+
+  it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
+    const def = getDocumentType(TYPE);
+    const criterion = getCriteria(TYPE, "elr_system_description").find(
+      (item) => item.key === "system_description.boundary"
+    );
+    expect(criterion?.description).toContain("product-contact");
+    expect(criterion?.description).toContain("secondary");
+    expect(criterion?.description).toContain("tertiary");
+    expect(criterion?.description).toContain("invented SS 316L");
+    expect(def.prompts.base).toContain(
+      "Secondary (cartoning, labelling) and tertiary (palletizing, wrapping)"
+    );
+    expect(def.prompts.perSection.elr_system_description).toContain(
+      "omit MOC are met on that point"
+    );
   });
 
   it("asks which container format when attachments name both and the title page is unset", () => {
@@ -216,6 +233,9 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).toContain("1 April to 31 March");
     expect(def.chat.draftingGuidance).toContain("one row per Grade A / environmental **method**");
     expect(def.chat.draftingGuidance).toContain("compact process-alarm");
+    expect(def.chat.draftingGuidance).toContain("product-contact MOC");
+    expect(def.chat.draftingGuidance).toContain("secondary packaging");
+    expect(def.chat.draftingGuidance).toContain("tertiary");
     expect(def.chat.draftingGuidance).toContain("ATTACHMENT NO.");
     expect(def.chat.draftingGuidance).toContain("findingsOmitted");
     expect(def.chat.draftingGuidance).toContain("Limits and counts");
