@@ -1037,6 +1037,11 @@ describe("buildChatTools document review", () => {
       (result as { queuedPages?: number; skippedDocuments?: unknown[] })
         .queuedPages
     ).toBe(1);
+    expect(
+      (result as { documents?: { attachmentId: string }[] }).documents
+    ).toEqual([
+      expect.objectContaining({ attachmentId: "att_prqr" }),
+    ]);
   });
 
   it("walks every ready file for ELR Calibration with the same column filter", async () => {
@@ -1100,6 +1105,72 @@ describe("buildChatTools document review", () => {
     expect(
       (result as { queuedPages?: number }).queuedPages
     ).toBe(1);
+    expect(
+      (result as { documents?: { attachmentId: string }[] }).documents
+    ).toEqual([
+      expect.objectContaining({ attachmentId: "att_cal" }),
+    ]);
+  });
+
+  it("does not page-list a calibration planner during an ELR QMS review", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_planner",
+        filename: "Master Annual Calibration Planner PR.pdf",
+        description: null,
+        pageCount: 231,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        description: null,
+        pageCount: 18,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        pageNumber: 22,
+        transcript:
+          "QMS records Type CAPA Document Reference No. CAPA/25/01 Date Initiated 03/02/2025 Qualification Impact N",
+        pageContext: "QMS since last PRQ",
+        printedPageLabel: "22",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      reviewCoverageObjective: "elr_qms",
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "elr_qms" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_prqr"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      queuedPages: 1,
+      documents: [
+        expect.objectContaining({
+          attachmentId: "att_prqr",
+          filename: "PRQR-25-PR-005 Report.pdf",
+        }),
+      ],
+    });
+    expect(
+      (result as { documents?: { filename: string }[] }).documents?.map(
+        (doc) => doc.filename
+      )
+    ).not.toContain("Master Annual Calibration Planner PR.pdf");
   });
 
   it("asks which attachment to review when several ready documents are untagged", async () => {

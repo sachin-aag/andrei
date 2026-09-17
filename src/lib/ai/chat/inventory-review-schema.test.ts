@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  filenameConflictsWithInventoryObjective,
   hasTypedSectionNoun,
   inventoryColumnNeedles,
+  inventoryReadyIdsForObjective,
   inventorySectionForObjective,
   scoreInventoryReviewPage,
 } from "./inventory-review-schema";
@@ -46,7 +48,82 @@ describe("hasTypedSectionNoun", () => {
   });
 });
 
+describe("filenameConflictsWithInventoryObjective", () => {
+  it("drops a calibration planner filename from a QMS walk and keeps PRQR", () => {
+    expect(
+      filenameConflictsWithInventoryObjective(
+        "Master Annual Calibration Planner PR.pdf",
+        "elr_qms"
+      )
+    ).toBe(true);
+    expect(
+      filenameConflictsWithInventoryObjective(
+        "PRQR-25-PR-005 Report.pdf",
+        "elr_qms"
+      )
+    ).toBe(false);
+    expect(
+      filenameConflictsWithInventoryObjective(
+        "Master Annual Calibration Planner PR.pdf",
+        "elr_calibration"
+      )
+    ).toBe(false);
+  });
+
+  it("does not empty the ready set when every filename conflicts", () => {
+    expect(
+      inventoryReadyIdsForObjective(
+        [
+          {
+            attachmentId: "cal",
+            filename: "Master Annual Calibration Planner PR.pdf",
+          },
+        ],
+        "elr_qms"
+      )
+    ).toEqual(["cal"]);
+    expect(
+      inventoryReadyIdsForObjective(
+        [
+          {
+            attachmentId: "cal",
+            filename: "Master Annual Calibration Planner PR.pdf",
+          },
+          { attachmentId: "prqr", filename: "PRQR-25-PR-005 Report.pdf" },
+        ],
+        "elr_qms"
+      )
+    ).toEqual(["prqr"]);
+  });
+});
+
 describe("scoreInventoryReviewPage", () => {
+  it("does not queue a calibration-planner header as QMS evidence", () => {
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "Master Annual Calibration Planner PR.pdf",
+          transcript:
+            "Document No. CAL-PR-014 Date 12/01/2025 Status Due Instrument ID TI-01",
+          pageContext: "Annual calibration planner",
+          outlineTitle: "Planner",
+        },
+        "elr_qms"
+      )
+    ).toBe(0);
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "PRQR-25-PR-005 Report.pdf",
+          transcript:
+            "QMS records Type CAPA Document Reference No. CAPA/25/01 Date Initiated 03/02/2025 Qualification Impact N",
+          outlineTitle: "QMS since last PRQ",
+        },
+        "elr_qms"
+      )
+    ).toBeGreaterThan(0);
+  });
+
   it("queues PRQR/PRQP result pages and not URS ports or a name plate", () => {
     expect(
       scoreInventoryReviewPage(

@@ -80,8 +80,11 @@ skips rehydrate so a finished session does not hide
 objective (floor 8; nearby same-file pages if almost nothing matches). ELR
 inventory tables score against the live column schema (headers / aliases, plus
 a typed `{modifier} {section noun}` that is not URS language such as
-`monitoring systems`), not the bare section token, and `start_document_review`
-walks every ready file unless the engineer tagged one. Complementary grep ORs
+`monitoring systems`), not the bare section token. `start_document_review`
+for an ELR inventory still omits a single-file pin so PRQR / PRQP / PQR
+rows can split, but it does not page-list a file typed as a different
+inventory (a calibration planner is not QMS). Running-header `document no`
+is not a column hit. The planning chip names queued files. Complementary grep ORs
 those column phrases. `REVIEW_PAGE_FETCH_CAP`
 (2500) is listing safety only — there is no 300-page walk cap.
 `continue_document_review` stops starting batches after ~60s and round-robins

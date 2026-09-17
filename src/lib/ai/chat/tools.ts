@@ -221,6 +221,7 @@ import {
 } from "@/lib/ai/chat/document-review";
 import type { SearchGate } from "@/lib/ai/chat/search-loop";
 import {
+  inventoryReadyIdsForObjective,
   isElrInventoryReviewObjective,
 } from "@/lib/ai/chat/inventory-review-schema";
 import {
@@ -394,6 +395,20 @@ function reviewDocumentIndexItem(doc: {
     filename: sanitizePromptMetadata(doc.filename, 180) || "unnamed",
     pageCount: doc.pageCount,
   };
+}
+
+/** Planning chip names queued files, not the whole selected vault. */
+function queuedReviewDocuments<
+  T extends { attachmentId: string; filename: string; pageCount: number | null },
+>(selectedDocs: readonly T[], queuedAttachmentIds: readonly string[]) {
+  const byId = new Map(selectedDocs.map((doc) => [doc.attachmentId, doc]));
+  const queued = queuedAttachmentIds.flatMap((id) => {
+    const doc = byId.get(id);
+    return doc ? [reviewDocumentIndexItem(doc)] : [];
+  });
+  return queued.length > 0
+    ? queued
+    : selectedDocs.map(reviewDocumentIndexItem);
 }
 
 function resultsTableInventoryMismatch(
@@ -1638,7 +1653,7 @@ export function buildChatTools(opts: {
           .max(12)
           .optional()
           .describe(
-            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so every ready file is column-filtered)."
+            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so the server keeps files that match this table's columns)."
           ),
       }),
       execute: async ({ objective, attachmentIds }) => {
@@ -1665,7 +1680,10 @@ export function buildChatTools(opts: {
               ? requestedInScope.filter((id) => allowed.has(id))
               : pinnedReady
             : inventoryScoped
-              ? ready.map((doc) => doc.attachmentId)
+              ? inventoryReadyIdsForObjective(
+                  ready,
+                  coverageObjective || objective
+                )
               : requestedInScope.length > 0
                 ? requestedInScope.filter((id) => allowed.has(id))
                 : ready.map((doc) => doc.attachmentId);
@@ -1746,7 +1764,10 @@ export function buildChatTools(opts: {
               ? false
               : started.totalPages < selectedPageTotal || skippedDocuments.length > 0,
           skippedDocuments,
-          documents: selectedDocs.map(reviewDocumentIndexItem),
+          documents: queuedReviewDocuments(
+            selectedDocs,
+            started.queuedAttachmentIds
+          ),
           nextAction: started.nextAction,
           ...(started.message ? { message: started.message } : {}),
         };

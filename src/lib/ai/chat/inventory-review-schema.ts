@@ -65,6 +65,11 @@ const GENERIC_COLUMN_NEEDLES = new Set([
   "instrument",
   "failure",
   "deviation",
+  // Running-header tokens on every GMP page — not evidence that the page
+  // belongs to this inventory table. Keep "document reference no".
+  "document no",
+  "document ref",
+  "initiated",
 ]);
 
 /**
@@ -209,6 +214,35 @@ export function isElrInventoryReviewObjective(
   return objectives.some((objective) =>
     Boolean(inventorySectionForObjective(objective))
   );
+}
+
+/**
+ * True when a filename is typed as a *different* ELR inventory than the
+ * current objective (e.g. "Master Annual Calibration Planner" during QMS).
+ * PRQR / PQP names that do not carry another section noun stay in scope.
+ */
+export function filenameConflictsWithInventoryObjective(
+  filename: string | null | undefined,
+  objective: string
+): boolean {
+  const current = inventorySectionForObjective(objective);
+  if (!current || !filename) return false;
+  const haystack = filename.toLowerCase();
+  for (const section of inventorySections()) {
+    if (section === current) continue;
+    if (hasTypedSectionNoun(haystack, sectionNoun(section))) return true;
+  }
+  return false;
+}
+
+/** Ready files to page-list for an inventory walk. Never returns empty when `ready` is not. */
+export function inventoryReadyIdsForObjective<
+  T extends { attachmentId: string; filename?: string | null },
+>(ready: readonly T[], objective: string): string[] {
+  const kept = ready.filter(
+    (doc) => !filenameConflictsWithInventoryObjective(doc.filename, objective)
+  );
+  return (kept.length > 0 ? kept : ready).map((doc) => doc.attachmentId);
 }
 
 function sectionNoun(section: SectionType): string {

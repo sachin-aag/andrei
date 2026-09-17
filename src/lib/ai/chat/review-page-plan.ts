@@ -1,4 +1,5 @@
 import {
+  filenameConflictsWithInventoryObjective,
   inventorySectionForObjective,
   pageObjectiveHaystack,
   scoreInventoryReviewPage,
@@ -217,7 +218,13 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
     if (scoreReviewPage(page, objective) > 0) relevant.push(page);
   }
   if (relevant.length === 0) {
-    return selectReviewPages(pages, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap));
+    const withoutForeignInventory = pages.filter(
+      (page) =>
+        !filenameConflictsWithInventoryObjective(page.filename, objective)
+    );
+    const pool =
+      withoutForeignInventory.length > 0 ? withoutForeignInventory : pages;
+    return selectReviewPages(pool, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap));
   }
   const prioritized = selectReviewPages(relevant, cap);
   if (prioritized.length >= REVIEW_OBJECTIVE_PAGE_FLOOR) {

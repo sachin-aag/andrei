@@ -130,6 +130,56 @@ describe("planReviewPages", () => {
     expect(selected[0]?.attachmentId).toBe("cal");
   });
 
+  it("does not queue a 231-page calibration planner for a QMS walk", () => {
+    const pages = [
+      ...Array.from({ length: 231 }, (_, i) => ({
+        attachmentId: "planner",
+        pageNumber: i + 1,
+        filename: "Master Annual Calibration Planner PR.pdf",
+        transcript: `Document No. CAL-PR-014 Date 12/01/2025 row ${i}`,
+        pageContext: "Annual calibration planner",
+        outlineTitle: "Planner",
+        identifiers: [] as string[],
+      })),
+      {
+        attachmentId: "prqr",
+        pageNumber: 22,
+        filename: "PRQR-25-PR-005 Report.pdf",
+        transcript:
+          "QMS records Type CAPA Document Reference No. CAPA/25/01 Date Initiated 03/02/2025 Qualification Impact N",
+        outlineTitle: "QMS since last PRQ",
+        identifiers: ["CAPA/25/01"],
+      },
+    ];
+    const selected = planReviewPages(pages, "elr_qms", 2500);
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.attachmentId).toBe("prqr");
+  });
+
+  it("samples a small floor from non-conflicting files when nothing matches", () => {
+    const pages = [
+      ...Array.from({ length: 231 }, (_, i) => ({
+        attachmentId: "planner",
+        pageNumber: i + 1,
+        filename: "Master Annual Calibration Planner PR.pdf",
+        transcript: `unrelated ${i}`,
+        outlineTitle: "Appendix",
+        identifiers: [] as string[],
+      })),
+      ...Array.from({ length: 8 }, (_, i) => ({
+        attachmentId: "other",
+        pageNumber: i + 1,
+        filename: "E-PR-068.pdf",
+        transcript: `name plate ${i}`,
+        outlineTitle: "Appendix",
+        identifiers: [] as string[],
+      })),
+    ];
+    const selected = planReviewPages(pages, "elr_qms", 2500);
+    expect(selected).toHaveLength(REVIEW_OBJECTIVE_PAGE_FLOOR);
+    expect(selected.every((page) => page.attachmentId === "other")).toBe(true);
+  });
+
   it("samples a small floor when nothing matches", () => {
     const pages = Array.from({ length: 80 }, (_, i) => ({
       attachmentId: i < 40 ? "a" : "b",
