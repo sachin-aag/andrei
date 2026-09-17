@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalizeSourceCitationBracket,
+  citationNumbersFromMarker,
+  formatNumericCitationMarker,
   isCitationShapedBracket,
   isNumericCitationMarker,
   isSourceCitationBracket,
@@ -25,9 +27,21 @@ describe("isCitationShapedBracket", () => {
 
   it("treats numeric markers as citations but not as source cites", () => {
     expect(isNumericCitationMarker("[3]")).toBe(true);
+    expect(isNumericCitationMarker("[1,2,3]")).toBe(true);
+    expect(isNumericCitationMarker("[1, 2]")).toBe(true);
     expect(isSourceCitationBracket("[3]")).toBe(false);
+    expect(isSourceCitationBracket("[1,2]")).toBe(false);
     expect(isSourceCitationBracket("[protocol.pdf, p. 3]")).toBe(true);
     expect(isSourceCitationBracket("[batch number]")).toBe(false);
+  });
+
+  it("parses and formats combined numeric markers", () => {
+    expect(citationNumbersFromMarker("[1,2,3]")).toEqual([1, 2, 3]);
+    expect(citationNumbersFromMarker("[1, 2]")).toEqual([1, 2]);
+    expect(citationNumbersFromMarker("[3]")).toEqual([3]);
+    expect(formatNumericCitationMarker([1, 2, 2, 3])).toBe("[1,2,3]");
+    expect(formatNumericCitationMarker([4])).toBe("[4]");
+    expect(isCitationShapedBracket("[1,2]")).toBe(true);
   });
 
   it("recognizes extension-less Attachment exhibit labels and lists", () => {

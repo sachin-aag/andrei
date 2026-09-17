@@ -3,9 +3,10 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import {
-  citationNumberFromMarker,
+  citationNumbersFromMarker,
   isNumericCitationMarker,
   isSourceCitationBracket,
+  numericCitationLinkSpans,
   sourceCitationLinkSpans,
 } from "@/lib/placeholders/citation-bracket";
 import { BRACKET_SPAN_REGEX } from "@/lib/placeholders/find";
@@ -21,6 +22,8 @@ export type CitationHighlight = {
   text: string;
   /** Source bracket to open, when known. */
   openRaw: string | null;
+  /** Combined `[1,2]` inner digit — styled as a click target, not a second bubble. */
+  part?: boolean;
 };
 
 export type CitationOpenHandlers = {
@@ -71,18 +74,43 @@ function scanBlockForCitations(
     if (toPos <= fromPos) continue;
 
     if (isNumericCitationMarker(text)) {
-      const number = citationNumberFromMarker(text);
-      if (number == null) continue;
-      const parked = numberedSources.get(number);
-      const parkedSpans = parked ? sourceCitationLinkSpans(parked) : [];
+      const numbers = citationNumbersFromMarker(text);
+      if (numbers.length === 0) continue;
+      if (numbers.length === 1) {
+        const number = numbers[0]!;
+        const parked = numberedSources.get(number);
+        const parkedSpans = parked ? sourceCitationLinkSpans(parked) : [];
+        highlights.push({
+          fromPos,
+          toPos,
+          kind: "numeric",
+          number,
+          text,
+          openRaw: parkedSpans[0]?.openRaw ?? parked ?? null,
+        });
+        continue;
+      }
       highlights.push({
         fromPos,
         toPos,
         kind: "numeric",
-        number,
+        number: null,
         text,
-        openRaw: parkedSpans[0]?.openRaw ?? parked ?? null,
+        openRaw: null,
       });
+      for (const span of numericCitationLinkSpans(text)) {
+        const parked = numberedSources.get(span.number);
+        const parkedSpans = parked ? sourceCitationLinkSpans(parked) : [];
+        highlights.push({
+          fromPos: pmOffsetToPos(chunks, match.index + span.from),
+          toPos: pmOffsetToPos(chunks, match.index + span.to),
+          kind: "numeric",
+          number: span.number,
+          text: String(span.number),
+          openRaw: parkedSpans[0]?.openRaw ?? parked ?? null,
+          part: true,
+        });
+      }
       continue;
     }
 
@@ -131,7 +159,7 @@ export function findNumericCitationMarkersInPmDoc(
   doc: PMNode
 ): CitationHighlight[] {
   return findCitationHighlightsInPmDoc(doc).filter(
-    (highlight) => highlight.kind === "numeric"
+    (highlight) => highlight.kind === "numeric" && highlight.number != null
   );
 }
 
@@ -144,7 +172,11 @@ function citationDecorationAttrs(highlight: CitationHighlight): {
   title?: string;
 } {
   const className =
-    highlight.kind === "numeric" ? "citation-ref" : "citation-source";
+    highlight.kind === "numeric"
+      ? highlight.part
+        ? "citation-ref-n"
+        : "citation-ref"
+      : "citation-source";
   const attrs: {
     class: string;
     "data-citation-number"?: string;

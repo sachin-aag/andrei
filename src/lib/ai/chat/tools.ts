@@ -1844,7 +1844,7 @@ export function buildChatTools(opts: {
       description:
         `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table. Do not rewrite an existing table as a bulleted list; that is edit_table (edit_cells / insert_column).${
           citationsAtEndOfSection
-            ? " Put document citations as [filename, p. N] immediately after the claim in insertText when the page is known; [filename] only if the page is missing or ambiguous. The server converts them to numbered markers and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
+            ? " Put document citations as [filename, p. N] immediately after the supported word or claim in insertText when the page is known; [filename] only if the page is missing or ambiguous. Never mid-word or inside **bold**. The server converts them to numbered markers ([1] or [1,2]) and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
             : ""
         }${scopeHint}`,
       inputSchema: z.object({

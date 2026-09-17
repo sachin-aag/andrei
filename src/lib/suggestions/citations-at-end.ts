@@ -1,7 +1,14 @@
 import type { JSONContent } from "@tiptap/core";
 import { citationDisplayFilename } from "@/lib/citations/citation-filename";
 import {
+  citationSiteOffset,
+  mapIndexAfterRemovals,
+  type TextSpan,
+} from "@/lib/citations/citation-site";
+import {
   canonicalizeSourceCitationBracket,
+  citationNumbersFromMarker,
+  formatNumericCitationMarker,
   isSourceCitationBracket,
 } from "@/lib/placeholders/citation-bracket";
 import type { EditScope } from "@/lib/suggestions/locator";
@@ -20,7 +27,10 @@ export type SplitSuggestionEdit = SuggestionEditPart & {
 
 const BRACKET_RE = /\[[^\]]+\]/g;
 const NUMBERED_LIST_PREFIX = /^(\d+)\.\s+/;
-const ADJACENT_MARKER_GAP = /(\[\d+\])[ \t]+(?=\[\d+\])/g;
+const NUMERIC_MARKER_RE = /\[\s*\d+(?:\s*,\s*\d+)*\s*\]/g;
+const ADJACENT_NUMERIC_MARKERS =
+  /\[\s*\d+(?:\s*,\s*\d+)*\s*\](?:[ \t]*\[\s*\d+(?:\s*,\s*\d+)*\s*\])+/g;
+const TRAILING_NUMERIC_MARKER = /\[\s*\d+(?:\s*,\s*\d+)*\s*\]$/;
 
 /** Heading written once above the parked citation list. */
 export const CITATIONS_HEADING = "Citations:";
@@ -62,7 +72,7 @@ const PDF_PAGE_CITATION_RULE =
 
 export function documentCitationRule(citationsAtEndOfSection: boolean): string {
   if (citationsAtEndOfSection) {
-    return `Cite evidence as [filename, p. N] when a tool result has a page for that fact. ${PDF_PAGE_CITATION_RULE} Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.`;
+    return `Cite evidence as [filename, p. N] when a tool result has a page for that fact. ${PDF_PAGE_CITATION_RULE} Use [filename] only when the page is missing or ambiguous. Place those source brackets immediately after the supported word or claim (or table cell), never in the middle of a word or inside markdown emphasis such as **bold**. The application converts them to numbered markers ([1] or combined [1,2] when several sources support the same claim) and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.`;
   }
   return `Cite evidence in prose as [filename, p. N] when a tool result has a page for that fact. ${PDF_PAGE_CITATION_RULE} Use [filename] only when the page is missing or ambiguous. Never use <to be filled> in a citation.`;
 }
@@ -103,7 +113,7 @@ export function extractCitationBrackets(text: string): string[] {
 }
 
 export function citationMarker(n: number): string {
-  return `[${n}]`;
+  return formatNumericCitationMarker([n]);
 }
 
 function numberedCitationLine(n: number, source: string): string {
@@ -210,6 +220,42 @@ export function sourceCitationsByNumber(
   );
 }
 
+function removalSpanForCitation(
+  text: string,
+  span: { start: number; end: number }
+): TextSpan {
+  let start = span.start;
+  if (start > 0 && /[ \t]/.test(text[start - 1]!)) start -= 1;
+  return { start, end: span.end };
+}
+
+function insertMarkersAt(text: string, at: number, markers: string): string {
+  if (!markers) return text;
+  const left = text.slice(0, at);
+  const right = text.slice(at);
+  if (TRAILING_NUMERIC_MARKER.test(left.trimEnd()) && !/\s$/.test(left)) {
+    return `${left}${markers}${right}`;
+  }
+  if (at > 0 && !/\s$/.test(left)) {
+    return `${left} ${markers}${right}`;
+  }
+  return `${left}${markers}${right}`;
+}
+
+function replaceSpansWithMarkersInPlace(
+  text: string,
+  spans: Array<{ start: number; end: number }>,
+  markers: readonly string[]
+): string {
+  let next = text;
+  for (let i = spans.length - 1; i >= 0; i--) {
+    const span = spans[i]!;
+    const marker = markers[i]!;
+    next = next.slice(0, span.start) + marker + next.slice(span.end);
+  }
+  return collapseAdjacentCitationMarkers(next);
+}
+
 function replaceSourceCitationsWithMarkers(
   text: string,
   numbering: FieldCitationNumbering
@@ -220,38 +266,76 @@ function replaceSourceCitationsWithMarkers(
   const spans = findSourceCitationSpans(text);
   if (spans.length === 0) return { text, assigned: [] };
 
-  const assigned: Array<{ source: string; number: number; isNew: boolean }> = [];
-  const replacements: Array<{ start: number; end: number; marker: string }> = [];
+  const assigned: Array<{ source: string; number: number; isNew: boolean }> =
+    [];
+  const markers: string[] = [];
+  const removals: TextSpan[] = [];
+  const plans: Array<{ from: number; number: number }> = [];
   for (const span of spans) {
     const result = numbering.assign(span.text);
-    assigned.push({ source: span.text, number: result.number, isNew: result.isNew });
-    replacements.push({
-      start: span.start,
-      end: span.end,
-      marker: citationMarker(result.number),
+    assigned.push({
+      source: span.text,
+      number: result.number,
+      isNew: result.isNew,
     });
+    markers.push(citationMarker(result.number));
+    removals.push(removalSpanForCitation(text, span));
+    plans.push({ from: span.end, number: result.number });
   }
 
-  let next = text;
-  for (let i = replacements.length - 1; i >= 0; i--) {
-    const replacement = replacements[i]!;
-    next =
-      next.slice(0, replacement.start) +
-      replacement.marker +
-      next.slice(replacement.end);
+  let stripped = text;
+  for (let i = removals.length - 1; i >= 0; i--) {
+    const removal = removals[i]!;
+    stripped = stripped.slice(0, removal.start) + stripped.slice(removal.end);
   }
-  return { text: collapseAdjacentCitationMarkers(next), assigned };
+  if (!stripped.trim()) {
+    return {
+      text: replaceSpansWithMarkersInPlace(text, spans, markers),
+      assigned,
+    };
+  }
+
+  const byDest = new Map<number, number[]>();
+  for (const plan of plans) {
+    const from = mapIndexAfterRemovals(plan.from, removals);
+    const dest = citationSiteOffset(stripped, from);
+    const atDest = byDest.get(dest) ?? [];
+    atDest.push(plan.number);
+    byDest.set(dest, atDest);
+  }
+
+  let next = stripped;
+  const dests = [...byDest.keys()].sort((a, b) => b - a);
+  for (const dest of dests) {
+    next = insertMarkersAt(
+      next,
+      dest,
+      formatNumericCitationMarker(byDest.get(dest) ?? [])
+    );
+  }
+  return {
+    text: collapseAdjacentCitationMarkers(tidyAfterCitationRemoval(next)),
+    assigned,
+  };
 }
 
 function collapseAdjacentCitationMarkers(text: string): string {
-  return text.replace(ADJACENT_MARKER_GAP, "$1");
+  return text.replace(ADJACENT_NUMERIC_MARKERS, (run) => {
+    const numbers: number[] = [];
+    const re = new RegExp(NUMERIC_MARKER_RE.source, "g");
+    let found: RegExpExecArray | null;
+    while ((found = re.exec(run)) !== null) {
+      numbers.push(...citationNumbersFromMarker(found[0]));
+    }
+    return formatNumericCitationMarker(numbers);
+  });
 }
 
 function appendCitationMarkers(prose: string, numbers: readonly number[]): string {
-  const markers = uniquePreserveOrder(numbers.map((n) => citationMarker(n))).join("");
+  const markers = formatNumericCitationMarker(numbers);
   if (!markers) return prose;
   if (!prose) return markers;
-  if (/\s$/.test(prose) || /\[\d+\]$/.test(prose.trimEnd())) {
+  if (/\s$/.test(prose) || TRAILING_NUMERIC_MARKER.test(prose.trimEnd())) {
     return collapseAdjacentCitationMarkers(`${prose.trimEnd()}${markers}`);
   }
   return collapseAdjacentCitationMarkers(`${prose} ${markers}`);
@@ -405,9 +489,12 @@ function stripNumericMarkersFromText(
   numbers: ReadonlySet<number>
 ): string {
   if (numbers.size === 0) return text;
-  const next = text.replace(/\[\s*(\d+)\s*\]/g, (full, raw: string) =>
-    numbers.has(Number(raw)) ? "" : full
-  );
+  const next = text.replace(NUMERIC_MARKER_RE, (full) => {
+    const kept = citationNumbersFromMarker(full).filter((n) => !numbers.has(n));
+    if (kept.length === 0) return "";
+    if (kept.length === citationNumbersFromMarker(full).length) return full;
+    return formatNumericCitationMarker(kept);
+  });
   return tidyAfterCitationRemoval(next).replace(/[ \t]+$/g, "");
 }
 

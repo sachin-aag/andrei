@@ -1,3 +1,4 @@
+import { splitSentences } from "@/lib/citations/citation-site";
 import {
   isNumericCitationMarker,
   isSourceCitationBracket,
@@ -131,23 +132,6 @@ function citationSpans(text: string): Array<{ start: number; end: number }> {
     }
   }
   return spans;
-}
-
-function splitSentences(text: string): Array<{ start: number; end: number }> {
-  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
-    const seg = new Intl.Segmenter("en", { granularity: "sentence" });
-    return [...seg.segment(text)].map((part) => ({
-      start: part.index,
-      end: part.index + part.segment.length,
-    }));
-  }
-  const spans: Array<{ start: number; end: number }> = [];
-  const re = /[^.!?\n]+(?:[.!?]+|$)/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text))) {
-    spans.push({ start: match.index, end: match.index + match[0].length });
-  }
-  return spans.length > 0 ? spans : [{ start: 0, end: text.length }];
 }
 
 function overlaps(
