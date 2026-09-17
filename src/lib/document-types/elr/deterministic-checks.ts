@@ -45,6 +45,12 @@ import {
   type ElrRiskGrade,
   type ElrSectionRecapSource,
 } from "./sections";
+import {
+  recommendationHasCalendarDate,
+  recommendationHasFrequency,
+  recommendationHasVagueTiming,
+  recommendationMentionsDate,
+} from "./recommendation-schedule";
 
 function verdict(
   status: CriterionStatus,
@@ -771,6 +777,58 @@ export function checkRecommendationSelected(ctx: EvaluationContext) {
     );
   }
   return verdict("met", `Recommendation recorded (${recommendation})`);
+}
+
+/**
+ * §6.0 must name calendar dates (next PRQ, 5.2 target dates) and how often
+ * each follow-up runs. "Soon" / "as required" / "periodically" is not a schedule.
+ */
+export function checkRecommendationNamesSchedule(ctx: EvaluationContext) {
+  const text = narrativeText(ctx.content, "recommendationNarrative");
+  if (text.length < 20) {
+    return verdict(
+      "not_met",
+      "Recommendation 6.0 is empty — name calendar dates and how often each follow-up runs"
+    );
+  }
+  const hasDate = recommendationHasCalendarDate(text);
+  const hasFrequency = recommendationHasFrequency(text);
+  const problems: string[] = [];
+  if (!hasDate) {
+    problems.push(
+      "6.0 names no calendar date (next PRQ, action target, or revalidation due)"
+    );
+  }
+  if (!hasFrequency) {
+    problems.push(
+      "6.0 names no frequency (annual PRQ, quarterly PM, monthly effectiveness check)"
+    );
+  }
+  const nextPrq = isoDate(metadataField(ctx, "nextPrqDate"));
+  if (nextPrq && !recommendationMentionsDate(text, nextPrq)) {
+    problems.push(`Next PRQ due ${nextPrq} is not named in 6.0`);
+  }
+  const actions = parseRiskActionMatrix(ctx.dependencies?.elr_risk_actions);
+  if (actions.ok) {
+    for (const row of actions.rows) {
+      const due = row.targetDate.trim();
+      if (!due) continue;
+      if (!recommendationHasCalendarDate(due) && !isoDate(due)) continue;
+      if (!recommendationMentionsDate(text, due)) {
+        problems.push(`5.2 target date ${due} is not named in 6.0`);
+      }
+    }
+  }
+  if (problems.length === 0) {
+    return verdict("met", "6.0 names calendar dates and follow-up frequency");
+  }
+  const vague = recommendationHasVagueTiming(text)
+    ? " Vague timing (soon / as required / periodically) is not a schedule."
+    : "";
+  return verdict(
+    !hasDate && !hasFrequency ? "not_met" : "partially_met",
+    `${problems.join("; ")}.${vague}`
+  );
 }
 
 export function checkElrRevisionHistory(ctx: EvaluationContext) {

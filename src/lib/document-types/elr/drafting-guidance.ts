@@ -230,10 +230,10 @@ must not advance on a filled table with an empty assessment.
   for the assessment.
 - \`elr_risk_actions\`: draft \`overallGrade\` in the same turn (\`low\` / \`medium\` /
   \`high\` — the stored enum, not "Low risk").
-- \`elr_conclusion\`: draft a bulleted recap in \`narrative\` (3.1–3.14, 4.0, 5.1, 5.2) and \`recommendation\` in the same turn
-  (\`continue\` / \`early_requalification\` / \`capa\` / \`other\`) plus the decision
-  sentence in \`recommendationNarrative\`. Do not put the enum's label into
-  \`recommendation\` as free text.
+- \`elr_conclusion\`: draft a bulleted recap in \`narrative\` (3.1–3.14, 4.0, 5.1, 5.2), \`recommendation\`, and a dated \`recommendationNarrative\` in the same turn
+  (\`continue\` / \`early_requalification\` / \`capa\` / \`other\`). The 6.0
+  sentence names calendar dates and how often each follow-up runs. Do not put
+  the enum's label into \`recommendation\` as free text.
 
 ## Table numbers
 
@@ -304,9 +304,22 @@ format. Where a section carries an unresolved finding, the recommendation has
 to account for it — do not conclude "no action required" over an open gap.
 
 \`recommendation\` must be exactly \`continue\` | \`early_requalification\` |
-\`capa\` | \`other\`. Put the decision sentence in \`recommendationNarrative\`
-(why that option, and what happens next). "Remain in qualified state" is not
-a valid \`recommendation\` value.
+\`capa\` | \`other\`. Put the decision in \`recommendationNarrative\` (6.0):
+
+- Name **calendar dates**, not "soon" / "as required" / "periodically".
+  Use the title-page next PRQ due date, any 5.2 Target date, and
+  revalidation / calibration / PM due dates that drive the choice.
+- Name **how often** each follow-up runs: annual (or VMP) PRQ cycle, ELR
+  frequency, PM interval, monitoring cadence, CAPA effectiveness check
+  (monthly / quarterly until closed).
+- Continue with no new action still names the next scheduled PRQ date and
+  that review frequency so "no action" is bounded in time.
+- Early re-qualification names the target date the event-triggered protocol
+  should complete (pulled forward from the next scheduled PRQ).
+- CAPA names the action, owner, target date from 5.2, and how often
+  effectiveness is checked.
+
+"Remain in qualified state" is not a valid \`recommendation\` value.
 
 ## Limits and counts
 

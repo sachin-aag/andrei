@@ -574,7 +574,7 @@ export function ElrConclusionEditor() {
         section={section}
         contentPath="recommendationNarrative"
         label="Justification"
-        placeholder="Justify the recommendation, and specify it here when Other is selected."
+        placeholder="Name calendar dates (next PRQ due, 5.2 target dates) and how often each follow-up runs (annual PRQ, PM interval, CAPA check). Continue still needs the next PRQ date and review frequency — not 'soon' or 'as required'."
         className="grid gap-2"
         value={content.recommendationNarrative}
         onChange={(doc) =>

@@ -629,15 +629,25 @@ describe("plan prompt and metadata", () => {
             "- 3.6 Monitoring — no excursions this period.\n- 4.0 Discrepancy — none observed.",
         },
       },
-      {
-        type: "tool-draft_field",
-        state: "output-available",
-        input: {
-          section: "elr_conclusion",
-          targetField: "recommendation",
-          markdown: "continue",
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "recommendation",
+            markdown: "continue",
+          },
         },
-      },
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "recommendationNarrative",
+            markdown:
+              "Next PRQ is due 15 August 2027 on the yearly VMP cycle.",
+          },
+        },
     ]);
     const view = chatPlanProgressView(
       started,

@@ -33,6 +33,7 @@ import {
   checkQualificationChain,
   checkQualificationFormatScope,
   checkRecommendationSelected,
+  checkRecommendationNamesSchedule,
   checkConclusionRecapsSections,
   checkRecordTypeMatchesReference,
   checkResponsibilitiesTable,
@@ -560,6 +561,19 @@ const CONCLUSION_CRITERIA: CriterionDefinition[] = [
     checkRecommendationSelected
   ),
   det(
+    "conclusion.recommendation_schedule",
+    "Recommendation 6.0 names calendar dates and how often each follow-up runs",
+    "Does 6.0 name calendar dates (next PRQ due, 5.2 action target dates, revalidation due) and the frequency of each follow-up (annual PRQ, PM interval, CAPA effectiveness check)? Continue still names the next scheduled PRQ date and review frequency. 'Soon', 'as required', and 'periodically' without a date or interval are not met.",
+    checkRecommendationNamesSchedule,
+    ["elr_risk_actions"]
+  ),
+  llm(
+    "conclusion.recommendation_dated",
+    "Each recommended follow-up in 6.0 is dated and has a frequency",
+    "Does the recommendation prose say when each follow-up happens (a calendar date, not 'soon') and how often it repeats (annual PRQ, quarterly PM, monthly effectiveness review)? If 5.2 listed target dates, are those dates in 6.0? Continue with no new action still has to bound the next PRQ date and ELR/PRQ frequency.",
+    ["elr_risk_actions"]
+  ),
+  det(
     "conclusion.recaps_sections",
     "The conclusion recaps 3.1–3.14, 4.0, 5.1 and 5.2 as a bulleted list",
     "Does the conclusion narrative include a bulleted (or numbered) list with one item per Observations subsection (3.1–3.14), Discrepancy (4.0), System Trends (5.1) and Risk Assessment (5.2)? Purpose and Scope may be omitted. Each bullet must summarise that section, not only name it.",
@@ -618,7 +632,7 @@ const PER_SECTION_PROMPTS: Record<string, string> = {
   elr_csv_status: `The assessment must interpret whether each system remains validated, name the revalidation due date (current vs overdue), and whether a change since last PRQ triggered revalidation.`,
   elr_system_trends: `The 5.1 table recaps every Observations subsection (3.1–3.14) and Discrepancy (4.0) — Purpose and Scope may be skipped. Nil sections still get a short recap ('none this period'). The narrative then names recurring themes that cut across those rows and states downtime / uptime / availability. Carry each theme that needs action into the risk-actions table.`,
   elr_risk_actions: `Prioritize by occurrence, frequency and severity. Product scrap and lost runtime are High. Actions must be specific, owned and dated — not "monitor closely". Around ten actions is a working size; do not list every event. The overall grade must match the highest-priority rows.`,
-  elr_conclusion: `The narrative opens with a bulleted recap of 3.1–3.14, 4.0, 5.1 and 5.2 (Purpose and Scope may be omitted). Then judge the decision: a recap without saying whether the qualified state holds is not met. It must account for the risk-actions grade and any open High-priority action.`,
+  elr_conclusion: `The narrative opens with a bulleted recap of 3.1–3.14, 4.0, 5.1 and 5.2 (Purpose and Scope may be omitted). Then judge the decision: a recap without saying whether the qualified state holds is not met. It must account for the risk-actions grade and any open High-priority action. 6.0 must name calendar dates (next PRQ, 5.2 target dates) and how often each follow-up runs — 'soon' / 'as required' / 'periodically' is not met. Continue still names the next scheduled PRQ date and review frequency.`,
 };
 
 // ------------------------------------------------------------------- merging

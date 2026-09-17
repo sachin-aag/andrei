@@ -20,6 +20,7 @@ describe("elrPlanRequiredFields", () => {
     expect(elrPlanRequiredFields("elr_conclusion")).toEqual([
       "narrative",
       "recommendation",
+      "recommendationNarrative",
     ]);
     expect(elrPlanRequiredFields("elr_system_trends")).toEqual(["narrative"]);
     expect(elrPlanRequiredFields("elr_objective")).toBeNull();
@@ -122,7 +123,7 @@ describe("elrPlanSectionCompleteFromParts", () => {
     expect(elrPlanSectionCompleteFromParts("elr_qms", parts)).toBe(false);
   });
 
-  it("requires conclusion recap narrative plus recommendation", () => {
+  it("requires conclusion recap, recommendation, and a dated 6.0", () => {
     expect(
       elrPlanSectionCompleteFromParts("elr_conclusion", [
         {
@@ -164,6 +165,48 @@ describe("elrPlanSectionCompleteFromParts", () => {
             section: "elr_conclusion",
             targetField: "recommendation",
             markdown: "continue",
+          },
+        },
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "recommendationNarrative",
+            markdown: "No action required.",
+          },
+        },
+      ])
+    ).toBe(false);
+    expect(
+      elrPlanSectionCompleteFromParts("elr_conclusion", [
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "narrative",
+            markdown:
+              "- 3.6 Monitoring — no excursions this period.\n- 4.0 Discrepancy — none observed.",
+          },
+        },
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "recommendation",
+            markdown: "continue",
+          },
+        },
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "recommendationNarrative",
+            markdown:
+              "Next PRQ is due 15 August 2027 on the yearly VMP cycle.",
           },
         },
       ])

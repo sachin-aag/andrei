@@ -24,6 +24,7 @@ import {
   checkQmsRecords,
   checkQualificationFormatScope,
   checkRecommendationSelected,
+  checkRecommendationNamesSchedule,
   checkConclusionRecapsSections,
   checkRecordTypeMatchesReference,
   checkMediaFillTable,
@@ -275,7 +276,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v12");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v13");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -670,6 +671,15 @@ describe("ELR criteria wiring", () => {
     expect(criteria.some((c) => c.key === "conclusion.recaps_sections")).toBe(
       true
     );
+    const schedule = criteria.find(
+      (c) => c.key === "conclusion.recommendation_schedule"
+    );
+    expect(schedule?.kind).toBe("deterministic");
+    expect(schedule?.dependsOn).toContain("elr_risk_actions");
+    expect(schedule?.description).toMatch(/calendar date/i);
+    expect(
+      getDocumentType(TYPE).prompts.perSection.elr_conclusion
+    ).toContain("calendar dates");
   });
 
   it("wires synthesis criteria onto the evidence sections they read", () => {
@@ -866,6 +876,22 @@ describe("ELR qualification follow-up", () => {
 });
 
 describe("ELR recommendation", () => {
+  const capaActionTable = tableDoc([
+    [...ELR_RISK_ACTION_HEADERS],
+    row(ELR_RISK_ACTION_HEADERS, {
+      "Sr. No.": "1",
+      Risk: "Recurrent peristaltic pump dosing fault",
+      "Source (section / records)": "Breakdowns; alarm 1951",
+      "Occurrence in period": "4",
+      Severity: "High — lost filling runtime",
+      "Priority (High / Medium / Low)": "High",
+      "Recommended action": "Raise a CAPA to replace the pump tubing set",
+      "Action type (CAPA / PM revision / change control / monitoring)": "CAPA",
+      Owner: "Engineering",
+      "Target date": "2026-10-31",
+      Reference: "CAPA-26-014",
+    }),
+  ]);
   it("requires a recommendation to be selected", () => {
     const result = checkRecommendationSelected(
       ctx(
@@ -904,6 +930,119 @@ describe("ELR recommendation", () => {
           recommendationNarrative: narrative("No action required."),
         },
         { section: "elr_conclusion" }
+      )
+    );
+    expect(result.status).toBe("met");
+  });
+
+  it("fails 6.0 that only says no action required", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "continue",
+          recommendationNarrative: narrative("No action required."),
+        },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/calendar date|frequency/i);
+  });
+
+  it("fails 6.0 that is only vague timing", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "continue",
+          recommendationNarrative: narrative("Monitor as required going forward."),
+        },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/soon|as required|periodically|calendar date/i);
+  });
+
+  it("is partial when 6.0 has a date but no frequency", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "continue",
+          recommendationNarrative: narrative(
+            "Next periodic re-qualification is due 15 August 2027."
+          ),
+        },
+        { section: "elr_conclusion", metadata: { nextPrqDate: "2027-08-15" } }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/frequency/i);
+  });
+
+  it("requires the title-page next PRQ date in 6.0", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "continue",
+          recommendationNarrative: narrative(
+            "Next periodic re-qualification is due 31 March 2028 on the yearly VMP cycle."
+          ),
+        },
+        { section: "elr_conclusion", metadata: { nextPrqDate: "2027-08-15" } }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/2027-08-15/);
+  });
+
+  it("requires 5.2 target dates in 6.0", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "capa",
+          recommendationNarrative: narrative(
+            "Next PRQ is due 15 August 2027 on the yearly VMP cycle."
+          ),
+        },
+        {
+          section: "elr_conclusion",
+          metadata: { nextPrqDate: "2027-08-15" },
+          dependencies: {
+            elr_risk_actions: {
+              table: capaActionTable,
+            },
+          },
+        }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/2026-10-31/);
+  });
+
+  it("accepts 6.0 that names next PRQ, frequency, and 5.2 dates", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "capa",
+          recommendationNarrative: narrative(
+            "Next PRQ is due 15 August 2027 on the yearly VMP cycle. Close the pump-tubing CAPA by 31 October 2026, with monthly effectiveness checks until closed."
+          ),
+        },
+        {
+          section: "elr_conclusion",
+          metadata: { nextPrqDate: "2027-08-15" },
+          dependencies: {
+            elr_risk_actions: {
+              table: capaActionTable,
+            },
+          },
+        }
       )
     );
     expect(result.status).toBe("met");

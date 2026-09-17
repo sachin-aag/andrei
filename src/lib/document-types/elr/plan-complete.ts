@@ -4,6 +4,8 @@
  * siblings) has to land in the same turn. Investigation / DV keys never match.
  */
 
+import { recommendationHasSchedule } from "./recommendation-schedule";
+
 export const ELR_ASSESSMENT_SECTIONS = [
   "elr_qualification",
   "elr_media_fill",
@@ -28,7 +30,9 @@ export function elrPlanRequiredFields(
   section: string
 ): readonly string[] | null {
   if (section === "elr_risk_actions") return ["narrative", "overallGrade"];
-  if (section === "elr_conclusion") return ["narrative", "recommendation"];
+  if (section === "elr_conclusion") {
+    return ["narrative", "recommendation", "recommendationNarrative"];
+  }
   if (section === "elr_system_trends") return ["narrative"];
   if (TREND_SECTIONS.has(section)) return ["narrative", "trend"];
   if (ASSESSMENT_SET.has(section)) return ["narrative"];
@@ -122,6 +126,14 @@ function sectionCompleteFromEdits(
       return false;
     }
     if (section === "elr_system_trends" && !narrative) return false;
+  }
+  if (section === "elr_conclusion") {
+    const recap = mine.find(
+      (edit) =>
+        (edit.name === "draft_field" || edit.name === "propose_edit") &&
+        edit.targetField === "recommendationNarrative"
+    );
+    if (!recap || !recommendationHasSchedule(recap.text)) return false;
   }
   return true;
 }
