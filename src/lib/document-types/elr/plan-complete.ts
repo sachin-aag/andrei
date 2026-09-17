@@ -28,7 +28,8 @@ export function elrPlanRequiredFields(
   section: string
 ): readonly string[] | null {
   if (section === "elr_risk_actions") return ["narrative", "overallGrade"];
-  if (section === "elr_conclusion") return ["recommendation"];
+  if (section === "elr_conclusion") return ["narrative", "recommendation"];
+  if (section === "elr_system_trends") return ["narrative"];
   if (TREND_SECTIONS.has(section)) return ["narrative", "trend"];
   if (ASSESSMENT_SET.has(section)) return ["narrative"];
   return null;
@@ -116,7 +117,11 @@ function sectionCompleteFromEdits(
         (edit.name === "draft_field" || edit.name === "propose_edit") &&
         edit.targetField === "narrative"
     );
-    if (!narrative || !/\d/.test(narrative.text)) return false;
+    // 5.1 narrative is a cross-cutting synthesis, not a count assessment.
+    if (section !== "elr_system_trends" && (!narrative || !/\d/.test(narrative.text))) {
+      return false;
+    }
+    if (section === "elr_system_trends" && !narrative) return false;
   }
   return true;
 }

@@ -202,13 +202,103 @@ export const ELR_REVISION_HISTORY_HEADERS = [
 
 export const ELR_SYSTEM_TRENDS_HEADERS = [
   "Sr. No.",
-  "Theme",
-  "Where seen (sections / record nos.)",
-  "Occurrences in period",
-  "Trend (increasing / stable / decreasing)",
+  "Section",
+  "Summary",
+  "Trend (increasing / stable / decreasing / none)",
   "Product or runtime impact",
   "Carried to risk (Risk ID)",
 ] as const;
+
+export type ElrSectionRecapSource = {
+  key: ElrSectionKey;
+  number: string;
+  label: string;
+};
+
+/**
+ * 5.1 table recap of every Observations subsection and Discrepancy.
+ * Purpose (1.0) and Scope (2.0) are omitted on purpose. 3.9.1 / 3.11.1
+ * stay inside 3.9 / 3.11 rather than extra rows.
+ */
+export const ELR_TREND_RECAP_SOURCES: readonly ElrSectionRecapSource[] = [
+  { key: "elr_responsibilities", number: "3.1", label: "Responsibilities" },
+  { key: "elr_abbreviations", number: "3.2", label: "Abbreviations" },
+  {
+    key: "elr_system_description",
+    number: "3.3",
+    label: "Equipment and System Description",
+  },
+  {
+    key: "elr_qualification",
+    number: "3.4",
+    label: "Qualification and Periodic Re-Qualification History",
+  },
+  {
+    key: "elr_media_fill",
+    number: "3.5",
+    label: "Media Fill / Aseptic Process Simulation",
+  },
+  { key: "elr_monitoring", number: "3.6", label: "Monitoring" },
+  {
+    key: "elr_calibration",
+    number: "3.7",
+    label: "Calibration of Associated Instruments",
+  },
+  {
+    key: "elr_preventive_maintenance",
+    number: "3.8",
+    label: "Preventive Maintenance",
+  },
+  { key: "elr_breakdowns", number: "3.9", label: "Breakdowns and Trends" },
+  {
+    key: "elr_qms",
+    number: "3.10",
+    label: "QMS Records since Last Periodic Re-Qualification",
+  },
+  { key: "elr_alarms", number: "3.11", label: "Alarm Trends" },
+  { key: "elr_access_control", number: "3.12", label: "Access Control" },
+  { key: "elr_audit_trail", number: "3.13", label: "Audit Trail Review" },
+  {
+    key: "elr_csv_status",
+    number: "3.14",
+    label: "Computerized System Validation Status",
+  },
+  { key: "elr_discrepancies", number: "4.0", label: "Discrepancy / Deviations" },
+];
+
+/** 5.3 also recaps 5.1 and 5.2 before the qualified-state decision. */
+export const ELR_CONCLUSION_RECAP_SOURCES: readonly ElrSectionRecapSource[] = [
+  ...ELR_TREND_RECAP_SOURCES,
+  {
+    key: "elr_system_trends",
+    number: "5.1",
+    label: "System Trends and Patterns",
+  },
+  {
+    key: "elr_risk_actions",
+    number: "5.2",
+    label: "Risk Assessment and Prioritized Actions",
+  },
+];
+
+/** Seeded 5.1 rows and filled recap cells must carry at least this much summary. */
+export const ELR_RECAP_MIN_SUMMARY_CHARS = 12;
+
+/**
+ * Match a 5.1 Section cell or a 5.3 bullet to a recap source. Prefer the
+ * first numbered heading (`3.6`, `4.0`) so "monitoring" in an Alarm Trends
+ * bullet cannot steal 3.6. `3.9.1` still belongs to 3.9.
+ */
+export function recapSourceMatchesText(
+  source: ElrSectionRecapSource,
+  text: string
+): boolean {
+  const hay = text.replace(/\s+/g, " ").trim();
+  if (!hay) return false;
+  const numbered = /(?:^|\s)(\d+\.\d+)(?!\d)/.exec(hay);
+  if (numbered) return numbered[1] === source.number;
+  return hay.toLowerCase().includes(source.label.toLowerCase());
+}
 
 export const ELR_RISK_ACTION_HEADERS = [
   "Sr. No.",
@@ -242,7 +332,7 @@ export const ELR_TABLE_CAPTION_TITLES = {
   elr_access_control: "Access control",
   elr_audit_trail: "Audit trail review",
   elr_csv_status: "Validation status",
-  elr_system_trends: "Recurring themes",
+  elr_system_trends: "Section summaries",
   elr_risk_actions: "Prioritized actions",
   elr_attachments: "Attachments",
   elr_revision_history: "Revision history",
@@ -437,6 +527,27 @@ function seededAbbreviations(): JSONContent {
   };
 }
 
+function seededSystemTrends(): JSONContent {
+  const doc = seededTableDoc(ELR_SYSTEM_TRENDS_HEADERS);
+  const table = doc.content?.[0];
+  if (!table) return doc;
+  table.content = [
+    table.content?.[0] as JSONContent,
+    ...ELR_TREND_RECAP_SOURCES.map((source, index) => ({
+      type: "tableRow",
+      content: [
+        textCell(String(index + 1)),
+        textCell(`${source.number} ${source.label}`),
+        textCell(""),
+        textCell(""),
+        textCell(""),
+        textCell(""),
+      ],
+    })),
+  ];
+  return { type: "doc", content: [table] };
+}
+
 export const EMPTY_ELR_CONTENT: ElrSectionMap = {
   elr_objective: { narrative: emptyDoc() },
   elr_scope: { narrative: emptyDoc() },
@@ -495,7 +606,7 @@ export const EMPTY_ELR_CONTENT: ElrSectionMap = {
   elr_discrepancies: { narrative: emptyDoc() },
   elr_system_trends: {
     narrative: emptyDoc(),
-    table: seededTableDoc(ELR_SYSTEM_TRENDS_HEADERS),
+    table: seededSystemTrends(),
   },
   elr_risk_actions: {
     narrative: emptyDoc(),

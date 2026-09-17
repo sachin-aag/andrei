@@ -167,6 +167,26 @@ function isBlankTableCellText(text: string): boolean {
   return text === "(empty)" || text.trim() === "";
 }
 
+function isElrTrendsRecapScaffold(doc: JSONContent): boolean {
+  const tables = summarizeTablesInDoc(doc);
+  if (tables.length === 0) return false;
+  if (countImagesInDoc(doc) > 0) return false;
+  if (docHasNonTableContent(doc)) return false;
+  for (const table of tables) {
+    const headers = table.headers.map((header) => header.trim().toLowerCase());
+    const sectionIdx = headers.findIndex((header) => header === "section");
+    const summaryIdx = headers.findIndex((header) => header === "summary");
+    if (sectionIdx < 0 || summaryIdx < 0) return false;
+    const dataCells = table.cells.filter((cell) => cell.row > 0);
+    if (dataCells.length === 0) return false;
+    for (const cell of dataCells) {
+      if (cell.col === 0 || cell.col === sectionIdx) continue;
+      if (!isBlankTableCellText(cell.text)) return false;
+    }
+  }
+  return true;
+}
+
 function nodeHasVisibleContent(node: JSONContent): boolean {
   if (node.type === "text" && (node.text ?? "").trim()) return true;
   if (node.type === "image" || node.type === "imageInline") return true;
@@ -212,6 +232,13 @@ export function fieldFillState(
   if (isRichTargetField(section, targetField)) {
     const doc = getRichFieldValue(record, targetField);
     if (isEmptyTableScaffoldDoc(doc)) return "empty";
+    if (
+      section === "elr_system_trends" &&
+      targetField === "table" &&
+      isElrTrendsRecapScaffold(doc)
+    ) {
+      return "empty";
+    }
   }
   const text = sectionFieldPlainText(record, section, targetField);
   const charCount = text.replace(/\s+/g, " ").trim().length;
@@ -240,7 +267,7 @@ function capElrSectionFillState(
   const hasRows = listFieldTables(record, section, "table").some(
     (table) => table.dataRowCount > 0
   );
-  if (hasRows && required.includes("narrative")) {
+  if (hasRows && required.includes("narrative") && section !== "elr_system_trends") {
     const narrative = sectionFieldPlainText(record, section, "narrative");
     if (!/\d/.test(narrative)) return "partial";
   }

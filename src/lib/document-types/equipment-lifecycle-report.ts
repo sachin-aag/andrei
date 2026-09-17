@@ -33,6 +33,7 @@ import {
   checkQualificationChain,
   checkQualificationFormatScope,
   checkRecommendationSelected,
+  checkConclusionRecapsSections,
   checkRecordTypeMatchesReference,
   checkResponsibilitiesTable,
   checkRiskActionRows,
@@ -485,21 +486,21 @@ const DISCREPANCY_CRITERIA: CriterionDefinition[] = [
 const SYSTEM_TRENDS_CRITERIA: CriterionDefinition[] = [
   det(
     "system_trends.rows",
-    "Each trend names the theme, where it was seen, occurrences and impact",
-    "Does every system-trend row carry a theme, where it was seen, an occurrence count and a product or runtime impact?",
+    "Each Observations subsection and Discrepancy has a recap row with a summary",
+    "Does the 5.1 table carry one row for 3.1–3.14 and 4.0 (Purpose and Scope may be omitted), each with a summary of what that section found — including 'none this period' when there is nothing to report?",
     checkSystemTrendRows
   ),
   det(
     "system_trends.covers_flagged_findings",
-    "Flagged findings from the evidence sections appear as trend themes",
-    "If breakdowns, alarms, monitoring, calibration, PM or QMS carry a flagged finding (repeat, Direct Impact, excursion, OOT, delayed PM, qualification impact), is the trends table non-empty?",
+    "Flagged findings appear in that section's recap summary",
+    "If breakdowns, alarms, monitoring, calibration, PM or QMS carry a flagged finding (repeat, Direct Impact, excursion, OOT, delayed PM, qualification impact), does that section's 5.1 recap summary name it rather than 'none this period'?",
     checkSystemTrendsCoverFlaggedFindings,
     SYNTHESIS_DEPENDS_ON
   ),
   llm(
     "system_trends.recurrence",
-    "The narrative identifies recurring themes across sections, not a recap of each table",
-    "Does the narrative name recurring themes that cut across sections — the same sensor, a PM alarm that is out of sync, a part that keeps failing — rather than restating each evidence table? A theme that appears in only one section still belongs here if it repeated in the period.",
+    "The narrative names recurring themes that cut across sections; the table is the per-section recap",
+    "Does the narrative name recurring themes that cut across sections — the same sensor, a PM alarm that is out of sync, a part that keeps failing — rather than only repeating the 5.1 table? The table itself must recap 3.1–3.14 and 4.0; do not fail it for that recap. A theme that appears in only one section still belongs in the narrative if it repeated in the period. If nothing cut across, say so.",
     SYNTHESIS_DEPENDS_ON
   ),
   llm(
@@ -558,10 +559,16 @@ const CONCLUSION_CRITERIA: CriterionDefinition[] = [
     "Is one recommendation chosen, with a conclusion narrative and, for Other, a specified justification?",
     checkRecommendationSelected
   ),
+  det(
+    "conclusion.recaps_sections",
+    "The conclusion recaps 3.1–3.14, 4.0, 5.1 and 5.2 as a bulleted list",
+    "Does the conclusion narrative include a bulleted (or numbered) list with one item per Observations subsection (3.1–3.14), Discrepancy (4.0), System Trends (5.1) and Risk Assessment (5.2)? Purpose and Scope may be omitted. Each bullet must summarise that section, not only name it.",
+    checkConclusionRecapsSections
+  ),
   llm(
     "conclusion.states_decision",
-    "The conclusion states a decision about the qualified state, not a summary of activity",
-    "Does the conclusion say whether the equipment remains in its qualified state for this container format and why, accounting for any discrepancy recorded in the discrepancy section and any unresolved finding in the evidence sections — rather than restating what was reviewed?",
+    "The conclusion states a decision about the qualified state after the section recap",
+    "After the section-recap bullets, does the conclusion say whether the equipment remains in its qualified state for this container format and why, accounting for any discrepancy recorded in the discrepancy section and any unresolved finding in the evidence sections? A recap with no qualified-state decision is not met.",
     ["elr_discrepancies"]
   ),
 ];
@@ -609,9 +616,9 @@ const PER_SECTION_PROMPTS: Record<string, string> = {
   elr_access_control: `Copy the current SOP / CSV privilege matrix (Task × Operator / Supervisor / Maintenance / Administrator), stamping System Name / ID from the annexure header. Separate initial qualification of access control from periodic verification this period. 21 CFR Part 11 access, authority and audit-trail checks belong here. Do not reshape the annexure into a user grant/revoke log.`,
   elr_audit_trail: `The assessment must interpret how many reviews, any anomaly, and the disposition — not that reviews were performed.`,
   elr_csv_status: `The assessment must interpret whether each system remains validated, name the revalidation due date (current vs overdue), and whether a change since last PRQ triggered revalidation.`,
-  elr_system_trends: `This is a synthesis over the evidence sections, not a new inventory. Identify recurring themes that cut across sections. State downtime / uptime / availability. Carry each theme that needs action into the risk-actions table.`,
+  elr_system_trends: `The 5.1 table recaps every Observations subsection (3.1–3.14) and Discrepancy (4.0) — Purpose and Scope may be skipped. Nil sections still get a short recap ('none this period'). The narrative then names recurring themes that cut across those rows and states downtime / uptime / availability. Carry each theme that needs action into the risk-actions table.`,
   elr_risk_actions: `Prioritize by occurrence, frequency and severity. Product scrap and lost runtime are High. Actions must be specific, owned and dated — not "monitor closely". Around ten actions is a working size; do not list every event. The overall grade must match the highest-priority rows.`,
-  elr_conclusion: `Judge the decision, not the prose. A conclusion that recites activity without stating whether the qualified state holds is not met. It must account for the risk-actions grade and any open High-priority action.`,
+  elr_conclusion: `The narrative opens with a bulleted recap of 3.1–3.14, 4.0, 5.1 and 5.2 (Purpose and Scope may be omitted). Then judge the decision: a recap without saying whether the qualified state holds is not met. It must account for the risk-actions grade and any open High-priority action.`,
 };
 
 // ------------------------------------------------------------------- merging

@@ -664,9 +664,8 @@ export const ELR_REVISION_HISTORY_COLUMN_SCHEMA: readonly MatrixColumnSchema<Elr
 
 export type SystemTrendsColumnId =
   | "serial"
-  | "theme"
-  | "whereSeen"
-  | "occurrences"
+  | "section"
+  | "summary"
   | "trend"
   | "impact"
   | "carriedToRisk";
@@ -674,26 +673,21 @@ export type SystemTrendsColumnId =
 export const SYSTEM_TRENDS_COLUMN_SCHEMA: readonly MatrixColumnSchema<SystemTrendsColumnId>[] =
   [
     serialFor<SystemTrendsColumnId>(),
-    { id: "theme", label: "Theme", aliases: ["theme", "pattern", "issue"] },
     {
-      id: "whereSeen",
-      label: "Where seen (sections / record nos.)",
-      aliases: [
-        "where seen sections record nos",
-        "where seen",
-        "sections",
-        "source",
-      ],
+      id: "section",
+      label: "Section",
+      aliases: ["section", "section no", "heading"],
     },
     {
-      id: "occurrences",
-      label: "Occurrences in period",
-      aliases: ["occurrences in period", "occurrences", "count", "frequency"],
+      id: "summary",
+      label: "Summary",
+      aliases: ["summary", "recap", "findings"],
     },
     {
       id: "trend",
-      label: "Trend (increasing / stable / decreasing)",
+      label: "Trend (increasing / stable / decreasing / none)",
       aliases: [
+        "trend increasing stable decreasing none",
         "trend increasing stable decreasing",
         "trend",
         "direction",

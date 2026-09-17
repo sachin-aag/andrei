@@ -230,7 +230,7 @@ must not advance on a filled table with an empty assessment.
   for the assessment.
 - \`elr_risk_actions\`: draft \`overallGrade\` in the same turn (\`low\` / \`medium\` /
   \`high\` — the stored enum, not "Low risk").
-- \`elr_conclusion\`: draft \`recommendation\` in the same turn
+- \`elr_conclusion\`: draft a bulleted recap in \`narrative\` (3.1–3.14, 4.0, 5.1, 5.2) and \`recommendation\` in the same turn
   (\`continue\` / \`early_requalification\` / \`capa\` / \`other\`) plus the decision
   sentence in \`recommendationNarrative\`. Do not put the enum's label into
   \`recommendation\` as free text.
@@ -263,12 +263,22 @@ periodic verification this period (last review, admin recertification).
 
 ## System trends
 
-\`elr_system_trends\` is a synthesis over the evidence sections, not a new
-inventory. Look for themes that cut across sections: the same sensor causing
-breakdowns and Direct Impact alarms; PM that is out of sync with the failure
-mode; a part that recurrently malfunctions. State downtime, uptime or
-availability for the period from the breakdown hours. Carry each theme that
-needs action into the risk-actions table via the Risk ID column.
+\`elr_system_trends\` (5.1) is a recap table of every previous Observations
+subsection and Discrepancy, then a short narrative of what cuts across them.
+
+- The seeded table already has one row per section: 3.1–3.14 and 4.0. Skip
+  Purpose (1.0) and Scope (2.0). Do not delete those rows. Fill \`Summary\`
+  with \`edit_cells\` — a sentence of what that section found. Nil events still
+  get a recap ("none this period"), not a blank cell.
+- 3.9.1 / 3.11.1 stay inside the 3.9 / 3.11 rows; do not add extra rows for
+  those sub-headings.
+- Trend / impact / Risk ID stay on the row so 5.2 can carry actions. Use
+  \`none\` when there is no trend.
+- The narrative is not another copy of the table. Name recurring themes that
+  cut across sections (the same sensor, a PM alarm out of sync with the
+  failure mode, a part that recurrently malfunctions). State downtime, uptime
+  or availability for the period from the breakdown hours. If nothing cut
+  across, say so.
 
 ## Risk assessment and actions
 
@@ -285,7 +295,11 @@ Medium/High row or over downtime.
 
 ## Conclusion
 
-State whether the equipment remains in its qualified state for this container
+\`elr_conclusion\` (5.3) opens with a **bulleted list** recapping each previous
+section: 3.1–3.14, 4.0 Discrepancy, 5.1 System Trends, and 5.2 Risk
+Assessment. Skip Purpose and Scope. Each bullet names the section number and
+summarises what it found (including "none this period"). After the list,
+state whether the equipment remains in its qualified state for this container
 format. Where a section carries an unresolved finding, the recommendation has
 to account for it — do not conclude "no action required" over an open gap.
 

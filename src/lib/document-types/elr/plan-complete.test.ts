@@ -17,7 +17,11 @@ describe("elrPlanRequiredFields", () => {
       "narrative",
       "overallGrade",
     ]);
-    expect(elrPlanRequiredFields("elr_conclusion")).toEqual(["recommendation"]);
+    expect(elrPlanRequiredFields("elr_conclusion")).toEqual([
+      "narrative",
+      "recommendation",
+    ]);
+    expect(elrPlanRequiredFields("elr_system_trends")).toEqual(["narrative"]);
     expect(elrPlanRequiredFields("elr_objective")).toBeNull();
     expect(elrPlanRequiredFields("define")).toBeNull();
   });
@@ -34,6 +38,37 @@ describe("elrPlanSectionCompleteFromParts", () => {
     ];
     expect(elrPlanSectionCompleteFromParts("elr_breakdowns", parts)).toBe(false);
     expect(elrIncompleteSectionKeysFromParts(parts)).toEqual(["elr_breakdowns"]);
+  });
+
+  it("does not complete 5.1 on edit_table alone, and does not require a count digit", () => {
+    expect(
+      elrPlanSectionCompleteFromParts("elr_system_trends", [
+        {
+          type: "tool-edit_table",
+          state: "output-available",
+          input: { section: "elr_system_trends" },
+        },
+      ])
+    ).toBe(false);
+    expect(
+      elrPlanSectionCompleteFromParts("elr_system_trends", [
+        {
+          type: "tool-edit_table",
+          state: "output-available",
+          input: { section: "elr_system_trends" },
+        },
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_system_trends",
+            targetField: "narrative",
+            markdown:
+              "No recurring theme cut across sections. Runtime was not recorded this period.",
+          },
+        },
+      ])
+    ).toBe(true);
   });
 
   it("completes when the table, a counted assessment, and trend land together", () => {
@@ -87,7 +122,7 @@ describe("elrPlanSectionCompleteFromParts", () => {
     expect(elrPlanSectionCompleteFromParts("elr_qms", parts)).toBe(false);
   });
 
-  it("requires conclusion recommendation and risk overallGrade", () => {
+  it("requires conclusion recap narrative plus recommendation", () => {
     expect(
       elrPlanSectionCompleteFromParts("elr_conclusion", [
         {
@@ -99,6 +134,29 @@ describe("elrPlanSectionCompleteFromParts", () => {
     ).toBe(false);
     expect(
       elrPlanSectionCompleteFromParts("elr_conclusion", [
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "recommendation",
+            markdown: "continue",
+          },
+        },
+      ])
+    ).toBe(false);
+    expect(
+      elrPlanSectionCompleteFromParts("elr_conclusion", [
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "narrative",
+            markdown:
+              "- 3.6 Monitoring — no excursions this period.\n- 4.0 Discrepancy — none observed.",
+          },
+        },
         {
           type: "tool-draft_field",
           state: "output-available",

@@ -237,4 +237,11 @@ describe("ELR sectionFillState", () => {
     };
     expect(sectionFillState(assessed, "elr_calibration")).toBe("filled");
   });
+
+  it("treats a 5.1 table that only has seeded section numbers as empty", () => {
+    const content = EMPTY_ELR_CONTENT.elr_system_trends;
+    expect(fieldFillState(content, "elr_system_trends", "table")).toBe("empty");
+    expect(sectionFillState(content, "elr_system_trends")).toBe("empty");
+    expect(sectionHasTable(content, "elr_system_trends")).toBe(true);
+  });
 });

@@ -24,6 +24,7 @@ import {
   checkQmsRecords,
   checkQualificationFormatScope,
   checkRecommendationSelected,
+  checkConclusionRecapsSections,
   checkRecordTypeMatchesReference,
   checkMediaFillTable,
   checkResponsibilitiesTable,
@@ -56,9 +57,13 @@ import {
   ELR_RISK_ACTION_MAX_ROWS,
   ELR_SECTION_KEYS,
   ELR_SECTION_LABELS,
+  ELR_CONCLUSION_RECAP_SOURCES,
   ELR_SYSTEM_TRENDS_HEADERS,
+  ELR_TREND_RECAP_SOURCES,
   EMPTY_ELR_CONTENT,
+  recapSourceMatchesText,
 } from "./elr/sections";
+import { parseSystemTrendsMatrix } from "./elr/matrix-parser";
 
 const TYPE = "equipment_lifecycle_report";
 
@@ -108,6 +113,69 @@ function row(
   values: Record<string, string>
 ): string[] {
   return [...headers].map((header) => values[header] ?? "");
+}
+
+function recapRow(
+  source: (typeof ELR_TREND_RECAP_SOURCES)[number],
+  index: number,
+  extra: {
+    summary?: string;
+    trend?: string;
+    impact?: string;
+    risk?: string;
+  } = {}
+): string[] {
+  return row(ELR_SYSTEM_TRENDS_HEADERS, {
+    "Sr. No.": String(index + 1),
+    Section: `${source.number} ${source.label}`,
+    Summary: extra.summary ?? "None this period.",
+    "Trend (increasing / stable / decreasing / none)": extra.trend ?? "none",
+    "Product or runtime impact": extra.impact ?? "None this period.",
+    "Carried to risk (Risk ID)": extra.risk ?? "",
+  });
+}
+
+function completeRecapTable(
+  overrides: Partial<
+    Record<string, { summary?: string; trend?: string; impact?: string; risk?: string }>
+  > = {}
+): JSONContent {
+  return tableDoc([
+    [...ELR_SYSTEM_TRENDS_HEADERS],
+    ...ELR_TREND_RECAP_SOURCES.map((source, index) =>
+      recapRow(source, index, overrides[source.number] ?? {})
+    ),
+  ]);
+}
+
+function bulletDoc(items: string[]): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "bulletList",
+        content: items.map((text) => ({
+          type: "listItem",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text }],
+            },
+          ],
+        })),
+      },
+    ],
+  };
+}
+
+function completeConclusionRecap(
+  omit?: string
+): JSONContent {
+  return bulletDoc(
+    ELR_CONCLUSION_RECAP_SOURCES.filter((source) => source.number !== omit).map(
+      (source) => `${source.number} ${source.label} — none this period.`
+    )
+  );
 }
 
 function ctx(
@@ -207,7 +275,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v11");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v12");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -599,6 +667,9 @@ describe("ELR criteria wiring", () => {
     const criteria = getCriteria(TYPE, "elr_conclusion");
     const decision = criteria.find((c) => c.key === "conclusion.states_decision");
     expect(decision?.dependsOn).toContain("elr_discrepancies");
+    expect(criteria.some((c) => c.key === "conclusion.recaps_sections")).toBe(
+      true
+    );
   });
 
   it("wires synthesis criteria onto the evidence sections they read", () => {
@@ -919,16 +990,6 @@ describe("ELR assessment, trends and risk checks", () => {
       }),
     ]),
   };
-
-  const completeTrend = row(ELR_SYSTEM_TRENDS_HEADERS, {
-    "Sr. No.": "1",
-    Theme: "Peristaltic pump dosing faults",
-    "Where seen (sections / record nos.)": "Breakdowns 3.9; alarm 1951",
-    "Occurrences in period": "4",
-    "Trend (increasing / stable / decreasing)": "increasing",
-    "Product or runtime impact": "Lost runtime on the filling line",
-    "Carried to risk (Risk ID)": "R-1",
-  });
 
   const completeAction = (priority: string, serial = "1") =>
     row(ELR_RISK_ACTION_HEADERS, {
@@ -1398,19 +1459,41 @@ describe("ELR assessment, trends and risk checks", () => {
     expect(result.reasoning).toMatch(/deviation/i);
   });
 
-  it("requires theme, where-seen, occurrences and impact on each trend row", () => {
-    const incomplete = tableDoc([
+  it("requires a recap row with a summary for 3.1–3.14 and 4.0", () => {
+    const missingMonitoring = tableDoc([
       [...ELR_SYSTEM_TRENDS_HEADERS],
-      row(ELR_SYSTEM_TRENDS_HEADERS, {
-        "Sr. No.": "1",
-        Theme: "Peristaltic pump dosing faults",
-      }),
+      ...ELR_TREND_RECAP_SOURCES.filter((source) => source.number !== "3.6").map(
+        (source, index) => recapRow(source, index)
+      ),
     ]);
-    const result = checkSystemTrendRows(
-      ctx({ table: incomplete }, { section: "elr_system_trends" })
+    const missing = checkSystemTrendRows(
+      ctx({ table: missingMonitoring }, { section: "elr_system_trends" })
     );
-    expect(result.status).toBe("not_met");
-    expect(result.reasoning).toMatch(/where the theme was seen/i);
+    expect(missing.status).toBe("not_met");
+    expect(missing.reasoning).toMatch(/3\.6/i);
+
+    const emptySummary = completeRecapTable({
+      "3.6": { summary: "N/A" },
+    });
+    const short = checkSystemTrendRows(
+      ctx({ table: emptySummary }, { section: "elr_system_trends" })
+    );
+    expect(short.status).toBe("not_met");
+    expect(short.reasoning).toMatch(/no summary/i);
+
+    expect(
+      checkSystemTrendRows(
+        ctx({ table: completeRecapTable() }, { section: "elr_system_trends" })
+      ).status
+    ).toBe("met");
+  });
+
+  it("does not require Purpose or Scope recap rows in 5.1", () => {
+    const result = checkSystemTrendRows(
+      ctx({ table: completeRecapTable() }, { section: "elr_system_trends" })
+    );
+    expect(result.status).toBe("met");
+    expect(result.reasoning).not.toMatch(/1\.0|2\.0|Purpose|Scope/i);
   });
 
   it("fails an empty trends table when a repeat breakdown is flagged", () => {
@@ -1427,8 +1510,29 @@ describe("ELR assessment, trends and risk checks", () => {
     expect(result.reasoning).toMatch(/repeat breakdown/i);
   });
 
-  it("passes a complete trend row against flagged findings", () => {
-    const table = tableDoc([[...ELR_SYSTEM_TRENDS_HEADERS], completeTrend]);
+  it("fails a 3.9 recap that omits a flagged repeat breakdown", () => {
+    const result = checkSystemTrendsCoverFlaggedFindings(
+      ctx(
+        { table: completeRecapTable() },
+        {
+          section: "elr_system_trends",
+          dependencies: { elr_breakdowns: repeatBreakdown },
+        }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/3\.9/i);
+  });
+
+  it("passes a complete recap table that names the flagged finding", () => {
+    const table = completeRecapTable({
+      "3.9": {
+        summary: "Four repeat peristaltic-pump dosing faults this period.",
+        trend: "increasing",
+        impact: "Lost runtime on the filling line",
+        risk: "R-1",
+      },
+    });
     expect(
       checkSystemTrendRows(ctx({ table }, { section: "elr_system_trends" })).status
     ).toBe("met");
@@ -1443,6 +1547,88 @@ describe("ELR assessment, trends and risk checks", () => {
         )
       ).status
     ).toBe("met");
+  });
+
+  it("requires 5.3 bullets for 3.1–3.14, 4.0, 5.1 and 5.2", () => {
+    const noList = checkConclusionRecapsSections(
+      ctx(
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "The equipment remains in its qualified state.",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(noList.status).toBe("not_met");
+    expect(noList.reasoning).toMatch(/bulleted recap/i);
+
+    const missingMonitoring = checkConclusionRecapsSections(
+      ctx(
+        { narrative: completeConclusionRecap("3.6") },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(missingMonitoring.status).toBe("not_met");
+    expect(missingMonitoring.reasoning).toMatch(/3\.6/i);
+
+    expect(
+      checkConclusionRecapsSections(
+        ctx(
+          { narrative: completeConclusionRecap() },
+          { section: "elr_conclusion" }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("seeds 5.1 with one recap row per Observations subsection and Discrepancy", () => {
+    const parsed = parseSystemTrendsMatrix(EMPTY_ELR_CONTENT.elr_system_trends);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.rows).toHaveLength(ELR_TREND_RECAP_SOURCES.length);
+    for (const source of ELR_TREND_RECAP_SOURCES) {
+      expect(
+        parsed.rows.some((row) =>
+          row.section.includes(source.number)
+        )
+      ).toBe(true);
+    }
+    expect(parsed.rows.some((row) => row.section.includes("1.0"))).toBe(false);
+    expect(parsed.rows.some((row) => row.section.includes("2.0"))).toBe(false);
+  });
+
+  it("matches recap rows by section number so 3.11 cannot steal 3.6", () => {
+    const monitoring = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.6");
+    const alarms = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.11");
+    expect(monitoring && recapSourceMatchesText(monitoring, "3.6 Monitoring")).toBe(
+      true
+    );
+    expect(
+      monitoring &&
+        recapSourceMatchesText(
+          monitoring,
+          "3.11 Alarm Trends — monitoring of codes is still appropriate"
+        )
+    ).toBe(false);
+    expect(
+      alarms &&
+        recapSourceMatchesText(
+          alarms,
+          "3.11 Alarm Trends — monitoring of codes is still appropriate"
+        )
+    ).toBe(true);
   });
 
   it("rejects a High-priority action with overall grade Low", () => {
@@ -1526,8 +1712,9 @@ describe("ELR assessment, trends and risk checks", () => {
         [...ELR_SYSTEM_TRENDS_HEADERS],
         row(ELR_SYSTEM_TRENDS_HEADERS, {
           "Sr. No.": "1",
-          Theme: "Peristaltic pump dosing faults",
-          "Trend (increasing / stable / decreasing)": "increasing",
+          Section: "3.9 Breakdowns and Trends",
+          Summary: "Peristaltic pump dosing faults increased this period.",
+          "Trend (increasing / stable / decreasing / none)": "increasing",
           "Product or runtime impact": "Lost runtime on the filling line",
         }),
       ]),

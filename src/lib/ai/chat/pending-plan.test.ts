@@ -624,6 +624,16 @@ describe("plan prompt and metadata", () => {
         state: "output-available",
         input: {
           section: "elr_conclusion",
+          targetField: "narrative",
+          markdown:
+            "- 3.6 Monitoring — no excursions this period.\n- 4.0 Discrepancy — none observed.",
+        },
+      },
+      {
+        type: "tool-draft_field",
+        state: "output-available",
+        input: {
+          section: "elr_conclusion",
           targetField: "recommendation",
           markdown: "continue",
         },
