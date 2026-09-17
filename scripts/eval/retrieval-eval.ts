@@ -9,8 +9,10 @@
  * `--from-gcs` downloads the test corpus from the retrieval-eval GCS prefix,
  * then ingests, searches, and LLM-judges. That is the CI path. CI never
  * uploads or seeds the bucket — add objects with `pnpm retrieval-eval:upload`.
- * `--live` generates the same PDFs locally (no bucket) for a laptop run.
- * `--report-id` searches an already-ingested report (no ingest).
+ * If the downloaded PDFs fail gold anchors (bucket predates a generator
+ * change), `--from-gcs` generates locally and continues. Missing objects
+ * still fail. `--live` generates the same PDFs locally (no bucket) for a
+ * laptop run. `--report-id` searches an already-ingested report (no ingest).
  *
  * `--dry-run` and `--report-id` merge gitignored
  * `retrieval-cases.local.json` when that file exists (copy

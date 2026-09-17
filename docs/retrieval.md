@@ -166,10 +166,10 @@ Entry points: `src/lib/attachments/retrieval.ts`,
 `src/lib/attachments/page-outline.ts`,
 `src/lib/attachments/run-document-ingest.ts`. Eval:
 `pnpm retrieval-eval` (default `--dry-run` validates cases and merges a
-local overlay when present; `--from-gcs` is the CI path (download only;
-never upload; never overlay); `--live` generates the same PDFs without
-GCS and never overlays; `--report-id` searches an already-ingested
-report and merges the overlay).
+local overlay when present; `--from-gcs` is the CI path (download; generate
+locally if gold anchors fail; never upload; never overlay); `--live`
+generates the same PDFs without GCS and never overlays; `--report-id`
+searches an already-ingested report and merges the overlay).
 
 ## Phase 0 — eval harness
 
@@ -191,7 +191,7 @@ production cases live in the optional overlay, not in CI.
 ```bash
 pnpm retrieval-eval -- --dry-run          # parse + print cases (merges overlay if present)
 pnpm retrieval-eval:upload                # laptop only: write PDFs to the test bucket
-pnpm retrieval-eval -- --from-gcs         # CI path: download, ingest, search, judge (no overlay)
+pnpm retrieval-eval -- --from-gcs         # CI path: download (generate if GCS stale), ingest, search, judge
 pnpm retrieval-eval -- --live             # same PDFs, skip GCS (laptop + Vertex; no overlay)
 cp scripts/eval/retrieval-cases.local.example.json scripts/eval/retrieval-cases.local.json
 pnpm retrieval-eval -- --report-id <id>   # already-ingested report + overlay
@@ -211,10 +211,13 @@ Required Actions secrets:
 
 Do not add `GCP_SERVICE_ACCOUNT_KEY`. The job needs `permissions.id-token: write`.
 The same WIF secrets are used by `.github/workflows/pdf-ingest-soak.yml`.
-`--from-gcs` downloads the corpus from the bucket. It does **not** generate
-or upload objects. Add new files with laptop ADC (`pnpm retrieval-eval:upload`
-or `gsutil cp`), not GitHub Actions. The GitHub Actions SA needs
-`roles/storage.objectViewer` on the eval bucket (not objectCreator).
+`--from-gcs` downloads the corpus from the bucket. It does **not** upload.
+If the downloaded PDFs fail gold anchors (the bucket predates a generator
+change such as D1 slash IDs), it generates the same PDFs locally and
+continues. Missing objects still fail the job. Refresh the bucket with
+laptop ADC (`pnpm retrieval-eval:upload` or `gsutil cp`), not GitHub
+Actions. The GitHub Actions SA needs `roles/storage.objectViewer` on the
+eval bucket (not objectCreator).
 
 Local ingest uses `ATTACHMENT_STORAGE_BACKEND=local` (the bucket is the
 corpus source, not where CI writes attachment bytes). Runs write JSON
