@@ -44,6 +44,12 @@ describe("inventoryColumnNeedles", () => {
     expect(needles).not.toContain("user name");
     expect(needles).not.toContain("granted");
   });
+
+  it("uses CSV revalidation due date, not only last validation", () => {
+    const needles = inventoryColumnNeedles("elr_csv_status");
+    expect(needles).toContain("revalidation due date");
+    expect(needles).toContain("last validation revalidation date");
+  });
 });
 
 describe("hasTypedSectionNoun", () => {

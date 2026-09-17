@@ -724,6 +724,9 @@ export function checkCsvStatus(ctx: EvaluationContext) {
     if (!row.validationStatus.trim()) {
       problems.push(`${label} has no validation status`);
     }
+    if (!row.revalidationDueDate.trim()) {
+      problems.push(`${label} has no revalidation due date`);
+    }
     if (!row.changeSinceLastPrq.trim()) {
       problems.push(`${label} does not answer whether it changed since last PRQ`);
       return;
@@ -894,6 +897,18 @@ export function checkAssessmentInterpretsTable(ctx: EvaluationContext) {
     gaps.push(
       "The table cites a CAPA number but the assessment does not mention CAPA"
     );
+  }
+  if (ctx.section === "elr_csv_status") {
+    const csv = parseCsvStatusMatrix(ctx.content);
+    if (
+      csv.ok &&
+      csv.rows.some((row) => row.revalidationDueDate.trim()) &&
+      !/\bdue\b|\boverdue\b|next (?:re)?validat/i.test(text)
+    ) {
+      gaps.push(
+        "The table records a revalidation due date but the assessment does not name it as due, overdue, or next revalidation"
+      );
+    }
   }
   if (sectionHasFlaggedFindings(ctx) && !QUALIFIED_STATE_RE.test(text)) {
     gaps.push(

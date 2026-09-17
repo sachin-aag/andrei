@@ -163,6 +163,8 @@ These pairings are checked. Draft them consistently:
 - An audit trail anomaly (Y) must carry a deviation reference.
 - A computerized system changed since the last PRQ (Y) must carry a change
   control reference.
+- A computerized system's Revalidation Due Date that has passed must be
+  named in the assessment as overdue.
 - A QMS record marked as affecting the qualified state (Y) must be referenced
   in the qualification history.
 
@@ -207,6 +209,11 @@ QMS: if a record is still open at the ELR cut-off, say so in the assessment
 
 Preventive maintenance: when a PM is delayed or a failure mode repeats, say
 whether the checklist needs revision — not only that the date slipped.
+
+Computerized system validation (elr_csv_status): every system row carries
+Last Validation / Revalidation Date **and** Revalidation Due Date. The
+assessment names the due date and whether it is current, overdue, or due
+within the window — not only that the last review was performed.
 
 Responsibilities: the table is a seeded matrix. Fill it with edit_cells /
 insert_rows (do not create_table a second grid). In the same turn, draft a short

@@ -553,6 +553,7 @@ export type CsvStatusColumnId =
   | "systemName"
   | "validationStatus"
   | "lastValidationDate"
+  | "revalidationDueDate"
   | "documentRef"
   | "changeSinceLastPrq"
   | "changeControlRef"
@@ -578,6 +579,17 @@ export const CSV_STATUS_COLUMN_SCHEMA: readonly MatrixColumnSchema<CsvStatusColu
         "last validation revalidation date",
         "last validation date",
         "validation date",
+      ],
+    },
+    {
+      id: "revalidationDueDate",
+      label: "Revalidation Due Date",
+      aliases: [
+        "revalidation due date",
+        "next revalidation due",
+        "next revalidation date",
+        "periodic review due",
+        "due date",
       ],
     },
     {

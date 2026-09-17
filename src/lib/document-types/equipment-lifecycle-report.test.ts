@@ -15,6 +15,7 @@ import {
   checkBreakdownRepeatNotIsolated,
   checkCalibrationStatus,
   checkCalibrationValidityNotContradicted,
+  checkCsvStatus,
   checkMonitoringExcursionsLinked,
   checkPreventiveMaintenanceJustified,
   checkPrqScheduleCurrent,
@@ -35,6 +36,7 @@ import {
 import { QUANTITY_MATH_CRITERION_KEY } from "@/lib/math/quantity-math";
 import {
   ACCESS_CONTROL_COLUMN_SCHEMA,
+  CSV_STATUS_COLUMN_SCHEMA,
   RISK_ACTION_COLUMN_SCHEMA,
   SYSTEM_TRENDS_COLUMN_SCHEMA,
 } from "./elr/matrix-columns";
@@ -43,6 +45,7 @@ import {
   ELR_ALARM_HEADERS,
   ELR_BREAKDOWN_HEADERS,
   ELR_CALIBRATION_HEADERS,
+  ELR_CSV_STATUS_HEADERS,
   ELR_MEDIA_FILL_HEADERS,
   ELR_MONITORING_HEADERS,
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
@@ -204,7 +207,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v10");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v11");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -222,6 +225,19 @@ describe("equipment lifecycle report definition", () => {
     expect(def.prompts.perSection.elr_system_description).toContain(
       "omit MOC are met on that point"
     );
+  });
+
+  it("requires CSV revalidation due dates in the table, assessment, and eval prompt", () => {
+    const def = getDocumentType(TYPE);
+    expect(def.prompts.perSection.elr_csv_status).toContain("revalidation due date");
+    const records = getCriteria(TYPE, "elr_csv_status").find(
+      (item) => item.key === "csv_status.records"
+    );
+    const periodic = getCriteria(TYPE, "elr_csv_status").find(
+      (item) => item.key === "csv_status.periodic_review"
+    );
+    expect(records?.description).toContain("revalidation due date");
+    expect(periodic?.description).toContain("revalidation due date");
   });
 
   it("asks which container format when attachments name both and the title page is unset", () => {
@@ -244,6 +260,8 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).toContain("<1 CFU/plate");
     expect(def.chat.draftingGuidance).toContain("privilege matrix");
     expect(def.chat.draftingGuidance).toContain("Task × Operator");
+    expect(def.chat.draftingGuidance).toContain("Revalidation Due Date");
+    expect(def.chat.draftingGuidance).toContain("current, overdue, or due");
     expect(def.chat.contextIdentity?.({})).toEqual(
       expect.arrayContaining([
         expect.stringContaining("container format: (unset)"),
@@ -378,6 +396,38 @@ describe("ELR cross-reference checks", () => {
     );
     expect(result.status).toBe("not_met");
     expect(result.reasoning).toMatch(/justification/i);
+  });
+
+  it("requires a revalidation due date on every computerized system", () => {
+    const missing = tableDoc([
+      [...ELR_CSV_STATUS_HEADERS],
+      row(ELR_CSV_STATUS_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA / E/PR/070",
+        "Validation Status": "Validated",
+        "Change Since Last PRQ (Y/N)": "N",
+      }),
+    ]);
+    const missingResult = checkCsvStatus(
+      ctx({ table: missing }, { section: "elr_csv_status" })
+    );
+    expect(missingResult.status).toBe("not_met");
+    expect(missingResult.reasoning).toMatch(/revalidation due date/i);
+
+    const complete = tableDoc([
+      [...ELR_CSV_STATUS_HEADERS],
+      row(ELR_CSV_STATUS_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA / E/PR/070",
+        "Validation Status": "Validated",
+        "Last Validation / Revalidation Date": "15 Mar 2025",
+        "Revalidation Due Date": "15 Mar 2027",
+        "Change Since Last PRQ (Y/N)": "N",
+      }),
+    ]);
+    expect(
+      checkCsvStatus(ctx({ table: complete }, { section: "elr_csv_status" })).status
+    ).toBe("met");
   });
 
   it("requires a CAPA for a repeat breakdown", () => {
@@ -895,7 +945,7 @@ describe("ELR assessment, trends and risk checks", () => {
       Reference: "CAPA-26-014",
     });
 
-  it("keeps system-trend, risk-action and access-control headers identical to the column schemas", () => {
+  it("keeps system-trend, risk-action, access-control and CSV headers identical to the column schemas", () => {
     expect(SYSTEM_TRENDS_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
       ...ELR_SYSTEM_TRENDS_HEADERS,
     ]);
@@ -904,6 +954,9 @@ describe("ELR assessment, trends and risk checks", () => {
     ]);
     expect(ACCESS_CONTROL_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
       ...ELR_ACCESS_CONTROL_HEADERS,
+    ]);
+    expect(CSV_STATUS_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_CSV_STATUS_HEADERS,
     ]);
   });
 
@@ -1116,6 +1169,49 @@ describe("ELR assessment, trends and risk checks", () => {
     expect(deviationOnly.status).toBe("not_met");
     expect(deviationOnly.reasoning).toMatch(/qualified state/i);
     expect(deviationOnly.reasoning).not.toMatch(/capa/i);
+  });
+
+  it("requires the CSV assessment to name the revalidation due date from the table", () => {
+    const csvTable = captionedTableDoc(
+      [
+        [...ELR_CSV_STATUS_HEADERS],
+        row(ELR_CSV_STATUS_HEADERS, {
+          "Sr. No.": "1",
+          "System Name / ID": "SCADA / E/PR/070",
+          "Validation Status": "Validated",
+          "Last Validation / Revalidation Date": "15 Mar 2025",
+          "Revalidation Due Date": "15 Mar 2027",
+          "Change Since Last PRQ (Y/N)": "N",
+        }),
+      ],
+      "Validation status"
+    );
+    const omitted = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: csvTable,
+          narrative: narrative(
+            "1 computerized system remains validated; no change since last PRQ triggered revalidation and no product impact."
+          ),
+        },
+        { section: "elr_csv_status" }
+      )
+    );
+    expect(omitted.status).toBe("not_met");
+    expect(omitted.reasoning).toMatch(/due date|overdue|next revalidation/i);
+
+    const named = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: csvTable,
+          narrative: narrative(
+            "1 computerized system remains validated. Revalidation is due on 15 Mar 2027 and is not overdue. No change since last PRQ and no product impact."
+          ),
+        },
+        { section: "elr_csv_status" }
+      )
+    );
+    expect(named.status).toBe("met");
   });
 
   it("flags an OOT table contradicted by a within-calibration assessment", () => {

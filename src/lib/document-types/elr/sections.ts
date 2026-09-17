@@ -178,6 +178,7 @@ export const ELR_CSV_STATUS_HEADERS = [
   "System Name / ID",
   "Validation Status",
   "Last Validation / Revalidation Date",
+  "Revalidation Due Date",
   "Document Reference",
   "Change Since Last PRQ (Y/N)",
   "Change Control Ref.",

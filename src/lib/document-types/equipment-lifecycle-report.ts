@@ -446,14 +446,14 @@ const AUDIT_TRAIL_CRITERIA: CriterionDefinition[] = [
 const CSV_STATUS_CRITERIA: CriterionDefinition[] = [
   det(
     "csv_status.records",
-    "Validation status is recorded and changes carry a change control",
-    "Does every system carry a validation status and an answer on whether it changed since the last PRQ, with a change control reference for changes?",
+    "Validation status is recorded, revalidation is dated, and changes carry a change control",
+    "Does every system carry a validation status, a revalidation due date, and an answer on whether it changed since the last PRQ, with a change control reference for changes?",
     checkCsvStatus
   ),
   llm(
     "csv_status.periodic_review",
     "The computerized system periodic review has not lapsed",
-    "Does the section state when the system's periodic review was last performed and whether it remains current?"
+    "Does the section state when the system's last validation / periodic review was performed, the next revalidation due date, and whether that due date is still current versus overdue?"
   ),
   det(
     "csv_status.assessment_present",
@@ -608,7 +608,7 @@ const PER_SECTION_PROMPTS: Record<string, string> = {
   elr_alarms: `The assessment above the alarm table interprets this period's codes (counts, Direct Impact, CAPA, lost runtime). The 3.11.1 trend summary is whether the trended set is still appropriate.`,
   elr_access_control: `Copy the current SOP / CSV privilege matrix (Task × Operator / Supervisor / Maintenance / Administrator), stamping System Name / ID from the annexure header. Separate initial qualification of access control from periodic verification this period. 21 CFR Part 11 access, authority and audit-trail checks belong here. Do not reshape the annexure into a user grant/revoke log.`,
   elr_audit_trail: `The assessment must interpret how many reviews, any anomaly, and the disposition — not that reviews were performed.`,
-  elr_csv_status: `The assessment must interpret whether each system remains validated and whether a change since last PRQ triggered revalidation.`,
+  elr_csv_status: `The assessment must interpret whether each system remains validated, name the revalidation due date (current vs overdue), and whether a change since last PRQ triggered revalidation.`,
   elr_system_trends: `This is a synthesis over the evidence sections, not a new inventory. Identify recurring themes that cut across sections. State downtime / uptime / availability. Carry each theme that needs action into the risk-actions table.`,
   elr_risk_actions: `Prioritize by occurrence, frequency and severity. Product scrap and lost runtime are High. Actions must be specific, owned and dated — not "monitor closely". Around ten actions is a working size; do not list every event. The overall grade must match the highest-priority rows.`,
   elr_conclusion: `Judge the decision, not the prose. A conclusion that recites activity without stating whether the qualified state holds is not met. It must account for the risk-actions grade and any open High-priority action.`,
