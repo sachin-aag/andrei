@@ -32,6 +32,7 @@ Live report creation on the PR is still the layer-3 merge gate.
 | F2 MJ overlay replay / F1 live LLM cost | Not in this repo. User report creation + Langfuse on the PR. |
 | Live QMS vs calibration-planner walk | Landed. ELR inventory start no longer page-lists files typed as a different inventory (a calibration planner is not QMS). Page scoring ignores running-header `document no`. The planning chip names queued files, not the whole vault. |
 | Remaining-sections UI (plan slot, false error, done popup, idle Working… / N of N chip) | Landed. Plan progress sits below the transcript. Auto-continue rows stay hidden and do not resurrect the original user bubble. Successful section turns do not toast “hit an error”. Agent-done notice is `Assistant is done with {section}`. Working… hides when the stream is idle (stale optimistic send overlay after hydrate). The N of N chip spins only while the turn is running, shows Paused on Cancel, and hides when every remaining section is drafted. |
+| Remaining-sections seed miss (`dev 7` “go on to monitoring and sections after that”) | Landed. That phrasing is a write (`go on`) but was not a multi-section seed, so the first leftover-inventory turn had no queue and milled reviews until the 270s abort. Queue still does not cap start/finish loops inside one inventory turn — that abort cluster remains after an explicit `draft remaining sections`. |
 
 ## 1. What `dev 6` actually cost (measured, not estimated)
 

@@ -57,8 +57,22 @@ describe("multi-section draft detection", () => {
     expect(isMultiSectionDraftRequest("complete the rest of the report")).toBe(
       true
     );
+    expect(
+      isMultiSectionDraftRequest(
+        "go on to monitoring and sections after that"
+      )
+    ).toBe(true);
+    expect(
+      isMultiSectionDraftRequest("go on to monitoring and the rest")
+    ).toBe(true);
     expect(isMultiSectionDraftRequest("Write the Objective")).toBe(false);
     expect(isMultiSectionDraftRequest("draft Purpose")).toBe(false);
+    expect(
+      isMultiSectionDraftRequest(
+        "go on to Qualification and Periodic Re-Qualification History"
+      )
+    ).toBe(false);
+    expect(isMultiSectionDraftRequest("draft first two sections")).toBe(false);
   });
 
   it("treats continue/resume as a plan resume, not a new queue", () => {
@@ -247,6 +261,29 @@ describe("resolvePlanAtTurnStart", () => {
         now: new Date("2026-09-14T00:00:00.000Z"),
       })
     ).toBeNull();
+  });
+
+  it("seeds on go-on-and-sections-after phrasing that used to miss", () => {
+    const seeded = resolvePlanAtTurnStart({
+      existing: null,
+      userText: "go on to monitoring and sections after that",
+      autoContinue: false,
+      writeIntent: true,
+      documentType: "equipment_lifecycle_report",
+      sections: {
+        elr_monitoring: EMPTY_ELR_CONTENT.elr_monitoring,
+        elr_calibration: EMPTY_ELR_CONTENT.elr_calibration,
+        elr_preventive_maintenance:
+          EMPTY_ELR_CONTENT.elr_preventive_maintenance,
+      },
+      promptVersion: "chat-v94-section-plan",
+      now: new Date("2026-09-17T04:06:59.000Z"),
+    });
+    expect(seeded?.items.length).toBeGreaterThanOrEqual(2);
+    expect(seeded?.items[0]?.state).toBe("in_progress");
+    expect(seeded?.items.slice(1).every((item) => item.state === "queued")).toBe(
+      true
+    );
   });
 
   it("pauses an active plan when the engineer types a new prompt", () => {

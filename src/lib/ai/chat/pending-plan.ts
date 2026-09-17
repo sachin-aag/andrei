@@ -47,10 +47,12 @@ export type ChatTurnContinuation = {
 /**
  * Whole-document / remaining-section asks. `remaining` may sit between the
  * verb and the noun (`draft remaining report`), not only after it
- * (`draft the report`, `remaining sections`).
+ * (`draft the report`, `remaining sections`). "Go on to X and sections after
+ * that" is the same ask — without this the turn is a write with no queue and
+ * the model mills every leftover inventory until the 270s abort.
  */
 const MULTI_SECTION_DRAFT_RE =
-  /\b(?:remaining (?:sections?|report|document|elr)|all (?:the )?(?:empty )?sections?|every section|entire (?:report|document)|whole (?:report|document)|(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\s+(?:the )?(?:remaining |rest of (?:the )?)?(?:report|document|elr)|fill(?:\s+(?:in|out))?\s+(?:the )?(?:rest|remaining))\b/i;
+  /\b(?:remaining (?:sections?|report|document|elr)|all (?:the )?(?:empty )?sections?|every section|entire (?:report|document)|whole (?:report|document)|(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\s+(?:the )?(?:remaining |rest of (?:the )?)?(?:report|document|elr)|fill(?:\s+(?:in|out))?\s+(?:the )?(?:rest|remaining)|sections? after (?:that|this)|(?:the )?(?:rest|remaining) after (?:that|this)|and (?:then )?(?:the )?(?:rest|remaining sections?))\b/i;
 
 const RESUME_PLAN_RE =
   /\b(?:continue (?:the )?(?:remaining )?sections?|keep going|resume|finish (?:the )?(?:rest|remaining|report|draft))\b/i;
