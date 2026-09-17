@@ -28,6 +28,7 @@ const {
   listReadyDocumentsForReportMock,
   listDocumentPagesForReviewMock,
   loadDocumentPageEvidenceMock,
+  searchReportDocumentsManyMock,
   listActiveAttachmentsMock,
   listAttachmentFoldersMock,
   dbSelectMock,
@@ -42,6 +43,7 @@ const {
   loadDocumentPageEvidenceMock: vi.fn(
     async (): Promise<PageEvidenceRow[]> => []
   ),
+  searchReportDocumentsManyMock: vi.fn(async (): Promise<unknown[][]> => []),
   listActiveAttachmentsMock: vi.fn(),
   listAttachmentFoldersMock: vi.fn(),
   dbSelectMock: vi.fn(),
@@ -87,6 +89,8 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
       listDocumentPagesForReviewMock(...(args as [])),
     loadDocumentPageEvidence: (...args: unknown[]) =>
       loadDocumentPageEvidenceMock(...(args as [])),
+    searchReportDocumentsMany: (...args: unknown[]) =>
+      searchReportDocumentsManyMock(...(args as [])),
   };
 });
 
@@ -868,6 +872,8 @@ describe("buildChatTools document review", () => {
     listDocumentPagesForReviewMock.mockReset();
     loadDocumentPageEvidenceMock.mockReset();
     loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    searchReportDocumentsManyMock.mockReset();
+    searchReportDocumentsManyMock.mockResolvedValue([]);
     dbInsertMock.mockReset();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
   });
@@ -1637,6 +1643,8 @@ describe("buildChatTools propose edits", () => {
     getReportAnalyticsMock.mockResolvedValue(null);
     loadDocumentPageEvidenceMock.mockReset();
     loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    searchReportDocumentsManyMock.mockReset();
+    searchReportDocumentsManyMock.mockResolvedValue([]);
     readDocumentPageMock.mockReset();
     mockDefineSectionSelect();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
@@ -1993,6 +2001,138 @@ describe("buildChatTools propose edits", () => {
     );
     expect(drafted).toMatchObject({ status: "drafted" });
     expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("repairs a blocked identifier by searching the fact onto a new page", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-pqr",
+          filename: "PQR-24-PR-042.pdf",
+          description: null,
+          pageNumber: 21,
+          chunkId: "c1",
+          sourceKind: "hybrid",
+          text: "Media fill MF-24-PR-001 performed 15/07/2024",
+          quote: "Media fill MF-24-PR-001 performed 15/07/2024",
+          citationId: "att:att-pqr:p:21",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: "planner" },
+              output: {
+                results: [
+                  {
+                    filename: "Planner.pdf",
+                    pageNumber: 22,
+                    attachmentId: "att-plan",
+                    quote: "Annual calibration planner EQ-12 Balance",
+                    citationId: "att:att-plan:p:22",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Media fill MF-24-PR-001 [PQR-24-PR-042.pdf, p. 21].",
+        reasoning: "Fill media fill number.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted[0]?.content).toContain("MF-24-PR-001");
+    expect(inserted[0]?.content).not.toContain("<identifier>");
+    expect(searchReportDocumentsManyMock).toHaveBeenCalled();
+  });
+
+  it("refuses leftover MJ placeholders when repair search finds a new page", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: "att-plan",
+      filename: "Planner.pdf",
+      pageNumber: 22,
+      transcript: "EQ-12 Balance — see certificate for due date",
+      visualInterpretation: "",
+      pageContext: null,
+    });
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-cert",
+          filename: "Cert.pdf",
+          description: null,
+          pageNumber: 5,
+          chunkId: "c1",
+          sourceKind: "hybrid",
+          text: "EQ-12 due 12/03/2026 certificate 2025/014",
+          quote: "EQ-12 due 12/03/2026 certificate 2025/014",
+          citationId: "att:att-cert:p:5",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: "att-plan", pageNumber: 22 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "EQ-12 due <date> [Planner.pdf, p. 22].",
+        reasoning: "Planner has the ID, not the date.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({
+      status: "unsupported_facts",
+      keepSearchOpen: true,
+    });
+    expect(refused).toMatchObject({
+      repairHits: [
+        expect.objectContaining({
+          filename: "Cert.pdf",
+          pageNumber: 5,
+        }),
+      ],
+    });
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
   it("grounds a date from a reviewed page that was omitted from the findings sample", async () => {

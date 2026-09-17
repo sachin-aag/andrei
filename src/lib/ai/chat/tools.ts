@@ -236,6 +236,7 @@ import {
   budgetSearchHit,
   toolResultBudget,
 } from "@/lib/ai/chat/tool-result-budget";
+import type { HardFact } from "@/lib/ai/chat/claim-facts";
 import {
   containsGatedFactPlaceholders,
   groundDraftText,
@@ -245,6 +246,15 @@ import {
   unsupportedFactsToolResult,
   type UnsupportedFactsToolResult,
 } from "@/lib/ai/chat/ground-draft";
+import {
+  repairSearchQueries,
+  repairTextsFromTableOperation,
+  searchUnsupportedFactsRepair,
+  seedRepairHits,
+  toUnsupportedFactsRepairHits,
+  unsupportedFactsRepairMessage,
+  type RepairSearchHit,
+} from "@/lib/ai/chat/unsupported-facts-repair";
 import { scoreDraftEntailment } from "@/lib/ai/chat/entailment";
 import { getCustomerPack, type UnsupportedFactPolicy } from "@/lib/customers/packs";
 import {
@@ -1220,6 +1230,32 @@ export function buildChatTools(opts: {
       message: PLACEHOLDER_NEEDS_RETRIEVAL_MESSAGE,
     });
   };
+  const emptyRepair = {
+    hits: [] as RepairSearchHit[],
+    newQuotedHits: [] as RepairSearchHit[],
+  };
+  const runUnsupportedFactsRepair = async (input: {
+    unsupported: readonly HardFact[];
+    texts: readonly string[];
+  }) => {
+    if (unsupportedFactPolicy !== "block") return emptyRepair;
+    const queries = repairSearchQueries(input);
+    if (queries.length === 0) return emptyRepair;
+    const hits = await searchUnsupportedFactsRepair({
+      reportId,
+      queries,
+      attachmentIds:
+        pinnedAttachmentIds.length > 0 ? pinnedAttachmentIds : undefined,
+    });
+    return { hits, newQuotedHits: seedRepairHits(citationLedger, hits) };
+  };
+  const repairResultFields = (hits: readonly RepairSearchHit[]) =>
+    hits.length > 0
+      ? {
+          message: unsupportedFactsRepairMessage(hits),
+          repairHits: toUnsupportedFactsRepairHits(hits),
+        }
+      : {};
   const includePlotMeasurements = opts.includePlotMeasurements ?? true;
   const citationRule = documentCitationRule(citationsAtEndOfSection);
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
@@ -1951,18 +1987,47 @@ export function buildChatTools(opts: {
             )
           : null;
         await ensureEvidence();
-        const groundedInsert = groundDraftText({
+        let groundedInsert = groundDraftText({
           text: insertText,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
         });
-        const groundedSecond = rawSecond
+        let groundedSecond = rawSecond
           ? groundDraftText({
               text: rawSecond.insertText ?? "",
               ledger: citationLedger,
               policy: unsupportedFactPolicy,
             })
           : null;
+        const leftoverInsert = `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`;
+        const repair =
+          groundedInsert.blocked ||
+          Boolean(groundedSecond?.blocked) ||
+          containsGatedFactPlaceholders(leftoverInsert)
+            ? await runUnsupportedFactsRepair({
+                unsupported: [
+                  ...groundedInsert.unsupported,
+                  ...(groundedSecond?.unsupported ?? []),
+                ],
+                texts: [insertText, rawSecond?.insertText ?? ""].filter(
+                  (text) => text.length > 0
+                ),
+              })
+            : emptyRepair;
+        if (repair.hits.length > 0) {
+          groundedInsert = groundDraftText({
+            text: insertText,
+            ledger: citationLedger,
+            policy: unsupportedFactPolicy,
+          });
+          groundedSecond = rawSecond
+            ? groundDraftText({
+                text: rawSecond.insertText ?? "",
+                ledger: citationLedger,
+                policy: unsupportedFactPolicy,
+              })
+            : null;
+        }
         if (groundedInsert.blocked || groundedSecond?.blocked) {
           const unsupported = [
             ...groundedInsert.unsupported,
@@ -1978,11 +2043,21 @@ export function buildChatTools(opts: {
           return unsupportedFactsToolResult({
             unsupported,
             draftWithPlaceholders: groundedInsert.text,
+            ...repairResultFields(repair.hits),
           });
         }
-        const placeholderDump = refuseGatedPlaceholderDump(
-          `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`
-        );
+        const leftover = `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`;
+        if (
+          containsGatedFactPlaceholders(leftover) &&
+          repair.newQuotedHits.length > 0
+        ) {
+          return unsupportedFactsToolResult({
+            unsupported: [],
+            draftWithPlaceholders: leftover,
+            ...repairResultFields(repair.newQuotedHits),
+          });
+        }
+        const placeholderDump = refuseGatedPlaceholderDump(leftover);
         if (placeholderDump) return placeholderDump;
         const claimProvenance = {
           claims: [
@@ -3015,11 +3090,31 @@ export function buildChatTools(opts: {
           resolvedField
         );
         await ensureEvidence();
-        const groundedTable = groundTableOperation({
-          operation: captureTableOperationSnapshots(fieldDoc, parsedOp),
+        const originalTableOp = captureTableOperationSnapshots(
+          fieldDoc,
+          parsedOp
+        );
+        let groundedTable = groundTableOperation({
+          operation: originalTableOp,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
         });
+        const tableNeedsRepair =
+          groundedTable.blocked ||
+          tableOperationContainsGatedPlaceholders(groundedTable.operation);
+        const repair = tableNeedsRepair
+          ? await runUnsupportedFactsRepair({
+              unsupported: groundedTable.unsupported,
+              texts: repairTextsFromTableOperation(originalTableOp),
+            })
+          : emptyRepair;
+        if (repair.hits.length > 0) {
+          groundedTable = groundTableOperation({
+            operation: originalTableOp,
+            ledger: citationLedger,
+            policy: unsupportedFactPolicy,
+          });
+        }
         if (groundedTable.blocked) {
           recordClaimAudit({
             blocked: true,
@@ -3031,11 +3126,19 @@ export function buildChatTools(opts: {
             draftWithPlaceholders: groundedTable.unsupported
               .map((fact) => fact.text)
               .join("; "),
+            ...repairResultFields(repair.hits),
           });
         }
         if (
           tableOperationContainsGatedPlaceholders(groundedTable.operation)
         ) {
+          if (repair.newQuotedHits.length > 0) {
+            return unsupportedFactsToolResult({
+              unsupported: [],
+              draftWithPlaceholders: JSON.stringify(groundedTable.operation),
+              ...repairResultFields(repair.newQuotedHits),
+            });
+          }
           const placeholderDump = refuseGatedPlaceholderDump(
             JSON.stringify(groundedTable.operation)
           );
@@ -3352,11 +3455,26 @@ export function buildChatTools(opts: {
           tableNumber = prefixed.tableNumber;
         }
         const normalizedMarkdown = normalizeSuggestionInsertText(markdownForDraft);
-        const groundedDraft = groundDraftText({
+        let groundedDraft = groundDraftText({
           text: normalizedMarkdown,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
         });
+        const repair =
+          groundedDraft.blocked ||
+          containsGatedFactPlaceholders(groundedDraft.text)
+            ? await runUnsupportedFactsRepair({
+                unsupported: groundedDraft.unsupported,
+                texts: [normalizedMarkdown],
+              })
+            : emptyRepair;
+        if (repair.hits.length > 0) {
+          groundedDraft = groundDraftText({
+            text: normalizedMarkdown,
+            ledger: citationLedger,
+            policy: unsupportedFactPolicy,
+          });
+        }
         if (groundedDraft.blocked) {
           recordClaimAudit({
             suggestionId,
@@ -3369,6 +3487,19 @@ export function buildChatTools(opts: {
             draftWithPlaceholders: citationsAtEndOfSection
               ? moveCitationsToEndOfText(groundedDraft.text)
               : groundedDraft.text,
+            ...repairResultFields(repair.hits),
+          });
+        }
+        if (
+          containsGatedFactPlaceholders(groundedDraft.text) &&
+          repair.newQuotedHits.length > 0
+        ) {
+          return unsupportedFactsToolResult({
+            unsupported: [],
+            draftWithPlaceholders: citationsAtEndOfSection
+              ? moveCitationsToEndOfText(groundedDraft.text)
+              : groundedDraft.text,
+            ...repairResultFields(repair.newQuotedHits),
           });
         }
         const placeholderDump = refuseGatedPlaceholderDump(groundedDraft.text);

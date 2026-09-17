@@ -95,7 +95,9 @@ export class CitationPageLedger {
     const key = pageKey(id, pageNumber);
     const quote = evidence?.quote?.trim() ?? "";
     const existing = this.evidenceByKey.get(key);
-    const nextQuote = quote || existing?.quote || "";
+    const previous = existing?.quote ?? "";
+    const nextQuote =
+      quote.length >= previous.trim().length ? quote || previous : previous;
     const citationId =
       evidence?.citationId?.trim() ||
       existing?.citationId ||

@@ -24,6 +24,7 @@ Live report creation on the PR is still the layer-3 merge gate.
 | A4 prompt diet | Landed (`CHAT_PROMPT_VERSION` `chat-v107-harness-diet`). Independently revertible. |
 | A5 tool-schema diet | Landed. |
 | C1–C3 placeholder fill | Landed (`placeholder_fill`, not a page walk). |
+| C4 same-turn unsupported-facts repair | Landed. Write tools search once and re-ground; no LLM subagent. |
 | D1–D3 ranking | Landed (slash IDs, local IDF, per-file diversity). |
 | E1–E3 honest finish / list_attachments / continue budget | Landed. |
 | B4 retire heuristics D2 covers | **Evaluated, not deleted.** IDF + diversity cover the cover-magnet ranking case. Divider regexes (`attachment-divider.ts`) mark locators for `keepSearchOpen` — that is not ranking. Analytics `requirementIndex` TOC demotion and ELR inventory column needles score a different question than token rarity. No new heuristic. |
@@ -197,9 +198,20 @@ for partially-filled tables goes away.
   `CitationPageLedger` in the same turn, so MJ's `block` policy has real
   quotes and stops returning `unsupported_facts` on facts that are in the
   PDFs.
+- **C4. Repair on the write, not a later fill turn.** Round-1 drafts
+  still dump `<date>` / `<identifier>` after a document review of the
+  wrong page (planner vs certificate). Prompt-only "if unsupported_facts,
+  search then fill" does not run under the 270s abort. On a blocked MJ
+  write, `draft_field` / `edit_table` / `propose_edit` run the same
+  closed-set search as C1 once, seed new quotes, and re-ground the
+  *original* text. New pages keep the write from persisting; the tool
+  result includes the snippets so the next step can fill. Leftovers after
+  a page that already had a quote still persist (true miss). Not a
+  Flash-Lite subagent.
 - **Done when:** a "fill the placeholders in tables 9–11" turn completes
   in **≤4 steps** with no `start_document_review`, and the cited pages
-  match the pages a human would open.
+  match the pages a human would open. Round-1 inventory drafts do not
+  persist `<cal due date>` when a certificate page is searchable.
 
 ## 7. Workstream D — Ranking (small code, gated by cases)
 
