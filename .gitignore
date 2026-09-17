@@ -114,6 +114,7 @@ docs/convergent-onboarding-temporary-passwords.md
 
 # Local chart fixture renders (`scripts/render-chart-fixture.ts`)
 /tmp/
+.tmp/
 
 scripts/eval/retrieval-runs/
 scripts/eval/retrieval-cases.local.json
