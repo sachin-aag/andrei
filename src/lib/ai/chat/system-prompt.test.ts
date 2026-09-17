@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v108-harness-diet");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v109-elr-first-draft");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -45,6 +45,29 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("## Multi-section plan");
     expect(prompt).toContain("This turn: **Calibration**");
     expect(prompt).toContain("Do not start Monitoring");
+    expect(prompt).toContain("not done after edit_table alone");
+  });
+
+  it("does not add ELR sibling copy to investigation remaining-section", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "write",
+      documentType: "investigation_report",
+      pendingPlan: {
+        kind: "section_queue",
+        objective: "Draft the remaining sections",
+        createdAt: "2026-09-14T00:00:00.000Z",
+        promptVersion: "chat-v94-section-plan",
+        items: [
+          { sectionKey: "define", label: "Define", state: "in_progress" },
+          { sectionKey: "measure", label: "Measure", state: "queued" },
+        ],
+      },
+    });
+    expect(prompt).toContain("This turn: **Define**");
+    expect(prompt).not.toContain("not done after edit_table alone");
+    expect(prompt).not.toContain("overallGrade is low|medium|high");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {

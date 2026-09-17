@@ -144,19 +144,48 @@ Write a brief assessment in the section's \`narrative\` field, above the table,
 and refer to it with \`[[table]]\` (never type "Table N" or copy tableNumber).
 Do not recap that the section was reviewed. Reason from the rows:
 
-- Counts (how many events, which codes, how many repeats).
+- Counts (how many events, which codes, how many repeats). A digit is required
+  whenever the table has rows — "records were reviewed" is a fail.
 - What happened.
-- Implication for the qualified state.
+- Implication for the qualified state (does it still hold).
 - What was done (CA / CAPA / deviation / change control).
-- Whether product was scrapped or runtime was lost.
+- Closer: product scrap / batch loss, and runtime / downtime hours. Name them
+  even when the answer is none, if the rows recorded events. One media-fill
+  APS still needs that closer — n=1 is not a skip.
 
 Suggest only actions that follow from these rows. If the table is empty, say
-none occurred. The assessment is the quality of the report — a cheerful recap
-of a noisy table is a failure.
+none occurred — do **not** insert a Nil / None / NA / "nothing happened" row.
+Those cells fail the document-reference check. Omit the row.
+
+Do not fill Result or Status with Pass or Closed as a stand-in for a
+certificate you have not read. Leave the cell or skip the row until that page
+is read.
+
+QMS: if a record is still open at the ELR cut-off, say so in the assessment
+(status cell alone is not enough).
+
+Preventive maintenance: when a PM is delayed or a failure mode repeats, say
+whether the checklist needs revision — not only that the date slipped.
 
 Responsibilities: the table is a seeded matrix. Fill it with edit_cells /
 insert_rows (do not create_table a second grid). In the same turn, draft a short
 narrative that summarises who does what and uses \`[[table]]\`.
+
+## Same-turn siblings
+
+An evidence section is not drafted after the table alone. In the **same turn**
+as edit_table, draft \`narrative\` (the assessment with a count). Remaining-section
+must not advance on a filled table with an empty assessment.
+
+- Breakdowns and alarms also draft \`trend\` in that turn (failure-mode grouping /
+  whether the trended alarm set is still appropriate). Trend is not a substitute
+  for the assessment.
+- \`elr_risk_actions\`: draft \`overallGrade\` in the same turn (\`low\` / \`medium\` /
+  \`high\` — the stored enum, not "Low risk").
+- \`elr_conclusion\`: draft \`recommendation\` in the same turn
+  (\`continue\` / \`early_requalification\` / \`capa\` / \`other\`) plus the decision
+  sentence in \`recommendationNarrative\`. Do not put the enum's label into
+  \`recommendation\` as free text.
 
 ## Table numbers
 
@@ -194,15 +223,23 @@ needs action into the risk-actions table via the Risk ID column.
 Prioritize by occurrence, frequency and severity. Product scrap and lost
 runtime are High. Each action must be a specific, owned, dated step (raise a
 CAPA, revise a PM checklist, file a change control) — not "monitor closely".
-Around ten actions is a working size; do not list every event. Select an
-overall report risk grade (Low / Medium / High) that matches the highest-priority
-rows.
+Around ten actions is a working size; do not list every event.
+
+\`overallGrade\` is the stored enum \`low\` | \`medium\` | \`high\`. It is
+max(highest row priority, downtime/scrap floor): any recorded downtime hours
+floor Medium; scrap or ≥8 h downtime floor High. Do not select Low over a
+Medium/High row or over downtime.
 
 ## Conclusion
 
 State whether the equipment remains in its qualified state for this container
 format. Where a section carries an unresolved finding, the recommendation has
 to account for it — do not conclude "no action required" over an open gap.
+
+\`recommendation\` must be exactly \`continue\` | \`early_requalification\` |
+\`capa\` | \`other\`. Put the decision sentence in \`recommendationNarrative\`
+(why that option, and what happens next). "Remain in qualified state" is not
+a valid \`recommendation\` value.
 
 ## Limits and counts
 

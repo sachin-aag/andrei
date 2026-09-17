@@ -1281,6 +1281,100 @@ describe("buildChatTools document review", () => {
     expect(refused).toMatchObject({ status: "use_edit_table" });
   });
 
+  it("coerces ELR overallGrade and recommendation labels onto stored enums", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-risk",
+                  reportId: "report-1",
+                  section: "elr_risk_actions",
+                  content: {
+                    narrative: { type: "doc", content: [] },
+                    table: { type: "doc", content: [] },
+                    overallGrade: "",
+                  },
+                },
+              ]
+        ),
+      }),
+    }));
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    dbUpdateMock.mockReturnValue({
+      set: () => ({ where: vi.fn().mockResolvedValue([]) }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_risk_actions",
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "elr_risk_actions",
+        targetField: "overallGrade",
+        markdown: "Low risk",
+        reasoning: "Select the overall grade.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(parseAiRedraftCommentContent(inserted[0]?.content ?? "").markdown).toBe(
+      "low"
+    );
+  });
+
+  it("rejects free-text ELR recommendation instead of storing a sentence", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-con",
+                  reportId: "report-1",
+                  section: "elr_conclusion",
+                  content: {
+                    narrative: { type: "doc", content: [] },
+                    recommendation: "",
+                    recommendationNarrative: { type: "doc", content: [] },
+                  },
+                },
+              ]
+        ),
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_conclusion",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "elr_conclusion",
+        targetField: "recommendation",
+        markdown: "Remain in qualified state; no further action this cycle.",
+        reasoning: "State the recommendation.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "invalid_value" });
+    expect(String((refused as { message?: string }).message)).toContain(
+      "continue | early_requalification | capa | other"
+    );
+  });
+
   it("blocks an empty ELR inventory fill until a matching review has finished", async () => {
     const { EMPTY_ELR_CONTENT } = await import(
       "@/lib/document-types/elr/sections"

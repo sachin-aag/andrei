@@ -195,7 +195,10 @@ Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
 abort still apply). Do not add a tool-call count limit. Report Agent may
 persist a remaining-section queue on `chat_sessions.pending_plan` when the
 engineer asks to fill several empty `draftOrder` sections. Each turn drafts
-the current item (or two adjacent non-inventory sections). After persist the
+the current item (or two adjacent non-inventory sections). MJ ELR evidence
+sections stay in progress until that turn also drafts the assessment with a
+count (and `trend` / `overallGrade` / `recommendation` siblings); investigation
+and DV queues are unchanged. After persist the
 client POSTs `Continue the remaining sections.` with `autoContinue` (one
 live remaining-section widget **below the transcript**, not a user bubble and
 not in the auto-continue slot; collapsed is `N of M —

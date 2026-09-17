@@ -85,6 +85,7 @@ import {
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
+import { coerceElrEnumDraft } from "@/lib/document-types/elr/draft-enums";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import type { CommitEditInput } from "@/lib/suggestions/apply-commit-content";
 import {
@@ -356,6 +357,7 @@ export type DraftFieldResult =
   | { status: "figures_not_supported"; message: string }
   | { status: "review_incomplete"; message: string }
   | { status: "use_edit_table"; message: string }
+  | { status: "invalid_value"; message: string }
   | { status: typeof NOT_A_REWRITE_STATUS; hint: string; coverage: number }
   | {
       status: "inventory_mismatch";
@@ -3453,6 +3455,17 @@ export function buildChatTools(opts: {
           );
           markdownForDraft = prefixed.markdown;
           tableNumber = prefixed.tableNumber;
+        }
+        const coercedEnum = coerceElrEnumDraft(
+          section,
+          resolvedField,
+          markdownForDraft
+        );
+        if (coercedEnum) {
+          if (!coercedEnum.ok) {
+            return { status: "invalid_value", message: coercedEnum.message };
+          }
+          markdownForDraft = coercedEnum.value;
         }
         const normalizedMarkdown = normalizeSuggestionInsertText(markdownForDraft);
         let groundedDraft = groundDraftText({

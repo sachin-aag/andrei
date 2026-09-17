@@ -276,4 +276,41 @@ describe("suggestion vs eval section context isolation", () => {
     expect(suggestPrompt).not.toMatch(/^Start date:/m);
     expect(suggestPrompt).not.toMatch(/^End date:/m);
   });
+
+  it("eval contextForPrompt includes ELR trend, grade, and recommendation", () => {
+    const para = (text: string): JSONContent => ({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text }],
+        },
+      ],
+    });
+    const alarms = contextForPrompt("elr_alarms", {
+      narrative: para("3 Direct Impact alarms this period."),
+      table: para(""),
+      trend: para("Nuisance door-open alarms dominate the set."),
+    });
+    expect(alarms).toContain("Narrative: 3 Direct Impact alarms this period.");
+    expect(alarms).toContain("Trend: Nuisance door-open alarms dominate the set.");
+
+    const risk = contextForPrompt("elr_risk_actions", {
+      narrative: para("Highest priority is downtime."),
+      overallGrade: "medium",
+    });
+    expect(risk).toContain("Overall grade: medium");
+
+    const conclusion = contextForPrompt("elr_conclusion", {
+      narrative: para("The equipment remains in its qualified state."),
+      recommendation: "continue",
+      recommendationNarrative: para(
+        "Continue routine use; next PRQ stays on the VMP date."
+      ),
+    });
+    expect(conclusion).toContain("Recommendation: continue");
+    expect(conclusion).toContain(
+      "Recommendation narrative: Continue routine use; next PRQ stays on the VMP date."
+    );
+  });
 });

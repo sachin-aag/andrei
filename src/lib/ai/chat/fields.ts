@@ -16,6 +16,7 @@ import {
   flattenDocForChat,
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
+import { elrPlanRequiredFields } from "@/lib/document-types/elr/plan-complete";
 
 /** Sections the drafting chat can read + edit (type-owned, not DMAIC-only). */
 export function chatEditableSections(
@@ -223,8 +224,38 @@ export function fieldFillState(
 }
 
 /**
+ * MJ ELR: a populated evidence table is not "filled" until the assessment
+ * states a count (and trend / overallGrade / recommendation siblings exist).
+ * Investigation and DV section keys never match `elrPlanRequiredFields`.
+ */
+function capElrSectionFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType,
+  aggregated: SectionFillState
+): SectionFillState {
+  if (aggregated === "empty") return aggregated;
+  const required = elrPlanRequiredFields(section);
+  if (!required) return aggregated;
+  const record = content ?? {};
+  const hasRows = listFieldTables(record, section, "table").some(
+    (table) => table.dataRowCount > 0
+  );
+  if (hasRows && required.includes("narrative")) {
+    const narrative = sectionFieldPlainText(record, section, "narrative");
+    if (!/\d/.test(narrative)) return "partial";
+  }
+  for (const field of required) {
+    if (field === "narrative" && !hasRows) continue;
+    if (fieldFillState(record, section, field) === "empty") return "partial";
+  }
+  return aggregated;
+}
+
+/**
  * Aggregate of per-field fill state. Empty only when every editable field is
  * empty — a populated table is not hidden behind an empty narrative.
+ * MJ ELR evidence sections stay partial until the assessment states a count
+ * (and trend / overallGrade / recommendation siblings exist).
  */
 export function sectionFillState(
   content: Record<string, unknown> | undefined,
@@ -237,9 +268,12 @@ export function sectionFillState(
   const states = fields.map((field) =>
     fieldFillState(content, section, field.targetField)
   );
-  if (states.every((state) => state === "empty")) return "empty";
-  if (states.some((state) => state === "filled")) return "filled";
-  return "partial";
+  const aggregated: SectionFillState = states.every((state) => state === "empty")
+    ? "empty"
+    : states.some((state) => state === "filled")
+      ? "filled"
+      : "partial";
+  return capElrSectionFillState(content, section, aggregated);
 }
 
 /**
