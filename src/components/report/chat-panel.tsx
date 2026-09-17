@@ -1201,7 +1201,6 @@ export function ChatPanel({
   );
 
   const createSessionInFlightRef = useRef<Promise<string | null> | null>(null);
-  const [isCreatingSession, setIsCreatingSession] = useState(false);
 
   const createSession = useCallback(async (): Promise<string | null> => {
     const inFlight = createSessionInFlightRef.current;
@@ -1218,12 +1217,10 @@ export function ChatPanel({
         return null;
       } finally {
         createSessionInFlightRef.current = null;
-        setIsCreatingSession(false);
       }
     })();
 
     createSessionInFlightRef.current = promise;
-    setIsCreatingSession(true);
     return promise;
   }, [base]);
 
@@ -1774,17 +1771,11 @@ export function ChatPanel({
         <button
           type="button"
           onClick={() => void newChat()}
-          disabled={isCreatingSession}
           aria-label="New chat"
-          aria-busy={isCreatingSession}
-          title={isCreatingSession ? "Starting new chat…" : "New chat"}
-          className="flex size-7 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] disabled:pointer-events-none disabled:opacity-50"
+          title="New chat"
+          className="flex size-7 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
         >
-          {isCreatingSession ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
+          <Plus className="size-4" />
         </button>
         <div ref={historyRef} className="relative">
           <button
