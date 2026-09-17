@@ -879,6 +879,15 @@ describe("plan prompt and metadata", () => {
         skippedFilenames: ["PRQR-25-PR-005 Report.pdf"],
       })
     ).toBe(false);
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 20,
+        skippedAttachmentIds: ["alarm"],
+        objective: "elr_monitoring",
+        queuedFilenames: ["PRQR-25-PR-005 Report.pdf"],
+        skippedFilenames: ["Alarm trend Q2 2025.pdf"],
+      })
+    ).toBe(false);
   });
 
   it("keeps comprehensive retrieval for a queued inventory section", () => {

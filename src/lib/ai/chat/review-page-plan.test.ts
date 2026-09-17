@@ -282,6 +282,44 @@ describe("planReviewPages", () => {
     expect(selected.map((page) => page.attachmentId)).toEqual(["prqr"]);
   });
 
+  it("queues PRQR methods and the alarm-trend PDF together", () => {
+    const header =
+      "UNCONTROLLED COPY Sign/Date Reviewed By QA Confidential and Proprietary ";
+    const pages = [
+      {
+        attachmentId: "csv",
+        pageNumber: 1,
+        filename: "CSV-OQ-PR-055 PART-1.pdf",
+        transcript:
+          "The machine is equipped with connections for environmental monitoring systems 12/01/2025",
+        outlineTitle: "URS",
+        identifiers: [] as string[],
+      },
+      {
+        attachmentId: "prqr",
+        pageNumber: 40,
+        filename: "PRQR-25-PR-005 Report.pdf",
+        transcript: `${header}${".".repeat(900)}Non-Viable Particulate Monitoring Settle Plate 23/07/2024`,
+        outlineTitle: "Environmental monitoring",
+        identifiers: ["PRQR-25-PR-005"],
+      },
+      {
+        attachmentId: "alarm",
+        pageNumber: 2,
+        filename: "Alarm trend Q2 2025.pdf",
+        transcript:
+          "Alarm Description FM Nitrogen Not Available Count 1950 Direct Impact N",
+        outlineTitle: "Alarm trend",
+        identifiers: [] as string[],
+      },
+    ];
+    const selected = planReviewPages(pages, "elr_monitoring", 2500);
+    expect(selected.map((page) => page.attachmentId).sort()).toEqual([
+      "alarm",
+      "prqr",
+    ]);
+  });
+
   it("queues a differential-pressure monitoring row from column hits", () => {
     const pages = [
       {

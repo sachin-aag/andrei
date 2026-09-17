@@ -148,26 +148,47 @@ const MONITORING_METHOD_PHRASES = [
   "environmental monitoring",
 ] as const;
 
+/** Alarm-trend pages that belong in Monitoring as well as Alarm Trends. */
+const MONITORING_ALARM_PHRASES = [
+  "alarm trend",
+  "alarm description",
+  "alarm code",
+  "nitrogen not available",
+  "fm nitrogen",
+  "compressed air",
+] as const;
+
 function methodPhrasesForSection(section: SectionType): readonly string[] {
-  if (section === "elr_monitoring") return MONITORING_METHOD_PHRASES;
+  if (section === "elr_monitoring") {
+    return [...MONITORING_METHOD_PHRASES, ...MONITORING_ALARM_PHRASES];
+  }
   return [];
 }
 
-function preferredFilenameNeedles(section: SectionType): readonly string[] {
+function preferredFilenameFamilies(
+  section: SectionType
+): readonly (readonly string[])[] {
   switch (section) {
     case "elr_monitoring":
-      return ["prqr", "prqp", "pqr", "environmental"];
+      return [
+        ["prqr", "prqp", "pqr", "environmental"],
+        ["alarm", "aap"],
+      ];
     case "elr_qms":
-      return ["ccf", "capa", "cpa", "dev/", "qdf", "prqr"];
+      return [["ccf", "capa", "cpa", "dev/", "qdf", "prqr"]];
     case "elr_breakdowns":
-      return ["pmc", "breakdown", "prqr"];
+      return [["pmc", "breakdown", "prqr"]];
     case "elr_qualification":
-      return ["prqr", "prqp", "pqr"];
+      return [["prqr", "prqp", "pqr"]];
     case "elr_alarms":
-      return ["alarm", "aap"];
+      return [["alarm", "aap"]];
     default:
       return [];
   }
+}
+
+function preferredFilenameNeedles(section: SectionType): readonly string[] {
+  return preferredFilenameFamilies(section).flat();
 }
 
 /** CSV-OQ / RTM / URS pages name "environmental monitoring" without being the EM grid. */
@@ -192,21 +213,24 @@ export function isPreferredInventoryFilename(
 }
 
 /**
- * True when a preferred evidence file (PRQR for monitoring, CCF/CAPA for
- * QMS) was skipped while nothing preferred was queued.
+ * True when a preferred evidence family was skipped while nothing in that
+ * family was queued. Monitoring treats PRQR and the alarm-trend PDF as
+ * separate families — skipping the alarm file while PRQR was queued is
+ * still unfinished.
  */
 export function preferredInventoryEvidenceSkipped(
   section: SectionType,
   queuedFilenames: readonly string[],
   skippedFilenames: readonly string[]
 ): boolean {
-  const needles = preferredFilenameNeedles(section);
-  if (needles.length === 0) return false;
-  const hits = (name: string) =>
-    needles.some((needle) => name.toLowerCase().includes(needle));
-  const skippedHasPreferred = skippedFilenames.some(hits);
-  if (!skippedHasPreferred) return false;
-  return !queuedFilenames.some(hits);
+  const families = preferredFilenameFamilies(section);
+  if (families.length === 0) return false;
+  return families.some((needles) => {
+    const hits = (name: string) =>
+      needles.some((needle) => name.toLowerCase().includes(needle));
+    if (!skippedFilenames.some(hits)) return false;
+    return !queuedFilenames.some(hits);
+  });
 }
 
 function methodPhraseHits(haystack: string, section: SectionType): number {
@@ -233,7 +257,11 @@ export function isInventoryHeaderOnlyPage(page: PageObjectiveText): boolean {
     stripped = stripped.split(phrase).join(" ");
   }
   const remaining = stripped.replace(/[^a-z0-9]+/g, " ").trim();
-  if (MONITORING_METHOD_PHRASES.some((phrase) => remaining.includes(phrase))) {
+  if (
+    methodPhrasesForSection("elr_monitoring").some((phrase) =>
+      remaining.includes(phrase)
+    )
+  ) {
     return false;
   }
   return remaining.length < 120;
@@ -350,6 +378,8 @@ export function filenameConflictsWithInventoryObjective(
   const haystack = filename.toLowerCase();
   for (const section of inventorySections()) {
     if (section === current) continue;
+    // Monitoring also compiles alarm-trend details — do not drop those files.
+    if (current === "elr_monitoring" && section === "elr_alarms") continue;
     if (hasTypedSectionNoun(haystack, sectionNoun(section))) return true;
   }
   return false;

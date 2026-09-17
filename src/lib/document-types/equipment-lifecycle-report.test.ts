@@ -202,7 +202,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v7");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v8");
   });
 
   it("asks which container format when attachments name both and the title page is unset", () => {
@@ -215,6 +215,7 @@ describe("equipment lifecycle report definition", () => {
     );
     expect(def.chat.draftingGuidance).toContain("1 April to 31 March");
     expect(def.chat.draftingGuidance).toContain("one row per Grade A / environmental **method**");
+    expect(def.chat.draftingGuidance).toContain("compact process-alarm");
     expect(def.chat.draftingGuidance).toContain("ATTACHMENT NO.");
     expect(def.chat.draftingGuidance).toContain("findingsOmitted");
     expect(def.chat.draftingGuidance).toContain("Limits and counts");

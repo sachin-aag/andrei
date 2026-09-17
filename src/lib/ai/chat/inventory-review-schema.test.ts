@@ -5,6 +5,7 @@ import {
   inventoryColumnNeedles,
   inventoryReadyIdsForObjective,
   inventorySectionForObjective,
+  preferredInventoryEvidenceSkipped,
   scoreInventoryReviewPage,
 } from "./inventory-review-schema";
 
@@ -66,6 +67,12 @@ describe("filenameConflictsWithInventoryObjective", () => {
       filenameConflictsWithInventoryObjective(
         "Master Annual Calibration Planner PR.pdf",
         "elr_calibration"
+      )
+    ).toBe(false);
+    expect(
+      filenameConflictsWithInventoryObjective(
+        "SCADA Alarms Trend Q1 2025.pdf",
+        "elr_monitoring"
       )
     ).toBe(false);
   });
@@ -230,5 +237,33 @@ describe("scoreInventoryReviewPage", () => {
         "elr_monitoring"
       )
     ).toBe(0);
+  });
+
+  it("queues alarm-trend pages on a monitoring walk", () => {
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "Alarm trend Q2 2025.pdf",
+          transcript:
+            "Alarm Description FM Nitrogen Not Available Count 1950 Direct Impact N",
+          outlineTitle: "Alarm trend",
+        },
+        "elr_monitoring"
+      )
+    ).toBeGreaterThan(0);
+    expect(
+      preferredInventoryEvidenceSkipped(
+        "elr_monitoring",
+        ["PRQR-25-PR-005 Report.pdf"],
+        ["Alarm trend Q2 2025.pdf"]
+      )
+    ).toBe(true);
+    expect(
+      preferredInventoryEvidenceSkipped(
+        "elr_monitoring",
+        ["PRQR-25-PR-005 Report.pdf", "Alarm trend Q2 2025.pdf"],
+        ["CSV-OQ-PR-055 PART-1.pdf"]
+      )
+    ).toBe(false);
   });
 });

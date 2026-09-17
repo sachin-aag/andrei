@@ -172,9 +172,15 @@ is read.
 Monitoring (elr_monitoring): one row per Grade A / environmental **method**
 (non-viable particles, active viable air, settle plate, surface and glove,
 differential pressure, LAF / air velocity). Do not merge methods into one
-"viable" row. Do not add SCADA process alarms (Nitrogen, compressed air) —
-those belong in alarms. Period Covered is the Indian FY (1 April–31 March),
-not the alarm-trend PDF's date range.
+"viable" row. After those method rows, also include compact process-alarm
+rows from the alarm-trend report (Nitrogen, compressed air, and other SCADA
+codes with occurrence counts, Direct Impact, CAPA). Period Covered on every
+row is the Indian FY (1 April–31 March), not the alarm-trend PDF's quarter.
+The assessment interprets excursion counts **and** this period's alarm
+picture (top codes, DI, CAPA, lost runtime). Alarm Trends (elr_alarms) still
+gets the full alarm matrix and 3.11.1 trend — monitoring does not replace it.
+Queue PRQR method pages **and** the alarm-trend PDF on the monitoring walk;
+skipping the alarm-trend file is not finished coverage.
 
 QMS: if a record is still open at the ELR cut-off, say so in the assessment
 (status cell alone is not enough).
