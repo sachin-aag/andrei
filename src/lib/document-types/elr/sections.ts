@@ -156,11 +156,11 @@ export const ELR_ALARM_HEADERS = [
 export const ELR_ACCESS_CONTROL_HEADERS = [
   "Sr. No.",
   "System Name / ID",
-  "User Name / ID",
-  "Role / Privilege Level",
-  "Action (Granted / Modified / Revoked)",
-  "Date",
-  "Document Reference",
+  "Task",
+  "Operator",
+  "Supervisor",
+  "Maintenance",
+  "Administrator",
 ] as const;
 
 export const ELR_AUDIT_TRAIL_HEADERS = [

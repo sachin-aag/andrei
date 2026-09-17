@@ -451,11 +451,18 @@ export const ALARM_COLUMN_SCHEMA: readonly MatrixColumnSchema<AlarmColumnId>[] =
 export type AccessControlColumnId =
   | "serial"
   | "systemName"
-  | "userName"
-  | "role"
-  | "action"
-  | "date"
-  | "documentRef";
+  | "task"
+  | "operator"
+  | "supervisor"
+  | "maintenance"
+  | "administrator";
+
+export const ACCESS_CONTROL_ROLE_IDS = [
+  "operator",
+  "supervisor",
+  "maintenance",
+  "administrator",
+] as const satisfies readonly AccessControlColumnId[];
 
 export const ACCESS_CONTROL_COLUMN_SCHEMA: readonly MatrixColumnSchema<AccessControlColumnId>[] =
   [
@@ -466,25 +473,34 @@ export const ACCESS_CONTROL_COLUMN_SCHEMA: readonly MatrixColumnSchema<AccessCon
       aliases: ["system name id", "system name", "system"],
     },
     {
-      id: "userName",
-      label: "User Name / ID",
-      aliases: ["user name id", "user name", "user", "user id"],
+      id: "task",
+      label: "Task",
+      aliases: [
+        "task",
+        "authorized function",
+        "privilege matrix",
+        "access matrix",
+      ],
     },
     {
-      id: "role",
-      label: "Role / Privilege Level",
-      aliases: ["role privilege level", "role", "privilege", "access level"],
+      id: "operator",
+      label: "Operator",
+      aliases: ["operator"],
     },
     {
-      id: "action",
-      label: "Action (Granted / Modified / Revoked)",
-      aliases: ["action granted modified revoked", "action"],
+      id: "supervisor",
+      label: "Supervisor",
+      aliases: ["supervisor"],
     },
-    { id: "date", label: "Date", aliases: ["date"] },
     {
-      id: "documentRef",
-      label: "Document Reference",
-      aliases: ["document reference", "document ref", "document no"],
+      id: "maintenance",
+      label: "Maintenance",
+      aliases: ["maintenance"],
+    },
+    {
+      id: "administrator",
+      label: "Administrator",
+      aliases: ["administrator", "admin"],
     },
   ];
 

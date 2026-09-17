@@ -396,7 +396,7 @@ export function ElrAccessControlEditor() {
       section="elr_access_control"
       narrativeLabel="Assessment"
       tableLabel={ELR_TABLE_CAPTION_TITLES.elr_access_control}
-      narrativePlaceholder="Separate initial qualification of access control (21 CFR Part 11) from what was verified this period: admin holders, privilege changes, leavers removed. Interpret the table counts."
+      narrativePlaceholder="Copy the SOP / CSV privilege matrix as-is. Stamp System Name / ID from the annexure header. Separate initial qualification (21 CFR Part 11) from last review and admin recertification this period."
       hint="Where the control system is shared across the line, scope to this equipment where the system permits and mark the remainder Line-common."
     />
   );
