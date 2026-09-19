@@ -108,8 +108,9 @@ import {
 } from "@/lib/ai/chat/image-parts";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  assistantPartsAreCannedError,
   chatWatchdogPhase,
+  isCannedAssistantNoticeText,
+  shouldHidePlanContinuingAssistantTurn,
   shouldShowChatClientError,
   shouldShowEmptyAssistantError,
 } from "@/lib/ai/chat/assistant-turn";
@@ -447,16 +448,18 @@ const MessageTurn = memo(function MessageTurn({
   // Assistant turn: full-width, no bubble (Cursor-style), tool chips inline.
   const parts = message.parts ?? [];
   const planContinuing = continuationFromMetadata(messageMetadata) != null;
-  const cannedFailure = assistantPartsAreCannedError(parts);
   const showEmptyError = shouldShowEmptyAssistantError({
     parts,
     streaming,
     planContinuing,
   });
-  const hideCannedPlanFailure = Boolean(
-    cannedFailure && planContinuing && !streaming
-  );
-  if (hideCannedPlanFailure) return null;
+  if (
+    planContinuing &&
+    !streaming &&
+    shouldHidePlanContinuingAssistantTurn(parts)
+  ) {
+    return null;
+  }
   return (
     <div
       className="flex flex-col gap-2"
@@ -484,6 +487,9 @@ const MessageTurn = memo(function MessageTurn({
           (block, i) => {
             if (block.kind === "text") {
               if (!block.text.trim()) return null;
+              if (planContinuing && isCannedAssistantNoticeText(block.text)) {
+                return null;
+              }
               return (
                 <ChatMarkdown key={i} onOpenCitation={onOpenCitation}>
                   {block.text}

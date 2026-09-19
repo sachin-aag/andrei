@@ -227,6 +227,65 @@ describe("groundDraftText citation parking", () => {
     expect(grounded.text).not.toContain(`[${REPORT}, p. 2] [1]`);
     expect(grounded.text).not.toContain(`[${PROTOCOL}, p. 21]`);
   });
+
+  it("keeps a cited date on the named page when that date also appears on SOP/PRQ pages", () => {
+    const vsr = "VSR-25-PR-001.pdf";
+    const sop = "SOP-DP-QA-014.pdf";
+    const date = "15/07/2024";
+    const grounded = groundDraftText({
+      text: `Last validation ${date} [${vsr}, p. 4].`,
+      ledger: ledgerFromPages([
+        {
+          filename: vsr,
+          pageNumber: 4,
+          attachmentId: "att-vsr",
+          quote: "",
+        },
+        {
+          filename: sop,
+          pageNumber: 12,
+          attachmentId: "att-sop",
+          quote: `Revision history approved ${date}. Periodic re-qualification ${date}.`,
+        },
+        {
+          filename: "PRQR-25-PR-005.pdf",
+          pageNumber: 3,
+          attachmentId: "att-prq",
+          quote: `Qualification completed ${date}.`,
+        },
+      ]),
+      policy: "block",
+    });
+    expect(grounded.blocked).toBe(false);
+    expect(
+      grounded.provenance.claims.find((claim) => claim.text === date)?.status
+    ).toBe("verified");
+    expect(grounded.text).toContain(`[${vsr}, p. 4]`);
+    expect(grounded.text).not.toContain(`[${sop}, p. 12]`);
+  });
+
+  it("does not steal a shared parked [n] when only one claim must move", () => {
+    const parkedDraft = `The review follows ${SOP} [1]. Isolation was 14 days [1].\n\nCitations:\n1. [${PROTOCOL}, p. 21]`;
+    const durationPages = [
+      ...pages,
+      {
+        filename: REPORT,
+        pageNumber: 8,
+        attachmentId: "att-report",
+        quote: "Hold time 14 days before load.",
+      },
+    ];
+    const grounded = groundDraftText({
+      text: parkedDraft,
+      ledger: ledgerFromPages(durationPages),
+      policy: "block",
+    });
+    expect(grounded.text).toMatch(/14 days \[2\]/);
+    expect(grounded.text).toMatch(new RegExp(`${SOP.replaceAll("/", "\\/")} \\[1\\]`));
+    expect(grounded.text).toContain(`1. [${REPORT}, p. 2]`);
+    expect(grounded.text).toContain(`2. [${REPORT}, p. 8]`);
+    expect(grounded.text).not.toContain(`[${PROTOCOL}, p. 21]`);
+  });
 });
 
 describe("groundTableOperation", () => {
@@ -252,6 +311,54 @@ describe("groundTableOperation", () => {
       kind: "edit_cells",
       cells: [{ insertText: "<identifier> [PQR-24-PR-102.pdf, p. 2]" }],
     });
+  });
+
+  it("keeps a CSV date on the VSR cited in documentRef instead of a colliding SOP page", () => {
+    const vsr = "VSR-25-PR-001.pdf";
+    const sop = "SOP-DP-QA-014.pdf";
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "1",
+            "SCADA",
+            "Validated",
+            "15/07/2024 [CSV-cover.pdf, p. 1]",
+            "14/07/2025",
+            "VSR-25-PR-001",
+          ],
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: "CSV-cover.pdf",
+          pageNumber: 1,
+          attachmentId: "att-cover",
+          quote: "Computerized System Validation Status.",
+        },
+        {
+          filename: vsr,
+          pageNumber: 4,
+          attachmentId: "att-vsr",
+          quote:
+            "VSR-25-PR-001 last validation 15/07/2024 revalidation due 14/07/2025.",
+        },
+        {
+          filename: sop,
+          pageNumber: 12,
+          attachmentId: "att-sop",
+          quote: "SOP revision approved 15/07/2024. Next review 14/07/2025.",
+        },
+      ]),
+      policy: "block",
+    });
+    expect(result.blocked).toBe(false);
+    const dateCell = (result.operation as { rows: string[][] }).rows[0]![3]!;
+    expect(dateCell).toContain(`[${vsr}, p. 4]`);
+    expect(dateCell).not.toContain(`[${sop}, p. 12]`);
+    expect(dateCell).not.toContain("[CSV-cover.pdf, p. 1]");
   });
 });
 

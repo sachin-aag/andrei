@@ -152,15 +152,75 @@ const FILE_EXT_RE = /\.(?:pdf|docx)\b/gi;
 const SOURCE_SEPARATOR_RE = /^\s*[;,]\s+(?!p\.\s*\d)/;
 const LEFTOVER_SOURCE_SEP_RE = /^\s*[;,]\s*/;
 
-/** Consume `,` / `;` (and surrounding spaces) between sources. */
+/**
+ * Hyphenated / slashed exhibit ids (`E-PR-068`, `SOP/DP/QA/014`) that sit
+ * beside a `.pdf`/`.docx` in an `and`-combined cite. Not a batch code
+ * (`B-2024-117`) — those stay placeholders unless they already pass
+ * `isCitationShapedCore`.
+ */
+const SOURCE_STEM_RE =
+  /^(?:[A-Z]{1,8}(?:[-_/][A-Z0-9]{2,})+|[A-Z]{1,8}(?:\/[A-Z0-9]+)+)$/i;
+
+function looksLikeSourceStem(text: string): boolean {
+  const trimmed = citeCoreWithoutPage(text.trim());
+  if (!trimmed || /\s/.test(trimmed)) return false;
+  if (isCitationShapedCore(trimmed)) return true;
+  return SOURCE_STEM_RE.test(trimmed);
+}
+
+function looksLikeNextSourceToken(token: string): boolean {
+  const trimmed = token.trim();
+  if (!trimmed) return false;
+  if (/\.(?:pdf|docx)$/i.test(trimmed)) return true;
+  return looksLikeSourceStem(trimmed);
+}
+
+const AND_SOURCE_SEP_RE = /^\s*and\s+/i;
+
+/** Consume `,` / `;` / `and` (and surrounding spaces) between sources. */
 function skipSourceSeparator(inner: string, cursor: number): number {
   let i = cursor;
   while (i < inner.length && /\s/.test(inner[i]!)) i += 1;
   if (inner[i] === "," || inner[i] === ";") {
     i += 1;
     while (i < inner.length && /\s/.test(inner[i]!)) i += 1;
+    return i;
   }
-  return i;
+  const rest = inner.slice(cursor);
+  const andSep = AND_SOURCE_SEP_RE.exec(rest);
+  if (!andSep) return cursor;
+  const after = rest.slice(andSep[0].length);
+  const nextToken = (after.split(/[,\s]/)[0] ?? "").trim();
+  if (
+    looksLikeNextSourceToken(nextToken) ||
+    /\.(?:pdf|docx)\b/i.test(after.slice(0, 80))
+  ) {
+    return cursor + andSep[0].length;
+  }
+  return cursor;
+}
+
+/**
+ * `E-PR-068 and E-PR-071.pdf` — peel the stem left of `and` so the leftover
+ * does not extend the last `.pdf` range. `filling and sealing machine.pdf`
+ * stays one filename (`filling` is not a source stem).
+ */
+function peelAndSourcePrefix(
+  inner: string,
+  cursor: number,
+  extIndex: number
+): { prefix: string | null; start: number } {
+  const between = inner.slice(cursor, extIndex);
+  const re = /\s+and\s+/gi;
+  let last: { index: number; length: number } | null = null;
+  let found: RegExpExecArray | null;
+  while ((found = re.exec(between)) !== null) {
+    last = { index: found.index, length: found[0].length };
+  }
+  if (!last) return { prefix: null, start: cursor };
+  const left = between.slice(0, last.index).trim();
+  if (!looksLikeSourceStem(left)) return { prefix: null, start: cursor };
+  return { prefix: left, start: cursor + last.index + last.length };
 }
 
 /**
@@ -178,6 +238,7 @@ function splitByPdfDocxAnchors(inner: string): string[] | null {
   if (matches.length === 0) return null;
 
   const ranges: { start: number; end: number }[] = [];
+  const prefixes: string[] = [];
   let cursor = 0;
   for (let i = 0; i < matches.length; i++) {
     const ext = matches[i]!;
@@ -185,6 +246,11 @@ function splitByPdfDocxAnchors(inner: string): string[] | null {
     if (i > 0) {
       const skipped = skipSourceSeparator(inner, cursor);
       if (skipped !== cursor) cursor = skipped;
+    }
+    const peeled = peelAndSourcePrefix(inner, cursor, ext.index);
+    if (peeled.prefix) {
+      prefixes.push(peeled.prefix);
+      cursor = peeled.start;
     }
     if (ext.index < cursor) return null;
     let end = ext.index + ext.length;
@@ -197,30 +263,37 @@ function splitByPdfDocxAnchors(inner: string): string[] | null {
     cursor = end;
   }
 
+  const asParts = (extra: string[] = []): string[] =>
+    [...prefixes, ...ranges.map((range) => inner.slice(range.start, range.end).trim()), ...extra]
+      .map((part) => part.trim())
+      .filter(Boolean);
+
   const leftover = inner.slice(cursor);
   const leftoverSep = LEFTOVER_SOURCE_SEP_RE.exec(leftover);
   if (leftoverSep) {
     const rest = leftover.slice(leftoverSep[0].length).trim();
-    const parts = ranges
-      .map((range) => inner.slice(range.start, range.end).trim())
-      .filter(Boolean);
-    if (rest) parts.push(...splitWithoutFileExtensions(rest));
+    const parts = asParts(rest ? splitWithoutFileExtensions(rest) : []);
     return parts.length > 0 ? parts : null;
   }
   if (leftover.trim() && ranges.length > 0) {
+    const leftoverAnd = AND_SOURCE_SEP_RE.exec(leftover);
+    if (leftoverAnd) {
+      const rest = leftover.slice(leftoverAnd[0].length).trim();
+      const parts = asParts(rest ? splitWithoutFileExtensions(rest) : []);
+      return parts.length > 0 ? parts : null;
+    }
     ranges[ranges.length - 1]!.end = inner.length;
   }
-  const parts = ranges
-    .map((range) => inner.slice(range.start, range.end).trim())
-    .filter(Boolean);
+  const parts = asParts();
   return parts.length > 0 ? parts : null;
 }
 
 /**
- * Split `[file A, p. N, file B, p. M]` (or `;` between files) into one inner
+ * Split `[file A, p. N, file B, p. M]` (or `;` / `and` between files) into one inner
  * string per source. Same-file page lists (`p. 4, 26, 163`, `p. 1, p. 2`,
  * `p. 1-3`) stay a single part. Commas inside a `.pdf`/`.docx` filename are
- * not treated as a new source.
+ * not treated as a new source. `E-PR-068 and E-PR-071.pdf` is two parts;
+ * `filling and sealing machine.pdf` stays one filename.
  */
 export function splitSourceCitationParts(inner: string): string[] {
   const trimmed = inner.trim();
@@ -443,8 +516,9 @@ function isCitationShapedCore(core: string): boolean {
  * - page cites `[name, p. N]` / `[name, p. N, M]` / `[name, p. 1, p. 2]` /
  *   `[name, p. 1-3]` (any name; extension optional; commas in the filename stay
  *   in that cite)
- * - combined sources in one bracket, comma or semicolon separated
- *   (`[A.pdf, p. 1; B.pdf, p. 1-3]`) when every part is itself a cite
+ * - combined sources in one bracket, comma, semicolon, or `and` separated
+ *   (`[A.pdf, p. 1; B.pdf, p. 1-3]`, `[E-PR-068 and E-PR-071.pdf, p. 1]`)
+ *   when every part is a cite or a hyphenated/slashed exhibit stem
  * - bare attachment filenames using supported extensions from file-types
  * - extension-less exhibit labels (`[Attachment_XIV]`, lists, optional page)
  * - appendix / report-number cites (`[Appendix B]`,
@@ -462,7 +536,13 @@ export function isCitationShapedBracket(match: string): boolean {
   if (!core) return false;
   const parts = splitSourceCitationParts(core);
   if (parts.length > 1) {
-    return parts.every((part) => isCitationShapedCore(part));
+    const shaped = parts.filter((part) => isCitationShapedCore(part));
+    if (shaped.length === 0) return false;
+    return parts.every(
+      (part) =>
+        isCitationShapedCore(part) ||
+        looksLikeSourceStem(citeCoreWithoutPage(part))
+    );
   }
   return isCitationShapedCore(core);
 }
