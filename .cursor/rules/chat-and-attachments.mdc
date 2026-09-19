@@ -115,7 +115,7 @@ and `truncated !== true`.
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
 against the citation ledger's served quotes (`groundDraftText`). Skip
 attachment grounding (and skip the repair search) for title-page /
-user-confirmed identity, the ELR Indian FY window, recap sections, and
+user-confirmed identity, the ELR 1 April–31 March window, recap sections, and
 assessment narratives (`citation-exemption.ts`). Inventory tables stay
 strict. Finish seeds `reviewedEvidence` (every walked page, not the
 60-finding sample) so those transcripts can hydrate. Empty ledger or

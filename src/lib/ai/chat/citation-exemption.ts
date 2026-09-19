@@ -253,7 +253,7 @@ function identityHaystacks(input: {
   return haystacks;
 }
 
-/** Title-page identity, user-confirmed facts, and Indian FY bounds. */
+/** Title-page identity, user-confirmed facts, and 1 April–31 March bounds. */
 export function isExemptFrameFact(
   fact: HardFact,
   source: {

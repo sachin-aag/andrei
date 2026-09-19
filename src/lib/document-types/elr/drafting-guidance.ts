@@ -89,7 +89,7 @@ Indirect Impact and No Impact systems do not.
 ## Document numbering (§7.3)
 
 \`<TYPE>-<FY>-<DEPT>-<NNN>\` — e.g. \`PRQP-25-PR-001\`, \`PQR-24-PR-042\`,
-\`CSV-OQ-PR-055\`. FY is the last two digits of the financial year; DEPT is
+\`CSV-OQ-PR-055\`. FY is the last two digits of the 1-April start year; DEPT is
 QA / QC / MB / WH / EU / PR / PK / IT / PUR / EHS; NNN is a 3-digit serial.
 Addenda append \`-AD01\`, \`-AD02\`. Equipment is \`E/PR/0NN\`; instruments hang off
 the parent as \`E/PR/0NN/<type> <n>-NN\`. Never invent a number that does not
@@ -103,23 +103,34 @@ system validation SOP/DP/QA/015, alarm categorization SOP/DP/QA/036.
 Qualification discrepancies are raised on form SOP/DP/QA/014/F14 and graded
 Minor / Major / Critical (§7.14.3).
 
-## Period rules — Indian financial year
+## Period rules — 1 April to 31 March
 
-The ELR period is always **1 April to 31 March of the following year**
-(Indian FY). Never copy a 3-month SCADA alarm-trend window, a PRQR
+For MJ, the ELR period always **starts on 1 April** and **ends on 31 March
+of the following year**. Always write **both** calendar dates (start and
+end) — e.g. 01/04/2025 to 31/03/2026, or 1 April 2025 to 31 March 2026.
+Do not give the window a named-year label; the two dates are the period.
+Never write a start date with an implied cutoff ("through the annual
+review cutoff"). Never copy a 3-month SCADA alarm-trend window, a PRQR
 execution span, or an August–July rolling year. Prefer the title-page
-dates when they already are 1 April–31 March; otherwise infer the FY from
-periodFrom, last PRQ date, or document FY digits (\`PRQR-25\` → April 2025–
-March 2026).
+dates when they already are 1 April–31 March; otherwise infer the window
+from periodFrom, last PRQ date, or document FY digits (\`PRQR-25\` → 1 April
+2025–31 March 2026).
 
 - Qualification history (elr_qualification): **cumulative**, the whole life of
   the equipment. No date cut-off.
 - QMS records (elr_qms): from the **completion date of the last PRQ** to the
-  ELR cut-off (31 March of that FY). Not a quarter.
-- Everything else, including monitoring **Period Covered**: that FY window
-  (1 April–31 March).
+  ELR end date (31 March of the following year). Not a quarter.
+- Everything else, including monitoring **Period Covered**: that same window
+  (1 April to 31 March of the following year), with both dates named.
 
 Open or unresolved items carry forward regardless of date.
+
+## Scope — both period dates
+
+Scope is short, but the period sentence must name the **start date (1 April /
+01/04)** and the **end date (31 March / 31.03 of the following year)**.
+"Starting 01/04/2025 through the annual review cutoff" is incomplete — write
+31.03 of the following year as the end date.
 
 ## Container format — this report covers one format
 
@@ -197,7 +208,8 @@ differential pressure, LAF / air velocity). Do not merge methods into one
 "viable" row. After those method rows, also include compact process-alarm
 rows from the alarm-trend report (Nitrogen, compressed air, and other SCADA
 codes with occurrence counts, Direct Impact, CAPA). Period Covered on every
-row is the Indian FY (1 April–31 March), not the alarm-trend PDF's quarter.
+row is 1 April to 31 March of the following year (both dates), not the
+alarm-trend PDF's quarter.
 The assessment interprets excursion counts **and** this period's alarm
 picture (top codes, DI, CAPA, lost runtime). Alarm Trends (elr_alarms) still
 gets the full alarm matrix and 3.9.1 trend — monitoring does not replace it.
@@ -354,12 +366,12 @@ missing from a table, use a <label> placeholder and say what document would
 settle it. Search attached evidence before asking.
 
 Do not search-for-cite (and do not invent a page) for title-page identity or
-the Indian FY window the engineer already confirmed — equipment ID, container
-format, and 1 April–31 March. Purpose, Responsibilities, and Abbreviations
+the 1 April–31 March window the engineer already confirmed — equipment ID, container
+format, and both period dates. Purpose, Responsibilities, and Abbreviations
 do not need attachment citations; they frame this report, they are not
 evidence rows. Scope and Equipment description still cite make, model, and
-other facts copied from attachments; they do not cite the FY period or the
-title-page equipment ID. Assessment narratives, System Trends, Conclusion,
+other facts copied from attachments; they do not cite the 1 April–31 March
+period or the title-page equipment ID. Assessment narratives, System Trends, Conclusion,
 and Risk Actions narrative recap this document or the table just drafted —
 do not grep to park a page next to those sentences.
 

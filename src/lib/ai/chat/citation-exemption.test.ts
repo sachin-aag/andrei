@@ -149,7 +149,7 @@ describe("isExemptFrameFact", () => {
     latestUserMessageText: "lets go for cartridge. go for april 2024 to march 2025",
   };
 
-  it("exempts title-page equipment IDs and Indian FY bounds", () => {
+  it("exempts title-page equipment IDs and 1 April–31 March bounds", () => {
     const facts = extractHardFacts(
       "Equipment E/PR/071. Period 01 April 2024 to 31 March 2025."
     );
