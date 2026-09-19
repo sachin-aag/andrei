@@ -308,7 +308,19 @@ describe("splitSourceCitationParts", () => {
     ]);
   });
 
-  it("does not split on commas inside a pdf filename", () => {
+  it("splits two files joined with and", () => {
+    expect(
+      splitSourceCitationParts("E-PR-068.pdf, p. 1 and E-PR-071.pdf, p. 1")
+    ).toEqual(["E-PR-068.pdf, p. 1", "E-PR-071.pdf, p. 1"]);
+  });
+
+  it("splits an exhibit stem and a pdf joined with and", () => {
+    expect(
+      splitSourceCitationParts("E-PR-068 and E-PR-071.pdf, p. 1")
+    ).toEqual(["E-PR-068", "E-PR-071.pdf, p. 1"]);
+  });
+
+  it("does not split and inside a pdf filename", () => {
     expect(
       splitSourceCitationParts(
         "URS-FP-21-006 vial washinh, sterilization, filling and sealing machine.pdf, p. 16"
@@ -391,17 +403,16 @@ describe("sourceCitationLinkSpans", () => {
     );
   });
 
-  it("makes two inner links for a semicolon-combined cite with a page range", () => {
-    const match =
-      "[Alarm trend 01 April to 30 June 25 (2).pdf, p. 1; AAP-E-PR-070-036-R00 List of alarm and their action plan Filling.pdf, p. 1-3]";
+  it("makes two inner links for an and-combined cite", () => {
+    const match = "[E-PR-068 and E-PR-071.pdf, p. 1]";
     expect(isCitationShapedBracket(match)).toBe(true);
     const spans = sourceCitationLinkSpans(match);
     expect(spans).toHaveLength(2);
-    expect(spans[0]?.openRaw).toBe(
-      "[Alarm trend 01 April to 30 June 25 (2).pdf, p. 1]"
-    );
-    expect(spans[1]?.openRaw).toBe(
-      "[AAP-E-PR-070-036-R00 List of alarm and their action plan Filling.pdf, p. 1-3]"
+    expect(spans[0]?.openRaw).toBe("[E-PR-068]");
+    expect(spans[1]?.openRaw).toBe("[E-PR-071.pdf, p. 1]");
+    expect(match.slice(spans[0]!.from, spans[0]!.to)).toBe("E-PR-068");
+    expect(match.slice(spans[1]!.from, spans[1]!.to)).toBe(
+      "E-PR-071.pdf, p. 1"
     );
   });
 });

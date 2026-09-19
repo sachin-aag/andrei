@@ -2167,6 +2167,163 @@ describe("buildChatTools propose edits", () => {
     expect(searchReportDocumentsManyMock).toHaveBeenCalled();
   });
 
+  it("does not repair-search Purpose for an uncited SOP number", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-elr-obj",
+                  reportId: "report-1",
+                  section: "elr_objective",
+                  content: { narrative: { type: "doc", content: [] } },
+                },
+              ]
+        ),
+      }),
+    }));
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "equipment_lifecycle_report",
+      unsupportedFactPolicy: "block",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: "planner" },
+              output: {
+                results: [
+                  {
+                    filename: "Planner.pdf",
+                    pageNumber: 22,
+                    attachmentId: "att-plan",
+                    quote: "Annual calibration planner EQ-12 Balance",
+                    citationId: "att:att-plan:p:22",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "elr_objective",
+        targetField: "narrative",
+        markdown:
+          "Periodic review in accordance with Validation/Qualification Procedure SOP/DP/QA/014.",
+        reasoning: "Draft Purpose.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted[0]?.content).toContain("SOP/DP/QA/014");
+    expect(searchReportDocumentsManyMock).not.toHaveBeenCalled();
+  });
+
+  it("does not block Scope FY dates the engineer already confirmed", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-elr-scope",
+                  reportId: "report-1",
+                  section: "elr_scope",
+                  content: { narrative: { type: "doc", content: [] } },
+                },
+              ]
+        ),
+      }),
+    }));
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "equipment_lifecycle_report",
+      unsupportedFactPolicy: "block",
+      reportMetadata: {
+        equipmentId: "E/PR/071",
+        formatScope: "Cartridge",
+      },
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "lets go for cartridge. go for april 2024 to march 2025",
+            },
+          ],
+        },
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: "planner" },
+              output: {
+                results: [
+                  {
+                    filename: "Planner.pdf",
+                    pageNumber: 22,
+                    attachmentId: "att-plan",
+                    quote: "Annual calibration planner EQ-12 Balance",
+                    citationId: "att:att-plan:p:22",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "elr_scope",
+        targetField: "narrative",
+        markdown:
+          "This ELR covers cartridge filling machine E/PR/071 for 01 April 2024 to 31 March 2025.",
+        reasoning: "Draft Scope.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted[0]?.content).toContain("01 April 2024");
+    expect(inserted[0]?.content).toContain("E/PR/071");
+    expect(searchReportDocumentsManyMock).not.toHaveBeenCalled();
+  });
+
   it("persists leftover MJ placeholders when repair search finds a new page", async () => {
     mockDefineSectionSelect({ type: "doc", content: [] });
     readDocumentPageMock.mockResolvedValueOnce({

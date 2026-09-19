@@ -252,6 +252,12 @@ import {
   type UnsupportedFactsToolResult,
 } from "@/lib/ai/chat/ground-draft";
 import {
+  citationGroundingMode,
+  citationGroundingRunsRepair,
+  type CitationWriteTool,
+  type GroundDraftGrounding,
+} from "@/lib/ai/chat/citation-exemption";
+import {
   repairSearchQueries,
   repairTextsFromTableOperation,
   searchUnsupportedFactsRepair,
@@ -1084,6 +1090,8 @@ export function buildChatTools(opts: {
     citationId?: string;
     sourceSha256?: string;
   }[];
+  /** Title-page identity for frame-fact citation exemptions (ELR period, equipment ID). */
+  reportMetadata?: Record<string, unknown> | null;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1202,6 +1210,20 @@ export function buildChatTools(opts: {
   }
   const unsupportedFactPolicy: UnsupportedFactPolicy =
     opts.unsupportedFactPolicy ?? getCustomerPack().unsupportedFactPolicy;
+  const writeGrounding = (
+    section: SectionType,
+    targetField: string,
+    tool: CitationWriteTool
+  ): GroundDraftGrounding => ({
+    mode: citationGroundingMode({
+      documentType,
+      section,
+      targetField,
+      tool,
+    }),
+    reportMetadata: opts.reportMetadata ?? null,
+    latestUserMessageText: latestUserMessageText(messages),
+  });
   let evidenceHydrate: Promise<void> | null = null;
   const ensureEvidence = () => {
     evidenceHydrate ??= citationLedger.hydrateQuotes(async (pages) => {
@@ -2078,23 +2100,31 @@ export function buildChatTools(opts: {
             )
           : null;
         await ensureEvidence();
+        const insertGrounding = writeGrounding(
+          section,
+          resolvedField,
+          "propose_edit"
+        );
         let groundedInsert = groundDraftText({
           text: insertText,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
+          grounding: insertGrounding,
         });
         let groundedSecond = rawSecond
           ? groundDraftText({
               text: rawSecond.insertText ?? "",
               ledger: citationLedger,
               policy: unsupportedFactPolicy,
+              grounding: insertGrounding,
             })
           : null;
         const leftoverInsert = `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`;
         const repair =
-          groundedInsert.blocked ||
-          Boolean(groundedSecond?.blocked) ||
-          containsGatedFactPlaceholders(leftoverInsert)
+          citationGroundingRunsRepair(insertGrounding.mode ?? "strict") &&
+          (groundedInsert.blocked ||
+            Boolean(groundedSecond?.blocked) ||
+            containsGatedFactPlaceholders(leftoverInsert))
             ? await runUnsupportedFactsRepair({
                 unsupported: [
                   ...groundedInsert.unsupported,
@@ -2110,12 +2140,14 @@ export function buildChatTools(opts: {
             text: insertText,
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
+            grounding: insertGrounding,
           });
           groundedSecond = rawSecond
             ? groundDraftText({
                 text: rawSecond.insertText ?? "",
                 ledger: citationLedger,
                 policy: unsupportedFactPolicy,
+                grounding: insertGrounding,
               })
             : null;
         }
@@ -3174,14 +3206,21 @@ export function buildChatTools(opts: {
           fieldDoc,
           parsedOp
         );
+        const tableGrounding = writeGrounding(
+          section,
+          resolvedField,
+          "edit_table"
+        );
         let groundedTable = groundTableOperation({
           operation: originalTableOp,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
+          grounding: tableGrounding,
         });
         const tableNeedsRepair =
-          groundedTable.blocked ||
-          tableOperationContainsGatedPlaceholders(groundedTable.operation);
+          citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
+          (groundedTable.blocked ||
+            tableOperationContainsGatedPlaceholders(groundedTable.operation));
         const repair = tableNeedsRepair
           ? await runUnsupportedFactsRepair({
               unsupported: groundedTable.unsupported,
@@ -3193,6 +3232,7 @@ export function buildChatTools(opts: {
             operation: originalTableOp,
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
+            grounding: tableGrounding,
           });
         }
         if (groundedTable.blocked) {
@@ -3533,14 +3573,21 @@ export function buildChatTools(opts: {
           markdownForDraft = coercedEnum.value;
         }
         const normalizedMarkdown = normalizeSuggestionInsertText(markdownForDraft);
+        const draftGrounding = writeGrounding(
+          section,
+          resolvedField,
+          "draft_field"
+        );
         let groundedDraft = groundDraftText({
           text: normalizedMarkdown,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
+          grounding: draftGrounding,
         });
         const repair =
-          groundedDraft.blocked ||
-          containsGatedFactPlaceholders(groundedDraft.text)
+          citationGroundingRunsRepair(draftGrounding.mode ?? "strict") &&
+          (groundedDraft.blocked ||
+            containsGatedFactPlaceholders(groundedDraft.text))
             ? await runUnsupportedFactsRepair({
                 unsupported: groundedDraft.unsupported,
                 texts: [normalizedMarkdown],
@@ -3551,6 +3598,7 @@ export function buildChatTools(opts: {
             text: normalizedMarkdown,
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
+            grounding: draftGrounding,
           });
         }
         if (groundedDraft.blocked) {
