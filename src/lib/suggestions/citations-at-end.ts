@@ -644,7 +644,9 @@ export function citationNumbersFromText(text: string): Set<number> {
 
 /** Numbers assigned in a TipTap field's trailing Citations list. */
 export function citationNumbersFromDoc(doc: JSONContent): Set<number> {
-  return numberingFromDoc(doc).numbers();
+  const fromList = numberingFromDoc(doc).numbers();
+  if (fromList.size > 0) return fromList;
+  return citationMarkerNumbersFromDoc(doc);
 }
 
 /** Drop a trailing Citations:/References: block from plain text. */
@@ -709,6 +711,306 @@ export function stripTrailingCitationsFromContent(content: unknown): unknown {
     );
   }
   return content;
+}
+
+function walkJsonTextNodes(
+  node: JSONContent,
+  visit: (text: string) => void
+): void {
+  if (node.type === "text" && typeof node.text === "string") {
+    visit(node.text);
+    return;
+  }
+  for (const child of node.content ?? []) walkJsonTextNodes(child, visit);
+}
+
+function rewriteCitationFields(
+  content: unknown,
+  rewriteText: (text: string) => string,
+  rewriteDoc: (doc: JSONContent) => JSONContent
+): unknown {
+  if (typeof content === "string") return rewriteText(content);
+  if (isTiptapDoc(content)) return rewriteDoc(content);
+  if (Array.isArray(content)) {
+    return content.map((item) =>
+      rewriteCitationFields(item, rewriteText, rewriteDoc)
+    );
+  }
+  if (content && typeof content === "object") {
+    return Object.fromEntries(
+      Object.entries(content as Record<string, unknown>).map(([key, value]) => [
+        key,
+        rewriteCitationFields(value, rewriteText, rewriteDoc),
+      ])
+    );
+  }
+  return content;
+}
+
+/** Drop a trailing Citations:/References: list; keep `[n]` markers in the body. */
+export function dropTrailingCitationListFromText(text: string): string {
+  return splitTrailingCitationBlock(text).body;
+}
+
+/** Drop a trailing Citations:/References: list; keep `[n]` markers in the body. */
+export function dropTrailingCitationListFromDoc(doc: JSONContent): JSONContent {
+  if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
+    return doc;
+  }
+  const part = partitionBibliography(doc.content);
+  if (!part) return doc;
+  return {
+    ...doc,
+    content: part.body.length > 0 ? part.body : [{ type: "paragraph" }],
+  };
+}
+
+/** Drop trailing citation lists from every TipTap/plain field; keep `[n]` markers. */
+export function dropTrailingCitationListsFromContent(content: unknown): unknown {
+  return rewriteCitationFields(
+    content,
+    dropTrailingCitationListFromText,
+    dropTrailingCitationListFromDoc
+  );
+}
+
+function citationMarkersInOrderFromText(text: string): number[] {
+  const numbers: number[] = [];
+  const re = new RegExp(NUMERIC_MARKER_RE.source, "g");
+  let found: RegExpExecArray | null;
+  while ((found = re.exec(text)) !== null) {
+    numbers.push(...citationNumbersFromMarker(found[0]));
+  }
+  return numbers;
+}
+
+/** Numeric markers in a TipTap field, in document order (body and table cells). */
+export function citationMarkersInOrderFromDoc(doc: JSONContent): number[] {
+  const numbers: number[] = [];
+  walkJsonTextNodes(doc, (text) => {
+    numbers.push(...citationMarkersInOrderFromText(text));
+  });
+  return numbers;
+}
+
+/** Numbers used by `[n]` markers in a TipTap field. */
+export function citationMarkerNumbersFromDoc(doc: JSONContent): Set<number> {
+  return new Set(citationMarkersInOrderFromDoc(doc));
+}
+
+export function remapNumericCitationMarkersInText(
+  text: string,
+  localToGlobal: ReadonlyMap<number, number>
+): string {
+  if (localToGlobal.size === 0) return text;
+  return text.replace(NUMERIC_MARKER_RE, (full) => {
+    const mapped = citationNumbersFromMarker(full).map(
+      (n) => localToGlobal.get(n) ?? n
+    );
+    return formatNumericCitationMarker(mapped) || full;
+  });
+}
+
+export function remapNumericCitationMarkersInDoc(
+  doc: JSONContent,
+  localToGlobal: ReadonlyMap<number, number>
+): JSONContent {
+  if (localToGlobal.size === 0) return doc;
+  return mapJsonTextNodes(doc, (text) =>
+    remapNumericCitationMarkersInText(text, localToGlobal)
+  );
+}
+
+export function remapNumericCitationMarkersInContent(
+  content: unknown,
+  localToGlobal: ReadonlyMap<number, number>
+): unknown {
+  return rewriteCitationFields(
+    content,
+    (text) => remapNumericCitationMarkersInText(text, localToGlobal),
+    (doc) => remapNumericCitationMarkersInDoc(doc, localToGlobal)
+  );
+}
+
+/** Parked `{ number, source }` rows from a field's trailing Citations list. */
+export function citationListEntriesFromText(
+  text: string
+): Array<{ number: number; source: string }> {
+  return parseFieldCitationNumbering(text).entries();
+}
+
+/** Parked `{ number, source }` rows from a TipTap field's trailing Citations list. */
+export function citationListEntriesFromDoc(
+  doc: JSONContent
+): Array<{ number: number; source: string }> {
+  return numberingFromDoc(doc).entries();
+}
+
+/**
+ * Source brackets in first-appearance order: body/table markers first, then
+ * any leftover parked list entries.
+ */
+export function orderedCitationSourcesFromDoc(doc: JSONContent): string[] {
+  const byNumber = new Map(
+    citationListEntriesFromDoc(doc).map(({ number, source }) => [number, source])
+  );
+  const body = dropTrailingCitationListFromDoc(doc);
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const n of citationMarkersInOrderFromDoc(body)) {
+    const source = byNumber.get(n);
+    if (!source || seen.has(source)) continue;
+    seen.add(source);
+    ordered.push(source);
+  }
+  for (const { source } of citationListEntriesFromDoc(doc)) {
+    if (seen.has(source)) continue;
+    seen.add(source);
+    ordered.push(source);
+  }
+  return ordered;
+}
+
+export function orderedCitationSourcesFromText(text: string): string[] {
+  const byNumber = new Map(
+    citationListEntriesFromText(text).map(({ number, source }) => [
+      number,
+      source,
+    ])
+  );
+  const body = dropTrailingCitationListFromText(text);
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const n of citationMarkersInOrderFromText(body)) {
+    const source = byNumber.get(n);
+    if (!source || seen.has(source)) continue;
+    seen.add(source);
+    ordered.push(source);
+  }
+  for (const { source } of citationListEntriesFromText(text)) {
+    if (seen.has(source)) continue;
+    seen.add(source);
+    ordered.push(source);
+  }
+  return ordered;
+}
+
+export function orderedCitationSourcesFromContent(content: unknown): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const add = (sources: readonly string[]) => {
+    for (const source of sources) {
+      if (seen.has(source)) continue;
+      seen.add(source);
+      ordered.push(source);
+    }
+  };
+  const walk = (value: unknown): void => {
+    if (typeof value === "string") {
+      add(orderedCitationSourcesFromText(value));
+      return;
+    }
+    if (isTiptapDoc(value)) {
+      add(orderedCitationSourcesFromDoc(value));
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    if (value && typeof value === "object") {
+      for (const nested of Object.values(value as Record<string, unknown>)) {
+        walk(nested);
+      }
+    }
+  };
+  walk(content);
+  return ordered;
+}
+
+function localToGlobalFromEntries(
+  entries: Array<{ number: number; source: string }>,
+  sourceToGlobal: ReadonlyMap<string, number>
+): Map<number, number> {
+  const localToGlobal = new Map<number, number>();
+  for (const { number, source } of entries) {
+    const global =
+      sourceToGlobal.get(source) ??
+      sourceToGlobal.get(canonicalizeSourceCitationBracket(source));
+    if (global != null) localToGlobal.set(number, global);
+  }
+  return localToGlobal;
+}
+
+/** Drop per-field Citations lists and rewrite `[n]` to global numbers. */
+export function applyGlobalCitationNumbersToText(
+  text: string,
+  sourceToGlobal: ReadonlyMap<string, number>
+): string {
+  const localToGlobal = localToGlobalFromEntries(
+    citationListEntriesFromText(text),
+    sourceToGlobal
+  );
+  return remapNumericCitationMarkersInText(
+    dropTrailingCitationListFromText(text),
+    localToGlobal
+  );
+}
+
+export function applyGlobalCitationNumbersToDoc(
+  doc: JSONContent,
+  sourceToGlobal: ReadonlyMap<string, number>
+): JSONContent {
+  const localToGlobal = localToGlobalFromEntries(
+    citationListEntriesFromDoc(doc),
+    sourceToGlobal
+  );
+  return remapNumericCitationMarkersInDoc(
+    dropTrailingCitationListFromDoc(doc),
+    localToGlobal
+  );
+}
+
+export function applyGlobalCitationNumbersToContent(
+  content: unknown,
+  sourceToGlobal: ReadonlyMap<string, number>
+): unknown {
+  return rewriteCitationFields(
+    content,
+    (text) => applyGlobalCitationNumbersToText(text, sourceToGlobal),
+    (doc) => applyGlobalCitationNumbersToDoc(doc, sourceToGlobal)
+  );
+}
+
+export function localCitationNumberMapFromContent(
+  content: unknown
+): Map<number, string> {
+  const map = new Map<number, string>();
+  const walk = (value: unknown): void => {
+    if (typeof value === "string") {
+      for (const { number, source } of citationListEntriesFromText(value)) {
+        if (!map.has(number)) map.set(number, source);
+      }
+      return;
+    }
+    if (isTiptapDoc(value)) {
+      for (const { number, source } of citationListEntriesFromDoc(value)) {
+        if (!map.has(number)) map.set(number, source);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    if (value && typeof value === "object") {
+      for (const nested of Object.values(value as Record<string, unknown>)) {
+        walk(nested);
+      }
+    }
+  };
+  walk(content);
+  return map;
 }
 
 /** True when the field already ends with a Citations/References block. */

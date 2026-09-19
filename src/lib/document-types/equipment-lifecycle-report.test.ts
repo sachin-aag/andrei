@@ -38,6 +38,7 @@ import {
 import { QUANTITY_MATH_CRITERION_KEY } from "@/lib/math/quantity-math";
 import {
   ACCESS_CONTROL_COLUMN_SCHEMA,
+  ATTACHMENTS_COLUMN_SCHEMA,
   CSV_STATUS_COLUMN_SCHEMA,
   RISK_ACTION_COLUMN_SCHEMA,
   SYSTEM_TRENDS_COLUMN_SCHEMA,
@@ -45,6 +46,7 @@ import {
 import {
   ELR_ACCESS_CONTROL_HEADERS,
   ELR_ALARM_HEADERS,
+  ELR_ATTACHMENTS_HEADERS,
   ELR_BREAKDOWN_HEADERS,
   ELR_CALIBRATION_HEADERS,
   ELR_CSV_STATUS_HEADERS,
@@ -1212,6 +1214,9 @@ describe("ELR assessment, trends and risk checks", () => {
     ]);
     expect(CSV_STATUS_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
       ...ELR_CSV_STATUS_HEADERS,
+    ]);
+    expect(ATTACHMENTS_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_ATTACHMENTS_HEADERS,
     ]);
   });
 

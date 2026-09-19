@@ -18,6 +18,9 @@ import {
   stripTrailingCitationBlockFromDoc,
   stripTrailingCitationBlockFromText,
   stripTrailingCitationsFromContent,
+  applyGlobalCitationNumbersToContent,
+  citationNumbersFromDoc,
+  orderedCitationSourcesFromContent,
 } from "./citations-at-end";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 
@@ -768,6 +771,73 @@ describe("stripTrailingCitationsFromContent", () => {
       type: "doc",
       content: [{ type: "paragraph" }],
     });
+  });
+});
+
+describe("applyGlobalCitationNumbersToContent", () => {
+  it("drops the list and rewrites local markers using the global map", () => {
+    const next = applyGlobalCitationNumbersToContent(
+      {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "IQ completed [1]." }],
+            },
+            { type: "paragraph" },
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "Citations:" }],
+            },
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "1. [iq.pdf, p. 4]" }],
+            },
+          ],
+        },
+      },
+      new Map([["[iq.pdf, p. 4]", 7]])
+    ) as { narrative: JSONContent };
+
+    expect(
+      next.narrative.content
+        ?.map((node) =>
+          (node.content ?? [])
+            .map((child) => (child as { text?: string }).text ?? "")
+            .join("")
+        )
+        .join("\n")
+    ).toBe("IQ completed [7].");
+  });
+});
+
+describe("citationNumbersFromDoc", () => {
+  it("falls back to body markers when the trailing list was already dropped", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "The URS was approved [1] and [2]." }],
+        },
+      ],
+    };
+    expect([...citationNumbersFromDoc(doc)].toSorted((a, b) => a - b)).toEqual([
+      1, 2,
+    ]);
+  });
+});
+
+describe("orderedCitationSourcesFromContent", () => {
+  it("walks nested fields in first-appearance order", () => {
+    expect(
+      orderedCitationSourcesFromContent({
+        narrative:
+          "Approved [1].\n\nCitations:\n1. [urs.pdf, p. 2]",
+        table: "IQ [1]\n\nCitations:\n1. [iq.pdf, p. 4]",
+      })
+    ).toEqual(["[urs.pdf, p. 2]", "[iq.pdf, p. 4]"]);
   });
 });
 

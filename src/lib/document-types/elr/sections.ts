@@ -191,6 +191,7 @@ export const ELR_ATTACHMENTS_HEADERS = [
   "Title",
   "Document Reference No.",
   "No. of Pages",
+  "Location",
 ] as const;
 
 export const ELR_REVISION_HISTORY_HEADERS = [

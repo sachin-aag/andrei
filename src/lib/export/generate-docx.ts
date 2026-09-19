@@ -18,6 +18,8 @@ import {
   designVerificationMetadata,
   investigationOtherTools,
   investigationToolsUsed,
+  type ReportAttachmentFolderRecord,
+  type ReportAttachmentRecord,
   type ReportRecord,
   type ReportSectionRecord,
 } from "@/types/report";
@@ -78,6 +80,12 @@ import {
   applyTocHeadingStylesToDocxZip,
   tocHeadingSpecsForDocumentType,
 } from "@/lib/export/docx-toc-headings";
+import { applyElrLiveAttachmentsTable } from "@/lib/export/elr-attachments-table";
+import {
+  elrCitationsAppendixXml,
+  insertXmlBeforeLastSectPr,
+  unifyElrCitationsForExport,
+} from "@/lib/export/elr-unified-citations";
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -511,14 +519,34 @@ export async function generateReportDocx({
   comments = [],
   electronicSignatures = [],
   omitCitations = false,
+  attachments,
+  attachmentFolders,
 }: {
   report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   comments?: ReportDocxComment[];
   electronicSignatures?: DocxAuditSignature[];
   omitCitations?: boolean;
+  /** When set (including `[]`), ELR 7.0 Attachments is rebuilt from live files. */
+  attachments?: ReportAttachmentRecord[];
+  attachmentFolders?: ReportAttachmentFolderRecord[];
 }): Promise<Buffer> {
-  const exportSections = sectionsForDocxExport(sections, omitCitations);
+  let exportSections = sectionsForDocxExport(sections, omitCitations);
+  let citationsAppendixXml = "";
+  if (report.documentType === "equipment_lifecycle_report") {
+    if (attachments !== undefined) {
+      exportSections = applyElrLiveAttachmentsTable(
+        exportSections,
+        attachments,
+        attachmentFolders ?? []
+      );
+    }
+    if (!omitCitations) {
+      const unified = unifyElrCitationsForExport(exportSections);
+      exportSections = unified.sections;
+      citationsAppendixXml = elrCitationsAppendixXml(unified.bibliography);
+    }
+  }
   if (report.documentType === "generic_document") {
     return generateGenericDocumentDocx({
       report,
@@ -538,6 +566,7 @@ export async function generateReportDocx({
       report,
       sections: exportSections,
       electronicSignatures,
+      citationsAppendixXml,
     });
   }
 
@@ -659,11 +688,13 @@ async function generateDesignVerificationDocx({
   report,
   sections,
   electronicSignatures,
+  citationsAppendixXml = "",
 }: {
   documentType: DocumentType;
   report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   electronicSignatures: DocxAuditSignature[];
+  citationsAppendixXml?: string;
 }): Promise<Buffer> {
   const templateContent = fs.readFileSync(
     getDocumentType(documentType).export.templatePath
@@ -730,6 +761,16 @@ async function generateDesignVerificationDocx({
   }
 
   doc.render(data);
+  if (citationsAppendixXml) {
+    const zip = doc.getZip();
+    const document = zip.file("word/document.xml");
+    if (document) {
+      zip.file(
+        "word/document.xml",
+        insertXmlBeforeLastSectPr(document.asText(), citationsAppendixXml)
+      );
+    }
+  }
   const headingSpecs = tocHeadingSpecsForDocumentType(documentType);
   if (headingSpecs) {
     applyTocHeadingStylesToDocxZip(doc.getZip(), headingSpecs);

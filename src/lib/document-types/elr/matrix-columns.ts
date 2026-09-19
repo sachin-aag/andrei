@@ -632,6 +632,46 @@ export const RESPONSIBILITIES_COLUMN_SCHEMA: readonly MatrixColumnSchema<Respons
     },
   ];
 
+export type ElrAttachmentsColumnId =
+  | "serial"
+  | "attachmentNo"
+  | "title"
+  | "documentRef"
+  | "pageCount"
+  | "location";
+
+export const ATTACHMENTS_COLUMN_SCHEMA: readonly MatrixColumnSchema<ElrAttachmentsColumnId>[] =
+  [
+    serialFor<ElrAttachmentsColumnId>(),
+    {
+      id: "attachmentNo",
+      label: "Attachment No.",
+      aliases: ["attachment no", "attachment", "annexure"],
+    },
+    { id: "title", label: "Title", aliases: ["title", "name", "filename"] },
+    {
+      id: "documentRef",
+      label: "Document Reference No.",
+      aliases: [
+        "document reference no",
+        "document no",
+        "document reference",
+        "reference no",
+      ],
+      inferFromContent: "idLike",
+    },
+    {
+      id: "pageCount",
+      label: "No. of Pages",
+      aliases: ["no of pages", "pages", "page count"],
+    },
+    {
+      id: "location",
+      label: "Location",
+      aliases: ["location", "path", "folder", "directory"],
+    },
+  ];
+
 export type ElrRevisionHistoryColumnId =
   | "revision"
   | "effectiveDate"
