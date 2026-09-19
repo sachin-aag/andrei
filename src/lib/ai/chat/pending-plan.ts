@@ -106,7 +106,7 @@ export function parseChatPendingPlan(value: unknown): ChatPendingPlan | null {
     }
     if (typeof row.label !== "string" || !row.label.trim()) return null;
     if (!isChatPlanItemState(row.state)) return null;
-    const item: ChatPlanItem = {
+    const parsed: ChatPlanItem = {
       sectionKey: row.sectionKey,
       label: row.label,
       state: row.state,
@@ -116,9 +116,9 @@ export function parseChatPendingPlan(value: unknown): ChatPendingPlan | null {
       Number.isInteger(row.attempts) &&
       row.attempts > 0
     ) {
-      item.attempts = row.attempts;
+      parsed.attempts = row.attempts;
     }
-    items.push(item);
+    items.push(parsed);
   }
   return {
     kind: "section_queue",
