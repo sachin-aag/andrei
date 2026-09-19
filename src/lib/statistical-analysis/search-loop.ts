@@ -1,4 +1,7 @@
-import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
+import {
+  ANALYTICS_WRITE_TOOL_SET,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
 import {
   DEFAULT_ATTACHMENT_LOCATE_TOOLS,
   DEFAULT_SEARCH_TOOL,
@@ -16,6 +19,7 @@ import {
   type SearchLoopDirective,
   type SearchLoopStep,
 } from "@/lib/ai/chat/search-loop";
+import { stepsRequestedHiddenWriteTool } from "@/lib/ai/chat/unsupported-tool";
 
 export const ANALYTICS_SEARCH_LOOP_LIMIT = SEARCH_LOOP_EMPTY_LIMIT;
 
@@ -454,6 +458,13 @@ export function prepareAnalyticsChatStep(input: {
   if (input.intent === "social") {
     return { activeTools: [] };
   }
+  const unlockWrites =
+    input.canEdit &&
+    input.intent === "read" &&
+    stepsRequestedHiddenWriteTool(input.steps, ANALYTICS_WRITE_TOOL_SET);
+  const intent: ChatUserIntentKind | undefined = unlockWrites
+    ? "write"
+    : input.intent;
   const searchDirective = analyticsSearchLoopDirective(input.steps);
   const writeDirective = analyticsWriteLoopDirective(input.steps);
   const dumpReady = analyticsDumpReadinessDirective(input.steps);
@@ -481,7 +492,7 @@ export function prepareAnalyticsChatStep(input: {
     (!dumpSource &&
       (stepsHadSearch(input.steps) ||
         locateIntent ||
-        input.intent === "read"));
+        intent === "read"));
   const hidden = new Set<string>();
   if (hideWrite) hidden.add(WRITE_COLUMN_TOOL);
   if (hideManage) hidden.add(MANAGE_WORKSHEET_TOOL);
@@ -491,7 +502,7 @@ export function prepareAnalyticsChatStep(input: {
   }
 
   const forceContinue =
-    input.intent !== "read" &&
+    intent !== "read" &&
     writeDirective !== "finish" &&
     stillGathering;
 
@@ -510,19 +521,21 @@ export function prepareAnalyticsChatStep(input: {
   };
 
   if (searchDirective !== "read") {
-    if (input.intent === "read") {
+    if (intent === "read") {
       return { activeTools: readTools(hidden) };
     }
     if (!input.canEdit) {
       return hidden.size > 0 ? { activeTools: readTools(hidden) } : undefined;
     }
-    if (hidden.size > 0) {
+    // A remapped unsupported_tool unlocks writes on a read turn. Returning
+    // undefined would keep advertisedTools, which still omit write tools.
+    if (hidden.size > 0 || unlockWrites) {
       return withChoice(writableTools(true));
     }
     return undefined;
   }
   const activeTools: string[] = [...READ_AFTER_SEARCH_TOOLS];
-  if (input.canEdit && input.intent !== "read") {
+  if (input.canEdit && intent !== "read") {
     activeTools.push(...WRITE_AFTER_SEARCH_TOOLS);
   }
   const next =

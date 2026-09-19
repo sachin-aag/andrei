@@ -280,10 +280,7 @@ export const GATED_FACT_PLACEHOLDERS = [
 ] as const;
 
 export const UNSUPPORTED_FACTS_RETRY_MESSAGE =
-  "These facts were not on any retrieved page. Search or read the page that states them, then fill the real value. Do not persist <date>/<identifier>/<number> until that pass. Placeholders are only for facts still missing after the page read this turn.";
-
-export const PLACEHOLDER_NEEDS_RETRIEVAL_MESSAGE =
-  "Do not persist <date>/<identifier>/<number> yet. Search or read_document_page for the certificate or record that states the fact, then fill the real value. Placeholders are only for facts still missing after that pass this turn.";
+  "These facts were not on any retrieved page. Search or read the page that states them, then fill the real value. Leftover <date>/<identifier>/<number> are for facts still missing after that lookup — do not invent the value.";
 
 export function containsGatedFactPlaceholders(text: string): boolean {
   return GATED_FACT_PLACEHOLDERS.some((token) => text.includes(token));

@@ -38,6 +38,9 @@ export const ANALYTICS_WRITE_TOOLS = [
   "plot_measurements",
 ] as const;
 
+export const DOCUMENT_WRITE_TOOL_SET = new Set<string>(DOCUMENT_WRITE_TOOLS);
+export const ANALYTICS_WRITE_TOOL_SET = new Set<string>(ANALYTICS_WRITE_TOOLS);
+
 const GREETING_RE =
   /^(?:hi+|hello|hey+|yo|hiya|howdy|sup|what'?s up|whats up|good (?:morning|afternoon|evening|night))(?:\s+there)?(?:\s*[!.]*)?$/i;
 
@@ -74,6 +77,14 @@ const START_REPORT_RE =
 
 const CONTINUE_RE =
   /\b(?:keep going|continue|you missed|still missing|go on|finish (?:it|the (?:draft|report|section|review)))\b/i;
+
+/**
+ * Complaints that promised work did not land. `QUESTION_START_RE` would
+ * otherwise swallow "why isn't the table filled" as a lookup, and Flash-Lite
+ * mapped those turns to read so write tools never loaded.
+ */
+const MISSING_WORK_RE =
+  /\b(?:nothing (?:(?:was|is|got) )?(?:filled|written|drafted|there|showing|showed up|in (?:the |this )?(?:table|section|document|grid|worksheet|report))|(?:still|remains?) (?:empty|blank)|(?:did(?:n'?t| not)|has(?:n'?t| not)|have(?:n'?t| not)|never) (?:fill|write|draft|show|appear|land|update)|i (?:don'?t|do not|can'?t|cannot) see|(?:is(?:n'?t| not)|not) (?:in the (?:document|table|section)|showing|the (?:table|section|document|grid|worksheet|report) (?:filled|written|there|showing))|you (?:said|claimed|told me) you (?:filled|wrote|drafted|added|updated|fill|write|draft|add|update)|where (?:is|did) (?:the|it)|didn'?t (?:land|show)|nothing happened|still blank)\b/i;
 
 const POLITE_WRITE_RE =
   /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;
@@ -221,6 +232,10 @@ function classifyTaskText(
     return { kind: "write", reason: "continue_task" };
   }
 
+  if (MISSING_WORK_RE.test(text)) {
+    return { kind: "write", reason: "missing_work" };
+  }
+
   if (ADVICE_QUESTION_RE.test(text)) {
     return { kind: "read", reason: "writing_advice" };
   }
@@ -355,8 +370,8 @@ None. This message is small talk — reply in one short sentence and call nothin
     surface === "analytics" ? ANALYTICS_WRITE_TOOLS : DOCUMENT_WRITE_TOOLS
   ).join(", ");
   return `## Tools available this turn
-This message reads as a question, so the write tools (${hidden}) are not loaded. Do not call them — they will fail.
-Answer from evidence. If they actually want you to change the ${target}, say so in one line and ask them to confirm; the tools return on that next message. Do not paste a draft, table, or worksheet block into chat as a stand-in for the edit, and do not tell them to switch modes.`;
+This message reads as a question, so the write tools (${hidden}) start hidden.
+Do not call them for a lookup. If they actually asked to change the ${target} (including "it's still empty", "nothing was filled", "I don't see the change", or "you said you filled it"), call the matching write tool anyway — it becomes available on the next step. Do not paste a draft, table, or worksheet block into chat as a stand-in for the edit, and do not tell them to switch modes.`;
 }
 
 export function restrictToolsForIntent<T extends Record<string, unknown>>(

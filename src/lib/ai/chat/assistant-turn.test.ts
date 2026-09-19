@@ -559,7 +559,7 @@ describe("chatUiStreamErrorText", () => {
     );
     const formatted = chatUiStreamErrorText(error);
     expect(formatted.recoverable).toBe(true);
-    expect(formatted.text).toContain("edit_table is not available this turn");
+    expect(formatted.text).toContain("edit_table is not available this step");
     expect(formatted.text).not.toBe(CHAT_ASSISTANT_ERROR_MESSAGE);
   });
 

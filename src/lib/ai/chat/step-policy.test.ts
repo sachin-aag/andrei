@@ -205,6 +205,79 @@ describe("prepareReportChatStep (characterization)", () => {
       toolChoice: { type: "tool", toolName: "finish_document_review" },
     });
   });
+
+  it("unlocks registered write tools after a hidden edit_table on a read turn", () => {
+    const readAdvertised = [
+      "read_section",
+      "list_attachments",
+      "search_documents",
+      "read_document_page",
+      "document_outline",
+      "ask_user",
+      "list_suggestions",
+    ] as const;
+    const hiddenWrite: SearchLoopStep = {
+      toolCalls: [
+        {
+          toolName: "unsupported_tool",
+          toolCallId: "u1",
+          input: { requestedTool: "edit_table" },
+        },
+      ],
+      toolResults: [
+        {
+          toolName: "unsupported_tool",
+          toolCallId: "u1",
+          output: { status: "unavailable", requestedTool: "edit_table" },
+        },
+      ],
+    };
+    const unlocked = prepareReportChatStep(
+      baseInput({
+        advertisedTools: readAdvertised,
+        userIntentKind: "read",
+        registeredWriteTools: ["draft_field", "propose_edit", "edit_table"],
+        steps: [hiddenWrite],
+      })
+    );
+    expect(unlocked.activeTools).toEqual(
+      expect.arrayContaining(["edit_table", "draft_field", "propose_edit"])
+    );
+    expect(unlocked.toolChoice).toBeUndefined();
+
+    const stillRead = prepareReportChatStep(
+      baseInput({
+        advertisedTools: readAdvertised,
+        userIntentKind: "read",
+        registeredWriteTools: ["draft_field", "propose_edit", "edit_table"],
+        steps: [],
+      })
+    );
+    expect(stillRead.activeTools).not.toContain("edit_table");
+    expect(stillRead.activeTools).toContain("list_suggestions");
+  });
+
+  it("does not unlock writes during an active document review", () => {
+    const decision = prepareReportChatStep(
+      baseInput({
+        advertisedTools: ["read_section", "continue_document_review"],
+        userIntentKind: "read",
+        registeredWriteTools: ["edit_table"],
+        reviewPhase: "in_progress",
+        steps: [
+          {
+            toolCalls: [
+              {
+                toolName: "unsupported_tool",
+                input: { requestedTool: "edit_table" },
+              },
+            ],
+          },
+        ],
+      })
+    );
+    expect(decision.activeTools).not.toContain("edit_table");
+  });
 });
 
 describe("lastStartNeedsAttachmentScope", () => {
