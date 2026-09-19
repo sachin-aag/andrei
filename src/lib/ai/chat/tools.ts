@@ -242,7 +242,6 @@ import {
   containsGatedFactPlaceholders,
   groundDraftText,
   groundTableOperation,
-  PLACEHOLDER_NEEDS_RETRIEVAL_MESSAGE,
   tableOperationContainsGatedPlaceholders,
   unsupportedFactsToolResult,
   type UnsupportedFactsToolResult,
@@ -804,7 +803,6 @@ function buildSearchDocumentsTool(opts: {
   pinnedAttachmentIds: string[];
   citationRule: string;
   citationLedger: CitationPageLedger;
-  onCitedPage?: () => void;
   searchGate?: SearchGate;
   sectionScope?: string | null;
   reviewCoverageObjective?: string | null;
@@ -814,7 +812,6 @@ function buildSearchDocumentsTool(opts: {
     pinnedAttachmentIds,
     citationRule,
     citationLedger,
-    onCitedPage,
     searchGate,
   } = opts;
   const phraseFamilies = phraseFamiliesForChatSearch(
@@ -893,9 +890,6 @@ function buildSearchDocumentsTool(opts: {
       .map(budgetSearchHit)
       .map(withSourceCitation);
     const annotated = annotateDividerSearchHits(cited);
-    if (merged.length > 0 && !annotated.keepSearchOpen) {
-      onCitedPage?.();
-    }
     return {
       results: annotated.results,
       queriesRun: queryList,
@@ -1216,25 +1210,8 @@ export function buildChatTools(opts: {
       console.error("claim provenance audit failed", err);
     });
   };
-  let retrievalPassesThisTurn = 0;
-  const noteCitedRetrieval = () => {
-    retrievalPassesThisTurn += 1;
-  };
-  const refuseGatedPlaceholderDump = (
-    text: string
-  ): UnsupportedFactsToolResult | null => {
-    if (unsupportedFactPolicy !== "block") return null;
-    if (!containsGatedFactPlaceholders(text)) return null;
-    if (retrievalPassesThisTurn > 0) return null;
-    return unsupportedFactsToolResult({
-      unsupported: [],
-      draftWithPlaceholders: text,
-      message: PLACEHOLDER_NEEDS_RETRIEVAL_MESSAGE,
-    });
-  };
   const emptyRepair = {
     hits: [] as RepairSearchHit[],
-    newQuotedHits: [] as RepairSearchHit[],
   };
   const runUnsupportedFactsRepair = async (input: {
     unsupported: readonly HardFact[];
@@ -1249,7 +1226,11 @@ export function buildChatTools(opts: {
       attachmentIds:
         pinnedAttachmentIds.length > 0 ? pinnedAttachmentIds : undefined,
     });
-    return { hits, newQuotedHits: seedRepairHits(citationLedger, hits) };
+    // Seed quotes so re-ground can fill invented facts. Leftover
+    // <date>/<identifier>/<number> after that pass persist — they are
+    // honest gaps, not a reason to drop the whole write.
+    seedRepairHits(citationLedger, hits);
+    return { hits };
   };
   const repairResultFields = (hits: readonly RepairSearchHit[]) =>
     hits.length > 0
@@ -1501,7 +1482,6 @@ export function buildChatTools(opts: {
       pinnedAttachmentIds,
       citationRule,
       citationLedger,
-      onCitedPage: noteCitedRetrieval,
       searchGate: opts.searchGate,
       sectionScope: opts.sectionScope,
       reviewCoverageObjective: opts.reviewCoverageObjective,
@@ -1657,7 +1637,6 @@ export function buildChatTools(opts: {
             .filter((part) => part.trim().length > 0)
             .join("\n"),
         });
-        noteCitedRetrieval();
         return {
           status: "found" as const,
           page: {
@@ -2050,19 +2029,6 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
           });
         }
-        const leftover = `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`;
-        if (
-          containsGatedFactPlaceholders(leftover) &&
-          repair.newQuotedHits.length > 0
-        ) {
-          return unsupportedFactsToolResult({
-            unsupported: [],
-            draftWithPlaceholders: leftover,
-            ...repairResultFields(repair.newQuotedHits),
-          });
-        }
-        const placeholderDump = refuseGatedPlaceholderDump(leftover);
-        if (placeholderDump) return placeholderDump;
         const claimProvenance = {
           claims: [
             ...groundedInsert.provenance.claims,
@@ -3135,21 +3101,6 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
           });
         }
-        if (
-          tableOperationContainsGatedPlaceholders(groundedTable.operation)
-        ) {
-          if (repair.newQuotedHits.length > 0) {
-            return unsupportedFactsToolResult({
-              unsupported: [],
-              draftWithPlaceholders: JSON.stringify(groundedTable.operation),
-              ...repairResultFields(repair.newQuotedHits),
-            });
-          }
-          const placeholderDump = refuseGatedPlaceholderDump(
-            JSON.stringify(groundedTable.operation)
-          );
-          if (placeholderDump) return placeholderDump;
-        }
         if (groundedTable.provenance.claims.length > 0) {
           void scoreDraftEntailment({
             draft: JSON.stringify(groundedTable.operation),
@@ -3509,20 +3460,6 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
           });
         }
-        if (
-          containsGatedFactPlaceholders(groundedDraft.text) &&
-          repair.newQuotedHits.length > 0
-        ) {
-          return unsupportedFactsToolResult({
-            unsupported: [],
-            draftWithPlaceholders: citationsAtEndOfSection
-              ? moveCitationsToEndOfText(groundedDraft.text)
-              : groundedDraft.text,
-            ...repairResultFields(repair.newQuotedHits),
-          });
-        }
-        const placeholderDump = refuseGatedPlaceholderDump(groundedDraft.text);
-        if (placeholderDump) return placeholderDump;
         if (groundedDraft.provenance.claims.length > 0) {
           void scoreDraftEntailment({
             draft: groundedDraft.text,

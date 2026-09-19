@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v117-citation-word-end");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v118-placeholder-leftover");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -570,7 +570,9 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain("Never write a citation as a placeholder");
     expect(prompt).toContain("unsupported_facts");
-    expect(prompt).toContain("do not persist <date>/<identifier>/<number>");
+    expect(prompt).toContain(
+      "Leftover <date>/<identifier>/<number> are OK for facts still missing after that lookup"
+    );
     expect(prompt).toContain(
       "The server rejects unsupported facts on MJ and flags them as unsourced on other packs"
     );

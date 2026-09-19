@@ -2039,7 +2039,7 @@ describe("buildChatTools propose edits", () => {
     expect(markdown).not.toContain(`[${protocol}, p. 21]`);
   });
 
-  it("refuses MJ <date> dumps until a page is read this turn", async () => {
+  it("persists leftover MJ <date> tokens after lookup finds nothing", async () => {
     mockDefineSectionSelect({ type: "doc", content: [] });
     const tools = buildChatTools({
       reportId: "report-1",
@@ -2047,7 +2047,7 @@ describe("buildChatTools propose edits", () => {
       actor,
       unsupportedFactPolicy: "block",
     });
-    const refused = await tools.draft_field!.execute!(
+    const drafted = await tools.draft_field!.execute!(
       {
         section: "define",
         targetField: "narrative",
@@ -2056,11 +2056,8 @@ describe("buildChatTools propose edits", () => {
       },
       TEST_TOOL_OPTIONS
     );
-    expect(refused).toMatchObject({
-      status: "unsupported_facts",
-      keepSearchOpen: true,
-    });
-    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(dbInsertMock).toHaveBeenCalled();
   });
 
   it("persists leftover MJ placeholders after a same-turn page read", async () => {
@@ -2168,7 +2165,7 @@ describe("buildChatTools propose edits", () => {
     expect(searchReportDocumentsManyMock).toHaveBeenCalled();
   });
 
-  it("refuses leftover MJ placeholders when repair search finds a new page", async () => {
+  it("persists leftover MJ placeholders when repair search finds a new page", async () => {
     mockDefineSectionSelect({ type: "doc", content: [] });
     readDocumentPageMock.mockResolvedValueOnce({
       attachmentId: "att-plan",
@@ -2205,7 +2202,7 @@ describe("buildChatTools propose edits", () => {
       TEST_TOOL_OPTIONS
     );
     expect(read).toMatchObject({ status: "found" });
-    const refused = await tools.draft_field!.execute!(
+    const drafted = await tools.draft_field!.execute!(
       {
         section: "define",
         targetField: "narrative",
@@ -2214,19 +2211,112 @@ describe("buildChatTools propose edits", () => {
       },
       TEST_TOOL_OPTIONS
     );
-    expect(refused).toMatchObject({
-      status: "unsupported_facts",
-      keepSearchOpen: true,
-    });
-    expect(refused).toMatchObject({
-      repairHits: [
-        expect.objectContaining({
-          filename: "Cert.pdf",
-          pageNumber: 5,
-        }),
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("proposes mixed known cells and leftover MJ table placeholders after lookup", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Document", "Date"].map((text) => ({
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["", ""].map((text) => ({
+                type: "tableCell",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+          ],
+        },
       ],
     });
-    expect(dbInsertMock).not.toHaveBeenCalled();
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: "att-pqr",
+      filename: "PQR-24-PR-042.pdf",
+      pageNumber: 21,
+      transcript: "Media fill MF-24-PR-001 performed",
+      visualInterpretation: "",
+      pageContext: null,
+    });
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-cert",
+          filename: "Cert.pdf",
+          description: null,
+          pageNumber: 5,
+          chunkId: "c1",
+          sourceKind: "hybrid",
+          text: "Unrelated calibration certificate 2025/014",
+          quote: "Unrelated calibration certificate 2025/014",
+          citationId: "att:att-cert:p:5",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: "att-pqr", pageNumber: 21 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Fill known media fill id; date still missing.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            { row: 1, col: 0, insertText: "MF-24-PR-001" },
+            { row: 1, col: 1, insertText: "<date>" },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalled();
+    const comment = inserted.find((row) => {
+      const parsed = parseAiFixCommentContent(String(row.content ?? ""));
+      return parsed.tableOperation?.kind === "edit_cells";
+    });
+    expect(comment).toBeTruthy();
+    const payload = parseAiFixCommentContent(String(comment!.content));
+    expect(payload.tableOperation?.kind).toBe("edit_cells");
+    const cells =
+      payload.tableOperation?.kind === "edit_cells"
+        ? payload.tableOperation.cells
+        : [];
+    expect(cells[0]?.insertText).toContain("MF-24-PR-001");
+    expect(cells[1]?.insertText).toContain("<date>");
   });
 
   it("grounds a date from a reviewed page that was omitted from the findings sample", async () => {

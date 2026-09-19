@@ -104,12 +104,12 @@ against the citation ledger's served quotes (`groundDraftText`). Finish
 seeds `reviewedEvidence` (every walked page, not the 60-finding sample)
 so those transcripts can hydrate. Empty ledger or pages with no quotes
 fail open. MJ `unsupportedFactPolicy: block` (no persist;
-`unsupported_facts`). MJ also refuses `<date>` / `<identifier>` /
-`<number>` until a same-turn `read_document_page` or non-divider search.
-On a blocked MJ write, those tools run one closed-set repair search
-(C1 retriever), seed new quotes, and re-ground the original text — not a
-Flash-Lite subagent. Leftover placeholders persist only when that search
-adds no new quoted page. Demo/Convergent `flag` (persist with
+`unsupported_facts`). On a blocked MJ write, those tools run one closed-set
+repair search (C1 retriever), seed new quotes, and re-ground the original
+text — not a Flash-Lite subagent. Leftover `<date>` / `<identifier>` /
+`<number>` persist after that lookup when the facts are still missing —
+do not drop the whole write because the search added some other page.
+Demo/Convergent `flag` (persist with
 Traceability). Analytics `write_column` stays ungated. Pack identity,
 not a feature flag.
 

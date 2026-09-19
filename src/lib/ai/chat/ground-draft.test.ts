@@ -204,7 +204,7 @@ describe("gated placeholder persist policy", () => {
     expect(containsGatedFactPlaceholders("use <batch number>")).toBe(false);
   });
 
-  it("tells the model to read the page, not persist placeholders", () => {
+  it("tells the model to fill real values, not invent them", () => {
     const result = unsupportedFactsToolResult({
       unsupported: [],
       draftWithPlaceholders: "Due <date>",
@@ -212,6 +212,7 @@ describe("gated placeholder persist policy", () => {
     expect(result.status).toBe("unsupported_facts");
     expect(result.keepSearchOpen).toBe(true);
     expect(result.message).toBe(UNSUPPORTED_FACTS_RETRY_MESSAGE);
+    expect(result.message).toMatch(/Leftover <date>\/<identifier>\/<number>/);
     expect(result.message).not.toMatch(/or use angle-bracket placeholders/i);
   });
 });
