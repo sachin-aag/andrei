@@ -84,6 +84,44 @@ describe("analyticsSearchLoopDirective", () => {
 });
 
 describe("prepareAnalyticsChatStep", () => {
+  it("unlocks write tools after a hidden write_column on an Agent read turn", () => {
+    const hiddenWrite: AnalyticsChatStep = {
+      toolCalls: [
+        {
+          toolName: "unsupported_tool",
+          input: { requestedTool: "write_column" },
+        },
+      ],
+      toolResults: [
+        {
+          toolName: "unsupported_tool",
+          output: { status: "unavailable", requestedTool: "write_column" },
+        },
+      ],
+    };
+    const prepared = prepareAnalyticsChatStep({
+      steps: [hiddenWrite],
+      canEdit: true,
+      intent: "read",
+    });
+    expect(prepared?.activeTools).toContain("write_column");
+    expect(prepared?.activeTools).toContain("manage_worksheet");
+    expect(
+      prepareAnalyticsChatStep({
+        steps: [],
+        canEdit: true,
+        intent: "read",
+      })?.activeTools
+    ).not.toContain("write_column");
+    expect(
+      prepareAnalyticsChatStep({
+        steps: [hiddenWrite],
+        canEdit: false,
+        intent: "read",
+      })?.activeTools
+    ).not.toContain("write_column");
+  });
+
   it("hides search after two empty greps and keeps write tools when editable", () => {
     const prepared = prepareAnalyticsChatStep({
       steps: [step(["search_documents"], 0), step(["search_documents"], 0)],

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v118-placeholder-leftover");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v119-write-unlock-suggestions");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -70,7 +70,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("overallGrade is low|medium|high");
   });
 
-  it("tells an Agent read turn which write tools were stripped", () => {
+  it("tells an Agent read turn that write tools start hidden and can unlock", () => {
     const read = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
@@ -78,9 +78,10 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(read).toContain("## Tools available this turn");
     expect(read).toContain("propose_edit");
-    expect(read).toContain("write tools not loaded");
+    expect(read).toContain("write tools start hidden");
     expect(read).toContain("list_attachments");
-    expect(read).toContain("Do not call them — they will fail");
+    expect(read).toContain("list_suggestions");
+    expect(read).toContain("becomes available on the next step");
     expect(read).not.toContain("are loaded and working");
     expect(read).not.toContain("Never say the edit tools are disabled");
 
@@ -206,6 +207,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("drafting structure is in this prompt");
     expect(prompt).toContain("How to draft this report");
     expect(prompt).toContain("Never call this a recipe");
+    expect(prompt).toContain("Never say you filled, proposed, drafted, or applied a change unless");
+    expect(prompt).toContain("list_suggestions");
   });
   it("includes the mention block when the engineer tagged something", () => {
     const prompt = buildChatSystemPrompt({
@@ -650,7 +653,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("plan the first 3 sections");
     expect(prompt).toContain("answer in chat");
     expect(prompt).toContain(
-      'if this prompt has a "Tools available this turn" block saying write tools are not loaded'
+      'if this prompt has a "Tools available this turn" block saying write tools start hidden'
     );
   });
 

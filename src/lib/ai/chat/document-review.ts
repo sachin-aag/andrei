@@ -892,6 +892,7 @@ export async function extractReviewBatch(input: {
 /** Plan-mode allowlist — new chat tools must be listed here or they are missing in Plan. */
 export const PLAN_MODE_CHAT_TOOL_NAMES = [
   "read_section",
+  "list_suggestions",
   "list_attachments",
   "search_documents",
   "read_document_page",

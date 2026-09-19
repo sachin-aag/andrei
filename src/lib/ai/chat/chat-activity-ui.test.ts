@@ -392,4 +392,23 @@ describe("readChatToolPart", () => {
       expect.objectContaining({ label: "Listed attachments" })
     );
   });
+
+  it("names list_suggestions while pending and after counts land", () => {
+    const pending = buildChatActivityBlocks([
+      toolPart("list_suggestions", "input-available", { status: "all" }),
+    ] as never);
+    expect(pending).toHaveLength(1);
+    if (pending[0]?.kind !== "activity") return;
+    expect(pending[0].node.label).toBe("Checking suggestions…");
+
+    const done = buildChatActivityBlocks([
+      toolPart("list_suggestions", "output-available", { status: "all" }, {
+        counts: { open: 2, resolved: 1, dismissed: 0 },
+        suggestions: [],
+      }),
+    ] as never);
+    expect(done).toHaveLength(1);
+    if (done[0]?.kind !== "activity") return;
+    expect(done[0].node.label).toBe("Checked suggestions (2 open)");
+  });
 });

@@ -1,6 +1,6 @@
 import { tool, type ToolSet, type UIMessage } from "ai";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db";
 import { comments, reportSections, reports } from "@/db/schema";
@@ -179,6 +179,11 @@ type ReadSectionSuccess = {
     targetField: string;
     preview: string;
   }>;
+  suggestionCounts?: {
+    open: number;
+    resolved: number;
+    dismissed: number;
+  };
   imageNote?: string;
   /** Request-local key — vision bytes live in `sectionImageStore`, not the tool JSON. */
   imageResultId?: string;
@@ -1011,6 +1016,32 @@ function proposedWithSupersession<T extends { status: string }>(
   return { ...result, supersededSuggestionIds: supersededIds };
 }
 
+const LIST_SUGGESTIONS_MAX = 40;
+const SUGGESTION_LIST_STATUSES = ["open", "resolved", "dismissed"] as const;
+type SuggestionListStatus = (typeof SUGGESTION_LIST_STATUSES)[number];
+
+function isSuggestionListStatus(value: string): value is SuggestionListStatus {
+  return (SUGGESTION_LIST_STATUSES as readonly string[]).includes(value);
+}
+
+function suggestionPreviewFromRow(row: {
+  kind: string;
+  content: string;
+}): string {
+  if (row.kind === "ai_redraft") {
+    return parseAiRedraftCommentContent(row.content)
+      .markdown.replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 400);
+  }
+  const payload = parseAiFixCommentContent(row.content);
+  const preview =
+    payload.insertText ||
+    payload.deleteText ||
+    (payload.tableOperation ? JSON.stringify(payload.tableOperation) : "");
+  return preview.replace(/\s+/g, " ").trim().slice(0, 400);
+}
+
 /**
  * Build the drafting-chat tool set for a report. Tools reuse the existing
  * suggestion pipeline: `propose_edit` creates an open `ai_fix` comment (no
@@ -1295,7 +1326,7 @@ export function buildChatTools(opts: {
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section. Returns text, readingText ([image:N] markers), structuredText (tables[] with tableIndex and [row,col]), and fillState.${scopeHint}` +
+        `Read the current text of an editable section. Returns text, readingText ([image:N] markers), structuredText (tables[] with tableIndex and [row,col]), fillState, pendingSuggestions (open cards only), and suggestionCounts (open / approved / dismissed). Call list_suggestions to inspect approved or dismissed cards.${scopeHint}` +
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
@@ -1383,27 +1414,25 @@ export function buildChatTools(opts: {
         const pendingSuggestions = pendingRows.flatMap((row) => {
           if (row.status !== "open" || !isAiSuggestionKind(row.kind)) return [];
           const targetField = row.contentPath ?? "narrative";
-          let preview = "";
-          if (row.kind === "ai_redraft") {
-            preview = parseAiRedraftCommentContent(row.content).markdown;
-          } else {
-            const payload = parseAiFixCommentContent(row.content);
-            preview =
-              payload.insertText ||
-              payload.deleteText ||
-              (payload.tableOperation
-                ? JSON.stringify(payload.tableOperation)
-                : "");
-          }
           return [
             {
               id: row.id,
               kind: row.kind,
               targetField,
-              preview: preview.replace(/\s+/g, " ").trim().slice(0, 400),
+              preview: suggestionPreviewFromRow(row),
             },
           ];
         });
+        const suggestionCounts = pendingRows.reduce(
+          (counts, row) => {
+            if (!isAiSuggestionKind(row.kind)) return counts;
+            if (row.status === "open") counts.open += 1;
+            else if (row.status === "resolved") counts.resolved += 1;
+            else if (row.status === "dismissed") counts.dismissed += 1;
+            return counts;
+          },
+          { open: 0, resolved: 0, dismissed: 0 }
+        );
 
         let imageResultId: string | undefined;
         if (collected.length > 0) {
@@ -1416,6 +1445,12 @@ export function buildChatTools(opts: {
           fields: fieldResults,
           images: imageRefs,
           ...(pendingSuggestions.length > 0 ? { pendingSuggestions } : {}),
+          ...(suggestionCounts.open +
+            suggestionCounts.resolved +
+            suggestionCounts.dismissed >
+          0
+            ? { suggestionCounts }
+            : {}),
           ...(imageResultId ? { imageResultId } : {}),
           ...(collected.length > 0
             ? {
@@ -1451,6 +1486,9 @@ export function buildChatTools(opts: {
           ...(result.pendingSuggestions
             ? { pendingSuggestions: result.pendingSuggestions }
             : {}),
+          ...(result.suggestionCounts
+            ? { suggestionCounts: result.suggestionCounts }
+            : {}),
           ...(result.imageNote ? { imageNote: result.imageNote } : {}),
         };
 
@@ -1474,6 +1512,76 @@ export function buildChatTools(opts: {
         }
 
         return { type: "content" as const, value: parts };
+      },
+    }),
+
+    list_suggestions: tool({
+      description:
+        "List AI suggestion cards on this report: open (waiting for Apply/Dismiss), resolved (the engineer approved), and dismissed. Use this before claiming a prior proposal is still waiting or that nothing was proposed. Open cards are proposed, not landed in the document. read_section.pendingSuggestions is open cards on that section only.",
+      inputSchema: z.object({
+        status: z
+          .enum(["all", "open", "resolved", "dismissed"])
+          .optional()
+          .describe("all (default) returns every AI card. resolved = approved."),
+        section: z
+          .enum(readableSectionEnum)
+          .optional()
+          .describe("Limit to one section. Omit for the whole report."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(LIST_SUGGESTIONS_MAX)
+          .optional()
+          .default(LIST_SUGGESTIONS_MAX),
+      }),
+      execute: async ({ status, section, limit }) => {
+        const wanted = status ?? "all";
+        const cap = limit ?? LIST_SUGGESTIONS_MAX;
+        const rows = await db
+          .select({
+            id: comments.id,
+            kind: comments.kind,
+            content: comments.content,
+            contentPath: comments.contentPath,
+            status: comments.status,
+            section: comments.section,
+          })
+          .from(comments)
+          .where(eq(comments.reportId, reportId))
+          .orderBy(desc(comments.createdAt));
+        const suggestions = rows.flatMap((row) => {
+          if (!isAiSuggestionKind(row.kind)) return [];
+          if (!isSuggestionListStatus(row.status)) return [];
+          if (section && row.section !== section) return [];
+          return [
+            {
+              id: row.id,
+              section: row.section,
+              targetField: row.contentPath ?? "narrative",
+              status: row.status,
+              kind: row.kind,
+              preview: suggestionPreviewFromRow(row),
+            },
+          ];
+        });
+        const counts = suggestions.reduce(
+          (acc, item) => {
+            acc[item.status] += 1;
+            return acc;
+          },
+          { open: 0, resolved: 0, dismissed: 0 }
+        );
+        const listed =
+          wanted === "all"
+            ? suggestions
+            : suggestions.filter((item) => item.status === wanted);
+        return {
+          counts,
+          truncated: listed.length > cap,
+          suggestions: listed.slice(0, cap),
+          note: "open = waiting for Apply/Dismiss (proposed, not landed). resolved = approved. dismissed = rejected. Never say a prior proposal is still waiting unless status is open.",
+        };
       },
     }),
 

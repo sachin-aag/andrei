@@ -85,6 +85,26 @@ describe("resolveChatUserIntent", () => {
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 
+  it("pins the missing-work classifier prompt version", () => {
+    expect(INTENT_CLASSIFIER_PROMPT_VERSION).toBe("intent-v6-missing-work");
+  });
+
+  it("skips Lite when a missing-work complaint is already write", async () => {
+    await expect(
+      resolveChatUserIntent({
+        userText: "why isn't the table filled?",
+        mode: "agent",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "missing_work" });
+    await expect(
+      resolveChatUserIntent({
+        userText: "nothing was filled",
+        mode: "agent",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "missing_work" });
+    expect(generateTextMock).not.toHaveBeenCalled();
+  });
+
   it("skips Flash-Lite when stub chat is on", async () => {
     vi.mocked(isTestStubChat).mockReturnValue(true);
     await expect(
@@ -143,6 +163,8 @@ describe("resolveChatUserIntent", () => {
     );
     expect(prompt).toContain("Can you do the same for X");
     expect(prompt).toContain("can you do the same for @Preventive Maintenance");
+    expect(prompt).toContain("Nothing was filled");
+    expect(prompt).toContain("why isn't the table filled");
   });
 
   it("falls back to Agent write when Lite fails on a polite leftover", async () => {

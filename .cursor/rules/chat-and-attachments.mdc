@@ -37,7 +37,15 @@ request. Agent-mode "go for it" / "do it" is write even when the prior
 turn dumped findings instead of matching the offer regex. Polite leftovers
 (`can you` without a produce verb, "do the same") go to Lite — they are
 not `question_or_lookup`. Real lookups (`what` / `who` / `do you`) stay
-on rules.
+on rules. Missing-work complaints ("nothing was filled", "why isn't the
+table filled", "I don't see the change") are write on Agent
+(`reason: missing_work`) so Lite is skipped. Agent read keeps write tools
+registered on the ToolSet; `advertisedTools` hides them. A remapped
+`unsupported_tool` for a write tool unlocks them on the next step
+(Document `prepareReportChatStep` and Analytics `prepareAnalyticsChatStep`).
+`list_suggestions` lists open / approved / dismissed AI cards. Wrap-up
+must not claim a fill unless a tool this turn returned proposed, drafted,
+or applied.
 
 Search attachments **before** `ask_user`, `draft_field`, or a `<placeholder>`
 for report facts (batch, date, result, equipment ID, requirement ID, design
@@ -156,6 +164,7 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   helper from `src/lib/attachments/`.
 - New tools: register in `buildChatTools` **and** add to the Plan allowlist in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
+  Include `list_suggestions` (open / approved / dismissed AI cards).
   Missing from the allowlist = silent Plan-mode gap. Analytics tools stay
   off that list. File-set questions (how many attachments, which files in which
   folder, PDF vs Word, status, filename/topic) use `list_attachments`
@@ -173,6 +182,8 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   question or document-review step) remaps onto the internal `unsupported_tool`
   fallback so the stream continues with a hint — do not let `AI_NoSuchToolError`
   fail the chat. Keep that fallback out of `activeTools` / the Plan allowlist.
+  On Agent read, a write-tool `unsupported_tool` unlocks the registered write
+  tools on the next step (do not paste a markdown table as a stand-in).
 - Analytics never asks which page to read. `ask_user` is hidden on a lookup,
   after Skip / “find it”, and after any grep (including TOC-only) until a
   page is read/scanned. Page-number questions are rejected if they still

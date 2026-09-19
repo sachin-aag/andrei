@@ -473,6 +473,7 @@ describe("pickPlanModeChatTools", () => {
   it("keeps document-review tools on the Plan-mode allowlist", () => {
     const allTools = {
       read_section: { kind: "read" },
+      list_suggestions: { kind: "suggestions" },
       search_documents: { kind: "search" },
       read_document_page: { kind: "page" },
       document_outline: { kind: "outline" },
@@ -495,9 +496,11 @@ describe("pickPlanModeChatTools", () => {
         "finish_document_review",
         "document_outline",
         "list_attachments",
+        "list_suggestions",
         "ask_user",
       ])
     );
+    expect(planTools).toHaveProperty("list_suggestions");
     expect(planTools).toMatchObject({
       start_document_review: { kind: "start" },
       continue_document_review: { kind: "continue" },

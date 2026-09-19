@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v50-list-attachments-meta"
+      "analytics-chat-v51-write-unlock"
     );
   });
 
@@ -34,7 +34,7 @@ describe("analytics chat prompt", () => {
     };
     const read = buildAnalyticsChatSystemPrompt({ ...base, intent: "read" });
     expect(read).toContain("Tools available this turn");
-    expect(read).toContain("are not loaded");
+    expect(read).toContain("start hidden");
 
     const write = buildAnalyticsChatSystemPrompt({ ...base, intent: "write" });
     expect(write).not.toContain("Tools available this turn");
