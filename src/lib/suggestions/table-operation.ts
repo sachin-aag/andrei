@@ -79,6 +79,11 @@ export type TableCellEdit = {
   /** Omit to capture the current cell before proposing. */
   expectedText?: string;
   insertText: string;
+  /**
+   * Live sibling cells on this row (documentRef, system id, …). Grounding
+   * uses this to keep a date on the cited file instead of a colliding SOP.
+   */
+  rowContext?: string;
 };
 
 export type TableRowDelete = {
@@ -752,10 +757,23 @@ export function captureTableOperationSnapshots(
   switch (captured.kind) {
     case "edit_cells":
       captured.cells = captured.cells.map((cell) => {
-        if (cell.expectedText !== undefined) return cell;
         const row = rows[cell.row];
         const node = row ? rowCells(row)[cell.col] : undefined;
-        return node ? { ...cell, expectedText: cellPlainText(node) } : cell;
+        const rowContext =
+          cell.rowContext ??
+          (row ? rowSnapshot(row).filter(Boolean).join("\n") : undefined);
+        if (cell.expectedText !== undefined) {
+          return rowContext ? { ...cell, rowContext } : cell;
+        }
+        return node
+          ? {
+              ...cell,
+              expectedText: cellPlainText(node),
+              ...(rowContext ? { rowContext } : {}),
+            }
+          : rowContext
+            ? { ...cell, rowContext }
+            : cell;
       });
       return captured;
     case "insert_rows": {
@@ -1562,6 +1580,8 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
           expectedText:
             typeof item.expectedText === "string" ? item.expectedText : undefined,
           insertText: item.insertText,
+          rowContext:
+            typeof item.rowContext === "string" ? item.rowContext : undefined,
         });
       }
       return { kind: "edit_cells", tableIndex, cells };

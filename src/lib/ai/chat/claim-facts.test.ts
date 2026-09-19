@@ -26,6 +26,16 @@ describe("extractHardFacts", () => {
     ]);
   });
 
+  it("attaches a parked [n] marker via the Citations list", () => {
+    const facts = extractHardFacts(
+      "Equipment E/PR/070 [1] remains qualified.\n\nCitations:\n1. [PQR-24-PR-102.pdf, p. 2]"
+    );
+    const equipment = facts.find((fact) => fact.text === "E/PR/070");
+    expect(equipment?.cited).toEqual([
+      { filename: "PQR-24-PR-102.pdf", page: 2 },
+    ]);
+  });
+
   it("extracts dates, durations, temperatures, and unit numbers", () => {
     const facts = extractHardFacts(
       "Incubation 14 days at 20-25 °C on 12 Jan 2024 filled 10,000 units, contaminated units 0."

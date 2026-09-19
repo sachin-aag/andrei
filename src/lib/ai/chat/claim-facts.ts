@@ -1,9 +1,11 @@
 import { splitSentences } from "@/lib/citations/citation-site";
 import {
+  citationNumbersFromMarker,
   isNumericCitationMarker,
   isSourceCitationBracket,
   parseSourceCitation,
 } from "@/lib/placeholders/citation-bracket";
+import { sourceCitationsByNumber } from "@/lib/suggestions/citations-at-end";
 
 export type HardFactKind =
   | "date"
@@ -101,7 +103,8 @@ export function stripCitationBrackets(text: string): string {
 function citationsInRange(
   text: string,
   rangeStart: number,
-  rangeEnd: number
+  rangeEnd: number,
+  parkedByNumber: ReadonlyMap<number, string>
 ): CitedPage[] {
   const cited: CitedPage[] = [];
   const re = /\[[^\]]+\]/g;
@@ -111,6 +114,18 @@ function citationsInRange(
     if (match.index >= rangeEnd) break;
     if (match.index < rangeStart) continue;
     const raw = match[0];
+    if (isNumericCitationMarker(raw)) {
+      for (const n of citationNumbersFromMarker(raw)) {
+        const parked = parkedByNumber.get(n);
+        if (!parked) continue;
+        const parsed = parseSourceCitation(parked);
+        if (!parsed || parsed.pages.length === 0) continue;
+        for (const page of parsed.pages) {
+          cited.push({ filename: parsed.filename, page });
+        }
+      }
+      continue;
+    }
     if (!isSourceCitationBracket(raw)) continue;
     const parsed = parseSourceCitation(raw);
     if (!parsed) continue;
@@ -120,6 +135,12 @@ function citationsInRange(
     }
   }
   return cited;
+}
+
+/** Source pages cited in `text`, including parked `[n]` resolved via Citations:. */
+export function citedPagesFromText(text: string): CitedPage[] {
+  if (!text.trim()) return [];
+  return citationsInRange(text, 0, text.length, sourceCitationsByNumber(text));
 }
 
 function citationSpans(text: string): Array<{ start: number; end: number }> {
@@ -199,13 +220,19 @@ export function extractHardFacts(text: string): HardFact[] {
   const facts: HardFact[] = [];
   const taken: Array<{ start: number; end: number }> = [];
   const citeSpans = citationSpans(text);
+  const parkedByNumber = sourceCitationsByNumber(text);
   const sentenceCited = (start: number, end: number): CitedPage[] => {
     for (const span of splitSentences(text)) {
       if (start >= span.start && start < span.end) {
-        return citationsInRange(text, span.start, span.end);
+        return citationsInRange(text, span.start, span.end, parkedByNumber);
       }
     }
-    return citationsInRange(text, Math.max(0, start - 80), Math.min(text.length, end + 80));
+    return citationsInRange(
+      text,
+      Math.max(0, start - 80),
+      Math.min(text.length, end + 80),
+      parkedByNumber
+    );
   };
 
   collectKind(facts, taken, citeSpans, text, IDENTIFIER_RE, "identifier", sentenceCited);
