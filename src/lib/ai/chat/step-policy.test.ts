@@ -110,6 +110,20 @@ describe("prepareReportChatStep (characterization)", () => {
     });
   });
 
+  it("does not restart start_document_review after a truncated matching finish", () => {
+    const decision = prepareReportChatStep(
+      baseInput({
+        retrievalPolicy: "adaptive",
+        reviewPhase: "complete",
+        requireInventoryReview: true,
+        restartInventoryReview: false,
+      })
+    );
+    expect(decision.toolChoice).toBeUndefined();
+    expect(decision.activeTools).not.toContain("start_document_review");
+    expect(decision.activeTools).toContain("edit_table");
+  });
+
   it("hides search_documents after a cited hit", () => {
     const searchGate = createSearchGate();
     const decision = prepareReportChatStep(

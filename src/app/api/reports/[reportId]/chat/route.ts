@@ -675,6 +675,12 @@ async function handleChatPost(
         return isAssistantTurnCancelRequested(sessionId);
       },
       prepareStep: ({ steps, messages }) => {
+        const inventoryReviewInput = {
+          documentType: report.documentType,
+          sections: mergedSections,
+          sectionKeys: inventoryTurnSections,
+          finishedCoverageKey: documentReview.finishedCoverageKey(),
+        };
         const decision = prepareReportChatStep({
           advertisedTools,
           steps,
@@ -691,13 +697,14 @@ async function handleChatPost(
             alreadyDrafted != null
               ? false
               : inScopeEmptyInventoryNeedsReview({
-                  documentType: report.documentType,
-                  sections: mergedSections,
-                  sectionKeys: inventoryTurnSections,
-                  finishedCoverageKey: documentReview.finishedCoverageKey(),
+                  ...inventoryReviewInput,
                   inventoryFinishSatisfiesDraft:
                     documentReview.inventoryFinishSatisfiesDraft(),
                 }),
+          restartInventoryReview:
+            alreadyDrafted != null
+              ? false
+              : inScopeEmptyInventoryNeedsReview(inventoryReviewInput),
           searchGate,
           forceListAttachments: lastStartNeedsAttachmentScope(steps),
           forceFinishReview:

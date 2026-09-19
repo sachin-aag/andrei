@@ -197,11 +197,52 @@ export function neighborFillPages<T extends ReviewPagePlanInput>(
 }
 
 /**
+ * Preferred inventory files (PRQR / PMC / alarm-trend) that had zero scored
+ * pages. A few CSV-IQ / FAT hits must not skip those files — that is the
+ * remaining-section hang (floor-8 pad, then truncated finish cannot unlock).
+ */
+function preferredPagesMissingFromHits<T extends ReviewPagePlanInput>(
+  pages: readonly T[],
+  hits: readonly T[],
+  objective: string
+): T[] {
+  const section = inventorySectionForObjective(objective);
+  if (!section) return [];
+  const hitPreferredIds = new Set<string>();
+  for (const page of hits) {
+    if (isPreferredInventoryFilename(page.filename, section)) {
+      hitPreferredIds.add(page.attachmentId);
+    }
+  }
+  return pages.filter(
+    (page) =>
+      isPreferredInventoryFilename(page.filename, section) &&
+      !hitPreferredIds.has(page.attachmentId) &&
+      !filenameConflictsWithInventoryObjective(page.filename, objective)
+  );
+}
+
+function withNeighborFill<T extends ReviewPagePlanInput>(
+  prioritized: T[],
+  pages: readonly T[],
+  cap: number
+): T[] {
+  if (prioritized.length >= REVIEW_OBJECTIVE_PAGE_FLOOR) return prioritized;
+  const fill = Math.min(
+    REVIEW_OBJECTIVE_PAGE_FLOOR - prioritized.length,
+    cap - prioritized.length
+  );
+  if (fill <= 0) return prioritized;
+  return [...prioritized, ...neighborFillPages(pages, prioritized, fill)];
+}
+
+/**
  * Queue pages that match the review objective. Do not pad leftovers up to
  * the listing cap — an objective-filtered finish is complete for that `|obj:`.
  * When few pages score, keep nearby pages in the same file up to
  * `REVIEW_OBJECTIVE_PAGE_FLOOR`. When nothing scores, take that many
- * fair-shared pages so the walk is not empty.
+ * fair-shared pages so the walk is not empty. Preferred inventory files
+ * with zero hits are still queued (all of their pages, up to `cap`).
  */
 export function planReviewPages<T extends ReviewPagePlanInput>(
   pages: readonly T[],
@@ -217,9 +258,25 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
   }
   const relevant: T[] = [];
   for (const page of pages) {
-    if (scoreReviewPage(page, objective) > 0) relevant.push(page);
+    if (
+      scoreReviewPage(page, objective) > 0 &&
+      !filenameConflictsWithInventoryObjective(page.filename, objective)
+    ) {
+      relevant.push(page);
+    }
   }
+  const preferredMissing = preferredPagesMissingFromHits(
+    pages,
+    relevant,
+    objective
+  );
   if (relevant.length === 0) {
+    if (preferredMissing.length > 0) {
+      return selectReviewPages(
+        preferredMissing,
+        Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap)
+      );
+    }
     const withoutForeignInventory = pages.filter(
       (page) =>
         !filenameConflictsWithInventoryObjective(page.filename, objective)
@@ -228,28 +285,14 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
       withoutForeignInventory.length > 0 ? withoutForeignInventory : pages;
     const section = inventorySectionForObjective(objective);
     if (section) {
-      const preferred = pool.filter((page) =>
-        isPreferredInventoryFilename(page.filename, section)
+      const notDemoted = pool.filter(
+        (page) => !isDemotedInventoryFilename(page.filename)
       );
-      if (preferred.length > 0) {
-        pool = preferred;
-      } else {
-        const notDemoted = pool.filter(
-          (page) => !isDemotedInventoryFilename(page.filename)
-        );
-        if (notDemoted.length > 0) pool = notDemoted;
-      }
+      if (notDemoted.length > 0) pool = notDemoted;
     }
     return selectReviewPages(pool, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap));
   }
-  const prioritized = selectReviewPages(relevant, cap);
-  if (prioritized.length >= REVIEW_OBJECTIVE_PAGE_FLOOR) {
-    return prioritized;
-  }
-  const fill = Math.min(
-    REVIEW_OBJECTIVE_PAGE_FLOOR - prioritized.length,
-    cap - prioritized.length
-  );
-  if (fill <= 0) return prioritized;
-  return [...prioritized, ...neighborFillPages(pages, prioritized, fill)];
+  const candidate =
+    preferredMissing.length > 0 ? [...relevant, ...preferredMissing] : relevant;
+  return withNeighborFill(selectReviewPages(candidate, cap), pages, cap);
 }

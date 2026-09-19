@@ -343,6 +343,63 @@ describe("planReviewPages", () => {
     const selected = planReviewPages(pages, "elr_monitoring", 2500);
     expect(selected.map((page) => page.attachmentId)).toEqual(["prqr"]);
   });
+
+  it("queues PRQR and PMC on breakdowns even when a few FAT pages score", () => {
+    const fatHits = Array.from({ length: 3 }, (_, i) => ({
+      attachmentId: "fat",
+      pageNumber: i + 1,
+      filename: "FAT-OQ-PR-012.pdf",
+      transcript: `Document Reference FAT-OQ-12 Date 12/0${i + 1}/2025 Corrective Action Taken replace seal`,
+      outlineTitle: "FAT",
+      identifiers: [] as string[],
+    }));
+    const csvHeaders = Array.from({ length: 6 }, (_, i) => ({
+      attachmentId: "csv",
+      pageNumber: i + 1,
+      filename: "CSV-IQ-PR-078 PART-1.pdf",
+      transcript: `Document Reference No. CSV-IQ-PR-078 Date 12/0${i + 1}/2025`,
+      outlineTitle: "IQ",
+      identifiers: [] as string[],
+    }));
+    const prqrCovers = Array.from({ length: 20 }, (_, i) => ({
+      attachmentId: "prqr",
+      pageNumber: i + 1,
+      filename: "PRQR-25-PR-060 Report.pdf",
+      transcript: `Document No. PRQR-25-PR-060 Date 12/01/2025 cover ${i}`,
+      outlineTitle: "Cover",
+      identifiers: [] as string[],
+    }));
+    const pmcCovers = Array.from({ length: 8 }, (_, i) => ({
+      attachmentId: "pmc",
+      pageNumber: i + 1,
+      filename: "Master PMC.pdf",
+      transcript: `Document No. PMC-01 Date 12/01/2025 log ${i}`,
+      outlineTitle: "PMC",
+      identifiers: [] as string[],
+    }));
+    const alarm = {
+      attachmentId: "alarm",
+      pageNumber: 2,
+      filename: "Alarm trend Q2 2025.pdf",
+      transcript: "Alarm Description FM Nitrogen Not Available Count 1951",
+      outlineTitle: "Alarm trend",
+      identifiers: [] as string[],
+    };
+    const selected = planReviewPages(
+      [...csvHeaders, ...fatHits, alarm, ...prqrCovers, ...pmcCovers],
+      "elr_breakdowns",
+      2500
+    );
+    const ids = new Set(selected.map((page) => page.attachmentId));
+    expect(ids.has("prqr")).toBe(true);
+    expect(ids.has("pmc")).toBe(true);
+    expect(selected.filter((page) => page.attachmentId === "prqr").length).toBe(
+      20
+    );
+    expect(selected.filter((page) => page.attachmentId === "csv").length).toBe(
+      0
+    );
+  });
 });
 
 describe("neighborFillPages", () => {

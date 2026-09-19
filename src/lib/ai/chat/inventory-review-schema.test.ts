@@ -246,6 +246,17 @@ describe("scoreInventoryReviewPage", () => {
     expect(
       scoreInventoryReviewPage(
         {
+          filename: "CSV-IQ-PR-078 PART-1.pdf",
+          transcript:
+            "Document Reference No. CSV-IQ-PR-078 Date 12/01/2025",
+          outlineTitle: "IQ",
+        },
+        "elr_breakdowns"
+      )
+    ).toBe(0);
+    expect(
+      scoreInventoryReviewPage(
+        {
           filename: "RTM for E-PR-068.pdf",
           transcript:
             "URS environmental monitoring sampling ports Date 01/04/2025",

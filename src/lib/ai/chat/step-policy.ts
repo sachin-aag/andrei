@@ -42,6 +42,12 @@ export type PrepareReportChatStepInput = {
   retrievalPolicy: RetrievalPolicy;
   reviewPhase: DocumentReviewPhase;
   requireInventoryReview: boolean;
+  /**
+   * Coverage is a different inventory (or none). Truncated matching finishes
+   * keep requireInventoryReview for the edit_table lock but must not restart.
+   * Omit to use requireInventoryReview as the complete-phase restart signal.
+   */
+  restartInventoryReview?: boolean;
   searchGate?: SearchGate;
   /**
    * E2: when the last start_document_review returned needs_attachment_scope,
@@ -203,6 +209,9 @@ export function prepareReportChatStep(
     requireInventoryReview: input.alreadyDrafted
       ? false
       : input.requireInventoryReview,
+    restartInventoryReview: input.alreadyDrafted
+      ? false
+      : (input.restartInventoryReview ?? input.requireInventoryReview),
   });
   const reviewActive =
     input.reviewPhase === "in_progress" ||

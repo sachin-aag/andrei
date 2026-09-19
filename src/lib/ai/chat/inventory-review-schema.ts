@@ -192,13 +192,14 @@ function preferredFilenameNeedles(section: SectionType): readonly string[] {
   return preferredFilenameFamilies(section).flat();
 }
 
-/** CSV-OQ / RTM / URS pages name "environmental monitoring" without being the EM grid. */
+/** CSV-OQ / CSV-IQ / RTM / URS pages name "environmental monitoring" without being the EM grid. */
 export function isDemotedInventoryFilename(
   filename: string | null | undefined
 ): boolean {
   if (!filename) return false;
   const n = filename.toLowerCase();
   if (n.includes("csv-oq") || n.includes("csv oq")) return true;
+  if (n.includes("csv-iq") || n.includes("csv iq")) return true;
   if (n.includes("rtm for") || /\brtm\b/.test(n)) return true;
   if (/\burs\b/.test(n) || n.includes("user requirement")) return true;
   return false;
@@ -490,7 +491,7 @@ export function scoreInventoryReviewPage(
   }
 
   if (isDemotedInventoryFilename(page.filename)) {
-    // URS / CSV-OQ / RTM may name "environmental monitoring" and carry a
+    // URS / CSV-OQ / CSV-IQ / RTM may name "environmental monitoring" and carry a
     // revision date. Require a dated result table (two distinctive columns).
     if (!(dated && columnHits >= 2)) return 0;
   }
