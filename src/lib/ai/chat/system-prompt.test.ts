@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v122-elr-period-dates");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v123-citation-fact-exemption");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -580,7 +580,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "Leftover <date>/<identifier>/<number> are OK for facts still missing after that lookup"
     );
-    expect(prompt).toContain("Do not search-for-cite report-frame facts");
+    expect(prompt).toContain("Do not search-for-cite facts the engineer already confirmed");
     expect(prompt).toContain(
       "The server rejects unsupported inventory facts on MJ and flags them as unsourced on other packs"
     );

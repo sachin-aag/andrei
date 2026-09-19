@@ -113,11 +113,13 @@ when the file set is unknown. Rehydrate only a finish with `status=complete`
 and `truncated !== true`.
 
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
-against the citation ledger's served quotes (`groundDraftText`). Skip
-attachment grounding (and skip the repair search) for title-page /
-user-confirmed identity, the ELR 1 April–31 March window, recap sections, and
-assessment narratives (`citation-exemption.ts`). Inventory tables stay
-strict. Finish seeds `reviewedEvidence` (every walked page, not the
+against the citation ledger's served quotes (`groundDraftText`). That
+gate is fact-level (`citation-exemption.ts`): never skip a whole
+section. Exempt title-page / user-confirmed identity, the ELR
+1 April–31 March window, and facts already written in this report
+(sibling table or another section). Copied attachment facts still need
+a page in Purpose, Responsibilities, assessments, and recaps. Tables
+stay strict. Finish seeds `reviewedEvidence` (every walked page, not the
 60-finding sample) so those transcripts can hydrate. Empty ledger or
 pages with no quotes fail open. MJ `unsupportedFactPolicy: block` (no
 persist; `unsupported_facts`). On a blocked MJ write, those tools run

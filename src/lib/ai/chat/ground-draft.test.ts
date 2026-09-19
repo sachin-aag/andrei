@@ -214,6 +214,42 @@ describe("groundDraftText citation parking", () => {
     expect(invented.text).toContain("E/PR/071");
   });
 
+  it("frame mode exempts a fact already stated in a sibling table", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Planner.pdf",
+        pageNumber: 22,
+        attachmentId: "att-plan",
+        quote: "Annual calibration planner EQ-12 Balance",
+      },
+    ]);
+    const recap = groundDraftText({
+      text: "[[table]] records breakdown PR/BD/001.",
+      ledger,
+      policy: "block",
+      grounding: {
+        mode: "frame",
+        alreadyStatedText: "PR/BD/001 closed 12 Mar 2025.",
+      },
+    });
+    expect(recap.blocked).toBe(false);
+    expect(recap.text).toContain("PR/BD/001");
+    expect(recap.text).not.toContain("Planner.pdf");
+
+    const copied = groundDraftText({
+      text: "Follow SOP/DP/QA/014 for the review.",
+      ledger,
+      policy: "block",
+      grounding: {
+        mode: "frame",
+        alreadyStatedText: "PR/BD/001 closed 12 Mar 2025.",
+      },
+    });
+    expect(copied.blocked).toBe(true);
+    expect(copied.text).toContain("<identifier>");
+    expect(copied.text).not.toContain("SOP/DP/QA/014");
+  });
+
   it("rewrites a parked Citations line instead of inserting a filename cite beside [n]", () => {
     const parkedDraft = `The review follows ${SOP} [1].\n\nCitations:\n1. [${PROTOCOL}, p. 21]`;
     const grounded = groundDraftText({

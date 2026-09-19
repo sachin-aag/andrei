@@ -1,83 +1,50 @@
 import { describe, expect, it } from "vitest";
 import {
+  alreadyStatedHaystack,
   citationGroundingMode,
   citationGroundingRunsRepair,
+  contentWithoutField,
   isExemptFrameFact,
 } from "./citation-exemption";
 import { extractHardFacts } from "./claim-facts";
 
 describe("citationGroundingMode", () => {
-  it("skips Purpose, Responsibilities, Abbreviations, and recap sections", () => {
+  it("frames every prose field, including Purpose, recap, and assessment", () => {
     expect(
       citationGroundingMode({
         documentType: "equipment_lifecycle_report",
         section: "elr_objective",
         targetField: "narrative",
       })
-    ).toBe("skip");
+    ).toBe("frame");
     expect(
       citationGroundingMode({
         documentType: "equipment_lifecycle_report",
         section: "elr_responsibilities",
         targetField: "narrative",
       })
-    ).toBe("skip");
-    expect(
-      citationGroundingMode({
-        documentType: "equipment_lifecycle_report",
-        section: "elr_abbreviations",
-        targetField: "table",
-        tool: "edit_table",
-      })
-    ).toBe("skip");
+    ).toBe("frame");
     expect(
       citationGroundingMode({
         documentType: "equipment_lifecycle_report",
         section: "elr_system_trends",
         targetField: "narrative",
       })
-    ).toBe("skip");
+    ).toBe("frame");
     expect(
       citationGroundingMode({
         documentType: "equipment_lifecycle_report",
         section: "elr_conclusion",
         targetField: "recommendationNarrative",
       })
-    ).toBe("skip");
-  });
-
-  it("skips assessment narratives and investigation conclusion prose", () => {
+    ).toBe("frame");
     expect(
       citationGroundingMode({
         documentType: "equipment_lifecycle_report",
         section: "elr_csv_status",
         targetField: "narrative",
       })
-    ).toBe("skip");
-    expect(
-      citationGroundingMode({
-        documentType: "equipment_lifecycle_report",
-        section: "elr_media_fill",
-        targetField: "narrative",
-      })
-    ).toBe("skip");
-    expect(
-      citationGroundingMode({
-        documentType: "equipment_lifecycle_report",
-        section: "elr_risk_actions",
-        targetField: "overallGrade",
-      })
-    ).toBe("skip");
-    expect(
-      citationGroundingMode({
-        documentType: "investigation_report",
-        section: "conclusion",
-        targetField: "narrative",
-      })
-    ).toBe("skip");
-  });
-
-  it("frames Scope and Equipment description prose", () => {
+    ).toBe("frame");
     expect(
       citationGroundingMode({
         documentType: "equipment_lifecycle_report",
@@ -88,18 +55,25 @@ describe("citationGroundingMode", () => {
     ).toBe("frame");
     expect(
       citationGroundingMode({
-        documentType: "equipment_lifecycle_report",
-        section: "elr_system_description",
+        documentType: "investigation_report",
+        section: "conclusion",
+        targetField: "narrative",
+      })
+    ).toBe("frame");
+    expect(
+      citationGroundingMode({
+        documentType: "investigation_report",
+        section: "define",
         targetField: "narrative",
       })
     ).toBe("frame");
   });
 
-  it("keeps inventory and media-fill tables strict", () => {
+  it("keeps every table write strict, including Responsibilities and Abbreviations", () => {
     expect(
       citationGroundingMode({
         documentType: "equipment_lifecycle_report",
-        section: "elr_csv_status",
+        section: "elr_responsibilities",
         targetField: "table",
         tool: "edit_table",
       })
@@ -107,7 +81,15 @@ describe("citationGroundingMode", () => {
     expect(
       citationGroundingMode({
         documentType: "equipment_lifecycle_report",
-        section: "elr_media_fill",
+        section: "elr_abbreviations",
+        targetField: "table",
+        tool: "edit_table",
+      })
+    ).toBe("strict");
+    expect(
+      citationGroundingMode({
+        documentType: "equipment_lifecycle_report",
+        section: "elr_csv_status",
         targetField: "table",
         tool: "edit_table",
       })
@@ -120,13 +102,6 @@ describe("citationGroundingMode", () => {
         tool: "draft_field",
       })
     ).toBe("strict");
-    expect(
-      citationGroundingMode({
-        documentType: "investigation_report",
-        section: "define",
-        targetField: "narrative",
-      })
-    ).toBe("strict");
   });
 });
 
@@ -135,6 +110,32 @@ describe("citationGroundingRunsRepair", () => {
     expect(citationGroundingRunsRepair("skip")).toBe(false);
     expect(citationGroundingRunsRepair("frame")).toBe(true);
     expect(citationGroundingRunsRepair("strict")).toBe(true);
+  });
+});
+
+describe("alreadyStatedHaystack", () => {
+  it("omits the field being written and keeps sibling table text", () => {
+    const haystack = alreadyStatedHaystack({
+      sections: {
+        elr_csv_status: {
+          narrative: { type: "doc", content: [] },
+          table: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Breakdown PR/BD/001 closed." }],
+              },
+            ],
+          },
+        },
+      },
+      exclude: { section: "elr_csv_status", targetField: "narrative" },
+    });
+    expect(haystack).toContain("PR/BD/001");
+    expect(contentWithoutField({ narrative: "x", table: "y" }, "narrative")).toEqual({
+      table: "y",
+    });
   });
 });
 
@@ -173,6 +174,16 @@ describe("isExemptFrameFact", () => {
     }
   });
 
+  it("exempts a fact already written in another field of this report", () => {
+    const fact = extractHardFacts("Breakdown PR/BD/001 closed.")[0]!;
+    expect(fact.kind).toBe("identifier");
+    expect(
+      isExemptFrameFact(fact, {
+        alreadyStatedText: "Table: PR/BD/001 closed with CAPA CA-12.",
+      })
+    ).toBe(true);
+  });
+
   it("does not exempt a mid-year event date or an invented batch", () => {
     const event = extractHardFacts("Calibrated 15 April 2024.")[0]!;
     expect(event.kind).toBe("date");
@@ -181,5 +192,10 @@ describe("isExemptFrameFact", () => {
     const batch = extractHardFacts("Media fill MF-25-VIAL-01.")[0]!;
     expect(batch.kind).toBe("identifier");
     expect(isExemptFrameFact(batch, fySource)).toBe(false);
+    expect(
+      isExemptFrameFact(batch, {
+        alreadyStatedText: "Breakdown PR/BD/001 closed.",
+      })
+    ).toBe(false);
   });
 });
