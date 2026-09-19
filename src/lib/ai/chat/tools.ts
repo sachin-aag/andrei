@@ -252,6 +252,7 @@ import {
   type UnsupportedFactsToolResult,
 } from "@/lib/ai/chat/ground-draft";
 import {
+  alreadyStatedHaystack,
   citationGroundingMode,
   citationGroundingRunsRepair,
   type CitationWriteTool,
@@ -1092,6 +1093,8 @@ export function buildChatTools(opts: {
   }[];
   /** Title-page identity for frame-fact citation exemptions (ELR period, equipment ID). */
   reportMetadata?: Record<string, unknown> | null;
+  /** Live section JSON so recaps of this document are exempt (not the field being written). */
+  reportSections?: Partial<Record<SectionType, Record<string, unknown>>> | null;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1210,20 +1213,52 @@ export function buildChatTools(opts: {
   }
   const unsupportedFactPolicy: UnsupportedFactPolicy =
     opts.unsupportedFactPolicy ?? getCustomerPack().unsupportedFactPolicy;
+  const sameTurnStated = new Map<string, string>();
+  const rememberSameTurnStated = (
+    section: SectionType,
+    targetField: string,
+    text: string
+  ) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const key = `${section}:${targetField}`;
+    const prev = sameTurnStated.get(key);
+    sameTurnStated.set(key, prev ? `${prev}\n${trimmed}` : trimmed);
+  };
   const writeGrounding = (
     section: SectionType,
     targetField: string,
-    tool: CitationWriteTool
-  ): GroundDraftGrounding => ({
-    mode: citationGroundingMode({
-      documentType,
-      section,
-      targetField,
-      tool,
-    }),
-    reportMetadata: opts.reportMetadata ?? null,
-    latestUserMessageText: latestUserMessageText(messages),
-  });
+    tool: CitationWriteTool,
+    sectionContent?: Record<string, unknown>
+  ): GroundDraftGrounding => {
+    const extra: string[] = [];
+    if (sectionContent) {
+      extra.push(
+        alreadyStatedHaystack({
+          sections: { [section]: sectionContent },
+          exclude: { section, targetField },
+        })
+      );
+    }
+    for (const [key, text] of sameTurnStated) {
+      if (key !== `${section}:${targetField}`) extra.push(text);
+    }
+    return {
+      mode: citationGroundingMode({
+        documentType,
+        section,
+        targetField,
+        tool,
+      }),
+      reportMetadata: opts.reportMetadata ?? null,
+      latestUserMessageText: latestUserMessageText(messages),
+      alreadyStatedText: alreadyStatedHaystack({
+        sections: opts.reportSections,
+        exclude: { section, targetField },
+        extra,
+      }),
+    };
+  };
   let evidenceHydrate: Promise<void> | null = null;
   const ensureEvidence = () => {
     evidenceHydrate ??= citationLedger.hydrateQuotes(async (pages) => {
@@ -2103,7 +2138,8 @@ export function buildChatTools(opts: {
         const insertGrounding = writeGrounding(
           section,
           resolvedField,
-          "propose_edit"
+          "propose_edit",
+          loaded.content as Record<string, unknown>
         );
         let groundedInsert = groundDraftText({
           text: insertText,
@@ -2284,6 +2320,11 @@ export function buildChatTools(opts: {
                 sectionContent: loaded.content,
                 newCommentId: nearby.suggestionId,
               });
+              rememberSameTurnStated(
+                section,
+                resolvedField,
+                `${normalizedInsert}\n${second?.insertText ?? ""}`
+              );
               return proposedWithSupersession(
                 {
                   status: "proposed" as const,
@@ -2374,6 +2415,11 @@ export function buildChatTools(opts: {
             sectionContent: loaded.content,
             newCommentId: suggestionId,
           });
+          rememberSameTurnStated(
+            section,
+            resolvedField,
+            `${normalizedInsert}\n${second?.insertText ?? ""}`
+          );
           return proposedWithSupersession(
             {
               status: "proposed" as const,
@@ -3209,7 +3255,8 @@ export function buildChatTools(opts: {
         const tableGrounding = writeGrounding(
           section,
           resolvedField,
-          "edit_table"
+          "edit_table",
+          loaded.content as Record<string, unknown>
         );
         let groundedTable = groundTableOperation({
           operation: originalTableOp,
@@ -3362,6 +3409,11 @@ export function buildChatTools(opts: {
           sectionContent: loaded.content,
           newCommentId: suggestionId,
         });
+        rememberSameTurnStated(
+          section,
+          resolvedField,
+          repairTextsFromTableOperation(groundedTable.operation).join("\n")
+        );
         return proposedWithSupersession(
           {
             status: "proposed" as const,
@@ -3576,7 +3628,8 @@ export function buildChatTools(opts: {
         const draftGrounding = writeGrounding(
           section,
           resolvedField,
-          "draft_field"
+          "draft_field",
+          loaded.content as Record<string, unknown>
         );
         let groundedDraft = groundDraftText({
           text: normalizedMarkdown,
@@ -3670,6 +3723,7 @@ export function buildChatTools(opts: {
           sectionContent: loaded.content,
           newCommentId: suggestionId,
         });
+        rememberSameTurnStated(section, resolvedField, groundedDraft.text);
         return proposedWithSupersession(
           {
             status: "drafted" as const,

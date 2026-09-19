@@ -431,6 +431,7 @@ export function groundDraftText(input: {
       isExemptFrameFact(fact, {
         reportMetadata: input.grounding?.reportMetadata,
         latestUserMessageText: input.grounding?.latestUserMessageText,
+        alreadyStatedText: input.grounding?.alreadyStatedText,
       })
     ) {
       return {

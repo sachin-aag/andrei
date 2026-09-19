@@ -593,6 +593,7 @@ async function handleChatPost(
       !Array.isArray(report.metadata)
         ? (report.metadata as Record<string, unknown>)
         : null,
+    reportSections: mergedSections,
   });
   const scopedTools: ToolSet =
     mode === "plan"
