@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { JSONContent } from "@tiptap/core";
 import { ELR_ATTACHMENTS_HEADERS } from "@/lib/document-types/elr/sections";
 import {
   applyElrLiveAttachmentsTable,
@@ -45,8 +46,8 @@ function folder(
   };
 }
 
-function cellTexts(doc: { content?: Array<{ content?: unknown[] }> }): string[][] {
-  const table = doc.content?.[0] as {
+function cellTexts(doc: JSONContent | { content?: unknown[] }): string[][] {
+  const table = (doc.content?.[0] ?? doc) as {
     content?: Array<{
       content?: Array<{
         content?: Array<{ content?: Array<{ text?: string }> }>;
@@ -155,7 +156,7 @@ describe("applyElrLiveAttachmentsTable", () => {
       attachment({ id: "a1", filename: "protocol.pdf", pageCount: 3 }),
     ]);
     expect(next[0]).toEqual(sections[0]);
-    const table = (next[1]?.content as { table: { type: string } }).table;
+    const table = (next[1]?.content as { table: JSONContent }).table;
     expect(cellTexts(table)[1]?.[2]).toBe("protocol.pdf");
   });
 });
