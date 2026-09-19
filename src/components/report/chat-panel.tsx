@@ -276,7 +276,9 @@ function appliedEditsFromParts(
     const tool = readChatToolPart(part);
     if (!tool?.output) continue;
     const status = tool.output.status;
-    if (status !== "applied") continue;
+    if (status !== "applied" && status !== "proposed" && status !== "drafted") {
+      continue;
+    }
     const section =
       typeof tool.output.section === "string" ? tool.output.section : "";
     const targetField =

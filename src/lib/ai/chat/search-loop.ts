@@ -19,6 +19,8 @@ export type ToolCallLike = {
   type?: string;
   tool?: string;
   toolCallId?: string;
+  input?: unknown;
+  args?: unknown;
 };
 
 export type ToolResultLike = {

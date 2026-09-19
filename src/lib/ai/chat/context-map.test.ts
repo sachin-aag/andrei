@@ -54,6 +54,9 @@ describe("buildReportContextMap", () => {
     // one met + one partial; the not_met is bypassed so excluded
     expect(map).toContain("1 met / 1 partial / 0 not-met");
     expect(map).toContain("1 open suggestion(s)");
+    expect(map).toContain(
+      "Suggestions (AI cards): 1 open, 0 approved, 0 dismissed"
+    );
     // analyze root cause is empty
     expect(map).toContain("Analyze [analyze] — empty");
     expect(map).toContain("analyze method: not chosen");
@@ -115,6 +118,26 @@ describe("buildReportContextMap", () => {
     expect(injected).toContain("topics=");
     expect(injected).not.toMatch(/topics="# System/);
     expect(injected.toLowerCase()).not.toMatch(/topics="system:/);
+  });
+
+  it("summarizes approved and dismissed AI cards at document level", () => {
+    const map = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: { define: { narrative: docWith("Filled define narrative.") } },
+      evaluations: [],
+      comments: [
+        { section: "define", kind: "ai_fix", status: "open" },
+        { section: "define", kind: "ai_fix", status: "resolved" },
+        { section: "define", kind: "ai_redraft", status: "dismissed" },
+        { section: "define", kind: "manager", status: "open" },
+      ],
+      documents: [],
+    });
+    expect(map).toContain("1 open / 1 approved / 1 dismissed suggestion(s)");
+    expect(map).toContain(
+      "Suggestions (AI cards): 1 open, 1 approved, 1 dismissed"
+    );
+    expect(map).toContain("Call list_suggestions to inspect");
   });
 
   it("points file-set questions at list_attachments instead of a buried count", () => {

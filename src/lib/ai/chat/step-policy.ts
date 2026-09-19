@@ -20,7 +20,14 @@ import {
   tableEditLoopDirective,
   type ChatStepWithTools,
 } from "@/lib/ai/chat/table-edit-loop";
-import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
+import {
+  DOCUMENT_WRITE_TOOL_SET,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
+import {
+  stepsRequestedHiddenWriteTool,
+  withUnlockedWriteTools,
+} from "@/lib/ai/chat/unsupported-tool";
 
 export type ChatStepToolChoice = {
   type: "tool";
@@ -60,6 +67,12 @@ export type PrepareReportChatStepInput = {
    * instead of starting another continue that will hit the 270s abort.
    */
   forceFinishReview?: boolean;
+  /**
+   * Write tools kept registered on the ToolSet for Agent read turns so a
+   * remapped `unsupported_tool` can unlock them mid-turn. Empty when they
+   * were stripped from the ToolSet (Ask / social).
+   */
+  registeredWriteTools?: readonly string[];
 };
 
 function asTableEditSteps(
@@ -232,19 +245,28 @@ export function prepareReportChatStep(
     }
     return next;
   };
+  const unlockWrites =
+    input.userIntentKind === "read" &&
+    !reviewActive &&
+    stepsRequestedHiddenWriteTool(input.steps, DOCUMENT_WRITE_TOOL_SET);
+  const maybeUnlock = (tools: readonly string[]): string[] =>
+    unlockWrites
+      ? withUnlockedWriteTools(tools, input.registeredWriteTools ?? [])
+      : [...tools];
+
   if (!prepared) {
     let activeTools = applyLoopHides(input.advertisedTools);
     if (input.alreadyDrafted) {
       activeTools = withoutDraftFieldTools(activeTools);
     }
-    return { activeTools };
+    return { activeTools: maybeUnlock(activeTools) };
   }
   let activeTools = input.alreadyDrafted
     ? withoutDraftFieldTools(prepared.activeTools)
     : prepared.activeTools;
   activeTools = applyLoopHides(activeTools);
   return {
-    activeTools,
+    activeTools: maybeUnlock(activeTools),
     ...(prepared.toolChoice
       ? {
           toolChoice: {

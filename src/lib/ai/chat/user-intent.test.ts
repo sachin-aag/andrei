@@ -228,6 +228,34 @@ describe("classifyChatUserIntent", () => {
     ).toBe(false);
   });
 
+  it("treats missing-work complaints as write, including why-questions", () => {
+    for (const text of [
+      "nothing was filled",
+      "the table is still empty",
+      "I don't see anything in the table",
+      "you said you filled it",
+      "why isn't the table filled?",
+      "didn't fill anything",
+      "nothing showed up",
+    ]) {
+      expect(classifyChatUserIntent({ userText: text, mode: "agent" })).toEqual({
+        kind: "write",
+        reason: "missing_work",
+      });
+      expect(
+        needsLlmIntentClassification(
+          classifyChatUserIntent({ userText: text, mode: "agent" })
+        )
+      ).toBe(false);
+    }
+    expect(
+      classifyChatUserIntent({
+        userText: "what is in the equipment table?",
+        mode: "agent",
+      }).kind
+    ).toBe("read");
+  });
+
   it("does not let Agent mode turn questions or greetings into writes", () => {
     expect(
       classifyChatUserIntent({
@@ -480,13 +508,16 @@ describe("intentToolAvailabilityRule", () => {
     expect(rule).toContain("manage_worksheet");
     expect(rule).toContain("extract_sheet");
     expect(rule).toContain("plot_xy_scatter");
+    expect(rule).toContain("start hidden");
     expect(rule).not.toContain("propose_edit");
   });
 
-  it("names the stripped document tools on a read turn", () => {
+  it("names the hidden document tools on a read turn", () => {
     const rule = intentToolAvailabilityRule("read", "document");
     expect(rule).toContain("propose_edit");
     expect(rule).toContain("draft_field");
+    expect(rule).toContain("start hidden");
+    expect(rule).toContain("becomes available on the next step");
     expect(rule).not.toContain("write_column");
   });
 

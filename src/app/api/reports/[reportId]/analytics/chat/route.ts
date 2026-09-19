@@ -257,9 +257,7 @@ async function handleAnalyticsChatPost(
     mentionBlock: buildAnalyticsMentionBlock(mentions),
     intent: userIntent.kind,
   });
-  const tools = withUnsupportedChatToolFallback(
-    restrictToolsForIntent(
-      buildAnalyticsChatTools({
+  const builtTools = buildAnalyticsChatTools({
         reportId,
         canEdit: canWrite,
         documentType: report.documentType,
@@ -268,12 +266,17 @@ async function handleAnalyticsChatPost(
         focusedSheetId,
         actor: auditActorFromUser(user),
         turnStartedAtMs,
-      }),
-      userIntent.kind,
-      "analytics"
-    )
+      });
+  const tools = withUnsupportedChatToolFallback(
+    userIntent.kind === "social"
+      ? restrictToolsForIntent(builtTools, "social", "analytics")
+      : canWrite
+        ? builtTools
+        : restrictToolsForIntent(builtTools, userIntent.kind, "analytics")
   );
-  const advertisedTools = advertisedChatToolNames(tools);
+  const advertisedTools = advertisedChatToolNames(
+    restrictToolsForIntent(tools, userIntent.kind, "analytics")
+  );
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
   const model = isTestStubChat()

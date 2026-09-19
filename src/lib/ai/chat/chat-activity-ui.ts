@@ -842,6 +842,26 @@ function analyticsPlotLabels(
 }
 
 function buildGenericNode(info: ChatToolPartInfo): ActivitySurfaceNode {
+  if (info.toolName === "list_suggestions") {
+    const pending = isToolPending(info);
+    const counts = info.output?.counts;
+    const open =
+      counts && typeof counts === "object" && "open" in counts
+        ? Number((counts as { open?: unknown }).open) || 0
+        : null;
+    return {
+      kind: "generic",
+      label: pending
+        ? "Checking suggestions…"
+        : open != null
+          ? `Checked suggestions (${open} open)`
+          : "Checked suggestions",
+      pending,
+      tone: "muted",
+      expandable: false,
+      children: [],
+    };
+  }
   if (isUnsupportedChatToolName(info.toolName)) {
     const pending = isToolPending(info);
     const requested =

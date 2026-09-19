@@ -15,6 +15,8 @@ import {
 import {
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
+  serializeAiFixCommentContent,
+  serializeAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
 import type { PageEvidenceRow } from "@/lib/ai/chat/citation-grounding";
 import {
@@ -2039,7 +2041,7 @@ describe("buildChatTools propose edits", () => {
     expect(markdown).not.toContain(`[${protocol}, p. 21]`);
   });
 
-  it("refuses MJ <date> dumps until a page is read this turn", async () => {
+  it("persists leftover MJ <date> tokens after lookup finds nothing", async () => {
     mockDefineSectionSelect({ type: "doc", content: [] });
     const tools = buildChatTools({
       reportId: "report-1",
@@ -2047,7 +2049,7 @@ describe("buildChatTools propose edits", () => {
       actor,
       unsupportedFactPolicy: "block",
     });
-    const refused = await tools.draft_field!.execute!(
+    const drafted = await tools.draft_field!.execute!(
       {
         section: "define",
         targetField: "narrative",
@@ -2056,11 +2058,8 @@ describe("buildChatTools propose edits", () => {
       },
       TEST_TOOL_OPTIONS
     );
-    expect(refused).toMatchObject({
-      status: "unsupported_facts",
-      keepSearchOpen: true,
-    });
-    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(dbInsertMock).toHaveBeenCalled();
   });
 
   it("persists leftover MJ placeholders after a same-turn page read", async () => {
@@ -2168,7 +2167,7 @@ describe("buildChatTools propose edits", () => {
     expect(searchReportDocumentsManyMock).toHaveBeenCalled();
   });
 
-  it("refuses leftover MJ placeholders when repair search finds a new page", async () => {
+  it("persists leftover MJ placeholders when repair search finds a new page", async () => {
     mockDefineSectionSelect({ type: "doc", content: [] });
     readDocumentPageMock.mockResolvedValueOnce({
       attachmentId: "att-plan",
@@ -2205,7 +2204,7 @@ describe("buildChatTools propose edits", () => {
       TEST_TOOL_OPTIONS
     );
     expect(read).toMatchObject({ status: "found" });
-    const refused = await tools.draft_field!.execute!(
+    const drafted = await tools.draft_field!.execute!(
       {
         section: "define",
         targetField: "narrative",
@@ -2214,19 +2213,112 @@ describe("buildChatTools propose edits", () => {
       },
       TEST_TOOL_OPTIONS
     );
-    expect(refused).toMatchObject({
-      status: "unsupported_facts",
-      keepSearchOpen: true,
-    });
-    expect(refused).toMatchObject({
-      repairHits: [
-        expect.objectContaining({
-          filename: "Cert.pdf",
-          pageNumber: 5,
-        }),
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("proposes mixed known cells and leftover MJ table placeholders after lookup", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Document", "Date"].map((text) => ({
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["", ""].map((text) => ({
+                type: "tableCell",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+          ],
+        },
       ],
     });
-    expect(dbInsertMock).not.toHaveBeenCalled();
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: "att-pqr",
+      filename: "PQR-24-PR-042.pdf",
+      pageNumber: 21,
+      transcript: "Media fill MF-24-PR-001 performed",
+      visualInterpretation: "",
+      pageContext: null,
+    });
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-cert",
+          filename: "Cert.pdf",
+          description: null,
+          pageNumber: 5,
+          chunkId: "c1",
+          sourceKind: "hybrid",
+          text: "Unrelated calibration certificate 2025/014",
+          quote: "Unrelated calibration certificate 2025/014",
+          citationId: "att:att-cert:p:5",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: "att-pqr", pageNumber: 21 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Fill known media fill id; date still missing.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            { row: 1, col: 0, insertText: "MF-24-PR-001" },
+            { row: 1, col: 1, insertText: "<date>" },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalled();
+    const comment = inserted.find((row) => {
+      const parsed = parseAiFixCommentContent(String(row.content ?? ""));
+      return parsed.tableOperation?.kind === "edit_cells";
+    });
+    expect(comment).toBeTruthy();
+    const payload = parseAiFixCommentContent(String(comment!.content));
+    expect(payload.tableOperation?.kind).toBe("edit_cells");
+    const cells =
+      payload.tableOperation?.kind === "edit_cells"
+        ? payload.tableOperation.cells
+        : [];
+    expect(cells[0]?.insertText).toContain("MF-24-PR-001");
+    expect(cells[1]?.insertText).toContain("<date>");
   });
 
   it("grounds a date from a reviewed page that was omitted from the findings sample", async () => {
@@ -3964,5 +4056,196 @@ describe("buildChatTools propose edits", () => {
     expect(payload.insertImage?.src).toBe(dataUrl);
     expect(payload.removeImage?.index).toBe(1);
     expect(inserted[0]!.anchorText).toBe("First paragraph of purpose.");
+  });
+});
+
+describe("buildChatTools list_suggestions", () => {
+  const actor = {
+    id: "engineer-1",
+    name: "Engineer",
+    role: "engineer" as const,
+  };
+
+  function suggestionRows() {
+    return [
+      {
+        id: "c-open",
+        kind: "ai_fix",
+        content: serializeAiFixCommentContent({
+          deleteText: "",
+          insertText: "Lot 24A failed dissolution.",
+          reasoning: "Name the batch.",
+        }),
+        contentPath: "narrative",
+        status: "open",
+        section: "define",
+      },
+      {
+        id: "c-approved",
+        kind: "ai_fix",
+        content: serializeAiFixCommentContent({
+          deleteText: "drift",
+          insertText: "humidity excursion",
+          reasoning: "Correct the cause.",
+        }),
+        contentPath: "narrative",
+        status: "resolved",
+        section: "define",
+      },
+      {
+        id: "c-dismissed",
+        kind: "ai_redraft",
+        content: serializeAiRedraftCommentContent({
+          markdown: "Rewrite measure.",
+          reasoning: "Too thin.",
+        }),
+        contentPath: "narrative",
+        status: "dismissed",
+        section: "measure",
+      },
+      {
+        id: "c-manager",
+        kind: "manager",
+        content: "Please expand.",
+        contentPath: "narrative",
+        status: "open",
+        section: "define",
+      },
+    ];
+  }
+
+  function mockSuggestionSelect() {
+    const rows = suggestionRows();
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => {
+        const commentChain = {
+          orderBy: vi.fn().mockResolvedValue(rows),
+          then(
+            onFulfilled: (value: unknown) => unknown,
+            onRejected?: (reason: unknown) => unknown
+          ) {
+            return Promise.resolve(rows).then(onFulfilled, onRejected);
+          },
+        };
+        return {
+          where: vi.fn().mockImplementation(() =>
+            table === comments
+              ? commentChain
+              : Promise.resolve([
+                  {
+                    id: "sec-1",
+                    reportId: "report-1",
+                    section: "define",
+                    content: { narrative: DEFINE_NARRATIVE },
+                  },
+                ])
+          ),
+        };
+      },
+    }));
+  }
+
+  beforeEach(() => {
+    dbSelectMock.mockReset();
+    mockSuggestionSelect();
+  });
+
+  it("accepts status and optional section", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(tools.list_suggestions).toBeDefined();
+    expect(accepts(tools, "list_suggestions", {})).toBe(true);
+    expect(accepts(tools, "list_suggestions", { status: "open" })).toBe(true);
+    expect(
+      accepts(tools, "list_suggestions", { status: "resolved", section: "define" })
+    ).toBe(true);
+    expect(accepts(tools, "list_suggestions", { status: "waiting" })).toBe(false);
+  });
+
+  it("lists open, approved, and dismissed AI cards and skips manager comments", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+    });
+    const result = await tools.list_suggestions!.execute!(
+      { status: "all" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      counts: { open: 1, resolved: 1, dismissed: 1 },
+      truncated: false,
+      suggestions: [
+        expect.objectContaining({
+          id: "c-open",
+          status: "open",
+          preview: "Lot 24A failed dissolution.",
+        }),
+        expect.objectContaining({ id: "c-approved", status: "resolved" }),
+        expect.objectContaining({ id: "c-dismissed", status: "dismissed" }),
+      ],
+      note: expect.stringMatching(/open = waiting/i),
+    });
+  });
+
+  it("filters by section and by approved status", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const bySection = await tools.list_suggestions!.execute!(
+      { section: "define" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(bySection).toMatchObject({
+      counts: { open: 1, resolved: 1, dismissed: 0 },
+      suggestions: [
+        expect.objectContaining({ id: "c-open" }),
+        expect.objectContaining({ id: "c-approved" }),
+      ],
+    });
+
+    const approved = await tools.list_suggestions!.execute!(
+      { status: "resolved" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(approved).toMatchObject({
+      suggestions: [expect.objectContaining({ id: "c-approved", status: "resolved" })],
+    });
+  });
+
+  it("returns suggestionCounts on read_section including approved and dismissed", async () => {
+    const defineRows = suggestionRows().filter((row) => row.section === "define");
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockImplementation(() =>
+          table === comments
+            ? Promise.resolve(defineRows)
+            : Promise.resolve([
+                {
+                  id: "sec-1",
+                  reportId: "report-1",
+                  section: "define",
+                  content: { narrative: DEFINE_NARRATIVE },
+                },
+              ])
+        ),
+      }),
+    }));
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.read_section!.execute!(
+      { section: "define" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      section: "define",
+      suggestionCounts: { open: 1, resolved: 1, dismissed: 0 },
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        pendingSuggestions: [
+          expect.objectContaining({
+            id: "c-open",
+            preview: "Lot 24A failed dissolution.",
+          }),
+        ],
+      })
+    );
   });
 });

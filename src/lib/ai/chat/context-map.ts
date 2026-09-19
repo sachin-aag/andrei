@@ -146,10 +146,21 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     const imageCount = countSectionInlineImages(content, section);
     const state = sectionFillState(content, section);
     const sectionEvals = evaluations.filter((e) => e.section === section);
-    const openFixes = comments.filter(
-      (c) =>
-        c.section === section && isAiSuggestionKind(c.kind) && c.status === "open"
+    const suggestionRows = comments.filter((c) => isAiSuggestionKind(c.kind));
+    const openFixes = suggestionRows.filter(
+      (c) => c.section === section && c.status === "open"
     ).length;
+    const resolvedFixes = suggestionRows.filter(
+      (c) => c.section === section && c.status === "resolved"
+    ).length;
+    const dismissedFixes = suggestionRows.filter(
+      (c) => c.section === section && c.status === "dismissed"
+    ).length;
+    const suggestionBits = [
+      openFixes > 0 ? `${openFixes} open` : "",
+      resolvedFixes > 0 ? `${resolvedFixes} approved` : "",
+      dismissedFixes > 0 ? `${dismissedFixes} dismissed` : "",
+    ].filter(Boolean);
 
     lines.push(
       `- ${sectionLabel(section)} [${section}] — ${state} (${charCount} chars` +
@@ -157,7 +168,9 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
           ? `, ${imageCount} image${imageCount === 1 ? "" : "s"}`
           : "") +
         `) · criteria: ${evalSummary(sectionEvals)}` +
-        (openFixes > 0 ? ` · ${openFixes} open suggestion(s)` : "")
+        (suggestionBits.length > 0
+          ? ` · ${suggestionBits.join(" / ")} suggestion(s)`
+          : "")
     );
     for (const field of chatTargetFields(section)) {
       const fieldState = fieldFillState(content, section, field.targetField);
@@ -187,6 +200,18 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     if (section === "analyze") {
       lines.push(analyzeMethodLine(content, report.toolsUsed));
     }
+  }
+
+  const allSuggestionRows = comments.filter((c) => isAiSuggestionKind(c.kind));
+  if (allSuggestionRows.length > 0) {
+    const open = allSuggestionRows.filter((c) => c.status === "open").length;
+    const approved = allSuggestionRows.filter((c) => c.status === "resolved").length;
+    const dismissed = allSuggestionRows.filter(
+      (c) => c.status === "dismissed"
+    ).length;
+    lines.push(
+      `Suggestions (AI cards): ${open} open, ${approved} approved, ${dismissed} dismissed. Call list_suggestions to inspect. Open = proposed, not landed. Do not claim a prior proposal is still waiting unless it is open.`
+    );
   }
 
   const plots = (input.analyticsPlots ?? []).filter((item) =>

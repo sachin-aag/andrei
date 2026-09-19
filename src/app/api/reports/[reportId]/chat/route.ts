@@ -51,6 +51,7 @@ import {
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
+  DOCUMENT_WRITE_TOOLS,
   messageHasChatImage,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
@@ -590,10 +591,21 @@ async function handleChatPost(
     mode === "plan"
       ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
+  // Agent keeps write tools registered on a read turn so a remapped
+  // unsupported_tool can unlock them mid-turn. Ask still strips them.
   const tools: ToolSet = withUnsupportedChatToolFallback(
-    restrictToolsForIntent(scopedTools, userIntent.kind, "document")
+    userIntent.kind === "social"
+      ? restrictToolsForIntent(scopedTools, "social", "document")
+      : mode === "agent"
+        ? scopedTools
+        : restrictToolsForIntent(scopedTools, userIntent.kind, "document")
   );
-  const advertisedTools = advertisedChatToolNames(tools);
+  const advertisedTools = advertisedChatToolNames(
+    restrictToolsForIntent(tools, userIntent.kind, "document")
+  );
+  const registeredWriteTools = DOCUMENT_WRITE_TOOLS.filter(
+    (name) => name in tools
+  );
 
   const stubSection =
     sectionScope === "all"
@@ -709,6 +721,7 @@ async function handleChatPost(
           forceListAttachments: lastStartNeedsAttachmentScope(steps),
           forceFinishReview:
             reviewContinueBudgetMs(remainingChatAbortMs(turnStartedAtMs)) === 0,
+          registeredWriteTools,
         });
         return {
           ...decision,

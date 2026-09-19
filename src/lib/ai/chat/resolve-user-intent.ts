@@ -40,7 +40,7 @@ import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-genera
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 
-export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v5-polite-same";
+export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v6-missing-work";
 export const INTENT_CLASSIFIER_TIMEOUT_MS = 2_500;
 const INTENT_MIN_CONFIDENCE = 0.4;
 /** Stricter than kind-classification — the switch widget must be rare. */
@@ -180,6 +180,7 @@ function buildIntentClassifierPrompt(input: ResolveChatUserIntentInput): string 
     "kind=write: they asked to change the document or worksheet now (draft, insert, fill, edit, plot, extract into the grid, or yes to an offer to write).",
     "A yes / go for it / do it after you told them to switch to Analytics is write — continue the earlier extract/fill request. Do not classify that as social.",
     '"Can you do the same for X" and "do that for Preventive Maintenance" are kind=write — they continue the previous edit. They are not questions.',
+    '"Nothing was filled", "the table is still empty", "I don\'t see the change", "you said you filled it but it isn\'t there", and "why isn\'t the table filled" are kind=write in Agent — they want the missing work delivered. They are not lookups.',
     '"Can you tell me what is in the table" is read.',
     "preferredSurface=analytics: they asked to fill, extract into, or plot on the Analytics worksheet / spreadsheet / data grid. Not when they asked to put worksheet results into a report section.",
     "preferredSurface=report: anything else, including drafting prose or editing a document table.",
