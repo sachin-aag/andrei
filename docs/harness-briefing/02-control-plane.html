@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Andrei chat harness — turn plan and step policy</title>
+<style>
+@page { size: letter; margin: 0.55in 0.6in 0.6in; }
+:root { --navy:#001838; --blue:#1d4e89; --ink:#1a2230; --muted:#5b6573; --line:#d5dee8; --bg:#f4f7fb; --good:#0f6b3a; --warn:#8a4b00; }
+* { box-sizing: border-box; }
+html,body { margin:0; padding:0; font-family:"DejaVu Sans","Liberation Sans",sans-serif; color:var(--ink); font-size:10.5pt; line-height:1.42; }
+h1 { font-size:20pt; color:var(--navy); margin:0 0 6px; line-height:1.15; }
+h2 { font-size:13pt; color:var(--navy); margin:16px 0 8px; page-break-after:avoid; }
+h3 { font-size:11pt; color:var(--blue); margin:12px 0 6px; page-break-after:avoid; }
+p { margin:0 0 8px; }
+.kicker { font-size:8.5pt; letter-spacing:.12em; text-transform:uppercase; color:var(--blue); font-weight:700; margin:0 0 4px; }
+.lede { font-size:11.5pt; color:#2c3644; margin:0 0 12px; }
+code { font-family:"DejaVu Sans Mono","Liberation Mono",monospace; font-size:8.6pt; }
+.box, .callout, table, svg { page-break-inside:avoid; }
+.box { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:0 0 10px; }
+.callout { border-left:4px solid var(--blue); padding:8px 12px; background:#eef4fb; margin:0 0 10px; }
+.callout.warn { border-left-color:var(--warn); background:#fff6ea; }
+table { width:100%; border-collapse:collapse; margin:0 0 12px; font-size:8.8pt; }
+th,td { border:1px solid var(--line); padding:5px 7px; vertical-align:top; text-align:left; }
+th { background:var(--navy); color:#fff; }
+tr:nth-child(even) td { background:#f7fafc; }
+svg { width:100%; height:auto; display:block; margin:0 0 6px; }
+.caption { font-size:8.5pt; color:var(--muted); margin:0 0 12px; }
+footer { font-size:8pt; color:var(--muted); margin-top:8px; }
+ul,ol { margin:0 0 10px; padding-left:1.15em; }
+li { margin:0 0 4px; }
+.page-break { page-break-before:always; }
+</style>
+</head>
+<body>
+<p class="kicker">Andrei · junior engineer briefing · 2 of 4</p>
+<h1>Turn plan and step policy</h1>
+<p class="lede">At turn start the harness snapshots a <code>ChatTurnPlan</code>. On every model step it runs <code>prepareReportChatStep</code> and returns the only tools the model may call. Characterization tests lock first-step behavior so a “simpler” change cannot silently reopen a 273-page walk.</p>
+
+<h2>1. ChatTurnPlan (once per POST)</h2>
+<p>Built in <code>assembleChatTurnPlan</code> (<code>turn-plan.ts</code>). Downstream code must consume this object instead of re-classifying the same user text.</p>
+<table>
+  <tr><th>Field</th><th>Meaning</th><th>Source</th></tr>
+  <tr><td><code>intent</code></td><td><code>social</code> · <code>read</code> · <code>write</code></td><td><code>classifyChatUserIntent</code> then optional Flash-Lite</td></tr>
+  <tr><td><code>retrievalPolicy</code></td><td><code>focused</code> · <code>adaptive</code> · <code>comprehensive</code></td><td><code>classifyRetrievalPolicy</code></td></tr>
+  <tr><td><code>reviewObjective</code></td><td>Coverage key suffix <code>|obj:</code> for document review</td><td><code>planCoverageObjective</code></td></tr>
+  <tr><td><code>alreadyDrafted</code></td><td>Write against a filled/partial section → force <code>read_section</code> first</td><td><code>detectAlreadyDraftedSection</code></td></tr>
+  <tr><td><code>sectionIntent</code></td><td>Section inferred from latest user text (not @ tags)</td><td><code>detectSectionIntentFromText</code></td></tr>
+</table>
+<div class="callout">
+<strong>Latest turn only.</strong> Comprehensive shape, inventory-section escalation, and all-scope section intent score the <em>latest</em> user message. An earlier “draft equipment” must not keep “draft the remaining sections” on the adaptive/comprehensive path.
+</div>
+
+<h2>2. Intent (what kind of turn is this?)</h2>
+<svg viewBox="0 0 740 280" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+  <rect x="20" y="16" width="160" height="48" rx="7" fill="#001838"/><text x="100" y="45" text-anchor="middle" fill="#fff" font-size="12">Latest user text</text>
+  <path d="M180 40 H230" stroke="#001838" stroke-width="1.5"/>
+  <rect x="230" y="16" width="250" height="48" rx="7" fill="#1d4e89"/><text x="355" y="36" text-anchor="middle" fill="#fff" font-size="12">Rules classifier</text><text x="355" y="52" text-anchor="middle" fill="#d7e7f8" font-size="10">user-intent.ts  (~55 regexes)</text>
+  <path d="M480 40 H530" stroke="#001838" stroke-width="1.5"/>
+  <rect x="530" y="8" width="190" height="28" rx="6" fill="#3d5a40"/><text x="625" y="27" text-anchor="middle" fill="#fff" font-size="11">clear social / write / read</text>
+  <rect x="530" y="44" width="190" height="28" rx="6" fill="#8a4b00"/><text x="625" y="63" text-anchor="middle" fill="#fff" font-size="11">ambiguous → Flash-Lite</text>
+  <rect x="20" y="100" width="700" height="160" rx="10" fill="#f4f7fb" stroke="#d5dee8"/>
+  <text x="36" y="124" fill="#001838" font-size="12" font-weight="700">social</text>
+  <text x="110" y="124" fill="#1a2230" font-size="11">“hi”, thanks. Strip every tool. No search, no write. One step.</text>
+  <text x="36" y="150" fill="#001838" font-size="12" font-weight="700">read</text>
+  <text x="110" y="150" fill="#1a2230" font-size="11">Lookups. Search/outline/page allowed. Write tools hidden (Ask always; Agent unless unlocked).</text>
+  <text x="36" y="176" fill="#001838" font-size="12" font-weight="700">write</text>
+  <text x="110" y="176" fill="#1a2230" font-size="11">Draft/fill/edit verbs, pending_plan continuation, “go for it” after an offer. Propose-only.</text>
+  <text x="36" y="210" fill="#5b6573" font-size="10">Flash-Lite is gated: ambiguous_agent_mode (plan vs write), ambiguous_polite_request (“can you do the same”),</text>
+  <text x="36" y="226" fill="#5b6573" font-size="10">and Document-chat worksheet-dump phrasing (≥0.75 → Switch to Analytics, do not paste a markdown table).</text>
+  <text x="36" y="246" fill="#5b6573" font-size="10">Strip a leading affirmation then reclassify: “yes put it in the data worksheet” is write.</text>
+</svg>
+<p class="caption">Figure 1. Empty sections and ready attachments are not a draft request. Agent mode means the model <em>may</em> write when asked.</p>
+
+<h2>3. Retrieval policy (how hard should we look?)</h2>
+<table>
+  <tr><th>Policy</th><th>When</th><th>Harness behavior</th></tr>
+  <tr><td><code>focused</code></td><td>Skim, no docs, greeting mapped to no_task, narrow locator</td><td>May inject <code>buildAutoEvidence</code> (≤1.5s, fail-soft). No page walk.</td></tr>
+  <tr><td><code>adaptive</code></td><td>Default. Complementary grep + outline</td><td>Skip auto-evidence so the model must call <code>search_documents</code>. Hide search after a cited hit, a locate/read, or two empty greps.</td></tr>
+  <tr><td><code>comprehensive</code></td><td>Empty inventory / open-set draft with distributed evidence (≥12 pages or ≥6 outline siblings), explicit every-row language, pushback</td><td>Expose <code>start/continue/finish_document_review</code>. Drain remaining pages in one continue (8-wide pool, ~60s budget).</td></tr>
+</table>
+<div class="callout warn">
+<strong>C2.</strong> A populated table with <code>&lt;date&gt;</code> / <code>&lt;identifier&gt;</code> is <code>placeholder_fill</code> (adaptive), not comprehensive. Empty header-only tables are empty inventories and still need a matching finished review.
+</div>
+
+<h2 class="page-break">4. prepareReportChatStep (every step)</h2>
+<p><code>step-policy.ts</code> is the single control plane. The seven former route gates still run in this order; tests require <code>activeTools</code> equality with the old chain.</p>
+<svg viewBox="0 0 740 720" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#001838"/></marker></defs>
+  <rect x="220" y="8" width="300" height="36" rx="6" fill="#001838"/><text x="370" y="31" text-anchor="middle" fill="#fff" font-size="12">prepareReportChatStep(input)</text>
+  <line x1="370" y1="44" x2="370" y2="60" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="80" y="62" width="580" height="36" rx="6" fill="#8b1e2d"/><text x="370" y="85" text-anchor="middle" fill="#fff" font-size="12">intent === social?  →  activeTools = []  (return)</text>
+  <line x1="370" y1="98" x2="370" y2="114" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="80" y="116" width="580" height="50" rx="6" fill="#fff6ea" stroke="#c9842a"/>
+  <text x="370" y="136" text-anchor="middle" fill="#001838" font-size="12">tableEditLoopDirective</text>
+  <text x="370" y="154" text-anchor="middle" fill="#5b6573" font-size="10">finish → []    reread → force read_section</text>
+  <line x1="370" y1="166" x2="370" y2="182" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="80" y="184" width="580" height="36" rx="6" fill="#eef8f1" stroke="#0f6b3a"/><text x="370" y="207" text-anchor="middle" fill="#001838" font-size="12">alreadyDraftedReadStep  →  force read_section on step 0 of a filled-section write</text>
+  <line x1="370" y1="220" x2="370" y2="236" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="80" y="238" width="580" height="36" rx="6" fill="#eef8f1" stroke="#0f6b3a"/><text x="370" y="261" text-anchor="middle" fill="#001838" font-size="12">tableSchemaReadStep  →  write + in-scope table already exists → read live headers first</text>
+  <line x1="370" y1="274" x2="370" y2="290" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="80" y="292" width="580" height="50" rx="6" fill="#eef4fb" stroke="#1d4e89"/>
+  <text x="370" y="312" text-anchor="middle" fill="#001838" font-size="12">E2 forceListAttachments / E3 forceFinishReview</text>
+  <text x="370" y="330" text-anchor="middle" fill="#5b6573" font-size="10">needs_attachment_scope → list_attachments    continue budget 0 → finish_document_review</text>
+  <line x1="370" y1="342" x2="370" y2="358" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="80" y="360" width="580" height="50" rx="6" fill="#eef4fb" stroke="#1d4e89"/>
+  <text x="370" y="380" text-anchor="middle" fill="#001838" font-size="12">prepareDocumentReviewStep(policy, phase, requireInventoryReview)</text>
+  <text x="370" y="398" text-anchor="middle" fill="#5b6573" font-size="10">idle+comprehensive/empty inventory → start   in_progress → continue   ready_to_finish → finish</text>
+  <line x1="370" y1="410" x2="370" y2="426" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="80" y="428" width="580" height="50" rx="6" fill="#f4f7fb" stroke="#5b6573"/>
+  <text x="370" y="448" text-anchor="middle" fill="#001838" font-size="12">searchLoopDirective + documentAskUserDirective</text>
+  <text x="370" y="466" text-anchor="middle" fill="#5b6573" font-size="10">Hide search after cited hit / locate / two empty greps. Hide ask_user after grep until page read. Cover sheets keep search open.</text>
+  <line x1="370" y1="478" x2="370" y2="494" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="80" y="496" width="580" height="36" rx="6" fill="#f4f7fb" stroke="#5b6573"/><text x="370" y="519" text-anchor="middle" fill="#001838" font-size="12">alreadyDrafted → withoutDraftFieldTools   (edit, don’t whole-field rewrite)</text>
+  <line x1="370" y1="532" x2="370" y2="548" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="80" y="550" width="580" height="50" rx="6" fill="#fff6ea" stroke="#c9842a"/>
+  <text x="370" y="570" text-anchor="middle" fill="#001838" font-size="12">maybeUnlock writes (Agent read turn)</text>
+  <text x="370" y="588" text-anchor="middle" fill="#5b6573" font-size="10">If the model called a hidden write tool, remap to unsupported_tool then unlock. Never AI_NoSuchToolError the stream.</text>
+  <line x1="370" y1="600" x2="370" y2="616" stroke="#001838" marker-end="url(#a)"/>
+  <rect x="180" y="618" width="380" height="40" rx="6" fill="#001838"/><text x="370" y="643" text-anchor="middle" fill="#fff" font-size="12">return { activeTools, toolChoice? } + compacted messages</text>
+</svg>
+<p class="caption">Figure 2. Early returns win. Do not reorder gates without updating <code>step-policy.test.ts</code> characterization.</p>
+
+<h2 class="page-break">5. Locked F1 scenarios</h2>
+<p><code>harness-scenarios.ts</code> is the cheap merge gate. A change that drops tokens but changes these first-step tools is a fail — do not “check with a live model.”</p>
+<table>
+  <tr><th>id</th><th>User text</th><th>Expected shape</th></tr>
+  <tr><td><code>greeting</code></td><td>hi</td><td>social · no tools</td></tr>
+  <tr><td><code>sentence_rewrite</code></td><td>change the last sentence in Purpose</td><td>write on a filled section · <code>alreadyDrafted</code> · force <code>read_section</code> · no document review</td></tr>
+  <tr><td><code>placeholder_fill</code></td><td>fill the placeholders in tables 9–11</td><td>adaptive <code>placeholder_fill</code> · populated table with <code>&lt;date&gt;</code> · no <code>start_document_review</code></td></tr>
+  <tr><td><code>empty_inventory</code></td><td>draft Calibration from the attachments</td><td>empty ELR table · <code>requireInventoryReview</code> · start a walk whose coverage key matches that section</td></tr>
+  <tr><td><code>identifier_lookup</code></td><td>Where is SW-LWB-4 listed?</td><td>read · identifier search · no page walk</td></tr>
+</table>
+
+<h2>6. Remaining-sections queue</h2>
+<p>When the engineer asks to fill several empty <code>draftOrder</code> sections, Agent persists <code>chat_sessions.pending_plan</code>. Each turn drafts the current item (two adjacent non-inventory sections may share a turn). After persist the client POSTs <code>Continue the remaining sections.</code> with <code>autoContinue</code>.</p>
+<ul>
+  <li>MJ ELR evidence sections stay in progress until the same turn also drafts the assessment (a count in <code>narrative</code>, plus <code>trend</code> / <code>overallGrade</code> / <code>recommendation</code>).</li>
+  <li>Cancel or a new typed prompt pauses the queue. Reopening a thread does not auto-chain.</li>
+  <li>A matching <code>finish_document_review</code> this turn unlocks <code>edit_table</code>; do not force another start because the table is still empty — unless the finish was a floor-8 skip that never queued the evidence file (e.g. PRQR).</li>
+</ul>
+
+<h2>7. Plan vs Agent vs Ask</h2>
+<table>
+  <tr><th>Mode</th><th>Tools</th></tr>
+  <tr><td>Plan</td><td>Allowlist only: read/list/search/outline/page + document-review + <code>ask_user</code>. New tools missing from <code>PLAN_MODE_CHAT_TOOL_NAMES</code> are silently gone.</td></tr>
+  <tr><td>Ask</td><td>Search/extract only. Write tools stripped from the ToolSet.</td></tr>
+  <tr><td>Agent</td><td>May write. Write tools stay registered on a read turn so a hallucinated <code>edit_table</code> remaps to internal <code>unsupported_tool</code> instead of failing the chat. Keep that fallback out of <code>activeTools</code>.</td></tr>
+</table>
+
+<footer>Andrei chat harness · turn plan and step policy · next: briefing 3 indexing, briefing 4 search</footer>
+</body>
+</html>

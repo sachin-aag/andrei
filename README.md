@@ -197,5 +197,6 @@ Release-candidate manual cases: [docs/manual-test-cases.md](docs/manual-test-cas
 | [docs/email-deliverability.md](docs/email-deliverability.md) | Resend / magic-link deliverability |
 | [docs/pdf-evidence-deployment-checklist.md](docs/pdf-evidence-deployment-checklist.md) | Attachment ingest release gates |
 | [docs/neon-vercel-setup.md](docs/neon-vercel-setup.md) | Neon ↔ Vercel integration |
+| [docs/harness-briefing/](docs/harness-briefing/) | Junior-engineer PDFs: harness architecture, step policy, indexing/storage, retrieval/grounding |
 
 There is **no** `middleware.ts`. Next.js 16 request interception is `src/proxy.ts`.
