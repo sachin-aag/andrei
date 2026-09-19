@@ -7,6 +7,7 @@ fix this file.
 The layer above this one — per-step context size, tool availability, and
 the turn classifiers — is [`harness-plan.md`](harness-plan.md). Ranking
 work that only matters because it removes tool steps belongs there.
+Junior-engineer briefing (diagrams): [`harness-briefing/`](harness-briefing/).
 
 Chat stays the **control plane**. Do not replace agentic grep
 (`search_documents` / outline / page read / comprehensive review) with a

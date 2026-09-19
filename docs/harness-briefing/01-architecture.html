@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Andrei chat harness — architecture</title>
+<style>
+@page { size: letter; margin: 0.55in 0.6in 0.6in; }
+:root { --navy:#001838; --blue:#1d4e89; --ink:#1a2230; --muted:#5b6573; --line:#d5dee8; --bg:#f4f7fb; --good:#0f6b3a; --warn:#8a4b00; }
+* { box-sizing: border-box; }
+html,body { margin:0; padding:0; font-family:"DejaVu Sans","Liberation Sans",sans-serif; color:var(--ink); font-size:10.5pt; line-height:1.42; }
+h1 { font-size:20pt; color:var(--navy); margin:0 0 6px; line-height:1.15; }
+h2 { font-size:13pt; color:var(--navy); margin:16px 0 8px; page-break-after:avoid; }
+h3 { font-size:11pt; color:var(--blue); margin:12px 0 6px; page-break-after:avoid; }
+p { margin:0 0 8px; }
+.kicker { font-size:8.5pt; letter-spacing:.12em; text-transform:uppercase; color:var(--blue); font-weight:700; margin:0 0 4px; }
+.lede { font-size:11.5pt; color:#2c3644; margin:0 0 12px; }
+code { font-family:"DejaVu Sans Mono","Liberation Mono",monospace; font-size:8.6pt; }
+.box, .callout, table, svg { page-break-inside:avoid; }
+.box { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:0 0 10px; }
+.callout { border-left:4px solid var(--blue); padding:8px 12px; background:#eef4fb; margin:0 0 10px; }
+.callout.warn { border-left-color:var(--warn); background:#fff6ea; }
+table { width:100%; border-collapse:collapse; margin:0 0 12px; font-size:9pt; }
+th,td { border:1px solid var(--line); padding:5px 7px; vertical-align:top; text-align:left; }
+th { background:var(--navy); color:#fff; }
+tr:nth-child(even) td { background:#f7fafc; }
+svg { width:100%; height:auto; display:block; margin:0 0 6px; }
+.caption { font-size:8.5pt; color:var(--muted); margin:0 0 12px; }
+footer { font-size:8pt; color:var(--muted); margin-top:8px; }
+ul,ol { margin:0 0 10px; padding-left:1.15em; }
+li { margin:0 0 4px; }
+.page-break { page-break-before:always; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 10px; }
+</style>
+</head>
+<body>
+<p class="kicker">Andrei · junior engineer briefing · 1 of 3</p>
+<h1>Chat harness architecture</h1>
+<p class="lede">The harness is the server-side control plane around report chat. It is not the Gemini model, and it is not the PDF search index. It decides intent, retrieval shape, which tools exist on each step, and whether a drafted fact is allowed to persist.</p>
+
+<div class="callout">
+<strong>Mental model.</strong> The LLM proposes. The harness constrains. The engineer Applies. There is no <code>commit</code> edit path: live report chat always writes <code>ai_fix</code> comments plus red/green marks. Nothing lands in <code>report_sections</code> until Apply / Dismiss.
+</div>
+
+<h2>1. Three layers that people mix up</h2>
+<svg viewBox="0 0 740 210" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+  <rect x="8" y="8" width="724" height="58" rx="8" fill="#001838"/>
+  <text x="24" y="32" fill="#fff" font-size="13" font-weight="700">A. Harness (this briefing)</text>
+  <text x="24" y="52" fill="#cfe0f5" font-size="11">src/lib/ai/chat/*  ·  POST /api/reports/[reportId]/chat  ·  intent, TurnPlan, prepareStep, grounding, compaction</text>
+  <rect x="8" y="76" width="724" height="58" rx="8" fill="#1d4e89"/>
+  <text x="24" y="100" fill="#fff" font-size="13" font-weight="700">B. Retrieval (attachment search)</text>
+  <text x="24" y="120" fill="#d7e7f8" font-size="11">src/lib/attachments/retrieval.ts  ·  hybrid vector + FTS  ·  identifiers  ·  ingest/embed is Vertex-only</text>
+  <rect x="8" y="144" width="724" height="58" rx="8" fill="#3d5a40"/>
+  <text x="24" y="168" fill="#fff" font-size="13" font-weight="700">C. Orchestrator model</text>
+  <text x="24" y="188" fill="#dce8dc" font-size="11">Gemini 3.7 Flash, thinking medium  ·  page extracts: 3.5 Flash-Lite  ·  the model barely writes; it mostly re-reads context</text>
+</svg>
+<p class="caption">Figure 1. Chat stays the control plane. Do not replace agentic grep with a standalone search product. Retrieval runs underneath the harness.</p>
+
+<div class="grid2">
+  <div class="box">
+    <h3 style="margin-top:0">What the harness owns</h3>
+    <ul>
+      <li>Latest-turn intent: <code>social | read | write</code></li>
+      <li>Retrieval policy: <code>focused | adaptive | comprehensive</code></li>
+      <li>Per-step <code>activeTools</code> / optional <code>toolChoice</code></li>
+      <li>Citation ledger + <code>groundDraftText</code></li>
+      <li>In-turn message compaction and tool-result budgets</li>
+      <li>270s wall-clock abort (not a tool-step cap)</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3 style="margin-top:0">What it does not own</h3>
+    <ul>
+      <li>TipTap section JSON (autosave PATCH)</li>
+      <li>Criteria eval / suggestion generation</li>
+      <li>PDF bytes / Vertex ingest / embeddings</li>
+      <li>Analytics worksheet (separate <code>/analytics/chat</code>, same <code>ChatPanel</code>)</li>
+      <li>Apply/Dismiss merge (<code>src/lib/suggestions</code>)</li>
+    </ul>
+  </div>
+</div>
+
+<h2 class="page-break">2. Request lifecycle</h2>
+<p>Entry point: <code>src/app/api/reports/[reportId]/chat/route.ts</code>. One HTTP POST is one <em>turn</em>. A turn may contain many <em>steps</em> (model → tools → model).</p>
+<svg viewBox="0 0 740 640" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#001838"/></marker>
+  </defs>
+  <style> .n{font:11px DejaVu Sans} .s{font:10px DejaVu Sans} </style>
+  <rect x="200" y="8" width="340" height="40" rx="7" fill="#001838"/><text class="n" x="370" y="33" text-anchor="middle" fill="#fff">ChatPanel POST (Ask/Agent, Quick/Deep, @ mentions)</text>
+  <line x1="370" y1="48" x2="370" y2="68" stroke="#001838" marker-end="url(#arr)"/>
+  <rect x="160" y="70" width="420" height="40" rx="7" fill="#e8eef6" stroke="#1d4e89"/><text class="n" x="370" y="95" text-anchor="middle" fill="#001838">Auth + load report, sections, ready docs, pending_plan</text>
+  <line x1="370" y1="110" x2="370" y2="130" stroke="#001838" marker-end="url(#arr)"/>
+  <rect x="120" y="132" width="500" height="52" rx="7" fill="#fff8ee" stroke="#c9842a"/>
+  <text class="n" x="370" y="153" text-anchor="middle" fill="#001838">classifyChatUserIntent → optional resolveChatUserIntent (Flash-Lite)</text>
+  <text class="s" x="370" y="171" text-anchor="middle" fill="#5b6573">social / read / write   ·   maybe switchToAnalytics widget</text>
+  <line x1="370" y1="184" x2="370" y2="204" stroke="#001838" marker-end="url(#arr)"/>
+  <rect x="120" y="206" width="500" height="52" rx="7" fill="#eef8f1" stroke="#0f6b3a"/>
+  <text class="n" x="370" y="227" text-anchor="middle" fill="#001838">assembleChatTurnPlan</text>
+  <text class="s" x="370" y="245" text-anchor="middle" fill="#5b6573">intent + retrievalPolicy + reviewObjective + alreadyDrafted + sectionIntent</text>
+  <line x1="370" y1="258" x2="370" y2="278" stroke="#001838" marker-end="url(#arr)"/>
+  <rect x="80" y="280" width="580" height="52" rx="7" fill="#eef4fb" stroke="#1d4e89"/>
+  <text class="n" x="370" y="301" text-anchor="middle" fill="#001838">Kickoff retrieval (fail-soft) + buildChatSystemPrompt + buildChatTools</text>
+  <text class="s" x="370" y="319" text-anchor="middle" fill="#5b6573">focused: auto-evidence ≤1.5s  ·  placeholder_fill: closed-set search  ·  Plan mode: allowlist only</text>
+  <line x1="370" y1="332" x2="370" y2="352" stroke="#001838" marker-end="url(#arr)"/>
+  <rect x="40" y="354" width="660" height="170" rx="10" fill="#f7fafc" stroke="#001838" stroke-width="1.5"/>
+  <text class="n" x="370" y="376" text-anchor="middle" fill="#001838" font-weight="700">streamText loop  (stopWhen = Cancel OR 270s from request start)</text>
+  <rect x="60" y="392" width="190" height="48" rx="6" fill="#001838"/><text class="s" x="155" y="412" text-anchor="middle" fill="#fff">prepareReportChatStep</text><text class="s" x="155" y="428" text-anchor="middle" fill="#cfe0f5">activeTools / toolChoice</text>
+  <rect x="275" y="392" width="190" height="48" rx="6" fill="#1d4e89"/><text class="s" x="370" y="412" text-anchor="middle" fill="#fff">compactInTurnModelMessages</text><text class="s" x="370" y="428" text-anchor="middle" fill="#d7e7f8">shrink prior tool results</text>
+  <rect x="490" y="392" width="190" height="48" rx="6" fill="#3d5a40"/><text class="s" x="585" y="412" text-anchor="middle" fill="#fff">Gemini + tools</text><text class="s" x="585" y="428" text-anchor="middle" fill="#dce8dc">repairChatToolCall once</text>
+  <text class="s" x="370" y="466" text-anchor="middle" fill="#5b6573">Writes (draft_field / propose_edit / edit_table) run groundDraftText against the CitationPageLedger</text>
+  <text class="s" x="370" y="484" text-anchor="middle" fill="#5b6573">MJ unsupportedFactPolicy=block  ·  demo/Convergent=flag  ·  repair search once, no LLM subagent</text>
+  <text class="s" x="370" y="508" text-anchor="middle" fill="#001838">Loop until the model stops calling tools, Cancel, or CHAT_SERVER_ABORT_MS</text>
+  <line x1="370" y1="524" x2="370" y2="544" stroke="#001838" marker-end="url(#arr)"/>
+  <rect x="160" y="546" width="420" height="48" rx="7" fill="#001838"/>
+  <text class="n" x="370" y="566" text-anchor="middle" fill="#fff">Persist chat_messages  ·  ai_fix comments  ·  pending_plan  ·  Langfuse</text>
+  <text class="s" x="370" y="582" text-anchor="middle" fill="#cfe0f5">deadline_abort captures ai_chat_failed  ·  client may autoContinue remaining sections</text>
+</svg>
+<p class="caption">Figure 2. One POST = one turn. Cost is dominated by resending system + tool schemas + accumulated tool results on every step.</p>
+
+<h2>3. Where to read the code</h2>
+<table>
+  <tr><th>Concern</th><th>Primary files</th></tr>
+  <tr><td>HTTP turn</td><td><code>src/app/api/reports/[reportId]/chat/route.ts</code></td></tr>
+  <tr><td>Intent</td><td><code>user-intent.ts</code>, <code>resolve-user-intent.ts</code></td></tr>
+  <tr><td>Turn snapshot</td><td><code>turn-plan.ts</code> → <code>ChatTurnPlan</code></td></tr>
+  <tr><td>Per-step tools</td><td><code>step-policy.ts</code> → <code>prepareReportChatStep</code></td></tr>
+  <tr><td>Retrieval policy</td><td><code>retrieval-policy.ts</code> (<code>focused|adaptive|comprehensive</code>)</td></tr>
+  <tr><td>Tool implementations</td><td><code>tools.ts</code> (Plan allowlist in <code>document-review.ts</code>)</td></tr>
+  <tr><td>Page walk</td><td><code>document-review.ts</code>, <code>review-page-plan.ts</code></td></tr>
+  <tr><td>Search hide / ask_user hide</td><td><code>search-loop.ts</code></td></tr>
+  <tr><td>Closed-set blanks</td><td><code>placeholder-fill.ts</code></td></tr>
+  <tr><td>Fact gate</td><td><code>ground-draft.ts</code>, <code>citation-grounding.ts</code>, <code>claim-facts.ts</code></td></tr>
+  <tr><td>Payload size</td><td><code>compact-tool-history.ts</code>, <code>tool-result-budget.ts</code></td></tr>
+  <tr><td>Characterization lock</td><td><code>harness-scenarios.ts</code> + colocated <code>*.test.ts</code></td></tr>
+  <tr><td>Living plans</td><td><code>docs/harness-plan.md</code>, <code>docs/retrieval.md</code></td></tr>
+</table>
+
+<div class="callout warn">
+<strong>Two control planes.</strong> The server hides tools in <code>prepareStep</code>. The prompt also tells the model not to use missing tools (<code>intentToolAvailabilityRule</code>). If you add a guard, pick one plane. Do not add a regex, a prompt paragraph, and a test for the same incident without retiring something. That is how this file grew.
+</div>
+
+<footer>Andrei chat harness · architecture · code is source of truth over this PDF</footer>
+</body>
+</html>

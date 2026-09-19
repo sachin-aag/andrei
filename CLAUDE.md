@@ -351,7 +351,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 3. Outline spans persisted on the ingest run, then chunk (`chunk-pages.ts`) + embed (`embed-chunks.ts`, 768-d) → `document_chunks`
 4. `documentSummary` written on the ingest run; listed by `listReadyDocumentsForReport`
 
-**Chat retrieval:** `searchReportDocuments`, `readDocumentPage`, `readDocumentOutline` in `src/lib/attachments/retrieval.ts`. Identifier queries (`requirementIds()`) hit `document_pages.identifiers` first and skip the query embedding when those hits fill `limit`. Results collapse to one chunk per page. FTS: `to_tsvector('english', contextual_text)` + `document_chunks_contextual_text_fts_en_idx`. Outline reads prefer stored `document_outline_spans`. Plan: `docs/retrieval.md`. Release gates: `docs/pdf-evidence-deployment-checklist.md`.
+**Chat retrieval:** `searchReportDocuments`, `readDocumentPage`, `readDocumentOutline` in `src/lib/attachments/retrieval.ts`. Identifier queries (`requirementIds()`) hit `document_pages.identifiers` first and skip the query embedding when those hits fill `limit`. Results collapse to one chunk per page. FTS: `to_tsvector('english', contextual_text)` + `document_chunks_contextual_text_fts_en_idx`. Outline reads prefer stored `document_outline_spans`. Plan: `docs/retrieval.md`. Junior-engineer briefing (diagrams): `docs/harness-briefing/`. Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 
 ## Subsystem: Redrafts
 
