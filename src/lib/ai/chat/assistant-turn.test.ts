@@ -9,8 +9,10 @@ import {
   chatWatchdogPhase,
   formatChatLlmError,
   isChatClientDisconnectError,
+  isCannedAssistantNoticeText,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
+  shouldHidePlanContinuingAssistantTurn,
   shouldShowChatClientError,
   shouldShowEmptyAssistantError,
   shouldToastEmptyAssistantTurn,
@@ -459,6 +461,40 @@ describe("partsForPersistedAssistantTurn", () => {
     });
   });
 
+  it("does not append the interrupted line when the remaining-section queue will continue", () => {
+    const parts = [
+      {
+        type: "tool-start_document_review",
+        toolCallId: "call_1",
+        state: "input-available",
+      },
+    ] as unknown as UIMessage["parts"];
+    const result = partsForPersistedAssistantTurn({
+      parts,
+      isAborted: true,
+      planContinuing: true,
+    });
+    expect(result.interrupted).toBe(false);
+    expect(result.emptyFailure).toBe(false);
+    expect(result.incomplete).toBe(true);
+    expect(result.parts.some((part) => part.type === "text")).toBe(false);
+  });
+
+  it("does not persist a canned interrupt for an empty aborted turn that will continue", () => {
+    expect(
+      partsForPersistedAssistantTurn({
+        parts: [],
+        isAborted: true,
+        planContinuing: true,
+      })
+    ).toEqual({
+      parts: [],
+      emptyFailure: false,
+      interrupted: false,
+      incomplete: true,
+    });
+  });
+
   it("does not mark a completed aborted reply as interrupted", () => {
     const parts = [{ type: "text" as const, text: "Draft Define." }];
     expect(
@@ -541,6 +577,53 @@ describe("partsForPersistedAssistantTurn", () => {
       interrupted: false,
       incomplete: true,
     });
+  });
+});
+
+describe("isCannedAssistantNoticeText", () => {
+  it("matches the empty-turn and interrupt notices", () => {
+    expect(isCannedAssistantNoticeText(CHAT_ASSISTANT_ERROR_MESSAGE)).toBe(
+      true
+    );
+    expect(
+      isCannedAssistantNoticeText(CHAT_ASSISTANT_INTERRUPTED_MESSAGE)
+    ).toBe(true);
+    expect(isCannedAssistantNoticeText("Draft Access Control.")).toBe(false);
+  });
+});
+
+describe("shouldHidePlanContinuingAssistantTurn", () => {
+  it("hides empty and canned-notice rows", () => {
+    expect(shouldHidePlanContinuingAssistantTurn([])).toBe(true);
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE },
+      ])
+    ).toBe(true);
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE },
+      ])
+    ).toBe(true);
+  });
+
+  it("keeps tool chips and real wrap-up prose", () => {
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "tool-start_document_review" },
+      ])
+    ).toBe(false);
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE },
+        { type: "tool-continue_document_review" },
+      ])
+    ).toBe(false);
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "text", text: "Drafted Access Control." },
+      ])
+    ).toBe(false);
   });
 });
 

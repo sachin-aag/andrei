@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_ELR_CONTENT } from "@/lib/document-types/elr/sections";
 import {
   CHAT_AUTO_CONTINUE_TEXT,
+  CHAT_PLAN_SAME_SECTION_TURN_LIMIT,
   advancePlanAfterTurn,
   chatPlanProgressView,
   chatUserTurnIsAutoContinue,
@@ -209,6 +210,65 @@ describe("advancePlanAfterTurn", () => {
     expect(result.plan.items[0]?.state).toBe("in_progress");
     expect(result.continuation?.remaining).toBe(2);
     expect(result.plan.paused).toBeFalsy();
+    expect(result.plan.items[0]?.attempts).toBe(1);
+  });
+
+  it("pauses after too many remaining-section turns on the same item", () => {
+    let current = plan([
+      {
+        sectionKey: "elr_access_control",
+        label: "Access Control",
+        state: "in_progress",
+      },
+      { sectionKey: "elr_qms", label: "QMS Records", state: "queued" },
+    ]);
+    const reviewParts = [{ type: "tool-continue_document_review" }];
+    for (let i = 1; i < CHAT_PLAN_SAME_SECTION_TURN_LIMIT; i++) {
+      const result = advancePlanAfterTurn({
+        plan: current,
+        documentType: "equipment_lifecycle_report",
+        draftedSectionKeys: [],
+        parts: reviewParts,
+      });
+      expect(result.plan.paused).toBeFalsy();
+      expect(result.continuation).not.toBeNull();
+      expect(result.plan.items[0]?.attempts).toBe(i);
+      current = result.plan;
+    }
+    const stuck = advancePlanAfterTurn({
+      plan: current,
+      documentType: "equipment_lifecycle_report",
+      draftedSectionKeys: [],
+      parts: reviewParts,
+    });
+    expect(stuck.plan.paused).toBe(true);
+    expect(stuck.plan.pauseReason).toBe("same_section_limit");
+    expect(stuck.continuation).toBeNull();
+    expect(shouldAutoContinuePlan(stuck.continuation)).toBe(false);
+    expect(stuck.plan.items[0]?.attempts).toBe(
+      CHAT_PLAN_SAME_SECTION_TURN_LIMIT
+    );
+  });
+
+  it("clears attempts when the section completes before the cap", () => {
+    const started = plan([
+      {
+        sectionKey: "elr_objective",
+        label: "Objective",
+        state: "in_progress",
+        attempts: CHAT_PLAN_SAME_SECTION_TURN_LIMIT - 1,
+      },
+      { sectionKey: "elr_scope", label: "Scope", state: "queued" },
+    ]);
+    const result = advancePlanAfterTurn({
+      plan: started,
+      documentType: "equipment_lifecycle_report",
+      draftedSectionKeys: ["elr_objective", "elr_scope"],
+    });
+    expect(result.plan.paused).toBeFalsy();
+    expect(result.plan.items[0]?.state).toBe("done");
+    expect(result.plan.items[0]?.attempts).toBeUndefined();
+    expect(result.plan.items[1]?.attempts).toBeUndefined();
   });
 
   it("pauses when the turn made no edits and did not review", () => {
@@ -375,6 +435,24 @@ describe("pause and resume", () => {
     const resumed = resumeChatPendingPlan(paused);
     expect(resumed?.paused).toBe(false);
     expect(resumed?.items[1]?.state).toBe("in_progress");
+    expect(resumed?.items[1]?.attempts).toBeUndefined();
+  });
+
+  it("resets same-section attempts on resume so the engineer can retry", () => {
+    const paused = pauseChatPendingPlan(
+      plan([
+        {
+          sectionKey: "elr_access_control",
+          label: "Access Control",
+          state: "in_progress",
+          attempts: CHAT_PLAN_SAME_SECTION_TURN_LIMIT,
+        },
+      ]),
+      "same_section_limit"
+    );
+    const resumed = resumeChatPendingPlan(paused);
+    expect(resumed?.items[0]?.state).toBe("in_progress");
+    expect(resumed?.items[0]?.attempts).toBeUndefined();
   });
 });
 
@@ -736,6 +814,41 @@ describe("plan prompt and metadata", () => {
         items: [{ sectionKey: "define", label: "Define", state: "queued" }],
       })?.items[0]?.sectionKey
     ).toBe("define");
+  });
+
+  it("roundtrips same-section attempts on plan items", () => {
+    expect(
+      parseChatPendingPlan({
+        kind: "section_queue",
+        objective: "x",
+        createdAt: "t",
+        promptVersion: "v",
+        items: [
+          {
+            sectionKey: "elr_access_control",
+            label: "Access Control",
+            state: "in_progress",
+            attempts: 2,
+          },
+        ],
+      })?.items[0]?.attempts
+    ).toBe(2);
+    expect(
+      parseChatPendingPlan({
+        kind: "section_queue",
+        objective: "x",
+        createdAt: "t",
+        promptVersion: "v",
+        items: [
+          {
+            sectionKey: "elr_access_control",
+            label: "Access Control",
+            state: "in_progress",
+            attempts: 0,
+          },
+        ],
+      })?.items[0]?.attempts
+    ).toBeUndefined();
   });
 
   it("uses the in-progress section as the review coverage objective", () => {
