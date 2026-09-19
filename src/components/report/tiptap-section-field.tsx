@@ -140,7 +140,8 @@ function TableEditToolbar({
 }) {
   return (
     <div
-      className="flex max-w-[min(100vw-1.5rem,36rem)] flex-wrap items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-1.5 py-1 shadow-md"
+      data-testid="table-edit-toolbar"
+      className="z-50 flex max-w-[min(100vw-1.5rem,36rem)] flex-wrap items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-1.5 py-1 shadow-md"
       onMouseDown={(e) => e.preventDefault()}
     >
       <span className="w-full px-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--muted-foreground)] sm:w-auto sm:pr-1">
@@ -1339,11 +1340,21 @@ export function TiptapSectionField({
           pluginKey={`tableEditFloatingMenu:${thisEditorKey}`}
           updateDelay={50}
           appendTo={() => document.body}
+          // Canvas panes are z-10. TipTap portals this node onto document.body
+          // with position:absolute and no default z-index, so it otherwise
+          // paints under the editor. ELR table-only fields make that obvious:
+          // there is no prose above the matrix, flip overlays the table, and
+          // the toolbar looks missing.
+          className="z-50"
           options={{
+            strategy: "fixed",
             placement: "top-start",
             offset: 10,
             flip: true,
             shift: { padding: 8 },
+            scrollTarget:
+              editor.view.dom.closest<HTMLElement>("[data-canvas-pane]") ??
+              window,
           }}
           shouldShow={({ editor: ed }) =>
             ed.isEditable &&
@@ -1364,6 +1375,7 @@ export function TiptapSectionField({
         <BubbleMenu
           editor={editor}
           appendTo={() => document.body}
+          className="z-50"
           options={{
             placement: "right-end",
             offset: 10,
