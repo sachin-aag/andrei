@@ -228,19 +228,19 @@ describe("getReportTableOfContents", () => {
       "3.6 Monitoring",
       "3.7 Calibration of Associated Instruments",
       "3.8 Preventive Maintenance",
-      "3.9 Breakdowns and Trends",
-      "3.10 QMS Records since Last Periodic Re-Qualification",
-      "3.11 Alarm Trends",
+      "3.9 Alarm Trends",
+      "3.10 Breakdowns and Trends",
+      "3.11 QMS Records since Last Periodic Re-Qualification",
       "3.12 Access Control",
       "3.13 Audit Trail Review",
       "3.14 Computerized System Validation Status",
     ]);
     const breakdowns = observations?.children?.find(
-      (c) => c.label === "3.9 Breakdowns and Trends"
+      (c) => c.label === "3.10 Breakdowns and Trends"
     );
     expect(breakdowns?.sectionKey).toBe("elr_breakdowns");
     expect(breakdowns?.children?.[0]).toEqual({
-      label: "3.9.1 Breakdown Trend Summary",
+      label: "3.10.1 Breakdown Trend Summary",
       sectionKey: "elr_breakdowns",
     });
     const summary = toc.find((e) => e.label === "5. Summary and Conclusion");

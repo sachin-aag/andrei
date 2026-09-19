@@ -244,6 +244,14 @@ describe("equipment lifecycle report definition", () => {
     expect(sections.indexOf("elr_risk_actions")).toBeLessThan(
       sections.indexOf("elr_conclusion")
     );
+    expect(sections.indexOf("elr_alarms")).toBeLessThan(
+      sections.indexOf("elr_breakdowns")
+    );
+    expect(sections.indexOf("elr_breakdowns")).toBeLessThan(
+      sections.indexOf("elr_qms")
+    );
+    const draft = getDocumentType(TYPE).chat.draftOrder;
+    expect(draft.indexOf("elr_alarms")).toBeLessThan(draft.indexOf("elr_breakdowns"));
   });
 
   it("seeds a starter glossary that no criterion enforces", () => {
@@ -276,7 +284,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v13");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v14");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -710,6 +718,13 @@ describe("ELR criteria wiring", () => {
     expect(monitoring.some((c) => c.key === "monitoring.assessment_present")).toBe(
       true
     );
+    const breakdowns = getCriteria(TYPE, "elr_breakdowns");
+    expect(
+      breakdowns.find((c) => c.key === "breakdowns.assessment_reasons")?.dependsOn
+    ).toContain("elr_alarms");
+    expect(breakdowns.find((c) => c.key === "breakdowns.trend")?.dependsOn).toContain(
+      "elr_alarms"
+    );
   });
 
   it("attaches the quantity-math check to every judged section, not the registers", () => {
@@ -1098,6 +1113,20 @@ describe("ELR docx template contract", () => {
     const zip = new PizZip(fs.readFileSync(def.export.templatePath));
     const xml = zip.file("word/document.xml")!.asText();
     expect(xml).not.toContain("TABLE OF CONTENTS");
+  });
+
+  it("places Alarm Trends above Breakdowns", () => {
+    const def = getDocumentType(TYPE);
+    const zip = new PizZip(fs.readFileSync(def.export.templatePath));
+    const xml = zip.file("word/document.xml")!.asText();
+    const alarmAt = xml.indexOf("3.9 ALARM TRENDS");
+    const breakdownAt = xml.indexOf("3.10 BREAKDOWNS AND TRENDS");
+    const qmsAt = xml.indexOf("3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION");
+    expect(alarmAt).toBeGreaterThan(-1);
+    expect(breakdownAt).toBeGreaterThan(alarmAt);
+    expect(qmsAt).toBeGreaterThan(breakdownAt);
+    expect(xml).not.toContain("3.9 BREAKDOWNS");
+    expect(xml).not.toContain("3.11 ALARM");
   });
 });
 
@@ -1649,7 +1678,7 @@ describe("ELR assessment, trends and risk checks", () => {
     expect(result.reasoning).toMatch(/repeat breakdown/i);
   });
 
-  it("fails a 3.9 recap that omits a flagged repeat breakdown", () => {
+  it("fails a 3.10 recap that omits a flagged repeat breakdown", () => {
     const result = checkSystemTrendsCoverFlaggedFindings(
       ctx(
         { table: completeRecapTable() },
@@ -1660,12 +1689,12 @@ describe("ELR assessment, trends and risk checks", () => {
       )
     );
     expect(result.status).toBe("not_met");
-    expect(result.reasoning).toMatch(/3\.9/i);
+    expect(result.reasoning).toMatch(/3\.10/i);
   });
 
   it("passes a complete recap table that names the flagged finding", () => {
     const table = completeRecapTable({
-      "3.9": {
+      "3.10": {
         summary: "Four repeat peristaltic-pump dosing faults this period.",
         trend: "increasing",
         impact: "Lost runtime on the filling line",
@@ -1748,9 +1777,9 @@ describe("ELR assessment, trends and risk checks", () => {
     expect(parsed.rows.some((row) => row.section.includes("2.0"))).toBe(false);
   });
 
-  it("matches recap rows by section number so 3.11 cannot steal 3.6", () => {
+  it("matches recap rows by section number so 3.9 cannot steal 3.6", () => {
     const monitoring = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.6");
-    const alarms = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.11");
+    const alarms = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.9");
     expect(monitoring && recapSourceMatchesText(monitoring, "3.6 Monitoring")).toBe(
       true
     );
@@ -1758,14 +1787,14 @@ describe("ELR assessment, trends and risk checks", () => {
       monitoring &&
         recapSourceMatchesText(
           monitoring,
-          "3.11 Alarm Trends — monitoring of codes is still appropriate"
+          "3.9 Alarm Trends — monitoring of codes is still appropriate"
         )
     ).toBe(false);
     expect(
       alarms &&
         recapSourceMatchesText(
           alarms,
-          "3.11 Alarm Trends — monitoring of codes is still appropriate"
+          "3.9 Alarm Trends — monitoring of codes is still appropriate"
         )
     ).toBe(true);
   });
@@ -1851,7 +1880,7 @@ describe("ELR assessment, trends and risk checks", () => {
         [...ELR_SYSTEM_TRENDS_HEADERS],
         row(ELR_SYSTEM_TRENDS_HEADERS, {
           "Sr. No.": "1",
-          Section: "3.9 Breakdowns and Trends",
+          Section: "3.10 Breakdowns and Trends",
           Summary: "Peristaltic pump dosing faults increased this period.",
           "Trend (increasing / stable / decreasing / none)": "increasing",
           "Product or runtime impact": "Lost runtime on the filling line",

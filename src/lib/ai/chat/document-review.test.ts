@@ -467,6 +467,20 @@ describe("prepareDocumentReviewStep", () => {
       })?.activeTools
     ).toEqual(["draft_field", "search_documents", "ask_user"]);
   });
+
+  it("does not restart a truncated matching inventory finish", () => {
+    expect(
+      prepareDocumentReviewStep({
+        policy: "adaptive",
+        phase: "complete",
+        availableTools: available,
+        requireInventoryReview: true,
+        restartInventoryReview: false,
+      })
+    ).toEqual({
+      activeTools: ["draft_field", "search_documents", "ask_user"],
+    });
+  });
 });
 
 describe("pickPlanModeChatTools", () => {

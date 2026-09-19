@@ -198,7 +198,65 @@ function rewriteBlocks(blocks) {
   }
 
   if (summaryOpened && !summaryFilled) flushSummary();
-  return out;
+  return reorderAlarmTrendsAboveBreakdowns(out);
+}
+
+const HEADING_RENAMES = [
+  ["3.11 ALARM TRENDS", "3.9 ALARM TRENDS"],
+  ["3.11.1 ALARM TREND SUMMARY", "3.9.1 ALARM TREND SUMMARY"],
+  ["3.9 BREAKDOWNS AND TRENDS", "3.10 BREAKDOWNS AND TRENDS"],
+  ["3.9.1 BREAKDOWN TREND SUMMARY", "3.10.1 BREAKDOWN TREND SUMMARY"],
+  [
+    "3.10 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION",
+    "3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION",
+  ],
+];
+
+function headingIndex(blocks, text) {
+  return blocks.findIndex(
+    (block) => block.startsWith("<w:p") && paragraphPlainText(block) === text
+  );
+}
+
+function renameHeadingText(block) {
+  const text = paragraphPlainText(block);
+  for (const [from, to] of HEADING_RENAMES) {
+    if (text === from) return block.replace(from, to);
+  }
+  return block;
+}
+
+function renameHeadingSlice(blocks) {
+  return blocks.map(renameHeadingText);
+}
+
+/** Alarm Trends (3.9) sits above Breakdowns (3.10) so remaining-section can cite that table. */
+function reorderAlarmTrendsAboveBreakdowns(blocks) {
+  if (headingIndex(blocks, "3.9 ALARM TRENDS") >= 0) return blocks;
+
+  const breakdownStart = headingIndex(blocks, "3.9 BREAKDOWNS AND TRENDS");
+  const qmsStart = headingIndex(
+    blocks,
+    "3.10 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION"
+  );
+  const alarmStart = headingIndex(blocks, "3.11 ALARM TRENDS");
+  const accessStart = headingIndex(blocks, "3.12 ACCESS CONTROL");
+  if (
+    breakdownStart < 0 ||
+    qmsStart < 0 ||
+    alarmStart < 0 ||
+    accessStart < 0 ||
+    !(breakdownStart < qmsStart && qmsStart < alarmStart && alarmStart < accessStart)
+  ) {
+    throw new Error("ELR template 3.9–3.11 headings are not in the expected order");
+  }
+
+  const before = blocks.slice(0, breakdownStart);
+  const breakdowns = renameHeadingSlice(blocks.slice(breakdownStart, qmsStart));
+  const qms = renameHeadingSlice(blocks.slice(qmsStart, alarmStart));
+  const alarms = renameHeadingSlice(blocks.slice(alarmStart, accessStart));
+  const after = blocks.slice(accessStart);
+  return [...before, ...alarms, ...breakdowns, ...qms, ...after];
 }
 
 const zip = new PizZip(fs.readFileSync(DEST));
@@ -240,6 +298,16 @@ for (const prefix of INSTRUCTION_PREFIXES) {
   if (next.includes(prefix)) {
     throw new Error(`Instructional copy still in template: ${prefix}`);
   }
+}
+
+const alarmAt = next.indexOf("3.9 ALARM TRENDS");
+const breakdownAt = next.indexOf("3.10 BREAKDOWNS AND TRENDS");
+const qmsAt = next.indexOf("3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION");
+if (!(alarmAt >= 0 && breakdownAt > alarmAt && qmsAt > breakdownAt)) {
+  throw new Error("ELR template did not place Alarm Trends above Breakdowns");
+}
+if (next.includes("3.9 BREAKDOWNS") || next.includes("3.11 ALARM")) {
+  throw new Error("ELR template still uses the old 3.9/3.11 numbering");
 }
 
 console.log(`Wrote ${path.relative(ROOT, DEST)} (${tags.length} tags)`);

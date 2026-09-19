@@ -188,17 +188,27 @@ function preferredFilenameFamilies(
   }
 }
 
+/** Alarm-trend / AAP files belong in Alarm Trends (and Monitoring), not Breakdowns. */
+export function isAlarmTrendFilename(
+  filename: string | null | undefined
+): boolean {
+  if (!filename) return false;
+  const n = filename.toLowerCase();
+  return n.includes("alarm") || n.includes("aap");
+}
+
 function preferredFilenameNeedles(section: SectionType): readonly string[] {
   return preferredFilenameFamilies(section).flat();
 }
 
-/** CSV-OQ / RTM / URS pages name "environmental monitoring" without being the EM grid. */
+/** CSV-OQ / CSV-IQ / RTM / URS pages name "environmental monitoring" without being the EM grid. */
 export function isDemotedInventoryFilename(
   filename: string | null | undefined
 ): boolean {
   if (!filename) return false;
   const n = filename.toLowerCase();
   if (n.includes("csv-oq") || n.includes("csv oq")) return true;
+  if (n.includes("csv-iq") || n.includes("csv iq")) return true;
   if (n.includes("rtm for") || /\brtm\b/.test(n)) return true;
   if (/\burs\b/.test(n) || n.includes("user requirement")) return true;
   return false;
@@ -377,6 +387,10 @@ export function filenameConflictsWithInventoryObjective(
   const current = inventorySectionForObjective(objective);
   if (!current || !filename) return false;
   const haystack = filename.toLowerCase();
+  // Breakdowns cite the already-drafted Alarm Trends table — drop those PDFs.
+  if (current === "elr_breakdowns" && isAlarmTrendFilename(filename)) {
+    return true;
+  }
   for (const section of inventorySections()) {
     if (section === current) continue;
     // Monitoring also compiles alarm-trend details — do not drop those files.
@@ -458,6 +472,9 @@ export function scoreInventoryReviewPage(
   const schema = ELR_INVENTORY_SCHEMAS[section];
   if (!schema) return null;
   if (isInventoryHeaderOnlyPage(page)) return 0;
+  if (section === "elr_breakdowns" && isAlarmTrendFilename(page.filename)) {
+    return 0;
+  }
 
   const haystack = pageObjectiveHaystack(page);
   let columnHits = 0;
@@ -490,7 +507,7 @@ export function scoreInventoryReviewPage(
   }
 
   if (isDemotedInventoryFilename(page.filename)) {
-    // URS / CSV-OQ / RTM may name "environmental monitoring" and carry a
+    // URS / CSV-OQ / CSV-IQ / RTM may name "environmental monitoring" and carry a
     // revision date. Require a dated result table (two distinctive columns).
     if (!(dated && columnHits >= 2)) return 0;
   }

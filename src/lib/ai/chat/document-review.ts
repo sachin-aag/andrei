@@ -930,6 +930,13 @@ export function prepareDocumentReviewStep(input: {
    * When a prior finish was for a different section, `complete` must restart.
    */
   requireInventoryReview?: boolean;
+  /**
+   * Coverage is for a *different* inventory (or none yet). Truncated matching
+   * finishes keep `requireInventoryReview` so edit_table stays locked, but
+   * must not `forceStart` the same floor-8 skip until the 270s abort.
+   * Omit to treat `requireInventoryReview` as the restart signal (tests).
+   */
+  restartInventoryReview?: boolean;
 }): DocumentReviewToolChoice | undefined {
   const allow = (names: readonly string[]): string[] =>
     names.filter((name) => input.availableTools.includes(name));
@@ -937,15 +944,18 @@ export function prepareDocumentReviewStep(input: {
     activeTools: allow(["start_document_review"]),
     toolChoice: { type: "tool", toolName: "start_document_review" },
   });
+  const hideReview = (): DocumentReviewToolChoice => ({
+    activeTools: input.availableTools.filter(
+      (name) => !isDocumentReviewToolName(name)
+    ),
+  });
+  const restartOnComplete =
+    input.restartInventoryReview ?? input.requireInventoryReview === true;
 
   switch (input.phase) {
     case "idle":
       if (input.policy !== "comprehensive" && !input.requireInventoryReview) {
-        return {
-          activeTools: input.availableTools.filter(
-            (name) => !isDocumentReviewToolName(name)
-          ),
-        };
+        return hideReview();
       }
       return forceStart();
     case "in_progress":
@@ -961,14 +971,10 @@ export function prepareDocumentReviewStep(input: {
     case "complete":
       // A leftover finish for a *different* inventory (rehydrated
       // qualification while drafting monitoring) still needs a walk.
-      // A matching finish this turn must not restart — the empty table is
-      // why we reviewed; the next step is edit_table, not another start.
-      if (input.requireInventoryReview) return forceStart();
-      return {
-        activeTools: input.availableTools.filter(
-          (name) => !isDocumentReviewToolName(name)
-        ),
-      };
+      // A matching finish this turn must not restart — even when the
+      // truncated walk cannot unlock edit_table (CSV-OQ skip of PRQR).
+      if (restartOnComplete) return forceStart();
+      return hideReview();
     default: {
       const _exhaustive: never = input.phase;
       throw new Error(`Unhandled document-review phase: ${String(_exhaustive)}`);

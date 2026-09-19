@@ -310,7 +310,8 @@ const BREAKDOWN_CRITERIA: CriterionDefinition[] = [
   llm(
     "breakdowns.trend",
     "The trend summary identifies recurring failure modes and their implication",
-    "Does the trend summary group by failure mode rather than by date, and state what recurrence implies for PM frequency, design change or re-qualification timing?"
+    "Does the trend summary group by failure mode rather than by date, refer to Alarm Trends when downtime or repeats relate to those codes, and state what recurrence implies for PM frequency, design change or re-qualification timing?",
+    ["elr_alarms"]
   ),
   det(
     "breakdowns.assessment_present",
@@ -318,10 +319,11 @@ const BREAKDOWN_CRITERIA: CriterionDefinition[] = [
     "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
     checkAssessmentInterpretsTable
   ),
-  assessment(
+  llm(
     "breakdowns.assessment_reasons",
     "The assessment interprets breakdowns rather than restating that they were listed",
-    "breakdown events"
+    "Does the assessment interpret this period's breakdown events — counts, downtime hours, CAPA, product/runtime impact — and refer to Alarm Trends ([[table:Alarm Trends]]) among those sources when alarm codes relate to the events, rather than restating that breakdowns were listed? Every number must match the table. Suggest only actions that follow from these rows. If the table has no data rows, an assessment that says none occurred is enough.",
+    ["elr_alarms"]
   ),
 ];
 
@@ -624,9 +626,9 @@ const PER_SECTION_PROMPTS: Record<string, string> = {
   elr_monitoring: `The assessment must interpret excursion counts and linked deviations, and this period's alarm picture (top codes, Direct Impact, CAPA, lost runtime), and say whether product or the environment was affected. The table is one row per environmental method (not merged viable methods) plus compact process-alarm rows from the alarm-trend report. Period Covered is the Indian FY (1 April–31 March), not an alarm-trend quarter.`,
   elr_calibration: `The assessment must interpret how many instruments, any OOT, the impact assessment and what was done — not that calibration was reviewed.`,
   elr_preventive_maintenance: `The assessment must interpret PM compliance (on time against planned), delayed jobs and whether delayed PM contributed to a breakdown.`,
-  elr_breakdowns: `The assessment above the event table is not the same as the 3.9.1 trend summary. The assessment interprets this period's events (counts, downtime hours, CAPA, product/runtime impact). The trend summary groups failure modes.`,
+  elr_alarms: `The assessment above the alarm table interprets this period's codes (counts, Direct Impact, CAPA, lost runtime). The 3.9.1 trend summary is whether the trended set is still appropriate.`,
+  elr_breakdowns: `The assessment above the event table is not the same as the 3.10.1 trend summary. The assessment interprets this period's events (counts, downtime hours, CAPA, product/runtime impact) and refers to Alarm Trends (3.9) among those sources — do not re-walk the alarm-trend PDF. The trend summary groups failure modes.`,
   elr_qms: `Period is from the last PRQ completion date to the ELR cut-off. Judge whether open items are separated from closed ones and whether qualification impact is reasoned, not whether every field is filled. The assessment must interpret the mix (deviations, CAPA, change controls) rather than recap the register.`,
-  elr_alarms: `The assessment above the alarm table interprets this period's codes (counts, Direct Impact, CAPA, lost runtime). The 3.11.1 trend summary is whether the trended set is still appropriate.`,
   elr_access_control: `Copy the current SOP / CSV privilege matrix (Task × Operator / Supervisor / Maintenance / Administrator), stamping System Name / ID from the annexure header. Separate initial qualification of access control from periodic verification this period. 21 CFR Part 11 access, authority and audit-trail checks belong here. Do not reshape the annexure into a user grant/revoke log.`,
   elr_audit_trail: `The assessment must interpret how many reviews, any anomaly, and the disposition — not that reviews were performed.`,
   elr_csv_status: `The assessment must interpret whether each system remains validated, name the revalidation due date (current vs overdue), and whether a change since last PRQ triggered revalidation.`,
@@ -797,9 +799,9 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "elr_monitoring",
       "elr_calibration",
       "elr_preventive_maintenance",
+      "elr_alarms",
       "elr_breakdowns",
       "elr_qms",
-      "elr_alarms",
       "elr_access_control",
       "elr_audit_trail",
       "elr_csv_status",
@@ -826,9 +828,9 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "elr_monitoring",
       "elr_calibration",
       "elr_preventive_maintenance",
+      "elr_alarms",
       "elr_breakdowns",
       "elr_qms",
-      "elr_alarms",
       "elr_access_control",
       "elr_audit_trail",
       "elr_csv_status",

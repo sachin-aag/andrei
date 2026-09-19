@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v119-write-unlock-suggestions");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v120-elr-alarms-before-breakdowns");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -529,6 +529,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("does not unlock edit_table");
     expect(prompt).toContain("compact process-alarm rows");
     expect(prompt).toContain("alarm-trend PDF");
+    expect(prompt).toContain("[[table:Alarm Trends]]");
+    expect(prompt).toContain("On ELR breakdowns");
     expect(prompt).not.toContain(
       "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
     );
