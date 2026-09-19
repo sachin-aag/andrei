@@ -37,6 +37,7 @@ import {
   citationNumbersFromMarker,
   formatNumericCitationMarker,
 } from "@/lib/placeholders/citation-bracket";
+import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 
 export type { ClaimProvenance, ClaimProvenanceRecord } from "@/lib/ai/chat/claim-facts";
 
@@ -116,13 +117,17 @@ function pageMatchesIdentifiers(
   );
 }
 
+/** Page-read ledgers may pin an uncited number; a hydrated review dump may not. */
+export const NUMBER_MOVE_SMALL_LEDGER = 8;
+
 function rankMoveTarget(input: {
   matches: readonly RecordedCitationPage[];
   fact: HardFact;
   cited: RecordedCitationPage | null;
   identifiers: readonly HardFact[];
+  quotedPageCount: number;
 }): RecordedCitationPage | null {
-  const { matches, fact, cited, identifiers } = input;
+  const { matches, fact, cited, identifiers, quotedPageCount } = input;
   if (matches.length === 0) return null;
 
   if (cited) {
@@ -130,6 +135,7 @@ function rankMoveTarget(input: {
       filenamesMatch(page.filename, cited.filename)
     );
     if (sameFile.length > 0) {
+      if (fact.kind === "number" && sameFile.length > 1) return null;
       return [...sameFile].sort(
         (a, b) =>
           Math.abs(a.pageNumber - cited.pageNumber) -
@@ -143,12 +149,22 @@ function rankMoveTarget(input: {
       pageMatchesIdentifiers(page, identifiers)
     );
     if (idHits.length === 1) return idHits[0]!;
-    if (idHits.length > 1) {
+    if (idHits.length > 1 && fact.kind !== "number") {
       return idHits[0]!;
     }
   }
 
   if (fact.kind === "date" && matches.length > 1 && cited) return null;
+  // Uncited / cross-file numbers must not attach a coincidental ledger page
+  // (hydrated review transcripts often contain 5,000 / 0 on unrelated PQ rows).
+  // Same-file unique hit and unique identifier pin already returned above.
+  // A one-page (or small page-read) ledger may still insert a missing cite.
+  if (fact.kind === "number") {
+    if (!cited && matches.length === 1 && quotedPageCount <= NUMBER_MOVE_SMALL_LEDGER) {
+      return matches[0]!;
+    }
+    return null;
+  }
   return matches[0]!;
 }
 
@@ -188,11 +204,13 @@ function resolveFact(
   }
 
   const matches = pages.filter((row) => evidenceContainsFact(row.quote, fact));
+  const quotedPageCount = pages.filter((row) => row.quote.trim()).length;
   const ranked = rankMoveTarget({
     matches,
     fact,
     cited: primaryCited,
     identifiers,
+    quotedPageCount,
   });
 
   if (primaryCited && !primaryCited.quote.trim() && fact.kind === "date") {
@@ -607,19 +625,45 @@ export const GATED_FACT_PLACEHOLDERS = [
 export const UNSUPPORTED_FACTS_RETRY_MESSAGE =
   "These facts were not on any retrieved page. Search or read the page that states them, then fill the real value. Leftover <date>/<identifier>/<number> are for facts still missing after that lookup — do not invent the value.";
 
+export const TABLE_PLACEHOLDER_LOOKUP_MESSAGE =
+  "These table cells are still placeholders. Search or read the page that states them, then fill the real value. Do not persist angle-bracket placeholders in the table until that lookup. Leftover <date>/<identifier>/<number> are only for facts still missing after that subsequent search — do not invent the value.";
+
 export function containsGatedFactPlaceholders(text: string): boolean {
   return GATED_FACT_PLACEHOLDERS.some((token) => text.includes(token));
 }
 
-export function tableOperationContainsGatedPlaceholders(
-  operation: TableOperation
-): boolean {
-  let found = false;
+export function containsTablePlaceholders(text: string): boolean {
+  return collectPlaceholderSpans(text).length > 0;
+}
+
+export function tablePlaceholderLabels(operation: TableOperation): string[] {
+  const labels: string[] = [];
+  const seen = new Set<string>();
   mapTableOperationText(operation, (value) => {
-    if (containsGatedFactPlaceholders(value)) found = true;
+    for (const span of collectPlaceholderSpans(value)) {
+      const key = span.text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      labels.push(span.text);
+    }
     return value;
   });
-  return found;
+  return labels;
+}
+
+export function tableOperationContainsPlaceholders(
+  operation: TableOperation
+): boolean {
+  return tablePlaceholderLabels(operation).length > 0;
+}
+
+export function tablePlaceholderLookupMessage(
+  labels: readonly string[]
+): string {
+  const listed = labels.slice(0, 8).join(", ");
+  return listed
+    ? `${TABLE_PLACEHOLDER_LOOKUP_MESSAGE} Missing: ${listed}.`
+    : TABLE_PLACEHOLDER_LOOKUP_MESSAGE;
 }
 
 export function unsupportedFactsToolResult(input: {

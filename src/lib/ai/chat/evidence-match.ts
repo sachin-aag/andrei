@@ -41,15 +41,17 @@ function numericForms(fact: HardFact): string[] {
 
 /**
  * Integers and decimals must be whole tokens. Substring "0" inside E/PR/070,
- * "1.0 Purpose", or "2024" is not evidence for contaminated-units 0.
+ * "1.0 Purpose", or "2024" is not evidence for contaminated-units 0. A
+ * sentence-final "0." still matches — only `.` + digit is a decimal.
  */
 function numericNeedlePresent(haystack: string, needle: string): boolean {
   const n = needle.toLowerCase();
   if (!n) return false;
   if (/^\d+(?:\.\d+)?$/.test(n)) {
-    return new RegExp(`(?<![\\d.])${escapeRegExp(n)}(?![\\d])`, "i").test(
-      haystack
-    );
+    return new RegExp(
+      `(?<![\\d.])${escapeRegExp(n)}(?!\\d)(?!\\.\\d)`,
+      "i"
+    ).test(haystack);
   }
   if (haystack.includes(n)) return true;
   const spaced = n.replace(/(\d)([a-z%])/gi, "$1 $2");
@@ -119,7 +121,10 @@ export function evidenceContainsFact(haystack: string, fact: HardFact): boolean 
   if (!haystack.trim()) return false;
   const hay = normalizeHaystack(haystack);
   const originalHay = collapseWs(haystack).toUpperCase();
-  const numericHay = hay.replace(/°/g, "").replace(/\s+/g, " ");
+  const numericHay = hay
+    .replace(/°/g, "")
+    .replace(/,/g, "")
+    .replace(/\s+/g, " ");
   for (const needle of kindNeedles(fact)) {
     if (!needle) continue;
     if (fact.kind === "identifier") {

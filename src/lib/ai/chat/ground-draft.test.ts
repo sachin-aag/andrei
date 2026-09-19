@@ -4,6 +4,10 @@ import {
   containsGatedFactPlaceholders,
   groundDraftText,
   groundTableOperation,
+  NUMBER_MOVE_SMALL_LEDGER,
+  tablePlaceholderLabels,
+  tablePlaceholderLookupMessage,
+  TABLE_PLACEHOLDER_LOOKUP_MESSAGE,
   unsupportedFactsToolResult,
   UNSUPPORTED_FACTS_RETRY_MESSAGE,
 } from "@/lib/ai/chat/ground-draft";
@@ -396,6 +400,99 @@ describe("groundTableOperation", () => {
     expect(dateCell).not.toContain(`[${sop}, p. 12]`);
     expect(dateCell).not.toContain("[CSV-cover.pdf, p. 1]");
   });
+
+  it("does not pin an uncited 5,000 from a hydrated review dump even when unique", () => {
+    const filler = Array.from({ length: NUMBER_MOVE_SMALL_LEDGER + 1 }, (_, i) => ({
+      filename: `PQR-24-PR-102-part-${i + 1}.pdf`,
+      pageNumber: i + 1,
+      attachmentId: `att-pqr-${i + 1}`,
+      quote:
+        i === NUMBER_MOVE_SMALL_LEDGER
+          ? "Vial line PQ fill volume 5,000 units. Batch PV-24-009."
+          : `Calibration due 0${i + 1}/01/2024 for EQ-${10 + i}.`,
+    }));
+    const result = groundDraftText({
+      text: "Media fill filled 5,000 units.",
+      ledger: ledgerFromPages(filler),
+      policy: "block",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.some((fact) => fact.text.includes("5,000"))).toBe(
+      true
+    );
+    expect(result.text).toContain("<number>");
+    expect(result.text).not.toContain("5,000");
+  });
+
+  it("does not steal an uncited 5,000 from an unrelated hydrated PQ page", () => {
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            insertText: "5,000 [PR-discrepancy.pdf, p. 29]",
+          },
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: "PR-discrepancy.pdf",
+          pageNumber: 29,
+          attachmentId: "att-disc",
+          quote:
+            "Leak test 28/06/2024 Cartridge 3.2 mL qty 8. Media Fill and not for product filling.",
+        },
+        {
+          filename: "PQR-24-PR-102-part-3.pdf",
+          pageNumber: 19,
+          attachmentId: "att-pqr3",
+          quote: "Vial line PQ fill volume 5,000 units. Batch PV-24-009.",
+        },
+      ]),
+      policy: "block",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text)).toContain("5,000");
+    const cell = (result.operation as { cells: Array<{ insertText: string }> })
+      .cells[0]!;
+    expect(cell.insertText).toContain("<number>");
+    expect(cell.insertText).not.toContain("5,000");
+    expect(cell.insertText).not.toContain("PQR-24-PR-102-part-3.pdf");
+  });
+
+  it("retargets 5,000 when the row identifier uniquely pins the APS page", () => {
+    const result = groundDraftText({
+      text: "MF-24-VIAL-01 filled 5,000 [Planner.pdf, p. 22].",
+      ledger: ledgerFromPages([
+        {
+          filename: "Planner.pdf",
+          pageNumber: 22,
+          attachmentId: "att-plan",
+          quote: "Annual calibration planner EQ-12 Balance",
+        },
+        {
+          filename: "PQR-24-PR-102.pdf",
+          pageNumber: 8,
+          attachmentId: "att-pqr",
+          quote:
+            "Aseptic process simulation MF-24-VIAL-01: 5,000 units filled, contaminated units 0.",
+        },
+      ]),
+      policy: "block",
+    });
+    expect(result.blocked).toBe(false);
+    expect(
+      result.provenance.claims
+        .filter((claim) => claim.status === "citation_moved")
+        .map((claim) => claim.text)
+    ).toContain("5,000");
+    expect(result.text).toContain("5,000");
+    expect(result.text).toContain("[PQR-24-PR-102.pdf, p. 8]");
+    expect(result.text).not.toContain("[Planner.pdf, p. 22]");
+  });
 });
 
 describe("gated placeholder persist policy", () => {
@@ -404,6 +501,25 @@ describe("gated placeholder persist policy", () => {
     expect(containsGatedFactPlaceholders("id <identifier>")).toBe(true);
     expect(containsGatedFactPlaceholders("n <number>")).toBe(true);
     expect(containsGatedFactPlaceholders("use <batch number>")).toBe(false);
+  });
+
+  it("treats column-label table tokens as leftovers, not only <date>/<number>", () => {
+    expect(
+      tablePlaceholderLabels({
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 2, insertText: "<Date of Execution>" },
+          { row: 1, col: 4, insertText: "<Units Filled>" },
+        ],
+      })
+    ).toEqual(["<Date of Execution>", "<Units Filled>"]);
+    expect(
+      tablePlaceholderLookupMessage(["<Units Filled>"])
+    ).toContain(TABLE_PLACEHOLDER_LOOKUP_MESSAGE);
+    expect(tablePlaceholderLookupMessage(["<Units Filled>"])).toContain(
+      "Missing: <Units Filled>."
+    );
   });
 
   it("tells the model to fill real values, not invent them", () => {
