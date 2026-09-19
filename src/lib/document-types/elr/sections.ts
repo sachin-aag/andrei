@@ -23,9 +23,9 @@ export const ELR_SECTION_KEYS = [
   "elr_monitoring",
   "elr_calibration",
   "elr_preventive_maintenance",
+  "elr_alarms",
   "elr_breakdowns",
   "elr_qms",
-  "elr_alarms",
   "elr_access_control",
   "elr_audit_trail",
   "elr_csv_status",
@@ -217,8 +217,8 @@ export type ElrSectionRecapSource = {
 
 /**
  * 5.1 table recap of every Observations subsection and Discrepancy.
- * Purpose (1.0) and Scope (2.0) are omitted on purpose. 3.9.1 / 3.11.1
- * stay inside 3.9 / 3.11 rather than extra rows.
+ * Purpose (1.0) and Scope (2.0) are omitted on purpose. 3.9.1 / 3.10.1
+ * stay inside 3.9 / 3.10 rather than extra rows.
  */
 export const ELR_TREND_RECAP_SOURCES: readonly ElrSectionRecapSource[] = [
   { key: "elr_responsibilities", number: "3.1", label: "Responsibilities" },
@@ -249,13 +249,13 @@ export const ELR_TREND_RECAP_SOURCES: readonly ElrSectionRecapSource[] = [
     number: "3.8",
     label: "Preventive Maintenance",
   },
-  { key: "elr_breakdowns", number: "3.9", label: "Breakdowns and Trends" },
+  { key: "elr_alarms", number: "3.9", label: "Alarm Trends" },
+  { key: "elr_breakdowns", number: "3.10", label: "Breakdowns and Trends" },
   {
     key: "elr_qms",
-    number: "3.10",
+    number: "3.11",
     label: "QMS Records since Last Periodic Re-Qualification",
   },
-  { key: "elr_alarms", number: "3.11", label: "Alarm Trends" },
   { key: "elr_access_control", number: "3.12", label: "Access Control" },
   { key: "elr_audit_trail", number: "3.13", label: "Audit Trail Review" },
   {
@@ -287,7 +287,7 @@ export const ELR_RECAP_MIN_SUMMARY_CHARS = 12;
 /**
  * Match a 5.1 Section cell or a 5.3 bullet to a recap source. Prefer the
  * first numbered heading (`3.6`, `4.0`) so "monitoring" in an Alarm Trends
- * bullet cannot steal 3.6. `3.9.1` still belongs to 3.9.
+ * bullet cannot steal 3.6. `3.9.1` still belongs to 3.9; `3.10.1` to 3.10.
  */
 export function recapSourceMatchesText(
   source: ElrSectionRecapSource,

@@ -247,25 +247,25 @@ const ELR_TOC: TableOfContentsEntry[] = [
         sectionKey: "elr_preventive_maintenance",
       },
       {
-        label: "3.9 Breakdowns and Trends",
+        label: "3.9 Alarm Trends",
+        sectionKey: "elr_alarms",
+        children: [
+          { label: "3.9.1 Alarm Trend Summary", sectionKey: "elr_alarms" },
+        ],
+      },
+      {
+        label: "3.10 Breakdowns and Trends",
         sectionKey: "elr_breakdowns",
         children: [
           {
-            label: "3.9.1 Breakdown Trend Summary",
+            label: "3.10.1 Breakdown Trend Summary",
             sectionKey: "elr_breakdowns",
           },
         ],
       },
       {
-        label: "3.10 QMS Records since Last Periodic Re-Qualification",
+        label: "3.11 QMS Records since Last Periodic Re-Qualification",
         sectionKey: "elr_qms",
-      },
-      {
-        label: "3.11 Alarm Trends",
-        sectionKey: "elr_alarms",
-        children: [
-          { label: "3.11.1 Alarm Trend Summary", sectionKey: "elr_alarms" },
-        ],
       },
       { label: "3.12 Access Control", sectionKey: "elr_access_control" },
       { label: "3.13 Audit Trail Review", sectionKey: "elr_audit_trail" },

@@ -91,7 +91,8 @@ COPY / Sign/Date chrome is 0. Haystack uses outline + pageContext + the first
 for an ELR inventory still omits a single-file pin so PRQR / PRQP / PQR
 rows can split, but it does not page-list a file typed as a different
 inventory (a calibration planner is not QMS). Monitoring still lists
-alarm-trend files. Running-header `document no`
+alarm-trend files. Breakdowns drop those files and cite the already-drafted
+Alarm Trends table instead. Running-header `document no`
 is not a column hit. A truncated matching finish that cannot unlock
 `edit_table` (floor-8 skip of PRQR) does not `forceStart` again — remaining
 section must not mill until the 270s abort. The planning chip names queued files. Complementary grep ORs

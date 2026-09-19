@@ -79,12 +79,12 @@ describe("TableOfContentsPanel", () => {
     expect(onJump).toHaveBeenCalledWith("elr_objective");
 
     await user.click(
-      screen.getByRole("button", { name: "3.9 Breakdowns and Trends" })
+      screen.getByRole("button", { name: "3.10 Breakdowns and Trends" })
     );
     expect(onJump).toHaveBeenCalledWith("elr_breakdowns");
 
     await user.click(
-      screen.getByRole("button", { name: "3.9.1 Breakdown Trend Summary" })
+      screen.getByRole("button", { name: "3.10.1 Breakdown Trend Summary" })
     );
     expect(onJump).toHaveBeenCalledWith("elr_breakdowns");
 

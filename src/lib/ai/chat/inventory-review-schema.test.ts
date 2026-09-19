@@ -92,6 +92,18 @@ describe("filenameConflictsWithInventoryObjective", () => {
         "elr_monitoring"
       )
     ).toBe(false);
+    expect(
+      filenameConflictsWithInventoryObjective(
+        "Alarm trend Q2 2025.pdf",
+        "elr_breakdowns"
+      )
+    ).toBe(true);
+    expect(
+      filenameConflictsWithInventoryObjective(
+        "Alarm trend Q2 2025.pdf",
+        "elr_alarms"
+      )
+    ).toBe(false);
   });
 
   it("does not empty the ready set when every filename conflicts", () => {
@@ -291,6 +303,27 @@ describe("scoreInventoryReviewPage", () => {
         "elr_monitoring",
         ["PRQR-25-PR-005 Report.pdf", "Alarm trend Q2 2025.pdf"],
         ["CSV-OQ-PR-055 PART-1.pdf"]
+      )
+    ).toBe(false);
+  });
+
+  it("does not queue alarm-trend pages on a breakdowns walk", () => {
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "Alarm trend Q2 2025.pdf",
+          transcript:
+            "Alarm Description FM Nitrogen Not Available Count 1950 Direct Impact N",
+          outlineTitle: "Alarm trend",
+        },
+        "elr_breakdowns"
+      )
+    ).toBe(0);
+    expect(
+      preferredInventoryEvidenceSkipped(
+        "elr_breakdowns",
+        ["Master PMC.pdf", "PRQR-25-PR-060 Report.pdf"],
+        ["Alarm trend Q2 2025.pdf"]
       )
     ).toBe(false);
   });

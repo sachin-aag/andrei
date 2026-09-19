@@ -22,9 +22,9 @@ const TABLE_SCHEMAS: readonly (readonly [string, readonly string[]])[] = [
   ["elr_monitoring", ELR_MONITORING_HEADERS],
   ["elr_calibration", ELR_CALIBRATION_HEADERS],
   ["elr_preventive_maintenance", ELR_PREVENTIVE_MAINTENANCE_HEADERS],
+  ["elr_alarms", ELR_ALARM_HEADERS],
   ["elr_breakdowns", ELR_BREAKDOWN_HEADERS],
   ["elr_qms", ELR_QMS_HEADERS],
-  ["elr_alarms", ELR_ALARM_HEADERS],
   ["elr_access_control", ELR_ACCESS_CONTROL_HEADERS],
   ["elr_audit_trail", ELR_AUDIT_TRAIL_HEADERS],
   ["elr_csv_status", ELR_CSV_STATUS_HEADERS],
@@ -200,9 +200,18 @@ codes with occurrence counts, Direct Impact, CAPA). Period Covered on every
 row is the Indian FY (1 April–31 March), not the alarm-trend PDF's quarter.
 The assessment interprets excursion counts **and** this period's alarm
 picture (top codes, DI, CAPA, lost runtime). Alarm Trends (elr_alarms) still
-gets the full alarm matrix and 3.11.1 trend — monitoring does not replace it.
+gets the full alarm matrix and 3.9.1 trend — monitoring does not replace it.
 Queue PRQR method pages **and** the alarm-trend PDF on the monitoring walk;
 skipping the alarm-trend file is not finished coverage.
+
+Breakdowns and Trends (elr_breakdowns): draft the event table from PMC, PRQR,
+and breakdown / work-order logs. Alarm-related downtime still belongs here as
+events. Do **not** walk the alarm-trend PDF again — Alarm Trends sits above
+this section. Call read_section on Alarm Trends and cite
+\`[[table:Alarm Trends]]\` among those sources (PMC, PRQR, other breakdowns).
+The assessment covers event counts, downtime hours, CAPA, product/runtime
+impact, and how this period's alarm picture relates to those events. Skip the
+alarm-trend attachment on the breakdowns walk.
 
 QMS: if a record is still open at the ELR cut-off, say so in the assessment
 (status cell alone is not enough).
@@ -249,7 +258,7 @@ write \`[[table]]\` (this section) or \`[[table:Section]]\` (another
 section key or label). Those display as Table N and update when a table
 is inserted above (Word REF). Do not type the returned tableNumber.
 
-Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.11.1)
+Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.10.1)
 for grouping failure modes / whether the trended alarm set is still
 appropriate. That is not a substitute for the assessment above the table.
 
@@ -270,7 +279,7 @@ subsection and Discrepancy, then a short narrative of what cuts across them.
   Purpose (1.0) and Scope (2.0). Do not delete those rows. Fill \`Summary\`
   with \`edit_cells\` — a sentence of what that section found. Nil events still
   get a recap ("none this period"), not a blank cell.
-- 3.9.1 / 3.11.1 stay inside the 3.9 / 3.11 rows; do not add extra rows for
+- 3.9.1 / 3.10.1 stay inside the 3.9 / 3.10 rows; do not add extra rows for
   those sub-headings.
 - Trend / impact / Risk ID stay on the row so 5.2 can carry actions. Use
   \`none\` when there is no trend.

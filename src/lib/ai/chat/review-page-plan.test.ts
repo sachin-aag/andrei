@@ -393,6 +393,7 @@ describe("planReviewPages", () => {
     const ids = new Set(selected.map((page) => page.attachmentId));
     expect(ids.has("prqr")).toBe(true);
     expect(ids.has("pmc")).toBe(true);
+    expect(ids.has("alarm")).toBe(false);
     expect(selected.filter((page) => page.attachmentId === "prqr").length).toBe(
       20
     );
