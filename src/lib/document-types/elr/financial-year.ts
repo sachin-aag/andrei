@@ -1,7 +1,7 @@
 /**
- * MJ ELR periods are always the Indian financial year: 1 April to
- * 31 March of the following year. Do not copy a PRQR execution window
- * or a 3-month SCADA alarm-trend quarter.
+ * MJ ELR periods always start 1 April and end 31 March of the following
+ * year. Do not copy a PRQR execution window or a 3-month SCADA alarm-trend
+ * quarter.
  */
 
 const MONTHS: Record<string, number> = {
@@ -47,8 +47,8 @@ export function elrFinancialYearWindow(startYear: number): ElrFinancialYearWindo
 }
 
 /**
- * Indian FY containing `date`: month ≥ April starts that calendar year;
- * Jan–Mar belongs to the FY that started the previous April.
+ * Period start year containing `date`: month ≥ April starts that calendar
+ * year; Jan–Mar belongs to the window that started the previous April.
  */
 export function indianFyStartYearContaining(
   year: number,
@@ -156,4 +156,4 @@ export function canonicalElrPeriod(input: {
 }
 
 export const ELR_FY_PERIOD_RULE =
-  "always 1 April–31 March of the following year (Indian FY). Do not copy a 3-month alarm-trend window or a PRQR execution span.";
+  "always start 1 April and end 31 March of the following year. Write both calendar dates. Do not copy a 3-month alarm-trend window or a PRQR execution span.";

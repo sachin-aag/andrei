@@ -284,7 +284,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v14");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v15");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -326,6 +326,12 @@ describe("equipment lifecycle report definition", () => {
       "If it is unset and attachments name **both** Vial and Cartridge, stop"
     );
     expect(def.chat.draftingGuidance).toContain("1 April to 31 March");
+    expect(def.chat.draftingGuidance).toContain("starts on 1 April");
+    expect(def.chat.draftingGuidance).toContain("ends on 31 March");
+    expect(def.chat.draftingGuidance).toContain("both calendar dates");
+    expect(def.chat.draftingGuidance).toContain("31.03 of the following year");
+    expect(def.chat.draftingGuidance).not.toMatch(/Indian Financial Year/i);
+    expect(def.chat.draftingGuidance).not.toMatch(/Indian FY\b/i);
     expect(def.chat.draftingGuidance).toContain("one row per Grade A / environmental **method**");
     expect(def.chat.draftingGuidance).toContain("compact process-alarm");
     expect(def.chat.draftingGuidance).toContain("product-contact MOC");
@@ -344,6 +350,26 @@ describe("equipment lifecycle report definition", () => {
         expect.stringContaining("container format: (unset)"),
       ])
     );
+  });
+
+  it("requires Scope to name 1 April and 31 March of the following year", () => {
+    const def = getDocumentType(TYPE);
+    const scope = getCriteria(TYPE, "elr_scope").find(
+      (item) => item.key === "scope.equipment_and_format"
+    );
+    expect(scope?.description).toContain("start date (1 April)");
+    expect(scope?.description).toContain(
+      "end date (31 March of the following year)"
+    );
+    expect(scope?.description).not.toMatch(/Indian Financial Year/i);
+    expect(def.prompts.perSection.elr_scope).toContain("start 1 April");
+    expect(def.prompts.perSection.elr_scope).toContain(
+      "end 31 March of the following year"
+    );
+    expect(def.prompts.base).toContain("starts 1 April and ends 31 March");
+    expect(def.prompts.base).not.toMatch(/Indian Financial Year/i);
+    expect(def.prompts.base).not.toMatch(/Indian FY\b/i);
+    expect(def.prompts.perSection.elr_monitoring).not.toMatch(/Indian FY\b/i);
   });
 
   it("maps every section into the export template data", () => {

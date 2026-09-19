@@ -32,7 +32,7 @@ function periodLine(
   if (window) {
     return `period: ${window.fromLabel} – ${window.toLabel} (${ELR_FY_PERIOD_RULE})`;
   }
-  return `period: (unset) — ${ELR_FY_PERIOD_RULE} Infer from last PRQ or document FY digits (PRQR-25 → 2025–26).`;
+  return `period: (unset) — ${ELR_FY_PERIOD_RULE} Infer from last PRQ or document FY digits (PRQR-25 → 1 April 2025 – 31 March 2026).`;
 }
 
 /**

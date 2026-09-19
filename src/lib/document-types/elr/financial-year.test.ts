@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalElrPeriod,
+  ELR_FY_PERIOD_RULE,
   fyStartYearFromDocumentNumber,
   indianFyStartYearContaining,
   parseElrIdentityDate,
@@ -90,5 +91,14 @@ describe("canonicalElrPeriod", () => {
       fromLabel: "01-Apr-2025",
       toLabel: "31-Mar-2026",
     });
+  });
+});
+
+describe("ELR_FY_PERIOD_RULE", () => {
+  it("names both 1 April and 31 March without a named-year label", () => {
+    expect(ELR_FY_PERIOD_RULE).toContain("start 1 April");
+    expect(ELR_FY_PERIOD_RULE).toContain("end 31 March of the following year");
+    expect(ELR_FY_PERIOD_RULE).toContain("both calendar dates");
+    expect(ELR_FY_PERIOD_RULE).not.toMatch(/Indian/i);
   });
 });
