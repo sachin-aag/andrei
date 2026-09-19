@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -48,7 +47,9 @@ import {
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   chatUserTurnIsAutoContinue,
-  livePlanProgressFromParts,
+  continuationFromMetadata,
+  chatPlanProgressView,
+  livePlanProgressFromMessages,
   planHasRemainingWork,
 } from "@/lib/ai/chat/pending-plan";
 import { ChatPlanProgress } from "@/components/report/chat-plan-progress";
@@ -107,6 +108,7 @@ import {
 } from "@/lib/ai/chat/image-parts";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
+  assistantPartsAreCannedError,
   chatWatchdogPhase,
   shouldShowChatClientError,
   shouldShowEmptyAssistantError,
@@ -170,7 +172,7 @@ import {
   buildPendingChatUserMessage,
   mergePendingChatUserMessage,
   pendingChatSendBelongsToSession,
-  pendingChatUserMessageIsRepresented,
+  shouldShowPendingChatUserOverlay,
 } from "@/components/report/chat-pending-send";
 import {
   CHAT_VISIBLE_TAIL,
@@ -220,6 +222,7 @@ function announceCompletedAssistantTurn(
     currentUserId: string;
     documentNo: string;
     documentType: DocumentType;
+    sectionLabel?: string | null;
   }
 ): void {
   const elapsedMs = elapsedSince(startedAt);
@@ -230,6 +233,7 @@ function announceCompletedAssistantTurn(
     agentDoneNotificationCopy({
       documentNoun,
       documentNo: ctx.documentNo,
+      sectionLabel: ctx.sectionLabel,
     })
   );
 }
@@ -366,35 +370,6 @@ function textFromChatMessage(message: UIMessage | undefined): string {
     .trim();
 }
 
-function messageIsAutoContinue(message: UIMessage): boolean {
-  return (
-    message.role === "user" &&
-    chatUserTurnIsAutoContinue(
-      "metadata" in message
-        ? (message as { metadata?: unknown }).metadata
-        : undefined
-    )
-  );
-}
-
-function latestAutoContinueMessageId(messages: UIMessage[]): string | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (message && messageIsAutoContinue(message)) return message.id;
-  }
-  return null;
-}
-
-function livePlanProgressFromMessages(messages: UIMessage[]) {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (message?.role === "assistant") {
-      return livePlanProgressFromParts(message.parts);
-    }
-  }
-  return null;
-}
-
 const MessageTurn = memo(function MessageTurn({
   message,
   chatTarget,
@@ -469,10 +444,17 @@ const MessageTurn = memo(function MessageTurn({
 
   // Assistant turn: full-width, no bubble (Cursor-style), tool chips inline.
   const parts = message.parts ?? [];
+  const planContinuing = continuationFromMetadata(messageMetadata) != null;
+  const cannedFailure = assistantPartsAreCannedError(parts);
   const showEmptyError = shouldShowEmptyAssistantError({
     parts,
     streaming,
+    planContinuing,
   });
+  const hideCannedPlanFailure = Boolean(
+    cannedFailure && planContinuing && !streaming
+  );
+  if (hideCannedPlanFailure) return null;
   return (
     <div
       className="flex flex-col gap-2"
@@ -808,6 +790,7 @@ export function ChatPanel({
   const [pendingSend, setPendingSend] = useState<UIMessage | null>(null);
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [pendingRequestStarted, setPendingRequestStarted] = useState(false);
+  const [sawStreamBusyForPending, setSawStreamBusyForPending] = useState(false);
   const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
@@ -824,36 +807,64 @@ export function ChatPanel({
     pendingPlan,
     planChaining,
   } = runtime;
-  const pendingForDisplay =
-    pendingSend != null &&
-    pendingChatSendBelongsToSession(pendingSessionId, currentSessionId) &&
-    !pendingChatUserMessageIsRepresented(messages, pendingSend, {
-      allowTextMatch: pendingRequestStarted,
-    })
-      ? pendingSend
-      : null;
+  const pendingForDisplay = shouldShowPendingChatUserOverlay({
+    pending: pendingSend,
+    belongsToSession: pendingChatSendBelongsToSession(
+      pendingSessionId,
+      currentSessionId
+    ),
+    messages,
+    busy,
+    pendingRequestStarted,
+    sawStreamBusy: sawStreamBusyForPending,
+  })
+    ? pendingSend
+    : null;
   const threadBusy = busy || pendingForDisplay != null;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
-  const abortPendingSend = useCallback((restoreComposer: boolean) => {
-    sendEpochRef.current += 1;
-    if (
-      restoreComposer &&
-      pendingSendRef.current &&
-      !pendingSendStartedRef.current
-    ) {
-      pendingRestoreRef.current?.();
-    }
+  const resetPendingSendState = useCallback(() => {
     pendingSendRef.current = null;
     pendingRestoreRef.current = null;
     pendingSendStartedRef.current = false;
     setPendingSend(null);
     setPendingSessionId(null);
     setPendingRequestStarted(false);
+    setSawStreamBusyForPending(false);
   }, []);
+  const abortPendingSend = useCallback(
+    (restoreComposer: boolean) => {
+      sendEpochRef.current += 1;
+      if (
+        restoreComposer &&
+        pendingSendRef.current &&
+        !pendingSendStartedRef.current
+      ) {
+        pendingRestoreRef.current?.();
+      }
+      resetPendingSendState();
+    },
+    [resetPendingSendState]
+  );
   const stopPendingOrTurn = useCallback(() => {
     abortPendingSend(true);
     stopTurn();
   }, [abortPendingSend, stopTurn]);
+  useEffect(() => {
+    if (!pendingSend) return;
+    if (pendingRequestStarted && busy) {
+      setSawStreamBusyForPending(true);
+    }
+  }, [pendingSend, pendingRequestStarted, busy]);
+  useEffect(() => {
+    if (pendingRequestStarted && sawStreamBusyForPending && !busy) {
+      resetPendingSendState();
+    }
+  }, [
+    busy,
+    pendingRequestStarted,
+    resetPendingSendState,
+    sawStreamBusyForPending,
+  ]);
   const voice = useVoiceDictation({
     reportId: report.id,
     getPrefix: () => input,
@@ -1165,11 +1176,12 @@ export function ChatPanel({
   }, [loadSessions, onWorksheetChanged, refresh, setAgentCommitInFlight]);
 
   const onTurnCompleted = useCallback(
-    (startedAt: number | null) => {
+    (startedAt: number | null, details?: { sectionLabel?: string | null }) => {
       announceCompletedAssistantTurn(startedAt, {
         currentUserId,
         documentNo: report.documentNo,
         documentType: report.documentType,
+        sectionLabel: details?.sectionLabel,
       });
     },
     [currentUserId, report.documentNo, report.documentType]
@@ -1332,17 +1344,26 @@ export function ChatPanel({
   );
   const visibleMessages = taggedMessages.slice(visibleStartIndex);
   const hiddenCount = visibleStartIndex;
-  const latestAutoContinueId = latestAutoContinueMessageId(taggedMessages);
-  const latestAutoContinueVisible = visibleMessages.some(
-    (message) => message.id === latestAutoContinueId
-  );
   const livePlanProgress = livePlanProgressFromMessages(taggedMessages);
+  const planView = pendingPlan
+    ? chatPlanProgressView(
+        pendingPlan,
+        report.documentType,
+        livePlanProgress
+      )
+    : null;
+  const planQueueVisible =
+    pendingPlan != null &&
+    planHasRemainingWork(pendingPlan) &&
+    planView != null &&
+    !planView.complete;
   const planProgress =
-    pendingPlan && planHasRemainingWork(pendingPlan) ? (
+    planQueueVisible && pendingPlan ? (
       <ChatPlanProgress
         plan={pendingPlan}
         documentType={report.documentType}
         live={livePlanProgress}
+        active={threadBusy || planChaining}
       />
     ) : null;
 
@@ -1603,6 +1624,7 @@ export function ChatPanel({
       setPendingRequestStarted(false);
       setPendingSend(pending);
       setPendingSessionId(currentSessionId);
+      setSawStreamBusyForPending(false);
       const tagsForRequest = mentions;
       // Composer clears in the same tick as the optimistic bubble so Enter
       // never sits on the typed text while section saves flush.
@@ -1629,12 +1651,7 @@ export function ChatPanel({
       const sendWasCancelled = () => sendEpochRef.current !== epoch;
       const failBeforeRequest = (message?: string) => {
         if (sendWasCancelled()) return;
-        pendingSendRef.current = null;
-        pendingRestoreRef.current = null;
-        pendingSendStartedRef.current = false;
-        setPendingSend(null);
-        setPendingSessionId(null);
-        setPendingRequestStarted(false);
+        resetPendingSendState();
         restoreComposer();
         if (message) toast.error(message);
       };
@@ -1722,6 +1739,7 @@ export function ChatPanel({
       workspaceChrome,
       flushPendingSectionSaves,
       setAgentCommitInFlight,
+      resetPendingSendState,
     ]
   );
 
@@ -1890,51 +1908,44 @@ export function ChatPanel({
             </div>
           </div>
         ) : (
-          visibleMessages.map((m, i) => {
-            if (messageIsAutoContinue(m)) {
-              return m.id === latestAutoContinueId && planProgress ? (
-                <Fragment key={m.id}>{planProgress}</Fragment>
-              ) : null;
-            }
-            return (
-              <MessageTurn
-                key={m.id}
-                message={m}
-                chatTarget={m.chatTarget}
-                filenameByAttachmentId={filenameByAttachmentId}
-                onOpenCitation={onOpenCitation}
-                askUserActive={
-                  visibleStartIndex + i === displayMessages.length - 1 &&
-                  !threadBusy &&
-                  !initializing &&
-                  !voiceLock
-                }
-                onAnswerQuestions={(answerText) => void send(answerText, [])}
-                streaming={
-                  busy &&
-                  visibleStartIndex + i === displayMessages.length - 1 &&
-                  m.role === "assistant"
-                }
-                showAnalyticsSwitch={
-                  statsEnabled &&
-                  m.role === "assistant" &&
-                  assistantOffersAnalyticsSwitch(
-                    "metadata" in m
-                      ? (m as { metadata?: unknown }).metadata
-                      : undefined
-                  )
-                }
-                onSwitchToAnalytics={() => {
-                  const replay = textFromChatMessage(visibleMessages[i - 1]);
-                  setComposerChatTarget("analytics");
-                  if (replay) void send(replay, [], "analytics");
-                }}
-                composerOnAnalytics={targetingAnalytics}
-              />
-            );
-          })
+          visibleMessages.map((m, i) => (
+            <MessageTurn
+              key={m.id}
+              message={m}
+              chatTarget={m.chatTarget}
+              filenameByAttachmentId={filenameByAttachmentId}
+              onOpenCitation={onOpenCitation}
+              askUserActive={
+                visibleStartIndex + i === displayMessages.length - 1 &&
+                !threadBusy &&
+                !initializing &&
+                !voiceLock
+              }
+              onAnswerQuestions={(answerText) => void send(answerText, [])}
+              streaming={
+                busy &&
+                visibleStartIndex + i === displayMessages.length - 1 &&
+                m.role === "assistant"
+              }
+              showAnalyticsSwitch={
+                statsEnabled &&
+                m.role === "assistant" &&
+                assistantOffersAnalyticsSwitch(
+                  "metadata" in m
+                    ? (m as { metadata?: unknown }).metadata
+                    : undefined
+                )
+              }
+              onSwitchToAnalytics={() => {
+                const replay = textFromChatMessage(visibleMessages[i - 1]);
+                setComposerChatTarget("analytics");
+                if (replay) void send(replay, [], "analytics");
+              }}
+              composerOnAnalytics={targetingAnalytics}
+            />
+          ))
         )}
-        {!latestAutoContinueVisible ? planProgress : null}
+        {planProgress}
         {threadBusy ? (
           <ChatBusyStatus
             mode={mode}
@@ -1946,7 +1957,7 @@ export function ChatPanel({
             })}
             onCancel={stopPendingOrTurn}
           />
-        ) : planHasRemainingWork(pendingPlan) && !planChaining ? (
+        ) : planQueueVisible && !planChaining ? (
           <div className="flex justify-center">
             <button
               type="button"
@@ -1962,7 +1973,11 @@ export function ChatPanel({
             </button>
           </div>
         ) : null}
-        {shouldShowChatClientError({ error, busy: threadBusy }) ? (
+        {shouldShowChatClientError({
+          error,
+          busy: threadBusy,
+          planChaining,
+        }) ? (
           <p className="text-xs text-red-500" data-testid="chat-client-error">
             {CHAT_ASSISTANT_ERROR_MESSAGE}
           </p>

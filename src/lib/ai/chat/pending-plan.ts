@@ -6,8 +6,13 @@ import {
   sectionLabel,
 } from "@/lib/ai/chat/fields";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
-import { coverageKeySatisfiesObjective } from "@/lib/ai/chat/review-page-plan";
+import { coverageKeySatisfiesObjective, REVIEW_OBJECTIVE_PAGE_FLOOR } from "@/lib/ai/chat/review-page-plan";
+import {
+  inventorySectionForObjective,
+  preferredInventoryEvidenceSkipped,
+} from "@/lib/ai/chat/inventory-review-schema";
 import { getDocumentType } from "@/lib/document-types";
+import { elrIncompleteSectionKeysFromParts } from "@/lib/document-types/elr/plan-complete";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 
 /** Client-sent user turn that continues a server-owned section queue. */
@@ -47,10 +52,12 @@ export type ChatTurnContinuation = {
 /**
  * Whole-document / remaining-section asks. `remaining` may sit between the
  * verb and the noun (`draft remaining report`), not only after it
- * (`draft the report`, `remaining sections`).
+ * (`draft the report`, `remaining sections`). "Go on to X and sections after
+ * that" is the same ask — without this the turn is a write with no queue and
+ * the model mills every leftover inventory until the 270s abort.
  */
 const MULTI_SECTION_DRAFT_RE =
-  /\b(?:remaining (?:sections?|report|document|elr)|all (?:the )?(?:empty )?sections?|every section|entire (?:report|document)|whole (?:report|document)|(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\s+(?:the )?(?:remaining |rest of (?:the )?)?(?:report|document|elr)|fill(?:\s+(?:in|out))?\s+(?:the )?(?:rest|remaining))\b/i;
+  /\b(?:remaining (?:sections?|report|document|elr)|all (?:the )?(?:empty )?sections?|every section|entire (?:report|document)|whole (?:report|document)|(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\s+(?:the )?(?:remaining |rest of (?:the )?)?(?:report|document|elr)|fill(?:\s+(?:in|out))?\s+(?:the )?(?:rest|remaining)|sections? after (?:that|this)|(?:the )?(?:rest|remaining) after (?:that|this)|and (?:then )?(?:the )?(?:rest|remaining sections?))\b/i;
 
 const RESUME_PLAN_RE =
   /\b(?:continue (?:the )?(?:remaining )?sections?|keep going|resume|finish (?:the )?(?:rest|remaining|report|draft))\b/i;
@@ -198,16 +205,52 @@ export function isEmptyInventoryTable(
   return isEmptyTableScaffoldDoc(getRichFieldValue(content ?? {}, "table"));
 }
 
+export function inventoryFinishSatisfiesEmptyTable(input: {
+  reviewedPages: number;
+  skippedAttachmentIds: readonly string[];
+  objective?: string | null;
+  queuedFilenames?: readonly string[];
+  skippedFilenames?: readonly string[];
+}): boolean {
+  if (
+    input.reviewedPages <= REVIEW_OBJECTIVE_PAGE_FLOOR &&
+    input.skippedAttachmentIds.length > 0
+  ) {
+    return false;
+  }
+  const section = inventorySectionForObjective(input.objective);
+  if (
+    section &&
+    preferredInventoryEvidenceSkipped(
+      section,
+      input.queuedFilenames ?? [],
+      input.skippedFilenames ?? []
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function emptyInventoryNeedsMatchingReview(input: {
   documentType: DocumentType;
   section: SectionType;
   content: Record<string, unknown> | undefined;
   finishedCoverageKey: string | null | undefined;
+  /**
+   * Floor-8 + skipped-document finishes still emit a matching `|obj:` key.
+   * Pass false so edit_table stays locked until a real walk (PRQR queued).
+   * Omit to treat a matching key as enough (tests / rehydrated non-truncated).
+   */
+  inventoryFinishSatisfiesDraft?: boolean;
 }): boolean {
   if (!isEmptyInventoryTable(input.documentType, input.section, input.content)) {
     return false;
   }
-  return !coverageKeySatisfiesObjective(input.finishedCoverageKey, input.section);
+  if (!coverageKeySatisfiesObjective(input.finishedCoverageKey, input.section)) {
+    return true;
+  }
+  return input.inventoryFinishSatisfiesDraft === false;
 }
 
 export function inScopeEmptyInventoryNeedsReview(input: {
@@ -215,6 +258,7 @@ export function inScopeEmptyInventoryNeedsReview(input: {
   sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
   sectionKeys: readonly SectionType[];
   finishedCoverageKey: string | null | undefined;
+  inventoryFinishSatisfiesDraft?: boolean;
 }): boolean {
   return input.sectionKeys.some((section) =>
     emptyInventoryNeedsMatchingReview({
@@ -222,6 +266,7 @@ export function inScopeEmptyInventoryNeedsReview(input: {
       section,
       content: input.sections[section],
       finishedCoverageKey: input.finishedCoverageKey,
+      inventoryFinishSatisfiesDraft: input.inventoryFinishSatisfiesDraft,
     })
   );
 }
@@ -381,9 +426,13 @@ The remaining-section queue is paused${plan.pauseReason ? ` (${plan.pauseReason}
   const nextLine = next
     ? `Do not start ${next.label}. The next request continues automatically.`
     : "This is the last item in the queue.";
+  const elrSiblingLine =
+    documentType === "equipment_lifecycle_report"
+      ? " Evidence tables are not done after edit_table alone — draft narrative in the same turn with a count from the rows (and trend for breakdowns/alarms). Risk overallGrade is low|medium|high (max of row priority and downtime/scrap floor). Conclusion recommendation is continue|early_requalification|capa|other."
+      : "";
   return `## Multi-section plan
 The engineer asked to draft several sections (${done} of ${total} done). This turn: ${labels}.
-Draft only ${turn.length === 1 ? "this section" : "these two sections"}. ${nextLine}`;
+Draft only ${turn.length === 1 ? "this section" : "these two sections"}. ${nextLine}${elrSiblingLine}`;
 }
 
 function toolNamesFromParts(parts: unknown): string[] {
@@ -494,6 +543,24 @@ export function planProgressChipLabel(
   return `${continuation.itemIndex} of ${continuation.total} — ${continuation.nextLabel}`;
 }
 
+/** Section the finishing turn drafted, or the one still marked in progress. */
+export function completedPlanSectionLabel(
+  plan: ChatPendingPlan | null | undefined,
+  live?: LivePlanProgress | null
+): string | null {
+  if (!plan) return null;
+  const drafted = live?.draftedSectionKeys ?? [];
+  const labels: string[] = [];
+  for (const key of drafted) {
+    const label = plan.items.find((item) => item.sectionKey === key)?.label;
+    if (label && !labels.includes(label)) labels.push(label);
+  }
+  if (labels.length > 0) return labels.join(", ");
+  return (
+    plan.items.find((item) => item.state === "in_progress")?.label ?? null
+  );
+}
+
 const PLAN_EDIT_TOOLS = new Set([
   "draft_field",
   "edit_table",
@@ -503,6 +570,8 @@ const PLAN_EDIT_TOOLS = new Set([
 export type LivePlanProgress = {
   draftedSectionKeys: string[];
   inFlightSectionKey: string | null;
+  /** ELR evidence/risk/conclusion keys edited this turn but still missing siblings. */
+  incompleteSectionKeys?: string[];
 };
 
 /** Sections the current assistant turn has drafted or is writing. */
@@ -510,7 +579,11 @@ export function livePlanProgressFromParts(parts: unknown): LivePlanProgress {
   const draftedSectionKeys: string[] = [];
   let inFlightSectionKey: string | null = null;
   if (!Array.isArray(parts)) {
-    return { draftedSectionKeys, inFlightSectionKey };
+    return {
+      draftedSectionKeys,
+      inFlightSectionKey,
+      incompleteSectionKeys: [],
+    };
   }
   for (const part of parts) {
     if (!part || typeof part !== "object") continue;
@@ -541,7 +614,49 @@ export function livePlanProgressFromParts(parts: unknown): LivePlanProgress {
     if (state === "output-error") continue;
     inFlightSectionKey = key;
   }
-  return { draftedSectionKeys, inFlightSectionKey };
+  return {
+    draftedSectionKeys,
+    inFlightSectionKey,
+    incompleteSectionKeys: elrIncompleteSectionKeysFromParts(parts),
+  };
+}
+
+/**
+ * Remaining-section drafts across the thread, not only the last assistant
+ * row. A wrap-up message after the last `edit_table` must not wipe earlier
+ * drafted keys (that left the N of N chip spinning after the queue finished).
+ */
+export function livePlanProgressFromMessages(
+  messages: ReadonlyArray<{ role?: string; parts?: unknown }>
+): LivePlanProgress | null {
+  const draftedSectionKeys: string[] = [];
+  const incomplete = new Set<string>();
+  let inFlightSectionKey: string | null = null;
+  let found = false;
+  for (const message of messages) {
+    if (message?.role !== "assistant") continue;
+    const live = livePlanProgressFromParts(message.parts);
+    if (
+      live.draftedSectionKeys.length === 0 &&
+      live.inFlightSectionKey == null
+    ) {
+      continue;
+    }
+    found = true;
+    const stillIncomplete = new Set(live.incompleteSectionKeys);
+    for (const key of live.draftedSectionKeys) {
+      if (!draftedSectionKeys.includes(key)) draftedSectionKeys.push(key);
+      if (stillIncomplete.has(key)) incomplete.add(key);
+      else incomplete.delete(key);
+    }
+    inFlightSectionKey = live.inFlightSectionKey;
+  }
+  if (!found) return null;
+  return {
+    draftedSectionKeys,
+    inFlightSectionKey,
+    incompleteSectionKeys: draftedSectionKeys.filter((key) => incomplete.has(key)),
+  };
 }
 
 export type ChatPlanProgressView = {
@@ -550,6 +665,7 @@ export type ChatPlanProgressView = {
   currentLabel: string;
   chipLabel: string;
   paused: boolean;
+  complete: boolean;
   done: ChatPlanItem[];
   current: ChatPlanItem[];
   pending: ChatPlanItem[];
@@ -565,6 +681,7 @@ export function chatPlanProgressView(
   live?: LivePlanProgress | null
 ): ChatPlanProgressView {
   const drafted = new Set(live?.draftedSectionKeys ?? []);
+  const incomplete = new Set(live?.incompleteSectionKeys ?? []);
   const inFlight = live?.inFlightSectionKey?.trim() || null;
   const turnKeys = new Set(
     currentPlanTurnSections(plan, documentType).map((item) => item.sectionKey)
@@ -573,14 +690,21 @@ export function chatPlanProgressView(
   const current: ChatPlanItem[] = [];
   const pending: ChatPlanItem[] = [];
   for (const item of plan.items) {
-    if (item.state === "done" || drafted.has(item.sectionKey)) {
+    const liveDone =
+      drafted.has(item.sectionKey) && !incomplete.has(item.sectionKey);
+    if (item.state === "done" || liveDone) {
       done.push(item);
+      continue;
+    }
+    if (plan.paused === true) {
+      pending.push(item);
       continue;
     }
     const running =
       inFlight === item.sectionKey ||
       item.state === "in_progress" ||
-      turnKeys.has(item.sectionKey);
+      turnKeys.has(item.sectionKey) ||
+      incomplete.has(item.sectionKey);
     if (running) {
       current.push(item);
       continue;
@@ -588,20 +712,27 @@ export function chatPlanProgressView(
     pending.push(item);
   }
   const total = plan.items.length;
+  const complete = total > 0 && done.length === total;
+  const incompleteFocus = current.find((item) => incomplete.has(item.sectionKey));
   const focus =
+    incompleteFocus ??
     (inFlight
       ? current.find((item) => item.sectionKey === inFlight) ?? current[0]
-      : current[0]) ?? pending[0];
+      : current[0]) ??
+    pending[0];
   const itemIndex = focus
     ? plan.items.findIndex((item) => item.sectionKey === focus.sectionKey) + 1
     : Math.min(done.length + 1, Math.max(total, 1));
-  const currentLabel = focus?.label ?? "next section";
+  const currentLabel = complete
+    ? "done"
+    : (focus?.label ?? "next section");
   return {
-    itemIndex,
+    itemIndex: complete ? total : itemIndex,
     total,
     currentLabel,
-    chipLabel: `${itemIndex} of ${total} — ${currentLabel}`,
+    chipLabel: `${complete ? total : itemIndex} of ${total} — ${currentLabel}`,
     paused: plan.paused === true,
+    complete,
     done,
     current,
     pending,
@@ -619,18 +750,29 @@ export function advancePlanAfterTurn(input: {
   progressed: boolean;
 } {
   const drafted = new Set(input.draftedSectionKeys);
+  const incomplete =
+    input.documentType === "equipment_lifecycle_report"
+      ? new Set(elrIncompleteSectionKeysFromParts(input.parts))
+      : new Set<string>();
   const turn = currentPlanTurnSections(input.plan, input.documentType);
   const turnKeys = new Set(turn.map((item) => item.sectionKey));
-  const completedThisTurn = turn.filter((item) => drafted.has(item.sectionKey));
+  const completedThisTurn = turn.filter(
+    (item) => drafted.has(item.sectionKey) && !incomplete.has(item.sectionKey)
+  );
+  const progressedThisTurn = turn.some((item) => drafted.has(item.sectionKey));
   const reviewed = partsUsedDocumentReview(input.parts);
 
-  if (completedThisTurn.length === 0 && !reviewed) {
+  if (!progressedThisTurn && !reviewed) {
     const paused = pauseChatPendingPlan(input.plan, "no_progress");
     return { plan: paused, continuation: null, progressed: false };
   }
 
   const nextItems = input.plan.items.map((item) => {
-    if (drafted.has(item.sectionKey) && turnKeys.has(item.sectionKey)) {
+    if (
+      drafted.has(item.sectionKey) &&
+      turnKeys.has(item.sectionKey) &&
+      !incomplete.has(item.sectionKey)
+    ) {
       return { ...item, state: "done" as const };
     }
     return item;
@@ -671,6 +813,6 @@ export function advancePlanAfterTurn(input: {
       itemIndex: Math.min(doneCount + 1, withCurrent.length),
       total: withCurrent.length,
     },
-    progressed: completedThisTurn.length > 0 || reviewed,
+    progressed: progressedThisTurn || reviewed,
   };
 }

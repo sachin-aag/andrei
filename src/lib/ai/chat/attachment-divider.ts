@@ -2,6 +2,10 @@
  * Attachment cover / title sheets that grep hits before the actual table.
  * A cited divider must not close the Document-chat grep loop the way a
  * data page does — the certificate (or record) is on the following pages.
+ *
+ * Local IDF / per-file diversity (D2/D3) can demote cover tokens in rank
+ * but do not replace this: a cover hit still has to keep search open so
+ * p. N+1 can be read.
  */
 
 const DIVIDER_RE =

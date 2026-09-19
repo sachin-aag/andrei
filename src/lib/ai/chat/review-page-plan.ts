@@ -1,5 +1,9 @@
 import {
+  filenameConflictsWithInventoryObjective,
   inventorySectionForObjective,
+  isDemotedInventoryFilename,
+  isPreferredInventoryFilename,
+  pageObjectiveHaystack,
   scoreInventoryReviewPage,
 } from "@/lib/ai/chat/inventory-review-schema";
 import { phraseFamiliesForReviewObjective } from "@/lib/ai/chat/search-phrase-families";
@@ -114,14 +118,7 @@ export function scoreReviewPage(
   );
   if (tokens.length === 0 && familyTerms.length === 0) return 0;
   const identifiers = (page.identifiers ?? []).map((id) => id.toLowerCase());
-  const haystack = [
-    page.outlineTitle ?? "",
-    page.pageContext ?? "",
-    page.filename ?? "",
-    (page.transcript ?? "").slice(0, 800),
-  ]
-    .join(" ")
-    .toLowerCase();
+  const haystack = pageObjectiveHaystack(page);
   let score = 0;
   for (const term of familyTerms) {
     const needle = term.toLowerCase();
@@ -223,7 +220,27 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
     if (scoreReviewPage(page, objective) > 0) relevant.push(page);
   }
   if (relevant.length === 0) {
-    return selectReviewPages(pages, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap));
+    const withoutForeignInventory = pages.filter(
+      (page) =>
+        !filenameConflictsWithInventoryObjective(page.filename, objective)
+    );
+    let pool =
+      withoutForeignInventory.length > 0 ? withoutForeignInventory : pages;
+    const section = inventorySectionForObjective(objective);
+    if (section) {
+      const preferred = pool.filter((page) =>
+        isPreferredInventoryFilename(page.filename, section)
+      );
+      if (preferred.length > 0) {
+        pool = preferred;
+      } else {
+        const notDemoted = pool.filter(
+          (page) => !isDemotedInventoryFilename(page.filename)
+        );
+        if (notDemoted.length > 0) pool = notDemoted;
+      }
+    }
+    return selectReviewPages(pool, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap));
   }
   const prioritized = selectReviewPages(relevant, cap);
   if (prioritized.length >= REVIEW_OBJECTIVE_PAGE_FLOOR) {

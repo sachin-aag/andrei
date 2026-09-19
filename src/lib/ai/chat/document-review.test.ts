@@ -210,6 +210,7 @@ describe("DocumentReviewSession", () => {
     }
     const finished = session.finish();
     expect(finished.coverageComplete).toBe(false);
+    expect(finished.truncated).toBe(true);
     expect(finished.failedPages.map((item) => item.pageNumber)).toContain(2);
     expect(finished.coverageSummary).toMatch(/do not claim completeness/i);
   });
@@ -555,7 +556,12 @@ describe("reviewContinueBudgetMs", () => {
   it("caps at 60s and leaves abort margin", () => {
     expect(reviewContinueBudgetMs(270_000)).toBe(60_000);
     expect(reviewContinueBudgetMs(70_000)).toBe(50_000);
-    expect(reviewContinueBudgetMs(5_000)).toBe(1_000);
+  });
+
+  it("returns 0 when the abort window cannot fit another continue", () => {
+    expect(reviewContinueBudgetMs(5_000)).toBe(0);
+    expect(reviewContinueBudgetMs(20_000)).toBe(0);
+    expect(reviewContinueBudgetMs(21_000)).toBe(1_000);
   });
 });
 
@@ -597,9 +603,14 @@ describe("DocumentReviewSession coverage identity", () => {
     await session.continue();
     const finished = session.finish();
     expect(finished.status).toBe("complete");
+    expect(finished.truncated).toBe(true);
+    expect(finished.coverageComplete).toBe(false);
+    expect(finished.skippedAttachmentIds).toEqual(["att_b"]);
     expect(finished.coverageKey).toContain("att_a:400:");
     expect(finished.coverageKey).toContain("att_b:80:");
     expect(finished.coverageKey).toContain("|obj:ids");
+    expect(finished.coverageKey).toContain("|skip:att_b");
+    expect(session.inventoryFinishSatisfiesDraft()).toBe(false);
   });
 
   it("refuses a second start for the same inventory after finish", async () => {
@@ -629,6 +640,46 @@ describe("DocumentReviewSession coverage identity", () => {
       message: REVIEW_ALREADY_COMPLETE_MESSAGE,
     });
     expect(session.phase()).toBe("complete");
+    expect(session.inventoryFinishSatisfiesDraft()).toBe(true);
+  });
+
+  it("allows a second start after a floor-8 skip of the PRQR", async () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const csvPage = {
+      ...page(1, "connections for environmental monitoring systems", "csv"),
+      filename: "CSV-OQ-PR-055 PART-1.pdf",
+    };
+    const prqrPage = {
+      ...page(40, "Non-Viable Particulate Monitoring Settle Plate", "prqr"),
+      filename: "PRQR-25-PR-005 Report.pdf",
+    };
+    session.start({
+      objective: "monitoring parameters",
+      pages: [csvPage],
+      coverageSources: [
+        { attachmentId: "csv", pageCount: 8, ingestRunId: "run" },
+        { attachmentId: "prqr", pageCount: 357, ingestRunId: "run" },
+      ],
+      coverageObjective: "elr_monitoring",
+    });
+    await session.continue();
+    const finished = session.finish();
+    expect(finished.truncated).toBe(true);
+    expect(finished.skippedAttachmentIds).toEqual(["prqr"]);
+    expect(session.inventoryFinishSatisfiesDraft()).toBe(false);
+
+    const again = session.start({
+      objective: "monitoring parameters",
+      pages: [csvPage, prqrPage],
+      coverageSources: [
+        { attachmentId: "csv", pageCount: 8, ingestRunId: "run" },
+        { attachmentId: "prqr", pageCount: 357, ingestRunId: "run" },
+      ],
+      coverageObjective: "elr_monitoring",
+    });
+    expect(again.status).toBe("started");
   });
 
   it("starts a new walk when complete coverage is a different inventory", async () => {

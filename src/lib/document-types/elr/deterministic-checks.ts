@@ -34,12 +34,23 @@ import { extractRawRows } from "@/lib/document-types/design-verification/matrix-
 import { tableFieldDoc } from "@/lib/document-types/qra/matrix-parser";
 import { captionNumberAboveTable } from "@/lib/suggestions/table-operation";
 import {
+  ELR_CONCLUSION_RECAP_SOURCES,
   ELR_FORMAT_APPLICABILITY,
+  ELR_RECAP_MIN_SUMMARY_CHARS,
   ELR_RISK_ACTION_MAX_ROWS,
   ELR_RISK_GRADES,
+  ELR_TREND_RECAP_SOURCES,
+  recapSourceMatchesText,
   type ElrRecommendation,
   type ElrRiskGrade,
+  type ElrSectionRecapSource,
 } from "./sections";
+import {
+  recommendationHasCalendarDate,
+  recommendationHasFrequency,
+  recommendationHasVagueTiming,
+  recommendationMentionsDate,
+} from "./recommendation-schedule";
 
 function verdict(
   status: CriterionStatus,
@@ -724,6 +735,9 @@ export function checkCsvStatus(ctx: EvaluationContext) {
     if (!row.validationStatus.trim()) {
       problems.push(`${label} has no validation status`);
     }
+    if (!row.revalidationDueDate.trim()) {
+      problems.push(`${label} has no revalidation due date`);
+    }
     if (!row.changeSinceLastPrq.trim()) {
       problems.push(`${label} does not answer whether it changed since last PRQ`);
       return;
@@ -763,6 +777,58 @@ export function checkRecommendationSelected(ctx: EvaluationContext) {
     );
   }
   return verdict("met", `Recommendation recorded (${recommendation})`);
+}
+
+/**
+ * §6.0 must name calendar dates (next PRQ, 5.2 target dates) and how often
+ * each follow-up runs. "Soon" / "as required" / "periodically" is not a schedule.
+ */
+export function checkRecommendationNamesSchedule(ctx: EvaluationContext) {
+  const text = narrativeText(ctx.content, "recommendationNarrative");
+  if (text.length < 20) {
+    return verdict(
+      "not_met",
+      "Recommendation 6.0 is empty — name calendar dates and how often each follow-up runs"
+    );
+  }
+  const hasDate = recommendationHasCalendarDate(text);
+  const hasFrequency = recommendationHasFrequency(text);
+  const problems: string[] = [];
+  if (!hasDate) {
+    problems.push(
+      "6.0 names no calendar date (next PRQ, action target, or revalidation due)"
+    );
+  }
+  if (!hasFrequency) {
+    problems.push(
+      "6.0 names no frequency (annual PRQ, quarterly PM, monthly effectiveness check)"
+    );
+  }
+  const nextPrq = isoDate(metadataField(ctx, "nextPrqDate"));
+  if (nextPrq && !recommendationMentionsDate(text, nextPrq)) {
+    problems.push(`Next PRQ due ${nextPrq} is not named in 6.0`);
+  }
+  const actions = parseRiskActionMatrix(ctx.dependencies?.elr_risk_actions);
+  if (actions.ok) {
+    for (const row of actions.rows) {
+      const due = row.targetDate.trim();
+      if (!due) continue;
+      if (!recommendationHasCalendarDate(due) && !isoDate(due)) continue;
+      if (!recommendationMentionsDate(text, due)) {
+        problems.push(`5.2 target date ${due} is not named in 6.0`);
+      }
+    }
+  }
+  if (problems.length === 0) {
+    return verdict("met", "6.0 names calendar dates and follow-up frequency");
+  }
+  const vague = recommendationHasVagueTiming(text)
+    ? " Vague timing (soon / as required / periodically) is not a schedule."
+    : "";
+  return verdict(
+    !hasDate && !hasFrequency ? "not_met" : "partially_met",
+    `${problems.join("; ")}.${vague}`
+  );
 }
 
 export function checkElrRevisionHistory(ctx: EvaluationContext) {
@@ -895,6 +961,18 @@ export function checkAssessmentInterpretsTable(ctx: EvaluationContext) {
       "The table cites a CAPA number but the assessment does not mention CAPA"
     );
   }
+  if (ctx.section === "elr_csv_status") {
+    const csv = parseCsvStatusMatrix(ctx.content);
+    if (
+      csv.ok &&
+      csv.rows.some((row) => row.revalidationDueDate.trim()) &&
+      !/\bdue\b|\boverdue\b|next (?:re)?validat/i.test(text)
+    ) {
+      gaps.push(
+        "The table records a revalidation due date but the assessment does not name it as due, overdue, or next revalidation"
+      );
+    }
+  }
   if (sectionHasFlaggedFindings(ctx) && !QUALIFIED_STATE_RE.test(text)) {
     gaps.push(
       "Flagged findings are present — the assessment must state whether the equipment remains in its qualified state"
@@ -906,31 +984,63 @@ export function checkAssessmentInterpretsTable(ctx: EvaluationContext) {
   return verdict("met", "Assessment is present and includes a count");
 }
 
-function flaggedFindings(dependencies: Record<string, unknown>): string[] {
-  const flags: string[] = [];
+type FlaggedFinding = {
+  section: string;
+  message: string;
+  needle: RegExp;
+};
+
+function flaggedFindingGroups(
+  dependencies: Record<string, unknown>
+): FlaggedFinding[] {
+  const flags: FlaggedFinding[] = [];
 
   const breakdowns = parseBreakdownMatrix(dependencies.elr_breakdowns ?? {});
   if (breakdowns.ok) {
     const n = breakdowns.rows.filter((r) => isYes(r.repeat)).length;
-    if (n > 0) flags.push(`${n} repeat breakdown(s)`);
+    if (n > 0) {
+      flags.push({
+        section: "elr_breakdowns",
+        message: `${n} repeat breakdown(s)`,
+        needle: /\brepeat/i,
+      });
+    }
   }
 
   const alarms = parseAlarmMatrix(dependencies.elr_alarms ?? {});
   if (alarms.ok) {
     const n = alarms.rows.filter((r) => isDirectImpact(r.criticality)).length;
-    if (n > 0) flags.push(`${n} Direct Impact alarm(s)`);
+    if (n > 0) {
+      flags.push({
+        section: "elr_alarms",
+        message: `${n} Direct Impact alarm(s)`,
+        needle: /direct\s*impact|\bdi\b/i,
+      });
+    }
   }
 
   const monitoring = parseMonitoringMatrix(dependencies.elr_monitoring ?? {});
   if (monitoring.ok) {
     const n = monitoring.rows.filter((r) => isYes(r.excursion)).length;
-    if (n > 0) flags.push(`${n} monitoring excursion(s)`);
+    if (n > 0) {
+      flags.push({
+        section: "elr_monitoring",
+        message: `${n} monitoring excursion(s)`,
+        needle: /excursion/i,
+      });
+    }
   }
 
   const calibration = parseCalibrationMatrix(dependencies.elr_calibration ?? {});
   if (calibration.ok) {
     const n = calibration.rows.filter((r) => isOutOfTolerance(r.result)).length;
-    if (n > 0) flags.push(`${n} out-of-tolerance calibration(s)`);
+    if (n > 0) {
+      flags.push({
+        section: "elr_calibration",
+        message: `${n} out-of-tolerance calibration(s)`,
+        needle: /out[- ]of[- ]tolerance|\boot\b/i,
+      });
+    }
   }
 
   const pm = parsePreventiveMaintenanceMatrix(
@@ -938,57 +1048,128 @@ function flaggedFindings(dependencies: Record<string, unknown>): string[] {
   );
   if (pm.ok) {
     const n = pm.rows.filter((r) => isDelayed(r.status)).length;
-    if (n > 0) flags.push(`${n} delayed PM(s)`);
+    if (n > 0) {
+      flags.push({
+        section: "elr_preventive_maintenance",
+        message: `${n} delayed PM(s)`,
+        needle: /delay/i,
+      });
+    }
   }
 
   const qms = parseQmsMatrix(dependencies.elr_qms ?? {});
   if (qms.ok) {
     const n = qms.rows.filter((r) => isYes(r.qualificationImpact)).length;
-    if (n > 0) flags.push(`${n} qualification-impacting QMS record(s)`);
+    if (n > 0) {
+      flags.push({
+        section: "elr_qms",
+        message: `${n} qualification-impacting QMS record(s)`,
+        needle: /qualification[- ]impact/i,
+      });
+    }
   }
 
   return flags;
 }
 
+function flaggedFindings(dependencies: Record<string, unknown>): string[] {
+  return flaggedFindingGroups(dependencies).map((flag) => flag.message);
+}
+
+function recapRowForSource(
+  rows: readonly { section: string; summary: string }[],
+  source: ElrSectionRecapSource
+) {
+  return rows.find((row) => recapSourceMatchesText(source, row.section));
+}
+
 export function checkSystemTrendRows(ctx: EvaluationContext) {
   const parsed = parseSystemTrendsMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
-  if (parsed.rows.length === 0) {
-    return verdict("met", "No system trends recorded");
-  }
   const problems: string[] = [];
-  parsed.rows.forEach((row, index) => {
-    const label = rowLabel(row.serial, index);
-    if (!row.theme.trim()) problems.push(`${label} has no theme`);
-    if (!row.whereSeen.trim()) {
-      problems.push(`${label} does not say where the theme was seen`);
+  for (const source of ELR_TREND_RECAP_SOURCES) {
+    const row = recapRowForSource(parsed.rows, source);
+    if (!row) {
+      problems.push(`${source.number} ${source.label} has no recap row`);
+      continue;
     }
-    if (!row.occurrences.trim()) {
-      problems.push(`${label} has no occurrence count`);
+    if (row.summary.trim().length < ELR_RECAP_MIN_SUMMARY_CHARS) {
+      problems.push(
+        `${source.number} ${source.label} has no summary of what that section found`
+      );
     }
-    if (!row.impact.trim()) {
-      problems.push(`${label} has no product or runtime impact`);
-    }
-  });
-  return listProblems(problems, `${parsed.rows.length} system trend(s) recorded`);
+  }
+  return listProblems(
+    problems,
+    `${ELR_TREND_RECAP_SOURCES.length} section recap(s) recorded`
+  );
 }
 
 export function checkSystemTrendsCoverFlaggedFindings(ctx: EvaluationContext) {
-  const flags = flaggedFindings(ctx.dependencies);
+  const flags = flaggedFindingGroups(ctx.dependencies);
   if (flags.length === 0) {
     return verdict("met", "No flagged findings that require a system-trend row");
   }
   const parsed = parseSystemTrendsMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
-  if (parsed.rows.length === 0) {
+  const problems: string[] = [];
+  for (const flag of flags) {
+    const source = ELR_TREND_RECAP_SOURCES.find((s) => s.key === flag.section);
+    if (!source) continue;
+    const row = recapRowForSource(parsed.rows, source);
+    if (!row) {
+      problems.push(`${flag.message} — ${source.number} has no recap row`);
+      continue;
+    }
+    if (!flag.needle.test(row.summary)) {
+      problems.push(
+        `${flag.message} not named in the ${source.number} summary`
+      );
+    }
+  }
+  return listProblems(
+    problems,
+    `${flags.length} flagged finding group(s) named in the matching recap`
+  );
+}
+
+function listItemTexts(node: unknown): string[] {
+  if (!node || typeof node !== "object") return [];
+  const n = node as { type?: unknown; content?: unknown };
+  if (n.type === "listItem") {
+    const text = plainText(node).replace(/\s+/g, " ").trim();
+    return text ? [text] : [];
+  }
+  if (!Array.isArray(n.content)) return [];
+  return n.content.flatMap(listItemTexts);
+}
+
+export function checkConclusionRecapsSections(ctx: EvaluationContext) {
+  const raw = (ctx.content as Record<string, unknown> | null | undefined)
+    ?.narrative;
+  const items = listItemTexts(raw);
+  if (items.length === 0) {
     return verdict(
       "not_met",
-      `Flagged findings are present (${flags.join("; ")}) but the system-trends table is empty`
+      "Conclusion has no bulleted recap of previous sections"
     );
   }
-  return verdict(
-    "met",
-    `${parsed.rows.length} trend theme(s) against ${flags.length} flagged finding group(s)`
+  const problems: string[] = [];
+  for (const source of ELR_CONCLUSION_RECAP_SOURCES) {
+    const item = items.find((text) => recapSourceMatchesText(source, text));
+    if (!item) {
+      problems.push(`${source.number} ${source.label} has no recap bullet`);
+      continue;
+    }
+    if (item.length < ELR_RECAP_MIN_SUMMARY_CHARS + 8) {
+      problems.push(
+        `${source.number} ${source.label} bullet names the section without summarising it`
+      );
+    }
+  }
+  return listProblems(
+    problems,
+    `${ELR_CONCLUSION_RECAP_SOURCES.length} previous section(s) recapped`
   );
 }
 

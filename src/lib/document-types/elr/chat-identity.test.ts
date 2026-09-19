@@ -12,6 +12,8 @@ describe("elrChatContextIdentity", () => {
     expect(lines.join("\n")).toContain("Do not pick the first PRQR");
     expect(lines.join("\n")).toContain("equipment ID: (unset)");
     expect(lines.join("\n")).toContain("F22-R00 (proposed)");
+    expect(lines.join("\n")).toContain("1 April–31 March");
+    expect(lines.join("\n")).toContain("alarm-trend");
   });
 
   it("uses a set title-page format and does not quiz", () => {
@@ -25,6 +27,16 @@ describe("elrChatContextIdentity", () => {
     expect(lines.join("\n")).not.toContain("ask_user");
     expect(lines.join("\n")).toContain("equipment ID: E/PR/070");
     expect(lines.join("\n")).toContain("period: 01-Apr-2025 – 31-Mar-2026");
+    expect(lines.join("\n")).toContain("1 April–31 March");
+  });
+
+  it("rewrites a title-page quarter onto the Indian FY", () => {
+    const lines = elrChatContextIdentity({
+      periodFrom: "01/04/2025",
+      periodTo: "30/06/2025",
+    });
+    expect(lines.join("\n")).toContain("period: 01-Apr-2025 – 31-Mar-2026");
+    expect(lines.join("\n")).not.toContain("30/06/2025");
   });
 
   it("flattens identity values onto one line", () => {

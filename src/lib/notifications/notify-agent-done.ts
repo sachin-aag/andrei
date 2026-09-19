@@ -45,8 +45,18 @@ let audioContext: AudioContext | null = null;
 export function agentDoneNotificationCopy(opts: {
   documentNoun: string;
   documentNo: string;
+  sectionLabel?: string | null;
 }): AgentDoneCopy {
   const documentNo = opts.documentNo.trim();
+  const sectionLabel = opts.sectionLabel?.trim() || "";
+  if (sectionLabel) {
+    return {
+      title: `Assistant is done with ${sectionLabel}`,
+      body: documentNo
+        ? `Finished ${sectionLabel} on ${opts.documentNoun} ${documentNo}.`
+        : `The assistant finished ${sectionLabel}.`,
+    };
+  }
   return {
     title: "Assistant is done",
     body: documentNo

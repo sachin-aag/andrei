@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v109-citation-word-end");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v117-citation-word-end");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -45,6 +45,29 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("## Multi-section plan");
     expect(prompt).toContain("This turn: **Calibration**");
     expect(prompt).toContain("Do not start Monitoring");
+    expect(prompt).toContain("not done after edit_table alone");
+  });
+
+  it("does not add ELR sibling copy to investigation remaining-section", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "write",
+      documentType: "investigation_report",
+      pendingPlan: {
+        kind: "section_queue",
+        objective: "Draft the remaining sections",
+        createdAt: "2026-09-14T00:00:00.000Z",
+        promptVersion: "chat-v94-section-plan",
+        items: [
+          { sectionKey: "define", label: "Define", state: "in_progress" },
+          { sectionKey: "measure", label: "Measure", state: "queued" },
+        ],
+      },
+    });
+    expect(prompt).toContain("This turn: **Define**");
+    expect(prompt).not.toContain("not done after edit_table alone");
+    expect(prompt).not.toContain("overallGrade is low|medium|high");
   });
 
   it("tells an Agent read turn which write tools were stripped", () => {
@@ -497,6 +520,12 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("short findings sample");
     expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");
     expect(prompt).toContain("M3-SYS-FN-037 is not SYS-FN-037");
+    expect(prompt).toContain("Grade A method names");
+    expect(prompt).toContain("CSV-OQ / RTM");
+    expect(prompt).toContain("1 April–31 March");
+    expect(prompt).toContain("does not unlock edit_table");
+    expect(prompt).toContain("compact process-alarm rows");
+    expect(prompt).toContain("alarm-trend PDF");
     expect(prompt).not.toContain(
       "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
     );
@@ -604,22 +633,10 @@ describe("buildChatSystemPrompt", () => {
     expect(planDefine).not.toContain("## Analyze questions");
   });
 
-  it("tells the model edits apply immediately when editPolicy is commit", () => {
+  it("keeps propose-and-review copy in Agent chrome", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
-      editPolicy: "commit",
-    });
-    expect(prompt).toContain("apply edits immediately");
-    expect(prompt).toContain("written to the document immediately");
-    expect(prompt).not.toContain("nothing is applied until they accept it");
-  });
-
-  it("keeps propose-and-review copy when editPolicy is propose", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "agent",
-      editPolicy: "propose",
     });
     expect(prompt).toContain("nothing lands until they accept it");
     expect(prompt).toContain("Delivery in this chrome is ALWAYS a suggestion card");
@@ -639,7 +656,6 @@ describe("buildChatSystemPrompt", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
-      editPolicy: "propose",
     });
     expect(prompt).toContain("there is no direct-insertion path");
     expect(prompt).toContain(
@@ -651,17 +667,6 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "The only turns that end with no edit tool call are questions and small talk"
     );
-  });
-
-  it("omits propose-only delivery guidance when editPolicy is commit", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "agent",
-      editPolicy: "commit",
-    });
-    expect(prompt).not.toContain("Delivery in this chrome is ALWAYS a suggestion card");
-    expect(prompt).not.toContain("there is no direct-insertion path");
-    expect(prompt).not.toContain("Never tell the engineer to switch to Agent mode");
   });
 
   it("tells ELR Agent to ask when attachments name both container formats", () => {

@@ -4,6 +4,10 @@ Living plan for attachment search. Update this file whenever a phase lands
 or a locked decision changes. Architecture that disagrees with code loses —
 fix this file.
 
+The layer above this one — per-step context size, tool availability, and
+the turn classifiers — is [`harness-plan.md`](harness-plan.md). Ranking
+work that only matters because it removes tool steps belongs there.
+
 Chat stays the **control plane**. Do not replace agentic grep
 (`search_documents` / outline / page read / comprehensive review) with a
 standalone search product (Elasticsearch, a hosted vector DB, BM25-only).
@@ -162,10 +166,10 @@ Entry points: `src/lib/attachments/retrieval.ts`,
 `src/lib/attachments/page-outline.ts`,
 `src/lib/attachments/run-document-ingest.ts`. Eval:
 `pnpm retrieval-eval` (default `--dry-run` validates cases and merges a
-local overlay when present; `--from-gcs` is the CI path (download only;
-never upload; never overlay); `--live` generates the same PDFs without
-GCS and never overlays; `--report-id` searches an already-ingested
-report and merges the overlay).
+local overlay when present; `--from-gcs` is the CI path (download; generate
+locally if gold anchors fail; never upload; never overlay); `--live`
+generates the same PDFs without GCS and never overlays; `--report-id`
+searches an already-ingested report and merges the overlay).
 
 ## Phase 0 — eval harness
 
@@ -187,7 +191,7 @@ production cases live in the optional overlay, not in CI.
 ```bash
 pnpm retrieval-eval -- --dry-run          # parse + print cases (merges overlay if present)
 pnpm retrieval-eval:upload                # laptop only: write PDFs to the test bucket
-pnpm retrieval-eval -- --from-gcs         # CI path: download, ingest, search, judge (no overlay)
+pnpm retrieval-eval -- --from-gcs         # CI path: download (generate if GCS stale), ingest, search, judge
 pnpm retrieval-eval -- --live             # same PDFs, skip GCS (laptop + Vertex; no overlay)
 cp scripts/eval/retrieval-cases.local.example.json scripts/eval/retrieval-cases.local.json
 pnpm retrieval-eval -- --report-id <id>   # already-ingested report + overlay
@@ -207,10 +211,13 @@ Required Actions secrets:
 
 Do not add `GCP_SERVICE_ACCOUNT_KEY`. The job needs `permissions.id-token: write`.
 The same WIF secrets are used by `.github/workflows/pdf-ingest-soak.yml`.
-`--from-gcs` downloads the corpus from the bucket. It does **not** generate
-or upload objects. Add new files with laptop ADC (`pnpm retrieval-eval:upload`
-or `gsutil cp`), not GitHub Actions. The GitHub Actions SA needs
-`roles/storage.objectViewer` on the eval bucket (not objectCreator).
+`--from-gcs` downloads the corpus from the bucket. It does **not** upload.
+If the downloaded PDFs fail gold anchors (the bucket predates a generator
+change such as D1 slash IDs), it generates the same PDFs locally and
+continues. Missing objects still fail the job. Refresh the bucket with
+laptop ADC (`pnpm retrieval-eval:upload` or `gsutil cp`), not GitHub
+Actions. The GitHub Actions SA needs `roles/storage.objectViewer` on the
+eval bucket (not objectCreator).
 
 Local ingest uses `ATTACHMENT_STORAGE_BACKEND=local` (the bucket is the
 corpus source, not where CI writes attachment bytes). Runs write JSON
@@ -273,7 +280,11 @@ none (legacy ready files).
 **Done.** Hybrid default still used by Document chat (no new tool `mode`).
 Identifier queries run exact-first. Page collapse is on for every mode.
 Keyword-only Analytics grep still skips embeddings; an identifier query
-that already fills `limit` skips embeddings in hybrid too.
+that already fills `limit` skips embeddings in hybrid too. Query-time
+`requirementIds()` also matches MJ slash forms (`PMC/PR/014`,
+`SOP/DP/QA/014`) so ready files do not need a re-ingest; ISO/IEC prefixes
+still drop. Do not bump `PARSER_VERSION` unless the page-column path
+proves necessary.
 
 ## Phase 3.5 — excerpt quality + lexical fast path
 
@@ -330,9 +341,13 @@ queries keep the exact / lexical skip-embed path. There is no new chat
 
 **Done (deterministic).** Candidates are reordered with
 `rerankHitsForQuery()` before slicing to `limit`: locator file/page
-boost, then identifier-in-excerpt / filename, then `lexicalMatchScore`.
-Ties keep original order. Do **not** add a cross-encoder. The synthetic
-nine is not production-scale proof that a learned reranker is needed.
+boost, then identifier-in-excerpt / filename, then `lexicalMatchScore`
+with a local document-frequency damp over the candidate set (common
+cover tokens weigh less than a rare vendor or ID). Semantic and
+identifier takes then apply `diversifyHitsByFile` (at most two hits per
+filename in the top `limit`); locator queries skip the cap. Ties keep
+original order. Do **not** add a cross-encoder. The synthetic public
+set is not production-scale proof that a learned reranker is needed.
 CI already uploads `retrieval-runs/` JSON; a Recall@5 trend series is
 not leftover for this architecture.
 

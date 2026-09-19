@@ -72,7 +72,7 @@ import {
 } from "@/lib/statistical-analysis/mentions";
 import { recoverDocumentMentionIds } from "@/lib/ai/chat/mentions";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
-import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
+import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   advertisedChatToolNames,
@@ -337,7 +337,7 @@ async function handleAnalyticsChatPost(
         if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
         return isAssistantTurnCancelRequested(sessionId);
       },
-      prepareStep: ({ steps }) => {
+      prepareStep: ({ steps, messages }) => {
         const prepared = prepareAnalyticsChatStep({
           steps,
           canEdit: canWrite,
@@ -345,10 +345,12 @@ async function handleAnalyticsChatPost(
           intent: userIntent.kind,
           intentReason: userIntent.reason,
         });
-        if (!prepared) return undefined;
+        const compacted = compactInTurnModelMessages(messages);
+        if (!prepared) return { messages: compacted };
         return {
           activeTools: prepared.activeTools,
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+          messages: compacted,
         };
       },
       abortSignal: turnAbort.signal,

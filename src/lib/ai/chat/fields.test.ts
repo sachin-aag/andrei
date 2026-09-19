@@ -9,6 +9,10 @@ import {
   MECHANICAL_RESULTS_HEADERS,
 } from "@/lib/document-types/mechanical/sections";
 import {
+  ELR_CALIBRATION_HEADERS,
+  EMPTY_ELR_CONTENT,
+} from "@/lib/document-types/elr/sections";
+import {
   listFieldTables,
   fieldFillState,
   sectionFillState,
@@ -163,5 +167,81 @@ describe("fieldFillState seeded tables", () => {
     };
     expect(fieldFillState(content, "traceability", "table")).not.toBe("empty");
     expect(sectionFillState(content, "traceability")).not.toBe("empty");
+  });
+});
+
+describe("ELR sectionFillState", () => {
+  const filledCalibrationTable = {
+    type: "doc" as const,
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: ELR_CALIBRATION_HEADERS.map((text) => ({
+              type: "tableHeader" as const,
+              content: [
+                { type: "paragraph", content: [{ type: "text", text }] },
+              ],
+            })),
+          },
+          {
+            type: "tableRow",
+            content: ELR_CALIBRATION_HEADERS.map((_, index) => ({
+              type: "tableCell" as const,
+              content: [
+                {
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: index === 0 ? "E/PR/070/PG 1-01" : "ok",
+                    },
+                  ],
+                },
+              ],
+            })),
+          },
+        ],
+      },
+    ],
+  };
+
+  it("keeps a table-only evidence section partial until the assessment has a count", () => {
+    const tableOnly = {
+      ...EMPTY_ELR_CONTENT.elr_calibration,
+      table: filledCalibrationTable,
+    };
+    expect(fieldFillState(tableOnly, "elr_calibration", "table")).not.toBe("empty");
+    expect(sectionFillState(tableOnly, "elr_calibration")).toBe("partial");
+  });
+
+  it("is filled when the table has rows and the assessment states a count", () => {
+    const assessed = {
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "18 of 18 instruments were within tolerance this period; the qualified state still holds and no runtime was lost. [[table]]",
+              },
+            ],
+          },
+        ],
+      },
+      table: filledCalibrationTable,
+    };
+    expect(sectionFillState(assessed, "elr_calibration")).toBe("filled");
+  });
+
+  it("treats a 5.1 table that only has seeded section numbers as empty", () => {
+    const content = EMPTY_ELR_CONTENT.elr_system_trends;
+    expect(fieldFillState(content, "elr_system_trends", "table")).toBe("empty");
+    expect(sectionFillState(content, "elr_system_trends")).toBe("empty");
+    expect(sectionHasTable(content, "elr_system_trends")).toBe(true);
   });
 });

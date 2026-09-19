@@ -230,8 +230,12 @@ function escapeXmlText(text: string): string {
 function boldLabelParagraph(label: string, value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
+  const gapMatch = label.match(/\s+$/);
+  const gap = gapMatch?.[0] ?? " ";
+  const labelText = gapMatch ? label.slice(0, -gap.length) : label;
   return (
-    `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXmlText(label)}</w:t></w:r>` +
+    `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXmlText(labelText)}</w:t></w:r>` +
+    `<w:r><w:rPr><w:noProof/></w:rPr><w:t xml:space="preserve">${escapeXmlText(gap)}</w:t></w:r>` +
     `<w:r><w:t xml:space="preserve">${escapeXmlText(trimmed)}</w:t></w:r></w:p>`
   );
 }
@@ -252,7 +256,10 @@ function composeMeasureXml(m: MeasureSection, ctx: DocxExportContext): string {
     richFieldParagraph("Experiment Conclusion: ", m.conclusion, ctx);
   const narrativeXml = narrativeToDocxXmlWithContext(m.narrative, ctx).xml;
   if (m.regulatoryNotification?.trim()) {
-    const regXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Regulatory Notification: </w:t></w:r><w:r><w:t xml:space="preserve">${escapeXmlText(m.regulatoryNotification.trim())}</w:t></w:r></w:p>`;
+    const regXml = boldLabelParagraph(
+      "Regulatory Notification: ",
+      m.regulatoryNotification
+    );
     return prefix + narrativeXml + regXml;
   }
   return prefix + narrativeXml;

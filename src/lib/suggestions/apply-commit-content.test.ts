@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/core";
-import { applyCommitToSectionContent } from "@/lib/ai/chat/commit-edit";
+import { applyCommitToSectionContent } from "@/lib/suggestions/apply-commit-content";
 import {
   DV_TRACEABILITY_HEADERS,
   seededTableDoc,

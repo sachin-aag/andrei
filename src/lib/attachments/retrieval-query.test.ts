@@ -4,11 +4,14 @@ import {
   classifyRetrievalQuery,
   collapseToBestChunkPerPage,
   contentQueryForSnippet,
+  diversifyHitsByFile,
   lexicalMatchScore,
   lexicalQueryTokens,
+  localTokenIdfWeights,
   rankHitsForQuery,
   requestedPageNumbers,
   rerankHitsForQuery,
+  takeRankedHits,
   locatorHitBoost,
 } from "./retrieval-query";
 
@@ -36,6 +39,16 @@ describe("classifyRetrievalQuery", () => {
   it("does not treat B-441 as a requirement id", () => {
     expect(classifyRetrievalQuery("Batch B-441 failed dissolution").kind).toBe(
       "semantic"
+    );
+  });
+
+  it("treats MJ slash document numbers as identifiers", () => {
+    expect(classifyRetrievalQuery("PMC/PR/014")).toEqual({
+      kind: "identifier",
+      identifiers: ["PMC/PR/014"],
+    });
+    expect(classifyRetrievalQuery("Where is SOP/DP/QA/014 cited?").kind).toBe(
+      "identifier"
     );
   });
 });
@@ -262,5 +275,115 @@ describe("rerankHitsForQuery", () => {
       "dissolution failure"
     );
     expect(ranked.map((row) => row.id)).toEqual(["first", "second"]);
+  });
+});
+
+describe("localTokenIdfWeights", () => {
+  it("dampens tokens that appear on every candidate", () => {
+    const haystacks = [
+      "equipment system report cover",
+      "equipment system report header",
+      "equipment system report index",
+      "Narda SRM-3006 spectrum analyzer on the equipment list",
+    ];
+    const weights = localTokenIdfWeights(haystacks, "Narda equipment");
+    expect(weights.get("narda") ?? 0).toBeGreaterThan(weights.get("equipment") ?? 0);
+  });
+});
+
+describe("IDF rerank", () => {
+  it("promotes a rare vendor over a cover that only repeats common tokens", () => {
+    const ranked = rerankHitsForQuery(
+      [
+        {
+          filename: "dv-protocol-equipment.pdf",
+          pageNumber: 1,
+          excerpt: "equipment system report cover equipment system report",
+          id: "cover",
+        },
+        {
+          filename: "dv-protocol-equipment.pdf",
+          pageNumber: 2,
+          excerpt: "Narda SRM-3006 Portable Spectrum Analyzer",
+          id: "gold",
+        },
+        {
+          filename: "software-requirements.pdf",
+          pageNumber: 1,
+          excerpt: "equipment system report software cover",
+          id: "soft-cover",
+        },
+        {
+          filename: "other.pdf",
+          pageNumber: 1,
+          excerpt: "equipment calibration system report",
+          id: "other",
+        },
+      ],
+      "Narda equipment"
+    );
+    expect(ranked[0]?.id).toBe("gold");
+    const unweightedCover = lexicalMatchScore(
+      "equipment system report cover equipment system report",
+      "Narda equipment"
+    );
+    const unweightedGold = lexicalMatchScore(
+      "Narda SRM-3006 Portable Spectrum Analyzer",
+      "Narda equipment"
+    );
+    expect(unweightedCover).toBeGreaterThan(unweightedGold);
+  });
+});
+
+describe("diversifyHitsByFile", () => {
+  it("keeps at most two hits per file in the top limit", () => {
+    const rows = [
+      { filename: "long.pdf", id: "a1" },
+      { filename: "long.pdf", id: "a2" },
+      { filename: "long.pdf", id: "a3" },
+      { filename: "other.pdf", id: "b1" },
+      { filename: "long.pdf", id: "a4" },
+    ];
+    expect(diversifyHitsByFile(rows, 8).map((row) => row.id)).toEqual([
+      "a1",
+      "a2",
+      "b1",
+    ]);
+  });
+});
+
+describe("takeRankedHits", () => {
+  it("does not cap a locator query to two pages of the named file", () => {
+    const rows = Array.from({ length: 5 }, (_, index) => ({
+      filename: "dv-protocol-equipment.pdf",
+      pageNumber: index + 1,
+      excerpt: `page ${index + 1}`,
+      id: `p${index + 1}`,
+    }));
+    const taken = takeRankedHits(rows, "dv-protocol-equipment.pdf page 2", 4);
+    expect(taken.map((row) => row.id)[0]).toBe("p2");
+    expect(taken).toHaveLength(4);
+  });
+
+  it("caps semantic results per file so one attachment cannot fill the limit", () => {
+    const rows = [
+      ...Array.from({ length: 6 }, (_, index) => ({
+        filename: "long.pdf",
+        pageNumber: index + 1,
+        excerpt: "equipment system report",
+        id: `long-${index + 1}`,
+      })),
+      {
+        filename: "other.pdf",
+        pageNumber: 2,
+        excerpt: "equipment system report table",
+        id: "other-2",
+      },
+    ];
+    expect(takeRankedHits(rows, "equipment system report", 8).map((row) => row.id)).toEqual([
+      "long-1",
+      "long-2",
+      "other-2",
+    ]);
   });
 });

@@ -124,9 +124,8 @@ scripts/eval/retrieval-cases.local.json
 /investor-deck/
 /investor-screenshots/
 
-# Investor deck / screenshots (local-only marketing assets)
-/investor-deck/
-/investor-screenshots/
+# Local marketing film build (HTML recorder, vendor assets, dist)
+/marketing/
 
 # Large media artifacts (keep out of git)
 *.mp4

@@ -109,8 +109,10 @@ export function isFailedChatFinishReason(
 export function shouldShowEmptyAssistantError(options: {
   parts: readonly ChatTurnPart[] | null | undefined;
   streaming: boolean;
+  planContinuing?: boolean;
 }): boolean {
-  if (options.streaming) return false;
+  if (options.streaming || options.planContinuing) return false;
+  if (assistantPartsAreCannedError(options.parts)) return true;
   return !assistantPartsHaveVisibleContent(options.parts);
 }
 
@@ -145,9 +147,51 @@ export function isChatClientDisconnectError(error: unknown): boolean {
 export function shouldShowChatClientError(options: {
   error: unknown;
   busy: boolean;
+  planChaining?: boolean;
 }): boolean {
-  if (options.busy || options.error == null) return false;
+  if (options.busy || options.planChaining || options.error == null) {
+    return false;
+  }
   return true;
+}
+
+/**
+ * True when the only visible assistant text is the canned empty-turn
+ * placeholder. A remaining-section finish that hydrates this way is not
+ * a user-facing failure if the plan is still chaining.
+ */
+export function assistantPartsAreCannedError(
+  parts: readonly ChatTurnPart[] | null | undefined
+): boolean {
+  if (!parts || parts.length === 0) return false;
+  let sawErrorText = false;
+  for (const part of parts) {
+    if (!part || typeof part.type !== "string") continue;
+    if (part.type === "text") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (!text) continue;
+      if (text === CHAT_ASSISTANT_ERROR_MESSAGE) {
+        sawErrorText = true;
+        continue;
+      }
+      return false;
+    }
+    if (part.type === "reasoning") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (text) return false;
+      continue;
+    }
+    if (part.type === "file" || part.type.startsWith("tool-")) return false;
+  }
+  return sawErrorText;
+}
+
+/** Toast an empty stream row only when hydrate did not recover a real reply. */
+export function shouldToastEmptyAssistantTurn(options: {
+  recoveredVisibleContent: boolean;
+  planContinuing: boolean;
+}): boolean {
+  return !options.recoveredVisibleContent && !options.planContinuing;
 }
 
 /**

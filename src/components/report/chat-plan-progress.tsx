@@ -15,14 +15,18 @@ export function ChatPlanProgress({
   plan,
   documentType,
   live,
+  active = false,
 }: {
   plan: ChatPendingPlan;
   documentType: DocumentType;
   live?: LivePlanProgress | null;
+  active?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (!planHasRemainingWork(plan)) return null;
   const view = chatPlanProgressView(plan, documentType, live);
+  if (view.complete) return null;
+  const spinning = active && !view.paused;
 
   return (
     <div className="flex justify-center" data-testid="chat-plan-progress">
@@ -38,12 +42,12 @@ export function ChatPlanProgress({
             <span className="shrink-0 rounded-full border border-[var(--border)] px-1.5 py-px text-[10px]">
               Paused
             </span>
-          ) : (
+          ) : spinning ? (
             <Loader2
               className="size-3 shrink-0 animate-spin"
               aria-hidden="true"
             />
-          )}
+          ) : null}
           <span className="min-w-0 flex-1 truncate">{view.chipLabel}</span>
           {expanded ? (
             <ChevronDown className="size-3.5 shrink-0 opacity-70" aria-hidden="true" />
@@ -64,7 +68,7 @@ export function ChatPlanProgress({
             <PlanProgressGroup
               label="In progress"
               items={view.current}
-              icon="current"
+              icon={spinning ? "current" : "pending"}
             />
             <PlanProgressGroup
               label="Pending"

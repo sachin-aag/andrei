@@ -2,6 +2,7 @@ import { generateText, Output, tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { sanitizePromptMetadata } from "@/lib/ai/chat/prompt-metadata";
+import { toolResultBudget } from "@/lib/ai/chat/tool-result-budget";
 import {
   uniqueChartCitations,
   type ChartCitation,
@@ -125,7 +126,6 @@ export const ANALYTICS_CHAT_TOOL_NAMES = [
 ] as const;
 
 export const MAX_EXTRACT_PAGES = 6;
-const PAGE_TEXT_LIMIT = 8_000;
 
 /**
  * Hit the 6-page cap and the attachment still has unread pages.
@@ -1152,8 +1152,14 @@ export function buildAnalyticsChatTools(opts: {
         );
         const bodies = pageReads.flatMap((page) => {
           if (!page) return [];
-          const transcript = page.transcript.slice(0, PAGE_TEXT_LIMIT);
-          const visual = page.visualInterpretation.slice(0, PAGE_TEXT_LIMIT);
+          const transcript = toolResultBudget(
+            "analyticsPageTranscript",
+            page.transcript
+          );
+          const visual = toolResultBudget(
+            "analyticsPageTranscript",
+            page.visualInterpretation
+          );
           return [
             {
               pageNumber: page.pageNumber,

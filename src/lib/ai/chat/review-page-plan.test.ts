@@ -130,6 +130,56 @@ describe("planReviewPages", () => {
     expect(selected[0]?.attachmentId).toBe("cal");
   });
 
+  it("does not queue a 231-page calibration planner for a QMS walk", () => {
+    const pages = [
+      ...Array.from({ length: 231 }, (_, i) => ({
+        attachmentId: "planner",
+        pageNumber: i + 1,
+        filename: "Master Annual Calibration Planner PR.pdf",
+        transcript: `Document No. CAL-PR-014 Date 12/01/2025 row ${i}`,
+        pageContext: "Annual calibration planner",
+        outlineTitle: "Planner",
+        identifiers: [] as string[],
+      })),
+      {
+        attachmentId: "prqr",
+        pageNumber: 22,
+        filename: "PRQR-25-PR-005 Report.pdf",
+        transcript:
+          "QMS records Type CAPA Document Reference No. CAPA/25/01 Date Initiated 03/02/2025 Qualification Impact N",
+        outlineTitle: "QMS since last PRQ",
+        identifiers: ["CAPA/25/01"],
+      },
+    ];
+    const selected = planReviewPages(pages, "elr_qms", 2500);
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.attachmentId).toBe("prqr");
+  });
+
+  it("samples a small floor from non-conflicting files when nothing matches", () => {
+    const pages = [
+      ...Array.from({ length: 231 }, (_, i) => ({
+        attachmentId: "planner",
+        pageNumber: i + 1,
+        filename: "Master Annual Calibration Planner PR.pdf",
+        transcript: `unrelated ${i}`,
+        outlineTitle: "Appendix",
+        identifiers: [] as string[],
+      })),
+      ...Array.from({ length: 8 }, (_, i) => ({
+        attachmentId: "other",
+        pageNumber: i + 1,
+        filename: "E-PR-068.pdf",
+        transcript: `name plate ${i}`,
+        outlineTitle: "Appendix",
+        identifiers: [] as string[],
+      })),
+    ];
+    const selected = planReviewPages(pages, "elr_qms", 2500);
+    expect(selected).toHaveLength(REVIEW_OBJECTIVE_PAGE_FLOOR);
+    expect(selected.every((page) => page.attachmentId === "other")).toBe(true);
+  });
+
   it("samples a small floor when nothing matches", () => {
     const pages = Array.from({ length: 80 }, (_, i) => ({
       attachmentId: i < 40 ? "a" : "b",
@@ -196,6 +246,78 @@ describe("planReviewPages", () => {
     expect(scoreReviewPage(pages[0]!, "elr_monitoring")).toBe(0);
     expect(scoreReviewPage(pages[1]!, "elr_monitoring")).toBeGreaterThan(0);
     expect(scoreReviewPage(pages[2]!, "elr_monitoring")).toBeGreaterThan(0);
+  });
+
+  it("queues PRQR environmental methods over CSV-OQ and RTM URS pages", () => {
+    const header =
+      "UNCONTROLLED COPY Sign/Date Reviewed By QA Confidential and Proprietary ";
+    const pages = [
+      {
+        attachmentId: "csv",
+        pageNumber: 1,
+        filename: "CSV-OQ-PR-055 PART-1.pdf",
+        transcript:
+          "The machine is equipped with connections for environmental monitoring systems 12/01/2025",
+        outlineTitle: "URS",
+        identifiers: [] as string[],
+      },
+      {
+        attachmentId: "rtm",
+        pageNumber: 2,
+        filename: "RTM for E-PR-068.pdf",
+        transcript: "URS environmental monitoring sampling ports Date 01/04/2025",
+        outlineTitle: "RTM",
+        identifiers: [] as string[],
+      },
+      {
+        attachmentId: "prqr",
+        pageNumber: 40,
+        filename: "PRQR-25-PR-005 Report.pdf",
+        transcript: `${header}${".".repeat(900)}Non-Viable Particulate Monitoring Settle Plate 23/07/2024`,
+        outlineTitle: "Environmental monitoring",
+        identifiers: ["PRQR-25-PR-005"],
+      },
+    ];
+    const selected = planReviewPages(pages, "elr_monitoring", 2500);
+    expect(selected.map((page) => page.attachmentId)).toEqual(["prqr"]);
+  });
+
+  it("queues PRQR methods and the alarm-trend PDF together", () => {
+    const header =
+      "UNCONTROLLED COPY Sign/Date Reviewed By QA Confidential and Proprietary ";
+    const pages = [
+      {
+        attachmentId: "csv",
+        pageNumber: 1,
+        filename: "CSV-OQ-PR-055 PART-1.pdf",
+        transcript:
+          "The machine is equipped with connections for environmental monitoring systems 12/01/2025",
+        outlineTitle: "URS",
+        identifiers: [] as string[],
+      },
+      {
+        attachmentId: "prqr",
+        pageNumber: 40,
+        filename: "PRQR-25-PR-005 Report.pdf",
+        transcript: `${header}${".".repeat(900)}Non-Viable Particulate Monitoring Settle Plate 23/07/2024`,
+        outlineTitle: "Environmental monitoring",
+        identifiers: ["PRQR-25-PR-005"],
+      },
+      {
+        attachmentId: "alarm",
+        pageNumber: 2,
+        filename: "Alarm trend Q2 2025.pdf",
+        transcript:
+          "Alarm Description FM Nitrogen Not Available Count 1950 Direct Impact N",
+        outlineTitle: "Alarm trend",
+        identifiers: [] as string[],
+      },
+    ];
+    const selected = planReviewPages(pages, "elr_monitoring", 2500);
+    expect(selected.map((page) => page.attachmentId).sort()).toEqual([
+      "alarm",
+      "prqr",
+    ]);
   });
 
   it("queues a differential-pressure monitoring row from column hits", () => {

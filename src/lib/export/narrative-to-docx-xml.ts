@@ -232,6 +232,42 @@ function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
+/**
+ * Word Online collapses a space that sits at the edge of a formatted run
+ * (`w:b` / `w:i` / underline) even when `xml:space="preserve"` is set.
+ * Put those spaces in their own unformatted run so "associated **Tray Loader**"
+ * does not export as "associatedTray Loader".
+ */
+function splitEdgeWhitespace(text: string): {
+  lead: string;
+  middle: string;
+  trail: string;
+} {
+  if (!text) return { lead: "", middle: "", trail: "" };
+  if (/^\s+$/.test(text)) return { lead: "", middle: "", trail: text };
+  const lead = text.match(/^\s+/)?.[0] ?? "";
+  const rest = text.slice(lead.length);
+  const trail = rest.match(/\s+$/)?.[0] ?? "";
+  return { lead, middle: rest.slice(0, rest.length - trail.length), trail };
+}
+
+function visualEmphasisKey(node: JSONContent | undefined, forceBold: boolean): string {
+  if (!node) return "none";
+  if (node.type === "text" || node.type === "tableRef") {
+    const marks = node.marks ?? [];
+    const bold = forceBold || marks.some((m) => m.type === "bold");
+    const italic = marks.some((m) => m.type === "italic");
+    const underline = marks.some((m) => m.type === "underline");
+    const subscript = marks.some((m) => m.type === "subscript");
+    const superscript = marks.some((m) => m.type === "superscript");
+    const color = colorFromTextMarks(marks) ?? "";
+    return `b${bold}|i${italic}|u${underline}|sub${subscript}|sup${superscript}|c${color}`;
+  }
+  if (node.type === "mathInline") return "math";
+  if (node.type === "imageInline") return "image";
+  return "none";
+}
+
 function textLineToCitationAwareRuns(
   line: string,
   rPr: string,
@@ -355,6 +391,17 @@ function paragraphToXml(
   return `<w:p>${pPr}${runs}</w:p>`;
 }
 
+function boundarySpaceRun(
+  whitespace: string,
+  textTag: "w:t" | "w:delText",
+  ctx: DocxExportContext | undefined,
+  runSizeOverride?: string
+): string {
+  if (!whitespace) return "";
+  const rPr = runProperties({ sizeHalfPoints: runSizeOverride, noProof: true }, ctx);
+  return `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(whitespace)}</${textTag}></w:r>`;
+}
+
 function inlineNodesToRuns(
   nodes: JSONContent[],
   forceBold = false,
@@ -362,8 +409,10 @@ function inlineNodesToRuns(
   runSizeOverride?: string
 ): string {
   const parts: string[] = [];
+  let emittedBoundarySpace = false;
 
-  for (const child of nodes) {
+  for (let index = 0; index < nodes.length; index++) {
+    const child = nodes[index]!;
     if (child.type === "text") {
       const text = child.text ?? "";
       if (!text) continue;
@@ -375,6 +424,13 @@ function inlineNodesToRuns(
       const isSubscript = marks.some((m) => m.type === "subscript");
       const isSuperscript = marks.some((m) => m.type === "superscript");
       const revision = suggestionRevisionFromMarks(marks);
+      const textTag: "w:t" | "w:delText" =
+        revision?.type === suggestionDeleteMarkName ? "w:delText" : "w:t";
+      const thisKey = visualEmphasisKey(child, forceBold);
+      const prevKey = visualEmphasisKey(nodes[index - 1], forceBold);
+      const nextKey = visualEmphasisKey(nodes[index + 1], forceBold);
+      const isolateLead = thisKey !== prevKey;
+      const isolateTrail = thisKey !== nextKey;
 
       const rPr = runProperties({
         bold: isBold,
@@ -400,19 +456,55 @@ function inlineNodesToRuns(
       for (let i = 0; i < lines.length; i++) {
         if (i > 0) {
           runParts.push(`<w:r>${rPr}<w:br/></w:r>`);
+          emittedBoundarySpace = false;
         }
-        if (lines[i]) {
-          const textTag =
-            revision?.type === suggestionDeleteMarkName ? "w:delText" : "w:t";
+        const line = lines[i]!;
+        if (!line) continue;
+        const { lead, middle, trail } = splitEdgeWhitespace(line);
+        if (!middle) {
+          const ws = lead + trail;
+          const isolate = thisKey !== prevKey || thisKey !== nextKey;
+          if (isolate) {
+            if (!emittedBoundarySpace) {
+              runParts.push(boundarySpaceRun(ws, textTag, ctx, runSizeOverride));
+            }
+            emittedBoundarySpace = true;
+          } else if (ws) {
+            runParts.push(
+              textLineToCitationAwareRuns(
+                ws,
+                rPr,
+                textTag,
+                superscriptRPr,
+                ctx?.citationNumbers
+              )
+            );
+            emittedBoundarySpace = false;
+          }
+          continue;
+        }
+        let core = middle;
+        if (lead && !isolateLead) core = lead + core;
+        if (trail && !isolateTrail) core = core + trail;
+        if (lead && isolateLead && !emittedBoundarySpace) {
+          runParts.push(boundarySpaceRun(lead, textTag, ctx, runSizeOverride));
+          emittedBoundarySpace = true;
+        }
+        if (core) {
           runParts.push(
             textLineToCitationAwareRuns(
-              lines[i]!,
+              core,
               rPr,
               textTag,
               superscriptRPr,
               ctx?.citationNumbers
             )
           );
+          emittedBoundarySpace = false;
+        }
+        if (trail && isolateTrail) {
+          runParts.push(boundarySpaceRun(trail, textTag, ctx, runSizeOverride));
+          emittedBoundarySpace = true;
         }
       }
       const runXml = runParts.join("");
@@ -421,22 +513,35 @@ function inlineNodesToRuns(
       );
     } else if (child.type === "hardBreak") {
       parts.push(`<w:r>${runProperties({ sizeHalfPoints: runSizeOverride }, ctx)}<w:br/></w:r>`);
+      emittedBoundarySpace = false;
     } else if (child.type === "imageInline" && ctx) {
       const src = child.attrs?.src as string | undefined;
       if (src) {
         const width = child.attrs?.width as number | undefined;
         parts.push(registerInlineImage(ctx, src, width));
       }
+      emittedBoundarySpace = false;
     } else if (child.type === "mathInline") {
       parts.push(mathInlineToRun(child, ctx));
+      emittedBoundarySpace = false;
     } else if (child.type === "tableRef") {
       const label = tableRefDisplayText({
         n: typeof child.attrs?.n === "number" ? child.attrs.n : null,
       });
-      const revision = suggestionRevisionFromMarks(child.marks);
-      const rPr = runProperties({ sizeHalfPoints: runSizeOverride }, ctx);
+      const marks = child.marks ?? [];
+      const revision = suggestionRevisionFromMarks(marks);
+      const rPr = runProperties(
+        {
+          bold: forceBold || marks.some((m) => m.type === "bold"),
+          italic: marks.some((m) => m.type === "italic"),
+          underline: marks.some((m) => m.type === "underline"),
+          sizeHalfPoints: runSizeOverride,
+        },
+        ctx
+      );
       const runXml = `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(label)}</w:t></w:r>`;
       parts.push(revision && runXml ? revisionWrapper(revision, runXml) : runXml);
+      emittedBoundarySpace = false;
     }
   }
 
@@ -503,6 +608,7 @@ function runProperties(
     subscript?: boolean;
     superscript?: boolean;
     sizeHalfPoints?: string;
+    noProof?: boolean;
   } = {},
   ctx?: DocxExportContext
 ): string {
@@ -525,6 +631,7 @@ function runProperties(
   if (wordColor) rPr += `<w:color w:val="${wordColor}"/>`;
   if (options.subscript) rPr += '<w:vertAlign w:val="subscript"/>';
   if (options.superscript) rPr += '<w:vertAlign w:val="superscript"/>';
+  if (options.noProof) rPr += "<w:noProof/>";
   rPr += "</w:rPr>";
   return rPr;
 }

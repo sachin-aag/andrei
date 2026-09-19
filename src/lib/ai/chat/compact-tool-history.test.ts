@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UIMessage } from "ai";
-import { compactChatToolHistoryForModel } from "./compact-tool-history";
+import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "./compact-tool-history";
 
 describe("compactChatToolHistoryForModel", () => {
   it("replaces bulky finish findings with a page-citation digest", () => {
@@ -217,5 +217,131 @@ describe("compactChatToolHistoryForModel", () => {
       },
     ];
     expect(compactChatToolHistoryForModel(messages)).toEqual(messages);
+  });
+});
+
+describe("compactInTurnModelMessages", () => {
+  it("keeps the last two search_documents excerpts and digests older ones to citations", () => {
+    const search = (id: string, excerpt: string) => ({
+      role: "tool" as const,
+      content: [
+        {
+          type: "tool-result" as const,
+          toolCallId: id,
+          toolName: "search_documents",
+          output: {
+            type: "json" as const,
+            value: {
+              results: [
+                {
+                  filename: "Protocol.pdf",
+                  pageNumber: 4,
+                  citation: "[Protocol.pdf, p. 4]",
+                  excerpt,
+                  attachmentId: "att-1",
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+    const compacted = compactInTurnModelMessages([
+      search("s1", "old excerpt one"),
+      search("s2", "recent excerpt two"),
+      search("s3", "recent excerpt three"),
+    ]);
+    const first = compacted[0]?.content[0]?.output as {
+      value?: { results?: Array<{ excerpt?: string; citation?: string }>; excerptsOmitted?: boolean };
+    };
+    expect(first.value?.excerptsOmitted).toBe(true);
+    expect(first.value?.results?.[0]?.citation).toBe("[Protocol.pdf, p. 4]");
+    expect(first.value?.results?.[0]?.excerpt).toBeUndefined();
+    const third = compacted[2]?.content[0]?.output as {
+      value?: { results?: Array<{ excerpt?: string }> };
+    };
+    expect(third.value?.results?.[0]?.excerpt).toBe("recent excerpt three");
+  });
+
+  it("keeps the latest page transcript and a quoted span on older reads", () => {
+    const page = (id: string, transcript: string) => ({
+      role: "tool" as const,
+      content: [
+        {
+          type: "tool-result" as const,
+          toolCallId: id,
+          toolName: "read_document_page",
+          output: {
+            type: "json" as const,
+            value: {
+              page: {
+                filename: "Protocol.pdf",
+                pageNumber: 4,
+                transcript,
+                visualInterpretation: "layout",
+              },
+            },
+          },
+        },
+      ],
+    });
+    const long = "Calibration due 12 Mar 2025. ".repeat(40);
+    const compacted = compactInTurnModelMessages([
+      page("p1", long),
+      page("p2", "Latest page transcript stays in full."),
+    ]);
+    const oldPage = compacted[0]?.content[0]?.output as {
+      value?: { page?: { transcript?: string; transcriptOmittedChars?: number } };
+    };
+    expect(oldPage.value?.page?.transcript?.startsWith("Calibration due")).toBe(
+      true
+    );
+    expect(oldPage.value?.page?.transcript?.length).toBeLessThanOrEqual(400);
+    expect(oldPage.value?.page?.transcriptOmittedChars).toBeGreaterThan(0);
+    const latest = compacted[1]?.content[0]?.output as {
+      value?: { page?: { transcript?: string } };
+    };
+    expect(latest.value?.page?.transcript).toBe(
+      "Latest page transcript stays in full."
+    );
+  });
+
+  it("always digests finish_document_review findings to citationDigest", () => {
+    const compacted = compactInTurnModelMessages([
+      {
+        role: "tool" as const,
+        content: [
+          {
+            type: "tool-result" as const,
+            toolCallId: "f1",
+            toolName: "finish_document_review",
+            output: {
+              type: "json" as const,
+              value: {
+                status: "complete",
+                findings: [
+                  {
+                    filename: "Protocol.pdf",
+                    pageNumber: 4,
+                    identifiers: ["PMC/PR/014"],
+                    summary: "PM due date 12 Mar 2025",
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ]);
+    const finish = compacted[0]?.content[0]?.output as {
+      value?: {
+        findings?: unknown[];
+        citationDigest?: Array<{ citation?: string }>;
+      };
+    };
+    expect(finish.value?.findings).toEqual([]);
+    expect(finish.value?.citationDigest?.[0]?.citation).toBe(
+      "[Protocol.pdf, p. 4]"
+    );
   });
 });

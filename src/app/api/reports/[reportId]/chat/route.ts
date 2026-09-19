@@ -28,11 +28,8 @@ import {
 } from "@/lib/ai/chat/system-prompt";
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
-import { deriveChatEditPolicy, isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
-import type { TurnEditItem } from "@/lib/ai/chat/commit-edit";
-import { engineerFacingHistorySummary } from "@/lib/ai/chat/change-summary";
+import { isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
-import { snapshotDocumentRevision } from "@/lib/document-revisions/snapshot";
 import {
   CHAT_EXTRACT_GOOGLE_MODEL_ID,
   chatAssistantTurnMetadata,
@@ -51,7 +48,6 @@ import {
   primaryFieldForSection,
   sectionHasTable,
 } from "@/lib/ai/chat/fields";
-import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
@@ -63,12 +59,7 @@ import {
   documentIntentFocus,
   resolveChatUserIntent,
 } from "@/lib/ai/chat/resolve-user-intent";
-import {
-  alreadyDraftedGapHints,
-  detectAlreadyDraftedSection,
-  alreadyDraftedReadStep,
-  withoutDraftFieldTools,
-} from "@/lib/ai/chat/already-drafted";
+import { alreadyDraftedGapHints } from "@/lib/ai/chat/already-drafted";
 import {
   createChatSession,
   findChatSession,
@@ -80,6 +71,7 @@ import {
   chatUserTurnIsAutoContinue,
   currentPlanTurnSections,
   inScopeEmptyInventoryNeedsReview,
+  livePlanProgressFromParts,
   parseChatPendingPlan,
   persistablePendingPlan,
   planCoverageObjective,
@@ -121,29 +113,21 @@ import { isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
 import { getReportAnalytics } from "@/lib/statistical-analysis/store";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import {
-  classifyRetrievalPolicy,
   isRetrievalPushback,
   recentUserMessageTexts,
 } from "@/lib/ai/chat/retrieval-policy";
 import {
   DocumentReviewSession,
   pickPlanModeChatTools,
-  prepareDocumentReviewStep,
   reviewContinueBudgetMs,
 } from "@/lib/ai/chat/document-review";
 import {
   rehydrateDocumentReviewIfCoverageUnchanged,
   retrievalPolicyAfterCoverageDelta,
 } from "@/lib/ai/chat/document-review-rehydrate";
-import {
-  createSearchGate,
-  documentAskUserDirective,
-  searchLoopDirective,
-  withoutAskUserTool,
-  withoutSearchTool,
-} from "@/lib/ai/chat/search-loop";
+import { createSearchGate } from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
-import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
+import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   captureChatAssistantFailure,
@@ -161,7 +145,12 @@ import {
   remainingChatAbortMs,
   scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
-import { tableEditLoopDirective } from "@/lib/ai/chat/table-edit-loop";
+import { prepareReportChatStep, lastStartNeedsAttachmentScope } from "@/lib/ai/chat/step-policy";
+import { assembleChatTurnPlan } from "@/lib/ai/chat/turn-plan";
+import {
+  renderPlaceholderFillEvidence,
+} from "@/lib/ai/chat/placeholder-fill";
+import { searchPlaceholderFill } from "@/lib/ai/chat/placeholder-fill-search";
 import {
   advertisedChatToolNames,
   withUnsupportedChatToolFallback,
@@ -253,8 +242,6 @@ async function handleChatPost(
   const workspaceChrome: WorkspaceChrome = isWorkspaceChrome(body.workspaceChrome)
     ? body.workspaceChrome
     : "document";
-  const editPolicy = deriveChatEditPolicy({ workspaceChrome, canEdit });
-  const turnEdits: TurnEditItem[] = [];
 
   // Resolve the session (create one if the client didn't supply a valid id).
   let existingPlan: ChatPendingPlan | null = null;
@@ -420,15 +407,21 @@ async function handleChatPost(
     });
   }
 
-  const retrievalDecision = classifyRetrievalPolicy({
+  const turnPlan = assembleChatTurnPlan({
     userText,
-    recentUserTexts: recentUserMessageTexts(messages),
+    userIntent,
     sectionScope,
     documentType: report.documentType,
+    recentUserTexts: recentUserMessageTexts(messages),
     mentionedPageCount,
     totalReadyPages,
     hasDocuments: documents.length > 0,
+    sections: mergedSections,
   });
+  const retrievalDecision = {
+    policy: turnPlan.retrievalPolicy,
+    reason: turnPlan.retrievalReason,
+  };
   const documentReview = new DocumentReviewSession();
   const pushback = isRetrievalPushback(userText);
   const coverageObjective = planCoverageObjective(pendingPlan, userText, {
@@ -453,18 +446,15 @@ async function handleChatPost(
         )
       : sectionScope && sectionScope !== "all"
         ? [sectionScope]
-        : (() => {
-            const detected = detectSectionIntentFromText(
-              userText,
-              report.documentType
-            );
-            return detected ? [detected] : [];
-          })();
+        : turnPlan.sectionIntent
+          ? [turnPlan.sectionIntent]
+          : [];
   const needsInventoryReview = inScopeEmptyInventoryNeedsReview({
     documentType: report.documentType,
     sections: mergedSections,
     sectionKeys: inventoryTurnSections,
     finishedCoverageKey: documentReview.finishedCoverageKey(),
+    inventoryFinishSatisfiesDraft: documentReview.inventoryFinishSatisfiesDraft(),
   });
   // Coverage growth or explicit pushback can start a fresh comprehensive walk.
   // Queued ELR inventory and empty inventory fills keep comprehensive so a
@@ -483,13 +473,7 @@ async function handleChatPost(
     policy: retrievalPolicy,
   };
 
-  const alreadyDrafted = detectAlreadyDraftedSection({
-    userText,
-    userIntentKind: userIntent.kind,
-    sectionScope,
-    documentType: report.documentType,
-    sections: mergedSections,
-  });
+  const alreadyDrafted = turnPlan.alreadyDrafted;
   const alreadyDraftedGapHintsForPrompt = alreadyDrafted
     ? alreadyDraftedGapHints(alreadyDrafted.section, evaluations)
     : undefined;
@@ -522,7 +506,18 @@ async function handleChatPost(
     analyticsPlots: analytics?.analyses ?? [],
   });
 
-  const autoEvidenceBlock =
+  const placeholderFill =
+    retrieval.policy === "adaptive" &&
+    retrieval.reason === "placeholder_fill" &&
+    documents.length > 0
+      ? await searchPlaceholderFill({
+          reportId,
+          sections: mergedSections,
+          attachmentIds:
+            pinnedAttachmentIds.length > 0 ? pinnedAttachmentIds : undefined,
+        })
+      : { queries: [], hits: [] };
+  const focusedEvidence =
     retrieval.policy === "focused" && userIntent.kind !== "social"
       ? await buildAutoEvidence({
     reportId,
@@ -542,6 +537,12 @@ async function handleChatPost(
     hasDocuments: documents.length > 0,
   })
     : "";
+  const autoEvidenceBlock = [
+    focusedEvidence,
+    renderPlaceholderFillEvidence(placeholderFill.hits),
+  ]
+    .filter((block) => block.trim().length > 0)
+    .join("\n\n");
 
   const system = buildChatSystemPrompt({
     contextMap,
@@ -554,7 +555,6 @@ async function handleChatPost(
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
-    editPolicy,
     intent: userIntent.kind,
     switchToAnalytics,
     pendingPlan,
@@ -572,13 +572,19 @@ async function handleChatPost(
     retrievalPolicy: retrieval.policy,
     documentReview,
     messages,
-    editPolicy,
-    turnEdits,
     reviewCoverageObjective: coverageObjective,
     searchGate,
     reviewContinueBudgetMs: reviewContinueBudgetMs(
       remainingChatAbortMs(turnStartedAtMs)
     ),
+    seedCitationHits: placeholderFill.hits.map((hit) => ({
+      filename: hit.filename,
+      pageNumber: hit.pageNumber,
+      attachmentId: hit.attachmentId,
+      quote: hit.quote || hit.text,
+      citationId: hit.citationId,
+      sourceSha256: hit.sourceSha256,
+    })),
   });
   const scopedTools: ToolSet =
     mode === "plan"
@@ -668,90 +674,38 @@ async function handleChatPost(
         if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
         return isAssistantTurnCancelRequested(sessionId);
       },
-      prepareStep: ({ steps }) => {
-        if (userIntent.kind === "social") {
-          return { activeTools: [] };
-        }
-        const tableEditDirective = tableEditLoopDirective(steps);
-        if (tableEditDirective === "finish") {
-          // Force a plain-language explanation after the second failed table
-          // edit instead of allowing a costly retry loop.
-          return { activeTools: [] };
-        }
-        if (tableEditDirective === "reread" && tools.read_section) {
-          return {
-            activeTools: ["read_section"],
-            toolChoice: { type: "tool", toolName: "read_section" },
-          };
-        }
-
-        const alreadyDraftedActive = alreadyDrafted != null;
-        const alreadyDraftedStep = alreadyDraftedReadStep({
-          stepsTaken: steps.length,
-          alreadyDrafted: alreadyDraftedActive,
-          hasReadSectionTool: Boolean(tools.read_section),
-        });
-        if (alreadyDraftedStep) return alreadyDraftedStep;
-
-        const schemaStep = tableSchemaReadStep({
-          stepsTaken: steps.length,
-          isWrite: userIntent.kind === "write",
+      prepareStep: ({ steps, messages }) => {
+        const decision = prepareReportChatStep({
+          advertisedTools,
+          steps,
+          userIntentKind: userIntent.kind,
+          alreadyDrafted: alreadyDrafted != null,
           hasReadSectionTool: Boolean(tools.read_section),
           inScopeHasTable: chatSectionsInScope(
             sectionScope ?? "all",
             report.documentType
           ).some((section) => sectionHasTable(mergedSections[section], section)),
+          retrievalPolicy: retrieval.policy,
+          reviewPhase: documentReview.phase(),
+          requireInventoryReview:
+            alreadyDrafted != null
+              ? false
+              : inScopeEmptyInventoryNeedsReview({
+                  documentType: report.documentType,
+                  sections: mergedSections,
+                  sectionKeys: inventoryTurnSections,
+                  finishedCoverageKey: documentReview.finishedCoverageKey(),
+                  inventoryFinishSatisfiesDraft:
+                    documentReview.inventoryFinishSatisfiesDraft(),
+                }),
+          searchGate,
+          forceListAttachments: lastStartNeedsAttachmentScope(steps),
+          forceFinishReview:
+            reviewContinueBudgetMs(remainingChatAbortMs(turnStartedAtMs)) === 0,
         });
-        if (schemaStep) return schemaStep;
-
-        const prepared = prepareDocumentReviewStep({
-          policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
-          phase: documentReview.phase(),
-          availableTools: advertisedTools,
-          // Recompute from the live session. A stale request-start flag
-          // would force another walk after finish while the table is still empty.
-          requireInventoryReview: alreadyDraftedActive
-            ? false
-            : inScopeEmptyInventoryNeedsReview({
-                documentType: report.documentType,
-                sections: mergedSections,
-                sectionKeys: inventoryTurnSections,
-                finishedCoverageKey: documentReview.finishedCoverageKey(),
-              }),
-        });
-        const reviewPhase = documentReview.phase();
-        const reviewActive =
-          reviewPhase === "in_progress" || reviewPhase === "ready_to_finish";
-        const searchDirective = searchLoopDirective(steps);
-        if (searchDirective === "read") {
-          searchGate.closed = true;
-        }
-        const hideAskUser =
-          !reviewActive && documentAskUserDirective(steps) === "hide";
-        const applyLoopHides = (tools: readonly string[]): string[] => {
-          let next = [...tools];
-          if (!reviewActive && searchDirective === "read") {
-            next = withoutSearchTool(next);
-          }
-          if (hideAskUser) {
-            next = withoutAskUserTool(next);
-          }
-          return next;
-        };
-        if (!prepared) {
-          let activeTools = applyLoopHides(advertisedTools);
-          if (alreadyDraftedActive) {
-            activeTools = withoutDraftFieldTools(activeTools);
-          }
-          return { activeTools };
-        }
-        let activeTools = alreadyDraftedActive
-          ? withoutDraftFieldTools(prepared.activeTools)
-          : prepared.activeTools;
-        activeTools = applyLoopHides(activeTools);
         return {
-          activeTools,
-          ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+          ...decision,
+          messages: compactInTurnModelMessages(messages),
         };
       },
       abortSignal: turnAbort.signal,
@@ -974,19 +928,13 @@ async function handleChatPost(
         });
       }
       try {
-        const changeItems = turnEdits.map((item) => ({
-          section: item.section,
-          targetField: item.targetField,
-          reasoning: item.reasoning,
-        }));
+        const live = livePlanProgressFromParts(persisted.parts);
         const advanced =
           mode === "agent" && pendingPlan && !pendingPlan.paused
             ? advancePlanAfterTurn({
                 plan: pendingPlan,
                 documentType: report.documentType,
-                draftedSectionKeys: [
-                  ...new Set(turnEdits.map((item) => item.section)),
-                ],
+                draftedSectionKeys: live.draftedSectionKeys,
                 parts: persisted.parts,
               })
             : null;
@@ -1000,56 +948,23 @@ async function handleChatPost(
             console.error("chat: failed to save pending plan", err);
           }
         }
-        const assistantMetadata = (changeSummary?: {
-          items: typeof changeItems;
-          revisionNo?: number;
-        }) =>
+        const assistantMetadata = () =>
           chatAssistantTurnMetadata({
             pace,
             mode,
             promptVersion: CHAT_PROMPT_VERSION,
             chatTarget: "report",
             switchToAnalytics,
-            changeSummary,
             continuation: advanced?.continuation ?? undefined,
           });
-        const [inserted] = await db
-          .insert(chatMessages)
-          .values({
-            reportId,
-            sessionId,
-            role: "assistant",
-            parts: persisted.parts,
-            metadata: assistantMetadata(
-              changeItems.length > 0 ? { items: changeItems } : undefined
-            ),
-            authorId: null,
-          })
-          .returning({ id: chatMessages.id });
-
-        if (changeItems.length > 0 && inserted) {
-          try {
-            const revision = await snapshotDocumentRevision({
-              reportId,
-              documentType: report.documentType,
-              summary: engineerFacingHistorySummary(changeItems),
-              createdBy: user.id,
-              chatSessionId: sessionId,
-              chatMessageId: inserted.id,
-            });
-            await db
-              .update(chatMessages)
-              .set({
-                metadata: assistantMetadata({
-                  items: changeItems,
-                  revisionNo: revision.revisionNo,
-                }),
-              })
-              .where(eq(chatMessages.id, inserted.id));
-          } catch (err) {
-            console.error("chat: failed to snapshot document revision", err);
-          }
-        }
+        await db.insert(chatMessages).values({
+          reportId,
+          sessionId,
+          role: "assistant",
+          parts: persisted.parts,
+          metadata: assistantMetadata(),
+          authorId: null,
+        });
         await touchChatSession(sessionId, null);
       } catch (err) {
         // The reply already streamed to the client, so we can only log here —

@@ -13,6 +13,17 @@ function ledgerWithSearchHit(filename: string, page: number, id = "att-1") {
 }
 
 describe("CitationPageLedger", () => {
+  it("keeps the longer quote when the same page is recorded twice", () => {
+    const ledger = new CitationPageLedger();
+    ledger.record("PQR.pdf", 21, "att-pqr", { quote: "Media fill" });
+    ledger.record("PQR.pdf", 21, "att-pqr", {
+      quote: "Media fill MF-24-PR-001 on 15/07/2024 fill volume 15,000",
+    });
+    expect(
+      ledger.recordedPages().find((page) => page.pageNumber === 21)?.quote
+    ).toContain("MF-24-PR-001");
+  });
+
   it("seeds pages from a prior search_documents tool result", () => {
     const messages: UIMessage[] = [
       {

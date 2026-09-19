@@ -257,12 +257,20 @@ export function groundTableOperation(input: {
   };
 }
 
+export type UnsupportedFactsRepairHit = {
+  filename: string;
+  pageNumber: number;
+  quote: string;
+  citation: string;
+};
+
 export type UnsupportedFactsToolResult = {
   status: "unsupported_facts";
   keepSearchOpen: true;
   message: string;
   unsupported: Array<{ text: string; kind: HardFactKind; placeholder: string }>;
   draftWithPlaceholders: string;
+  repairHits?: UnsupportedFactsRepairHit[];
 };
 
 export const GATED_FACT_PLACEHOLDERS = [
@@ -296,6 +304,7 @@ export function unsupportedFactsToolResult(input: {
   unsupported: readonly HardFact[];
   draftWithPlaceholders: string;
   message?: string;
+  repairHits?: UnsupportedFactsRepairHit[];
 }): UnsupportedFactsToolResult {
   return {
     status: "unsupported_facts",
@@ -307,5 +316,8 @@ export function unsupportedFactsToolResult(input: {
       placeholder: placeholderForFactKind(fact.kind),
     })),
     draftWithPlaceholders: input.draftWithPlaceholders,
+    ...(input.repairHits && input.repairHits.length > 0
+      ? { repairHits: input.repairHits }
+      : {}),
   };
 }

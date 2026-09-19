@@ -44,14 +44,13 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0]?.kind).toBe("activity");
     if (blocks[0]?.kind !== "activity") return;
     expect(blocks[0].node.kind).toBe("documents");
-    expect(blocks[0].node.label).toBe("Read Protocol.pdf");
+    expect(blocks[0].node.label).toBe("Read Protocol.pdf · pages 3–4");
     expect(blocks[0].node.expandable).toBe(true);
-    expect(blocks[0].node.children).toHaveLength(3);
+    expect(blocks[0].node.children).toHaveLength(2);
     expect(blocks[0].node.children).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: "Searched Protocol.pdf" }),
-        expect.objectContaining({ label: "Read Protocol.pdf · page 3" }),
-        expect.objectContaining({ label: "Read Protocol.pdf · page 4" }),
+        expect.objectContaining({ label: "Read Protocol.pdf · pages 3–4" }),
       ])
     );
   });
@@ -88,7 +87,8 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks).toHaveLength(1);
     if (blocks[0]?.kind !== "activity") return;
     expect(blocks[0].node.pending).toBe(true);
-    expect(blocks[0].node.label).toBe("Reading Protocol.pdf…");
+    expect(blocks[0].node.label).toBe("Reading Protocol.pdf · page 2…");
+    expect(blocks[0].node.expandable).toBe(false);
     expect(blocks[0].node.children[0]).toEqual(
       expect.objectContaining({
         label: "Reading Protocol.pdf · page 2…",
@@ -124,6 +124,85 @@ describe("buildChatActivityBlocks", () => {
         expect.objectContaining({ kind: "detail", label: expect.stringContaining("Read page 8") }),
       ])
     );
+  });
+
+  it("updates one Read chip as more pages of the same PDF stream in", () => {
+    const blocks = buildChatActivityBlocks(
+      [
+        toolPart(
+          "read_document_page",
+          "output-available",
+          { pageNumber: 33, attachmentId: "att_prqr" },
+          { page: { filename: "PRQR-25-PR-005 Report.pdf", pageNumber: 33 } }
+        ),
+        { type: "step-start" },
+        { type: "text", text: "   " },
+        { type: "reasoning", text: "", state: "done" },
+        {
+          type: "reasoning",
+          text: "Reviewing calibration records on the next page.",
+          state: "done",
+        },
+        toolPart(
+          "read_document_page",
+          "output-available",
+          { pageNumber: 34, attachmentId: "att_prqr" },
+          { page: { filename: "PRQR-25-PR-005 Report.pdf", pageNumber: 34 } }
+        ),
+        { type: "step-start" },
+        toolPart(
+          "read_document_page",
+          "input-available",
+          { pageNumber: 35, attachmentId: "att_prqr" }
+        ),
+      ] as never,
+      new Map([["att_prqr", "PRQR-25-PR-005 Report.pdf"]])
+    );
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.kind).toBe("documents");
+    expect(blocks[0].node.pending).toBe(true);
+    expect(blocks[0].node.label).toBe(
+      "Reading PRQR-25-PR-005 Report.pdf · pages 33–35…"
+    );
+    expect(blocks[0].node.expandable).toBe(true);
+    const pageReads = blocks[0].node.children.filter(
+      (child) => child.kind === "detail"
+    );
+    expect(pageReads).toHaveLength(1);
+    expect(pageReads[0]).toEqual(
+      expect.objectContaining({
+        label: "Reading PRQR-25-PR-005 Report.pdf · pages 33–35…",
+      })
+    );
+  });
+
+  it("keeps a separate Read chip when a later page is a different PDF", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart(
+        "read_document_page",
+        "output-available",
+        { pageNumber: 1, attachmentId: "att_a" },
+        { page: { filename: "Protocol.pdf", pageNumber: 1 } }
+      ),
+      toolPart(
+        "read_document_page",
+        "output-available",
+        { pageNumber: 2, attachmentId: "att_b" },
+        { page: { filename: "COA.pdf", pageNumber: 2 } }
+      ),
+    ] as never);
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.label).toBe("Read Protocol.pdf and COA.pdf");
+    expect(
+      blocks[0].node.children.filter((child) => child.kind === "detail")
+    ).toEqual([
+      expect.objectContaining({ label: "Read Protocol.pdf · page 1" }),
+      expect.objectContaining({ label: "Read COA.pdf · page 2" }),
+    ]);
   });
 
   it("shows a standalone thought line outside document groups", () => {

@@ -441,8 +441,8 @@ export function ElrSystemTrendsEditor() {
       section="elr_system_trends"
       narrativeLabel="System-level assessment"
       tableLabel={ELR_TABLE_CAPTION_TITLES.elr_system_trends}
-      narrativePlaceholder="Identify recurring themes that cut across sections — the same sensor, a PM alarm that is out of sync, a part that keeps failing. State downtime, uptime or availability for the period. Carry each theme that needs action into the risk-actions table."
-      hint="This is a synthesis over the evidence sections, not a new inventory of records."
+      narrativePlaceholder="The table recaps 3.1–3.14 and 4.0 (skip Purpose and Scope). The narrative then names recurring themes that cut across those rows, and states downtime, uptime or availability for the period. Carry each theme that needs action into the risk-actions table."
+      hint="Fill every seeded section row. Nil events still get a short recap (none this period), not a blank summary."
     />
   );
 }
@@ -541,7 +541,7 @@ export function ElrConclusionEditor() {
         section={section}
         contentPath="narrative"
         label="Summary and conclusion"
-        placeholder="State whether the equipment remains in its qualified state for this container format, on the basis of the evidence sections above."
+        placeholder="Bullet each previous section (3.1–3.14, 4.0, 5.1, 5.2 — Purpose and Scope may be omitted), then state whether the equipment remains in its qualified state for this container format."
         className="grid gap-2"
         value={content.narrative}
         onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}
@@ -574,7 +574,7 @@ export function ElrConclusionEditor() {
         section={section}
         contentPath="recommendationNarrative"
         label="Justification"
-        placeholder="Justify the recommendation, and specify it here when Other is selected."
+        placeholder="Name calendar dates (next PRQ due, 5.2 target dates) and how often each follow-up runs (annual PRQ, PM interval, CAPA check). Continue still needs the next PRQ date and review frequency — not 'soon' or 'as required'."
         className="grid gap-2"
         value={content.recommendationNarrative}
         onChange={(doc) =>

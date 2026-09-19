@@ -178,4 +178,28 @@ describe("summarizeDocumentReviewProgress", () => {
       "Planning a complete review of 40 pages in a.pdf and 2 more files…"
     );
   });
+
+  it("names queued files, not the first vault file, on the planning chip", () => {
+    const snapshot = summarizeDocumentReviewProgress([
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: {
+          status: "started",
+          totalPages: 3,
+          documents: [
+            {
+              filename: "PRQR-25-PR-005 Report.pdf",
+              attachmentId: "prqr",
+            },
+          ],
+        },
+      },
+    ]);
+    expect(snapshot?.label).toBe(
+      "Planning a complete review of 3 pages in PRQR-25-PR-005 Report.pdf…"
+    );
+    expect(snapshot?.label).not.toContain("Calibration Planner");
+    expect(snapshot?.label).not.toContain("more files");
+  });
 });

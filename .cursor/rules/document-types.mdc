@@ -40,7 +40,10 @@ const sections = getWorkspaceSections(report.documentType);
   `src/lib/ai/chat/fields.ts`. Do not reuse investigation field maps on DV.
   Title-page identity that chat needs (ELR `formatScope`) is
   `chat.contextIdentity` on the type — do not hardcode metadata keys in
-  `context-map.ts`.
+  `context-map.ts`. MJ ELR remaining-section stays incomplete until the
+  assessment names a count (`elrPlanRequiredFields`); investigation / DV
+  keys never match. `overallGrade` / `recommendation` are stored enums
+  (`coerceElrEnumDraft`) — do not persist UI labels.
 - Document-chat empty-state chips: `chat.examplePrompts` on the type (Ask vs
   Agent). Name that template's sections (`Purpose & Scope`, `Objective`, …).
   Do not hardcode Define / Analyze in `ChatPanel`.

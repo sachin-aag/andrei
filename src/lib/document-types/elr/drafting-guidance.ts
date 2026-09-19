@@ -47,6 +47,26 @@ Identity (equipment name, equipment ID, associated system, container format,
 period, cycle number, last/next PRQ) lives in report metadata, not in a drafted
 section. The approval block is a printed placeholder — never invent signatures.
 
+## Equipment description — product-contact MOC
+
+Material of construction (MOC) of product-contact / wetted parts belongs in
+Equipment description (\`elr_system_description\`) **only when the equipment, or
+a named station on it, touches the product**.
+
+- **Needed** — primary packaging / product-contact: filling, stoppering,
+  sealing, hoppers, filling needles, product-contact pumps and tubing. Quote
+  the MOC from the URS / DQ / equipment spec (typically SS 316L, PTFE,
+  silicone). Cite the page. Do not invent a grade.
+- **Not needed** — secondary packaging (cartoning, labelling, leaflet
+  insertion, inspection of already-packed units) and tertiary (case packing,
+  palletizing, stretch wrapping). Do not pad those descriptions with SS 316L
+  or a "MOC: N/A" line. Frame steel is not a lifecycle-review fact.
+- A mixed line: name MOC only for the product-contact stations (the filler,
+  the stoppering head), not for a tray loader or cartoner that shares the
+  line.
+- This is **not** SLIA Direct / Indirect / No Impact. Direct Impact does not
+  by itself require MOC.
+
 ## Re-qualification: two different documents
 
 - **Periodic Re-Qualification** (PRQP protocol / PRQR report, §7.17) — the
@@ -83,13 +103,21 @@ system validation SOP/DP/QA/015, alarm categorization SOP/DP/QA/036.
 Qualification discrepancies are raised on form SOP/DP/QA/014/F14 and graded
 Minor / Major / Critical (§7.14.3).
 
-## Period rules — different sections cover different windows
+## Period rules — Indian financial year
+
+The ELR period is always **1 April to 31 March of the following year**
+(Indian FY). Never copy a 3-month SCADA alarm-trend window, a PRQR
+execution span, or an August–July rolling year. Prefer the title-page
+dates when they already are 1 April–31 March; otherwise infer the FY from
+periodFrom, last PRQ date, or document FY digits (\`PRQR-25\` → April 2025–
+March 2026).
 
 - Qualification history (elr_qualification): **cumulative**, the whole life of
   the equipment. No date cut-off.
 - QMS records (elr_qms): from the **completion date of the last PRQ** to the
-  ELR cut-off. Not the rolling window.
-- Everything else: the rolling ELR period on the title page.
+  ELR cut-off (31 March of that FY). Not a quarter.
+- Everything else, including monitoring **Period Covered**: that FY window
+  (1 April–31 March).
 
 Open or unresolved items carry forward regardless of date.
 
@@ -135,6 +163,8 @@ These pairings are checked. Draft them consistently:
 - An audit trail anomaly (Y) must carry a deviation reference.
 - A computerized system changed since the last PRQ (Y) must carry a change
   control reference.
+- A computerized system's Revalidation Due Date that has passed must be
+  named in the assessment as overdue.
 - A QMS record marked as affecting the qualified state (Y) must be referenced
   in the qualification history.
 
@@ -144,19 +174,66 @@ Write a brief assessment in the section's \`narrative\` field, above the table,
 and refer to it with \`[[table]]\` (never type "Table N" or copy tableNumber).
 Do not recap that the section was reviewed. Reason from the rows:
 
-- Counts (how many events, which codes, how many repeats).
+- Counts (how many events, which codes, how many repeats). A digit is required
+  whenever the table has rows — "records were reviewed" is a fail.
 - What happened.
-- Implication for the qualified state.
+- Implication for the qualified state (does it still hold).
 - What was done (CA / CAPA / deviation / change control).
-- Whether product was scrapped or runtime was lost.
+- Closer: product scrap / batch loss, and runtime / downtime hours. Name them
+  even when the answer is none, if the rows recorded events. One media-fill
+  APS still needs that closer — n=1 is not a skip.
 
 Suggest only actions that follow from these rows. If the table is empty, say
-none occurred. The assessment is the quality of the report — a cheerful recap
-of a noisy table is a failure.
+none occurred — do **not** insert a Nil / None / NA / "nothing happened" row.
+Those cells fail the document-reference check. Omit the row.
+
+Do not fill Result or Status with Pass or Closed as a stand-in for a
+certificate you have not read. Leave the cell or skip the row until that page
+is read.
+
+Monitoring (elr_monitoring): one row per Grade A / environmental **method**
+(non-viable particles, active viable air, settle plate, surface and glove,
+differential pressure, LAF / air velocity). Do not merge methods into one
+"viable" row. After those method rows, also include compact process-alarm
+rows from the alarm-trend report (Nitrogen, compressed air, and other SCADA
+codes with occurrence counts, Direct Impact, CAPA). Period Covered on every
+row is the Indian FY (1 April–31 March), not the alarm-trend PDF's quarter.
+The assessment interprets excursion counts **and** this period's alarm
+picture (top codes, DI, CAPA, lost runtime). Alarm Trends (elr_alarms) still
+gets the full alarm matrix and 3.11.1 trend — monitoring does not replace it.
+Queue PRQR method pages **and** the alarm-trend PDF on the monitoring walk;
+skipping the alarm-trend file is not finished coverage.
+
+QMS: if a record is still open at the ELR cut-off, say so in the assessment
+(status cell alone is not enough).
+
+Preventive maintenance: when a PM is delayed or a failure mode repeats, say
+whether the checklist needs revision — not only that the date slipped.
+
+Computerized system validation (elr_csv_status): every system row carries
+Last Validation / Revalidation Date **and** Revalidation Due Date. The
+assessment names the due date and whether it is current, overdue, or due
+within the window — not only that the last review was performed.
 
 Responsibilities: the table is a seeded matrix. Fill it with edit_cells /
 insert_rows (do not create_table a second grid). In the same turn, draft a short
 narrative that summarises who does what and uses \`[[table]]\`.
+
+## Same-turn siblings
+
+An evidence section is not drafted after the table alone. In the **same turn**
+as edit_table, draft \`narrative\` (the assessment with a count). Remaining-section
+must not advance on a filled table with an empty assessment.
+
+- Breakdowns and alarms also draft \`trend\` in that turn (failure-mode grouping /
+  whether the trended alarm set is still appropriate). Trend is not a substitute
+  for the assessment.
+- \`elr_risk_actions\`: draft \`overallGrade\` in the same turn (\`low\` / \`medium\` /
+  \`high\` — the stored enum, not "Low risk").
+- \`elr_conclusion\`: draft a bulleted recap in \`narrative\` (3.1–3.14, 4.0, 5.1, 5.2), \`recommendation\`, and a dated \`recommendationNarrative\` in the same turn
+  (\`continue\` / \`early_requalification\` / \`capa\` / \`other\`). The 6.0
+  sentence names calendar dates and how often each follow-up runs. Do not put
+  the enum's label into \`recommendation\` as free text.
 
 ## Table numbers
 
@@ -186,12 +263,22 @@ periodic verification this period (last review, admin recertification).
 
 ## System trends
 
-\`elr_system_trends\` is a synthesis over the evidence sections, not a new
-inventory. Look for themes that cut across sections: the same sensor causing
-breakdowns and Direct Impact alarms; PM that is out of sync with the failure
-mode; a part that recurrently malfunctions. State downtime, uptime or
-availability for the period from the breakdown hours. Carry each theme that
-needs action into the risk-actions table via the Risk ID column.
+\`elr_system_trends\` (5.1) is a recap table of every previous Observations
+subsection and Discrepancy, then a short narrative of what cuts across them.
+
+- The seeded table already has one row per section: 3.1–3.14 and 4.0. Skip
+  Purpose (1.0) and Scope (2.0). Do not delete those rows. Fill \`Summary\`
+  with \`edit_cells\` — a sentence of what that section found. Nil events still
+  get a recap ("none this period"), not a blank cell.
+- 3.9.1 / 3.11.1 stay inside the 3.9 / 3.11 rows; do not add extra rows for
+  those sub-headings.
+- Trend / impact / Risk ID stay on the row so 5.2 can carry actions. Use
+  \`none\` when there is no trend.
+- The narrative is not another copy of the table. Name recurring themes that
+  cut across sections (the same sensor, a PM alarm out of sync with the
+  failure mode, a part that recurrently malfunctions). State downtime, uptime
+  or availability for the period from the breakdown hours. If nothing cut
+  across, say so.
 
 ## Risk assessment and actions
 
@@ -199,15 +286,40 @@ needs action into the risk-actions table via the Risk ID column.
 Prioritize by occurrence, frequency and severity. Product scrap and lost
 runtime are High. Each action must be a specific, owned, dated step (raise a
 CAPA, revise a PM checklist, file a change control) — not "monitor closely".
-Around ten actions is a working size; do not list every event. Select an
-overall report risk grade (Low / Medium / High) that matches the highest-priority
-rows.
+Around ten actions is a working size; do not list every event.
+
+\`overallGrade\` is the stored enum \`low\` | \`medium\` | \`high\`. It is
+max(highest row priority, downtime/scrap floor): any recorded downtime hours
+floor Medium; scrap or ≥8 h downtime floor High. Do not select Low over a
+Medium/High row or over downtime.
 
 ## Conclusion
 
-State whether the equipment remains in its qualified state for this container
+\`elr_conclusion\` (5.3) opens with a **bulleted list** recapping each previous
+section: 3.1–3.14, 4.0 Discrepancy, 5.1 System Trends, and 5.2 Risk
+Assessment. Skip Purpose and Scope. Each bullet names the section number and
+summarises what it found (including "none this period"). After the list,
+state whether the equipment remains in its qualified state for this container
 format. Where a section carries an unresolved finding, the recommendation has
 to account for it — do not conclude "no action required" over an open gap.
+
+\`recommendation\` must be exactly \`continue\` | \`early_requalification\` |
+\`capa\` | \`other\`. Put the decision in \`recommendationNarrative\` (6.0):
+
+- Name **calendar dates**, not "soon" / "as required" / "periodically".
+  Use the title-page next PRQ due date, any 5.2 Target date, and
+  revalidation / calibration / PM due dates that drive the choice.
+- Name **how often** each follow-up runs: annual (or VMP) PRQ cycle, ELR
+  frequency, PM interval, monitoring cadence, CAPA effectiveness check
+  (monthly / quarterly until closed).
+- Continue with no new action still names the next scheduled PRQ date and
+  that review frequency so "no action" is bounded in time.
+- Early re-qualification names the target date the event-triggered protocol
+  should complete (pulled forward from the next scheduled PRQ).
+- CAPA names the action, owner, target date from 5.2, and how often
+  effectiveness is checked.
+
+"Remain in qualified state" is not a valid \`recommendation\` value.
 
 ## Limits and counts
 
@@ -243,7 +355,10 @@ grep for the procedure language instead. Full-document review is for the
 inventory tables (qualification history, monitoring, calibration, QMS, alarms,
 CSV). An empty inventory table (header-only seeded grid) is not draftable
 until that section's review has finished — a finished qualification walk does
-not unlock Associated Instruments. Attachment cover sheets
+not unlock Associated Instruments. A floor-8 finish that skipped selected
+documents (CSV-OQ / RTM headers while the PRQR was skipped) is not finished
+coverage: start_document_review again so the PRQR / method pages are queued.
+Attachment cover sheets
 (ATTACHMENT NO. / "CALIBRATION CERTIFICATE OF …") are locators: read the
 following pages, then fill the seeded matrix with edit_cells / insert_rows.
 Do not rewrite the table with draft_field. recommendedInventory is for

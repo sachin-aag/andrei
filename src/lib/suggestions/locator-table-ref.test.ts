@@ -253,4 +253,32 @@ describe("locator — tableRef atoms", () => {
       status: "accepted",
     });
   });
+
+  it("keeps bold SOP ids and a bold Table N ref after apply and accept", () => {
+    const empty: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph" }],
+    };
+    const preview = applyEditToRichDoc(
+      empty,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText:
+          "pursuant to **SOP/DP/QA/007** as detailed in **Table 9** [[table]].",
+      },
+      ATTRS
+    );
+    expect(preview.status).toBe("append");
+    const accepted = acceptSuggestionMarksById(preview.doc, ATTRS.id);
+    const inline = accepted.content![0]!.content ?? [];
+    const sop = inline.find(
+      (node) => node.type === "text" && node.text === "SOP/DP/QA/007"
+    );
+    expect(sop?.marks).toEqual([{ type: "bold" }]);
+    const ref = inline.find((node) => node.type === "tableRef");
+    expect(ref?.marks).toEqual([{ type: "bold" }]);
+    expect(flattenForAnchor(accepted).text).toContain("SOP/DP/QA/007");
+    expect(flattenForAnchor(accepted).text).toContain("the table");
+  });
 });

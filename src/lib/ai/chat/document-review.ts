@@ -30,6 +30,8 @@ import {
   coverageKeySatisfiesObjective,
   planReviewPages,
 } from "@/lib/ai/chat/review-page-plan";
+import { inventoryFinishSatisfiesEmptyTable } from "@/lib/ai/chat/pending-plan";
+import { TOOL_RESULT_BUDGET, toolResultBudget } from "@/lib/ai/chat/tool-result-budget";
 
 export { DOCUMENT_REVIEW_TOOL_NAMES, type DocumentReviewToolName };
 export { selectReviewPages } from "@/lib/ai/chat/review-page-plan";
@@ -37,7 +39,7 @@ export { selectReviewPages } from "@/lib/ai/chat/review-page-plan";
 export const REVIEW_TARGET_BATCH_CHARS = 8_000;
 export const REVIEW_MAX_PAGES_PER_BATCH = 6;
 export const REVIEW_DENSE_PAGE_CHARS = 6_000;
-export const REVIEW_PAGE_TEXT_LIMIT = 12_000;
+export const REVIEW_PAGE_TEXT_LIMIT = TOOL_RESULT_BUDGET.pageTranscriptChars;
 /** Safety cap when listing pages so one file cannot starve others. Not a walk cap. */
 export const REVIEW_PAGE_FETCH_CAP = 2500;
 /** In-flight extract calls inside one continue_document_review. */
@@ -52,13 +54,9 @@ export const REVIEW_CONTINUE_BUDGET_MS = 60_000;
 export const REVIEW_CONTINUE_DEADLINE_MARGIN_MS = 20_000;
 
 export function reviewContinueBudgetMs(remainingAbortMs: number): number {
-  return Math.max(
-    1_000,
-    Math.min(
-      REVIEW_CONTINUE_BUDGET_MS,
-      remainingAbortMs - REVIEW_CONTINUE_DEADLINE_MARGIN_MS
-    )
-  );
+  const remaining = remainingAbortMs - REVIEW_CONTINUE_DEADLINE_MARGIN_MS;
+  if (remaining < 1_000) return 0;
+  return Math.min(REVIEW_CONTINUE_BUDGET_MS, remaining);
 }
 /**
  * `finish_document_review` must stay small enough to persist in chat history.
@@ -66,7 +64,7 @@ export function reviewContinueBudgetMs(remainingAbortMs: number): number {
  * sample. A 273-page catalog produced ~1.3k findings / 530KB and the next
  * user turn failed before Gemini started.
  */
-export const REVIEW_FINISH_FINDINGS_CAP = 60;
+export const REVIEW_FINISH_FINDINGS_CAP = TOOL_RESULT_BUDGET.finishFindings;
 
 export type DocumentReviewPhase =
   | "idle"
@@ -85,7 +83,8 @@ export type DocumentReviewCoverageSource = {
 
 export function documentReviewCoverageKey(
   sources: readonly DocumentReviewCoverageSource[],
-  objective?: string
+  objective?: string,
+  skippedAttachmentIds?: readonly string[]
 ): DocumentReviewCoverageKey {
   const base = sources
     .map((source) => {
@@ -95,7 +94,13 @@ export function documentReviewCoverageKey(
     .sort()
     .join("|");
   const digest = coverageObjectiveDigest(objective ?? "");
-  return digest ? `${base}|obj:${digest}` : base;
+  const skip = [
+    ...new Set(
+      (skippedAttachmentIds ?? []).map((id) => id.trim()).filter(Boolean)
+    ),
+  ].sort();
+  const skipSuffix = skip.length > 0 ? `|skip:${skip.join(",")}` : "";
+  return `${digest ? `${base}|obj:${digest}` : base}${skipSuffix}`;
 }
 
 export function coverageKeysMatch(
@@ -225,6 +230,11 @@ export class DocumentReviewSession {
   private lastRecommended: RecommendedResultsInventory | null = null;
   private lastContinueStartedAt = 0;
   private lastBudgetExhausted = false;
+  private skippedAttachmentIds: string[] = [];
+  private queuedFilenames: string[] = [];
+  private skippedFilenames: string[] = [];
+  private coverageObjective = "";
+  private lastFinishTruncated = false;
 
   constructor(options?: { extractBatch?: ExtractReviewBatchFn }) {
     this.extractBatch = options?.extractBatch ?? extractReviewBatch;
@@ -240,6 +250,22 @@ export class DocumentReviewSession {
 
   finishedCoverageKey(): DocumentReviewCoverageKey | null {
     return this.phaseState === "complete" ? this.coverageKey : null;
+  }
+
+  /**
+   * A matching `|obj:` key from a floor-8 skip (CSV-OQ headers, PRQR not
+   * queued) must not unlock edit_table. Calibration walks that reviewed
+   * well past the floor still satisfy even when other files were skipped.
+   */
+  inventoryFinishSatisfiesDraft(): boolean {
+    if (this.phaseState !== "complete") return false;
+    return inventoryFinishSatisfiesEmptyTable({
+      reviewedPages: this.reviewedPageKeys.size,
+      skippedAttachmentIds: this.skippedAttachmentIds,
+      objective: this.coverageObjective || this.objective,
+      queuedFilenames: this.queuedFilenames,
+      skippedFilenames: this.skippedFilenames,
+    });
   }
 
   /**
@@ -260,6 +286,11 @@ export class DocumentReviewSession {
     this.reviewedPageList = [];
     this.totalPages = 0;
     this.objective = "";
+    this.skippedAttachmentIds = [];
+    this.queuedFilenames = [];
+    this.skippedFilenames = [];
+    this.coverageObjective = "";
+    this.lastFinishTruncated = false;
     this.lastRecommended =
       input.recommendedInventory ?? this.lastRecommended;
   }
@@ -316,6 +347,7 @@ export class DocumentReviewSession {
     const nextObjective = input.coverageObjective ?? input.objective;
     if (
       this.phaseState === "complete" &&
+      !this.lastFinishTruncated &&
       this.coverageKey &&
       coverageKeySatisfiesObjective(this.coverageKey, nextObjective)
     ) {
@@ -366,14 +398,35 @@ export class DocumentReviewSession {
     this.reviewedPageKeys = new Set();
     this.reviewedPageList = [];
     this.totalPages = pages.length;
-    this.coverageKey = documentReviewCoverageKey(
+    const coverageSources =
       input.coverageSources && input.coverageSources.length > 0
         ? input.coverageSources
-        : coverageSourcesFromReviewPages(pages),
-      input.coverageObjective ?? input.objective
+        : coverageSourcesFromReviewPages(pages);
+    const queuedIds = new Set(pages.map((page) => page.attachmentId));
+    this.skippedAttachmentIds = coverageSources
+      .map((source) => source.attachmentId)
+      .filter((id) => id && !queuedIds.has(id));
+    this.coverageObjective = (input.coverageObjective ?? input.objective).trim();
+    this.queuedFilenames = [
+      ...new Set(pages.map((page) => page.filename).filter(Boolean)),
+    ];
+    const skippedIdSet = new Set(this.skippedAttachmentIds);
+    this.skippedFilenames = [
+      ...new Set(
+        input.pages
+          .filter((page) => skippedIdSet.has(page.attachmentId))
+          .map((page) => page.filename)
+          .filter(Boolean)
+      ),
+    ];
+    this.coverageKey = documentReviewCoverageKey(
+      coverageSources,
+      input.coverageObjective ?? input.objective,
+      this.skippedAttachmentIds
     );
     this.findingSeq = 0;
     this.lastRecommended = null;
+    this.lastFinishTruncated = false;
     this.phaseState = this.queue.length === 0 ? "ready_to_finish" : "in_progress";
 
     return {
@@ -510,12 +563,14 @@ export class DocumentReviewSession {
     recommendedInventory: RecommendedResultsInventory;
     conflicts: string[];
     failedPages: DocumentReviewFailedPage[];
+    skippedAttachmentIds: string[];
     coverageSummary: string;
     reviewedEvidence: ReviewedEvidencePage[];
     truncated: boolean;
   } {
     if (this.phaseState === "idle" || this.queue.length > 0) {
       this.lastRecommended = null;
+      this.lastFinishTruncated = true;
       const empty = emptyRecommendedInventory();
       return {
         status: "incomplete",
@@ -532,6 +587,7 @@ export class DocumentReviewSession {
           (page) => `${page.filename} p.${page.pageNumber}: ${page.reason}`
         ),
         failedPages: [...this.failedPages],
+        skippedAttachmentIds: [...this.skippedAttachmentIds],
         coverageSummary: `Review incomplete: ${this.reviewedPageKeys.size}/${this.totalPages} pages, ${this.queue.length} batches remaining.`,
         reviewedEvidence: this.reviewedEvidencePages(),
         truncated: true,
@@ -542,12 +598,21 @@ export class DocumentReviewSession {
     const identifiers = uniqueIdentifiers(this.findings);
     const recommendedInventory = selectRecommendedInventory(this.findings);
     this.lastRecommended = recommendedInventory;
-    const coverageComplete = this.failedPages.length === 0;
+    const truncated =
+      this.skippedAttachmentIds.length > 0 ||
+      this.failedPages.length > 0 ||
+      this.lastBudgetExhausted;
+    const coverageComplete = !truncated;
+    this.lastFinishTruncated = truncated;
     const capped = capFindingsForFinish(compactFindings(this.findings));
     const inventoryNote =
       recommendedInventory.ids.length > 0
         ? ` recommendedInventory ${recommendedInventory.ids.length} (${recommendedInventory.sourceKind}).`
         : " No authoritative executed-test inventory was isolated; do not treat allIdentifiers as matrix rows.";
+    const skipNote =
+      this.skippedAttachmentIds.length > 0
+        ? ` ${this.skippedAttachmentIds.length} selected document(s) were not queued.`
+        : "";
     return {
       status: "complete",
       reviewedPages: this.reviewedPageKeys.size,
@@ -563,11 +628,12 @@ export class DocumentReviewSession {
         (page) => `${page.filename} p.${page.pageNumber}: ${page.reason}`
       ),
       failedPages: [...this.failedPages],
+      skippedAttachmentIds: [...this.skippedAttachmentIds],
       coverageSummary: coverageComplete
         ? `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages; ${this.findings.length} findings (${capped.findings.length} in sample${capped.omitted > 0 ? `, ${capped.omitted} omitted` : ""}); ${identifiers.length} identifiers.${inventoryNote}`
-        : `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages with ${this.failedPages.length} failed page(s); do not claim completeness.${inventoryNote}`,
+        : `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages with ${this.failedPages.length} failed page(s)${skipNote}; do not claim completeness.${inventoryNote}`,
       reviewedEvidence: this.reviewedEvidencePages(),
-      truncated: false,
+      truncated,
     };
   }
 
@@ -747,7 +813,7 @@ export function extractReviewFindingsFromPages(
   const findings: DocumentReviewFinding[] = [];
   let seq = 0;
   for (const page of pages) {
-    const text = page.transcript.slice(0, REVIEW_PAGE_TEXT_LIMIT);
+    const text = toolResultBudget("pageTranscript", page.transcript);
     const identifiers = requirementIds(text);
     const heading =
       derivePageOutlineDigest(text).split(" — ")[0]?.trim() ||
@@ -935,7 +1001,7 @@ async function extractReviewBatchWithLlm(input: {
 }): Promise<DocumentReviewFinding[]> {
   const pageBlock = input.pages
     .map((page) => {
-      const body = page.transcript.slice(0, REVIEW_PAGE_TEXT_LIMIT);
+      const body = toolResultBudget("pageTranscript", page.transcript);
       return `--- ${page.filename} p.${page.pageNumber} ---\n${body}`;
     })
     .join("\n\n");

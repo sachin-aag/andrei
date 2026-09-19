@@ -28,12 +28,12 @@ const {
   listReadyDocumentsForReportMock,
   listDocumentPagesForReviewMock,
   loadDocumentPageEvidenceMock,
+  searchReportDocumentsManyMock,
   listActiveAttachmentsMock,
   listAttachmentFoldersMock,
   dbSelectMock,
   dbInsertMock,
   dbUpdateMock,
-  commitChatEditMock,
   getReportAnalyticsMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
@@ -43,12 +43,12 @@ const {
   loadDocumentPageEvidenceMock: vi.fn(
     async (): Promise<PageEvidenceRow[]> => []
   ),
+  searchReportDocumentsManyMock: vi.fn(async (): Promise<unknown[][]> => []),
   listActiveAttachmentsMock: vi.fn(),
   listAttachmentFoldersMock: vi.fn(),
   dbSelectMock: vi.fn(),
   dbInsertMock: vi.fn(),
   dbUpdateMock: vi.fn(),
-  commitChatEditMock: vi.fn(),
   getReportAnalyticsMock: vi.fn(),
 }));
 
@@ -60,13 +60,6 @@ vi.mock("@/db", () => ({
   },
 }));
 
-vi.mock("@/lib/ai/chat/commit-edit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/ai/chat/commit-edit")>();
-  return {
-    ...actual,
-    commitChatEdit: (...args: unknown[]) => commitChatEditMock(...args),
-  };
-});
 
 vi.mock("@/lib/attachments/list-active", () => ({
   listActiveAttachments: (...args: unknown[]) =>
@@ -96,6 +89,8 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
       listDocumentPagesForReviewMock(...(args as [])),
     loadDocumentPageEvidence: (...args: unknown[]) =>
       loadDocumentPageEvidenceMock(...(args as [])),
+    searchReportDocumentsMany: (...args: unknown[]) =>
+      searchReportDocumentsManyMock(...(args as [])),
   };
 });
 
@@ -342,6 +337,7 @@ describe("buildChatTools search_documents scoping", () => {
       "truncated=true means keep grepping"
     );
     expect(SEARCH_COVERAGE_HINT).not.toContain("If truncated=true, grep again");
+    expect(SEARCH_COVERAGE_HINT).not.toContain("Pass nextExcludePages");
   });
 });
 
@@ -550,9 +546,7 @@ describe("buildChatTools tagged sections", () => {
 
     expect(accepts(tools, "read_section", { section: "control" })).toBe(true);
     expect(tools.read_section?.description).toContain("tagged control");
-    expect(tools.read_section?.description).toContain(
-      "call this FIRST — before search_documents or ask_user"
-    );
+    expect(tools.read_section?.description).toContain("structuredText");
   });
 
   it("does not let a tagged section become editable", () => {
@@ -878,6 +872,8 @@ describe("buildChatTools document review", () => {
     listDocumentPagesForReviewMock.mockReset();
     loadDocumentPageEvidenceMock.mockReset();
     loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    searchReportDocumentsManyMock.mockReset();
+    searchReportDocumentsManyMock.mockResolvedValue([]);
     dbInsertMock.mockReset();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
   });
@@ -1047,6 +1043,11 @@ describe("buildChatTools document review", () => {
       (result as { queuedPages?: number; skippedDocuments?: unknown[] })
         .queuedPages
     ).toBe(1);
+    expect(
+      (result as { documents?: { attachmentId: string }[] }).documents
+    ).toEqual([
+      expect.objectContaining({ attachmentId: "att_prqr" }),
+    ]);
   });
 
   it("walks every ready file for ELR Calibration with the same column filter", async () => {
@@ -1110,6 +1111,72 @@ describe("buildChatTools document review", () => {
     expect(
       (result as { queuedPages?: number }).queuedPages
     ).toBe(1);
+    expect(
+      (result as { documents?: { attachmentId: string }[] }).documents
+    ).toEqual([
+      expect.objectContaining({ attachmentId: "att_cal" }),
+    ]);
+  });
+
+  it("does not page-list a calibration planner during an ELR QMS review", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_planner",
+        filename: "Master Annual Calibration Planner PR.pdf",
+        description: null,
+        pageCount: 231,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        description: null,
+        pageCount: 18,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_prqr",
+        filename: "PRQR-25-PR-005 Report.pdf",
+        pageNumber: 22,
+        transcript:
+          "QMS records Type CAPA Document Reference No. CAPA/25/01 Date Initiated 03/02/2025 Qualification Impact N",
+        pageContext: "QMS since last PRQ",
+        printedPageLabel: "22",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      reviewCoverageObjective: "elr_qms",
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "elr_qms" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_prqr"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      queuedPages: 1,
+      documents: [
+        expect.objectContaining({
+          attachmentId: "att_prqr",
+          filename: "PRQR-25-PR-005 Report.pdf",
+        }),
+      ],
+    });
+    expect(
+      (result as { documents?: { filename: string }[] }).documents?.map(
+        (doc) => doc.filename
+      )
+    ).not.toContain("Master Annual Calibration Planner PR.pdf");
   });
 
   it("asks which attachment to review when several ready documents are untagged", async () => {
@@ -1212,6 +1279,100 @@ describe("buildChatTools document review", () => {
       TEST_TOOL_OPTIONS
     );
     expect(refused).toMatchObject({ status: "use_edit_table" });
+  });
+
+  it("coerces ELR overallGrade and recommendation labels onto stored enums", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-risk",
+                  reportId: "report-1",
+                  section: "elr_risk_actions",
+                  content: {
+                    narrative: { type: "doc", content: [] },
+                    table: { type: "doc", content: [] },
+                    overallGrade: "",
+                  },
+                },
+              ]
+        ),
+      }),
+    }));
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    dbUpdateMock.mockReturnValue({
+      set: () => ({ where: vi.fn().mockResolvedValue([]) }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_risk_actions",
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "elr_risk_actions",
+        targetField: "overallGrade",
+        markdown: "Low risk",
+        reasoning: "Select the overall grade.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(parseAiRedraftCommentContent(inserted[0]?.content ?? "").markdown).toBe(
+      "low"
+    );
+  });
+
+  it("rejects free-text ELR recommendation instead of storing a sentence", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-con",
+                  reportId: "report-1",
+                  section: "elr_conclusion",
+                  content: {
+                    narrative: { type: "doc", content: [] },
+                    recommendation: "",
+                    recommendationNarrative: { type: "doc", content: [] },
+                  },
+                },
+              ]
+        ),
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "equipment_lifecycle_report",
+      sectionScope: "elr_conclusion",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "elr_conclusion",
+        targetField: "recommendation",
+        markdown: "Remain in qualified state; no further action this cycle.",
+        reasoning: "State the recommendation.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "invalid_value" });
+    expect(String((refused as { message?: string }).message)).toContain(
+      "continue | early_requalification | capa | other"
+    );
   });
 
   it("blocks an empty ELR inventory fill until a matching review has finished", async () => {
@@ -1561,7 +1722,7 @@ function mockDefineSectionSelect(narrative: unknown = DEFINE_NARRATIVE) {
   }));
 }
 
-describe("buildChatTools propose vs commit", () => {
+describe("buildChatTools propose edits", () => {
   const actor = {
     id: "engineer-1",
     name: "Engineer",
@@ -1572,22 +1733,17 @@ describe("buildChatTools propose vs commit", () => {
     dbSelectMock.mockReset();
     dbInsertMock.mockReset();
     dbUpdateMock.mockReset();
-    commitChatEditMock.mockReset();
     getReportAnalyticsMock.mockReset();
     getReportAnalyticsMock.mockResolvedValue(null);
     loadDocumentPageEvidenceMock.mockReset();
     loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    searchReportDocumentsManyMock.mockReset();
+    searchReportDocumentsManyMock.mockResolvedValue([]);
     readDocumentPageMock.mockReset();
     mockDefineSectionSelect();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
     dbUpdateMock.mockReturnValue({
       set: () => ({ where: vi.fn().mockResolvedValue([]) }),
-    });
-    commitChatEditMock.mockResolvedValue({
-      status: "applied",
-      section: "define",
-      targetField: "narrative",
-      summary: "Name the actual cause.",
     });
   });
 
@@ -1600,12 +1756,11 @@ describe("buildChatTools propose vs commit", () => {
     reasoning: "Name the actual cause.",
   };
 
-  it("inserts an ai_fix comment in propose mode and does not commit", async () => {
+  it("inserts an ai_fix comment and does not write the section", async () => {
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
     expect(result).toMatchObject({
@@ -1614,38 +1769,8 @@ describe("buildChatTools propose vs commit", () => {
       targetField: "narrative",
     });
     expect(dbInsertMock).toHaveBeenCalled();
-    expect(commitChatEditMock).not.toHaveBeenCalled();
   });
 
-  it("commits in agent chrome and never inserts a suggestion comment", async () => {
-    const turnEdits: Array<{
-      section: string;
-      targetField: string;
-      reasoning: string;
-    }> = [];
-    const tools = buildChatTools({
-      reportId: "report-1",
-      canEdit: true,
-      actor,
-      editPolicy: "commit",
-      turnEdits,
-    });
-    const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
-    expect(result).toMatchObject({
-      status: "applied",
-      section: "define",
-      targetField: "narrative",
-    });
-    expect(commitChatEditMock).toHaveBeenCalledTimes(1);
-    expect(dbInsertMock).not.toHaveBeenCalled();
-    expect(turnEdits).toEqual([
-      {
-        section: "define",
-        targetField: "narrative",
-        reasoning: "Name the actual cause.",
-      },
-    ]);
-  });
 
   it("folds a second nearby propose_edit into the same card", async () => {
     const nearbyNarrative =
@@ -1677,7 +1802,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const first = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
     const second = await tools.propose_edit!.execute!(
@@ -1705,7 +1829,6 @@ describe("buildChatTools propose vs commit", () => {
     expect(folded.deleteText).toContain("batch was released");
     expect(folded.insertText).toContain("humidity excursion");
     expect(folded.insertText).toContain("batch remained in quarantine");
-    expect(commitChatEditMock).not.toHaveBeenCalled();
   });
 
   it("keeps distant propose_edit spans as separate cards", async () => {
@@ -1731,7 +1854,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const first = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
     const second = await tools.propose_edit!.execute!(
@@ -1766,7 +1888,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const leadIn = await tools.propose_edit!.execute!(
       {
@@ -1801,7 +1922,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "a1",
@@ -1865,7 +1985,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       unsupportedFactPolicy: "block",
       messages: [
         {
@@ -1926,7 +2045,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       unsupportedFactPolicy: "block",
     });
     const refused = await tools.draft_field!.execute!(
@@ -1959,7 +2077,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       unsupportedFactPolicy: "block",
     });
     const read = await tools.read_document_page!.execute!(
@@ -1978,6 +2095,138 @@ describe("buildChatTools propose vs commit", () => {
     );
     expect(drafted).toMatchObject({ status: "drafted" });
     expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("repairs a blocked identifier by searching the fact onto a new page", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-pqr",
+          filename: "PQR-24-PR-042.pdf",
+          description: null,
+          pageNumber: 21,
+          chunkId: "c1",
+          sourceKind: "hybrid",
+          text: "Media fill MF-24-PR-001 performed 15/07/2024",
+          quote: "Media fill MF-24-PR-001 performed 15/07/2024",
+          citationId: "att:att-pqr:p:21",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: "planner" },
+              output: {
+                results: [
+                  {
+                    filename: "Planner.pdf",
+                    pageNumber: 22,
+                    attachmentId: "att-plan",
+                    quote: "Annual calibration planner EQ-12 Balance",
+                    citationId: "att:att-plan:p:22",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Media fill MF-24-PR-001 [PQR-24-PR-042.pdf, p. 21].",
+        reasoning: "Fill media fill number.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted[0]?.content).toContain("MF-24-PR-001");
+    expect(inserted[0]?.content).not.toContain("<identifier>");
+    expect(searchReportDocumentsManyMock).toHaveBeenCalled();
+  });
+
+  it("refuses leftover MJ placeholders when repair search finds a new page", async () => {
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: "att-plan",
+      filename: "Planner.pdf",
+      pageNumber: 22,
+      transcript: "EQ-12 Balance — see certificate for due date",
+      visualInterpretation: "",
+      pageContext: null,
+    });
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-cert",
+          filename: "Cert.pdf",
+          description: null,
+          pageNumber: 5,
+          chunkId: "c1",
+          sourceKind: "hybrid",
+          text: "EQ-12 due 12/03/2026 certificate 2025/014",
+          quote: "EQ-12 due 12/03/2026 certificate 2025/014",
+          citationId: "att:att-cert:p:5",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: "att-plan", pageNumber: 22 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "EQ-12 due <date> [Planner.pdf, p. 22].",
+        reasoning: "Planner has the ID, not the date.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({
+      status: "unsupported_facts",
+      keepSearchOpen: true,
+    });
+    expect(refused).toMatchObject({
+      repairHits: [
+        expect.objectContaining({
+          filename: "Cert.pdf",
+          pageNumber: 5,
+        }),
+      ],
+    });
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
   it("grounds a date from a reviewed page that was omitted from the findings sample", async () => {
@@ -2002,7 +2251,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       unsupportedFactPolicy: "block",
       messages: [
         {
@@ -2071,7 +2319,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const refused = await tools.draft_field!.execute!(
       {
@@ -2114,7 +2361,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const refused = await tools.draft_field!.execute!(
       {
@@ -2128,7 +2374,6 @@ describe("buildChatTools propose vs commit", () => {
     );
     expect(refused).toMatchObject({ status: "not_a_rewrite" });
     expect(dbInsertMock).not.toHaveBeenCalled();
-    expect(commitChatEditMock).not.toHaveBeenCalled();
   });
 
   it("refuses draft_field that adds a table while keeping the surrounding prose", async () => {
@@ -2142,7 +2387,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const refused = await tools.draft_field!.execute!(
       {
@@ -2169,7 +2413,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.propose_edit!.execute!(
       {
@@ -2227,7 +2470,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.propose_edit!.execute!(
       {
@@ -2251,7 +2493,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2279,7 +2520,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2346,7 +2586,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2405,7 +2644,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2457,7 +2695,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = (await tools.read_section!.execute!(
       { section: "define" },
@@ -2521,7 +2758,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2592,7 +2828,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2621,7 +2856,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -2643,7 +2877,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     await tools.read_section!.execute!(
       { section: "define" },
@@ -2711,7 +2944,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.insert_image!.execute!(
       {
@@ -2765,7 +2997,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.insert_image!.execute!(
       {
@@ -2819,7 +3050,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -2904,7 +3134,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -2979,7 +3208,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3054,7 +3282,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3132,7 +3359,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3197,7 +3423,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3276,7 +3501,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3361,7 +3585,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
       messages: [
         {
           id: "u1",
@@ -3410,7 +3633,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     await tools.propose_edit!.execute!(
       {
@@ -3465,7 +3687,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     await tools.edit_table!.execute!(
       {
@@ -3557,7 +3778,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     await tools.propose_edit!.execute!(
       {
@@ -3639,7 +3859,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
 
     const removeOnce = await tools.remove_image!.execute!(
@@ -3728,7 +3947,6 @@ describe("buildChatTools propose vs commit", () => {
       reportId: "report-1",
       canEdit: true,
       actor,
-      editPolicy: "propose",
     });
     const result = await tools.insert_image!.execute!(
       {

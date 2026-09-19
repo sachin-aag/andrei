@@ -5,12 +5,15 @@ import {
   advancePlanAfterTurn,
   chatPlanProgressView,
   chatUserTurnIsAutoContinue,
+  completedPlanSectionLabel,
   continuationFromMetadata,
   currentPlanTurnSections,
   emptyInventoryNeedsMatchingReview,
+  inventoryFinishSatisfiesEmptyTable,
   isElrInventoryTableField,
   isMultiSectionDraftRequest,
   isPlanResumeRequest,
+  livePlanProgressFromMessages,
   livePlanProgressFromParts,
   parseChatPendingPlan,
   pauseChatPendingPlan,
@@ -55,8 +58,22 @@ describe("multi-section draft detection", () => {
     expect(isMultiSectionDraftRequest("complete the rest of the report")).toBe(
       true
     );
+    expect(
+      isMultiSectionDraftRequest(
+        "go on to monitoring and sections after that"
+      )
+    ).toBe(true);
+    expect(
+      isMultiSectionDraftRequest("go on to monitoring and the rest")
+    ).toBe(true);
     expect(isMultiSectionDraftRequest("Write the Objective")).toBe(false);
     expect(isMultiSectionDraftRequest("draft Purpose")).toBe(false);
+    expect(
+      isMultiSectionDraftRequest(
+        "go on to Qualification and Periodic Re-Qualification History"
+      )
+    ).toBe(false);
+    expect(isMultiSectionDraftRequest("draft first two sections")).toBe(false);
   });
 
   it("treats continue/resume as a plan resume, not a new queue", () => {
@@ -120,6 +137,57 @@ describe("advancePlanAfterTurn", () => {
       total: 3,
     });
     expect(shouldAutoContinuePlan(result.continuation)).toBe(true);
+  });
+
+  it("does not mark an ELR evidence section done after edit_table alone", () => {
+    const started = plan([
+      {
+        sectionKey: "elr_breakdowns",
+        label: "Breakdowns",
+        state: "in_progress",
+      },
+      { sectionKey: "elr_qms", label: "QMS Records", state: "queued" },
+    ]);
+    const parts = [
+      {
+        type: "tool-edit_table",
+        state: "output-available",
+        input: { section: "elr_breakdowns" },
+      },
+    ];
+    const result = advancePlanAfterTurn({
+      plan: started,
+      documentType: "equipment_lifecycle_report",
+      draftedSectionKeys: ["elr_breakdowns"],
+      parts,
+    });
+    expect(result.progressed).toBe(true);
+    expect(result.plan.paused).toBeFalsy();
+    expect(result.plan.items[0]?.state).toBe("in_progress");
+    expect(result.plan.items[1]?.state).toBe("queued");
+    expect(result.continuation?.nextLabel).toBe("Breakdowns");
+    expect(shouldAutoContinuePlan(result.continuation)).toBe(true);
+  });
+
+  it("still marks investigation sections done after a table-only turn", () => {
+    const started = plan([
+      { sectionKey: "define", label: "Define", state: "in_progress" },
+      { sectionKey: "measure", label: "Measure", state: "queued" },
+    ]);
+    const result = advancePlanAfterTurn({
+      plan: started,
+      documentType: "investigation_report",
+      draftedSectionKeys: ["define"],
+      parts: [
+        {
+          type: "tool-edit_table",
+          state: "output-available",
+          input: { section: "define" },
+        },
+      ],
+    });
+    expect(result.plan.items[0]?.state).toBe("done");
+    expect(result.plan.items[1]?.state).toBe("in_progress");
   });
 
   it("keeps an inventory section in progress when only review tools ran", () => {
@@ -247,6 +315,29 @@ describe("resolvePlanAtTurnStart", () => {
     ).toBeNull();
   });
 
+  it("seeds on go-on-and-sections-after phrasing that used to miss", () => {
+    const seeded = resolvePlanAtTurnStart({
+      existing: null,
+      userText: "go on to monitoring and sections after that",
+      autoContinue: false,
+      writeIntent: true,
+      documentType: "equipment_lifecycle_report",
+      sections: {
+        elr_monitoring: EMPTY_ELR_CONTENT.elr_monitoring,
+        elr_calibration: EMPTY_ELR_CONTENT.elr_calibration,
+        elr_preventive_maintenance:
+          EMPTY_ELR_CONTENT.elr_preventive_maintenance,
+      },
+      promptVersion: "chat-v94-section-plan",
+      now: new Date("2026-09-17T04:06:59.000Z"),
+    });
+    expect(seeded?.items.length).toBeGreaterThanOrEqual(2);
+    expect(seeded?.items[0]?.state).toBe("in_progress");
+    expect(seeded?.items.slice(1).every((item) => item.state === "queued")).toBe(
+      true
+    );
+  });
+
   it("pauses an active plan when the engineer types a new prompt", () => {
     const started = plan([
       { sectionKey: "define", label: "Define", state: "in_progress" },
@@ -302,6 +393,20 @@ describe("plan prompt and metadata", () => {
     );
     expect(block).toContain("This turn: **Calibration**");
     expect(block).toContain("Do not start Monitoring");
+    expect(block).toContain("not done after edit_table alone");
+  });
+
+  it("does not add ELR sibling copy on investigation remaining-section", () => {
+    const block = planPromptBlock(
+      plan([
+        { sectionKey: "define", label: "Define", state: "in_progress" },
+        { sectionKey: "measure", label: "Measure", state: "queued" },
+      ]),
+      "investigation_report"
+    );
+    expect(block).toContain("This turn: **Define**");
+    expect(block).not.toContain("not done after edit_table alone");
+    expect(block).not.toContain("overallGrade");
   });
 
   it("reads continuation and autoContinue from message metadata", () => {
@@ -331,6 +436,32 @@ describe("plan prompt and metadata", () => {
         total: 10,
       })
     ).toBe("4 of 10 — Monitoring");
+  });
+
+  it("names the section a remaining-section turn just finished", () => {
+    const started = plan([
+      { sectionKey: "elr_objective", label: "Objective", state: "done" },
+      {
+        sectionKey: "elr_qms",
+        label: "QMS Records",
+        state: "in_progress",
+      },
+      { sectionKey: "elr_attachments", label: "Attachments", state: "queued" },
+    ]);
+    expect(completedPlanSectionLabel(started)).toBe("QMS Records");
+    expect(
+      completedPlanSectionLabel(started, {
+        draftedSectionKeys: ["elr_qms"],
+        inFlightSectionKey: null,
+      })
+    ).toBe("QMS Records");
+    expect(
+      completedPlanSectionLabel(started, {
+        draftedSectionKeys: ["elr_objective", "elr_qms"],
+        inFlightSectionKey: null,
+      })
+    ).toBe("Objective, QMS Records");
+    expect(completedPlanSectionLabel(null)).toBeNull();
   });
 
   it("groups live plan progress into done, current, and pending", () => {
@@ -389,22 +520,63 @@ describe("plan prompt and metadata", () => {
     expect(live).toEqual({
       draftedSectionKeys: ["elr_media_fill"],
       inFlightSectionKey: "elr_qualification",
+      incompleteSectionKeys: ["elr_media_fill"],
     });
     const view = chatPlanProgressView(
       started,
       "equipment_lifecycle_report",
       live
     );
-    expect(view.chipLabel).toBe("2 of 3 — Qualification");
-    expect(view.done.map((item) => item.label)).toEqual([
-      "Media Fill / Aseptic Process Simulation",
-    ]);
+    expect(view.chipLabel).toBe(
+      "1 of 3 — Media Fill / Aseptic Process Simulation"
+    );
+    expect(view.done.map((item) => item.label)).toEqual([]);
     expect(view.current.map((item) => item.sectionKey)).toEqual([
+      "elr_media_fill",
       "elr_qualification",
     ]);
     expect(view.pending.map((item) => item.sectionKey)).toEqual([
       "elr_calibration",
     ]);
+  });
+
+  it("advances past an evidence section once the assessment has a count", () => {
+    const started = plan([
+      {
+        sectionKey: "elr_media_fill",
+        label: "Media Fill / Aseptic Process Simulation",
+        state: "in_progress",
+      },
+      {
+        sectionKey: "elr_qualification",
+        label: "Qualification",
+        state: "queued",
+      },
+    ]);
+    const live = livePlanProgressFromParts([
+      {
+        type: "tool-edit_table",
+        state: "output-available",
+        input: { section: "elr_media_fill" },
+      },
+      {
+        type: "tool-draft_field",
+        state: "output-available",
+        input: {
+          section: "elr_media_fill",
+          targetField: "narrative",
+          markdown:
+            "1 APS this period; no batch loss. The qualified state still holds. [[table]]",
+        },
+      },
+    ]);
+    const view = chatPlanProgressView(
+      started,
+      "equipment_lifecycle_report",
+      live
+    );
+    expect(view.chipLabel).toBe("2 of 2 — Qualification");
+    expect(view.done.map((item) => item.sectionKey)).toEqual(["elr_media_fill"]);
   });
 
   it("treats a paused queue as pending after the done items", () => {
@@ -434,6 +606,123 @@ describe("plan prompt and metadata", () => {
       "elr_media_fill",
       "elr_qualification",
     ]);
+    expect(view.complete).toBe(false);
+  });
+
+  it("marks the chip complete when live drafts cover every remaining section", () => {
+    const started = plan([
+      { sectionKey: "elr_objective", label: "Objective", state: "done" },
+      {
+        sectionKey: "elr_conclusion",
+        label: "Summary, Conclusion and Recommendation",
+        state: "in_progress",
+      },
+    ]);
+    const live = livePlanProgressFromParts([
+      {
+        type: "tool-draft_field",
+        state: "output-available",
+        input: {
+          section: "elr_conclusion",
+          targetField: "narrative",
+          markdown:
+            "- 3.6 Monitoring — no excursions this period.\n- 4.0 Discrepancy — none observed.",
+        },
+      },
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "recommendation",
+            markdown: "continue",
+          },
+        },
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_conclusion",
+            targetField: "recommendationNarrative",
+            markdown:
+              "Next PRQ is due 15 August 2027 on the yearly VMP cycle.",
+          },
+        },
+    ]);
+    const view = chatPlanProgressView(
+      started,
+      "equipment_lifecycle_report",
+      live
+    );
+    expect(view.complete).toBe(true);
+    expect(view.chipLabel).toBe("2 of 2 — done");
+    expect(view.current).toEqual([]);
+    expect(view.pending).toEqual([]);
+  });
+
+  it("does not keep a cancelled section in progress when a tool is still in flight", () => {
+    const paused = pauseChatPendingPlan(
+      plan([
+        {
+          sectionKey: "elr_media_fill",
+          label: "Media Fill / Aseptic Process Simulation",
+          state: "in_progress",
+        },
+      ]),
+      "cancelled"
+    );
+    const live = livePlanProgressFromParts([
+      {
+        type: "tool-edit_table",
+        state: "input-available",
+        input: { section: "elr_media_fill" },
+      },
+    ]);
+    const view = chatPlanProgressView(
+      paused,
+      "equipment_lifecycle_report",
+      live
+    );
+    expect(view.paused).toBe(true);
+    expect(view.complete).toBe(false);
+    expect(view.current).toEqual([]);
+    expect(view.pending.map((item) => item.sectionKey)).toEqual([
+      "elr_media_fill",
+    ]);
+  });
+
+  it("keeps drafted keys after a wrap-up assistant row with no edit tools", () => {
+    const live = livePlanProgressFromMessages([
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-draft_field",
+            state: "output-available",
+            input: { section: "elr_objective" },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-draft_field",
+            state: "output-available",
+            input: { section: "elr_conclusion" },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        parts: [{ type: "text", text: "Remaining sections are drafted." }],
+      },
+    ]);
+    expect(live).toEqual({
+      draftedSectionKeys: ["elr_objective", "elr_conclusion"],
+      inFlightSectionKey: null,
+      incompleteSectionKeys: ["elr_conclusion"],
+    });
   });
 
   it("rejects malformed plan JSON", () => {
@@ -569,6 +858,54 @@ describe("plan prompt and metadata", () => {
         section: "elr_objective",
         content: EMPTY_ELR_CONTENT.elr_objective,
         finishedCoverageKey: null,
+      })
+    ).toBe(false);
+  });
+
+  it("does not treat a floor-8 skipped finish as matching coverage", () => {
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 8,
+        skippedAttachmentIds: ["prqr"],
+        objective: "elr_monitoring",
+        queuedFilenames: ["CSV-OQ-PR-055 PART-1.pdf"],
+        skippedFilenames: ["PRQR-25-PR-005 Report.pdf"],
+      })
+    ).toBe(false);
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 148,
+        skippedAttachmentIds: ["other"],
+        objective: "elr_calibration",
+        queuedFilenames: ["Master Annual Calibration Planner PR.pdf"],
+        skippedFilenames: ["CSV-OQ-PR-055 PART-1.pdf"],
+      })
+    ).toBe(true);
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "equipment_lifecycle_report",
+        section: "elr_monitoring",
+        content: EMPTY_ELR_CONTENT.elr_monitoring,
+        finishedCoverageKey: "att:10:run|obj:elr_monitoring",
+        inventoryFinishSatisfiesDraft: false,
+      })
+    ).toBe(true);
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 20,
+        skippedAttachmentIds: ["prqr"],
+        objective: "elr_monitoring",
+        queuedFilenames: ["CSV-OQ-PR-055 PART-1.pdf"],
+        skippedFilenames: ["PRQR-25-PR-005 Report.pdf"],
+      })
+    ).toBe(false);
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 20,
+        skippedAttachmentIds: ["alarm"],
+        objective: "elr_monitoring",
+        queuedFilenames: ["PRQR-25-PR-005 Report.pdf"],
+        skippedFilenames: ["Alarm trend Q2 2025.pdf"],
       })
     ).toBe(false);
   });

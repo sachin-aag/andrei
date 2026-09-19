@@ -246,6 +246,28 @@ function collectContextLines(
         })
       );
     }
+    // MJ ELR extras — only emit when the keys exist so DV / investigation
+    // (and QRA) sections in this branch are unchanged.
+    if ("trend" in content) {
+      pushTextBlock(
+        lines,
+        "Trend",
+        richJsonToPlainText(normalizeRichField(content.trend), {
+          tableFormat: "markdown",
+        })
+      );
+    }
+    if ("recommendationNarrative" in content) {
+      pushTextBlock(
+        lines,
+        "Recommendation narrative",
+        richJsonToPlainText(normalizeRichField(content.recommendationNarrative), {
+          tableFormat: "markdown",
+        })
+      );
+    }
+    pushTextLine(lines, "Overall grade", content.overallGrade);
+    pushTextLine(lines, "Recommendation", content.recommendation);
   }
   return lines;
 }

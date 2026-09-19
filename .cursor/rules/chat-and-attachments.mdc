@@ -80,8 +80,17 @@ skips rehydrate so a finished session does not hide
 objective (floor 8; nearby same-file pages if almost nothing matches). ELR
 inventory tables score against the live column schema (headers / aliases, plus
 a typed `{modifier} {section noun}` that is not URS language such as
-`monitoring systems`), not the bare section token, and `start_document_review`
-walks every ready file unless the engineer tagged one. Complementary grep ORs
+`monitoring systems`), nested method names (non-viable / settle plate / glove /
+LAF), alarm-trend phrases on monitoring, and a preferred-filename boost
+(PRQR/PRQP; monitoring also prefers the alarm-trend PDF). CSV-OQ / RTM / URS pages
+score 0 unless they look like a dated result table. Header-only UNCONTROLLED
+COPY / Sign/Date chrome is 0. Haystack uses outline + pageContext + the first
+4000 transcript characters. `start_document_review`
+for an ELR inventory still omits a single-file pin so PRQR / PRQP / PQR
+rows can split, but it does not page-list a file typed as a different
+inventory (a calibration planner is not QMS). Monitoring still lists
+alarm-trend files. Running-header `document no`
+is not a column hit. The planning chip names queued files. Complementary grep ORs
 those column phrases. `REVIEW_PAGE_FETCH_CAP`
 (2500) is listing safety only — there is no 300-page walk cap.
 `continue_document_review` stops starting batches after ~60s and round-robins
@@ -97,8 +106,12 @@ so those transcripts can hydrate. Empty ledger or pages with no quotes
 fail open. MJ `unsupportedFactPolicy: block` (no persist;
 `unsupported_facts`). MJ also refuses `<date>` / `<identifier>` /
 `<number>` until a same-turn `read_document_page` or non-divider search.
-Demo/Convergent `flag` (persist with Traceability). Analytics `write_column`
-stays ungated. Pack identity, not a feature flag.
+On a blocked MJ write, those tools run one closed-set repair search
+(C1 retriever), seed new quotes, and re-ground the original text — not a
+Flash-Lite subagent. Leftover placeholders persist only when that search
+adds no new quoted page. Demo/Convergent `flag` (persist with
+Traceability). Analytics `write_column` stays ungated. Pack identity,
+not a feature flag.
 
 ## Spectrum
 
@@ -178,15 +191,13 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   plots copy the saved Analytics preview at the same 600px display width
   as right-click Insert graph (`CHART_DISPLAY_WIDTH_PX`). Do not shrink by
   a 300px height cap — that turns a sixpack into a thin unreadable strip.
-- Report chat `editPolicy` is derived on the **server**. Document **and**
-  Agent chrome **propose** (red/green `ai_fix` comments; nothing lands
-  until Apply / Dismiss, including Apply all / Dismiss all for one or more
-  open suggestions). Same-turn `propose_edit` calls serialize; locatable
-  spans within 20 characters on the same field fold into one card (no
-  per-field budget). Lead-in / table / figure / citation-split / cell-scope
-  edits stay separate. Do not trust a client `editPolicy`. Plan-mode
-  allowlist does not gain edit tools. The `commit` tool path remains for
-  tests; live report chat never derives it.
+- Document **and** Agent chrome **propose** (red/green `ai_fix` comments;
+  nothing lands until Apply / Dismiss, including Apply all / Dismiss all
+  for one or more open suggestions). Same-turn `propose_edit` calls
+  serialize; locatable spans within 20 characters on the same field fold
+  into one card (no per-field budget). Lead-in / table / figure /
+  citation-split / cell-scope edits stay separate. Plan-mode allowlist
+  does not gain edit tools. There is no `commit` edit-policy path.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.
 - Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
@@ -195,8 +206,19 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   a “ran out of steps / ask me to continue” notice. Multi-section Agent
   drafts persist a `pending_plan` on the chat session. After each turn
   the client POSTs `Continue the remaining sections.` with `autoContinue`
-  (one live remaining-section widget: collapsed `N of M — current`, expand
-  for done / running / pending). Cancel pauses the queue; a new typed prompt pauses it;
+  (auto-continue user rows stay hidden; one live remaining-section widget
+  sits **below** the transcript, above Working… / Resume — collapsed
+  `N of M — current`, expand for done / running / pending). The N of N chip
+  spins only while the turn is running; it shows Paused on Cancel and hides
+  when every remaining section is drafted. MJ ELR evidence sections stay
+  in progress after `edit_table` until the same turn drafts the assessment
+  with a count (and `trend` / `overallGrade` / `recommendation`);
+  investigation and DV queues still advance on the table or narrative they
+  already draft. Working… hides
+  when the stream is idle even if the optimistic send still has a stale
+  pending id after hydrate. The agent-done notice is `Assistant is done
+  with {section}`. Do not toast a false “hit an error” between successful
+  section turns. Cancel pauses the queue; a new typed prompt pauses it;
   reopening the thread does not auto-chain. When the 270s abort
   fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`
   so we can count it. Loop guards live in
@@ -263,7 +285,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   inventory still forces `start_document_review`
   (`requireInventoryReview`). Recompute that flag from the live
   `finishedCoverageKey` in `prepareStep` — a matching finish this turn
-  must not force another start because the table is still empty. Hide
+  must not force another start because the table is still empty, unless the
+  finish was a floor-8 skip (`reviewedPages <= 8` and selected files were
+  not queued) or a preferred evidence family was skipped (PRQR; monitoring
+  also requires the alarm-trend PDF when that file was in the skip set). Hide
   review tools after that finish and draft. `start_document_review`
   returns `already_complete` for the same `|obj:` instead of resetting.
   Gate empty tables only — filling missing
