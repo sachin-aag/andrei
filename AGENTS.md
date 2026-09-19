@@ -204,7 +204,12 @@ and DV queues are unchanged. After persist the
 client POSTs `Continue the remaining sections.` with `autoContinue` (one
 live remaining-section widget **below the transcript**, not a user bubble and
 not in the auto-continue slot; collapsed is `N of M —
-current`, expand lists done / running / pending). The chip spins only while
+current`, expand lists done / running / pending). Do not persist or show
+“The assistant stopped before finishing” when that next POST will run.
+Three remaining-section turns on the same in-progress item without
+completing it (`CHAT_PLAN_SAME_SECTION_TURN_LIMIT`, including review-only
+270s aborts) pause the queue (`same_section_limit`); Resume clears
+attempts. The chip spins only while
 the turn is running; Cancel shows Paused, and a finished queue hides the
 chip. Working… hides when the
 stream is idle (do not leave a leftover send overlay after hydrate). The

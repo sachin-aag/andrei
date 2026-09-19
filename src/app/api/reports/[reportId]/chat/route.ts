@@ -78,6 +78,7 @@ import {
   planCoverageObjective,
   planKeepsComprehensive,
   resolvePlanAtTurnStart,
+  shouldAutoContinuePlan,
   type ChatPendingPlan,
 } from "@/lib/ai/chat/pending-plan";
 import {
@@ -884,11 +885,30 @@ async function handleChatPost(
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
       stopTurnGuards();
-      const persisted = partsForPersistedAssistantTurn({
+      const closed = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,
         finishReason,
+        planContinuing: true,
       });
+      const live = livePlanProgressFromParts(closed.parts);
+      const advanced =
+        mode === "agent" && pendingPlan && !pendingPlan.paused
+          ? advancePlanAfterTurn({
+              plan: pendingPlan,
+              documentType: report.documentType,
+              draftedSectionKeys: live.draftedSectionKeys,
+              parts: closed.parts,
+            })
+          : null;
+      const planContinuing = shouldAutoContinuePlan(advanced?.continuation);
+      const persisted = planContinuing
+        ? closed
+        : partsForPersistedAssistantTurn({
+            parts: responseMessage.parts,
+            isAborted,
+            finishReason,
+          });
       const deadlineAbort = await captureChatTurnDeadlineAbort({
         startedAtMs: turnStartedAtMs,
         abortReason: turnAbort.signal.reason,
@@ -948,16 +968,6 @@ async function handleChatPost(
         });
       }
       try {
-        const live = livePlanProgressFromParts(persisted.parts);
-        const advanced =
-          mode === "agent" && pendingPlan && !pendingPlan.paused
-            ? advancePlanAfterTurn({
-                plan: pendingPlan,
-                documentType: report.documentType,
-                draftedSectionKeys: live.draftedSectionKeys,
-                parts: persisted.parts,
-              })
-            : null;
         if (advanced) {
           try {
             await saveChatPendingPlan(

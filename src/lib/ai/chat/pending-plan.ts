@@ -30,7 +30,19 @@ export type ChatPlanItem = {
   sectionKey: string;
   label: string;
   state: ChatPlanItemState;
+  /**
+   * Remaining-section POSTs that ended without completing this item.
+   * Pauses the queue at `CHAT_PLAN_SAME_SECTION_TURN_LIMIT`.
+   */
+  attempts?: number;
 };
+
+/**
+ * Max Agent remaining-section turns on one in-progress item without
+ * completing it. Review-only 270s aborts count — they must not chain
+ * forever on the same ELR evidence section.
+ */
+export const CHAT_PLAN_SAME_SECTION_TURN_LIMIT = 3;
 
 export type ChatPendingPlan = {
   kind: "section_queue";
@@ -94,11 +106,19 @@ export function parseChatPendingPlan(value: unknown): ChatPendingPlan | null {
     }
     if (typeof row.label !== "string" || !row.label.trim()) return null;
     if (!isChatPlanItemState(row.state)) return null;
-    items.push({
+    const parsed: ChatPlanItem = {
       sectionKey: row.sectionKey,
       label: row.label,
       state: row.state,
-    });
+    };
+    if (
+      typeof row.attempts === "number" &&
+      Number.isInteger(row.attempts) &&
+      row.attempts > 0
+    ) {
+      parsed.attempts = row.attempts;
+    }
+    items.push(parsed);
   }
   return {
     kind: "section_queue",
@@ -371,13 +391,15 @@ export function resumeChatPendingPlan(
     ...plan,
     paused: false,
     pauseReason: undefined,
-    items: plan.items.map((item) =>
-      item.sectionKey === next?.sectionKey
-        ? { ...item, state: "in_progress" }
-        : item.state === "in_progress"
-          ? { ...item, state: "queued" }
-          : item
-    ),
+    items: plan.items.map((item) => {
+      if (item.sectionKey !== next?.sectionKey) {
+        return item.state === "in_progress"
+          ? { ...item, state: "queued" as const }
+          : item;
+      }
+      const { attempts: _attempts, ...rest } = item;
+      return { ...rest, state: "in_progress" as const };
+    }),
   };
 }
 
@@ -773,7 +795,11 @@ export function advancePlanAfterTurn(input: {
       turnKeys.has(item.sectionKey) &&
       !incomplete.has(item.sectionKey)
     ) {
-      return { ...item, state: "done" as const };
+      const { attempts: _attempts, ...rest } = item;
+      return { ...rest, state: "done" as const };
+    }
+    if (turnKeys.has(item.sectionKey)) {
+      return { ...item, attempts: (item.attempts ?? 0) + 1 };
     }
     return item;
   });
@@ -784,6 +810,25 @@ export function advancePlanAfterTurn(input: {
       plan: { ...input.plan, items: nextItems, paused: false, pauseReason: undefined },
       continuation: null,
       progressed: completedThisTurn.length > 0,
+    };
+  }
+
+  const stuck = turn.some((item) => {
+    const next = nextItems.find((row) => row.sectionKey === item.sectionKey);
+    return (
+      next != null &&
+      next.state !== "done" &&
+      (next.attempts ?? 0) >= CHAT_PLAN_SAME_SECTION_TURN_LIMIT
+    );
+  });
+  if (stuck) {
+    return {
+      plan: pauseChatPendingPlan(
+        { ...input.plan, items: nextItems },
+        "same_section_limit"
+      ),
+      continuation: null,
+      progressed: progressedThisTurn || reviewed,
     };
   }
 
