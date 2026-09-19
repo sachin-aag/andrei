@@ -155,6 +155,41 @@ export function shouldShowChatClientError(options: {
   return true;
 }
 
+/** True for the canned empty-turn or interrupt notices (not model prose). */
+export function isCannedAssistantNoticeText(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed === CHAT_ASSISTANT_ERROR_MESSAGE ||
+    trimmed === CHAT_ASSISTANT_INTERRUPTED_MESSAGE
+  );
+}
+
+/**
+ * Hide a leftover assistant row when remaining-section auto-continue is
+ * about to POST. Tool chips stay; canned “stopped / hit an error” copy
+ * and empty bubbles do not.
+ */
+export function shouldHidePlanContinuingAssistantTurn(
+  parts: readonly ChatTurnPart[] | null | undefined
+): boolean {
+  if (!parts || parts.length === 0) return true;
+  for (const part of parts) {
+    if (!part || typeof part.type !== "string") continue;
+    if (part.type === "text") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (!text || isCannedAssistantNoticeText(text)) continue;
+      return false;
+    }
+    if (part.type === "reasoning") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (text) return false;
+      continue;
+    }
+    if (part.type === "file" || part.type.startsWith("tool-")) return false;
+  }
+  return true;
+}
+
 /**
  * True when the only visible assistant text is the canned empty-turn
  * placeholder. A remaining-section finish that hydrates this way is not
@@ -271,11 +306,15 @@ function appendInterruptedNotice(parts: UIMessage["parts"]): UIMessage["parts"] 
  * orphaned user turn. Tab close no longer aborts the server turn.
  * A `tool-calls` stop with only tool chips is logged as incomplete — do
  * not append a “continue / re-prompt” notice. There is no tool-step cap.
+ * Remaining-section auto-continue must not persist “stopped before
+ * finishing” — the next POST is about to run.
  */
 export function partsForPersistedAssistantTurn(options: {
   parts: UIMessage["parts"] | undefined;
   isAborted: boolean;
   finishReason?: string;
+  /** True when the remaining-section queue will POST another turn. */
+  planContinuing?: boolean;
 }): {
   parts: UIMessage["parts"];
   emptyFailure: boolean;
@@ -293,6 +332,14 @@ export function partsForPersistedAssistantTurn(options: {
         emptyFailure: false,
         interrupted: false,
         incomplete: false,
+      };
+    }
+    if (options.planContinuing) {
+      return {
+        parts,
+        emptyFailure: false,
+        interrupted: false,
+        incomplete: true,
       };
     }
     if (visible) {
