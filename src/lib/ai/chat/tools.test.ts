@@ -2167,7 +2167,7 @@ describe("buildChatTools propose edits", () => {
     expect(searchReportDocumentsManyMock).toHaveBeenCalled();
   });
 
-  it("does not repair-search Purpose for an uncited SOP number", async () => {
+  it("repair-searches Purpose for an uncited SOP number", async () => {
     dbSelectMock.mockImplementation(() => ({
       from: (table: unknown) => ({
         where: vi.fn().mockResolvedValue(
@@ -2191,6 +2191,22 @@ describe("buildChatTools propose edits", () => {
         return Promise.resolve();
       }),
     });
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-sop",
+          filename: "SOP-DP-QA-014.pdf",
+          description: null,
+          pageNumber: 2,
+          chunkId: "c1",
+          sourceKind: "hybrid",
+          text: "Validation/Qualification Procedure SOP/DP/QA/014 R04",
+          quote: "Validation/Qualification Procedure SOP/DP/QA/014 R04",
+          citationId: "att:att-sop:p:2",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -2235,6 +2251,112 @@ describe("buildChatTools propose edits", () => {
     );
     expect(drafted).toMatchObject({ status: "drafted" });
     expect(inserted[0]?.content).toContain("SOP/DP/QA/014");
+    expect(inserted[0]?.content).not.toContain("<identifier>");
+    expect(searchReportDocumentsManyMock).toHaveBeenCalled();
+  });
+
+  it("does not repair-search an assessment that only recaps the sibling table", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-elr-csv",
+                  reportId: "report-1",
+                  section: "elr_csv_status",
+                  content: {
+                    narrative: { type: "doc", content: [] },
+                    table: {
+                      type: "doc",
+                      content: [
+                        {
+                          type: "paragraph",
+                          content: [
+                            {
+                              type: "text",
+                              text: "Breakdown PR/BD/001 closed with CAPA CA-12.",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  },
+                },
+              ]
+        ),
+      }),
+    }));
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "equipment_lifecycle_report",
+      unsupportedFactPolicy: "block",
+      reportSections: {
+        elr_csv_status: {
+          narrative: { type: "doc", content: [] },
+          table: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "Breakdown PR/BD/001 closed with CAPA CA-12.",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-search_documents",
+              toolCallId: "call_search",
+              state: "output-available",
+              input: { query: "planner" },
+              output: {
+                results: [
+                  {
+                    filename: "Planner.pdf",
+                    pageNumber: 22,
+                    attachmentId: "att-plan",
+                    quote: "Annual calibration planner EQ-12 Balance",
+                    citationId: "att:att-plan:p:22",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "elr_csv_status",
+        targetField: "narrative",
+        markdown: "[[table]] records breakdown PR/BD/001.",
+        reasoning: "Assess CSV.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({ status: "drafted" });
+    expect(inserted[0]?.content).toContain("PR/BD/001");
     expect(searchReportDocumentsManyMock).not.toHaveBeenCalled();
   });
 

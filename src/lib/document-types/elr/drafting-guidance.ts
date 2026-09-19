@@ -355,13 +355,13 @@ settle it. Search attached evidence before asking.
 
 Do not search-for-cite (and do not invent a page) for title-page identity or
 the Indian FY window the engineer already confirmed — equipment ID, container
-format, and 1 April–31 March. Purpose, Responsibilities, and Abbreviations
-do not need attachment citations; they frame this report, they are not
-evidence rows. Scope and Equipment description still cite make, model, and
-other facts copied from attachments; they do not cite the FY period or the
-title-page equipment ID. Assessment narratives, System Trends, Conclusion,
-and Risk Actions narrative recap this document or the table just drafted —
-do not grep to park a page next to those sentences.
+format, and 1 April–31 March — or for a fact already written in this report
+(another section, or the sibling table when you are drafting the assessment).
+Copied attachment facts still need [filename, p. N] in every section,
+including Purpose, Responsibilities, Abbreviations, Scope, assessments, and
+recaps: SOP numbers, equipment IDs from records, make/model, duty-matrix
+language. Inventory tables stay strict. Do not grep to park a page next to a
+sentence that only restates this document's own table.
 
 When a sentence in an inventory table paraphrases an attached SOP, prior ELR,
 protocol, or record, put [filename, p. N] immediately after the supported

@@ -1,12 +1,14 @@
 /**
- * When attachment citation grounding should not run (or should skip
- * report-frame facts). Inventory tables stay strict.
+ * Attachment citation grounding is fact-level, never section-level.
+ * Tables stay strict. All other writes use frame: title-page / user /
+ * FY bounds and facts already in this report are exempt; copied
+ * attachment facts still need a page quote.
  */
 
-import type { DocumentType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import type { HardFact } from "@/lib/ai/chat/claim-facts";
-import { ELR_ASSESSMENT_SECTIONS } from "@/lib/document-types/elr/plan-complete";
+import { contextForPrompt } from "@/lib/ai/section-context";
 import { elrChatContextIdentity } from "@/lib/document-types/elr/chat-identity";
 import {
   canonicalElrPeriod,
@@ -23,31 +25,9 @@ export type GroundDraftGrounding = {
   mode?: CitationGroundingMode;
   reportMetadata?: Record<string, unknown> | null;
   latestUserMessageText?: string;
+  /** Sibling fields + other sections (not the field being written). */
+  alreadyStatedText?: string;
 };
-
-/** Purpose / duties / glossary / recap — do not search-for-cite. */
-const SKIP_WHOLE_SECTIONS = new Set<string>([
-  "elr_objective",
-  "elr_responsibilities",
-  "elr_abbreviations",
-  "elr_system_trends",
-  "elr_conclusion",
-]);
-
-const FRAME_SECTIONS = new Set<string>(["elr_scope", "elr_system_description"]);
-
-const ASSESSMENT_SECTIONS = new Set<string>([
-  ...ELR_ASSESSMENT_SECTIONS,
-  "elr_risk_actions",
-]);
-
-const ASSESSMENT_SKIP_FIELDS = new Set([
-  "narrative",
-  "trend",
-  "recommendation",
-  "overallGrade",
-  "recommendationNarrative",
-]);
 
 const MONTH_INDEX: Record<string, number> = {
   jan: 1,
@@ -95,24 +75,61 @@ export function citationGroundingMode(input: {
   targetField: string;
   tool?: CitationWriteTool;
 }): CitationGroundingMode {
-  const section = input.section.trim();
-  const targetField = input.targetField.trim();
   const tableWrite =
-    input.tool === "edit_table" || targetField === "table";
+    input.tool === "edit_table" || input.targetField.trim() === "table";
+  return tableWrite ? "strict" : "frame";
+}
 
-  if (tableWrite) {
-    return SKIP_WHOLE_SECTIONS.has(section) ? "skip" : "strict";
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+export function contentWithoutField(
+  content: Record<string, unknown>,
+  targetField: string
+): Record<string, unknown> {
+  const path = targetField
+    .split(".")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (path.length === 0) return { ...content };
+  const next: Record<string, unknown> = { ...content };
+  const [head, ...rest] = path;
+  if (!head) return next;
+  if (rest.length === 0) {
+    delete next[head];
+    return next;
   }
-  if (SKIP_WHOLE_SECTIONS.has(section)) return "skip";
-  if (section === "conclusion") return "skip";
-  if (
-    ASSESSMENT_SECTIONS.has(section) &&
-    ASSESSMENT_SKIP_FIELDS.has(targetField)
-  ) {
-    return "skip";
+  const child = next[head];
+  if (isRecord(child)) {
+    next[head] = contentWithoutField(child, rest.join("."));
   }
-  if (FRAME_SECTIONS.has(section)) return "frame";
-  return "strict";
+  return next;
+}
+
+/** Flatten other fields/sections so recaps of this document are exempt. */
+export function alreadyStatedHaystack(input: {
+  sections?: Partial<Record<string, unknown>> | null;
+  exclude?: { section: string; targetField: string };
+  extra?: Array<string | undefined | null>;
+}): string {
+  const parts: string[] = [];
+  if (input.sections) {
+    for (const [section, content] of Object.entries(input.sections)) {
+      if (!isRecord(content)) continue;
+      const trimmed =
+        input.exclude?.section === section
+          ? contentWithoutField(content, input.exclude.targetField)
+          : content;
+      const text = contextForPrompt(section as SectionType, trimmed).trim();
+      if (text) parts.push(text);
+    }
+  }
+  for (const extra of input.extra ?? []) {
+    const text = extra?.trim();
+    if (text) parts.push(text);
+  }
+  return parts.join("\n");
 }
 
 export function citationGroundingRunsRepair(
@@ -227,10 +244,13 @@ function isCanonicalFyBoundFact(
 function identityHaystacks(input: {
   reportMetadata?: Record<string, unknown> | null;
   latestUserMessageText?: string;
+  alreadyStatedText?: string;
 }): string[] {
   const haystacks: string[] = [];
   const user = input.latestUserMessageText?.trim();
   if (user) haystacks.push(user);
+  const alreadyStated = input.alreadyStatedText?.trim();
+  if (alreadyStated) haystacks.push(alreadyStated);
   const metadata = input.reportMetadata;
   if (metadata && typeof metadata === "object") {
     haystacks.push(...elrChatContextIdentity(metadata));
@@ -253,12 +273,13 @@ function identityHaystacks(input: {
   return haystacks;
 }
 
-/** Title-page identity, user-confirmed facts, and Indian FY bounds. */
+/** Title-page identity, user-confirmed facts, FY bounds, already-stated. */
 export function isExemptFrameFact(
   fact: HardFact,
   source: {
     reportMetadata?: Record<string, unknown> | null;
     latestUserMessageText?: string;
+    alreadyStatedText?: string;
   }
 ): boolean {
   for (const window of fyWindowsFromSources(source)) {
