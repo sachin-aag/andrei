@@ -587,6 +587,12 @@ async function handleChatPost(
       citationId: hit.citationId,
       sourceSha256: hit.sourceSha256,
     })),
+    reportMetadata:
+      report.metadata &&
+      typeof report.metadata === "object" &&
+      !Array.isArray(report.metadata)
+        ? (report.metadata as Record<string, unknown>)
+        : null,
   });
   const scopedTools: ToolSet =
     mode === "plan"

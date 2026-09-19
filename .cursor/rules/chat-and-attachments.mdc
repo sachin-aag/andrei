@@ -113,16 +113,19 @@ when the file set is unknown. Rehydrate only a finish with `status=complete`
 and `truncated !== true`.
 
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
-against the citation ledger's served quotes (`groundDraftText`). Finish
-seeds `reviewedEvidence` (every walked page, not the 60-finding sample)
-so those transcripts can hydrate. Empty ledger or pages with no quotes
-fail open. MJ `unsupportedFactPolicy: block` (no persist;
-`unsupported_facts`). On a blocked MJ write, those tools run one closed-set
-repair search (C1 retriever), seed new quotes, and re-ground the original
-text — not a Flash-Lite subagent. Leftover `<date>` / `<identifier>` /
-`<number>` persist after that lookup when the facts are still missing —
-do not drop the whole write because the search added some other page.
-Demo/Convergent `flag` (persist with
+against the citation ledger's served quotes (`groundDraftText`). Skip
+attachment grounding (and skip the repair search) for title-page /
+user-confirmed identity, the ELR Indian FY window, recap sections, and
+assessment narratives (`citation-exemption.ts`). Inventory tables stay
+strict. Finish seeds `reviewedEvidence` (every walked page, not the
+60-finding sample) so those transcripts can hydrate. Empty ledger or
+pages with no quotes fail open. MJ `unsupportedFactPolicy: block` (no
+persist; `unsupported_facts`). On a blocked MJ write, those tools run
+one closed-set repair search (C1 retriever), seed new quotes, and
+re-ground the original text — not a Flash-Lite subagent. Leftover
+`<date>` / `<identifier>` / `<number>` persist after that lookup when
+the facts are still missing — do not drop the whole write because the
+search added some other page. Demo/Convergent `flag` (persist with
 Traceability). Analytics `write_column` stays ungated. Pack identity,
 not a feature flag.
 

@@ -284,7 +284,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v14");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v15");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
