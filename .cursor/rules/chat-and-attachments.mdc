@@ -227,7 +227,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   the client POSTs `Continue the remaining sections.` with `autoContinue`
   (auto-continue user rows stay hidden; one live remaining-section widget
   sits **below** the transcript, above Working… / Resume — collapsed
-  `N of M — current`, expand for done / running / pending). The N of N chip
+  `N of M — current`, expand for done / running / pending). Do not persist
+  or show “The assistant stopped before finishing” when that next POST
+  will run. Three remaining-section turns on the same in-progress item
+  without completing it (`CHAT_PLAN_SAME_SECTION_TURN_LIMIT`, including
+  review-only 270s aborts) pause the queue (`same_section_limit`); Resume
+  clears attempts. The N of N chip
   spins only while the turn is running; it shows Paused on Cancel and hides
   when every remaining section is drafted. MJ ELR evidence sections stay
   in progress after `edit_table` until the same turn drafts the assessment
