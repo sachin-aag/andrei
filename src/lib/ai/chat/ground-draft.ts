@@ -18,6 +18,10 @@ import {
 } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import type { UnsupportedFactPolicy } from "@/lib/customers/packs";
+import {
+  isExemptFrameFact,
+  type GroundDraftGrounding,
+} from "@/lib/ai/chat/citation-exemption";
 
 export type { ClaimProvenance, ClaimProvenanceRecord } from "@/lib/ai/chat/claim-facts";
 
@@ -174,9 +178,11 @@ export function groundDraftText(input: {
   text: string;
   ledger: CitationPageLedger;
   policy: UnsupportedFactPolicy;
+  grounding?: GroundDraftGrounding;
 }): GroundDraftResult {
   const cited = rewriteCitationPagesInText(input.text, input.ledger);
-  if (!input.ledger.hasQuotedPages()) {
+  const mode = input.grounding?.mode ?? "strict";
+  if (!input.ledger.hasQuotedPages() || mode === "skip") {
     return {
       text: cited,
       provenance: { claims: [], policy: input.policy },
@@ -186,7 +192,24 @@ export function groundDraftText(input: {
   }
 
   const facts = extractHardFacts(cited);
-  const records = facts.map((fact) => resolveFact(fact, input.ledger));
+  const records = facts.map((fact) => {
+    if (
+      mode === "frame" &&
+      isExemptFrameFact(fact, {
+        reportMetadata: input.grounding?.reportMetadata,
+        latestUserMessageText: input.grounding?.latestUserMessageText,
+      })
+    ) {
+      return {
+        text: fact.text,
+        kind: fact.kind,
+        status: "verified" as const,
+        cited: fact.cited[0] ?? null,
+        source: null,
+      };
+    }
+    return resolveFact(fact, input.ledger);
+  });
   const withMoved = applyMovedCitations(cited, facts, records);
   const unsupportedFacts = facts.filter(
     (_, index) => records[index]?.status === "unsourced"
@@ -206,9 +229,13 @@ export function groundDraftText(input: {
       )
     : withMoved;
 
+  const provenanceClaims = records.filter(
+    (record) => !(record.status === "verified" && !record.source)
+  );
+
   return {
     text,
-    provenance: { claims: records, policy: input.policy },
+    provenance: { claims: provenanceClaims, policy: input.policy },
     unsupported: unsupportedFacts,
     blocked,
   };
@@ -218,6 +245,7 @@ export function groundTableOperation(input: {
   operation: TableOperation;
   ledger: CitationPageLedger;
   policy: UnsupportedFactPolicy;
+  grounding?: GroundDraftGrounding;
 }): {
   operation: TableOperation;
   provenance: ClaimProvenance;
@@ -242,6 +270,7 @@ export function groundTableOperation(input: {
       text: value,
       ledger: input.ledger,
       policy: input.policy,
+      grounding: input.grounding,
     });
     claims.push(...grounded.provenance.claims);
     unsupported.push(...grounded.unsupported);

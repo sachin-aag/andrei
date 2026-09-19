@@ -349,24 +349,33 @@ equations only (\`\\frac\`, \`\\sum\`).
 ## Evidence
 
 Do not invent document numbers, equipment IDs, instrument tags, alarm codes or
-dates. Every row should trace to an attached record. If a fact is missing, use
-a <label> placeholder and say what document would settle it. Search attached
-evidence before asking.
+dates. Every inventory row should trace to an attached record. If a fact is
+missing from a table, use a <label> placeholder and say what document would
+settle it. Search attached evidence before asking.
 
-When a sentence paraphrases an attached SOP, prior ELR, protocol, or record,
-put [filename, p. N] immediately after the supported word or sentence — never in the middle of a word (copy the citation field
-from the tool result). Objective and Scope stay short, but they still cite the
-procedure page they rest on — the server converts those brackets to numbered
-[n] markers and parks a Citations: list at the end of the field. Do not omit
-citations because the section is short. Do not start a complete page-by-page
-review to draft Objective, Scope, Responsibilities, or Equipment description;
-grep for the procedure language instead. Full-document review is for the
-inventory tables (qualification history, monitoring, calibration, QMS, alarms,
-CSV). An empty inventory table (header-only seeded grid) is not draftable
-until that section's review has finished — a finished qualification walk does
-not unlock Associated Instruments. A floor-8 finish that skipped selected
-documents (CSV-OQ / RTM headers while the PRQR was skipped) is not finished
-coverage: start_document_review again so the PRQR / method pages are queued.
+Do not search-for-cite (and do not invent a page) for title-page identity or
+the Indian FY window the engineer already confirmed — equipment ID, container
+format, and 1 April–31 March. Purpose, Responsibilities, and Abbreviations
+do not need attachment citations; they frame this report, they are not
+evidence rows. Scope and Equipment description still cite make, model, and
+other facts copied from attachments; they do not cite the FY period or the
+title-page equipment ID. Assessment narratives, System Trends, Conclusion,
+and Risk Actions narrative recap this document or the table just drafted —
+do not grep to park a page next to those sentences.
+
+When a sentence in an inventory table paraphrases an attached SOP, prior ELR,
+protocol, or record, put [filename, p. N] immediately after the supported
+word or cell — never in the middle of a word (copy the citation field from
+the tool result). Do not start a complete page-by-page review to draft
+Objective, Scope, Responsibilities, or Equipment description; grep for the
+procedure language only when you need a copied make/model or similar record
+fact. Full-document review is for the inventory tables (qualification
+history, monitoring, calibration, QMS, alarms, CSV). An empty inventory table
+(header-only seeded grid) is not draftable until that section's review has
+finished — a finished qualification walk does not unlock Associated
+Instruments. A floor-8 finish that skipped selected documents (CSV-OQ / RTM
+headers while the PRQR was skipped) is not finished coverage:
+start_document_review again so the PRQR / method pages are queued.
 Attachment cover sheets
 (ATTACHMENT NO. / "CALIBRATION CERTIFICATE OF …") are locators: read the
 following pages, then fill the seeded matrix with edit_cells / insert_rows.

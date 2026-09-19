@@ -155,6 +155,65 @@ describe("groundDraftText citation parking", () => {
     expect(parked).toContain("1. [scrap-log.pdf, p. 6]");
   });
 
+  it("skip mode does not gate or move citations onto a coincidental page", () => {
+    const result = groundDraftText({
+      text: "Period 01 April 2024 per SOP/DP/QA/014.",
+      ledger: ledgerFromPages([
+        {
+          filename: "PQR-24-PR-042.pdf",
+          pageNumber: 58,
+          attachmentId: "att-pqr",
+          quote:
+            "Calibration due 01 April 2024. Annexure for balance EQ-12.",
+        },
+      ]),
+      policy: "block",
+      grounding: { mode: "skip" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.unsupported).toEqual([]);
+    expect(result.provenance.claims).toEqual([]);
+    expect(result.text).toBe("Period 01 April 2024 per SOP/DP/QA/014.");
+    expect(result.text).not.toContain("PQR-24-PR-042.pdf");
+  });
+
+  it("frame mode exempts user-stated FY dates but still blocks an invented batch", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Planner.pdf",
+        pageNumber: 22,
+        attachmentId: "att-plan",
+        quote: "Annual calibration planner EQ-12 Balance",
+      },
+    ]);
+    const fyGrounding = {
+      mode: "frame" as const,
+      latestUserMessageText: "go for april 2024 to march 2025",
+      reportMetadata: { equipmentId: "E/PR/071" },
+    };
+    const period = groundDraftText({
+      text: "Cartridge line E/PR/071. Period 01 April 2024 to 31 March 2025.",
+      ledger,
+      policy: "block",
+      grounding: fyGrounding,
+    });
+    expect(period.blocked).toBe(false);
+    expect(period.text).toContain("01 April 2024");
+    expect(period.text).toContain("E/PR/071");
+    expect(period.text).not.toContain("Planner.pdf");
+
+    const invented = groundDraftText({
+      text: "Media fill MF-25-VIAL-01 on E/PR/071.",
+      ledger,
+      policy: "block",
+      grounding: fyGrounding,
+    });
+    expect(invented.blocked).toBe(true);
+    expect(invented.text).toContain("<identifier>");
+    expect(invented.text).not.toContain("MF-25-VIAL-01");
+    expect(invented.text).toContain("E/PR/071");
+  });
+
   it("rewrites a parked Citations line instead of inserting a filename cite beside [n]", () => {
     const parkedDraft = `The review follows ${SOP} [1].\n\nCitations:\n1. [${PROTOCOL}, p. 21]`;
     const grounded = groundDraftText({
