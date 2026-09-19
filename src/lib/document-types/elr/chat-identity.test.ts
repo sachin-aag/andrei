@@ -12,7 +12,10 @@ describe("elrChatContextIdentity", () => {
     expect(lines.join("\n")).toContain("Do not pick the first PRQR");
     expect(lines.join("\n")).toContain("equipment ID: (unset)");
     expect(lines.join("\n")).toContain("F22-R00 (proposed)");
-    expect(lines.join("\n")).toContain("1 April–31 March");
+    expect(lines.join("\n")).toContain("start 1 April");
+    expect(lines.join("\n")).toContain("end 31 March of the following year");
+    expect(lines.join("\n")).toContain("1 April 2025 – 31 March 2026");
+    expect(lines.join("\n")).not.toContain("Indian FY");
     expect(lines.join("\n")).toContain("alarm-trend");
   });
 
@@ -27,10 +30,11 @@ describe("elrChatContextIdentity", () => {
     expect(lines.join("\n")).not.toContain("ask_user");
     expect(lines.join("\n")).toContain("equipment ID: E/PR/070");
     expect(lines.join("\n")).toContain("period: 01-Apr-2025 – 31-Mar-2026");
-    expect(lines.join("\n")).toContain("1 April–31 March");
+    expect(lines.join("\n")).toContain("start 1 April");
+    expect(lines.join("\n")).toContain("end 31 March of the following year");
   });
 
-  it("rewrites a title-page quarter onto the Indian FY", () => {
+  it("rewrites a title-page quarter onto 1 April–31 March", () => {
     const lines = elrChatContextIdentity({
       periodFrom: "01/04/2025",
       periodTo: "30/06/2025",

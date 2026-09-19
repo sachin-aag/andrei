@@ -1,7 +1,7 @@
 /**
  * Attachment citation grounding is fact-level, never section-level.
  * Tables stay strict. All other writes use frame: title-page / user /
- * FY bounds and facts already in this report are exempt; copied
+ * 1 April–31 March bounds and facts already in this report are exempt; copied
  * attachment facts still need a page quote.
  */
 
@@ -273,7 +273,7 @@ function identityHaystacks(input: {
   return haystacks;
 }
 
-/** Title-page identity, user-confirmed facts, FY bounds, already-stated. */
+/** Title-page identity, user-confirmed facts, 1 April–31 March bounds, already-stated. */
 export function isExemptFrameFact(
   fact: HardFact,
   source: {
