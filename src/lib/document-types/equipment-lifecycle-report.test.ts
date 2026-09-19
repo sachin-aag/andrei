@@ -328,7 +328,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).toContain("1 April to 31 March");
     expect(def.chat.draftingGuidance).toContain("starts on 1 April");
     expect(def.chat.draftingGuidance).toContain("ends on 31 March");
-    expect(def.chat.draftingGuidance).toContain("both calendar dates");
+    expect(def.chat.draftingGuidance).toContain("**both** calendar dates");
     expect(def.chat.draftingGuidance).toContain("31.03 of the following year");
     expect(def.chat.draftingGuidance).not.toMatch(/Indian Financial Year/i);
     expect(def.chat.draftingGuidance).not.toMatch(/Indian FY\b/i);
