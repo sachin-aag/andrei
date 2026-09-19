@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<title>Andrei chat harness — retrieval, review, grounding</title>
+<title>Andrei — retrieval, review, grounding</title>
 <style>
 @page { size: letter; margin: 0.55in 0.6in 0.6in; }
 :root { --navy:#001838; --blue:#1d4e89; --ink:#1a2230; --muted:#5b6573; --line:#d5dee8; --bg:#f4f7fb; --good:#0f6b3a; --warn:#8a4b00; --bad:#8b1e2d; }
@@ -34,48 +34,88 @@ li { margin:0 0 4px; }
 </style>
 </head>
 <body>
-<p class="kicker">Andrei · junior engineer briefing · 3 of 3</p>
+<p class="kicker">Andrei · junior engineer briefing · 4 of 4</p>
 <h1>Retrieval, document review, and grounding</h1>
-<p class="lede">Search finds candidate pages. Document review walks a queued set of those pages. Grounding decides whether a drafted date, identifier, or number is allowed to persist. Cost is dominated by resending this evidence on every subsequent model step.</p>
+<p class="lede">This is the <em>read path</em>. Briefing 3 wrote <code>document_pages</code>, <code>document_outline_spans</code>, and <code>document_chunks</code> (pgvector + English FTS). This briefing queries those rows. Search finds candidate pages. Document review walks a queued set. Grounding decides whether a drafted fact may persist.</p>
 
 <div class="callout">
-<strong>Citations are filename + page.</strong> Chunk ids change on re-ingest. A hit that only names a file is a locator, not evidence. Cover sheets (<code>divider=true</code>) are locators too — Document chat keeps <code>search_documents</code> open so the following data page can be read.
+<strong>Reads what ingest wrote.</strong> There is no Pinecone, no Elasticsearch, no BM25 index. Vector = <code>document_chunks.embedding &lt;=&gt;</code> (HNSW cosine). Keyword = <code>to_tsvector('english', contextual_text) @@ websearch_to_tsquery</code>. Both arms fuse with reciprocal rank fusion (k=60). See briefing 3 if those tables are a blank.
 </div>
 
-<h2>1. Hybrid search (under the harness)</h2>
-<p><code>searchReportDocuments</code> / <code>searchReportDocumentsDetailed</code> in <code>src/lib/attachments/retrieval.ts</code>. Document chat uses hybrid. Analytics chat is keyword-first at the tool layer. The report body is not chunk-indexed — use <code>read_section</code>.</p>
-<svg viewBox="0 0 740 430" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
-  <rect x="8" y="8" width="724" height="36" rx="7" fill="#001838"/>
-  <text x="370" y="32" text-anchor="middle" fill="#fff" font-size="12">classifyRetrievalQuery(trimmed) → identifiers vs semantic vs mixed</text>
-  <rect x="8" y="56" width="230" height="70" rx="7" fill="#1d4e89"/>
-  <text x="123" y="82" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">1. File / span route</text>
-  <text x="123" y="100" text-anchor="middle" fill="#d7e7f8" font-size="10">filename + outline spans</text>
-  <text x="123" y="114" text-anchor="middle" fill="#d7e7f8" font-size="10">before chunk search</text>
-  <rect x="254" y="56" width="230" height="70" rx="7" fill="#1d4e89"/>
-  <text x="369" y="82" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">2. Exact identifiers</text>
-  <text x="369" y="100" text-anchor="middle" fill="#d7e7f8" font-size="10">document_pages.identifiers &&amp;</text>
-  <text x="369" y="114" text-anchor="middle" fill="#d7e7f8" font-size="10">legacy ILIKE on raw_text</text>
-  <rect x="500" y="56" width="232" height="70" rx="7" fill="#1d4e89"/>
-  <text x="616" y="82" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">3. English FTS</text>
-  <text x="616" y="100" text-anchor="middle" fill="#d7e7f8" font-size="10">to_tsvector(contextual_text)</text>
-  <text x="616" y="114" text-anchor="middle" fill="#d7e7f8" font-size="10">websearch_to_tsquery</text>
-  <rect x="120" y="142" width="500" height="52" rx="7" fill="#fff6ea" stroke="#c9842a"/>
-  <text x="370" y="163" text-anchor="middle" fill="#001838" font-size="12">If exact IDs already fill limit, or lexical fills limit with real matches</text>
-  <text x="370" y="181" text-anchor="middle" fill="#5b6573" font-size="10">skip the query embedding. Latency is mostly tool rounds + embed, not HNSW.</text>
-  <rect x="8" y="210" width="724" height="52" rx="7" fill="#3d5a40"/>
-  <text x="370" y="232" text-anchor="middle" fill="#fff" font-size="12">4. Vector arm (768-d) fused with FTS, then collapse to best chunk per page</text>
-  <text x="370" y="250" text-anchor="middle" fill="#dce8dc" font-size="10">Quoted phrases stay intact. AND across concepts. OR only inside a phrase family (e.g. Media Fill).</text>
-  <rect x="8" y="278" width="724" height="70" rx="7" fill="#f4f7fb" stroke="#d5dee8"/>
-  <text x="24" y="300" fill="#001838" font-size="12">Post-rank: match-centered excerpts · quote-over-visual · locator ranking. TOC / running-header ID lists are last.</text>
-  <text x="24" y="318" fill="#1a2230" font-size="11">Caps: 16 hits, 80 excludePages, 900-char excerpts. A TOC-only grep retries excluding those pages (<tspan font-family="DejaVu Sans Mono" font-size="10">requirementIndex</tspan>).</text>
-  <text x="24" y="336" fill="#5b6573" font-size="10">File-set questions (how many files, which folder, PDF vs Word, ready vs ingesting) use list_attachments — not this search.</text>
-  <rect x="8" y="362" width="724" height="52" rx="7" fill="#001838"/>
-  <text x="370" y="384" text-anchor="middle" fill="#fff" font-size="12">Tool result includes a ready citation: [filename, p. N]  or  [filename] if page missing</text>
-  <text x="370" y="402" text-anchor="middle" fill="#cfe0f5" font-size="10">Saved fields convert those to numbered [n] plus a trailing Citations: list. Do not reject a draft that omitted a known page.</text>
+<h2>1. What search reads (from briefing 3)</h2>
+<svg viewBox="0 0 740 200" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+  <rect x="8" y="8" width="724" height="28" rx="6" fill="#3d5a40"/>
+  <text x="370" y="27" text-anchor="middle" fill="#fff" font-size="12">Active scope: report_attachments.active_ingest_run_id = chunks.ingest_run_id · deletedAt is null</text>
+  <rect x="8" y="48" width="175" height="70" rx="7" fill="#001838"/>
+  <text x="95" y="76" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">pages</text>
+  <text x="95" y="94" text-anchor="middle" fill="#cfe0f5" font-size="10">transcript · identifiers</text>
+  <rect x="195" y="48" width="175" height="70" rx="7" fill="#001838"/>
+  <text x="282" y="76" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">outline spans</text>
+  <text x="282" y="94" text-anchor="middle" fill="#cfe0f5" font-size="10">file / heading route</text>
+  <rect x="382" y="48" width="175" height="70" rx="7" fill="#001838"/>
+  <text x="469" y="76" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">chunks FTS</text>
+  <text x="469" y="94" text-anchor="middle" fill="#cfe0f5" font-size="10">contextual_text GIN</text>
+  <rect x="569" y="48" width="163" height="70" rx="7" fill="#001838"/>
+  <text x="650" y="76" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">chunks vector</text>
+  <text x="650" y="94" text-anchor="middle" fill="#cfe0f5" font-size="10">768-d HNSW</text>
+  <rect x="8" y="130" width="358" height="56" rx="7" fill="#eef4fb" stroke="#1d4e89"/>
+  <text x="187" y="154" text-anchor="middle" fill="#001838" font-size="11"><tspan font-weight="700">list_attachments</tspan> — catalog, not page text</text>
+  <text x="187" y="172" text-anchor="middle" fill="#5b6573" font-size="10">count / folders / types / ready vs ingesting</text>
+  <rect x="374" y="130" width="358" height="56" rx="7" fill="#eef4fb" stroke="#1d4e89"/>
+  <text x="553" y="154" text-anchor="middle" fill="#001838" font-size="11"><tspan font-weight="700">read_section</tspan> — report body, not chunks</text>
+  <text x="553" y="172" text-anchor="middle" fill="#5b6573" font-size="10">TipTap JSON was never embedded</text>
 </svg>
-<p class="caption">Figure 1. Hybrid retrieval already runs under chat. Do not replace agentic grep with Elasticsearch or a hosted vector DB.</p>
+<p class="caption">Figure 1. File-set questions use <code>list_attachments</code>. Which files mention a fact inside a PDF use <code>search_documents</code>. The report body uses <code>read_section</code>.</p>
 
-<h2>2. Search loop (when the harness hides grep)</h2>
+<h2>2. Hybrid search pipeline</h2>
+<p><code>searchReportDocuments</code> / <code>searchReportDocumentsDetailed</code> in <code>src/lib/attachments/retrieval.ts</code>. Document chat uses hybrid. Analytics chat is keyword-first at the tool layer (same function, <code>mode: "keyword"</code> — still Postgres FTS, still not BM25).</p>
+<svg viewBox="0 0 740 590" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+  <rect x="8" y="8" width="724" height="36" rx="7" fill="#001838"/>
+  <text x="370" y="32" text-anchor="middle" fill="#fff" font-size="12">classifyRetrievalQuery → identifier · locator · semantic</text>
+  <rect x="8" y="56" width="724" height="70" rx="7" fill="#eef4fb" stroke="#1d4e89"/>
+  <text x="370" y="76" text-anchor="middle" fill="#001838" font-size="12">0. File / span route (identifier and locator only)</text>
+  <text x="370" y="94" text-anchor="middle" fill="#5b6573" font-size="10">Load ready files + stored outline spans. Match filename / document_summary / heading identifiers.</text>
+  <text x="370" y="110" text-anchor="middle" fill="#5b6573" font-size="10">Narrow chunk SQL. Under limit → backfill the rest of the report. @ tags pin then backfill.</text>
+  <rect x="8" y="138" width="358" height="70" rx="7" fill="#1d4e89"/>
+  <text x="187" y="164" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">1. Exact identifiers</text>
+  <text x="187" y="184" text-anchor="middle" fill="#d7e7f8" font-size="10">GIN overlap on pages.identifiers</text>
+  <text x="187" y="198" text-anchor="middle" fill="#d7e7f8" font-size="10">legacy empty array → ILIKE raw_text</text>
+  <rect x="374" y="138" width="358" height="70" rx="7" fill="#1d4e89"/>
+  <text x="553" y="164" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">2. Lexical ILIKE fast path</text>
+  <text x="553" y="184" text-anchor="middle" fill="#d7e7f8" font-size="10">phrase + token AND on contextual_text</text>
+  <text x="553" y="198" text-anchor="middle" fill="#d7e7f8" font-size="10">locator / semantic, not identifier-only</text>
+  <rect x="80" y="222" width="580" height="48" rx="7" fill="#fff6ea" stroke="#c9842a"/>
+  <text x="370" y="242" text-anchor="middle" fill="#001838" font-size="12">If exact IDs fill limit, or lexical fills limit with real matches → skip embedRetrievalQuery</text>
+  <text x="370" y="258" text-anchor="middle" fill="#5b6573" font-size="10">Latency is mostly tool rounds + the query embedding, not HNSW. Identifier lookups often never hit Vertex.</text>
+  <rect x="8" y="284" width="358" height="78" rx="7" fill="#3d5a40"/>
+  <text x="187" y="310" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">3a. Vector arm</text>
+  <text x="187" y="328" text-anchor="middle" fill="#dce8dc" font-size="10">embed query 768-d RETRIEVAL_QUERY</text>
+  <text x="187" y="344" text-anchor="middle" fill="#dce8dc" font-size="10">ORDER BY embedding &lt;=&gt; query  LIMIT ~40</text>
+  <rect x="374" y="284" width="358" height="78" rx="7" fill="#3d5a40"/>
+  <text x="553" y="310" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">3b. Keyword arm (not BM25)</text>
+  <text x="553" y="328" text-anchor="middle" fill="#dce8dc" font-size="10">websearch_to_tsquery on english tsvector</text>
+  <text x="553" y="344" text-anchor="middle" fill="#dce8dc" font-size="10">ORDER BY ts_rank_cd  LIMIT ~40</text>
+  <rect x="8" y="374" width="724" height="52" rx="7" fill="#001838"/>
+  <text x="370" y="394" text-anchor="middle" fill="#fff" font-size="12">4. Reciprocal rank fusion (k=60) · collapse to best chunk per (attachmentId, pageNumber)</text>
+  <text x="370" y="412" text-anchor="middle" fill="#cfe0f5" font-size="10">Winning chunk = highest lexical overlap with the query, not ordinal 0. Prefer quote over visual_interpretation.</text>
+  <rect x="8" y="438" width="724" height="76" rx="7" fill="#f4f7fb" stroke="#d5dee8"/>
+  <text x="24" y="458" fill="#001838" font-size="12">5. Deterministic rerank (no cross-encoder): locator file/page boost, then identifier-in-excerpt, then lexicalMatchScore.</text>
+  <text x="24" y="476" fill="#1a2230" font-size="11">Match-centered 900-char excerpt. TOC / running-header ID lists demoted (requirementIndex). Caps: 16 hits, 80 excludePages.</text>
+  <text x="24" y="494" fill="#5b6573" font-size="10">Quoted phrases stay intact. AND across concepts. OR only inside a phrase family (e.g. Media Fill). Semantic queries do not restrict by route.</text>
+  <rect x="8" y="526" width="724" height="52" rx="7" fill="#001838"/>
+  <text x="370" y="546" text-anchor="middle" fill="#fff" font-size="12">Ready citation: [filename, p. N]  ·  saved fields convert to numbered [n] + Citations: list</text>
+  <text x="370" y="564" text-anchor="middle" fill="#cfe0f5" font-size="10">Do not reject a draft that omitted a known page. Cover sheets (divider=true) are locators — keep search open.</text>
+</svg>
+<p class="caption">Figure 2. Two SQL lists, fused in application code. Adding Elasticsearch would duplicate this and leave the harness still deciding when to grep.</p>
+
+<table>
+  <tr><th>Query kind</th><th>What runs</th></tr>
+  <tr><td><code>identifier</code></td><td>Requirement-like IDs from <code>requirementIds()</code>. Exact SQL first. If those hits fill <code>limit</code>, skip embed. Prepend remaining hybrid RRF.</td></tr>
+  <tr><td><code>locator</code></td><td>Page / filename wording. Route first. Lexical fast path. Then hybrid if needed.</td></tr>
+  <tr><td><code>semantic</code></td><td>No extra identifier SQL. Vector + FTS + RRF. Unrestricted semantic stays two SQL calls (vector + keyword).</td></tr>
+</table>
+
+<h2 class="page-break">3. Search loop (when the harness hides grep)</h2>
 <p><code>searchLoopDirective</code> in <code>search-loop.ts</code>. Shared by Document and Analytics, with different “this was a real cited page” rules.</p>
 <table>
   <tr><th>Event this turn</th><th>search_documents</th><th>ask_user (Document)</th></tr>
@@ -89,7 +129,7 @@ li { margin:0 0 4px; }
 <strong>Never quiz the page number.</strong> After any grep, Document chat hides <code>ask_user</code> until <code>read_document_page</code>. Outline locates; it does not unlock a quiz.
 </div>
 
-<h2 class="page-break">3. Document review state machine</h2>
+<h2 class="page-break">4. Document review state machine</h2>
 <p>Empty inventories and open-set drafts with distributed evidence use a page walk, not another grep. Tools: <code>start_document_review</code> → <code>continue_document_review</code> → <code>finish_document_review</code>. Phase lives on the in-turn <code>DocumentReviewSession</code>.</p>
 <svg viewBox="0 0 740 340" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
   <rect x="20" y="40" width="150" height="56" rx="8" fill="#5b6573"/>
@@ -122,7 +162,7 @@ li { margin:0 0 4px; }
   <text x="36" y="292" fill="#001838" font-size="12" font-weight="700">already_complete</text>
   <text x="160" y="292" fill="#1a2230" font-size="11">Same |obj: just finished → do not reset into another walk. Fill with edit_table.</text>
 </svg>
-<p class="caption">Figure 2. <code>prepareDocumentReviewStep</code> forces the tool for the current phase. A leftover qualification finish does not unlock Calibration.</p>
+<p class="caption">Figure 3. <code>prepareDocumentReviewStep</code> forces the tool for the current phase. A leftover qualification finish does not unlock Calibration.</p>
 
 <h3>Coverage identity</h3>
 <table>
@@ -138,7 +178,7 @@ li { margin:0 0 4px; }
 <strong>placeholder_fill ≠ page walk.</strong> A populated table that still has <code>&lt;date&gt;</code> / <code>&lt;identifier&gt;</code> is adaptive closed-set search (<code>placeholder-fill.ts</code>). Header-only seeded tables (blank data cells) are empty inventories and still need a matching finished review.
 </div>
 
-<h2 class="page-break">4. Citation ledger and fact gate</h2>
+<h2 class="page-break">5. Citation ledger and fact gate</h2>
 <p>Hard facts (dates, identifiers, measured numbers) in <code>draft_field</code> / <code>propose_edit</code> / <code>edit_table</code> must match a quote on a page this turn retrieved. Empty ledger or pages with no served quotes <strong>fail open</strong>.</p>
 <svg viewBox="0 0 740 390" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
   <rect x="20" y="12" width="200" height="70" rx="8" fill="#001838"/>
@@ -172,7 +212,7 @@ li { margin:0 0 4px; }
   <text x="36" y="320" fill="#001838" font-size="11">finish_document_review seeds the ledger with reviewedEvidence so later drafts in the turn can hydrate those transcripts.</text>
   <text x="36" y="340" fill="#5b6573" font-size="10">Follow-up turns keep a slim citationDigest ([filename, p. N] + short summary), not the full 273-page findings array.</text>
 </svg>
-<p class="caption">Figure 3. The model can still hallucinate a batch number. The harness is the last gate before an <code>ai_fix</code> comment is written.</p>
+<p class="caption">Figure 4. The model can still hallucinate a batch number. The harness is the last gate before an <code>ai_fix</code> comment is written.</p>
 
 <div class="grid2">
   <div class="box">
@@ -194,9 +234,9 @@ li { margin:0 0 4px; }
   </div>
 </div>
 
-<h2>5. Compaction, budgets, abort</h2>
+<h2>6. Compaction, budgets, abort</h2>
 <p>Every model step resends system prompt + tool JSON schemas + the growing tool-result transcript. A 273-page finish that keeps full findings will 500 the next message. That is why compaction exists.</p>
-<svg viewBox="0 0 740 210" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+<svg viewBox="0 0 740 216" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
   <rect x="8" y="8" width="175" height="88" rx="8" fill="#001838"/>
   <text x="95" y="40" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">System + schemas</text>
   <text x="95" y="58" text-anchor="middle" fill="#cfe0f5" font-size="10">resent every step</text>
@@ -213,12 +253,13 @@ li { margin:0 0 4px; }
   <text x="655" y="40" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">270s abort</text>
   <text x="655" y="58" text-anchor="middle" fill="#f8d0d6" font-size="10">from request start</text>
   <text x="655" y="74" text-anchor="middle" fill="#f8d0d6" font-size="10">not a step cap</text>
-  <rect x="8" y="112" width="724" height="86" rx="8" fill="#f4f7fb" stroke="#d5dee8"/>
-  <text x="24" y="138" fill="#001838" font-size="12"><tspan font-weight="700">TOOL_RESULT_BUDGET</tspan>  ·  searchHits 16  ·  excerpt 900  ·  page transcript 12k (analytics 8k)  ·  finish findings 60  ·  digest summary 160</text>
-  <text x="24" y="160" fill="#1a2230" font-size="11"><tspan font-family="DejaVu Sans Mono" font-size="10">compactChatToolHistoryForModel</tspan> keeps ids / counts / page-citation digests; drops transcripts and value arrays.</text>
-  <text x="24" y="182" fill="#5b6573" font-size="10">deadline_abort captures ai_chat_failed. Do not tell the engineer they ran out of steps or to re-prompt. Cancel is a different stop.</text>
+  <rect x="8" y="112" width="724" height="92" rx="8" fill="#f4f7fb" stroke="#d5dee8"/>
+  <text x="24" y="134" fill="#001838" font-size="12"><tspan font-weight="700">TOOL_RESULT_BUDGET</tspan>  ·  searchHits 16  ·  excerpt 900  ·  page transcript 12k (analytics 8k)</text>
+  <text x="24" y="152" fill="#001838" font-size="11">finish findings 60  ·  digest summary 160</text>
+  <text x="24" y="172" fill="#1a2230" font-size="11"><tspan font-family="DejaVu Sans Mono" font-size="10">compactChatToolHistoryForModel</tspan> keeps ids / counts / page-citation digests; drops transcripts and value arrays.</text>
+  <text x="24" y="190" fill="#5b6573" font-size="10">deadline_abort captures ai_chat_failed. Do not tell the engineer they ran out of steps or to re-prompt. Cancel is a different stop.</text>
 </svg>
-<p class="caption">Figure 4. There is no per-turn tool-step cap. Loop guards live in <code>prepareStep</code>. Hobby function max duration must stay above 270s.</p>
+<p class="caption">Figure 5. There is no per-turn tool-step cap. Loop guards live in <code>prepareStep</code>. Hobby function max duration must stay above 270s.</p>
 
 <table>
   <tr><th>Constant</th><th>Value</th><th>File</th></tr>
@@ -234,9 +275,9 @@ li { margin:0 0 4px; }
 <strong>Debug a “it didn’t search” bug in this order.</strong> (1) Latest-turn intent — was it <code>social</code>? (2) <code>ChatTurnPlan.retrievalPolicy</code> — focused skips grep. (3) <code>prepareReportChatStep</code> activeTools on that step — search already hidden? (4) Langfuse generation — did the model see the tool? (5) Retrieval eval (<code>pnpm retrieval-eval</code>) if the page was wrong, not if the tool never ran.
 </div>
 
-<h2>6. Clicking a citation</h2>
+<h2>7. Clicking a citation</h2>
 <p>In the document, chat, or suggestion Sources, <code>[filename, p. N]</code> (or numbered <code>[n]</code> mapped to a parked source) opens or reuses that attachment’s canvas tab and scrolls the PDF. Combined <code>[file A, p. N, file B, p. M]</code> splits into one link per file. Word preview cannot jump to a page. Missing or ambiguous filenames toast. Open canvases stay mounted while you switch to Report so the PDF does not re-parse.</p>
 
-<footer>Andrei chat harness · retrieval, review, grounding · code is source of truth over this PDF</footer>
+<footer>Andrei · retrieval · briefing 3 wrote the tables this PDF queries · code is source of truth</footer>
 </body>
 </html>

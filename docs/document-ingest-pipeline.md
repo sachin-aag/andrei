@@ -4,6 +4,8 @@ How PDF/DOCX attachments become searchable evidence for report chat. Extract and
 
 Entry points: `startDocumentIngest` → `runDocumentIngest`. Chat later reads `document_pages` / `document_chunks` via hybrid retrieval.
 
+Junior-engineer briefing (diagrams): this write path is [`harness-briefing/03-indexing-and-storage.pdf`](harness-briefing/03-indexing-and-storage.pdf). How `search_documents` queries the rows ingest wrote: [`harness-briefing/04-retrieval-and-grounding.pdf`](harness-briefing/04-retrieval-and-grounding.pdf). Living search plan: [`retrieval.md`](retrieval.md).
+
 ```mermaid
 flowchart TD
   subgraph Upload["1. Reserve and upload"]

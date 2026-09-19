@@ -33,7 +33,7 @@ li { margin:0 0 4px; }
 </style>
 </head>
 <body>
-<p class="kicker">Andrei · junior engineer briefing · 1 of 3</p>
+<p class="kicker">Andrei · junior engineer briefing · 1 of 4</p>
 <h1>Chat harness architecture</h1>
 <p class="lede">The harness is the server-side control plane around report chat. It is not the Gemini model, and it is not the PDF search index. It decides intent, retrieval shape, which tools exist on each step, and whether a drafted fact is allowed to persist.</p>
 
@@ -47,13 +47,13 @@ li { margin:0 0 4px; }
   <text x="24" y="32" fill="#fff" font-size="13" font-weight="700">A. Harness (this briefing)</text>
   <text x="24" y="52" fill="#cfe0f5" font-size="11">src/lib/ai/chat/*  ·  POST /api/reports/[reportId]/chat  ·  intent, TurnPlan, prepareStep, grounding, compaction</text>
   <rect x="8" y="76" width="724" height="58" rx="8" fill="#1d4e89"/>
-  <text x="24" y="100" fill="#fff" font-size="13" font-weight="700">B. Retrieval (attachment search)</text>
-  <text x="24" y="120" fill="#d7e7f8" font-size="11">src/lib/attachments/retrieval.ts  ·  hybrid vector + FTS  ·  identifiers  ·  ingest/embed is Vertex-only</text>
+  <text x="24" y="100" fill="#fff" font-size="13" font-weight="700">B. Retrieval (briefing 3 writes the index · briefing 4 queries it)</text>
+  <text x="24" y="120" fill="#d7e7f8" font-size="11">Same Postgres: pgvector HNSW + English FTS — not Pinecone, not BM25. Ingest is Vertex-only.</text>
   <rect x="8" y="144" width="724" height="58" rx="8" fill="#3d5a40"/>
   <text x="24" y="168" fill="#fff" font-size="13" font-weight="700">C. Orchestrator model</text>
   <text x="24" y="188" fill="#dce8dc" font-size="11">Gemini 3.7 Flash, thinking medium  ·  page extracts: 3.5 Flash-Lite  ·  the model barely writes; it mostly re-reads context</text>
 </svg>
-<p class="caption">Figure 1. Chat stays the control plane. Do not replace agentic grep with a standalone search product. Retrieval runs underneath the harness.</p>
+<p class="caption">Figure 1. Chat stays the control plane. Do not replace agentic grep with a standalone search product. How files become rows: briefing 3. How search reads those rows: briefing 4.</p>
 
 <div class="grid2">
   <div class="box">
@@ -125,6 +125,8 @@ li { margin:0 0 4px; }
   <tr><td>Turn snapshot</td><td><code>turn-plan.ts</code> → <code>ChatTurnPlan</code></td></tr>
   <tr><td>Per-step tools</td><td><code>step-policy.ts</code> → <code>prepareReportChatStep</code></td></tr>
   <tr><td>Retrieval policy</td><td><code>retrieval-policy.ts</code> (<code>focused|adaptive|comprehensive</code>)</td></tr>
+  <tr><td>Indexing (write path)</td><td><code>run-document-ingest.ts</code>, <code>chunk-pages.ts</code>, <code>embed-chunks.ts</code> — briefing 3</td></tr>
+  <tr><td>Hybrid search (read path)</td><td><code>retrieval.ts</code> (pgvector + English FTS, RRF k=60) — briefing 4</td></tr>
   <tr><td>Tool implementations</td><td><code>tools.ts</code> (Plan allowlist in <code>document-review.ts</code>)</td></tr>
   <tr><td>Page walk</td><td><code>document-review.ts</code>, <code>review-page-plan.ts</code></td></tr>
   <tr><td>Search hide / ask_user hide</td><td><code>search-loop.ts</code></td></tr>
@@ -132,13 +134,13 @@ li { margin:0 0 4px; }
   <tr><td>Fact gate</td><td><code>ground-draft.ts</code>, <code>citation-grounding.ts</code>, <code>claim-facts.ts</code></td></tr>
   <tr><td>Payload size</td><td><code>compact-tool-history.ts</code>, <code>tool-result-budget.ts</code></td></tr>
   <tr><td>Characterization lock</td><td><code>harness-scenarios.ts</code> + colocated <code>*.test.ts</code></td></tr>
-  <tr><td>Living plans</td><td><code>docs/harness-plan.md</code>, <code>docs/retrieval.md</code></td></tr>
+  <tr><td>Living plans</td><td><code>docs/harness-plan.md</code>, <code>docs/retrieval.md</code>, <code>docs/document-ingest-pipeline.md</code></td></tr>
 </table>
 
 <div class="callout warn">
 <strong>Two control planes.</strong> The server hides tools in <code>prepareStep</code>. The prompt also tells the model not to use missing tools (<code>intentToolAvailabilityRule</code>). If you add a guard, pick one plane. Do not add a regex, a prompt paragraph, and a test for the same incident without retiring something. That is how this file grew.
 </div>
 
-<footer>Andrei chat harness · architecture · code is source of truth over this PDF</footer>
+<footer>Andrei chat harness · architecture · next: briefing 2 control plane, then 3 indexing, 4 search</footer>
 </body>
 </html>

@@ -7,7 +7,7 @@ fix this file.
 The layer above this one — per-step context size, tool availability, and
 the turn classifiers — is [`harness-plan.md`](harness-plan.md). Ranking
 work that only matters because it removes tool steps belongs there.
-Junior-engineer briefing (diagrams): [`harness-briefing/`](harness-briefing/).
+Junior-engineer briefing (diagrams): write path (ingest, pgvector + FTS, no hosted vector DB, no BM25) is [`harness-briefing/03-indexing-and-storage.pdf`](harness-briefing/03-indexing-and-storage.pdf); the search / review / grounding read path against those tables is [`harness-briefing/04-retrieval-and-grounding.pdf`](harness-briefing/04-retrieval-and-grounding.pdf). Pack index: [`harness-briefing/`](harness-briefing/).
 
 Chat stays the **control plane**. Do not replace agentic grep
 (`search_documents` / outline / page read / comprehensive review) with a

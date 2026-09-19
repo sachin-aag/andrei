@@ -10,7 +10,10 @@ one regex, and one prompt paragraph per incident. Most items below remove
 code. Every item that adds code names what it retires.
 
 Junior-engineer briefing (diagrams, how it works today):
-[`harness-briefing/`](harness-briefing/).
+[`harness-briefing/`](harness-briefing/). Indexing / storage:
+[`harness-briefing/03-indexing-and-storage.pdf`](harness-briefing/03-indexing-and-storage.pdf).
+Search of those tables:
+[`harness-briefing/04-retrieval-and-grounding.pdf`](harness-briefing/04-retrieval-and-grounding.pdf).
 
 ## Status (this branch)
 

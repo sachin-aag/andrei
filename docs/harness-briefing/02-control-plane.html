@@ -32,7 +32,7 @@ li { margin:0 0 4px; }
 </style>
 </head>
 <body>
-<p class="kicker">Andrei · junior engineer briefing · 2 of 3</p>
+<p class="kicker">Andrei · junior engineer briefing · 2 of 4</p>
 <h1>Turn plan and step policy</h1>
 <p class="lede">At turn start the harness snapshots a <code>ChatTurnPlan</code>. On every model step it runs <code>prepareReportChatStep</code> and returns the only tools the model may call. Characterization tests lock first-step behavior so a “simpler” change cannot silently reopen a 273-page walk.</p>
 
@@ -147,6 +147,6 @@ li { margin:0 0 4px; }
   <tr><td>Agent</td><td>May write. Write tools stay registered on a read turn so a hallucinated <code>edit_table</code> remaps to internal <code>unsupported_tool</code> instead of failing the chat. Keep that fallback out of <code>activeTools</code>.</td></tr>
 </table>
 
-<footer>Andrei chat harness · turn plan and step policy · characterization tests beat Langfuse vibes</footer>
+<footer>Andrei chat harness · turn plan and step policy · next: briefing 3 indexing, briefing 4 search</footer>
 </body>
 </html>

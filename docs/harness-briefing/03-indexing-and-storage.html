@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Andrei — indexing and storage</title>
+<style>
+@page { size: letter; margin: 0.55in 0.6in 0.6in; }
+:root { --navy:#001838; --blue:#1d4e89; --ink:#1a2230; --muted:#5b6573; --line:#d5dee8; --bg:#f4f7fb; --good:#0f6b3a; --warn:#8a4b00; --bad:#8b1e2d; }
+* { box-sizing: border-box; }
+html,body { margin:0; padding:0; font-family:"DejaVu Sans","Liberation Sans",sans-serif; color:var(--ink); font-size:10.5pt; line-height:1.42; }
+h1 { font-size:20pt; color:var(--navy); margin:0 0 6px; line-height:1.15; }
+h2 { font-size:13pt; color:var(--navy); margin:16px 0 8px; page-break-after:avoid; }
+h3 { font-size:11pt; color:var(--blue); margin:12px 0 6px; page-break-after:avoid; }
+p { margin:0 0 8px; }
+.kicker { font-size:8.5pt; letter-spacing:.12em; text-transform:uppercase; color:var(--blue); font-weight:700; margin:0 0 4px; }
+.lede { font-size:11.5pt; color:#2c3644; margin:0 0 12px; }
+code { font-family:"DejaVu Sans Mono","Liberation Mono",monospace; font-size:8.6pt; }
+.box, .callout, table, svg { page-break-inside:avoid; }
+.box { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:0 0 10px; }
+.callout { border-left:4px solid var(--blue); padding:8px 12px; background:#eef4fb; margin:0 0 10px; }
+.callout.warn { border-left-color:var(--warn); background:#fff6ea; }
+table { width:100%; border-collapse:collapse; margin:0 0 12px; font-size:8.8pt; }
+th,td { border:1px solid var(--line); padding:5px 7px; vertical-align:top; text-align:left; }
+th { background:var(--navy); color:#fff; }
+tr:nth-child(even) td { background:#f7fafc; }
+svg { width:100%; height:auto; display:block; margin:0 0 6px; }
+.caption { font-size:8.5pt; color:var(--muted); margin:0 0 12px; }
+footer { font-size:8pt; color:var(--muted); margin-top:8px; page-break-before:avoid; }
+ul,ol { margin:0 0 10px; padding-left:1.15em; }
+li { margin:0 0 4px; }
+.page-break { page-break-before:always; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 10px; }
+</style>
+</head>
+<body>
+<p class="kicker">Andrei · junior engineer briefing · 3 of 4</p>
+<h1>Indexing and storage</h1>
+<p class="lede">This briefing is the <em>write path</em>: how a PDF or Word file becomes rows and indexes in Postgres. Briefing 4 is the <em>read path</em>: how <code>search_documents</code> queries those same rows. There is no separate search cluster. Chat stays the control plane.</p>
+
+<table>
+  <tr><th>Question</th><th>What we actually have</th></tr>
+  <tr><td>Hosted vector DB (Pinecone, Weaviate, Elastic kNN)?</td><td><strong>No.</strong> A <code>vector(768)</code> column on <code>document_chunks</code> in the same Postgres (Neon or Docker). Index: HNSW, cosine ops. Query uses <code>embedding &lt;=&gt; query::vector</code>.</td></tr>
+  <tr><td>BM25?</td><td><strong>No.</strong> English Postgres full-text search: GIN on <code>to_tsvector('english', contextual_text)</code>, query via <code>websearch_to_tsquery</code>, rank via <code>ts_rank_cd</code>. BM25 as a third arm is deferred (<code>docs/retrieval.md</code>).</td></tr>
+  <tr><td>Elasticsearch / standalone search product?</td><td><strong>No.</strong> Do not replace agentic grep with one. Hybrid retrieval already runs under chat.</td></tr>
+  <tr><td>Is the report body indexed?</td><td><strong>No.</strong> TipTap JSON lives in <code>report_sections</code>. Chat uses <code>read_section</code>. Only attachment pages are chunked.</td></tr>
+</table>
+
+<div class="callout warn">
+<strong>Two stores, one pipeline.</strong> Object storage holds <em>bytes</em> (preview, download, re-ingest). Postgres holds <em>searchable text + vectors</em>. Search never greps GCS. If ingest did not finish, there is nothing to retrieve.
+</div>
+
+<h2>1. Overall: write path then read path</h2>
+<svg viewBox="0 0 740 248" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+  <rect x="8" y="8" width="724" height="28" rx="6" fill="#001838"/>
+  <text x="370" y="27" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">Write path — this briefing · runDocumentIngest</text>
+  <rect x="8" y="48" width="110" height="70" rx="7" fill="#1d4e89"/>
+  <text x="63" y="76" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">1. Upload</text>
+  <text x="63" y="94" text-anchor="middle" fill="#d7e7f8" font-size="9">bytes → GCS</text>
+  <text x="63" y="108" text-anchor="middle" fill="#d7e7f8" font-size="9">or local disk</text>
+  <rect x="132" y="48" width="120" height="70" rx="7" fill="#1d4e89"/>
+  <text x="192" y="76" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">2. Extract</text>
+  <text x="192" y="94" text-anchor="middle" fill="#d7e7f8" font-size="9">Vertex / DocAI</text>
+  <text x="192" y="108" text-anchor="middle" fill="#d7e7f8" font-size="9">→ document_pages</text>
+  <rect x="266" y="48" width="120" height="70" rx="7" fill="#1d4e89"/>
+  <text x="326" y="76" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">3. Outline</text>
+  <text x="326" y="94" text-anchor="middle" fill="#d7e7f8" font-size="9">heading spans</text>
+  <text x="326" y="108" text-anchor="middle" fill="#d7e7f8" font-size="9">+ identifiers</text>
+  <rect x="400" y="48" width="120" height="70" rx="7" fill="#1d4e89"/>
+  <text x="460" y="76" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">4. Chunk</text>
+  <text x="460" y="94" text-anchor="middle" fill="#d7e7f8" font-size="9">~3200 / 240</text>
+  <text x="460" y="108" text-anchor="middle" fill="#d7e7f8" font-size="9">quote vs visual</text>
+  <rect x="534" y="48" width="198" height="70" rx="7" fill="#3d5a40"/>
+  <text x="633" y="76" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">5. Index in Postgres</text>
+  <text x="633" y="94" text-anchor="middle" fill="#dce8dc" font-size="9">embed 768-d + HNSW</text>
+  <text x="633" y="108" text-anchor="middle" fill="#dce8dc" font-size="9">GIN FTS on contextual_text</text>
+  <rect x="8" y="138" width="724" height="28" rx="6" fill="#8a4b00"/>
+  <text x="370" y="157" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">Same tables — briefing 4 reads them · searchReportDocuments</text>
+  <rect x="8" y="178" width="175" height="56" rx="7" fill="#f4f7fb" stroke="#d5dee8"/>
+  <text x="95" y="202" text-anchor="middle" fill="#001838" font-size="11">pages.transcript</text>
+  <text x="95" y="218" text-anchor="middle" fill="#5b6573" font-size="9">read_document_page</text>
+  <rect x="195" y="178" width="175" height="56" rx="7" fill="#f4f7fb" stroke="#d5dee8"/>
+  <text x="282" y="202" text-anchor="middle" fill="#001838" font-size="11">pages.identifiers</text>
+  <text x="282" y="218" text-anchor="middle" fill="#5b6573" font-size="9">exact-ID GIN overlap</text>
+  <rect x="382" y="178" width="175" height="56" rx="7" fill="#f4f7fb" stroke="#d5dee8"/>
+  <text x="469" y="202" text-anchor="middle" fill="#001838" font-size="11">chunks.contextual_text</text>
+  <text x="469" y="218" text-anchor="middle" fill="#5b6573" font-size="9">English FTS / ILIKE</text>
+  <rect x="569" y="178" width="163" height="56" rx="7" fill="#f4f7fb" stroke="#d5dee8"/>
+  <text x="650" y="202" text-anchor="middle" fill="#001838" font-size="11">chunks.embedding</text>
+  <text x="650" y="218" text-anchor="middle" fill="#5b6573" font-size="9">HNSW cosine</text>
+</svg>
+<p class="caption">Figure 1. Indexing is ingest writing Postgres. Retrieval is SQL against those rows. Do not invent a third system in between.</p>
+<p>Join is always the report’s live ingest: <code>report_attachments.active_ingest_run_id = document_chunks.ingest_run_id</code>. Superseded runs are invisible to search. Library links join by <code>asset_id</code> when set; eval / legacy rows with null <code>asset_id</code> join on <code>attachment_id</code>. Citations stay filename + page — chunk ids change on re-ingest. Living plans: <code>docs/document-ingest-pipeline.md</code> (write) · <code>docs/retrieval.md</code> (read). Code: <code>run-document-ingest.ts</code> · <code>retrieval.ts</code>.</p>
+
+<h2 class="page-break">2. How input documents are processed</h2>
+<p>Entry: <code>startDocumentIngest</code> → <code>runDocumentIngest</code> (<code>src/lib/attachments/run-document-ingest.ts</code>). Extract + embed are <strong>Vertex-only</strong> (<code>GOOGLE_VERTEX_PROJECT</code>). A Gateway key is not enough. Stub: <code>ALLOW_TEST_STUB_DOCUMENT_INGEST</code>.</p>
+<svg viewBox="0 0 740 250" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+  <rect x="8" y="8" width="724" height="40" rx="7" fill="#001838"/>
+  <text x="370" y="33" text-anchor="middle" fill="#fff" font-size="12">Browser PUT staging object → finalize (size / MIME / malware) → promote to permanent key</text>
+  <rect x="8" y="62" width="358" height="120" rx="8" fill="#eef4fb" stroke="#1d4e89"/>
+  <text x="187" y="86" text-anchor="middle" fill="#001838" font-size="12" font-weight="700">PDF</text>
+  <text x="24" y="108" fill="#1a2230" font-size="11">Split into page batches (DocAI: 15-page, 3 in flight).</text>
+  <text x="24" y="126" fill="#1a2230" font-size="11">Born-digital: PDF text layer = transcript.</text>
+  <text x="24" y="144" fill="#1a2230" font-size="11">Scans: Document AI OCR, weak pages → Gemini vision.</text>
+  <text x="24" y="162" fill="#1a2230" font-size="11">Insight pass fills pageContext / tables / figures.</text>
+  <rect x="374" y="62" width="358" height="120" rx="8" fill="#eef8f1" stroke="#0f6b3a"/>
+  <text x="553" y="86" text-anchor="middle" fill="#001838" font-size="12" font-weight="700">DOCX</text>
+  <text x="390" y="108" fill="#1a2230" font-size="11">No real page model. Mammoth extracts body text.</text>
+  <text x="390" y="126" fill="#1a2230" font-size="11">Split on paragraph breaks into ~6k-char</text>
+  <text x="390" y="144" fill="#1a2230" font-size="11">pseudo-pages. Embedded rasters described with</text>
+  <text x="390" y="162" fill="#1a2230" font-size="11">the same Vertex extract model as PDF vision.</text>
+  <rect x="8" y="196" width="724" height="42" rx="7" fill="#f4f7fb" stroke="#d5dee8"/>
+  <text x="370" y="214" text-anchor="middle" fill="#001838" font-size="11">Both paths then: persistOutlineSpansForRun → chunkAndEmbedRun → mark run ready, supersede prior ready run</text>
+  <text x="370" y="230" text-anchor="middle" fill="#5b6573" font-size="10">Parser version v4. Clean ready files are not force-reprocessed. Caps: 250 MB/file, 500 pages/file.</text>
+</svg>
+<p class="caption">Figure 2. Extract model is Gemini Flash-Lite at Vertex <code>global</code>. OCR is a regional Document AI processor. Embeddings stay on <code>GOOGLE_VERTEX_LOCATION</code> (often <code>us-central1</code>). Do not conflate those locations.</p>
+
+<h3>Where bytes live</h3>
+<table>
+  <tr><th>Layer</th><th>Table / backend</th><th>What it stores</th></tr>
+  <tr><td>Canonical bytes</td><td><code>attachment_assets</code> + GCS (<code>GCS_BUCKET</code>) or local disk</td><td>The PDF/DOCX. Vault at <code>/vault</code>. Linking into a report does not copy bytes or count storage twice.</td></tr>
+  <tr><td>Report link</td><td><code>report_attachments</code></td><td>Filename, folder, <code>active_ingest_run_id</code>, processing status. Soft-delete via <code>deletedAt</code>.</td></tr>
+  <tr><td>One extract attempt</td><td><code>attachment_ingest_runs</code></td><td><code>document_summary</code>, outline spans pointer, status <code>pending → running → ready | failed | cancelled</code>.</td></tr>
+  <tr><td>PDF slices</td><td><code>document_ingest_batches</code></td><td>Temp batch objects while extract is in flight.</td></tr>
+</table>
+<p>Production: <code>ATTACHMENT_STORAGE_BACKEND</code> default GCS + WIF. Local uploads need <code>ATTACHMENT_STORAGE_BACKEND=local</code> <strong>and</strong> <code>ALLOW_LOCAL_ATTACHMENT_STORAGE=true</code>.</p>
+
+<h2 class="page-break">3. What Postgres stores after ingest</h2>
+<p>Searchable evidence is three grains. Metadata is filterable columns (file / page / span), not extra prose stuffed into every chunk. Chunks inherit page columns via <code>pageId</code>.</p>
+<svg viewBox="0 0 740 300" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, sans-serif">
+  <rect x="8" y="8" width="724" height="78" rx="8" fill="#001838"/>
+  <text x="24" y="32" fill="#fff" font-size="13" font-weight="700">document_pages  (one row per PDF page or DOCX pseudo-page)</text>
+  <text x="24" y="52" fill="#cfe0f5" font-size="11">transcript  ·  visual_interpretation  ·  page_context  ·  outline_title  ·  identifiers[]  ·  has_table / has_figure (nullable)</text>
+  <text x="24" y="70" fill="#cfe0f5" font-size="11">GIN on identifiers. Chat read_document_page returns the transcript (capped 12k). This is the quote ledger’s source of truth.</text>
+  <rect x="8" y="98" width="724" height="62" rx="8" fill="#1d4e89"/>
+  <text x="24" y="122" fill="#fff" font-size="13" font-weight="700">document_outline_spans  (heading range + unioned identifiers)</text>
+  <text x="24" y="142" fill="#d7e7f8" font-size="11">Written after pages exist, before chunk/embed. document_outline prefers stored spans; else live buildOutlineFromStoredPages.</text>
+  <rect x="8" y="172" width="724" height="118" rx="8" fill="#3d5a40"/>
+  <text x="24" y="196" fill="#fff" font-size="13" font-weight="700">document_chunks  (the search index)</text>
+  <text x="24" y="216" fill="#dce8dc" font-size="11">raw_text · contextual_text = “Document: file | Page N | pageContext” + raw</text>
+  <text x="24" y="234" fill="#dce8dc" font-size="11">source_kind quote | visual_interpretation · embedding vector(768) · HNSW cosine</text>
+  <text x="24" y="252" fill="#dce8dc" font-size="11">GIN FTS on to_tsvector('english', contextual_text) — expression must match the query byte-for-byte</text>
+  <text x="24" y="270" fill="#dce8dc" font-size="11">Unique (ingest_run_id, page_number, ordinal). ~3200 chars, 240 overlap, split on paragraph/sentence.</text>
+</svg>
+<p class="caption">Figure 3. <code>list_attachments</code> is not this index. It walks the Attachments tree (count / folders / types / status / filename). Which files mention a fact <em>inside</em> a PDF is still chunk search.</p>
+
+<h3>How a page becomes chunks</h3>
+<p><code>chunkDocumentPages</code> in <code>chunk-pages.ts</code>. Transcript and visual interpretation are chunked as separate sources so a figure caption does not drown the quote, and ranking can prefer <code>quote</code> over <code>visual_interpretation</code>.</p>
+<table>
+  <tr><th>Constant</th><th>Value</th></tr>
+  <tr><td><code>DEFAULT_CHUNK_MAX_CHARS</code></td><td>3_200</td></tr>
+  <tr><td><code>DEFAULT_CHUNK_OVERLAP_CHARS</code></td><td>240</td></tr>
+  <tr><td>Embedding model</td><td><code>gemini-embedding-001</code>, task <code>RETRIEVAL_DOCUMENT</code>, 768-d, batches of 32</td></tr>
+  <tr><td>Query embedding (briefing 4)</td><td>Same model, task <code>RETRIEVAL_QUERY</code></td></tr>
+  <tr><td>HNSW index</td><td><code>document_chunks_embedding_hnsw_idx</code> <code>vector_cosine_ops</code></td></tr>
+  <tr><td>FTS index</td><td><code>document_chunks_contextual_text_fts_en_idx</code> GIN <code>to_tsvector('english', contextual_text)</code></td></tr>
+</table>
+
+<div class="callout">
+<strong>There is no BM25 index to look at.</strong> Keyword search is Postgres <code>tsvector</code> / <code>tsquery</code> with English stemming. That is closer to a Lucene TF-IDF variant than Okapi BM25. Adding BM25 would be a new arm fused with vector + FTS — explicitly deferred, not missing by accident.
+</div>
+
+<div class="box">
+<h2 style="margin-top:0">4. Status until search can see the file</h2>
+<p>Attachment: <code>uploading → validating → queued → processing → ready</code> (or <code>failed</code>). Ingest run: <code>pending → running → ready | failed | cancelled</code>. A new successful run marks the previous ready run <code>superseded</code>. Chat lists ready docs in the context map (filename + sanitized <code>documentSummary</code>). Untrusted extract text is sanitized in chat/tools, not in the attachments package.</p>
+<footer>Andrei · indexing and storage · briefing 4 queries these tables · code is source of truth</footer>
+</div>
+</body>
+</html>
