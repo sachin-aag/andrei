@@ -101,7 +101,8 @@ describe("applyTocHeadingStylesToDocumentXml", () => {
   it("marks ELR trend summaries as Heading3", () => {
     const xml =
       `<w:p><w:r><w:t>3.10 BREAKDOWNS AND TRENDS</w:t></w:r></w:p>` +
-      `<w:p><w:r><w:t>3.10.1 BREAKDOWN TREND SUMMARY</w:t></w:r></w:p>`;
+      `<w:p><w:r><w:t>3.10.1 BREAKDOWN TREND SUMMARY</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>10.0 CITATIONS</w:t></w:r></w:p>`;
 
     const out = applyTocHeadingStylesToDocumentXml(xml, ELR_TOC_HEADINGS);
     expect(paragraphFor(out, "3.10 BREAKDOWNS AND TRENDS")).toContain(
@@ -110,6 +111,9 @@ describe("applyTocHeadingStylesToDocumentXml", () => {
     const summary = paragraphFor(out, "3.10.1 BREAKDOWN TREND SUMMARY");
     expect(summary).toContain('<w:pStyle w:val="Heading3"/>');
     expect(summary).toContain('<w:outlineLvl w:val="2"/>');
+    expect(paragraphFor(out, "10.0 CITATIONS")).toContain(
+      '<w:pStyle w:val="Heading1"/>'
+    );
   });
 
   it("paints investigation subsection titles black instead of Heading2 blue", () => {

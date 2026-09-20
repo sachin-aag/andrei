@@ -166,6 +166,7 @@ export const ELR_TOC_HEADINGS: readonly TocHeadingSpec[] = [
   heading("7.0 ATTACHMENTS", "Heading1"),
   heading("8.0 REVISION HISTORY", "Heading1"),
   heading("9.0 APPROVAL PAGE", "Heading1"),
+  heading("10.0 CITATIONS", "Heading1"),
 ];
 
 export function tocHeadingSpecsForDocumentType(

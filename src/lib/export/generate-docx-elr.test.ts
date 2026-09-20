@@ -130,6 +130,21 @@ function narrative(text: string): JSONContent {
   };
 }
 
+function citedDoc(body: string, citations: string[]): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: body }] },
+      { type: "paragraph" },
+      { type: "paragraph", content: [{ type: "text", text: "Citations:" }] },
+      ...citations.map((line) => ({
+        type: "paragraph" as const,
+        content: [{ type: "text", text: line }],
+      })),
+    ],
+  };
+}
+
 function paragraphStyle(xml: string, text: string): string | null {
   const paras = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? [];
   const para = paras.find((p) => docxParagraphPlainText(p) === text);
@@ -413,5 +428,125 @@ describe("ELR DOCX export", () => {
     const gridSum = widths.reduce((sum, w) => sum + w, 0);
     expect(gridSum).toBeGreaterThan(10469);
     expect(gridSum).toBeLessThanOrEqual(15394);
+  });
+
+  it("fills 7.0 Attachments from every live file and unifies citations at 10.0", async () => {
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections({
+        elr_objective: {
+          ...EMPTY_ELR_CONTENT.elr_objective,
+          narrative: citedDoc("The URS was approved [1].", [
+            "1. [urs.pdf, p. 2]",
+          ]),
+        },
+        elr_qualification: {
+          ...EMPTY_ELR_CONTENT.elr_qualification,
+          narrative: citedDoc("IQ completed [1].", ["1. [iq.pdf, p. 4]"]),
+        },
+      }),
+      attachments: [
+        {
+          id: "att-cited",
+          reportId: "elr-export-1",
+          folderId: "year",
+          assetId: "asset-cited",
+          filename: "URS-FP-21-006.pdf",
+          description: null,
+          mimeType: "application/pdf",
+          sizeBytes: 10,
+          pageCount: 8,
+          processingStatus: "ready",
+          processingProgress: 100,
+          processingPage: null,
+          processingError: null,
+          uploadedAt: "2026-03-09T00:00:00.000Z",
+          deletedAt: null,
+        },
+        {
+          id: "att-uncited",
+          reportId: "elr-export-1",
+          folderId: null,
+          assetId: "asset-uncited",
+          filename: "uncited-scan.pdf",
+          description: null,
+          mimeType: "application/pdf",
+          sizeBytes: 10,
+          pageCount: null,
+          processingStatus: "failed",
+          processingProgress: 0,
+          processingPage: null,
+          processingError: "extract failed",
+          uploadedAt: "2026-03-09T00:00:01.000Z",
+          deletedAt: null,
+        },
+      ],
+      attachmentFolders: [
+        {
+          id: "sops",
+          reportId: "elr-export-1",
+          parentId: null,
+          name: "SOPs",
+          createdAt: "2026-03-09T00:00:00.000Z",
+        },
+        {
+          id: "year",
+          reportId: "elr-export-1",
+          parentId: "sops",
+          name: "2026",
+          createdAt: "2026-03-09T00:00:00.000Z",
+        },
+      ],
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+
+    const attachmentsAt = xml.indexOf("7.0 ATTACHMENTS");
+    const revisionAt = xml.indexOf("8.0 REVISION HISTORY");
+    const approvalAt = xml.indexOf("9.0 APPROVAL PAGE");
+    const citationsAt = xml.indexOf("10.0 CITATIONS");
+    expect(attachmentsAt).toBeGreaterThan(-1);
+    expect(revisionAt).toBeGreaterThan(attachmentsAt);
+    expect(approvalAt).toBeGreaterThan(revisionAt);
+    expect(citationsAt).toBeGreaterThan(approvalAt);
+
+    const attachmentsSlice = xml.slice(attachmentsAt, revisionAt);
+    expect(attachmentsSlice).toContain("Location");
+    expect(attachmentsSlice).toContain("URS-FP-21-006.pdf");
+    expect(attachmentsSlice).toContain("/SOPs/2026");
+    expect(attachmentsSlice).toContain("uncited-scan.pdf");
+    expect(attachmentsSlice).toMatch(/<w:t[^>]*>\/<\/w:t>/);
+
+    expect(xml).toContain("The URS was approved");
+    expect(xml).toContain("IQ completed");
+    expect(xml).toContain('<w:vertAlign w:val="superscript"/>');
+    expect(xml).not.toContain("[1]");
+    expect(xml).not.toContain("[2]");
+    const perSectionCitations = xml.match(/Citations:/g) ?? [];
+    expect(perSectionCitations).toHaveLength(0);
+    expect(xml).toContain("1. [urs.pdf, p. 2]");
+    expect(xml).toContain("2. [iq.pdf, p. 4]");
+    expect(paragraphStyle(xml, "10.0 CITATIONS")).toBe("Heading1");
+  });
+
+  it("omits the unified bibliography and numbered markers when omitCitations is set", async () => {
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections({
+        elr_objective: {
+          ...EMPTY_ELR_CONTENT.elr_objective,
+          narrative: citedDoc("The URS was approved [1].", [
+            "1. [urs.pdf, p. 2]",
+          ]),
+        },
+      }),
+      omitCitations: true,
+      attachments: [],
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+    expect(xml).toContain("The URS was approved");
+    expect(xml).not.toContain("10.0 CITATIONS");
+    expect(xml).not.toContain("[urs.pdf, p. 2]");
+    expect(xml).not.toContain("[1]");
+    expect(xml).not.toContain("Citations:");
   });
 });

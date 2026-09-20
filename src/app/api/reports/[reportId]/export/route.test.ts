@@ -26,6 +26,14 @@ vi.mock("@/lib/export/generate-docx", () => ({
   generateReportDocx: vi.fn(),
 }));
 
+vi.mock("@/lib/attachments/list-active", () => ({
+  listActiveAttachments: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@/lib/attachments/folders", () => ({
+  listAttachmentFolders: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("@/lib/customers/packs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/customers/packs")>();
   return {
@@ -151,6 +159,8 @@ describe("GET /api/reports/[reportId]/export", () => {
           assignedManagerIds: ["manager-1"],
         }),
         omitCitations: false,
+        attachments: [],
+        attachmentFolders: [],
       })
     );
   });
