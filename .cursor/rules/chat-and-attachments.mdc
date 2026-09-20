@@ -91,8 +91,10 @@ a typed `{modifier} {section noun}` that is not URS language such as
 `monitoring systems`), nested method names (non-viable / settle plate / glove /
 LAF), alarm-trend phrases on monitoring, and a preferred-filename boost
 (PRQR/PRQP; monitoring also prefers the alarm-trend PDF). Preferred files with
-zero hits are still queued (PRQR/PMC on breakdowns) so a few CSV-IQ / FAT
-headers cannot floor-8-pad them out. CSV-OQ / CSV-IQ / RTM / URS pages
+zero hits are still queued as a stratified sample (PRQR/PMC on breakdowns,
+CCF/CAPA/PRQR on QMS, cap `REVIEW_PREFERRED_MISSING_PAGE_CAP`) so a few CSV-IQ
+/ FAT headers cannot floor-8-pad them out — not every page of a 200-page CCF.
+CSV-OQ / CSV-IQ / RTM / URS pages
 score 0 unless they look like a dated result table. Header-only UNCONTROLLED
 COPY / Sign/Date chrome is 0. Haystack uses outline + pageContext + the first
 4000 transcript characters. `start_document_review`

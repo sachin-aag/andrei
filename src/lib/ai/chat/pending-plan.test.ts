@@ -542,6 +542,23 @@ describe("plan prompt and metadata", () => {
     expect(completedPlanSectionLabel(null)).toBeNull();
   });
 
+  it("does not name QMS done when this turn landed no suggestion", () => {
+    const started = plan([
+      { sectionKey: "elr_objective", label: "Objective", state: "done" },
+      {
+        sectionKey: "elr_qms",
+        label: "QMS Records",
+        state: "in_progress",
+      },
+    ]);
+    expect(
+      completedPlanSectionLabel(started, {
+        draftedSectionKeys: [],
+        inFlightSectionKey: null,
+      })
+    ).toBeNull();
+  });
+
   it("groups live plan progress into done, current, and pending", () => {
     const started = plan([
       { sectionKey: "elr_objective", label: "Objective", state: "done" },
@@ -801,6 +818,54 @@ describe("plan prompt and metadata", () => {
       inFlightSectionKey: null,
       incompleteSectionKeys: ["elr_conclusion"],
     });
+  });
+
+  it("does not treat a bounced inventory write as drafted", () => {
+    const live = livePlanProgressFromParts([
+      {
+        type: "tool-edit_table",
+        state: "output-available",
+        input: { section: "elr_qms" },
+        output: {
+          status: "review_incomplete",
+          message: "Walk the attachments first.",
+        },
+      },
+    ]);
+    expect(live).toEqual({
+      draftedSectionKeys: [],
+      inFlightSectionKey: null,
+      incompleteSectionKeys: ["elr_qms"],
+    });
+    const started = plan([
+      {
+        sectionKey: "elr_qms",
+        label: "QMS Records",
+        state: "in_progress",
+      },
+      { sectionKey: "elr_conclusion", label: "Conclusion", state: "queued" },
+    ]);
+    const result = advancePlanAfterTurn({
+      plan: started,
+      documentType: "equipment_lifecycle_report",
+      draftedSectionKeys: live.draftedSectionKeys,
+      parts: [
+        { type: "tool-finish_document_review", state: "output-available" },
+        {
+          type: "tool-edit_table",
+          state: "output-available",
+          input: { section: "elr_qms" },
+          output: {
+            status: "review_incomplete",
+            message: "Walk the attachments first.",
+          },
+        },
+      ],
+    });
+    expect(result.plan.paused).toBeFalsy();
+    expect(result.plan.items[0]?.state).toBe("in_progress");
+    expect(result.plan.items[1]?.state).toBe("queued");
+    expect(completedPlanSectionLabel(started, live)).toBeNull();
   });
 
   it("rejects malformed plan JSON", () => {

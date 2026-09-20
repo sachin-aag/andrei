@@ -12,7 +12,10 @@ import {
   preferredInventoryEvidenceSkipped,
 } from "@/lib/ai/chat/inventory-review-schema";
 import { getDocumentType } from "@/lib/document-types";
-import { elrIncompleteSectionKeysFromParts } from "@/lib/document-types/elr/plan-complete";
+import {
+  elrIncompleteSectionKeysFromParts,
+  planEditToolLanded,
+} from "@/lib/document-types/elr/plan-complete";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 
 /** Client-sent user turn that continues a server-owned section queue. */
@@ -565,7 +568,7 @@ export function planProgressChipLabel(
   return `${continuation.itemIndex} of ${continuation.total} — ${continuation.nextLabel}`;
 }
 
-/** Section the finishing turn drafted, or the one still marked in progress. */
+/** Section this turn actually drafted, or the in-progress item when live is unknown. */
 export function completedPlanSectionLabel(
   plan: ChatPendingPlan | null | undefined,
   live?: LivePlanProgress | null
@@ -578,6 +581,7 @@ export function completedPlanSectionLabel(
     if (label && !labels.includes(label)) labels.push(label);
   }
   if (labels.length > 0) return labels.join(", ");
+  if (live) return null;
   return (
     plan.items.find((item) => item.state === "in_progress")?.label ?? null
   );
@@ -614,6 +618,8 @@ export function livePlanProgressFromParts(parts: unknown): LivePlanProgress {
       toolName?: unknown;
       state?: unknown;
       input?: unknown;
+      output?: unknown;
+      result?: unknown;
     };
     let name = "";
     if (typeof rec.toolName === "string" && rec.toolName) {
@@ -629,7 +635,12 @@ export function livePlanProgressFromParts(parts: unknown): LivePlanProgress {
     const key = section.trim();
     const state = typeof rec.state === "string" ? rec.state : "";
     if (state === "output-available") {
-      if (!draftedSectionKeys.includes(key)) draftedSectionKeys.push(key);
+      if (
+        planEditToolLanded(rec) &&
+        !draftedSectionKeys.includes(key)
+      ) {
+        draftedSectionKeys.push(key);
+      }
       if (inFlightSectionKey === key) inFlightSectionKey = null;
       continue;
     }

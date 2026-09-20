@@ -123,6 +123,32 @@ describe("elrPlanSectionCompleteFromParts", () => {
     expect(elrPlanSectionCompleteFromParts("elr_qms", parts)).toBe(false);
   });
 
+  it("does not complete QMS when edit_table bounced as review_incomplete", () => {
+    const parts = [
+      {
+        type: "tool-edit_table",
+        state: "output-available",
+        input: { section: "elr_qms" },
+        output: {
+          status: "review_incomplete",
+          message: "Walk the attachments first.",
+        },
+      },
+      {
+        type: "tool-draft_field",
+        state: "output-available",
+        input: {
+          section: "elr_qms",
+          targetField: "narrative",
+          markdown: "4 QMS records this period. [[table]]",
+        },
+        output: { status: "drafted", suggestionId: "n1" },
+      },
+    ];
+    expect(elrPlanSectionCompleteFromParts("elr_qms", parts)).toBe(false);
+    expect(elrIncompleteSectionKeysFromParts(parts)).toEqual(["elr_qms"]);
+  });
+
   it("requires conclusion recap, recommendation, and a dated 6.0", () => {
     expect(
       elrPlanSectionCompleteFromParts("elr_conclusion", [
