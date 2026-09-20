@@ -247,7 +247,9 @@ import {
   containsGatedFactPlaceholders,
   groundDraftText,
   groundTableOperation,
-  tableOperationContainsGatedPlaceholders,
+  tableOperationContainsPlaceholders,
+  tablePlaceholderLabels,
+  tablePlaceholderLookupMessage,
   unsupportedFactsToolResult,
   type UnsupportedFactsToolResult,
 } from "@/lib/ai/chat/ground-draft";
@@ -1214,6 +1216,7 @@ export function buildChatTools(opts: {
   const unsupportedFactPolicy: UnsupportedFactPolicy =
     opts.unsupportedFactPolicy ?? getCustomerPack().unsupportedFactPolicy;
   const sameTurnStated = new Map<string, string>();
+  let tablePlaceholderLookupBounced = false;
   const rememberSameTurnStated = (
     section: SectionType,
     targetField: string,
@@ -1314,9 +1317,9 @@ export function buildChatTools(opts: {
       attachmentIds:
         pinnedAttachmentIds.length > 0 ? pinnedAttachmentIds : undefined,
     });
-    // Seed quotes so re-ground can fill invented facts. Leftover
-    // <date>/<identifier>/<number> after that pass persist — they are
-    // honest gaps, not a reason to drop the whole write.
+    // Seed quotes so re-ground can fill invented facts. Prose leftover
+    // <date>/<identifier>/<number> after that pass persist. Table leftovers
+    // bounce once (keepSearchOpen) so a subsequent grep can still fill them.
     seedRepairHits(citationLedger, hits);
     return { hits };
   };
@@ -3267,7 +3270,7 @@ export function buildChatTools(opts: {
         const tableNeedsRepair =
           citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
           (groundedTable.blocked ||
-            tableOperationContainsGatedPlaceholders(groundedTable.operation));
+            tableOperationContainsPlaceholders(groundedTable.operation));
         const repair = tableNeedsRepair
           ? await runUnsupportedFactsRepair({
               unsupported: groundedTable.unsupported,
@@ -3294,6 +3297,16 @@ export function buildChatTools(opts: {
               .map((fact) => fact.text)
               .join("; "),
             ...repairResultFields(repair.hits),
+          });
+        }
+        const leftoverLabels = tablePlaceholderLabels(groundedTable.operation);
+        if (leftoverLabels.length > 0 && !tablePlaceholderLookupBounced) {
+          tablePlaceholderLookupBounced = true;
+          return unsupportedFactsToolResult({
+            unsupported: groundedTable.unsupported,
+            draftWithPlaceholders: leftoverLabels.join("; "),
+            ...repairResultFields(repair.hits),
+            message: tablePlaceholderLookupMessage(leftoverLabels),
           });
         }
         if (groundedTable.provenance.claims.length > 0) {

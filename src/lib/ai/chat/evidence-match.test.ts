@@ -27,6 +27,16 @@ describe("evidenceContainsFact", () => {
     expect(evidenceContainsFact("Units filled 10000", count)).toBe(true);
   });
 
+  it("matches 5,000 against a comma-formatted fill volume", () => {
+    const count = fact("filled 5,000 units");
+    expect(
+      evidenceContainsFact(
+        "Aseptic process simulation MF-24-VIAL-01: 5,000 units filled, contaminated units 0.",
+        count
+      )
+    ).toBe(true);
+  });
+
   it("does not match an invented media-fill serial", () => {
     const invented = fact("APS batch MF-25-VIAL-01");
     expect(
@@ -52,6 +62,14 @@ describe("evidenceContainsFact", () => {
     expect(
       evidenceContainsFact("Aseptic process simulation: contaminated units 0.", zero)
     ).toBe(true);
+  });
+
+  it("does not treat 3 mL as present because 3.2 mL contains a 3", () => {
+    const threeMl = fact("Cartridge 3 mL", "number");
+    expect(evidenceContainsFact("Leak test Cartridge 3.2 mL qty 8.", threeMl)).toBe(
+      false
+    );
+    expect(evidenceContainsFact("Fill volume 3 mL cartridge.", threeMl)).toBe(true);
   });
 
   it("matches 14 days against a spaced incubation line", () => {

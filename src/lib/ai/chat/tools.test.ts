@@ -2567,19 +2567,37 @@ describe("buildChatTools propose edits", () => {
       TEST_TOOL_OPTIONS
     );
     expect(read).toMatchObject({ status: "found" });
+    const operation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, insertText: "MF-24-PR-001" },
+        { row: 1, col: 1, insertText: "<date>" },
+      ],
+    };
+    const first = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Fill known media fill id; date still missing.",
+        operation,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({
+      status: "unsupported_facts",
+      keepSearchOpen: true,
+    });
+    expect(String((first as { message?: string }).message)).toMatch(
+      /Do not persist angle-bracket placeholders in the table/
+    );
+    expect(dbInsertMock).not.toHaveBeenCalled();
     const result = await tools.edit_table!.execute!(
       {
         section: "define",
         targetField: "narrative",
         reasoning: "Fill known media fill id; date still missing.",
-        operation: {
-          kind: "edit_cells",
-          tableIndex: 0,
-          cells: [
-            { row: 1, col: 0, insertText: "MF-24-PR-001" },
-            { row: 1, col: 1, insertText: "<date>" },
-          ],
-        },
+        operation,
       },
       TEST_TOOL_OPTIONS
     );
@@ -2598,6 +2616,79 @@ describe("buildChatTools propose edits", () => {
         : [];
     expect(cells[0]?.insertText).toContain("MF-24-PR-001");
     expect(cells[1]?.insertText).toContain("<date>");
+  });
+
+  it("bounces column-label table placeholders so a subsequent search can fill them", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Media fill number", "Units Filled"].map((text) => ({
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["", ""].map((text) => ({
+                type: "tableCell",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: "att-pqr",
+      filename: "PQR-24-PR-042.pdf",
+      pageNumber: 21,
+      transcript: "Media fill MF-24-PR-001 performed",
+      visualInterpretation: "",
+      pageContext: null,
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    await tools.read_document_page!.execute!(
+      { attachmentId: "att-pqr", pageNumber: 21 },
+      TEST_TOOL_OPTIONS
+    );
+    const first = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "ID known; units filled not on this page.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            { row: 1, col: 0, insertText: "MF-24-PR-001" },
+            { row: 1, col: 1, insertText: "<Units Filled>" },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({
+      status: "unsupported_facts",
+      keepSearchOpen: true,
+    });
+    expect(String((first as { draftWithPlaceholders?: string }).draftWithPlaceholders)).toContain(
+      "<Units Filled>"
+    );
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
   it("grounds a date from a reviewed page that was omitted from the findings sample", async () => {
