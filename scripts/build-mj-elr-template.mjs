@@ -198,7 +198,7 @@ function rewriteBlocks(blocks) {
   }
 
   if (summaryOpened && !summaryFilled) flushSummary();
-  return reorderAlarmTrendsAboveBreakdowns(out);
+  return reorderAlarmTrendsAboveMonitoring(reorderAlarmTrendsAboveBreakdowns(out));
 }
 
 const HEADING_RENAMES = [
@@ -218,21 +218,26 @@ function headingIndex(blocks, text) {
   );
 }
 
-function renameHeadingText(block) {
+function renameHeadingText(block, pairs = HEADING_RENAMES) {
   const text = paragraphPlainText(block);
-  for (const [from, to] of HEADING_RENAMES) {
+  for (const [from, to] of pairs) {
     if (text === from) return block.replace(from, to);
   }
   return block;
 }
 
-function renameHeadingSlice(blocks) {
-  return blocks.map(renameHeadingText);
+function renameHeadingSlice(blocks, pairs = HEADING_RENAMES) {
+  return blocks.map((block) => renameHeadingText(block, pairs));
 }
 
 /** Alarm Trends (3.9) sits above Breakdowns (3.10) so remaining-section can cite that table. */
 function reorderAlarmTrendsAboveBreakdowns(blocks) {
-  if (headingIndex(blocks, "3.9 ALARM TRENDS") >= 0) return blocks;
+  if (
+    headingIndex(blocks, "3.9 ALARM TRENDS") >= 0 ||
+    headingIndex(blocks, "3.6 ALARM TRENDS") >= 0
+  ) {
+    return blocks;
+  }
 
   const breakdownStart = headingIndex(blocks, "3.9 BREAKDOWNS AND TRENDS");
   const qmsStart = headingIndex(
@@ -257,6 +262,45 @@ function reorderAlarmTrendsAboveBreakdowns(blocks) {
   const alarms = renameHeadingSlice(blocks.slice(alarmStart, accessStart));
   const after = blocks.slice(accessStart);
   return [...before, ...alarms, ...breakdowns, ...qms, ...after];
+}
+
+const HEADING_RENAMES_ABOVE_MONITORING = [
+  ["3.9 ALARM TRENDS", "3.6 ALARM TRENDS"],
+  ["3.9.1 ALARM TREND SUMMARY", "3.6.1 ALARM TREND SUMMARY"],
+  ["3.6 MONITORING", "3.7 MONITORING"],
+  ["3.7 CALIBRATION OF ASSOCIATED INSTRUMENTS", "3.8 CALIBRATION OF ASSOCIATED INSTRUMENTS"],
+  ["3.8 PREVENTIVE MAINTENANCE", "3.9 PREVENTIVE MAINTENANCE"],
+];
+
+/** Alarm Trends (3.6) sits above Monitoring (3.7) so remaining-section can cite that table. */
+function reorderAlarmTrendsAboveMonitoring(blocks) {
+  if (headingIndex(blocks, "3.6 ALARM TRENDS") >= 0) return blocks;
+
+  const monitoringStart = headingIndex(blocks, "3.6 MONITORING");
+  const alarmStart = headingIndex(blocks, "3.9 ALARM TRENDS");
+  const breakdownStart = headingIndex(blocks, "3.10 BREAKDOWNS AND TRENDS");
+  if (
+    monitoringStart < 0 ||
+    alarmStart < 0 ||
+    breakdownStart < 0 ||
+    !(monitoringStart < alarmStart && alarmStart < breakdownStart)
+  ) {
+    throw new Error(
+      "ELR template 3.6–3.10 headings are not in the expected order for Alarm Trends above Monitoring"
+    );
+  }
+
+  const before = blocks.slice(0, monitoringStart);
+  const monitoringThroughPm = renameHeadingSlice(
+    blocks.slice(monitoringStart, alarmStart),
+    HEADING_RENAMES_ABOVE_MONITORING
+  );
+  const alarms = renameHeadingSlice(
+    blocks.slice(alarmStart, breakdownStart),
+    HEADING_RENAMES_ABOVE_MONITORING
+  );
+  const after = blocks.slice(breakdownStart);
+  return [...before, ...alarms, ...monitoringThroughPm, ...after];
 }
 
 const zip = new PizZip(fs.readFileSync(DEST));
@@ -300,14 +344,29 @@ for (const prefix of INSTRUCTION_PREFIXES) {
   }
 }
 
-const alarmAt = next.indexOf("3.9 ALARM TRENDS");
+const alarmAt = next.indexOf("3.6 ALARM TRENDS");
+const monitoringAt = next.indexOf("3.7 MONITORING");
+const pmAt = next.indexOf("3.9 PREVENTIVE MAINTENANCE");
 const breakdownAt = next.indexOf("3.10 BREAKDOWNS AND TRENDS");
 const qmsAt = next.indexOf("3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION");
-if (!(alarmAt >= 0 && breakdownAt > alarmAt && qmsAt > breakdownAt)) {
-  throw new Error("ELR template did not place Alarm Trends above Breakdowns");
+if (
+  !(
+    alarmAt >= 0 &&
+    monitoringAt > alarmAt &&
+    pmAt > monitoringAt &&
+    breakdownAt > pmAt &&
+    qmsAt > breakdownAt
+  )
+) {
+  throw new Error("ELR template did not place Alarm Trends above Monitoring");
 }
-if (next.includes("3.9 BREAKDOWNS") || next.includes("3.11 ALARM")) {
-  throw new Error("ELR template still uses the old 3.9/3.11 numbering");
+if (
+  next.includes("3.6 MONITORING") ||
+  next.includes("3.9 ALARM") ||
+  next.includes("3.9 BREAKDOWNS") ||
+  next.includes("3.11 ALARM")
+) {
+  throw new Error("ELR template still uses the old 3.6–3.9 numbering");
 }
 
 console.log(`Wrote ${path.relative(ROOT, DEST)} (${tags.length} tags)`);

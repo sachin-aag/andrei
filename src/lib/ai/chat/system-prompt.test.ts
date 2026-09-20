@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v126-elr-system-description-list");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v127-elr-alarms-before-monitoring");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -529,10 +529,14 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Indian FY");
     expect(prompt).not.toContain("Indian Financial Year");
     expect(prompt).toContain("does not unlock edit_table");
-    expect(prompt).toContain("compact process-alarm rows");
-    expect(prompt).toContain("alarm-trend PDF");
     expect(prompt).toContain("[[table:Alarm Trends]]");
+    expect(prompt).toContain("On ELR monitoring");
     expect(prompt).toContain("On ELR breakdowns");
+    expect(prompt).not.toContain("compact process-alarm rows");
+    expect(prompt).not.toContain("on monitoring also queue the alarm-trend PDF");
+    expect(prompt).toContain(
+      "Do not restart monitoring or breakdowns because the alarm-trend PDF was skipped"
+    );
     expect(prompt).not.toContain(
       "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
     );

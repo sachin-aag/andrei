@@ -19,10 +19,10 @@ import {
 const TABLE_SCHEMAS: readonly (readonly [string, readonly string[]])[] = [
   ["elr_qualification", ELR_QUALIFICATION_HEADERS],
   ["elr_media_fill", ELR_MEDIA_FILL_HEADERS],
+  ["elr_alarms", ELR_ALARM_HEADERS],
   ["elr_monitoring", ELR_MONITORING_HEADERS],
   ["elr_calibration", ELR_CALIBRATION_HEADERS],
   ["elr_preventive_maintenance", ELR_PREVENTIVE_MAINTENANCE_HEADERS],
-  ["elr_alarms", ELR_ALARM_HEADERS],
   ["elr_breakdowns", ELR_BREAKDOWN_HEADERS],
   ["elr_qms", ELR_QMS_HEADERS],
   ["elr_access_control", ELR_ACCESS_CONTROL_HEADERS],
@@ -229,16 +229,14 @@ is read.
 Monitoring (elr_monitoring): one row per Grade A / environmental **method**
 (non-viable particles, active viable air, settle plate, surface and glove,
 differential pressure, LAF / air velocity). Do not merge methods into one
-"viable" row. After those method rows, also include compact process-alarm
-rows from the alarm-trend report (Nitrogen, compressed air, and other SCADA
-codes with occurrence counts, Direct Impact, CAPA). Period Covered on every
-row is 1 April to 31 March of the following year (both dates), not the
-alarm-trend PDF's quarter.
-The assessment interprets excursion counts **and** this period's alarm
-picture (top codes, DI, CAPA, lost runtime). Alarm Trends (elr_alarms) still
-gets the full alarm matrix and 3.9.1 trend — monitoring does not replace it.
-Queue PRQR method pages **and** the alarm-trend PDF on the monitoring walk;
-skipping the alarm-trend file is not finished coverage.
+"viable" row. Period Covered on every row is 1 April to 31 March of the
+following year (both dates). Do **not** walk the alarm-trend PDF again —
+Alarm Trends sits above this section. Call read_section on Alarm Trends and
+cite \`[[table:Alarm Trends]]\` for this period's alarm picture (top codes,
+DI, CAPA, lost runtime). Do not copy those codes into the monitoring table.
+The assessment interprets excursion counts **and** refers to that alarm
+picture. Queue PRQR method pages on the monitoring walk; skipping the
+alarm-trend file is finished coverage because Alarm Trends already owns it.
 
 Breakdowns and Trends (elr_breakdowns): draft the event table from PMC, PRQR,
 and breakdown / work-order logs. Alarm-related downtime still belongs here as
@@ -294,7 +292,7 @@ write \`[[table]]\` (this section) or \`[[table:Section]]\` (another
 section key or label). Those display as Table N and update when a table
 is inserted above (Word REF). Do not type the returned tableNumber.
 
-Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.10.1)
+Breakdowns and alarms still have a separate \`trend\` field (3.6.1 / 3.10.1)
 for grouping failure modes / whether the trended alarm set is still
 appropriate. That is not a substitute for the assessment above the table.
 
@@ -318,7 +316,7 @@ subsection and Discrepancy, then a short narrative of what cuts across them.
   Purpose (1.0) and Scope (2.0). Do not delete those rows. Fill \`Summary\`
   with \`edit_cells\` — a sentence of what that section found. Nil events still
   get a recap ("none this period"), not a blank cell.
-- 3.9.1 / 3.10.1 stay inside the 3.9 / 3.10 rows; do not add extra rows for
+- 3.6.1 / 3.10.1 stay inside the 3.6 / 3.10 rows; do not add extra rows for
   those sub-headings.
 - Trend / impact / Risk ID stay on the row so 5.2 can carry actions. Use
   \`none\` when there is no trend.

@@ -237,21 +237,21 @@ const ELR_TOC: TableOfContentsEntry[] = [
         label: "3.5 Media Fill / Aseptic Process Simulation",
         sectionKey: "elr_media_fill",
       },
-      { label: "3.6 Monitoring", sectionKey: "elr_monitoring" },
       {
-        label: "3.7 Calibration of Associated Instruments",
+        label: "3.6 Alarm Trends",
+        sectionKey: "elr_alarms",
+        children: [
+          { label: "3.6.1 Alarm Trend Summary", sectionKey: "elr_alarms" },
+        ],
+      },
+      { label: "3.7 Monitoring", sectionKey: "elr_monitoring" },
+      {
+        label: "3.8 Calibration of Associated Instruments",
         sectionKey: "elr_calibration",
       },
       {
-        label: "3.8 Preventive Maintenance",
+        label: "3.9 Preventive Maintenance",
         sectionKey: "elr_preventive_maintenance",
-      },
-      {
-        label: "3.9 Alarm Trends",
-        sectionKey: "elr_alarms",
-        children: [
-          { label: "3.9.1 Alarm Trend Summary", sectionKey: "elr_alarms" },
-        ],
       },
       {
         label: "3.10 Breakdowns and Trends",

@@ -149,19 +149,9 @@ const MONITORING_METHOD_PHRASES = [
   "environmental monitoring",
 ] as const;
 
-/** Alarm-trend pages that belong in Monitoring as well as Alarm Trends. */
-const MONITORING_ALARM_PHRASES = [
-  "alarm trend",
-  "alarm description",
-  "alarm code",
-  "nitrogen not available",
-  "fm nitrogen",
-  "compressed air",
-] as const;
-
 function methodPhrasesForSection(section: SectionType): readonly string[] {
   if (section === "elr_monitoring") {
-    return [...MONITORING_METHOD_PHRASES, ...MONITORING_ALARM_PHRASES];
+    return [...MONITORING_METHOD_PHRASES];
   }
   return [];
 }
@@ -171,10 +161,7 @@ function preferredFilenameFamilies(
 ): readonly (readonly string[])[] {
   switch (section) {
     case "elr_monitoring":
-      return [
-        ["prqr", "prqp", "pqr", "environmental"],
-        ["alarm", "aap"],
-      ];
+      return [["prqr", "prqp", "pqr", "environmental"]];
     case "elr_qms":
       return [["ccf", "capa", "cpa", "dev/", "qdf", "prqr"]];
     case "elr_breakdowns":
@@ -188,7 +175,7 @@ function preferredFilenameFamilies(
   }
 }
 
-/** Alarm-trend / AAP files belong in Alarm Trends (and Monitoring), not Breakdowns. */
+/** Alarm-trend / AAP files belong in Alarm Trends, not Monitoring or Breakdowns. */
 export function isAlarmTrendFilename(
   filename: string | null | undefined
 ): boolean {
@@ -225,9 +212,9 @@ export function isPreferredInventoryFilename(
 
 /**
  * True when a preferred evidence family was skipped while nothing in that
- * family was queued. Monitoring treats PRQR and the alarm-trend PDF as
- * separate families — skipping the alarm file while PRQR was queued is
- * still unfinished.
+ * family was queued. Monitoring treats PRQR as the preferred family —
+ * skipping an alarm-trend file is finished coverage because Alarm Trends
+ * already owns it.
  */
 export function preferredInventoryEvidenceSkipped(
   section: SectionType,
@@ -387,14 +374,15 @@ export function filenameConflictsWithInventoryObjective(
   const current = inventorySectionForObjective(objective);
   if (!current || !filename) return false;
   const haystack = filename.toLowerCase();
-  // Breakdowns cite the already-drafted Alarm Trends table — drop those PDFs.
-  if (current === "elr_breakdowns" && isAlarmTrendFilename(filename)) {
+  // Monitoring and Breakdowns cite the already-drafted Alarm Trends table.
+  if (
+    (current === "elr_breakdowns" || current === "elr_monitoring") &&
+    isAlarmTrendFilename(filename)
+  ) {
     return true;
   }
   for (const section of inventorySections()) {
     if (section === current) continue;
-    // Monitoring also compiles alarm-trend details — do not drop those files.
-    if (current === "elr_monitoring" && section === "elr_alarms") continue;
     if (hasTypedSectionNoun(haystack, sectionNoun(section))) return true;
   }
   return false;
@@ -472,7 +460,10 @@ export function scoreInventoryReviewPage(
   const schema = ELR_INVENTORY_SCHEMAS[section];
   if (!schema) return null;
   if (isInventoryHeaderOnlyPage(page)) return 0;
-  if (section === "elr_breakdowns" && isAlarmTrendFilename(page.filename)) {
+  if (
+    (section === "elr_breakdowns" || section === "elr_monitoring") &&
+    isAlarmTrendFilename(page.filename)
+  ) {
     return 0;
   }
 

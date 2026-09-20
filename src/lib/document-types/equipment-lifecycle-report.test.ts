@@ -254,13 +254,25 @@ describe("equipment lifecycle report definition", () => {
       sections.indexOf("elr_conclusion")
     );
     expect(sections.indexOf("elr_alarms")).toBeLessThan(
+      sections.indexOf("elr_monitoring")
+    );
+    expect(sections.indexOf("elr_monitoring")).toBeLessThan(
+      sections.indexOf("elr_calibration")
+    );
+    expect(sections.indexOf("elr_calibration")).toBeLessThan(
+      sections.indexOf("elr_preventive_maintenance")
+    );
+    expect(sections.indexOf("elr_preventive_maintenance")).toBeLessThan(
       sections.indexOf("elr_breakdowns")
     );
     expect(sections.indexOf("elr_breakdowns")).toBeLessThan(
       sections.indexOf("elr_qms")
     );
     const draft = getDocumentType(TYPE).chat.draftOrder;
-    expect(draft.indexOf("elr_alarms")).toBeLessThan(draft.indexOf("elr_breakdowns"));
+    expect(draft.indexOf("elr_alarms")).toBeLessThan(draft.indexOf("elr_monitoring"));
+    expect(draft.indexOf("elr_monitoring")).toBeLessThan(
+      draft.indexOf("elr_breakdowns")
+    );
   });
 
   it("seeds a starter glossary that no criterion enforces", () => {
@@ -293,7 +305,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v17");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v18");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -359,7 +371,12 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).not.toMatch(/Indian Financial Year/i);
     expect(def.chat.draftingGuidance).not.toMatch(/Indian FY\b/i);
     expect(def.chat.draftingGuidance).toContain("one row per Grade A / environmental **method**");
-    expect(def.chat.draftingGuidance).toContain("compact process-alarm");
+    expect(def.chat.draftingGuidance).toContain("[[table:Alarm Trends]]");
+    expect(def.chat.draftingGuidance).not.toContain("compact process-alarm");
+    expect(
+      def.chat.draftingGuidance.split("Breakdowns and Trends (elr_breakdowns):")
+        .length - 1
+    ).toBe(1);
     expect(def.chat.draftingGuidance).toContain("product-contact MOC");
     expect(def.chat.draftingGuidance).toContain("secondary packaging");
     expect(def.chat.draftingGuidance).toContain("tertiary");
@@ -1167,16 +1184,20 @@ describe("ELR docx template contract", () => {
     expect(xml).not.toContain("TABLE OF CONTENTS");
   });
 
-  it("places Alarm Trends above Breakdowns", () => {
+  it("places Alarm Trends above Monitoring", () => {
     const def = getDocumentType(TYPE);
     const zip = new PizZip(fs.readFileSync(def.export.templatePath));
     const xml = zip.file("word/document.xml")!.asText();
-    const alarmAt = xml.indexOf("3.9 ALARM TRENDS");
+    const alarmAt = xml.indexOf("3.6 ALARM TRENDS");
+    const monitoringAt = xml.indexOf("3.7 MONITORING");
     const breakdownAt = xml.indexOf("3.10 BREAKDOWNS AND TRENDS");
     const qmsAt = xml.indexOf("3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION");
     expect(alarmAt).toBeGreaterThan(-1);
-    expect(breakdownAt).toBeGreaterThan(alarmAt);
+    expect(monitoringAt).toBeGreaterThan(alarmAt);
+    expect(breakdownAt).toBeGreaterThan(monitoringAt);
     expect(qmsAt).toBeGreaterThan(breakdownAt);
+    expect(xml).not.toContain("3.6 MONITORING");
+    expect(xml).not.toContain("3.9 ALARM");
     expect(xml).not.toContain("3.9 BREAKDOWNS");
     expect(xml).not.toContain("3.11 ALARM");
   });
@@ -1935,24 +1956,24 @@ describe("ELR assessment, trends and risk checks", () => {
     expect(parsed.rows.some((row) => row.section.includes("2.0"))).toBe(false);
   });
 
-  it("matches recap rows by section number so 3.9 cannot steal 3.6", () => {
-    const monitoring = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.6");
-    const alarms = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.9");
-    expect(monitoring && recapSourceMatchesText(monitoring, "3.6 Monitoring")).toBe(
+  it("matches recap rows by section number so 3.6 cannot steal 3.7", () => {
+    const monitoring = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.7");
+    const alarms = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.6");
+    expect(monitoring && recapSourceMatchesText(monitoring, "3.7 Monitoring")).toBe(
       true
     );
     expect(
       monitoring &&
         recapSourceMatchesText(
           monitoring,
-          "3.9 Alarm Trends — monitoring of codes is still appropriate"
+          "3.6 Alarm Trends — monitoring of codes is still appropriate"
         )
     ).toBe(false);
     expect(
       alarms &&
         recapSourceMatchesText(
           alarms,
-          "3.9 Alarm Trends — monitoring of codes is still appropriate"
+          "3.6 Alarm Trends — monitoring of codes is still appropriate"
         )
     ).toBe(true);
   });
