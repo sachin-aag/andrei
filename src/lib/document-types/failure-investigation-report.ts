@@ -8,6 +8,7 @@ import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import { FIR_DRAFTING_GUIDANCE } from "./fir/drafting-guidance";
 import { FIR_EVALUATION_SYSTEM_PROMPT } from "./fir/prompts";
+import { firChatContextIdentity } from "./fir/chat-identity";
 import {
   checkActionsOwnedAndDated,
   checkBatchDisposition,
@@ -592,6 +593,7 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       ],
     },
     inventorySections: ["fir_historic_review"],
+    contextIdentity: firChatContextIdentity,
     sectionIntentPatterns: [
       [
         "fir_root_cause",

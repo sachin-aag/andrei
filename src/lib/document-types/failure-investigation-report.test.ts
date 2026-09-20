@@ -595,3 +595,47 @@ describe("FIR docx template contract", () => {
     expect(data.batchDispositionCheckboxes).toContain("☒ Batch Approved");
   });
 });
+
+// ------------------------------------------------------------ chat identity
+
+describe("FIR chat context identity", () => {
+  it("names every unset identity field instead of omitting it", () => {
+    const lines = getDocumentType(TYPE).chat.contextIdentity?.({}) ?? [];
+    const joined = lines.join("\n");
+    for (const label of [
+      "unit",
+      "date of non-conformance",
+      "source document no.",
+      "product",
+      "batch under investigation",
+      "equipment ID",
+    ]) {
+      expect(joined).toContain(label);
+    }
+    // MJ blocks unsupported facts — an unset field must warn, not go quiet.
+    expect(joined).toContain("do not take this from an attachment");
+    expect(joined).not.toContain("Define / Measure / Analyze / Improve / Control sections.\n\n");
+  });
+
+  it("uses the recorded identity when it is set", () => {
+    const lines =
+      getDocumentType(TYPE).chat.contextIdentity?.({
+        batchNo: "RIG25014",
+        equipmentId: "L-1901",
+        productName: "r-Insulin Glargine",
+      }) ?? [];
+    const joined = lines.join("\n");
+    expect(joined).toContain("batch under investigation: RIG25014");
+    expect(joined).toContain("equipment ID: L-1901");
+    expect(joined).toContain("product: r-Insulin Glargine");
+    expect(joined).not.toContain("batch under investigation: (unset)");
+  });
+
+  it("tells the model this is not the DMAIC form", () => {
+    const joined = (getDocumentType(TYPE).chat.contextIdentity?.({}) ?? []).join(
+      "\n"
+    );
+    expect(joined).toContain("Drug Substance");
+    expect(joined).toContain("Do not draft Define / Measure");
+  });
+});

@@ -18,6 +18,10 @@ import {
   ELR_DEFAULT_METADATA,
   type ElrMetadata,
 } from "@/lib/document-types/elr/sections";
+import {
+  FIR_DEFAULT_METADATA,
+  type FirMetadata,
+} from "@/lib/document-types/fir/sections";
 
 export type ReportRecord = {
   id: string;
@@ -90,6 +94,19 @@ export function qraMetadata(report: { metadata: ReportMetadata }): QraMetadata {
     idNo: meta.idNo ?? "",
     preApproval: meta.preApproval ?? "",
     postApproval: meta.postApproval ?? "",
+  };
+}
+
+export function firMetadata(report: { metadata: ReportMetadata }): FirMetadata {
+  const meta = report.metadata as Partial<FirMetadata>;
+  return {
+    unit: meta.unit ?? FIR_DEFAULT_METADATA.unit,
+    dateOfNonConformance: meta.dateOfNonConformance ?? "",
+    sourceDocumentNo: meta.sourceDocumentNo ?? "",
+    productName: meta.productName ?? "",
+    batchNo: meta.batchNo ?? "",
+    equipmentId: meta.equipmentId ?? "",
+    referenceSopNo: meta.referenceSopNo ?? FIR_DEFAULT_METADATA.referenceSopNo,
   };
 }
 
