@@ -237,6 +237,21 @@ describe("rewriteCitationPagesInText", () => {
       )
     ).toBe("See [PQR-24-PR-102.pdf, p. 1].");
   });
+
+  it("keeps a hyphenated-and filename cite that matches a retrieved file", () => {
+    const ledger = ledgerWithSearchHit(
+      "QDF-Filling and capping machine.pdf",
+      2
+    );
+    expect(
+      rewriteCitationPagesInText(
+        "SOP/DP/QA/014/F14-R00 [QDF-Filling and capping machine.pdf, p. 2]",
+        ledger
+      )
+    ).toBe(
+      "SOP/DP/QA/014/F14-R00 [QDF-Filling and capping machine.pdf, p. 2]"
+    );
+  });
 });
 
 describe("rewriteTableOperationCitations", () => {

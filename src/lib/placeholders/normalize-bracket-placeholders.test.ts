@@ -114,6 +114,15 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     expect(normalizeBracketPlaceholdersInPlainText(combined)).toBe(combined);
   });
 
+  it("does not turn a hyphenated-and filename cite into a leftover placeholder", () => {
+    const cite = "[QDF-Filling and capping machine.pdf, p. 2]";
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        `SOP/DP/QA/014/F14-R00 ${cite}`
+      )
+    ).toBe(`SOP/DP/QA/014/F14-R00 ${cite}`);
+  });
+
   it("leaves extension-less Attachment exhibit citations unchanged", () => {
     expect(
       normalizeBracketPlaceholdersInPlainText(

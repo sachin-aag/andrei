@@ -258,6 +258,15 @@ describe("parseSourceCitation", () => {
     });
   });
 
+  it("parses a hyphenated title word followed by and in the filename", () => {
+    expect(
+      parseSourceCitation("[QDF-Filling and capping machine.pdf, p. 2]")
+    ).toEqual({
+      filename: "QDF-Filling and capping machine.pdf",
+      pages: [2],
+    });
+  });
+
   it("omits pages when the cite has no page suffix", () => {
     expect(parseSourceCitation("[protocol.pdf]")).toEqual({
       filename: "protocol.pdf",
@@ -330,6 +339,20 @@ describe("splitSourceCitationParts", () => {
     ]);
   });
 
+  it("does not peel a hyphenated title word before and in a pdf filename", () => {
+    expect(
+      splitSourceCitationParts("QDF-Filling and capping machine.pdf, p. 2")
+    ).toEqual(["QDF-Filling and capping machine.pdf, p. 2"]);
+  });
+
+  it("does not peel a digit-bearing id before English title words", () => {
+    expect(
+      splitSourceCitationParts(
+        "PRQR-25-PR-005 and filling and capping machine.pdf, p. 1"
+      )
+    ).toEqual(["PRQR-25-PR-005 and filling and capping machine.pdf, p. 1"]);
+  });
+
   it("keeps repeated p. N lists on one file", () => {
     expect(
       splitSourceCitationParts(
@@ -383,6 +406,13 @@ describe("sourceCitationLinkSpans", () => {
   it("keeps a repeated p. N cite as one whole-bracket link", () => {
     const match =
       "[Master PMC-PR-014-R03 Filling and Capping Machine.pdf, p. 1, p. 2]";
+    expect(sourceCitationLinkSpans(match)).toEqual([
+      { from: 0, to: match.length, openRaw: match },
+    ]);
+  });
+
+  it("keeps a hyphenated-and filename cite as one whole-bracket link", () => {
+    const match = "[QDF-Filling and capping machine.pdf, p. 2]";
     expect(sourceCitationLinkSpans(match)).toEqual([
       { from: 0, to: match.length, openRaw: match },
     ]);

@@ -201,9 +201,24 @@ function skipSourceSeparator(inner: string, cursor: number): number {
 }
 
 /**
+ * True when the text after `and` is another source (`E-PR-071`), not the
+ * rest of a filename (`capping machine` in `QDF-Filling and capping
+ * machine.pdf`). Hyphenated title words like `QDF-Filling` match
+ * `SOURCE_STEM_RE` on the left; only peel when the right side is a source
+ * too.
+ */
+function remainderLooksLikeSource(right: string): boolean {
+  const trimmed = right.trim();
+  if (!trimmed) return false;
+  const head = (trimmed.split(/\s/)[0] ?? "").trim();
+  return looksLikeSourceStem(head);
+}
+
+/**
  * `E-PR-068 and E-PR-071.pdf` — peel the stem left of `and` so the leftover
  * does not extend the last `.pdf` range. `filling and sealing machine.pdf`
- * stays one filename (`filling` is not a source stem).
+ * stays one filename (`filling` is not a source stem). `QDF-Filling and
+ * capping machine.pdf` stays one filename (`capping` is not a source stem).
  */
 function peelAndSourcePrefix(
   inner: string,
@@ -219,7 +234,10 @@ function peelAndSourcePrefix(
   }
   if (!last) return { prefix: null, start: cursor };
   const left = between.slice(0, last.index).trim();
-  if (!looksLikeSourceStem(left)) return { prefix: null, start: cursor };
+  const right = between.slice(last.index + last.length);
+  if (!looksLikeSourceStem(left) || !remainderLooksLikeSource(right)) {
+    return { prefix: null, start: cursor };
+  }
   return { prefix: left, start: cursor + last.index + last.length };
 }
 
@@ -293,7 +311,8 @@ function splitByPdfDocxAnchors(inner: string): string[] | null {
  * string per source. Same-file page lists (`p. 4, 26, 163`, `p. 1, p. 2`,
  * `p. 1-3`) stay a single part. Commas inside a `.pdf`/`.docx` filename are
  * not treated as a new source. `E-PR-068 and E-PR-071.pdf` is two parts;
- * `filling and sealing machine.pdf` stays one filename.
+ * `filling and sealing machine.pdf` and `QDF-Filling and capping machine.pdf`
+ * stay one filename.
  */
 export function splitSourceCitationParts(inner: string): string[] {
   const trimmed = inner.trim();
