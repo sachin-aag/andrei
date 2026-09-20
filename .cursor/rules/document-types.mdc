@@ -43,7 +43,9 @@ const sections = getWorkspaceSections(report.documentType);
   `context-map.ts`. MJ ELR remaining-section stays incomplete until the
   assessment names a count (`elrPlanRequiredFields`); investigation / DV
   keys never match. `overallGrade` / `recommendation` are stored enums
-  (`coerceElrEnumDraft`) — do not persist UI labels.
+  (`coerceElrEnumDraft`) — do not persist UI labels. ELR Attachments
+  (`elr_attachments`) is not chat-editable: Word export fills 7.0 from the
+  live file list.
 - Document-chat empty-state chips: `chat.examplePrompts` on the type (Ask vs
   Agent). Name that template's sections (`Purpose & Scope`, `Objective`, …).
   Do not hardcode Define / Analyze in `ChatPanel`.

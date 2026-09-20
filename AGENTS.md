@@ -201,7 +201,9 @@ the current item (or two adjacent non-inventory sections). MJ ELR evidence
 sections stay in progress until that turn also drafts the assessment with a
 count (and `trend` / `overallGrade` / `recommendation` siblings); Access Control
 also stays in progress until every annexure Sr. row is copied, including the
-continuation page of a Page N of M split; investigation
+continuation page of a Page N of M split; ELR Attachments (`elr_attachments`)
+is rebuilt at Word export from the live file list and is not a remaining-section
+or Agent draft target; investigation
 and DV queues are unchanged. After persist the
 client POSTs `Continue the remaining sections.` with `autoContinue` (one
 live remaining-section widget **below the transcript**, not a user bubble and

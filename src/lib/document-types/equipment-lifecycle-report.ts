@@ -755,8 +755,9 @@ export const equipmentLifecycleReportDefinition: DocumentTypeDefinition = {
     key,
     label: ELR_SECTION_LABELS[key],
     order: index,
-    editable: true,
-    evaluable: true,
+    // 7.0 Attachments is rebuilt at Word export from the live file list.
+    editable: key !== "elr_attachments",
+    evaluable: key !== "elr_attachments",
     emptyContent: EMPTY_ELR_CONTENT[key],
   })),
   criteriaBySection: {

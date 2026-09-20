@@ -113,6 +113,22 @@ describe("seedSectionQueuePlan", () => {
       })
     ).toBeNull();
   });
+
+  it("does not queue ELR Attachments even when that table is empty", () => {
+    const seeded = seedSectionQueuePlan({
+      userText: "Draft the remaining sections",
+      documentType: "equipment_lifecycle_report",
+      sections: {
+        elr_objective: emptyNarrative,
+        elr_scope: emptyNarrative,
+        elr_attachments: EMPTY_ELR_CONTENT.elr_attachments,
+      },
+      promptVersion: "chat-v94-section-plan",
+    });
+    expect(seeded?.items.some((item) => item.sectionKey === "elr_attachments")).toBe(
+      false
+    );
+  });
 });
 
 describe("advancePlanAfterTurn", () => {

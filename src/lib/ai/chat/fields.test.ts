@@ -13,6 +13,8 @@ import {
   EMPTY_ELR_CONTENT,
 } from "@/lib/document-types/elr/sections";
 import {
+  chatEditableSections,
+  isChatEditableSection,
   listFieldTables,
   fieldFillState,
   sectionFillState,
@@ -20,6 +22,17 @@ import {
   sectionLabel,
   sectionFieldForChat,
 } from "./fields";
+
+describe("chatEditableSections", () => {
+  it("omits ELR Attachments because Word export fills that table", () => {
+    const editable = chatEditableSections("equipment_lifecycle_report");
+    expect(editable).not.toContain("elr_attachments");
+    expect(editable).toContain("elr_objective");
+    expect(isChatEditableSection("elr_attachments", "equipment_lifecycle_report")).toBe(
+      false
+    );
+  });
+});
 
 describe("sectionLabel", () => {
   it("uses registry titles for mechanical DV and QRA history", () => {
