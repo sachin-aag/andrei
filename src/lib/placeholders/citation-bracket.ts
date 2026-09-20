@@ -170,16 +170,13 @@ function looksLikeSourceStem(text: string): boolean {
   return SOURCE_STEM_RE.test(trimmed) && /\d/.test(trimmed);
 }
 
-function looksLikeNextSourceToken(token: string): boolean {
-  const trimmed = token.trim();
-  if (!trimmed) return false;
-  if (/\.(?:pdf|docx)$/i.test(trimmed)) return true;
-  return looksLikeSourceStem(trimmed);
-}
-
 const AND_SOURCE_SEP_RE = /^\s*and\s+/i;
 
-/** Consume `,` / `;` / `and` (and surrounding spaces) between sources. */
+/**
+ * Consume `,` / `;` / `and` between two `.pdf`/`.docx` anchors. Called only
+ * when a later extension already exists, so `and` is structural here — not a
+ * guess about exhibit ids.
+ */
 function skipSourceSeparator(inner: string, cursor: number): number {
   let i = cursor;
   while (i < inner.length && /\s/.test(inner[i]!)) i += 1;
@@ -191,30 +188,61 @@ function skipSourceSeparator(inner: string, cursor: number): number {
   const rest = inner.slice(cursor);
   const andSep = AND_SOURCE_SEP_RE.exec(rest);
   if (!andSep) return cursor;
-  const after = rest.slice(andSep[0].length);
-  const nextToken = (after.split(/[,\s]/)[0] ?? "").trim();
-  if (
-    looksLikeNextSourceToken(nextToken) ||
-    /\.(?:pdf|docx)\b/i.test(after.slice(0, 80))
-  ) {
-    return cursor + andSep[0].length;
+  return cursor + andSep[0].length;
+}
+
+function citationBasename(filename: string): string {
+  return filename.replace(/^.*[/\\]/, "").trim().toLowerCase();
+}
+
+function knownFilenameKeys(knownFilenames: readonly string[]): Set<string> {
+  const keys = new Set<string>();
+  for (const name of knownFilenames) {
+    const key = citationBasename(citationDisplayFilename(name));
+    if (key) keys.add(key);
   }
-  return cursor;
+  return keys;
+}
+
+function citedFilenameKeys(cited: string): string[] {
+  const base = citationBasename(citationDisplayFilename(cited));
+  if (!base) return [];
+  if (/\.(?:pdf|docx)$/i.test(base)) return [base];
+  return [base, `${base}.pdf`, `${base}.docx`];
+}
+
+function citedMatchesKnownFile(cited: string, known: Set<string>): boolean {
+  if (known.size === 0) return false;
+  return citedFilenameKeys(cited).some((key) => known.has(key));
 }
 
 /**
- * `E-PR-068 and E-PR-071.pdf` — peel the stem left of `and` so the leftover
- * does not extend the last `.pdf` range. Both sides of `and` (the whole
- * remainder through `.pdf`, not the first token) must be compact source
- * stems. `E-PR-068 and E-PR-071 filling report.pdf` and `QDF-Filling and
- * capping machine.pdf` stay one filename. Two `.pdf`/`.docx` extensions
- * still split via `skipSourceSeparator`.
+ * True when `cited` is exactly a known attached/retrieved basename.
+ * Includes-based fuzzy match is intentionally not used here — a stem like
+ * `E-PR-068` would otherwise match `E-PR-068 and E-PR-071.pdf`.
+ */
+export function isExactKnownCitationFilename(
+  cited: string,
+  knownFilenames: readonly string[]
+): boolean {
+  const citedNorm = citationBasename(cited);
+  if (!citedNorm) return false;
+  return knownFilenames.some((name) => citationBasename(name) === citedNorm);
+}
+
+/**
+ * Peel `E-PR-068 and E-PR-071.pdf` only when both sides match attached
+ * filenames (`E-PR-068.pdf` + `E-PR-071.pdf`). No attachment list, or a
+ * title like `QDF-Filling and capping machine.pdf`, stays one file.
+ * Two `.pdf`/`.docx` extensions still split via `skipSourceSeparator`.
  */
 function peelAndSourcePrefix(
   inner: string,
   cursor: number,
-  extIndex: number
+  extIndex: number,
+  known: Set<string>
 ): { prefix: string | null; start: number } {
+  if (known.size === 0) return { prefix: null, start: cursor };
   const between = inner.slice(cursor, extIndex);
   const re = /\s+and\s+/gi;
   let last: { index: number; length: number } | null = null;
@@ -224,8 +252,10 @@ function peelAndSourcePrefix(
   }
   if (!last) return { prefix: null, start: cursor };
   const left = between.slice(0, last.index).trim();
-  const right = between.slice(last.index + last.length);
-  if (!looksLikeSourceStem(left) || !looksLikeSourceStem(right)) {
+  const right = between.slice(last.index + last.length).trim();
+  const ext = inner.slice(extIndex).match(/^\.(?:pdf|docx)\b/i)?.[0] ?? "";
+  const rightFile = `${right}${ext}`;
+  if (!citedMatchesKnownFile(left, known) || !citedMatchesKnownFile(rightFile, known)) {
     return { prefix: null, start: cursor };
   }
   return { prefix: left, start: cursor + last.index + last.length };
@@ -236,7 +266,10 @@ function peelAndSourcePrefix(
  * filename. Page lists after the extension (including repeated `p.`) stay
  * with that file. Two extensions still yield two parts.
  */
-function splitByPdfDocxAnchors(inner: string): string[] | null {
+function splitByPdfDocxAnchors(
+  inner: string,
+  known: Set<string>
+): string[] | null {
   const extRe = new RegExp(FILE_EXT_RE.source, "gi");
   const matches: { index: number; length: number }[] = [];
   let found: RegExpExecArray | null;
@@ -255,7 +288,7 @@ function splitByPdfDocxAnchors(inner: string): string[] | null {
       const skipped = skipSourceSeparator(inner, cursor);
       if (skipped !== cursor) cursor = skipped;
     }
-    const peeled = peelAndSourcePrefix(inner, cursor, ext.index);
+    const peeled = peelAndSourcePrefix(inner, cursor, ext.index, known);
     if (peeled.prefix) {
       prefixes.push(peeled.prefix);
       cursor = peeled.start;
@@ -296,33 +329,13 @@ function splitByPdfDocxAnchors(inner: string): string[] | null {
   return parts.length > 0 ? parts : null;
 }
 
-function citationBasename(filename: string): string {
-  return filename.replace(/^.*[/\\]/, "").trim().toLowerCase();
-}
-
-/**
- * True when `cited` is exactly a known attached/retrieved basename.
- * Includes-based fuzzy match is intentionally not used here — a stem like
- * `E-PR-068` would otherwise match `E-PR-068 and E-PR-071.pdf`.
- */
-export function isExactKnownCitationFilename(
-  cited: string,
-  knownFilenames: readonly string[]
-): boolean {
-  const citedNorm = citationBasename(cited);
-  if (!citedNorm) return false;
-  return knownFilenames.some((name) => citationBasename(name) === citedNorm);
-}
-
 /**
  * Split `[file A, p. N, file B, p. M]` (or `;` / `and` between files) into one inner
  * string per source. Same-file page lists (`p. 4, 26, 163`, `p. 1, p. 2`,
  * `p. 1-3`) stay a single part. Commas inside a `.pdf`/`.docx` filename are
- * not treated as a new source. `E-PR-068 and E-PR-071.pdf` is two parts;
- * `filling and sealing machine.pdf`, `QDF-Filling and capping machine.pdf`,
- * and `E-PR-068 and E-PR-071 filling report.pdf` stay one filename.
- * Pass `knownFilenames` when an attached/retrieved basename is exactly the
- * unsplit cite — that file wins over a compact `STEM and STEM.pdf` peel.
+ * not treated as a new source. Compact `E-PR-068 and E-PR-071.pdf` splits
+ * only when those names are attached/retrieved as two files; English `and`
+ * titles and an exact combined basename stay one filename.
  */
 export function splitSourceCitationParts(
   inner: string,
@@ -336,7 +349,10 @@ export function splitSourceCitationParts(
   ) {
     return [trimmed];
   }
-  const byExt = splitByPdfDocxAnchors(trimmed);
+  const byExt = splitByPdfDocxAnchors(
+    trimmed,
+    knownFilenameKeys(knownFilenames ?? [])
+  );
   if (byExt) return byExt;
   return splitWithoutFileExtensions(trimmed);
 }
@@ -385,14 +401,15 @@ export type SourceCitationLinkSpan = {
  * each can open on its own.
  */
 export function sourceCitationLinkSpans(
-  match: string
+  match: string,
+  knownFilenames?: readonly string[]
 ): SourceCitationLinkSpan[] {
   if (!isSourceCitationBracket(match) || isNumericCitationMarker(match)) {
     return [];
   }
   const inner = match.slice(1, -1);
   const core = citationCoreFromInner(inner);
-  const parts = splitSourceCitationParts(core || inner);
+  const parts = splitSourceCitationParts(core || inner, knownFilenames);
   if (parts.length <= 1) {
     return [
       {
@@ -576,8 +593,10 @@ function isCitationShapedCore(core: string): boolean {
  *   `[name, p. 1-3]` (any name; extension optional; commas in the filename stay
  *   in that cite)
  * - combined sources in one bracket, comma, semicolon, or `and` separated
- *   (`[A.pdf, p. 1; B.pdf, p. 1-3]`, `[E-PR-068 and E-PR-071.pdf, p. 1]`)
- *   when every part is a cite or a hyphenated/slashed exhibit stem
+ *   (`[A.pdf, p. 1; B.pdf, p. 1-3]`, `[E-PR-068.pdf and E-PR-071.pdf, p. 1]`)
+ *   when every part is a cite or a hyphenated/slashed exhibit stem. Compact
+ *   `E-PR-068 and E-PR-071.pdf` (one extension) splits only when those files
+ *   are in `knownFilenames`.
  * - bare attachment filenames using supported extensions from file-types
  * - extension-less exhibit labels (`[Attachment_XIV]`, lists, optional page)
  * - appendix / report-number cites (`[Appendix B]`,

@@ -41,7 +41,10 @@ export function openCitedDocument(args: {
     }
   }
 
-  const parsed = parseSourceCitation(args.raw);
+  const parsed = parseSourceCitation(
+    args.raw,
+    args.attachments.map((item) => item.filename)
+  );
   if (!parsed) return { status: "unresolved" };
 
   const resolved = resolveCitedAttachment(args.attachments, parsed.filename);

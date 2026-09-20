@@ -278,14 +278,21 @@ describe("parseSourceCitation", () => {
     });
   });
 
-  it("parses a known combined filename without peeling the and stem", () => {
+  it("parses a compact and-cite as one filename until attachments confirm two files", () => {
     expect(
-      parseSourceCitation("[E-PR-068 and E-PR-071.pdf, p. 1]", [
-        "E-PR-068 and E-PR-071.pdf",
-      ])
+      parseSourceCitation("[E-PR-068 and E-PR-071.pdf, p. 1]")
     ).toEqual({
       filename: "E-PR-068 and E-PR-071.pdf",
       pages: [1],
+    });
+    expect(
+      parseSourceCitation("[E-PR-068 and E-PR-071.pdf, p. 1]", [
+        "E-PR-068.pdf",
+        "E-PR-071.pdf",
+      ])
+    ).toEqual({
+      filename: "E-PR-068",
+      pages: [],
     });
   });
 
@@ -345,10 +352,19 @@ describe("splitSourceCitationParts", () => {
     ).toEqual(["E-PR-068.pdf, p. 1", "E-PR-071.pdf, p. 1"]);
   });
 
-  it("splits an exhibit stem and a pdf joined with and", () => {
+  it("splits an exhibit stem and a pdf joined with and when both files are known", () => {
+    expect(
+      splitSourceCitationParts("E-PR-068 and E-PR-071.pdf, p. 1", [
+        "E-PR-068.pdf",
+        "E-PR-071.pdf",
+      ])
+    ).toEqual(["E-PR-068", "E-PR-071.pdf, p. 1"]);
+  });
+
+  it("does not guess an and-split without attached filenames", () => {
     expect(
       splitSourceCitationParts("E-PR-068 and E-PR-071.pdf, p. 1")
-    ).toEqual(["E-PR-068", "E-PR-071.pdf, p. 1"]);
+    ).toEqual(["E-PR-068 and E-PR-071.pdf, p. 1"]);
   });
 
   it("does not peel a compact id when English title words follow and", () => {
@@ -365,6 +381,33 @@ describe("splitSourceCitationParts", () => {
         "E-PR-068 and E-PR-071.pdf",
       ])
     ).toEqual(["E-PR-068 and E-PR-071.pdf, p. 1"]);
+  });
+
+  it("does not peel an and-cite when only one side is an attached file", () => {
+    expect(
+      splitSourceCitationParts("E-PR-068 and E-PR-071.pdf, p. 1", [
+        "E-PR-068.pdf",
+      ])
+    ).toEqual(["E-PR-068 and E-PR-071.pdf, p. 1"]);
+  });
+
+  it("does not peel an English title just because unrelated files are attached", () => {
+    expect(
+      splitSourceCitationParts("QDF-Filling and capping machine.pdf, p. 2", [
+        "E-PR-068.pdf",
+        "E-PR-071.pdf",
+        "protocol.pdf",
+      ])
+    ).toEqual(["QDF-Filling and capping machine.pdf, p. 2"]);
+  });
+
+  it("peels an English and-title only when both sides are attached files", () => {
+    expect(
+      splitSourceCitationParts("QDF-Filling and capping machine.pdf, p. 2", [
+        "QDF-Filling.pdf",
+        "capping machine.pdf",
+      ])
+    ).toEqual(["QDF-Filling", "capping machine.pdf, p. 2"]);
   });
 
   it("still splits two-extension and-cites even when a combined name is known", () => {
@@ -486,10 +529,16 @@ describe("sourceCitationLinkSpans", () => {
     );
   });
 
-  it("makes two inner links for an and-combined cite", () => {
+  it("makes two inner links for an and-combined cite only when both files are known", () => {
     const match = "[E-PR-068 and E-PR-071.pdf, p. 1]";
     expect(isCitationShapedBracket(match)).toBe(true);
-    const spans = sourceCitationLinkSpans(match);
+    expect(sourceCitationLinkSpans(match)).toEqual([
+      { from: 0, to: match.length, openRaw: match },
+    ]);
+    const spans = sourceCitationLinkSpans(match, [
+      "E-PR-068.pdf",
+      "E-PR-071.pdf",
+    ]);
     expect(spans).toHaveLength(2);
     expect(spans[0]?.openRaw).toBe("[E-PR-068]");
     expect(spans[1]?.openRaw).toBe("[E-PR-071.pdf, p. 1]");

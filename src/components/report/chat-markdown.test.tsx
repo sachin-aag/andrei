@@ -135,4 +135,27 @@ describe("ChatMarkdown", () => {
     await userEvent.click(links[1]!);
     expect(onOpenCitation).toHaveBeenCalledWith("[CSV-RTM-PR-053.pdf, p. 5]");
   });
+
+  it("splits a compact and-cite only when both attached filenames are known", async () => {
+    const onOpenCitation = vi.fn();
+    const { rerender } = render(
+      <ChatMarkdown onOpenCitation={onOpenCitation}>
+        {String.raw`See [E-PR-068 and E-PR-071.pdf, p. 1].`}
+      </ChatMarkdown>
+    );
+    expect(screen.getAllByTestId("citation-link")).toHaveLength(1);
+
+    rerender(
+      <ChatMarkdown
+        onOpenCitation={onOpenCitation}
+        knownFilenames={["E-PR-068.pdf", "E-PR-071.pdf"]}
+      >
+        {String.raw`See [E-PR-068 and E-PR-071.pdf, p. 1].`}
+      </ChatMarkdown>
+    );
+    const links = screen.getAllByTestId("citation-link");
+    expect(links).toHaveLength(2);
+    await userEvent.click(links[0]!);
+    expect(onOpenCitation).toHaveBeenCalledWith("[E-PR-068]");
+  });
 });

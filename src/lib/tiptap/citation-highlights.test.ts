@@ -170,6 +170,24 @@ describe("citation highlight decorations", () => {
     ).toBe(cite);
   });
 
+  it("keeps a compact and-cite as one span until both files are known", () => {
+    const schema = schemaWithTable();
+    const cite = "[E-PR-068 and E-PR-071.pdf, p. 1]";
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text(`See ${cite}.`)]),
+    ]);
+    expect(
+      findCitationHighlightsInPmDoc(doc).filter((h) => h.kind === "source")
+    ).toHaveLength(1);
+    const highlights = findCitationHighlightsInPmDoc(doc, [
+      "E-PR-068.pdf",
+      "E-PR-071.pdf",
+    ]).filter((h) => h.kind === "source");
+    expect(highlights).toHaveLength(2);
+    expect(highlights[0]?.openRaw).toBe("[E-PR-068]");
+    expect(highlights[1]?.openRaw).toBe("[E-PR-071.pdf, p. 1]");
+  });
+
   it("splits two files in one bracket into two clickable spans", () => {
     const schema = schemaWithTable();
     const cite =

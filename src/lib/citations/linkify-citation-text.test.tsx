@@ -94,4 +94,27 @@ describe("linkifyCitationText", () => {
     await userEvent.click(links[0]!);
     expect(onOpen).toHaveBeenCalledWith(cite);
   });
+
+  it("keeps a compact and-cite as one link until both files are known", async () => {
+    const onOpen = vi.fn();
+    const cite = "[E-PR-068 and E-PR-071.pdf, p. 1]";
+    const { rerender } = render(<>{linkifyCitationText(`See ${cite}.`, onOpen)}</>);
+    expect(screen.getAllByTestId("citation-link")).toHaveLength(1);
+    expect(screen.getByTestId("citation-link")).toHaveTextContent(cite);
+
+    rerender(
+      <>
+        {linkifyCitationText(`See ${cite}.`, onOpen, undefined, [
+          "E-PR-068.pdf",
+          "E-PR-071.pdf",
+        ])}
+      </>
+    );
+    const links = screen.getAllByTestId("citation-link");
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveTextContent("E-PR-068");
+    expect(links[1]).toHaveTextContent("E-PR-071.pdf, p. 1");
+    await userEvent.click(links[0]!);
+    expect(onOpen).toHaveBeenCalledWith("[E-PR-068]");
+  });
 });
