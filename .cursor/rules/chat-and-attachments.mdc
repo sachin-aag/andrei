@@ -70,10 +70,13 @@ After a cited search hit, a locate/read (`read_document_page` /
 `document_outline` / Analytics scan-extract), or two empty greps, hide
 `search_documents` for the rest of the turn (`searchLoopDirective` shared
 with Analytics). Document-chat attachment cover sheets (ATTACHMENT NO. /
-certificate-of locators, `divider=true`) are not a cited data page: they
+certificate-of locators, `divider=true`) and split tables (`continues=true`,
+Page N of M with N < M) are not a complete cited data page: they
 set `keepSearchOpen` and `searchHitCount` treats `dividerHits >=
-returnedCount` as 0 so the following page can be read. Analytics still
-hides after a real cited page. Do not hide search while a document review is
+returnedCount` as 0 so the following page can be read. `read_document_page`
+includes the next page as `continuation` when the transcript prints Page N
+of M. Analytics still hides after a real cited page (it does not keep grep
+open for split tables). Do not hide search while a document review is
 `in_progress` / `ready_to_finish`, or when a tool result sets
 `keepSearchOpen` / `status: unsupported_facts`. Prior-turn tool JSON is compacted before
 `convertToModelMessages` (page transcripts, finish findings, write
@@ -240,7 +243,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   spins only while the turn is running; it shows Paused on Cancel and hides
   when every remaining section is drafted. MJ ELR evidence sections stay
   in progress after `edit_table` until the same turn drafts the assessment
-  with a count (and `trend` / `overallGrade` / `recommendation`);
+  with a count (and `trend` / `overallGrade` / `recommendation`); Access
+  Control also needs contiguous annexure Sr. rows and the continuation page
+  of a Page N of M split;
   investigation and DV queues still advance on the table or narrative they
   already draft. Working… hides
   when the stream is idle even if the optimistic send still has a stale
@@ -343,7 +348,7 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (`requireInventoryReview`). Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (transcript-backed
-  batches skip the extract LLM; no thought summaries on extract). `finish_document_review` caps the findings sample;
+  batches skip the extract LLM; no thought summaries on extract). `finish_document_review` caps the findings sample (pin split-table / objective-named pages, then fair-share by attachment);
   follow-up turns strip prior findings arrays before the model call.
   `search_documents` `queries[]` is at most 8 and `limit` at most 16;
   `coerceSearchDocumentsInput` normalizes oversized model JSON, and

@@ -328,6 +328,13 @@ function rememberReadPageResult(
       pageNumber?: number;
       filename?: string;
     };
+    continuation?: {
+      page?: {
+        attachmentId?: string;
+        pageNumber?: number;
+        filename?: string;
+      };
+    };
   };
   if (record.status !== "found" || !record.page) return;
   rememberCitation(citationBucket, {
@@ -335,6 +342,36 @@ function rememberReadPageResult(
     page: record.page.pageNumber,
     filename: record.page.filename,
   });
+  if (record.continuation?.page) {
+    rememberCitation(citationBucket, {
+      attachmentId: record.continuation.page.attachmentId,
+      page: record.continuation.page.pageNumber,
+      filename: record.continuation.page.filename,
+    });
+  }
+}
+
+/** Document chat keeps grep open after a split table; Analytics still stops. */
+function withoutKeepSearchOpen<T>(toolValue: T): T {
+  if (!toolValue || typeof toolValue !== "object") return toolValue;
+  const record = toolValue as {
+    execute?: (...args: never[]) => Promise<unknown>;
+  };
+  const execute = record.execute;
+  if (typeof execute !== "function") return toolValue;
+  return {
+    ...record,
+    execute: async (...args: never[]) => {
+      const result = await execute(...args);
+      if (!result || typeof result !== "object" || Array.isArray(result)) {
+        return result;
+      }
+      if (!("keepSearchOpen" in result)) return result;
+      const next = { ...(result as Record<string, unknown>) };
+      delete next.keepSearchOpen;
+      return next;
+    },
+  } as T;
 }
 
 function rememberExtractResult(citationBucket: ChartCitation[], result: unknown) {
@@ -901,9 +938,11 @@ export function buildAnalyticsChatTools(opts: {
 
   const sourceCitations: ChartCitation[] = [];
   if (documentTools.read_document_page) {
-    documentTools.read_document_page = withRememberedExecute(
-      documentTools.read_document_page,
-      (result) => rememberReadPageResult(sourceCitations, result)
+    documentTools.read_document_page = withoutKeepSearchOpen(
+      withRememberedExecute(
+        documentTools.read_document_page,
+        (result) => rememberReadPageResult(sourceCitations, result)
+      )
     );
   }
 

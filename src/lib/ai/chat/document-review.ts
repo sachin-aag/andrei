@@ -29,7 +29,13 @@ import {
   coverageObjectiveDigest,
   coverageKeySatisfiesObjective,
   planReviewPages,
+  scoreReviewPage,
 } from "@/lib/ai/chat/review-page-plan";
+import {
+  continuationPageNumber,
+  filenameNamedInObjective,
+  parsePageOfTotal,
+} from "@/lib/ai/chat/page-continuation";
 import { inventoryFinishSatisfiesEmptyTable } from "@/lib/ai/chat/pending-plan";
 import { TOOL_RESULT_BUDGET, toolResultBudget } from "@/lib/ai/chat/tool-result-budget";
 
@@ -604,7 +610,9 @@ export class DocumentReviewSession {
       this.lastBudgetExhausted;
     const coverageComplete = !truncated;
     this.lastFinishTruncated = truncated;
-    const capped = capFindingsForFinish(compactFindings(this.findings));
+    const capped = capFindingsForFinish(compactFindings(this.findings), {
+      objective: this.coverageObjective || this.objective,
+    });
     const inventoryNote =
       recommendedInventory.ids.length > 0
         ? ` recommendedInventory ${recommendedInventory.ids.length} (${recommendedInventory.sourceKind}).`
@@ -1105,16 +1113,210 @@ function compactFindings(
   }));
 }
 
+export type CapFindingsForFinishOptions = {
+  cap?: number;
+  objective?: string;
+};
+
+const FINDING_PRIORITY_SCORE = 8;
+
+function findingObjectiveHaystack(finding: DocumentReviewFinding): string {
+  return [finding.heading, finding.summary, finding.identifiers.join(" ")]
+    .filter((part) => part && part.trim())
+    .join("\n");
+}
+
+function scoreFindingAgainstObjective(
+  finding: DocumentReviewFinding,
+  objective: string
+): number {
+  if (!objective.trim()) return 0;
+  return scoreReviewPage(
+    {
+      attachmentId: finding.attachmentId,
+      filename: finding.filename,
+      pageNumber: finding.pageNumber,
+      transcript: findingObjectiveHaystack(finding),
+      pageContext: finding.heading,
+      identifiers: finding.identifiers,
+    },
+    objective
+  );
+}
+
+function isSplitFinishFinding(finding: DocumentReviewFinding): boolean {
+  return (
+    continuationPageNumber({
+      pageNumber: finding.pageNumber,
+      heading: finding.heading,
+      summary: finding.summary,
+    }) != null ||
+    parsePageOfTotal(`${finding.heading ?? ""} ${finding.summary}`) != null
+  );
+}
+
+function isPriorityFinishFinding(
+  finding: DocumentReviewFinding,
+  objective: string
+): boolean {
+  if (filenameNamedInObjective(finding.filename, objective)) return true;
+  if (
+    continuationPageNumber({
+      pageNumber: finding.pageNumber,
+      heading: finding.heading,
+      summary: finding.summary,
+    }) != null
+  ) {
+    return true;
+  }
+  if (parsePageOfTotal(`${finding.heading ?? ""} ${finding.summary}`)) {
+    return true;
+  }
+  return scoreFindingAgainstObjective(finding, objective) >= FINDING_PRIORITY_SCORE;
+}
+
+function pinContinuationSiblings(
+  findings: readonly DocumentReviewFinding[],
+  pinned: Set<DocumentReviewFinding>
+): void {
+  for (const finding of findings) {
+    if (!pinned.has(finding)) continue;
+    const nextPage = continuationPageNumber({
+      pageNumber: finding.pageNumber,
+      heading: finding.heading,
+      summary: finding.summary,
+    });
+    const parsed = parsePageOfTotal(`${finding.heading ?? ""} ${finding.summary}`);
+    const lastPage =
+      nextPage != null
+        ? finding.pageNumber +
+          (parsed && parsed.page < parsed.total ? parsed.total - parsed.page : 1)
+        : null;
+    if (lastPage == null) continue;
+    for (const other of findings) {
+      if (other.attachmentId !== finding.attachmentId) continue;
+      if (
+        other.pageNumber > finding.pageNumber &&
+        other.pageNumber <= lastPage
+      ) {
+        pinned.add(other);
+      }
+    }
+  }
+}
+
+function takeRoundRobin(
+  groups: Map<string, DocumentReviewFinding[]>,
+  order: readonly string[],
+  selected: DocumentReviewFinding[],
+  used: Set<DocumentReviewFinding>,
+  cap: number
+): void {
+  let progressed = true;
+  while (selected.length < cap && progressed) {
+    progressed = false;
+    for (const id of order) {
+      if (selected.length >= cap) break;
+      const queue = groups.get(id);
+      if (!queue || queue.length === 0) continue;
+      const next = queue.shift();
+      if (!next || used.has(next)) continue;
+      used.add(next);
+      selected.push(next);
+      progressed = true;
+    }
+  }
+}
+
+function groupFindingsInOrder(
+  findings: readonly DocumentReviewFinding[]
+): { groups: Map<string, DocumentReviewFinding[]>; order: string[] } {
+  const groups = new Map<string, DocumentReviewFinding[]>();
+  const order: string[] = [];
+  for (const finding of findings) {
+    const existing = groups.get(finding.attachmentId);
+    if (existing) {
+      existing.push(finding);
+      continue;
+    }
+    groups.set(finding.attachmentId, [finding]);
+    order.push(finding.attachmentId);
+  }
+  return { groups, order };
+}
+
+/**
+ * Cap the finish sample without letting an early file occupy every slot.
+ * Always keep split-table continuation pages and files named in the
+ * objective, then fair-share the rest by attachment.
+ */
 export function capFindingsForFinish(
   findings: DocumentReviewFinding[],
-  cap = REVIEW_FINISH_FINDINGS_CAP
+  capOrOptions: number | CapFindingsForFinishOptions = REVIEW_FINISH_FINDINGS_CAP
 ): { findings: DocumentReviewFinding[]; omitted: number } {
+  const options: CapFindingsForFinishOptions =
+    typeof capOrOptions === "number" ? { cap: capOrOptions } : capOrOptions;
+  const cap = options.cap ?? REVIEW_FINISH_FINDINGS_CAP;
+  const objective = options.objective ?? "";
   if (findings.length <= cap) {
     return { findings, omitted: 0 };
   }
+
+  const pinned = new Set<DocumentReviewFinding>();
+  for (const finding of findings) {
+    if (isPriorityFinishFinding(finding, objective)) pinned.add(finding);
+  }
+  pinContinuationSiblings(findings, pinned);
+
+  const used = new Set<DocumentReviewFinding>();
+  const selected: DocumentReviewFinding[] = [];
+  const takePinned = findings.filter((finding) => pinned.has(finding));
+  const pinnedGrouped = groupFindingsInOrder(takePinned);
+  for (const id of pinnedGrouped.order) {
+    const queue = pinnedGrouped.groups.get(id);
+    if (!queue) continue;
+    queue.sort((left, right) => {
+      const leftSplit = isSplitFinishFinding(left);
+      const rightSplit = isSplitFinishFinding(right);
+      if (leftSplit !== rightSplit) return leftSplit ? -1 : 1;
+      if (leftSplit && rightSplit) return right.pageNumber - left.pageNumber;
+      return left.pageNumber - right.pageNumber;
+    });
+  }
+  takeRoundRobin(
+    pinnedGrouped.groups,
+    pinnedGrouped.order,
+    selected,
+    used,
+    cap
+  );
+
+  if (selected.length < cap) {
+    const rest = findings.filter((finding) => !used.has(finding));
+    const restGrouped = groupFindingsInOrder(rest);
+    for (const id of restGrouped.order) {
+      const queue = restGrouped.groups.get(id);
+      if (!queue) continue;
+      queue.sort((left, right) => {
+        const scoreDelta =
+          scoreFindingAgainstObjective(right, objective) -
+          scoreFindingAgainstObjective(left, objective);
+        if (scoreDelta !== 0) return scoreDelta;
+        return left.pageNumber - right.pageNumber;
+      });
+    }
+    takeRoundRobin(
+      restGrouped.groups,
+      restGrouped.order,
+      selected,
+      used,
+      cap
+    );
+  }
+
   return {
-    findings: findings.slice(0, cap),
-    omitted: findings.length - cap,
+    findings: selected,
+    omitted: findings.length - selected.length,
   };
 }
 

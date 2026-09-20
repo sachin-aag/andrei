@@ -170,6 +170,73 @@ describe("advancePlanAfterTurn", () => {
     expect(shouldAutoContinuePlan(result.continuation)).toBe(true);
   });
 
+  it("keeps Access Control in progress when annexure Sr. rows skip the continuation page", () => {
+    const started = plan([
+      {
+        sectionKey: "elr_access_control",
+        label: "Access Control",
+        state: "in_progress",
+      },
+      { sectionKey: "elr_qms", label: "QMS Records", state: "queued" },
+    ]);
+    const result = advancePlanAfterTurn({
+      plan: started,
+      documentType: "equipment_lifecycle_report",
+      draftedSectionKeys: ["elr_access_control"],
+      parts: [
+        {
+          type: "tool-read_document_page",
+          state: "output-available",
+          input: { attachmentId: "att-sop", pageNumber: 23 },
+          output: {
+            status: "found",
+            nextPage: 24,
+            page: {
+              filename: "SOP-DP-PR-040-R01 SOP.pdf",
+              pageNumber: 23,
+              transcript: "Page 23 of 24",
+            },
+            continuation: {
+              page: {
+                filename: "SOP-DP-PR-040-R01 SOP.pdf",
+                pageNumber: 24,
+                transcript: "Page 24 of 24",
+              },
+            },
+          },
+        },
+        {
+          type: "tool-edit_table",
+          state: "output-available",
+          input: {
+            section: "elr_access_control",
+            operation: {
+              kind: "insert_rows",
+              tableIndex: 0,
+              rows: Array.from({ length: 13 }, (_, i) => [
+                `${i + 1}`,
+                `Task ${i + 1}`,
+              ]),
+            },
+          },
+        },
+        {
+          type: "tool-draft_field",
+          state: "output-available",
+          input: {
+            section: "elr_access_control",
+            targetField: "narrative",
+            markdown:
+              "14 privilege rows copied from [SOP-DP-PR-040-R01 SOP.pdf, p. 23].",
+          },
+        },
+      ],
+    });
+    expect(result.plan.items[0]?.state).toBe("in_progress");
+    expect(result.plan.items[1]?.state).toBe("queued");
+    expect(result.continuation?.nextLabel).toBe("Access Control");
+  });
+
   it("still marks investigation sections done after a table-only turn", () => {
     const started = plan([
       { sectionKey: "define", label: "Define", state: "in_progress" },
@@ -472,6 +539,9 @@ describe("plan prompt and metadata", () => {
     expect(block).toContain("This turn: **Calibration**");
     expect(block).toContain("Do not start Monitoring");
     expect(block).toContain("not done after edit_table alone");
+    expect(block).toContain(
+      "Access Control is not done until every annexure Sr. row is copied"
+    );
   });
 
   it("does not add ELR sibling copy on investigation remaining-section", () => {

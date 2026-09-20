@@ -22,6 +22,7 @@ import {
   reviewContinueBudgetMs,
   selectReviewPages,
   capFindingsForFinish,
+  type DocumentReviewFinding,
   type ReviewPageSource,
 } from "./document-review";
 
@@ -566,6 +567,97 @@ describe("capFindingsForFinish", () => {
     expect(capped.findings).toHaveLength(REVIEW_FINISH_FINDINGS_CAP);
     expect(capped.omitted).toBe(17);
     expect(capped.findings[0]?.id).toBe("d1");
+  });
+
+  it("keeps a split annexure and its continuation when noise would occupy a FIFO cap", () => {
+    function row(
+      overrides: Pick<
+        DocumentReviewFinding,
+        "id" | "attachmentId" | "filename" | "pageNumber"
+      > &
+        Partial<DocumentReviewFinding>
+    ): DocumentReviewFinding {
+      return {
+        identifiers: [],
+        heading: null,
+        summary: "calibration row",
+        configuration: null,
+        result: null,
+        ...overrides,
+      };
+    }
+    const noise = Array.from({ length: 40 }, (_, i) =>
+      row({
+        id: `noise-${i + 1}`,
+        attachmentId: `att_noise_${Math.floor(i / 4)}`,
+        filename: `Cert-${Math.floor(i / 4)}.pdf`,
+        pageNumber: (i % 4) + 1,
+      })
+    );
+    const sop23 = row({
+      id: "sop-23",
+      attachmentId: "att_sop",
+      filename: "Privilege-Matrix.pdf",
+      pageNumber: 23,
+      heading: "Annexure-I",
+      summary: "Page 23 of 24 — Sr. 1 Equipment start through Sr. 19",
+    });
+    const sop24 = row({
+      id: "sop-24",
+      attachmentId: "att_sop",
+      filename: "Privilege-Matrix.pdf",
+      pageNumber: 24,
+      heading: "Annexure-I (continued)",
+      summary: "Page 24 of 24 — Sr. 20 Filling machine through Sr. 28",
+    });
+    const capped = capFindingsForFinish([...noise, sop23, sop24], {
+      cap: 6,
+      objective: "Fill Access Control privilege matrix",
+    });
+    expect(capped.findings).toHaveLength(6);
+    const ids = capped.findings.map((finding) => finding.id);
+    expect(ids).toContain("sop-23");
+    expect(ids).toContain("sop-24");
+    expect(ids.indexOf("sop-24")).toBeLessThan(ids.indexOf("sop-23"));
+  });
+
+  it("pins an objective-named SOP ahead of earlier attachments", () => {
+    const noise = Array.from({ length: 10 }, (_, file) =>
+      Array.from({ length: 5 }, (_, page) => ({
+        id: `noise-${file}-${page}`,
+        attachmentId: `att_noise_${file}`,
+        filename: `Cert-${file}.pdf`,
+        pageNumber: page + 1,
+        identifiers: [],
+        heading: null,
+        summary: "factory acceptance row",
+        configuration: null,
+        result: null,
+      }))
+    ).flat();
+    const sop = {
+      id: "sop-named",
+      attachmentId: "att_sop",
+      filename: "SOP-DP-PR-040-R01 SOP.pdf",
+      pageNumber: 23,
+      identifiers: [],
+      heading: "Access control",
+      summary: "Privilege matrix tasks",
+      configuration: null,
+      result: null,
+    };
+    const withoutPin = capFindingsForFinish([...noise, sop], {
+      cap: 8,
+      objective: "Fill monitoring from certificates",
+    });
+    expect(withoutPin.findings.map((finding) => finding.id)).not.toContain(
+      "sop-named"
+    );
+    const capped = capFindingsForFinish([...noise, sop], {
+      cap: 8,
+      objective: "Access Control from SOP-DP-PR-040",
+    });
+    expect(capped.findings.map((finding) => finding.id)).toContain("sop-named");
   });
 });
 

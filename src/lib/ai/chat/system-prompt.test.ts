@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v124-table-placeholder-lookup");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v125-annexure-continuation");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -575,6 +575,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "Use [filename] only when the page is missing or ambiguous"
     );
+    expect(prompt).toContain("Hits with continues=true");
+    expect(prompt).toContain("A split annexure still needs every remaining Sr. row");
     expect(prompt).toContain("Never write a citation as a placeholder");
     expect(prompt).toContain("unsupported_facts");
     expect(prompt).toContain(
