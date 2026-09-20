@@ -391,6 +391,39 @@ describe("splitSourceCitationParts", () => {
     ).toEqual(["E-PR-068 and E-PR-071.pdf, p. 1"]);
   });
 
+  it("does not peel when the LLM name is slightly wrong even if both files are attached", () => {
+    expect(
+      splitSourceCitationParts("E-PR-068 and E-PR-71.pdf, p. 1", [
+        "E-PR-068.pdf",
+        "E-PR-071.pdf",
+      ])
+    ).toEqual(["E-PR-068 and E-PR-71.pdf, p. 1"]);
+  });
+
+  it("still splits two-extension and-cites when the names are not attached", () => {
+    expect(
+      splitSourceCitationParts("E-PR-068-wrong.pdf and E-PR-071-wrong.pdf")
+    ).toEqual(["E-PR-068-wrong.pdf", "E-PR-071-wrong.pdf"]);
+  });
+
+  it("does not treat English leftover after a pdf as a second source", () => {
+    expect(
+      splitSourceCitationParts("protocol.pdf and capping machine")
+    ).toEqual(["protocol.pdf and capping machine"]);
+  });
+
+  it("splits leftover and after a pdf when the remainder is a cite", () => {
+    expect(
+      splitSourceCitationParts("protocol.pdf and Appendix B")
+    ).toEqual(["protocol.pdf", "Appendix B"]);
+  });
+
+  it("splits leftover and after a pdf when the remainder is an attached file", () => {
+    expect(
+      splitSourceCitationParts("protocol.pdf and E-PR-071", ["E-PR-071.pdf"])
+    ).toEqual(["protocol.pdf", "E-PR-071"]);
+  });
+
   it("does not peel an English title just because unrelated files are attached", () => {
     expect(
       splitSourceCitationParts("QDF-Filling and capping machine.pdf, p. 2", [

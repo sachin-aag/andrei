@@ -231,10 +231,12 @@ export function isExactKnownCitationFilename(
 }
 
 /**
- * Peel `E-PR-068 and E-PR-071.pdf` only when both sides match attached
- * filenames (`E-PR-068.pdf` + `E-PR-071.pdf`). No attachment list, or a
- * title like `QDF-Filling and capping machine.pdf`, stays one file.
- * Two `.pdf`/`.docx` extensions still split via `skipSourceSeparator`.
+ * Peel `E-PR-068 and E-PR-071.pdf` only when both sides **exactly** match
+ * attached filenames (`E-PR-068.pdf` + `E-PR-071.pdf`). A slightly wrong
+ * LLM name (`E-PR-71`) does not peel — fuzzy `filenameMatches` is for
+ * click-to-open, not for deciding how many files exist. No attachment
+ * list, or a title like `QDF-Filling and capping machine.pdf`, stays one
+ * file. Two `.pdf`/`.docx` extensions still split via `skipSourceSeparator`.
  */
 function peelAndSourcePrefix(
   inner: string,
@@ -320,8 +322,16 @@ function splitByPdfDocxAnchors(
     const leftoverAnd = AND_SOURCE_SEP_RE.exec(leftover);
     if (leftoverAnd) {
       const rest = leftover.slice(leftoverAnd[0].length).trim();
-      const parts = asParts(rest ? splitWithoutFileExtensions(rest) : []);
-      return parts.length > 0 ? parts : null;
+      // After a complete `.pdf`/`.docx`, `and` starts another source only
+      // when that remainder is already a cite (Appendix / exhibit / file)
+      // or an attached name — not English leftover (`and capping machine`).
+      if (
+        rest &&
+        (isCitationShapedCore(rest) || citedMatchesKnownFile(rest, known))
+      ) {
+        const parts = asParts(splitWithoutFileExtensions(rest));
+        return parts.length > 0 ? parts : null;
+      }
     }
     ranges[ranges.length - 1]!.end = inner.length;
   }
