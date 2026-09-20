@@ -251,7 +251,8 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   in progress after `edit_table` until the same turn drafts the assessment
   with a count (and `trend` / `overallGrade` / `recommendation`); Access
   Control also needs contiguous annexure Sr. rows and the continuation page
-  of a Page N of M split;
+  of a Page N of M split; ELR Attachments is filled at Word export from the
+  live file list (do not draft `elr_attachments`);
   investigation and DV queues still advance on the table or narrative they
   already draft. Working… hides
   when the stream is idle even if the optimistic send still has a stale

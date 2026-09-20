@@ -268,10 +268,15 @@ describe("equipment lifecycle report definition", () => {
     expect(sections.indexOf("elr_breakdowns")).toBeLessThan(
       sections.indexOf("elr_qms")
     );
-    const draft = getDocumentType(TYPE).chat.draftOrder;
+    const def = getDocumentType(TYPE);
+    const draft = def.chat.draftOrder;
     expect(draft.indexOf("elr_alarms")).toBeLessThan(draft.indexOf("elr_monitoring"));
     expect(draft.indexOf("elr_monitoring")).toBeLessThan(
       draft.indexOf("elr_breakdowns")
+    );
+    expect(draft).not.toContain("elr_attachments");
+    expect(def.sections.find((s) => s.key === "elr_attachments")?.editable).toBe(
+      false
     );
   });
 
@@ -305,7 +310,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v18");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v19");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -321,7 +326,7 @@ describe("equipment lifecycle report definition", () => {
       "Secondary (cartoning, labelling) and tertiary (palletizing, wrapping)"
     );
     expect(def.prompts.perSection.elr_system_description).toContain(
-      "omit MOC are met on that point"
+      "omit MOC (and omit that heading) are met on that point"
     );
     expect(def.prompts.perSection.elr_system_description).toContain(
       "numbered or bulleted list"
@@ -331,6 +336,12 @@ describe("equipment lifecycle report definition", () => {
     );
     expect(def.chat.draftingGuidance).toContain(
       "Core Functional Stations and Sub-Assemblies"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Do not** add a **Materials of Construction (MOC)** heading"
+    );
+    expect(def.chat.draftingGuidance).not.toMatch(
+      /5\. \*\*Materials of Construction/
     );
     expect(def.chat.draftingGuidance).not.toMatch(
       /Packed paragraph: Equipment description/
@@ -751,6 +762,10 @@ describe("ELR criteria wiring", () => {
       }
       expect(criteria.length).toBeGreaterThan(0);
     }
+    expect(
+      getDocumentType(TYPE).sections.find((s) => s.key === "elr_attachments")
+        ?.evaluable
+    ).toBe(false);
   });
 
   it("routes the conclusion through the discrepancy section", () => {
