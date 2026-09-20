@@ -91,7 +91,7 @@ describe("filenameConflictsWithInventoryObjective", () => {
         "SCADA Alarms Trend Q1 2025.pdf",
         "elr_monitoring"
       )
-    ).toBe(false);
+    ).toBe(true);
     expect(
       filenameConflictsWithInventoryObjective(
         "Alarm trend Q2 2025.pdf",
@@ -279,7 +279,7 @@ describe("scoreInventoryReviewPage", () => {
     ).toBe(0);
   });
 
-  it("queues alarm-trend pages on a monitoring walk", () => {
+  it("does not queue alarm-trend pages on a monitoring walk", () => {
     expect(
       scoreInventoryReviewPage(
         {
@@ -290,14 +290,14 @@ describe("scoreInventoryReviewPage", () => {
         },
         "elr_monitoring"
       )
-    ).toBeGreaterThan(0);
+    ).toBe(0);
     expect(
       preferredInventoryEvidenceSkipped(
         "elr_monitoring",
         ["PRQR-25-PR-005 Report.pdf"],
         ["Alarm trend Q2 2025.pdf"]
       )
-    ).toBe(true);
+    ).toBe(false);
     expect(
       preferredInventoryEvidenceSkipped(
         "elr_monitoring",

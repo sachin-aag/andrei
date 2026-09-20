@@ -372,6 +372,18 @@ describe("advancePlanAfterTurn", () => {
       )
     ).toEqual(["elr_objective", "elr_scope"]);
   });
+
+  it("does not pair Alarm Trends with Monitoring on one remaining-section turn", () => {
+    const started = plan([
+      { sectionKey: "elr_alarms", label: "Alarm Trends", state: "in_progress" },
+      { sectionKey: "elr_monitoring", label: "Monitoring", state: "queued" },
+    ]);
+    expect(
+      currentPlanTurnSections(started, "equipment_lifecycle_report").map(
+        (item) => item.sectionKey
+      )
+    ).toEqual(["elr_alarms"]);
+  });
 });
 
 describe("resolvePlanAtTurnStart", () => {
@@ -1155,7 +1167,7 @@ describe("plan prompt and metadata", () => {
         queuedFilenames: ["PRQR-25-PR-005 Report.pdf"],
         skippedFilenames: ["Alarm trend Q2 2025.pdf"],
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("keeps comprehensive retrieval for a queued inventory section", () => {

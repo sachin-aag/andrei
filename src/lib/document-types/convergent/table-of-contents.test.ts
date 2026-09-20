@@ -225,16 +225,24 @@ describe("getReportTableOfContents", () => {
       "3.3 Equipment and System Description",
       "3.4 Qualification and Periodic Re-Qualification History",
       "3.5 Media Fill / Aseptic Process Simulation",
-      "3.6 Monitoring",
-      "3.7 Calibration of Associated Instruments",
-      "3.8 Preventive Maintenance",
-      "3.9 Alarm Trends",
+      "3.6 Alarm Trends",
+      "3.7 Monitoring",
+      "3.8 Calibration of Associated Instruments",
+      "3.9 Preventive Maintenance",
       "3.10 Breakdowns and Trends",
       "3.11 QMS Records since Last Periodic Re-Qualification",
       "3.12 Access Control",
       "3.13 Audit Trail Review",
       "3.14 Computerized System Validation Status",
     ]);
+    const alarms = observations?.children?.find(
+      (c) => c.label === "3.6 Alarm Trends"
+    );
+    expect(alarms?.sectionKey).toBe("elr_alarms");
+    expect(alarms?.children?.[0]).toEqual({
+      label: "3.6.1 Alarm Trend Summary",
+      sectionKey: "elr_alarms",
+    });
     const breakdowns = observations?.children?.find(
       (c) => c.label === "3.10 Breakdowns and Trends"
     );

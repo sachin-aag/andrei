@@ -92,8 +92,8 @@ objective (floor 8; nearby same-file pages if almost nothing matches). ELR
 inventory tables score against the live column schema (headers / aliases, plus
 a typed `{modifier} {section noun}` that is not URS language such as
 `monitoring systems`), nested method names (non-viable / settle plate / glove /
-LAF), alarm-trend phrases on monitoring, and a preferred-filename boost
-(PRQR/PRQP; monitoring also prefers the alarm-trend PDF). Preferred files with
+LAF). Preferred-filename boost is PRQR/PRQP (monitoring no longer prefers
+the alarm-trend PDF). Preferred files with
 zero hits are still queued as a stratified sample (PRQR/PMC on breakdowns,
 CCF/CAPA/PRQR on QMS, cap `REVIEW_PREFERRED_MISSING_PAGE_CAP`) so a few CSV-IQ
 / FAT headers cannot floor-8-pad them out — not every page of a 200-page CCF.
@@ -103,9 +103,8 @@ COPY / Sign/Date chrome is 0. Haystack uses outline + pageContext + the first
 4000 transcript characters. `start_document_review`
 for an ELR inventory still omits a single-file pin so PRQR / PRQP / PQR
 rows can split, but it does not page-list a file typed as a different
-inventory (a calibration planner is not QMS). Monitoring still lists
-alarm-trend files. Breakdowns drop those files and cite the already-drafted
-Alarm Trends table instead. Running-header `document no`
+inventory (a calibration planner is not QMS). Monitoring and Breakdowns drop
+alarm-trend files and cite the already-drafted Alarm Trends table instead. Running-header `document no`
 is not a column hit. A truncated matching finish that cannot unlock
 `edit_table` (floor-8 skip of PRQR) does not `forceStart` again — remaining
 section must not mill until the 270s abort. The planning chip names queued files. Complementary grep ORs
@@ -324,9 +323,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   `finishedCoverageKey` in `prepareStep` — a matching finish this turn
   must not force another start because the table is still empty, unless the
   finish was a floor-8 skip (`reviewedPages <= 8` and selected files were
-  not queued) or a preferred evidence family was skipped (PRQR; monitoring
-  also requires the alarm-trend PDF when that file was in the skip set). Hide
-  review tools after that finish and draft. `start_document_review`
+  not queued) or a preferred evidence family was skipped (PRQR). Skipping
+  the alarm-trend PDF on monitoring or breakdowns is finished coverage —
+  Alarm Trends already owns that file. Hide review tools after that finish
+  and draft. `start_document_review`
   returns `already_complete` for the same `|obj:` instead of resetting.
   Gate empty tables only — filling missing
   cells on a partial table is not another full walk. `draft_field` of
