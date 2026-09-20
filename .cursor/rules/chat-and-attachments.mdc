@@ -124,7 +124,10 @@ gate is fact-level (`citation-exemption.ts`): never skip a whole
 section. Exempt title-page / user-confirmed identity, the ELR
 1 April–31 March window, and facts already written in this report
 (sibling table or another section). Copied attachment facts still need
-a page in Purpose, Responsibilities, assessments, and recaps. Tables
+a page in Purpose, Responsibilities, assessments, and recaps. ELR
+Responsibilities copies the duty matrix from the prior PRQR / PQP / ELR
+§3.1 (or F10) page — cite that one governing page, not PMC, CSV,
+operating SOPs, or calibration planners. Tables
 stay strict. Finish seeds `reviewedEvidence` (every walked page, not the
 60-finding sample) so those transcripts can hydrate. Empty ledger or
 pages with no quotes fail open. MJ `unsupportedFactPolicy: block` (no

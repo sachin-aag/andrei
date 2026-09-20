@@ -388,6 +388,18 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).toContain("Task × Operator");
     expect(def.chat.draftingGuidance).toContain("Revalidation Due Date");
     expect(def.chat.draftingGuidance).toContain("current, overdue, or due");
+    expect(def.chat.draftingGuidance).toContain(
+      "prior periodic report's §3.1"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Do **not** reconstruct duties from PMC"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      'A request for "better citations" means that 3.1 page'
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Responsibilities grep is for §3.1"
+    );
     expect(def.chat.contextIdentity?.({})).toEqual(
       expect.arrayContaining([
         expect.stringContaining("container format: (unset)"),

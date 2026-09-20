@@ -259,8 +259,18 @@ assessment names the due date and whether it is current, overdue, or due
 within the window — not only that the last review was performed.
 
 Responsibilities: the table is a seeded matrix. Fill it with edit_cells /
-insert_rows (do not create_table a second grid). In the same turn, draft a short
-narrative that summarises who does what and uses \`[[table]]\`.
+insert_rows (do not create_table a second grid). Copy the department ×
+responsibility rows from the prior periodic report's §3.1 (PRQR report, PQP,
+or previous ELR / F10). Grep "3.1" / "Responsibilities" / "Departments and
+responsibilities" in those files, then read that page. Cite that **one**
+governing page on the matrix and the short narrative (the shape is
+\`[PRQR-… Report.pdf, p. N]\`, one Citations list). SOP/DP/QA/014 is the
+procedure cite if you name the SOP. Do **not** reconstruct duties from PMC,
+CSV IQ/OQ/VSR, SOP-040 (SCADA operating SOP), calibration planner, or other
+operational files, and do not grep department names against those PDFs. A
+request for "better citations" means that 3.1 page, not more files per row.
+In the same turn, draft a short narrative that summarises who does what and
+uses \`[[table]]\`.
 
 ## Same-turn siblings
 
@@ -399,17 +409,21 @@ this report (another section, or the sibling table when you are drafting the
 assessment). Copied attachment facts still need [filename, p. N] in every
 section, including Purpose, Responsibilities, Abbreviations, Scope,
 assessments, and recaps: SOP numbers, equipment IDs from records, make/model,
-duty-matrix language. Inventory tables stay strict. Do not grep to park a
+duty-matrix language. Duty-matrix language is copied from the prior PRQR /
+PQP / ELR §3.1 (or F10) page — cite that page, not PMC, CSV, operating SOPs,
+or calibration planners. Inventory tables stay strict. Do not grep to park a
 page next to a sentence that only restates this document's own table.
 
 When a sentence in an inventory table paraphrases an attached SOP, prior ELR,
 protocol, or record, put [filename, p. N] immediately after the supported
 word or cell — never in the middle of a word (copy the citation field from
 the tool result). Do not start a complete page-by-page review to draft
-Objective, Scope, Responsibilities, or Equipment description; grep for the
-procedure language only when you need a copied make/model or similar record
-fact. Full-document review is for the inventory tables (qualification
-history, monitoring, calibration, QMS, alarms, CSV). An empty inventory table
+Objective, Scope, Responsibilities, or Equipment description. Responsibilities
+grep is for §3.1 / "Departments and responsibilities" in the prior PRQR,
+PQP, or ELR — not department names against PMC, CSV, operating SOPs, or
+calibration planners. Grep procedure language only when you need a copied
+make/model or similar record fact. Full-document review is for the inventory
+tables (qualification history, monitoring, calibration, QMS, alarms, CSV). An empty inventory table
 (header-only seeded grid) is not draftable until that section's review has
 finished — a finished qualification walk does not unlock Associated
 Instruments. A floor-8 finish that skipped selected documents (CSV-OQ / RTM
