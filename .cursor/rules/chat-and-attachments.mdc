@@ -107,7 +107,9 @@ is not a column hit. A truncated matching finish that cannot unlock
 `edit_table` (floor-8 skip of PRQR) does not `forceStart` again — remaining
 section must not mill until the 270s abort. The planning chip names queued files. Complementary grep ORs
 those column phrases. `REVIEW_PAGE_FETCH_CAP`
-(2500) is listing safety only — there is no 300-page walk cap.
+(2500) is listing safety only. ELR inventory walks then cap at
+`REVIEW_INVENTORY_WALK_CAP` (48) so one continue can drain scored CCF
+pages; DV catalogs keep the listing cap.
 `continue_document_review` stops starting batches after ~60s and round-robins
 batches across attachments. `start_document_review`
 reports `truncated` / `skippedDocuments`. Call `list_attachments` first

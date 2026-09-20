@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { REVIEW_PAGE_FETCH_CAP } from "@/lib/ai/chat/document-review";
 import {
+  REVIEW_INVENTORY_WALK_CAP,
   REVIEW_OBJECTIVE_PAGE_FLOOR,
   REVIEW_PREFERRED_MISSING_PAGE_CAP,
   coverageKeySatisfiesObjective,
@@ -449,6 +450,50 @@ describe("planReviewPages", () => {
       .filter((page) => page.attachmentId === "ccf")
       .map((page) => page.pageNumber ?? 0);
     expect(Math.max(...ccfPages)).toBeGreaterThan(REVIEW_OBJECTIVE_PAGE_FLOOR);
+  });
+
+  it("caps a scored CCF flood so QMS remaining-section can finish in one continue", () => {
+    const pages = Array.from({ length: 200 }, (_, i) => ({
+      attachmentId: "ccf",
+      pageNumber: i + 1,
+      filename: "CCF-24-PR-010.pdf",
+      transcript: `Document Reference CCF-24-PR-010 Date 12/01/2025 change ${i}`,
+      outlineTitle: "Change control",
+      identifiers: [`CCF-24-PR-010`],
+    }));
+    expect(scoreReviewPage(pages[0]!, "elr_qms")).toBeGreaterThan(0);
+    const selected = planReviewPages(pages, "elr_qms", 2500);
+    expect(selected).toHaveLength(REVIEW_INVENTORY_WALK_CAP);
+    expect(selected.every((page) => page.attachmentId === "ccf")).toBe(true);
+    const pageNumbers = selected.map((page) => page.pageNumber ?? 0);
+    expect(Math.max(...pageNumbers)).toBeGreaterThan(REVIEW_OBJECTIVE_PAGE_FLOOR);
+    expect(Math.max(...pageNumbers)).toBeGreaterThan(100);
+  });
+
+  it("keeps a small scored calibration walk under the inventory cap", () => {
+    const pages = Array.from({ length: 40 }, (_, i) => ({
+      attachmentId: "cal",
+      pageNumber: i + 1,
+      filename: "calibration.pdf",
+      transcript: `certificate of calibration ${i}`,
+      outlineTitle: "Calibration",
+      identifiers: ["CAL-1"],
+    }));
+    const selected = planReviewPages(pages, "elr_calibration", 2500);
+    expect(selected).toHaveLength(40);
+  });
+
+  it("does not cap a DV catalog walk that is not an ELR inventory", () => {
+    const pages = Array.from({ length: 80 }, (_, i) => ({
+      attachmentId: "catalog",
+      pageNumber: i + 1,
+      filename: "solea-requirements.pdf",
+      transcript: `requirement REQ-${i + 1} acceptance criteria`,
+      outlineTitle: "Requirements",
+      identifiers: [`REQ-${i + 1}`],
+    }));
+    const selected = planReviewPages(pages, "every requirement", 2500);
+    expect(selected).toHaveLength(80);
   });
 });
 

@@ -50,8 +50,8 @@ export const REVIEW_ALREADY_COMPLETE_MESSAGE =
 const REVIEW_DRAIN_MAX_EXTRACTS = 800;
 /** Stop starting new extract batches after this wall time in one continue. */
 export const REVIEW_CONTINUE_BUDGET_MS = 60_000;
-/** Leave this much of the chat abort window for persist after continue. */
-export const REVIEW_CONTINUE_DEADLINE_MARGIN_MS = 20_000;
+/** Leave this much of the chat abort window for finish + `edit_table`. */
+export const REVIEW_CONTINUE_DEADLINE_MARGIN_MS = 45_000;
 
 export function reviewContinueBudgetMs(remainingAbortMs: number): number {
   const remaining = remainingAbortMs - REVIEW_CONTINUE_DEADLINE_MARGIN_MS;
