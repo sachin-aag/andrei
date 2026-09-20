@@ -140,6 +140,21 @@ export function scoreReviewPage(
  * pages from other attachments.
  */
 export const REVIEW_OBJECTIVE_PAGE_FLOOR = 8;
+/**
+ * Preferred files with zero scored pages (CCF / CAPA / PRQR on QMS) still
+ * join the walk so a few FAT hits cannot skip them — but every page of a
+ * 200-page CCF folder is a remaining-section hang (270s abort, no draft).
+ * Sample across each file, then fair-share to this cap.
+ */
+export const REVIEW_PREFERRED_MISSING_PAGE_CAP = 24;
+/**
+ * ELR inventory walks must finish inside one ~60s continue (8 batches × 6
+ * pages at `REVIEW_EXTRACT_CONCURRENCY`) so `finish_document_review` is not
+ * truncated and remaining-section still has time to `edit_table` before the
+ * 270s abort. Scored CCF / CAPA pages otherwise queue up to the 2500 listing
+ * cap. DV catalogs are not inventories — they keep the listing cap.
+ */
+export const REVIEW_INVENTORY_WALK_CAP = 48;
 
 function pageOrdinal<T extends ReviewPagePlanInput>(
   page: T,
@@ -197,7 +212,34 @@ export function neighborFillPages<T extends ReviewPagePlanInput>(
 }
 
 /**
- * Preferred inventory files (PRQR / PMC / alarm-trend) that had zero scored
+ * Spread a sample through one attachment so a nested QMS / CAPA chapter
+ * is not missed by taking only the cover pages.
+ */
+export function samplePagesAcrossAttachment<T>(
+  pages: readonly T[],
+  limit: number
+): T[] {
+  if (limit <= 0 || pages.length === 0) return [];
+  if (pages.length <= limit) return [...pages];
+  if (limit === 1) return [pages[0]!];
+  const out: T[] = [];
+  const seen = new Set<number>();
+  for (let i = 0; i < limit; i++) {
+    const idx = Math.round((i * (pages.length - 1)) / (limit - 1));
+    if (seen.has(idx)) continue;
+    seen.add(idx);
+    out.push(pages[idx]!);
+  }
+  for (let idx = 0; idx < pages.length && out.length < limit; idx++) {
+    if (seen.has(idx)) continue;
+    seen.add(idx);
+    out.push(pages[idx]!);
+  }
+  return out;
+}
+
+/**
+ * Preferred inventory files (PRQR / PMC / CCF) that had zero scored
  * pages. A few CSV-IQ / FAT hits must not skip those files — that is the
  * remaining-section hang (floor-8 pad, then truncated finish cannot unlock).
  */
@@ -222,6 +264,63 @@ function preferredPagesMissingFromHits<T extends ReviewPagePlanInput>(
   );
 }
 
+function samplePagesAcrossAttachments<T extends ReviewPagePlanInput>(
+  pages: readonly T[],
+  cap: number,
+  perFileLimit?: number
+): T[] {
+  if (pages.length === 0 || cap <= 0) return [];
+  const byAttachment = new Map<string, T[]>();
+  const order: string[] = [];
+  for (const page of pages) {
+    const existing = byAttachment.get(page.attachmentId);
+    if (existing) {
+      existing.push(page);
+      continue;
+    }
+    order.push(page.attachmentId);
+    byAttachment.set(page.attachmentId, [page]);
+  }
+  const perFile = Math.max(
+    1,
+    Math.min(perFileLimit ?? cap, Math.ceil(cap / order.length))
+  );
+  const sampled: T[] = [];
+  for (const id of order) {
+    sampled.push(
+      ...samplePagesAcrossAttachment(byAttachment.get(id) ?? [], perFile)
+    );
+  }
+  return selectReviewPages(sampled, cap);
+}
+
+function samplePreferredMissingPages<T extends ReviewPagePlanInput>(
+  pages: readonly T[],
+  cap: number
+): T[] {
+  return samplePagesAcrossAttachments(
+    pages,
+    cap,
+    REVIEW_OBJECTIVE_PAGE_FLOOR
+  );
+}
+
+/**
+ * Stratified sample of an ELR inventory queue so scored CCF pages cannot
+ * consume the 2500 listing cap. No-op for DV / non-inventory objectives,
+ * and when the matching set already fits in one continue.
+ */
+function capInventoryReviewPages<T extends ReviewPagePlanInput>(
+  pages: readonly T[],
+  objective: string,
+  cap: number
+): T[] {
+  if (!inventorySectionForObjective(objective)) return [...pages];
+  const walkCap = Math.min(REVIEW_INVENTORY_WALK_CAP, cap);
+  if (pages.length <= walkCap) return [...pages];
+  return samplePagesAcrossAttachments(pages, walkCap);
+}
+
 function withNeighborFill<T extends ReviewPagePlanInput>(
   prioritized: T[],
   pages: readonly T[],
@@ -242,7 +341,10 @@ function withNeighborFill<T extends ReviewPagePlanInput>(
  * When few pages score, keep nearby pages in the same file up to
  * `REVIEW_OBJECTIVE_PAGE_FLOOR`. When nothing scores, take that many
  * fair-shared pages so the walk is not empty. Preferred inventory files
- * with zero hits are still queued (all of their pages, up to `cap`).
+ * with zero hits are still queued as a stratified sample (not every page
+ * of a 200-page CCF / PRQR, up to `REVIEW_PREFERRED_MISSING_PAGE_CAP`).
+ * Scored inventory pages are then capped at `REVIEW_INVENTORY_WALK_CAP`
+ * (DV catalogs are not).
  */
 export function planReviewPages<T extends ReviewPagePlanInput>(
   pages: readonly T[],
@@ -272,9 +374,13 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
   );
   if (relevant.length === 0) {
     if (preferredMissing.length > 0) {
-      return selectReviewPages(
-        preferredMissing,
-        Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap)
+      return capInventoryReviewPages(
+        samplePreferredMissingPages(
+          preferredMissing,
+          Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap)
+        ),
+        objective,
+        cap
       );
     }
     const withoutForeignInventory = pages.filter(
@@ -290,9 +396,21 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
       );
       if (notDemoted.length > 0) pool = notDemoted;
     }
-    return selectReviewPages(pool, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap));
+    return capInventoryReviewPages(
+      selectReviewPages(pool, Math.min(REVIEW_OBJECTIVE_PAGE_FLOOR, cap)),
+      objective,
+      cap
+    );
   }
+  const preferredSample = samplePreferredMissingPages(
+    preferredMissing,
+    Math.min(REVIEW_PREFERRED_MISSING_PAGE_CAP, cap)
+  );
   const candidate =
-    preferredMissing.length > 0 ? [...relevant, ...preferredMissing] : relevant;
-  return withNeighborFill(selectReviewPages(candidate, cap), pages, cap);
+    preferredSample.length > 0 ? [...relevant, ...preferredSample] : relevant;
+  return capInventoryReviewPages(
+    withNeighborFill(selectReviewPages(candidate, cap), pages, cap),
+    objective,
+    cap
+  );
 }

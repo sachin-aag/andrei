@@ -16,6 +16,7 @@ import {
   PLAN_MODE_CHAT_TOOL_NAMES,
   prepareDocumentReviewStep,
   REVIEW_ALREADY_COMPLETE_MESSAGE,
+  REVIEW_CONTINUE_DEADLINE_MARGIN_MS,
   REVIEW_EXTRACT_CONCURRENCY,
   REVIEW_FINISH_FINDINGS_CAP,
   reviewBatchNeedsLlmExtract,
@@ -664,13 +665,17 @@ describe("capFindingsForFinish", () => {
 describe("reviewContinueBudgetMs", () => {
   it("caps at 60s and leaves abort margin", () => {
     expect(reviewContinueBudgetMs(270_000)).toBe(60_000);
-    expect(reviewContinueBudgetMs(70_000)).toBe(50_000);
+    expect(reviewContinueBudgetMs(70_000)).toBe(
+      70_000 - REVIEW_CONTINUE_DEADLINE_MARGIN_MS
+    );
   });
 
   it("returns 0 when the abort window cannot fit another continue", () => {
     expect(reviewContinueBudgetMs(5_000)).toBe(0);
-    expect(reviewContinueBudgetMs(20_000)).toBe(0);
-    expect(reviewContinueBudgetMs(21_000)).toBe(1_000);
+    expect(reviewContinueBudgetMs(REVIEW_CONTINUE_DEADLINE_MARGIN_MS)).toBe(0);
+    expect(
+      reviewContinueBudgetMs(REVIEW_CONTINUE_DEADLINE_MARGIN_MS + 1_000)
+    ).toBe(1_000);
   });
 });
 
