@@ -124,6 +124,18 @@ describe("compactChatToolHistoryForModel", () => {
             output: {
               status: "found",
               citation: "[Protocol.pdf, p. 3]",
+              nextPage: 4,
+              continuation: {
+                citation: "[Protocol.pdf, p. 4]",
+                page: {
+                  attachmentId: "att_1",
+                  filename: "Protocol.pdf",
+                  pageNumber: 4,
+                  transcript: "z".repeat(2_000),
+                  visualInterpretation: "",
+                  pageContext: "Table 2 continued",
+                },
+              },
               page: {
                 attachmentId: "att_1",
                 filename: "Protocol.pdf",
@@ -149,6 +161,12 @@ describe("compactChatToolHistoryForModel", () => {
           visualOmittedChars?: number;
           pageContext?: string;
         };
+        continuation?: {
+          page?: {
+            transcript?: string;
+            transcriptOmittedChars?: number;
+          };
+        };
       };
     };
     expect(part.output?.citation).toBe("[Protocol.pdf, p. 3]");
@@ -157,6 +175,8 @@ describe("compactChatToolHistoryForModel", () => {
     expect(part.output?.page?.transcriptOmittedChars).toBe(5_000);
     expect(part.output?.page?.visualOmittedChars).toBe(1_000);
     expect(part.output?.page?.pageContext).toBe("Table 2");
+    expect(part.output?.continuation?.page?.transcript).toBe("");
+    expect(part.output?.continuation?.page?.transcriptOmittedChars).toBe(2_000);
   });
 
   it("omits bulky write_column value arrays from prior turns", () => {

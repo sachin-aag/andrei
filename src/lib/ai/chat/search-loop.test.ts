@@ -107,6 +107,54 @@ describe("searchLoopDirective", () => {
     ).toBe("continue");
   });
 
+  it("keeps search open after a split-table cited page", () => {
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [{ toolName: "search_documents" }],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 1,
+                continuationHits: 1,
+                keepSearchOpen: true,
+                results: [
+                  {
+                    pageNumber: 23,
+                    continues: true,
+                    nextPage: 24,
+                    quote: "Annexure-I Page 23 of 24",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+  });
+
+  it("keeps search open after a split-table page read that sets keepSearchOpen", () => {
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [{ toolName: "read_document_page" }],
+          toolResults: [
+            {
+              toolName: "read_document_page",
+              output: {
+                status: "found",
+                nextPage: 24,
+                keepSearchOpen: true,
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+  });
+
   it("keeps search open after unsupported_facts so the model can grep again", () => {
     expect(
       searchLoopDirective([

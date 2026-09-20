@@ -4619,3 +4619,113 @@ describe("buildChatTools list_suggestions", () => {
     );
   });
 });
+
+describe("buildChatTools annexure continuation", () => {
+  beforeEach(() => {
+    searchReportDocumentsManyMock.mockReset();
+    searchReportDocumentsManyMock.mockResolvedValue([]);
+    readDocumentPageMock.mockReset();
+  });
+
+  it("keeps search open and annotates a Page N of M hit", async () => {
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-sop",
+          filename: "SOP-DP-PR-040-R01 SOP.pdf",
+          description: null,
+          pageNumber: 23,
+          chunkId: "c23",
+          sourceKind: "hybrid",
+          text: "Annexure-I Page 23 of 24 Sr. 1 Equipment start",
+          quote: "Annexure-I Page 23 of 24 Sr. 1 Equipment start",
+          citationId: "att:att-sop:p:23",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = (await tools.search_documents!.execute!(
+      { query: "access control annexure" },
+      TEST_TOOL_OPTIONS
+    )) as {
+      keepSearchOpen?: boolean;
+      continuationHits?: number;
+      results?: Array<{ continues?: boolean; nextPage?: number }>;
+      continuationHint?: string;
+    };
+    expect(result.keepSearchOpen).toBe(true);
+    expect(result.continuationHits).toBe(1);
+    expect(result.results?.[0]).toMatchObject({
+      continues: true,
+      nextPage: 24,
+    });
+    expect(result.continuationHint).toContain("continues=true");
+  });
+
+  it("attaches the next page when a read is Page N of M", async () => {
+    readDocumentPageMock
+      .mockResolvedValueOnce({
+        attachmentId: "att-sop",
+        filename: "SOP-DP-PR-040-R01 SOP.pdf",
+        description: null,
+        pageNumber: 23,
+        printedPageLabel: "23",
+        transcript: "Annexure-I\nPage 23 of 24\n1 Equipment start",
+        visualInterpretation: "",
+        pageContext: null,
+        ingestRunId: "run",
+      })
+      .mockResolvedValueOnce({
+        attachmentId: "att-sop",
+        filename: "SOP-DP-PR-040-R01 SOP.pdf",
+        description: null,
+        pageNumber: 24,
+        printedPageLabel: "24",
+        transcript: "Page 24 of 24\n20 Filling machine",
+        visualInterpretation: "",
+        pageContext: null,
+        ingestRunId: "run",
+      });
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = (await tools.read_document_page!.execute!(
+      { attachmentId: "att-sop", pageNumber: 23 },
+      TEST_TOOL_OPTIONS
+    )) as {
+      status?: string;
+      nextPage?: number;
+      keepSearchOpen?: boolean;
+      continuation?: { citation?: string; page?: { pageNumber?: number } };
+    };
+    expect(result.status).toBe("found");
+    expect(result.nextPage).toBe(24);
+    expect(result.keepSearchOpen).toBe(true);
+    expect(result.continuation?.citation).toBe(
+      "[SOP-DP-PR-040-R01 SOP.pdf, p. 24]"
+    );
+    expect(result.continuation?.page?.pageNumber).toBe(24);
+    expect(readDocumentPageMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not fetch a continuation from a complete page", async () => {
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: "att-cert",
+      filename: "Cert.pdf",
+      description: null,
+      pageNumber: 33,
+      printedPageLabel: "33",
+      transcript: "Certificate 2025/014 due 12/03/2026",
+      visualInterpretation: "",
+      pageContext: null,
+      ingestRunId: "run",
+    });
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = (await tools.read_document_page!.execute!(
+      { attachmentId: "att-cert", pageNumber: 33 },
+      TEST_TOOL_OPTIONS
+    )) as { nextPage?: number; continuation?: unknown };
+    expect(result.nextPage).toBeUndefined();
+    expect(result.continuation).toBeUndefined();
+    expect(readDocumentPageMock).toHaveBeenCalledTimes(1);
+  });
+});

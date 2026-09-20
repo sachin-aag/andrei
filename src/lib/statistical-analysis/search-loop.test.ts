@@ -49,6 +49,30 @@ describe("analyticsSearchLoopDirective", () => {
     );
   });
 
+  it("still hides search when the cited snippet is a split table without keepSearchOpen", () => {
+    expect(
+      analyticsSearchLoopDirective([
+        {
+          toolCalls: [{ toolName: "search_documents" }],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 1,
+                results: [
+                  {
+                    pageNumber: 23,
+                    quote: "Annexure-I Page 23 of 24",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("read");
+  });
+
   it("hides search after a page read, scan, outline, or extract", () => {
     expect(
       analyticsSearchLoopDirective([step(["read_document_page"])])

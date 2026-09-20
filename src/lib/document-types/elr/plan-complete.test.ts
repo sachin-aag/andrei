@@ -252,3 +252,102 @@ describe("elrPlanSectionCompleteFromParts", () => {
     ).toBe(false);
   });
 });
+
+describe("elr access control annexure coverage", () => {
+  const sop = "SOP-DP-PR-040-R01 SOP.pdf";
+
+  function parts(args: {
+    serials: number[];
+    citePages: number[];
+    includeContinuation?: boolean;
+  }) {
+    const rows = args.serials.map((serial) => [`${serial}`, `Task ${serial}`]);
+    const cites = args.citePages
+      .map((page) => `[${sop}, p. ${page}]`)
+      .join(" and ");
+    return [
+      {
+        type: "tool-read_document_page",
+        state: "output-available",
+        input: { attachmentId: "att-sop", pageNumber: 23 },
+        output: {
+          status: "found",
+          nextPage: 24,
+          page: {
+            filename: sop,
+            pageNumber: 23,
+            transcript: "Page 23 of 24\n1 Equipment start",
+          },
+          ...(args.includeContinuation
+            ? {
+                continuation: {
+                  citation: `[${sop}, p. 24]`,
+                  page: {
+                    filename: sop,
+                    pageNumber: 24,
+                    transcript: "Page 24 of 24\n20 Filling machine",
+                  },
+                },
+              }
+            : {}),
+        },
+      },
+      {
+        type: "tool-edit_table",
+        state: "output-available",
+        input: {
+          section: "elr_access_control",
+          operation: { kind: "insert_rows", tableIndex: 0, rows },
+        },
+      },
+      {
+        type: "tool-draft_field",
+        state: "output-available",
+        input: {
+          section: "elr_access_control",
+          targetField: "narrative",
+          markdown: `${args.serials.length} privilege rows copied from ${cites}.`,
+        },
+      },
+    ];
+  }
+
+  it("stays incomplete when Sr. numbering skips mid-page rows", () => {
+    expect(
+      elrPlanSectionCompleteFromParts(
+        "elr_access_control",
+        parts({
+          serials: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 19],
+          citePages: [23],
+          includeContinuation: true,
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("stays incomplete when the continuation page was served but not cited", () => {
+    expect(
+      elrPlanSectionCompleteFromParts(
+        "elr_access_control",
+        parts({
+          serials: Array.from({ length: 28 }, (_, i) => i + 1),
+          citePages: [23],
+          includeContinuation: true,
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("completes when Sr. 1..N is contiguous and both annexure pages are cited", () => {
+    expect(
+      elrPlanSectionCompleteFromParts(
+        "elr_access_control",
+        parts({
+          serials: Array.from({ length: 28 }, (_, i) => i + 1),
+          citePages: [23, 24],
+          includeContinuation: true,
+        })
+      )
+    ).toBe(true);
+  });
+});

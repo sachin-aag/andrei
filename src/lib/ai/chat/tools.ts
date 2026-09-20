@@ -75,6 +75,12 @@ import {
 } from "@/lib/ai/chat/fields";
 import { annotateDividerSearchHits } from "@/lib/ai/chat/attachment-divider";
 import {
+  annotateContinuationSearchHits,
+  continuationPageNumber,
+  PAGE_CONTINUATION_SEARCH_HINT,
+  parsePageOfTotal,
+} from "@/lib/ai/chat/page-continuation";
+import {
   emptyInventoryNeedsMatchingReview,
   isElrInventoryTableField,
   resolveReviewCoverageObjective,
@@ -405,6 +411,27 @@ const REVIEW_INCOMPLETE_MESSAGE =
   "Finish the document review (start_document_review → continue_document_review until coverage is complete → finish_document_review) before drafting.";
 const SEEDED_ELR_TABLE_MESSAGE =
   "This ELR evidence table is a seeded matrix. Fill it with edit_table (edit_cells / insert_rows). Do not rewrite the field with draft_field — finish_document_review findings are a sample, not the matrix.";
+
+function documentPageToolPayload(page: {
+  attachmentId: string;
+  filename: string;
+  pageNumber: number;
+  transcript: string;
+  visualInterpretation: string;
+  pageContext: string | null;
+}) {
+  return {
+    attachmentId: page.attachmentId,
+    filename: page.filename,
+    pageNumber: page.pageNumber,
+    transcript: toolResultBudget("pageTranscript", page.transcript),
+    visualInterpretation: toolResultBudget(
+      "pageTranscript",
+      page.visualInterpretation
+    ),
+    pageContext: page.pageContext,
+  };
+}
 
 function reviewDocumentIndexItem(doc: {
   attachmentId: string;
@@ -904,12 +931,14 @@ function buildSearchDocumentsTool(opts: {
       .map(budgetSearchHit)
       .map(withSourceCitation);
     const annotated = annotateDividerSearchHits(cited);
+    const continuation = annotateContinuationSearchHits(annotated.results);
     return {
-      results: annotated.results,
+      results: continuation.results,
       queriesRun: queryList,
       mode: input.mode ?? "hybrid",
       returnedCount: merged.length,
       dividerHits: annotated.dividerHits,
+      continuationHits: continuation.continuationHits,
       dataHits: Math.max(0, annotated.results.length - annotated.dividerHits),
       queryPlan,
       truncated,
@@ -922,7 +951,12 @@ function buildSearchDocumentsTool(opts: {
       coverageHint: SEARCH_COVERAGE_HINT,
       citationRule,
       trustBoundary: DOCUMENT_TRUST_BOUNDARY,
-      ...(annotated.keepSearchOpen ? { keepSearchOpen: true as const } : {}),
+      ...(continuation.continuationHits > 0
+        ? { continuationHint: PAGE_CONTINUATION_SEARCH_HINT }
+        : {}),
+      ...(annotated.keepSearchOpen || continuation.keepSearchOpen
+        ? { keepSearchOpen: true as const }
+        : {}),
     };
   }
 
@@ -1805,21 +1839,66 @@ export function buildChatTools(opts: {
             .filter((part) => part.trim().length > 0)
             .join("\n"),
         });
+        const nextPageNumber = continuationPageNumber({
+          pageNumber: page.pageNumber,
+          transcript: page.transcript,
+          visualInterpretation: page.visualInterpretation,
+          pageContext: page.pageContext,
+          printedPageLabel: page.printedPageLabel,
+        });
+        const parsedOf = parsePageOfTotal(
+          [page.transcript, page.pageContext, page.printedPageLabel]
+            .filter((part): part is string => typeof part === "string")
+            .join("\n")
+        );
+        let continuation:
+          | {
+              page: ReturnType<typeof documentPageToolPayload>;
+              citation: string;
+            }
+          | undefined;
+        if (nextPageNumber != null && nextPageNumber !== page.pageNumber) {
+          const nextPage = await readDocumentPage({
+            reportId,
+            attachmentId,
+            pageNumber: nextPageNumber,
+          });
+          if (nextPage) {
+            citationLedger.record(
+              nextPage.filename,
+              nextPage.pageNumber,
+              nextPage.attachmentId,
+              {
+                quote: [nextPage.transcript, nextPage.visualInterpretation]
+                  .filter((part) => part.trim().length > 0)
+                  .join("\n"),
+              }
+            );
+            continuation = {
+              page: documentPageToolPayload(nextPage),
+              citation: sourceCitationBracket(
+                nextPage.filename,
+                nextPage.pageNumber
+              ),
+            };
+          }
+        }
         return {
           status: "found" as const,
-          page: {
-            attachmentId: page.attachmentId,
-            filename: page.filename,
-            pageNumber: page.pageNumber,
-            transcript: toolResultBudget("pageTranscript", page.transcript),
-            visualInterpretation: toolResultBudget(
-              "pageTranscript",
-              page.visualInterpretation
-            ),
-            pageContext: page.pageContext,
-          },
+          page: documentPageToolPayload(page),
           citation: sourceCitationBracket(page.filename, page.pageNumber),
           trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+          ...(nextPageNumber != null
+            ? {
+                nextPage: nextPageNumber,
+                keepSearchOpen: true as const,
+                continuationHint:
+                  continuation != null
+                    ? `This page is a split table (Page ${parsedOf?.page ?? page.pageNumber} of ${parsedOf?.total ?? "?"}). The next page is included as continuation. Copy every Sr. row from both pages before edit_table.`
+                    : `This page continues on p. ${nextPageNumber}. Read that page and copy every Sr. row before edit_table.`,
+              }
+            : {}),
+          ...(continuation ? { continuation } : {}),
         };
       },
     }),

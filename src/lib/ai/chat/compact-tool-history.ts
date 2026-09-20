@@ -143,6 +143,28 @@ function compactFinishOutput(output: unknown): unknown {
   return emitOutput(output, next, parsed.asString);
 }
 
+function omitPageTranscripts(
+  page: Record<string, unknown>
+): { next: Record<string, unknown>; changed: boolean } {
+  const transcript = page.transcript;
+  const visual = page.visualInterpretation;
+  const transcriptLen = typeof transcript === "string" ? transcript.length : 0;
+  const visualLen = typeof visual === "string" ? visual.length : 0;
+  if (transcriptLen === 0 && visualLen === 0) {
+    return { next: page, changed: false };
+  }
+  return {
+    next: {
+      ...page,
+      transcript: "",
+      visualInterpretation: "",
+      transcriptOmittedChars: transcriptLen,
+      visualOmittedChars: visualLen,
+    },
+    changed: true,
+  };
+}
+
 function compactReadPageOutput(output: unknown): unknown {
   const parsed = parseToolOutput(output);
   if (!parsed || !parsed.parsed || typeof parsed.parsed !== "object") {
@@ -153,20 +175,25 @@ function compactReadPageOutput(output: unknown): unknown {
   const page = record.page;
   if (!page || typeof page !== "object" || Array.isArray(page)) return output;
   const pageRecord = page as Record<string, unknown>;
-  const transcript = pageRecord.transcript;
-  const visual = pageRecord.visualInterpretation;
-  const transcriptLen =
-    typeof transcript === "string" ? transcript.length : 0;
-  const visualLen = typeof visual === "string" ? visual.length : 0;
-  if (transcriptLen === 0 && visualLen === 0) return output;
-  const nextPage = {
-    ...pageRecord,
-    transcript: "",
-    visualInterpretation: "",
-    transcriptOmittedChars: transcriptLen,
-    visualOmittedChars: visualLen,
-  };
-  const next = { ...record, page: nextPage };
+  const omitted = omitPageTranscripts(pageRecord);
+  let changed = omitted.changed;
+  let next: Record<string, unknown> = { ...record, page: omitted.next };
+  const continuation = record.continuation;
+  if (continuation && typeof continuation === "object" && !Array.isArray(continuation)) {
+    const cont = continuation as Record<string, unknown>;
+    const contPage = cont.page;
+    if (contPage && typeof contPage === "object" && !Array.isArray(contPage)) {
+      const contOmitted = omitPageTranscripts(contPage as Record<string, unknown>);
+      if (contOmitted.changed) {
+        changed = true;
+        next = {
+          ...next,
+          continuation: { ...cont, page: contOmitted.next },
+        };
+      }
+    }
+  }
+  if (!changed) return output;
   return emitOutput(output, next, parsed.asString);
 }
 
@@ -325,7 +352,22 @@ function compactReadPageKeepQuote(output: unknown, quoteChars = 400): unknown {
     typeof pageRecord.visualInterpretation === "string"
       ? pageRecord.visualInterpretation
       : "";
-  if (transcript.length <= quoteChars && visual.length === 0) return output;
+  const continuation = record.continuation;
+  const hasContinuationTranscript =
+    continuation &&
+    typeof continuation === "object" &&
+    !Array.isArray(continuation) &&
+    typeof (continuation as { page?: { transcript?: unknown } }).page?.transcript ===
+      "string" &&
+    String((continuation as { page: { transcript: string } }).page.transcript)
+      .length > 0;
+  if (
+    transcript.length <= quoteChars &&
+    visual.length === 0 &&
+    !hasContinuationTranscript
+  ) {
+    return output;
+  }
   const quote = transcript.slice(0, quoteChars);
   const nextPage = {
     ...pageRecord,
@@ -334,7 +376,16 @@ function compactReadPageKeepQuote(output: unknown, quoteChars = 400): unknown {
     transcriptOmittedChars: Math.max(0, transcript.length - quote.length),
     visualOmittedChars: visual.length,
   };
-  return emitOutput(output, { ...record, page: nextPage }, parsed.asString);
+  let next: Record<string, unknown> = { ...record, page: nextPage };
+  if (continuation && typeof continuation === "object" && !Array.isArray(continuation)) {
+    const cont = continuation as Record<string, unknown>;
+    const contPage = cont.page;
+    if (contPage && typeof contPage === "object" && !Array.isArray(contPage)) {
+      const omitted = omitPageTranscripts(contPage as Record<string, unknown>);
+      next = { ...next, continuation: { ...cont, page: omitted.next } };
+    }
+  }
+  return emitOutput(output, next, parsed.asString);
 }
 
 type CompactToolMode = "history" | "in-turn-stale-search" | "in-turn-stale-page";

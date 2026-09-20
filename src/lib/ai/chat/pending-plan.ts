@@ -453,7 +453,7 @@ The remaining-section queue is paused${plan.pauseReason ? ` (${plan.pauseReason}
     : "This is the last item in the queue.";
   const elrSiblingLine =
     documentType === "equipment_lifecycle_report"
-      ? " Evidence tables are not done after edit_table alone — draft narrative in the same turn with a count from the rows (and trend for breakdowns/alarms). Risk overallGrade is low|medium|high (max of row priority and downtime/scrap floor). Conclusion recommendation is continue|early_requalification|capa|other."
+      ? " Evidence tables are not done after edit_table alone — draft narrative in the same turn with a count from the rows (and trend for breakdowns/alarms). Access Control is not done until every annexure Sr. row is copied, including the continuation page of a Page N of M split. Risk overallGrade is low|medium|high (max of row priority and downtime/scrap floor). Conclusion recommendation is continue|early_requalification|capa|other."
       : "";
   return `## Multi-section plan
 The engineer asked to draft several sections (${done} of ${total} done). This turn: ${labels}.
