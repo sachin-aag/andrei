@@ -217,6 +217,34 @@ const QRA_TOC: TableOfContentsEntry[] = [
  * `templates/mj-equipment-lifecycle-report-template.docx` (SOP/DP/QA/014 F10).
  * Approval Page is template-static (no editor section).
  */
+const FIR_TOC: TableOfContentsEntry[] = [
+  { label: "Description of Event", sectionKey: "fir_event_description" },
+  { label: "Standard Procedures", sectionKey: "fir_standard_procedures" },
+  { label: "Immediate Action Taken", sectionKey: "fir_immediate_action" },
+  { label: "Initial Impact Assessment", sectionKey: "fir_initial_impact" },
+  { label: "Investigation Team", sectionKey: "fir_investigation_team" },
+  { label: "Investigation Tools Assigned", sectionKey: "fir_investigation_tools" },
+  { label: "Chronology of the Event", sectionKey: "fir_chronology" },
+  { label: "Investigation Details", sectionKey: "fir_investigation_details" },
+  { label: "Historic Review", sectionKey: "fir_historic_review" },
+  { label: "Root Cause / Probable Cause", sectionKey: "fir_root_cause" },
+  { label: "Human Error Evaluation", sectionKey: "fir_human_error" },
+  { label: "Impact Assessment", sectionKey: "fir_impact_assessment" },
+  { label: "Scope Assessment", sectionKey: "fir_scope_assessment" },
+  { label: "Batch Disposition", sectionKey: "fir_batch_disposition" },
+  {
+    label: "Correction, Corrective and Preventive Action",
+    children: [
+      { label: "Correction Details", sectionKey: "fir_correction" },
+      { label: "Corrective Action", sectionKey: "fir_corrective_action" },
+      { label: "Interim Control", sectionKey: "fir_interim_control" },
+      { label: "Preventive Action", sectionKey: "fir_preventive_action" },
+    ],
+  },
+  { label: "CAPA Effectiveness Check", sectionKey: "fir_capa_effectiveness" },
+  { label: "List of Attachments", sectionKey: "fir_attachments" },
+];
+
 const ELR_TOC: TableOfContentsEntry[] = [
   { label: "1.0 Purpose", sectionKey: "elr_objective" },
   { label: "2.0 Scope", sectionKey: "elr_scope" },
@@ -416,6 +444,8 @@ function reportTableOfContentsRecipe(
       return QRA_TOC;
     case "equipment_lifecycle_report":
       return ELR_TOC;
+    case "failure_investigation_report":
+      return FIR_TOC;
     case "generic_document":
       return GENERIC_DOCUMENT_TOC;
     default: {

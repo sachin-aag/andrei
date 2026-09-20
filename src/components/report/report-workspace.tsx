@@ -195,6 +195,29 @@ export type { WorkspaceMode };
  * server-rendered section and replace it with a fallback, silently discarding
  * focus and keystrokes typed into it.
  */
+import {
+  FirAttachmentsEditor,
+  FirBatchDispositionEditor,
+  FirCapaEffectivenessEditor,
+  FirChronologyEditor,
+  FirCorrectionEditor,
+  FirCorrectiveActionEditor,
+  FirEventDescriptionEditor,
+  FirHistoricReviewEditor,
+  FirHumanErrorEditor,
+  FirImmediateActionEditor,
+  FirImpactAssessmentEditor,
+  FirInitialImpactEditor,
+  FirInterimControlEditor,
+  FirInvestigationDetailsEditor,
+  FirInvestigationTeamEditor,
+  FirInvestigationToolsEditor,
+  FirPreventiveActionEditor,
+  FirRootCauseEditor,
+  FirScopeAssessmentEditor,
+  FirStandardProceduresEditor,
+} from "@/components/report/sections/fir/fir-section-editors";
+
 const INVESTIGATION_SECTION_EDITORS: Record<string, ComponentType> = {
   define: DefineEditor,
   measure: MeasureEditor,
@@ -287,6 +310,29 @@ const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
   elr_revision_history: ElrRevisionHistoryEditor,
 };
 
+const FIR_SECTION_EDITORS: Record<string, ComponentType> = {
+  fir_event_description: FirEventDescriptionEditor,
+  fir_standard_procedures: FirStandardProceduresEditor,
+  fir_immediate_action: FirImmediateActionEditor,
+  fir_initial_impact: FirInitialImpactEditor,
+  fir_investigation_team: FirInvestigationTeamEditor,
+  fir_investigation_tools: FirInvestigationToolsEditor,
+  fir_chronology: FirChronologyEditor,
+  fir_investigation_details: FirInvestigationDetailsEditor,
+  fir_historic_review: FirHistoricReviewEditor,
+  fir_root_cause: FirRootCauseEditor,
+  fir_human_error: FirHumanErrorEditor,
+  fir_impact_assessment: FirImpactAssessmentEditor,
+  fir_scope_assessment: FirScopeAssessmentEditor,
+  fir_batch_disposition: FirBatchDispositionEditor,
+  fir_correction: FirCorrectionEditor,
+  fir_corrective_action: FirCorrectiveActionEditor,
+  fir_interim_control: FirInterimControlEditor,
+  fir_preventive_action: FirPreventiveActionEditor,
+  fir_capa_effectiveness: FirCapaEffectivenessEditor,
+  fir_attachments: FirAttachmentsEditor,
+};
+
 const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   DocumentType,
   Record<string, ComponentType>
@@ -297,6 +343,7 @@ const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   generic_document: { body: GenericDocumentEditor },
   quality_risk_assessment: QRA_SECTION_EDITORS,
   equipment_lifecycle_report: ELR_SECTION_EDITORS,
+  failure_investigation_report: FIR_SECTION_EDITORS,
 };
 
 export function ReportWorkspace({

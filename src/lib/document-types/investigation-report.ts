@@ -61,7 +61,10 @@ export function buildInvestigationReportDefinition(
 
   return {
     key: "investigation_report",
-    label: "Investigation Report",
+    // MJ runs two investigation forms side by side: this one (SOP/DP/QA/008,
+    // Drug Product) and SOP/QA/017-F01 R01 (Drug Substance). Only MJ needs the
+    // unit suffix to tell them apart.
+    label: pack.id === "mj" ? "Investigation Report DP" : "Investigation Report",
     documentNoun: "deviation",
     documentNoLabel: "Deviation Number",
     sections,

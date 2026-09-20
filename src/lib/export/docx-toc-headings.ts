@@ -137,6 +137,34 @@ export const QRA_TOC_HEADINGS: readonly TocHeadingSpec[] = [
 ];
 
 /** MJ equipment lifecycle report (`mj-equipment-lifecycle-report-template.docx`). */
+/**
+ * SOP/QA/017-F01 R01 is a flat field form, not a numbered document — each
+ * heading is a form field label, all at one level.
+ */
+export const FIR_TOC_HEADINGS: readonly TocHeadingSpec[] = [
+  heading("Non-Conformance Description/ Description of event:", "Heading1"),
+  heading("Standard Procedures:", "Heading1"),
+  heading("Immediate action taken (if any):", "Heading1"),
+  heading("Initial Impact Assessment", "Heading1"),
+  heading("Investigation Team:", "Heading1"),
+  heading("Investigation Tools Assigned:", "Heading1"),
+  heading("Chronology of the event:", "Heading1"),
+  heading("Investigation details:", "Heading1"),
+  heading("Historic Review:", "Heading1"),
+  heading("Root Cause/ Probable Cause:", "Heading1"),
+  heading("Human Error Evaluation", "Heading1"),
+  heading("Impact Assessment:", "Heading1"),
+  heading("Scope Assessment:", "Heading1"),
+  heading("Batch Disposition", "Heading1"),
+  heading("Correction, Corrective and Preventive action Details (CAPA):", "Heading1"),
+  heading("Correction Details:", "Heading2"),
+  heading("Corrective Action:", "Heading2"),
+  heading("Interim Control", "Heading2"),
+  heading("Preventive Action:", "Heading2"),
+  heading("CAPA Effectiveness Check", "Heading1"),
+  heading("List of Attachment:", "Heading1"),
+];
+
 export const ELR_TOC_HEADINGS: readonly TocHeadingSpec[] = [
   heading("1.0 PURPOSE", "Heading1"),
   heading("2.0 SCOPE", "Heading1"),
@@ -183,6 +211,8 @@ export function tocHeadingSpecsForDocumentType(
       return QRA_TOC_HEADINGS;
     case "equipment_lifecycle_report":
       return ELR_TOC_HEADINGS;
+    case "failure_investigation_report":
+      return FIR_TOC_HEADINGS;
     case "generic_document":
       return null;
     default: {

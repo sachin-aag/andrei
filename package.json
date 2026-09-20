@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit",
     "build-mechanical-template": "node scripts/build-mechanical-dv-template.mjs",
     "build-elr-template": "node scripts/build-mj-elr-template.mjs",
+    "build-fir-template": "node scripts/build-mj-fir-template.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/drizzle-migrate.ts",
     "db:ensure": "npm run db:migrate-suggested-fix && drizzle-kit push",
