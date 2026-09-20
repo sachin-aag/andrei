@@ -491,7 +491,15 @@ const MessageTurn = memo(function MessageTurn({
                 return null;
               }
               return (
-                <ChatMarkdown key={i} onOpenCitation={onOpenCitation}>
+                <ChatMarkdown
+                  key={i}
+                  onOpenCitation={onOpenCitation}
+                  knownFilenames={
+                    filenameByAttachmentId
+                      ? [...filenameByAttachmentId.values()]
+                      : undefined
+                  }
+                >
                   {block.text}
                 </ChatMarkdown>
               );

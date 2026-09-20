@@ -237,6 +237,43 @@ describe("rewriteCitationPagesInText", () => {
       )
     ).toBe("See [PQR-24-PR-102.pdf, p. 1].");
   });
+
+  it("keeps a hyphenated-and filename cite that matches a retrieved file", () => {
+    const ledger = ledgerWithSearchHit(
+      "QDF-Filling and capping machine.pdf",
+      2
+    );
+    expect(
+      rewriteCitationPagesInText(
+        "SOP/DP/QA/014/F14-R00 [QDF-Filling and capping machine.pdf, p. 2]",
+        ledger
+      )
+    ).toBe(
+      "SOP/DP/QA/014/F14-R00 [QDF-Filling and capping machine.pdf, p. 2]"
+    );
+  });
+
+  it("keeps a retrieved combined filename that looks like two exhibit stems", () => {
+    const ledger = ledgerWithSearchHit("E-PR-068 and E-PR-071.pdf", 1);
+    expect(
+      rewriteCitationPagesInText(
+        "See [E-PR-068 and E-PR-071.pdf, p. 1].",
+        ledger
+      )
+    ).toBe("See [E-PR-068 and E-PR-071.pdf, p. 1].");
+  });
+
+  it("still splits a compact two-file cite when those files were retrieved separately", () => {
+    const ledger = new CitationPageLedger();
+    ledger.record("E-PR-068.pdf", 1, "att-068");
+    ledger.record("E-PR-071.pdf", 1, "att-071");
+    expect(
+      rewriteCitationPagesInText(
+        "See [E-PR-068 and E-PR-071.pdf, p. 1].",
+        ledger
+      )
+    ).toBe("See [E-PR-068, E-PR-071.pdf, p. 1].");
+  });
 });
 
 describe("rewriteTableOperationCitations", () => {

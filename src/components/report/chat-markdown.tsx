@@ -95,58 +95,64 @@ const COMPONENTS: Components = {
 function wrapCitationChildren(
   children: ReactNode,
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string>
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[]
 ): ReactNode {
-  return linkifyCitationChildren(children, onOpen, numbered);
+  return linkifyCitationChildren(children, onOpen, numbered, knownFilenames);
 }
 
 function createCitationMarkdownComponents(
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string>
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[]
 ): Components {
   return {
     ...COMPONENTS,
     p: ({ children }) => (
       <p className="leading-relaxed">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(children, onOpen, numbered, knownFilenames)}
       </p>
     ),
     li: ({ children }) => (
-      <li className="pl-0.5">{wrapCitationChildren(children, onOpen, numbered)}</li>
+      <li className="pl-0.5">
+        {wrapCitationChildren(children, onOpen, numbered, knownFilenames)}
+      </li>
     ),
     strong: ({ children }) => (
       <strong className="font-semibold text-[var(--foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(children, onOpen, numbered, knownFilenames)}
       </strong>
     ),
     em: ({ children }) => (
-      <em className="italic">{wrapCitationChildren(children, onOpen, numbered)}</em>
+      <em className="italic">
+        {wrapCitationChildren(children, onOpen, numbered, knownFilenames)}
+      </em>
     ),
     h1: ({ children }) => (
       <h1 className="text-sm font-semibold text-[var(--foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(children, onOpen, numbered, knownFilenames)}
       </h1>
     ),
     h2: ({ children }) => (
       <h2 className="text-sm font-semibold text-[var(--foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(children, onOpen, numbered, knownFilenames)}
       </h2>
     ),
     h3: ({ children }) => (
       <h3 className="text-[13px] font-semibold text-[var(--foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(children, onOpen, numbered, knownFilenames)}
       </h3>
     ),
     blockquote: ({ children }) => (
       <blockquote className="border-l-2 border-[var(--border)] pl-3 text-[var(--muted-foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(children, onOpen, numbered, knownFilenames)}
       </blockquote>
     ),
     td: ({ children }) => (
-      <td>{wrapCitationChildren(children, onOpen, numbered)}</td>
+      <td>{wrapCitationChildren(children, onOpen, numbered, knownFilenames)}</td>
     ),
     th: ({ children }) => (
-      <th>{wrapCitationChildren(children, onOpen, numbered)}</th>
+      <th>{wrapCitationChildren(children, onOpen, numbered, knownFilenames)}</th>
     ),
   };
 }
@@ -155,9 +161,11 @@ function createCitationMarkdownComponents(
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   onOpenCitation,
+  knownFilenames,
 }: {
   children: string;
   onOpenCitation?: (raw: string) => void;
+  knownFilenames?: readonly string[];
 }) {
   const markdown = rewriteChatMathHtmlConflicts(children);
   const numberedSources = useMemo(
@@ -167,9 +175,13 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   const components = useMemo(
     () =>
       onOpenCitation
-        ? createCitationMarkdownComponents(onOpenCitation, numberedSources)
+        ? createCitationMarkdownComponents(
+            onOpenCitation,
+            numberedSources,
+            knownFilenames
+          )
         : COMPONENTS,
-    [onOpenCitation, numberedSources]
+    [onOpenCitation, numberedSources, knownFilenames]
   );
   return (
     <div className="chat-markdown min-w-0 wrap-anywhere space-y-2 text-sm leading-relaxed text-[var(--foreground)]">

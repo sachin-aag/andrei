@@ -51,6 +51,7 @@ import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
 import {
+  citationRefreshMeta,
   createCitationHighlightExtension,
   type CitationOpenHandlers,
 } from "@/lib/tiptap/citation-highlights";
@@ -398,17 +399,25 @@ export function TiptapSectionField({
   const citationHandlersRef = useRef<CitationOpenHandlers>({
     onOpenCitation: () => {},
   });
+  const knownCitationFilenamesRef = useRef<string[]>([]);
   useLayoutEffect(() => {
     citationHandlersRef.current = {
       onOpenCitation: (raw) =>
         openCitedDocumentOrToast({ raw, attachments, openDocument }),
     };
+    knownCitationFilenamesRef.current = attachments.map(
+      (attachment) => attachment.filename
+    );
   }, [attachments, openDocument]);
 
   const getRanges = useCallback(() => rangesRef.current, []);
   const getHandlers = useCallback(() => handlersRef.current, []);
   const getCitationHandlers = useCallback(
     () => citationHandlersRef.current,
+    []
+  );
+  const getKnownCitationFilenames = useCallback(
+    () => knownCitationFilenamesRef.current,
     []
   );
 
@@ -443,8 +452,11 @@ export function TiptapSectionField({
   const citationHighlightExtension = useMemo(
     () =>
       // eslint-disable-next-line react-hooks/refs -- ProseMirror calls this getter on click, not during render
-      createCitationHighlightExtension(getCitationHandlers),
-    [getCitationHandlers]
+      createCitationHighlightExtension(
+        getCitationHandlers,
+        getKnownCitationFilenames
+      ),
+    [getCitationHandlers, getKnownCitationFilenames]
   );
 
   const filteredRanges = useMemo(() => {
@@ -1268,6 +1280,15 @@ export function TiptapSectionField({
         .setMeta("addToHistory", false)
     );
   }, [editor, focusedPanelPlaceholderId, section, contentPath]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta(citationRefreshMeta, true)
+        .setMeta("addToHistory", false)
+    );
+  }, [editor, attachments]);
 
   const cancelCommentCompose = useCallback(() => {
     setCommentComposing(false);

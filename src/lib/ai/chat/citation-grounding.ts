@@ -190,6 +190,14 @@ export class CitationPageLedger {
     return pages.has(page) ? "keep" : "drop";
   }
 
+  /**
+   * Exact attached/retrieved basenames. Combined `STEM and STEM.pdf` cites
+   * stay one file when that name is on the ledger.
+   */
+  recordedFilenames(): string[] {
+    return this.files.map((file) => file.filename);
+  }
+
   private idForFilename(filename: string): string {
     const resolved = resolveCitedAttachment(this.files, filename);
     if (resolved.status === "found") return resolved.attachment.id;
@@ -272,20 +280,23 @@ function rewriteSourceCitationBracket(
   ledger: CitationPageLedger
 ): string {
   const inner = match.slice(1, -1);
-  const parts = splitSourceCitationParts(inner);
+  const parts = splitSourceCitationParts(inner, ledger.recordedFilenames());
   if (parts.length === 0) return match;
   const rewritten = parts
     .map((part) => rewriteCitationPart(part, ledger))
     .filter((part) => part.trim().length > 0);
   if (rewritten.length === 0) return "";
-  return canonicalizeSourceCitationBracket(`[${rewritten.join(", ")}]`);
+  return canonicalizeSourceCitationBracket(
+    `[${rewritten.join(", ")}]`,
+    ledger.recordedFilenames()
+  );
 }
 
 function rewriteCitationPart(
   part: string,
   ledger: CitationPageLedger
 ): string {
-  const parsed = parseSourceCitation(`[${part}]`);
+  const parsed = parseSourceCitation(`[${part}]`, ledger.recordedFilenames());
   if (!parsed) return part;
   if (parsed.pages.length === 0) {
     if (

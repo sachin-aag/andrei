@@ -34,23 +34,25 @@ function citationButton(
 
 function parkedOpenRaw(
   number: number,
-  numbered: ReadonlyMap<number, string>
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[]
 ): string | null {
   const parked = numbered.get(number);
   if (!parked) return null;
-  const parkedSpans = sourceCitationLinkSpans(parked);
+  const parkedSpans = sourceCitationLinkSpans(parked, knownFilenames);
   return parkedSpans[0]?.openRaw ?? parked;
 }
 
 function renderNumericMarker(
   token: string,
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string>
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[]
 ): ReactNode {
   const numbers = citationNumbersFromMarker(token);
   if (numbers.length === 0) return token;
   if (numbers.length === 1) {
-    const openRaw = parkedOpenRaw(numbers[0]!, numbered);
+    const openRaw = parkedOpenRaw(numbers[0]!, numbered, knownFilenames);
     if (!openRaw) return token;
     return citationButton("n", token, openRaw, onOpen);
   }
@@ -58,7 +60,7 @@ function renderNumericMarker(
   const nodes: ReactNode[] = ["["];
   numbers.forEach((number, idx) => {
     if (idx > 0) nodes.push(",");
-    const openRaw = parkedOpenRaw(number, numbered);
+    const openRaw = parkedOpenRaw(number, numbered, knownFilenames);
     if (!openRaw) {
       nodes.push(String(number));
       return;
@@ -75,13 +77,14 @@ function renderNumericMarker(
 function renderCitationToken(
   token: string,
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string>
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[]
 ): ReactNode {
   if (isNumericCitationMarker(token)) {
-    return renderNumericMarker(token, onOpen, numbered);
+    return renderNumericMarker(token, onOpen, numbered, knownFilenames);
   }
 
-  const spans = sourceCitationLinkSpans(token);
+  const spans = sourceCitationLinkSpans(token, knownFilenames);
   if (spans.length === 0) return token;
   if (spans.length === 1 && spans[0]!.from === 0 && spans[0]!.to === token.length) {
     return citationButton("0", token, spans[0]!.openRaw, onOpen);
@@ -114,12 +117,14 @@ function renderCitationToken(
 /**
  * Turns `[filename, p. N]` (and numbered `[n]` when a Citations list
  * maps it) into clickable buttons inside chat markdown. Combined
- * `[A.pdf, p. 1, B.pdf, p. 2]` becomes two links.
+ * `[A.pdf, p. 1, B.pdf, p. 2]` becomes two links. Compact `and` cites
+ * split only when `knownFilenames` includes both files.
  */
 export function linkifyCitationText(
   text: string,
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string> = EMPTY_NUMBERED
+  numbered: ReadonlyMap<number, string> = EMPTY_NUMBERED,
+  knownFilenames?: readonly string[]
 ): ReactNode {
   if (!text.includes("[")) return text;
   const parts = text.split(CITATION_SPLIT_RE);
@@ -129,7 +134,12 @@ export function linkifyCitationText(
     if (!/^\[[^\]]+\]$/.test(part)) {
       return <Fragment key={i}>{part}</Fragment>;
     }
-    const rendered = renderCitationToken(part, onOpen, numbered);
+    const rendered = renderCitationToken(
+      part,
+      onOpen,
+      numbered,
+      knownFilenames
+    );
     if (rendered === part) {
       return <Fragment key={i}>{part}</Fragment>;
     }
@@ -140,17 +150,18 @@ export function linkifyCitationText(
 export function linkifyCitationChildren(
   children: ReactNode,
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string> = EMPTY_NUMBERED
+  numbered: ReadonlyMap<number, string> = EMPTY_NUMBERED,
+  knownFilenames?: readonly string[]
 ): ReactNode {
   if (typeof children === "string") {
-    return linkifyCitationText(children, onOpen, numbered);
+    return linkifyCitationText(children, onOpen, numbered, knownFilenames);
   }
   if (Array.isArray(children)) {
     return children.map((child, i) => {
       if (typeof child === "string") {
         return (
           <Fragment key={i}>
-            {linkifyCitationText(child, onOpen, numbered)}
+            {linkifyCitationText(child, onOpen, numbered, knownFilenames)}
           </Fragment>
         );
       }
