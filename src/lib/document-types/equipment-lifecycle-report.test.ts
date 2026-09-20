@@ -374,8 +374,9 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).toContain("[[table:Alarm Trends]]");
     expect(def.chat.draftingGuidance).not.toContain("compact process-alarm");
     expect(
-      def.chat.draftingGuidance.split("Breakdowns and Trends (elr_breakdowns):")
-        .length - 1
+      (def.chat.draftingGuidance ?? "").split(
+        "Breakdowns and Trends (elr_breakdowns):"
+      ).length - 1
     ).toBe(1);
     expect(def.chat.draftingGuidance).toContain("product-contact MOC");
     expect(def.chat.draftingGuidance).toContain("secondary packaging");
