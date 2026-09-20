@@ -395,10 +395,10 @@ describe("equipment lifecycle report definition", () => {
       "Do **not** reconstruct duties from PMC"
     );
     expect(def.chat.draftingGuidance).toContain(
-      'A request for "better citations" means that 3.1 page'
+      'request for "better citations" means that 3.1 page'
     );
     expect(def.chat.draftingGuidance).toContain(
-      "Responsibilities grep is for §3.1"
+      'grep is for §3.1 / "Departments and responsibilities"'
     );
     expect(def.chat.contextIdentity?.({})).toEqual(
       expect.arrayContaining([

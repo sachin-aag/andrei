@@ -267,8 +267,9 @@ governing page on the matrix and the short narrative (the shape is
 \`[PRQR-… Report.pdf, p. N]\`, one Citations list). SOP/DP/QA/014 is the
 procedure cite if you name the SOP. Do **not** reconstruct duties from PMC,
 CSV IQ/OQ/VSR, SOP-040 (SCADA operating SOP), calibration planner, or other
-operational files, and do not grep department names against those PDFs. A
-request for "better citations" means that 3.1 page, not more files per row.
+operational files, and do not grep department names against those PDFs.
+A request for "better citations" means that 3.1 page, not more files per
+row.
 In the same turn, draft a short narrative that summarises who does what and
 uses \`[[table]]\`.
 
