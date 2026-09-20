@@ -671,6 +671,7 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         disposition?: string;
       };
       return {
+        documentNo: report.documentNo,
         unit: meta.unit ?? "",
         referenceSopNo: meta.referenceSopNo ?? "",
         dateOfNonConformance: meta.dateOfNonConformance ?? "",

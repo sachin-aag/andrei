@@ -544,7 +544,10 @@ describe("FIR docx template contract", () => {
     const zip = new PizZip(fs.readFileSync(def.export.templatePath));
     const body = zip.file("word/document.xml")!.asText();
     const footer = zip.file("word/footer1.xml")!.asText();
-    const header = zip.file("word/header2.xml")!.asText();
+    const header = zip
+      .file("word/header1.xml")!
+      .asText()
+      .replace(/<[^>]+>/g, "");
 
     expect(body).toContain("Initial Impact Assessment");
     expect(body).toContain("Batch Disposition");
@@ -553,15 +556,67 @@ describe("FIR docx template contract", () => {
     expect(body).not.toContain("5 Why Approach");
     expect(footer).toContain("/QA/017-F01/R01");
     expect(header).toContain("SOP/QA/017");
-    // The unit meta row is what separates DS from DP on paper.
+    // The unit line is what separates DS from DP on paper.
     expect(header).toContain("Unit: Drug Substance");
+    expect(header).toContain("Investigation Report");
     expect(header).not.toContain("SOP/DP/QA/008");
+    expect(header).not.toContain("Drug Product");
   });
 
-  it("keeps the MJ logo from the source template", () => {
+  it("keeps the MJ logo from the source report's header", () => {
     const def = getDocumentType(TYPE);
     const zip = new PizZip(fs.readFileSync(def.export.templatePath));
-    expect(zip.file("word/media/image1.png")).toBeTruthy();
+    const media = Object.keys(zip.files).filter((n) =>
+      n.startsWith("word/media/")
+    );
+    expect(media.length).toBeGreaterThan(0);
+    const rels = zip.file("word/_rels/header1.xml.rels")!.asText();
+    for (const name of media) {
+      expect(rels).toContain(name.replace("word/", ""));
+    }
+  });
+
+  it("matches the source report's page and table geometry", () => {
+    // Geometry copied from a real SOP/QA/017-F01 report. Getting this wrong is
+    // what made the first cut look obviously unlike MJ's own output.
+    const def = getDocumentType(TYPE);
+    const zip = new PizZip(fs.readFileSync(def.export.templatePath));
+    const body = zip.file("word/document.xml")!.asText();
+
+    // Page 11909 wide with 720 margins leaves 10469; the form table is 10440.
+    expect(body).toContain('<w:pgSz w:w="11909"');
+    expect(body).toContain('<w:tblW w:w="10440" w:type="dxa"/>');
+    // Four equal columns, not one full-width column.
+    expect(body).toContain('<w:gridCol w:w="2610"/>');
+    // Approval table keeps its own width.
+    expect(body).toContain('<w:tblW w:w="10457" w:type="dxa"/>');
+    // Body text is 12pt throughout, as in the source.
+    expect(body).toContain('<w:sz w:val="24"/>');
+    expect(body).not.toContain('<w:sz w:val="28"/>');
+  });
+
+  it("leaves section labels unshaded", () => {
+    // The source shades only inner table header rows. Shading every section
+    // label was the single most obvious visual difference in the first cut.
+    const def = getDocumentType(TYPE);
+    const zip = new PizZip(fs.readFileSync(def.export.templatePath));
+    const body = zip.file("word/document.xml")!.asText();
+    expect(body).not.toContain('w:fill="D9D9D9"');
+    expect(body).not.toContain('w:fill="E7E6E6"');
+  });
+
+  it("puts every raw-XML field inside a paragraph so it renders", () => {
+    // docxtemplater replaces the enclosing paragraph of a {@tag}; a bare tag in
+    // a table cell silently fails to render and leaves the literal text.
+    const def = getDocumentType(TYPE);
+    const zip = new PizZip(fs.readFileSync(def.export.templatePath));
+    const body = zip.file("word/document.xml")!.asText();
+    for (const tag of body.match(/\{@[A-Za-z]+\}/g) ?? []) {
+      const at = body.indexOf(tag);
+      const before = body.lastIndexOf("<w:p>", at);
+      const closed = body.lastIndexOf("</w:p>", at);
+      expect(before).toBeGreaterThan(closed);
+    }
   });
 
   it("renders checkbox rows for every fixed list", () => {
