@@ -32,6 +32,7 @@ import {
   checkRiskActionRows,
   checkRiskActionsNotBloated,
   checkRiskGradeConsistent,
+  checkSystemDescriptionStationsListed,
   checkSystemTrendRows,
   checkSystemTrendsCoverFlaggedFindings,
 } from "./elr/deterministic-checks";
@@ -151,24 +152,30 @@ function completeRecapTable(
   ]);
 }
 
-function bulletDoc(items: string[]): JSONContent {
-  return {
-    type: "doc",
+function listItems(items: string[]): JSONContent[] {
+  return items.map((text) => ({
+    type: "listItem",
     content: [
       {
-        type: "bulletList",
-        content: items.map((text) => ({
-          type: "listItem",
-          content: [
-            {
-              type: "paragraph",
-              content: [{ type: "text", text }],
-            },
-          ],
-        })),
+        type: "paragraph",
+        content: [{ type: "text", text }],
       },
     ],
+  }));
+}
+
+function listDoc(
+  type: "bulletList" | "orderedList",
+  items: string[]
+): JSONContent {
+  return {
+    type: "doc",
+    content: [{ type, content: listItems(items) }],
   };
+}
+
+function bulletDoc(items: string[]): JSONContent {
+  return listDoc("bulletList", items);
 }
 
 function completeConclusionRecap(
@@ -286,7 +293,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v16");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v17");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -304,6 +311,23 @@ describe("equipment lifecycle report definition", () => {
     expect(def.prompts.perSection.elr_system_description).toContain(
       "omit MOC are met on that point"
     );
+    expect(def.prompts.perSection.elr_system_description).toContain(
+      "numbered or bulleted list"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "stations as a list"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Core Functional Stations and Sub-Assemblies"
+    );
+    expect(def.chat.draftingGuidance).not.toMatch(
+      /Packed paragraph: Equipment description/
+    );
+    const listed = getCriteria(TYPE, "elr_system_description").find(
+      (item) => item.key === "system_description.stations_listed"
+    );
+    expect(listed?.kind).toBe("deterministic");
+    expect(listed?.description).toContain("packed paragraph");
   });
 
   it("requires CSV revalidation due dates in the table, assessment, and eval prompt", () => {
@@ -1790,6 +1814,109 @@ describe("ELR assessment, trends and risk checks", () => {
         )
       ).status
     ).toBe("met");
+  });
+
+  it("fails a packed 3.3 description and ignores a trailing Citations list", () => {
+    const empty = checkSystemDescriptionStationsListed(
+      ctx({ narrative: narrative("") }, { section: "elr_system_description" })
+    );
+    expect(empty.status).toBe("not_met");
+    expect(empty.reasoning).toMatch(/empty/i);
+
+    const packed = checkSystemDescriptionStationsListed(
+      ctx(
+        {
+          narrative: narrative(
+            "The filling line includes infeed, filling, stoppering, capping and a tray loader in one paragraph."
+          ),
+        },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(packed.status).toBe("partially_met");
+    expect(packed.reasoning).toMatch(/packed/i);
+
+    const citationsOnly = checkSystemDescriptionStationsListed(
+      ctx(
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "The filling line includes infeed, filling, stoppering, capping and a tray loader in one paragraph.",
+                  },
+                ],
+              },
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Citations:" }],
+              },
+              {
+                type: "orderedList",
+                content: listItems(["URS, p. 4", "DQ, p. 2"]),
+              },
+            ],
+          },
+        },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(citationsOnly.status).toBe("partially_met");
+  });
+
+  it("passes 3.3 when stations are a body list before Citations", () => {
+    const bullets = checkSystemDescriptionStationsListed(
+      ctx(
+        { narrative: bulletDoc(["Infeed conveyor", "Filling station"]) },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(bullets.status).toBe("met");
+    expect(bullets.reasoning).toMatch(/2 station/i);
+
+    const numbered = checkSystemDescriptionStationsListed(
+      ctx(
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    marks: [{ type: "bold" }],
+                    text: "Core Functional Stations and Sub-Assemblies",
+                  },
+                ],
+              },
+              {
+                type: "orderedList",
+                content: listItems([
+                  "Infeed conveyor — vial infeed from the washer.",
+                  "Filling station — peristaltic dosing.",
+                ]),
+              },
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Citations:" }],
+              },
+              {
+                type: "orderedList",
+                content: listItems(["URS, p. 4"]),
+              },
+            ],
+          },
+        },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(numbered.status).toBe("met");
+    expect(numbered.reasoning).toMatch(/2 station/i);
   });
 
   it("seeds 5.1 with one recap row per Observations subsection and Discrepancy", () => {

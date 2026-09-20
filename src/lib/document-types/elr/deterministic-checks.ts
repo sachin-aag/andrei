@@ -127,6 +127,28 @@ export function checkNarrativePresent(ctx: EvaluationContext) {
 }
 
 /**
+ * Equipment description (3.3) should list stations as real bullets/numbers
+ * (the liked `dev 5` shape), not a packed paragraph (`dev 11`). The trailing
+ * Citations ordered list does not count.
+ */
+export function checkSystemDescriptionStationsListed(ctx: EvaluationContext) {
+  if (narrativeText(ctx.content).trim().length < 20) {
+    return verdict("not_met", "This section is still empty");
+  }
+  const items = bodyListItemTexts(ctx.content);
+  if (items.length === 0) {
+    return verdict(
+      "partially_met",
+      "Stations are packed into prose instead of a numbered or bulleted list"
+    );
+  }
+  return verdict(
+    "met",
+    `${items.length} station or sub-assembly item(s) listed`
+  );
+}
+
+/**
  * Limits/counts in math atoms (`$<1 CFU/plate$`) become OMML that Word
  * refuses when `m:t` contains a raw `<`. Flatten them to Unicode prose.
  */
@@ -1142,6 +1164,27 @@ function listItemTexts(node: unknown): string[] {
   }
   if (!Array.isArray(n.content)) return [];
   return n.content.flatMap(listItemTexts);
+}
+
+function isCitationsHeading(node: unknown): boolean {
+  return /^citations:?$/i.test(plainText(node).replace(/\s+/g, " ").trim());
+}
+
+/** List items in the body of a narrative field, stopping at Citations:. */
+function bodyListItemTexts(content: unknown): string[] {
+  const raw = (content as Record<string, unknown> | null | undefined)?.narrative;
+  if (!raw || typeof raw !== "object") return [];
+  const blocks = (raw as { content?: unknown }).content;
+  if (!Array.isArray(blocks)) return [];
+  const items: string[] = [];
+  for (const block of blocks) {
+    if (isCitationsHeading(block)) break;
+    const n = block as { type?: unknown };
+    if (n.type === "bulletList" || n.type === "orderedList") {
+      items.push(...listItemTexts(block));
+    }
+  }
+  return items;
 }
 
 export function checkConclusionRecapsSections(ctx: EvaluationContext) {

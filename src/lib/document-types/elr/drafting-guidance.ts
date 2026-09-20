@@ -67,6 +67,30 @@ a named station on it, touches the product**.
 - This is **not** SLIA Direct / Indirect / No Impact. Direct Impact does not
   by itself require MOC.
 
+## Equipment and System Description — stations as a list
+
+\`elr_system_description\` (3.3) is a short identity lead-in, then **bold
+sub-headings** as their own paragraphs, then a **numbered or bulleted list**
+of functional stations. Do not collapse stations, associated systems, or MOC
+into one packed paragraph.
+
+Recipe:
+
+1. Lead-in: equipment name, ID, make/model, rooms. Cite the page.
+2. **Equipment Boundaries and Integrated Line** — upstream/downstream
+   neighbours and shared-line equipment.
+3. **Core Functional Stations and Sub-Assemblies** — a numbered list, one
+   station per item (infeed, filling, stoppering, capping, tray loader,
+   cRABS, … as the attachments name them). Each item starts with the
+   station name in bold, then the cited detail.
+4. **Automation and Associated Systems** — PLC / SCADA / 21 CFR Part 11
+   and clean utilities.
+5. **Materials of Construction (MOC)** — only product-contact / wetted
+   parts, and only when that station touches the product (see above).
+
+Markdown: write \`1. **Station name:** detail [file, p. N]\`. Do not wrap
+the station set as a comma-separated sentence.
+
 ## Re-qualification: two different documents
 
 - **Periodic Re-Qualification** (PRQP protocol / PRQR report, §7.17) — the
@@ -356,8 +380,10 @@ equations only (\`\\frac\`, \`\\sum\`).
 ## Verbosity
 
 - Short: Objective, Scope, Responsibilities narrative.
-- Packed paragraph: Equipment description, each section's assessment,
-  trend summaries, system-trends narrative, risk-actions narrative, conclusion.
+- Structured lists: Equipment and System Description (3.3) — numbered or
+  bulleted stations under bold sub-headings; never one packed paragraph.
+- Packed paragraph: each section's assessment, trend summaries,
+  system-trends narrative, risk-actions narrative, conclusion.
 - Tables carry the evidence. Prefer a row over a sentence in the table;
   the assessment above it is where you interpret.
 

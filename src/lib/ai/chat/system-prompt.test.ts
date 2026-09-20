@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v125-annexure-continuation");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v126-elr-system-description-list");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -691,5 +691,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("title-page container format");
     expect(prompt).toMatch(/pick the\s+first PRQR/);
     expect(prompt).toContain("do not infer it from the first PRQR");
+  });
+
+  it("tells ELR Agent to list equipment stations instead of packing them", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "equipment_lifecycle_report",
+    });
+    expect(prompt).toContain("stations as a list");
+    expect(prompt).toContain("Core Functional Stations and Sub-Assemblies");
+    expect(prompt).not.toMatch(/Packed paragraph: Equipment description/);
   });
 });
