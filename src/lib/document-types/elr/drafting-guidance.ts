@@ -47,6 +47,11 @@ Identity (equipment name, equipment ID, associated system, container format,
 period, cycle number, last/next PRQ) lives in report metadata, not in a drafted
 section. The approval block is a printed placeholder — never invent signatures.
 
+Attachments (\`elr_attachments\`, Word 7.0) is **not a drafted section**. Word
+export rebuilds that table from every live file on the report. Do not
+edit_table, draft_field, or propose_edit it. Do not copy filenames into it
+from list_attachments. Leave it empty.
+
 ## Equipment description — product-contact MOC
 
 Material of construction (MOC) of product-contact / wetted parts belongs in
@@ -429,6 +434,7 @@ none overdue, or no OOT while required cells are still <placeholders>.
 ## Section keys
 
 ${Object.entries(ELR_SECTION_LABELS)
+  .filter(([key]) => key !== "elr_attachments")
   .map(([key, label]) => `- ${key}: ${label}`)
   .join("\n")}
 `;

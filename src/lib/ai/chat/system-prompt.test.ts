@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v127-elr-alarms-before-monitoring");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v128-elr-attachments-export-only");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -706,5 +706,17 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("stations as a list");
     expect(prompt).toContain("Core Functional Stations and Sub-Assemblies");
     expect(prompt).not.toMatch(/Packed paragraph: Equipment description/);
+  });
+
+  it("does not list ELR Attachments as an editable field", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "equipment_lifecycle_report",
+    });
+    expect(prompt).toContain("not a drafted section");
+    expect(prompt).toContain("export rebuilds that table from every live file");
+    expect(prompt).not.toContain("Attachments [elr_attachments]");
+    expect(prompt).not.toContain("- elr_attachments:");
   });
 });

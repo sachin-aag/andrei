@@ -268,10 +268,15 @@ describe("equipment lifecycle report definition", () => {
     expect(sections.indexOf("elr_breakdowns")).toBeLessThan(
       sections.indexOf("elr_qms")
     );
-    const draft = getDocumentType(TYPE).chat.draftOrder;
+    const def = getDocumentType(TYPE);
+    const draft = def.chat.draftOrder;
     expect(draft.indexOf("elr_alarms")).toBeLessThan(draft.indexOf("elr_monitoring"));
     expect(draft.indexOf("elr_monitoring")).toBeLessThan(
       draft.indexOf("elr_breakdowns")
+    );
+    expect(draft).not.toContain("elr_attachments");
+    expect(def.sections.find((s) => s.key === "elr_attachments")?.editable).toBe(
+      false
     );
   });
 
@@ -739,6 +744,10 @@ describe("ELR criteria wiring", () => {
       }
       expect(criteria.length).toBeGreaterThan(0);
     }
+    expect(
+      getDocumentType(TYPE).sections.find((s) => s.key === "elr_attachments")
+        ?.evaluable
+    ).toBe(false);
   });
 
   it("routes the conclusion through the discrepancy section", () => {
