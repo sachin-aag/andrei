@@ -25,6 +25,38 @@ const ASSESSMENT_SET = new Set<string>(ELR_ASSESSMENT_SECTIONS);
 
 const PLAN_EDIT_TOOLS = new Set(["draft_field", "edit_table", "propose_edit"]);
 
+/** Tool results that actually persist a suggestion / rewrite. */
+const PLAN_LANDED_STATUSES = new Set(["proposed", "drafted", "applied"]);
+
+export function planEditOutputStatus(part: {
+  output?: unknown;
+  result?: unknown;
+}): string {
+  const raw = part.output ?? part.result;
+  if (!raw || typeof raw !== "object") return "";
+  const status = (raw as { status?: unknown }).status;
+  return typeof status === "string" ? status.trim() : "";
+}
+
+/**
+ * True when a remaining-section edit tool persisted. `review_incomplete` /
+ * `unsupported_facts` still stream as `output-available` — they must not
+ * mark QMS drafted or fire "Assistant is done with QMS Records".
+ * Missing `output.status` (tests / in-progress finalize) still counts.
+ */
+export function planEditToolLanded(part: {
+  state?: unknown;
+  output?: unknown;
+  result?: unknown;
+}): boolean {
+  const state = typeof part.state === "string" ? part.state : "";
+  if (state === "output-error") return false;
+  if (state !== "output-available" && state !== "") return false;
+  const status = planEditOutputStatus(part);
+  if (!status) return true;
+  return PLAN_LANDED_STATUSES.has(status);
+}
+
 /** Extra fields that must be drafted before the remaining-section queue advances. */
 export function elrPlanRequiredFields(
   section: string
@@ -45,6 +77,7 @@ type SectionEdit = {
   targetField: string;
   text: string;
   complete: boolean;
+  bounced: boolean;
 };
 
 function toolNameFromPart(part: {
@@ -68,6 +101,8 @@ function editsFromParts(parts: unknown): SectionEdit[] {
       toolName?: unknown;
       state?: unknown;
       input?: unknown;
+      output?: unknown;
+      result?: unknown;
     };
     const name = toolNameFromPart(rec);
     if (!PLAN_EDIT_TOOLS.has(name)) continue;
@@ -88,12 +123,14 @@ function editsFromParts(parts: unknown): SectionEdit[] {
           : "";
     const state = typeof rec.state === "string" ? rec.state : "";
     if (state === "output-error") continue;
+    const complete = planEditToolLanded(rec);
     edits.push({
       name,
       section: section.trim(),
       targetField,
       text,
-      complete: state === "output-available" || state === "",
+      complete,
+      bounced: state === "output-available" && !complete,
     });
   }
   return edits;
@@ -105,7 +142,10 @@ function sectionCompleteFromEdits(
 ): boolean {
   const required = elrPlanRequiredFields(section);
   if (!required) return true;
-  const mine = edits.filter((edit) => edit.section === section && edit.complete);
+  const mineAll = edits.filter((edit) => edit.section === section);
+  const mine = mineAll.filter((edit) => edit.complete);
+  if (mineAll.length === 0) return true;
+  if (mineAll.some((edit) => edit.bounced)) return false;
   if (mine.length === 0) return true;
   for (const field of required) {
     const hit = mine.some(

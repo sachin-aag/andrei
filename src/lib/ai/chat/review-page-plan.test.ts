@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { REVIEW_PAGE_FETCH_CAP } from "@/lib/ai/chat/document-review";
 import {
+  REVIEW_INVENTORY_WALK_CAP,
   REVIEW_OBJECTIVE_PAGE_FLOOR,
+  REVIEW_PREFERRED_MISSING_PAGE_CAP,
   coverageKeySatisfiesObjective,
   coverageObjectiveDigest,
   neighborFillPages,
   objectiveTokens,
   planReviewPages,
+  samplePagesAcrossAttachment,
   scoreReviewPage,
 } from "./review-page-plan";
 
@@ -395,11 +398,102 @@ describe("planReviewPages", () => {
     expect(ids.has("pmc")).toBe(true);
     expect(ids.has("alarm")).toBe(false);
     expect(selected.filter((page) => page.attachmentId === "prqr").length).toBe(
-      20
+      REVIEW_OBJECTIVE_PAGE_FLOOR
     );
     expect(selected.filter((page) => page.attachmentId === "csv").length).toBe(
       0
     );
+  });
+
+  it("samples preferred CCF/PRQR pages on QMS instead of walking every page", () => {
+    const capaHit = {
+      attachmentId: "capa",
+      pageNumber: 1,
+      filename: "CAPA-25-01.pdf",
+      transcript:
+        "QMS records Type CAPA Document Reference No. CAPA/25/01 Date Initiated 03/02/2025 Qualification Impact N",
+      outlineTitle: "CAPA",
+      identifiers: ["CAPA/25/01"],
+    };
+    const ccf = Array.from({ length: 200 }, (_, i) => ({
+      attachmentId: "ccf",
+      pageNumber: i + 1,
+      filename: "CCF-24-PR-010.pdf",
+      transcript: `change control cover ${i}`,
+      outlineTitle: "Cover",
+      identifiers: [] as string[],
+    }));
+    const prqr = Array.from({ length: 273 }, (_, i) => ({
+      attachmentId: "prqr",
+      pageNumber: i + 1,
+      filename: "PRQR-25-PR-005 Report.pdf",
+      transcript: `cover ${i}`,
+      outlineTitle: "Cover",
+      identifiers: [] as string[],
+    }));
+    const selected = planReviewPages(
+      [...ccf, capaHit, ...prqr],
+      "elr_qms",
+      2500
+    );
+    const byAttachment = selected.reduce<Record<string, number>>((acc, page) => {
+      acc[page.attachmentId] = (acc[page.attachmentId] ?? 0) + 1;
+      return acc;
+    }, {});
+    expect(byAttachment.capa).toBe(1);
+    expect(byAttachment.ccf).toBe(REVIEW_OBJECTIVE_PAGE_FLOOR);
+    expect(byAttachment.prqr).toBe(REVIEW_OBJECTIVE_PAGE_FLOOR);
+    expect(selected.length).toBeLessThanOrEqual(
+      1 + REVIEW_PREFERRED_MISSING_PAGE_CAP
+    );
+    const ccfPages = selected
+      .filter((page) => page.attachmentId === "ccf")
+      .map((page) => page.pageNumber ?? 0);
+    expect(Math.max(...ccfPages)).toBeGreaterThan(REVIEW_OBJECTIVE_PAGE_FLOOR);
+  });
+
+  it("caps a scored CCF flood so QMS remaining-section can finish in one continue", () => {
+    const pages = Array.from({ length: 200 }, (_, i) => ({
+      attachmentId: "ccf",
+      pageNumber: i + 1,
+      filename: "CCF-24-PR-010.pdf",
+      transcript: `Document Reference CCF-24-PR-010 Date 12/01/2025 change ${i}`,
+      outlineTitle: "Change control",
+      identifiers: [`CCF-24-PR-010`],
+    }));
+    expect(scoreReviewPage(pages[0]!, "elr_qms")).toBeGreaterThan(0);
+    const selected = planReviewPages(pages, "elr_qms", 2500);
+    expect(selected).toHaveLength(REVIEW_INVENTORY_WALK_CAP);
+    expect(selected.every((page) => page.attachmentId === "ccf")).toBe(true);
+    const pageNumbers = selected.map((page) => page.pageNumber ?? 0);
+    expect(Math.max(...pageNumbers)).toBeGreaterThan(REVIEW_OBJECTIVE_PAGE_FLOOR);
+    expect(Math.max(...pageNumbers)).toBeGreaterThan(100);
+  });
+
+  it("keeps a small scored calibration walk under the inventory cap", () => {
+    const pages = Array.from({ length: 40 }, (_, i) => ({
+      attachmentId: "cal",
+      pageNumber: i + 1,
+      filename: "calibration.pdf",
+      transcript: `certificate of calibration ${i}`,
+      outlineTitle: "Calibration",
+      identifiers: ["CAL-1"],
+    }));
+    const selected = planReviewPages(pages, "elr_calibration", 2500);
+    expect(selected).toHaveLength(40);
+  });
+
+  it("does not cap a DV catalog walk that is not an ELR inventory", () => {
+    const pages = Array.from({ length: 80 }, (_, i) => ({
+      attachmentId: "catalog",
+      pageNumber: i + 1,
+      filename: "solea-requirements.pdf",
+      transcript: `requirement REQ-${i + 1} acceptance criteria`,
+      outlineTitle: "Requirements",
+      identifiers: [`REQ-${i + 1}`],
+    }));
+    const selected = planReviewPages(pages, "every requirement", 2500);
+    expect(selected).toHaveLength(80);
   });
 });
 
@@ -414,6 +508,18 @@ describe("neighborFillPages", () => {
     const hit = pages[2]!;
     const neighbors = neighborFillPages(pages, [hit], 2);
     expect(neighbors.map((page) => page.pageNumber)).toEqual([2, 4]);
+  });
+});
+
+describe("samplePagesAcrossAttachment", () => {
+  it("spreads across the file instead of taking only the cover", () => {
+    const pages = Array.from({ length: 200 }, (_, i) => ({ page: i + 1 }));
+    expect(samplePagesAcrossAttachment(pages, 8).map((row) => row.page)).toEqual([
+      1, 29, 58, 86, 115, 143, 172, 200,
+    ]);
+    expect(samplePagesAcrossAttachment(pages, 250).map((row) => row.page)).toHaveLength(
+      200
+    );
   });
 });
 
