@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveCitedAttachment } from "@/lib/citations/resolve-cited-attachment";
+import { resolveCitedAttachment, resolveExactCitedAttachment } from "@/lib/citations/resolve-cited-attachment";
 
 const attachments = [
   { id: "att_protocol", filename: "protocol.pdf" },
@@ -60,13 +60,16 @@ describe("resolveCitedAttachment", () => {
     });
   });
 
-  it("opens a document-number cite against a download-stamped stored name", () => {
-    const stamped = [
-      { id: "att_pqr", filename: "PQR-24-PR-102_20250320092518.pdf" },
+  it("does not exact-match a stem against a combined and filename", () => {
+    const combined = [
+      { id: "att_combo", filename: "E-PR-068 and E-PR-071.pdf" },
     ];
-    expect(resolveCitedAttachment(stamped, "PQR-24-PR-102.pdf")).toEqual({
+    expect(resolveExactCitedAttachment(combined, "E-PR-068")).toEqual({
+      status: "missing",
+    });
+    expect(resolveCitedAttachment(combined, "E-PR-068")).toEqual({
       status: "found",
-      attachment: stamped[0],
+      attachment: combined[0],
     });
   });
 });

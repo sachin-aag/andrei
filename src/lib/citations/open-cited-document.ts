@@ -1,6 +1,12 @@
 import { toast } from "sonner";
-import { resolveCitedAttachment } from "@/lib/citations/resolve-cited-attachment";
-import { parseSourceCitation } from "@/lib/placeholders/citation-bracket";
+import {
+  resolveCitedAttachment,
+  resolveExactCitedAttachment,
+} from "@/lib/citations/resolve-cited-attachment";
+import {
+  parseSourceCitation,
+  parseSourceCitationUnsplit,
+} from "@/lib/placeholders/citation-bracket";
 
 export type CitedAttachmentRef = {
   id: string;
@@ -18,6 +24,23 @@ export function openCitedDocument(args: {
   attachments: readonly CitedAttachmentRef[];
   openDocument: (id: string, page?: number) => void;
 }): OpenCitedDocumentResult {
+  const unsplit = parseSourceCitationUnsplit(args.raw);
+  if (unsplit) {
+    const exact = resolveExactCitedAttachment(
+      args.attachments,
+      unsplit.filename
+    );
+    if (exact.status === "found") {
+      const page = unsplit.pages[0] ?? 1;
+      args.openDocument(exact.attachment.id, page);
+      return {
+        status: "opened",
+        attachmentId: exact.attachment.id,
+        page,
+      };
+    }
+  }
+
   const parsed = parseSourceCitation(args.raw);
   if (!parsed) return { status: "unresolved" };
 

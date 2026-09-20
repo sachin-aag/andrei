@@ -329,8 +329,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   draft that omitted a known page. Clicking those brackets (or numbered `[n]` that maps to
   a parked source) in the document, chat, or suggestion Sources opens or
   reuses that attachment canvas tab and scrolls the PDF to the cited
-  page.   Combined `[file A, p. N, file B, p. M]` or `[E-PR-068 and E-PR-071.pdf, p. 1]`
-  is two links; extra pages of one file stay one link. Word preview cannot jump to a page.
+  page.   Combined `[file A, p. N, file B, p. M]` or compact `[E-PR-068 and E-PR-071.pdf, p. 1]`
+  is two links; extra pages of one file stay one link. English `and` titles
+  (`QDF-Filling and capping machine.pdf`) and an attached file whose basename
+  is exactly the unsplit cite stay one link. Word preview cannot jump to a page.
   Open attachment canvases stay mounted while the tab is open (hidden/inert
   like Analytics) so switching to Report does not show “Loading preview…”
   or reset the page. `openDocument(id)` without a page does not jump to 1;

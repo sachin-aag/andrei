@@ -56,19 +56,33 @@ describe("openCitedDocument", () => {
     expect(openDocument).toHaveBeenCalledWith("att_rtm", 100);
   });
 
-  it("opens a split second source at its own page", () => {
+  it("opens an exact combined filename even when the parser would peel and", () => {
     const openDocument = vi.fn();
-    const files = [
-      { id: "att_rtm", filename: "RTM for E-PR-068.pdf" },
-      { id: "att_csv", filename: "CSV-RTM-PR-053.pdf" },
-    ];
     expect(
       openCitedDocument({
-        raw: "[CSV-RTM-PR-053.pdf, p. 5]",
-        attachments: files,
+        raw: "[E-PR-068 and E-PR-071.pdf, p. 1]",
+        attachments: [
+          { id: "att_combo", filename: "E-PR-068 and E-PR-071.pdf" },
+        ],
         openDocument,
       })
-    ).toEqual({ status: "opened", attachmentId: "att_csv", page: 5 });
+    ).toEqual({ status: "opened", attachmentId: "att_combo", page: 1 });
+    expect(openDocument).toHaveBeenCalledWith("att_combo", 1);
+  });
+
+  it("opens the first file of a compact two-file cite when those files are attached separately", () => {
+    const openDocument = vi.fn();
+    expect(
+      openCitedDocument({
+        raw: "[E-PR-068 and E-PR-071.pdf, p. 1]",
+        attachments: [
+          { id: "att_068", filename: "E-PR-068.pdf" },
+          { id: "att_071", filename: "E-PR-071.pdf" },
+        ],
+        openDocument,
+      })
+    ).toEqual({ status: "opened", attachmentId: "att_068", page: 1 });
+    expect(openDocument).toHaveBeenCalledWith("att_068", 1);
   });
 
   it("opens a short citation against a QMS download-stamped stored filename", () => {

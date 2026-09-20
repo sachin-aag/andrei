@@ -267,6 +267,28 @@ describe("parseSourceCitation", () => {
     });
   });
 
+  it("parses a compact id plus English title words as one filename", () => {
+    expect(
+      parseSourceCitation(
+        "[E-PR-068 and E-PR-071 filling report.pdf, p. 1]"
+      )
+    ).toEqual({
+      filename: "E-PR-068 and E-PR-071 filling report.pdf",
+      pages: [1],
+    });
+  });
+
+  it("parses a known combined filename without peeling the and stem", () => {
+    expect(
+      parseSourceCitation("[E-PR-068 and E-PR-071.pdf, p. 1]", [
+        "E-PR-068 and E-PR-071.pdf",
+      ])
+    ).toEqual({
+      filename: "E-PR-068 and E-PR-071.pdf",
+      pages: [1],
+    });
+  });
+
   it("omits pages when the cite has no page suffix", () => {
     expect(parseSourceCitation("[protocol.pdf]")).toEqual({
       filename: "protocol.pdf",
@@ -327,6 +349,30 @@ describe("splitSourceCitationParts", () => {
     expect(
       splitSourceCitationParts("E-PR-068 and E-PR-071.pdf, p. 1")
     ).toEqual(["E-PR-068", "E-PR-071.pdf, p. 1"]);
+  });
+
+  it("does not peel a compact id when English title words follow and", () => {
+    expect(
+      splitSourceCitationParts(
+        "E-PR-068 and E-PR-071 filling report.pdf, p. 1"
+      )
+    ).toEqual(["E-PR-068 and E-PR-071 filling report.pdf, p. 1"]);
+  });
+
+  it("does not peel a known combined filename that looks like two stems", () => {
+    expect(
+      splitSourceCitationParts("E-PR-068 and E-PR-071.pdf, p. 1", [
+        "E-PR-068 and E-PR-071.pdf",
+      ])
+    ).toEqual(["E-PR-068 and E-PR-071.pdf, p. 1"]);
+  });
+
+  it("still splits two-extension and-cites even when a combined name is known", () => {
+    expect(
+      splitSourceCitationParts("E-PR-068.pdf, p. 1 and E-PR-071.pdf, p. 1", [
+        "E-PR-068 and E-PR-071.pdf",
+      ])
+    ).toEqual(["E-PR-068.pdf, p. 1", "E-PR-071.pdf, p. 1"]);
   });
 
   it("does not split and inside a pdf filename", () => {
@@ -413,6 +459,13 @@ describe("sourceCitationLinkSpans", () => {
 
   it("keeps a hyphenated-and filename cite as one whole-bracket link", () => {
     const match = "[QDF-Filling and capping machine.pdf, p. 2]";
+    expect(sourceCitationLinkSpans(match)).toEqual([
+      { from: 0, to: match.length, openRaw: match },
+    ]);
+  });
+
+  it("keeps a compact-id-and-English-title cite as one whole-bracket link", () => {
+    const match = "[E-PR-068 and E-PR-071 filling report.pdf, p. 1]";
     expect(sourceCitationLinkSpans(match)).toEqual([
       { from: 0, to: match.length, openRaw: match },
     ]);

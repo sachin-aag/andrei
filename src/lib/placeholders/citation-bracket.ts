@@ -165,7 +165,9 @@ function looksLikeSourceStem(text: string): boolean {
   const trimmed = citeCoreWithoutPage(text.trim());
   if (!trimmed || /\s/.test(trimmed)) return false;
   if (isCitationShapedCore(trimmed)) return true;
-  return SOURCE_STEM_RE.test(trimmed);
+  // Hyphenated English titles (`QDF-Filling`) match SOURCE_STEM_RE; a real
+  // exhibit id also carries a digit (`E-PR-068`, `SOP/DP/QA/014`).
+  return SOURCE_STEM_RE.test(trimmed) && /\d/.test(trimmed);
 }
 
 function looksLikeNextSourceToken(token: string): boolean {
@@ -201,24 +203,12 @@ function skipSourceSeparator(inner: string, cursor: number): number {
 }
 
 /**
- * True when the text after `and` is another source (`E-PR-071`), not the
- * rest of a filename (`capping machine` in `QDF-Filling and capping
- * machine.pdf`). Hyphenated title words like `QDF-Filling` match
- * `SOURCE_STEM_RE` on the left; only peel when the right side is a source
- * too.
- */
-function remainderLooksLikeSource(right: string): boolean {
-  const trimmed = right.trim();
-  if (!trimmed) return false;
-  const head = (trimmed.split(/\s/)[0] ?? "").trim();
-  return looksLikeSourceStem(head);
-}
-
-/**
  * `E-PR-068 and E-PR-071.pdf` — peel the stem left of `and` so the leftover
- * does not extend the last `.pdf` range. `filling and sealing machine.pdf`
- * stays one filename (`filling` is not a source stem). `QDF-Filling and
- * capping machine.pdf` stays one filename (`capping` is not a source stem).
+ * does not extend the last `.pdf` range. Both sides of `and` (the whole
+ * remainder through `.pdf`, not the first token) must be compact source
+ * stems. `E-PR-068 and E-PR-071 filling report.pdf` and `QDF-Filling and
+ * capping machine.pdf` stay one filename. Two `.pdf`/`.docx` extensions
+ * still split via `skipSourceSeparator`.
  */
 function peelAndSourcePrefix(
   inner: string,
@@ -235,7 +225,7 @@ function peelAndSourcePrefix(
   if (!last) return { prefix: null, start: cursor };
   const left = between.slice(0, last.index).trim();
   const right = between.slice(last.index + last.length);
-  if (!looksLikeSourceStem(left) || !remainderLooksLikeSource(right)) {
+  if (!looksLikeSourceStem(left) || !looksLikeSourceStem(right)) {
     return { prefix: null, start: cursor };
   }
   return { prefix: left, start: cursor + last.index + last.length };
@@ -306,17 +296,46 @@ function splitByPdfDocxAnchors(inner: string): string[] | null {
   return parts.length > 0 ? parts : null;
 }
 
+function citationBasename(filename: string): string {
+  return filename.replace(/^.*[/\\]/, "").trim().toLowerCase();
+}
+
+/**
+ * True when `cited` is exactly a known attached/retrieved basename.
+ * Includes-based fuzzy match is intentionally not used here — a stem like
+ * `E-PR-068` would otherwise match `E-PR-068 and E-PR-071.pdf`.
+ */
+export function isExactKnownCitationFilename(
+  cited: string,
+  knownFilenames: readonly string[]
+): boolean {
+  const citedNorm = citationBasename(cited);
+  if (!citedNorm) return false;
+  return knownFilenames.some((name) => citationBasename(name) === citedNorm);
+}
+
 /**
  * Split `[file A, p. N, file B, p. M]` (or `;` / `and` between files) into one inner
  * string per source. Same-file page lists (`p. 4, 26, 163`, `p. 1, p. 2`,
  * `p. 1-3`) stay a single part. Commas inside a `.pdf`/`.docx` filename are
  * not treated as a new source. `E-PR-068 and E-PR-071.pdf` is two parts;
- * `filling and sealing machine.pdf` and `QDF-Filling and capping machine.pdf`
- * stay one filename.
+ * `filling and sealing machine.pdf`, `QDF-Filling and capping machine.pdf`,
+ * and `E-PR-068 and E-PR-071 filling report.pdf` stay one filename.
+ * Pass `knownFilenames` when an attached/retrieved basename is exactly the
+ * unsplit cite — that file wins over a compact `STEM and STEM.pdf` peel.
  */
-export function splitSourceCitationParts(inner: string): string[] {
+export function splitSourceCitationParts(
+  inner: string,
+  knownFilenames?: readonly string[]
+): string[] {
   const trimmed = inner.trim();
   if (!trimmed) return [];
+  if (
+    knownFilenames &&
+    isExactKnownCitationFilename(citeCoreWithoutPage(trimmed), knownFilenames)
+  ) {
+    return [trimmed];
+  }
   const byExt = splitByPdfDocxAnchors(trimmed);
   if (byExt) return byExt;
   return splitWithoutFileExtensions(trimmed);
@@ -428,15 +447,33 @@ function pageNumbersFromCore(core: string): number[] {
  * Parse `[filename, p. N]` / `[filename]` into a filename and page list.
  * The first page is the jump target when the cite lists several.
  */
-export function parseSourceCitation(match: string): ParsedSourceCitation | null {
+export function parseSourceCitation(
+  match: string,
+  knownFilenames?: readonly string[]
+): ParsedSourceCitation | null {
   if (!isSourceCitationBracket(match)) return null;
   const core = citationCoreFromInner(match.slice(1, -1));
   if (!core) return null;
-  const part = splitSourceCitationParts(core)[0] ?? core;
+  const part = splitSourceCitationParts(core, knownFilenames)[0] ?? core;
   if (!part) return null;
   const filename = citeCoreWithoutPage(part);
   if (!filename) return null;
   return { filename, pages: pageNumbersFromCore(part) };
+}
+
+/**
+ * Filename and pages from a source bracket without peeling `and` stems.
+ * Use this before split when matching against a known attached file.
+ */
+export function parseSourceCitationUnsplit(
+  match: string
+): ParsedSourceCitation | null {
+  if (!isSourceCitationBracket(match)) return null;
+  const core = citationCoreFromInner(match.slice(1, -1));
+  if (!core) return null;
+  const filename = citeCoreWithoutPage(core);
+  if (!filename) return null;
+  return { filename, pages: pageNumbersFromCore(core) };
 }
 
 function canonicalizeSourceCitationPart(part: string): string {
@@ -450,13 +487,16 @@ function canonicalizeSourceCitationPart(part: string): string {
  * Drop a trailing `_YYYYMMDDHHmmss` download stamp from each filename in a
  * source bracket so parked cites show the document number, not the export name.
  */
-export function canonicalizeSourceCitationBracket(match: string): string {
+export function canonicalizeSourceCitationBracket(
+  match: string,
+  knownFilenames?: readonly string[]
+): string {
   if (!isSourceCitationBracket(match) || isNumericCitationMarker(match)) {
     return match;
   }
   const inner = match.slice(1, -1);
   const core = citationCoreFromInner(inner);
-  const parts = splitSourceCitationParts(core || inner);
+  const parts = splitSourceCitationParts(core || inner, knownFilenames);
   if (parts.length === 0) return match;
   const next = parts.map((part) => canonicalizeSourceCitationPart(part));
   if (next.every((part, i) => part === parts[i]!.trim())) return match;
