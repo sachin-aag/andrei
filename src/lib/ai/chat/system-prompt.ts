@@ -19,7 +19,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v127-elr-alarms-before-monitoring";
+export const CHAT_PROMPT_VERSION = "chat-v128-elr-attachments-export-only";
 
 export type ChatMode = "plan" | "agent";
 

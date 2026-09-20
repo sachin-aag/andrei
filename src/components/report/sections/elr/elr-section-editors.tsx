@@ -24,6 +24,7 @@ import {
 } from "@/lib/document-types/elr/sections";
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] };
+const NOOP_DOC_CHANGE = (_doc: JSONContent) => {};
 
 function label(section: ElrSectionKey): string {
   return ELR_SECTION_LABELS[section];
@@ -587,11 +588,26 @@ export function ElrConclusionEditor() {
 }
 
 export function ElrAttachmentsEditor() {
+  const { value } = useGenericSectionSave("elr_attachments");
+  const content = (value as TableContent | undefined) ?? { table: EMPTY_DOC };
+
   return (
-    <TableEditor
+    <SectionShell
+      title={label("elr_attachments")}
+      description="Word export fills this table from every live file on the report. You do not need to draft it."
+      showSaveStatus={false}
       section="elr_attachments"
-      fieldLabel={ELR_TABLE_CAPTION_TITLES.elr_attachments}
-    />
+    >
+      <TiptapSectionField
+        section="elr_attachments"
+        contentPath="table"
+        label={ELR_TABLE_CAPTION_TITLES.elr_attachments}
+        className="grid gap-2"
+        value={content.table}
+        onChange={NOOP_DOC_CHANGE}
+        locked
+      />
+    </SectionShell>
   );
 }
 
