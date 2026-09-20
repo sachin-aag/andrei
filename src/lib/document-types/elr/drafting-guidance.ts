@@ -71,10 +71,10 @@ a named station on it, touches the product**.
 
 \`elr_system_description\` (3.3) is a short identity lead-in, then **bold
 sub-headings** as their own paragraphs, then a **numbered or bulleted list**
-of functional stations. Do not collapse stations, associated systems, or MOC
-into one packed paragraph.
+of functional stations. Do not collapse stations or associated systems into
+one packed paragraph.
 
-Recipe:
+Recipe (four parts — stop here):
 
 1. Lead-in: equipment name, ID, make/model, rooms. Cite the page.
 2. **Equipment Boundaries and Integrated Line** — upstream/downstream
@@ -85,8 +85,13 @@ Recipe:
    station name in bold, then the cited detail.
 4. **Automation and Associated Systems** — PLC / SCADA / 21 CFR Part 11
    and clean utilities.
-5. **Materials of Construction (MOC)** — only product-contact / wetted
-   parts, and only when that station touches the product (see above).
+
+**Do not** add a **Materials of Construction (MOC)** heading, a
+"MOC: N/A" line, frame steel, or guessed SS 316L. MOC is not a fifth
+sub-heading. If a named station touches the product, put the cited
+product-contact / wetted-part grade on **that station's list item**
+(see the product-contact rule above). Secondary and tertiary
+descriptions omit MOC entirely.
 
 Markdown: write \`1. **Station name:** detail [file, p. N]\`. Do not wrap
 the station set as a comma-separated sentence.
