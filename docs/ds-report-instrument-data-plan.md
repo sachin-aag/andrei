@@ -56,6 +56,7 @@ without the source prints, which are gitignored.
 | RIG23001 | 380–620 | 22/03/2024 10:08 → 11:48 | 101 | 100 min | 844.1 high |
 | RIG24003 | 200–600 | 12/05/2024 11:04 → 12:49 | 106 | 105 min | 191.6 low |
 | C072630015 | 480–720 | 29/05/2026 22:27 → 23:38 | 24 (separate) | — | 755.3 high |
+| RIG25010 | — | 17/11/2025 cycle | 0 | — | clean (see trap below) |
 
 Also: RIG25014 has **exactly one** out-of-band run in its whole cycle;
 C072630015/16/17 have **none** at the 800 µbar setpoint.
@@ -63,6 +64,24 @@ C072630015/16/17 have **none** at the 800 µbar setpoint.
 Conditional bands, from the recipe: `800 → 650–950`, `600 → 480–720`,
 `500 → 380–620`, `250 → 200–600`. All eight prints share one recipe, so the
 mapping is constant across them.
+
+**The band is not a column.** The data table is
+`DATE TIME TT1..TT6 VAC1 VAC2 PT1` — eleven columns, no setpoint among them.
+The schedule lives in the recipe block at the top of the print, as prose. So
+`ConditionalSpec` (which selects a band by another *column's* value) does not
+apply to these prints: analyse one drying phase at a time with a fixed band and
+a row range. The conditional shape still earns its place for stability
+timepoints and multi-grade lines, where the selector really is a column.
+
+**Trap — a setpoint step reads as a 121-minute excursion.** Judging RIG25010's
+whole cycle against 650–950 reports a 122-reading run down to 543.9. It is not
+an excursion: at 01:20 the vacuum is at 752 holding near 800, at 01:21 it steps
+to 584, and it then holds 590–620 for two hours — the 600 setpoint, whose band
+is 480–720, containing every one of those readings. Contrast RIG25014, which
+fell to 192.4 and recovered within eight readings while its neighbours sat near
+800. **A run that holds steady at its new level is a step; a run that departs
+and returns is an excursion.** Any test that applies one band across a whole
+cycle will manufacture this finding.
 
 ### Staging the prints
 
