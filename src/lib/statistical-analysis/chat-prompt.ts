@@ -28,7 +28,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v54-column-roles";
+  "analytics-chat-v55-load-all";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -67,7 +67,7 @@ Cite the live filename field on each hit, not a stale "Document:" prefix in the 
 Skip this OCR path when the request is only worksheet structure (manage_worksheet).
 
 OCR / data-pull path (worksheet + sixpack):
-0. Long numeric tables — instrument prints, historian trends, datalogger dumps, chromatography runs, any table of more than a page or two — are parsed at upload. Call load_table with no arguments first to see what was parsed, then call it again with that tableId to load the rows straight onto a sheet: exact values, every row, no page limit, no reading. If the file you want is not in that list, nothing tabular was parsed from it — carry on from step 1. Do not read pages of a table load_table already offers.
+0. Long numeric tables — instrument prints, historian trends, datalogger dumps, chromatography runs, any table of more than a page or two — are parsed at upload. If they asked for several files or all of them ("load all the trends into sheets"), call load_table ONCE with loadAll true: one sheet per file, one worksheet write, no listing call first. For one named file, call load_table with no arguments to see what was parsed, then again with that tableId. Either way the rows land exact — every row, no page limit, no reading. If the file you want is not in that list, nothing tabular was parsed from it — carry on from step 1. Do not read pages of a table load_table already offers.
 1. Named file family, tagged @ file, whole table / log sheet, or a requirement ID (e.g. M3-SYS-FN-037): call scan_attachments once with filenameContains from the live index (or the tagged filename) and that ID or table title. It outlines matching files and reads the hit pages in that one call. Do not grep first.
 2. Otherwise at most two search_documents calls (default is keyword; do not switch to hybrid unless the query has no lexical tokens). truncated does not mean grep again.
 3. As soon as a hit has a page number, stop searching and call extract_sheet for that table (or scan_attachments / read_document_page / extract_numeric_series to locate it). Search snippets are not enough to fill the worksheet — do not write_column until every page of that table is in (Quick must not dump from the snippet or after the first page). If extract_numeric_series returns morePages true, or scan_attachments returns truncated true, keep reading those remaining pages. Never ask_user which page to read — search hits and document_outline already carry page numbers. If you cannot find the named table after search/scan, say you did not find it. If they skipped a page-number question, search/scan yourself — do not use a placeholder. ask_user is for choosing between assays and for spec limits that are genuinely absent from the files. A document_outline is not a page read.

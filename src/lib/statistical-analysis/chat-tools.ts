@@ -301,6 +301,8 @@ function optionalSpecString(value: number | null | undefined): string {
 
 const MAX_WRITE_COLUMNS = 40;
 const MAX_WRITE_SOURCE_PAGES = 12;
+/** Tables one load_table call may write. `MAX_DATA_SHEETS` is 12. */
+const MAX_TABLES_PER_LOAD = 12;
 
 function rememberCitation(
   bucket: ChartCitation[],
@@ -917,7 +919,21 @@ const loadTableInputSchema = z
       .min(1)
       .optional()
       .describe(
-        "Table to load, from a previous no-argument call. Omit to list the parsed tables."
+        "One table to load, from a previous no-argument call. Omit to list the parsed tables."
+      ),
+    tableIds: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .max(MAX_TABLES_PER_LOAD)
+      .optional()
+      .describe(
+        "Several tables in one call, each onto its own sheet named after its file. Prefer this over one call per table — it is a single worksheet write."
+      ),
+    loadAll: z
+      .boolean()
+      .optional()
+      .describe(
+        "Load every parsed table on the report, each onto its own sheet. Use for \"load all the trends into sheets\" — no listing call needed first."
       ),
     attachmentId: z
       .string()
@@ -1774,7 +1790,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.load_table = tool({
       description:
-        "Load a table that was parsed from an attachment straight into a worksheet sheet — exact values, every row, no page limit and no reading. Call this FIRST for instrument prints, historian trends, datalogger dumps, chromatography runs and any long numeric table: it is faster and exact where extract_sheet re-reads pages a model already transcribed. Call with no tableId to list what was parsed from the attached files, then call again with that tableId. Pass sheetName for the destination tab. Pass columns to load only the ones you need. rowStart/rowLimit page through a table longer than the worksheet holds. If the file you want is not listed, nothing tabular was parsed from it — fall back to extract_sheet.",
+        "Load tables that were parsed from attachments straight onto worksheet sheets — exact values, every row, no page limit and no reading. Call this FIRST for instrument prints, historian trends, datalogger dumps, chromatography runs and any long numeric table: it is faster and exact where extract_sheet re-reads pages a model already transcribed. **To load every trend/print at once, call it once with loadAll true** — one sheet per file, named after the file, in a single worksheet write. That is one call, not one per file, and it needs no listing call first. Pass tableIds for a specific subset, tableId for exactly one. Call with no arguments to list what was parsed. Pass columns to load only the ones you need; rowStart/rowLimit page through a table longer than the worksheet holds. Do not call extract_sheet or read pages for a table this tool offers. If a file is not listed, nothing tabular was parsed from it — fall back to extract_sheet.",
       inputSchema: loadTableInputSchema,
       execute: async (input) => {
         const outOfScope = attachmentOutOfScope(input.attachmentId?.trim());
@@ -1802,7 +1818,11 @@ export function buildAnalyticsChatTools(opts: {
       input: z.infer<typeof loadTableInputSchema>
     ) {
       {
-        if (!input.tableId) {
+        const wantsLoad =
+          Boolean(input.tableId) ||
+          Boolean(input.tableIds?.length) ||
+          input.loadAll === true;
+        if (!wantsLoad) {
           // Attachments ingested before table detection shipped have nothing
           // stored. Parse them now rather than sending the model off to read
           // 76 pages of numbers a parser can read exactly in milliseconds.
@@ -1832,99 +1852,153 @@ export function buildAnalyticsChatTools(opts: {
         }
 
         const limit = Math.min(input.rowLimit ?? MAX_WORKSHEET_ROWS, MAX_WORKSHEET_ROWS);
-        const table = await loadDetectedTable(reportId, input.tableId, {
-          rowStart: input.rowStart,
-          limit,
-        });
-        if (!table) {
-          return {
-            status: "not_found" as const,
-            message:
-              "No parsed table with that id on this report. Call load_table with no arguments to list them.",
-          };
-        }
-        if (table.rows.length === 0) {
-          return {
-            status: "empty" as const,
-            rowCount: table.rowCount,
-            message: `That table has ${table.rowCount} row(s); rowStart is past the end.`,
-          };
-        }
-
-        const requested = input.columns?.length
-          ? input.columns
-          : table.columns.map((column) => column.name);
-        const entries: WriteColumnEntry[] = [];
-        const missing: string[] = [];
-        for (const ref of requested) {
-          const cells = columnCellsFromLoadedTable(table, ref);
-          if (!cells) {
-            missing.push(ref);
-            continue;
+        let tableIds: string[];
+        if (input.loadAll) {
+          // Healing runs in the listing branch, which loadAll skips.
+          await ensureDocumentTablesForReport(reportId);
+          const all = await listDetectedTablesForReport(reportId, {
+            attachmentIds: input.attachmentId
+              ? [input.attachmentId]
+              : pinnedAttachmentIds,
+          });
+          if (all.length === 0) {
+            return {
+              status: "listed" as const,
+              tableCount: 0,
+              tables: [],
+              note: "No table was parsed from the attached files. Use extract_sheet or read pages instead.",
+            };
           }
-          entries.push({ name: cells.name, values: cells.values });
-        }
-        if (entries.length === 0) {
-          return {
-            status: "not_found" as const,
-            message: `None of those columns are in this table. It has: ${table.columns
-              .map((column) => column.name)
-              .join(", ")}.`,
-          };
+          tableIds = all.slice(0, MAX_TABLES_PER_LOAD).map((t) => t.tableId);
+        } else if (input.tableIds?.length) {
+          tableIds = input.tableIds.slice(0, MAX_TABLES_PER_LOAD);
+        } else {
+          tableIds = [input.tableId!];
         }
 
-        // Every loaded row carries the page it was printed on, so the written
-        // columns cite the source pages the same way a read-and-write dump does.
-        const citations = uniqueChartCitations(
-          table.rows
-            .map((row) => row.pageNumber)
-            .filter((page, index, all) => all.indexOf(page) === index)
-            .slice(0, MAX_WRITE_SOURCE_PAGES)
-            .map((page) => ({
-              attachmentId: table.attachmentId,
-              page,
-              filename: table.filename,
-            }))
-        );
+        type Loaded = {
+          table: Awaited<ReturnType<typeof loadDetectedTable>>;
+          entries: WriteColumnEntry[];
+          citations: ChartCitation[];
+          sheetName: string;
+          missing: string[];
+        };
+        const loaded: Loaded[] = [];
 
-        const sheetName = (input.sheetName?.trim() || table.filename).slice(0, 40);
+        for (const tableId of tableIds) {
+          const table = await loadDetectedTable(reportId, tableId, {
+            rowStart: input.rowStart,
+            limit,
+          });
+          if (!table) {
+            return {
+              status: "not_found" as const,
+              message: `No parsed table with id ${tableId} on this report. Call load_table with no arguments to list them.`,
+            };
+          }
+          if (table.rows.length === 0) {
+            return {
+              status: "empty" as const,
+              rowCount: table.rowCount,
+              message: `${table.filename} has ${table.rowCount} row(s); rowStart is past the end.`,
+            };
+          }
+
+          const requested = input.columns?.length
+            ? input.columns
+            : table.columns.map((column) => column.name);
+          const entries: WriteColumnEntry[] = [];
+          const missing: string[] = [];
+          for (const ref of requested) {
+            const cells = columnCellsFromLoadedTable(table, ref);
+            if (!cells) {
+              missing.push(ref);
+              continue;
+            }
+            entries.push({ name: cells.name, values: cells.values });
+          }
+          if (entries.length === 0) {
+            return {
+              status: "not_found" as const,
+              message: `None of those columns are in ${table.filename}. It has: ${table.columns
+                .map((column) => column.name)
+                .join(", ")}.`,
+            };
+          }
+
+          // Every loaded row carries the page it was printed on, so the written
+          // columns cite the source pages the same way a read-and-write dump does.
+          const citations = uniqueChartCitations(
+            table.rows
+              .map((row) => row.pageNumber)
+              .filter((page, index, all) => all.indexOf(page) === index)
+              .slice(0, MAX_WRITE_SOURCE_PAGES)
+              .map((page) => ({
+                attachmentId: table.attachmentId,
+                page,
+                filename: table.filename,
+              }))
+          );
+
+          // One sheet per table. A caller-supplied name only makes sense for a
+          // single load; several tables on one named tab would overwrite each
+          // other, so a batch always names each sheet after its file.
+          const sheetName = (
+            tableIds.length === 1
+              ? input.sheetName?.trim() || table.filename
+              : table.filename
+          ).slice(0, 40);
+
+          loaded.push({ table, entries, citations, sheetName, missing });
+        }
+
         return withWorksheetMutationLock(reportId, async () => {
           const analytics = await getOrCreateReportAnalytics(reportId);
           const keepActiveId = analytics.worksheet.activeSheetId;
-          // addDataSheet reuses a same-named tab and switches to it, so this
-          // both creates the destination and resolves its id.
-          const writeOnto = async (base: WorksheetData, version: number) => {
-            const withSheet = addDataSheet(base, sheetName);
-            const applied = applyWriteColumnEntries(
-              withSheet,
-              entries,
-              citations,
-              withSheet.activeSheetId,
-              "replace"
-            );
-            if (!applied.ok) return { applied };
+
+          // Every table is applied to one in-memory workbook and saved once.
+          // Persisting per table would rewrite the whole workbook N times, and
+          // the workbook grows with each one — eight 2,000-row instrument
+          // tables would mean nine cumulative writes of up to ~2 MB.
+          const writeAll = async (base: WorksheetData, version: number) => {
+            let next = base;
+            const written: Array<{ sheetId: string; entry: Loaded }> = [];
+            for (const entry of loaded) {
+              const withSheet = addDataSheet(next, entry.sheetName);
+              const applied = applyWriteColumnEntries(
+                withSheet,
+                entry.entries,
+                entry.citations,
+                withSheet.activeSheetId,
+                "replace"
+              );
+              if (!applied.ok) return { failed: entry.sheetName };
+              next = applied.worksheet;
+              written.push({ sheetId: applied.worksheet.activeSheetId, entry });
+            }
             const saved = await persistAndRecord(
-              restoreActiveSheet(applied.worksheet, keepActiveId),
+              restoreActiveSheet(next, keepActiveId),
               version
             );
-            return { applied, saved };
+            return { saved, written };
           };
 
-          let outcome = await writeOnto(analytics.worksheet, analytics.version);
+          let outcome = await writeAll(analytics.worksheet, analytics.version);
           if (
+            "saved" in outcome &&
             outcome.saved &&
             !outcome.saved.ok &&
             outcome.saved.reason === "conflict"
           ) {
-            outcome = await writeOnto(
+            outcome = await writeAll(
               outcome.saved.analytics.worksheet,
               outcome.saved.analytics.version
             );
           }
-          if (outcome.applied.ok === false) {
+          if ("failed" in outcome) {
             return {
               status: "error" as const,
-              message: `Could not write to sheet ${sheetName}.`,
+              message: `Could not write to sheet ${outcome.failed}.`,
             };
           }
           const savedResult = outcome.saved;
@@ -1937,23 +2011,44 @@ export function buildAnalyticsChatTools(opts: {
             };
           }
           const saved = savedResult.analytics;
-          const writtenSheetId = outcome.applied.worksheet.activeSheetId;
-          const sheet = findSheet(saved.worksheet, writtenSheetId);
+
+          const sheets = outcome.written.map(({ sheetId, entry }) => {
+            const sheet = findSheet(saved.worksheet, sheetId);
+            const table = entry.table!;
+            return {
+              sheetId: sheet?.id ?? sheetId,
+              sheetName: sheet?.name ?? entry.sheetName,
+              filename: table.filename,
+              columnNames: entry.entries.map((column) => column.name),
+              rowsWritten: table.rows.length,
+              rowStart: table.rowStart,
+              rowCount: table.rowCount,
+              hasMore: table.hasMore,
+              pages: `${table.pageStart}-${table.pageEnd}`,
+              ...(entry.missing.length > 0
+                ? { missingColumns: entry.missing }
+                : {}),
+            };
+          });
+          const first = sheets[0]!;
+          const incomplete = sheets.filter((sheet) => sheet.hasMore);
+
           return {
             status: "loaded" as const,
-            sheetId: sheet?.id ?? writtenSheetId,
-            sheetName: sheet?.name ?? sheetName,
-            filename: table.filename,
-            columnNames: entries.map((entry) => entry.name),
-            rowsWritten: table.rows.length,
-            rowStart: table.rowStart,
-            rowCount: table.rowCount,
-            hasMore: table.hasMore,
-            pages: `${table.pageStart}-${table.pageEnd}`,
-            ...(missing.length > 0 ? { missingColumns: missing } : {}),
-            note: table.hasMore
-              ? `Loaded rows ${table.rowStart}–${table.rowStart + table.rows.length - 1} of ${table.rowCount}. Call again with rowStart ${table.rowStart + table.rows.length} for the rest.`
-              : "Every row of this table is on the sheet.",
+            ...first,
+            sheets,
+            sheetCount: sheets.length,
+            note:
+              incomplete.length > 0
+                ? `${incomplete
+                    .map(
+                      (sheet) =>
+                        `${sheet.sheetName}: rows ${sheet.rowStart}–${sheet.rowStart + sheet.rowsWritten - 1} of ${sheet.rowCount}`
+                    )
+                    .join("; ")}. Call again with rowStart for the rest.`
+                : sheets.length === 1
+                  ? "Every row of this table is on the sheet."
+                  : `Every row of all ${sheets.length} tables is on its own sheet.`,
           };
         });
       }

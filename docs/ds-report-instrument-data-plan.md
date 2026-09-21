@@ -182,6 +182,18 @@ Three wiring points that are easy to miss, all covered by tests:
   worker loading a parsed table creates a second tab holding the data it was
   sent to dump.
 
+**Batch loading is one call, not subagents.** `loadAll` (or `tableIds`) writes
+one sheet per file in a *single* worksheet write. Per-table calls would be the
+obvious shape and the wrong one: each takes the mutation lock and persists the
+whole workbook, which grows with every table — eight 2,000-row instrument
+tables means nine cumulative writes of up to ~2 MB, plus version-conflict
+retries if the model fires them in parallel.
+
+Subagents are also the wrong shape here, even though `extract_sheet` uses them.
+A worker exists to run an LLM over pages; `load_table` runs no model at all, so
+spinning up eight of them would be slower and costlier than eight direct reads
+— and this is one read.
+
 ### Phase 1.4 — ingest at volume
 
 Interior pages of a table spanning 8+ pages are skipped by chunk + embed

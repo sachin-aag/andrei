@@ -848,3 +848,15 @@ describe("load_table in the analytics step plan", () => {
     expect(prepared?.activeTools ?? []).not.toContain("load_table");
   });
 });
+
+describe("load_table batching", () => {
+  it("stays available after loading, so a batch can be followed up", () => {
+    // Loading eight prints and then plotting each is one turn's work.
+    expect(
+      analyticsLoadTableDirective([
+        loadTableStep("loaded"),
+        loadTableStep("loaded"),
+      ])
+    ).toBe("continue");
+  });
+});
