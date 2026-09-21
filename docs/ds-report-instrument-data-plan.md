@@ -226,6 +226,22 @@ CSV and XLSX download, `plot_time_series` in Analytics chat, and registration in
 - The source figure's `00:13:39 / −192.1` cursor readout is the excursion
   duration and depth. It is computed, not placed by hand.
 
+**Column roles are inferred, not asked for.** `column-roles.ts` classifies each
+worksheet column from its cells — timestamp / date / clock / measurement /
+setpoint / category / label — so `plot_time_series` takes the engineer's own
+words ("plot the chamber vacuum over time") and works the four columns out.
+
+The discriminator worth knowing: **a setpoint is numeric but takes a handful of
+values and holds each one**, while a measurement varies nearly every row. That
+is what separates VAC2 (0 / 250 / 500 / 600 / 800) from VAC1 without knowing
+anything about lyophilizers, and the same shape covers a stability timepoint or
+a product grade. A measurement is paired with the setpoint sharing its name
+stem (VAC1 ↔ VAC2), not merely the nearest column — TT1 is closer to VAC1 by
+index and is the wrong band.
+
+**The measurement is never guessed when several fit and none was named.**
+Plotting one of nine instrument channels at random is worse than listing them.
+
 **Still open on this kind:** *Export with Excel charts* routes through the
 `ChartSpec` path, so a time series exports as an XY chart with numeric (epoch)
 x values rather than a native Excel date axis. The data tabs and the excursion

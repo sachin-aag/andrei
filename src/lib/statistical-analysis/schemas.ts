@@ -648,24 +648,41 @@ function refineTimeSeriesSpecs(
 export const timeSeriesBodySchema = z
   .object({
     analysisId: z.string().trim().min(1).max(128).optional(),
-    columnId: z.string().trim().min(1).optional(),
-    timeColumnId: z.string().trim().min(1).optional(),
+    columnId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "Measurement column id. Omit it and pass `measurement` instead to have the column worked out from the sheet."
+      ),
+    measurement: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(
+        "What to plot, in the engineer's words — a header (VAC1) or a description (chamber vacuum). Used when columnId is omitted."
+      ),
+    sheetId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe("Tab name (or id) holding the data. Defaults to the active tab."),
+    timeColumnId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe("Date or timestamp column. Worked out from the sheet when omitted."),
     clockColumnId: z.string().trim().min(1).nullable().optional(),
     title: z.string().trim().max(120).optional(),
     ...timeSeriesSpecFields,
     ...timeSeriesRowFields,
   })
-  .superRefine((value, ctx) => {
-    if (!value.analysisId && (!value.columnId || !value.timeColumnId)) {
-      ctx.addIssue({
-        code: "custom",
-        message:
-          "columnId and timeColumnId are required when creating a new time series.",
-        path: ["columnId"],
-      });
-    }
-    refineTimeSeriesSpecs(value, ctx);
-  });
+  .superRefine(refineTimeSeriesSpecs);
 
 export const timeSeriesInputSchema = z
   .object({

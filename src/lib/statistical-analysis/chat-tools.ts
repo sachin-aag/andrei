@@ -90,6 +90,7 @@ import {
   listDetectedTablesForReport,
   loadDetectedTable,
 } from "@/lib/attachments/document-tables";
+import { suggestTimeSeriesColumns } from "./column-roles";
 import {
   applyManageWorksheet,
   manageWorksheetInputSchema,
@@ -2334,6 +2335,83 @@ export function buildAnalyticsChatTools(opts: {
       },
     });
 
+    /**
+     * Fill in whichever of the four columns the caller left out.
+     *
+     * The measurement is never guessed when several fit and none was named:
+     * plotting one of nine instrument channels at random is worse than saying
+     * which nine there are. Everything else is unambiguous from the cells.
+     */
+    async function resolveTimeSeriesColumnsForChat(patch: {
+      columnId?: string;
+      measurement?: string;
+      sheetId?: string;
+      timeColumnId?: string;
+      clockColumnId?: string | null;
+      conditionColumnId?: string | null;
+    }): Promise<
+      | {
+          columnId: string;
+          timeColumnId: string;
+          clockColumnId: string | null;
+          conditionColumnId: string | null;
+        }
+      | { status: "error"; message: string }
+    > {
+      if (patch.columnId && patch.timeColumnId) {
+        return {
+          columnId: patch.columnId,
+          timeColumnId: patch.timeColumnId,
+          clockColumnId: patch.clockColumnId ?? null,
+          conditionColumnId: patch.conditionColumnId ?? null,
+        };
+      }
+      const analytics = await getOrCreateReportAnalytics(reportId);
+      const sheet = patch.sheetId
+        ? findSheet(analytics.worksheet, patch.sheetId)
+        : (findSheet(analytics.worksheet, focusedSheetId ?? "") ??
+          dataSheets(analytics.worksheet).find(
+            (item) => item.id === analytics.worksheet.activeSheetId
+          ));
+      const columns = (sheet ?? dataSheets(analytics.worksheet)[0])?.columns;
+      if (!columns || columns.length === 0) {
+        return {
+          status: "error" as const,
+          message: "That sheet has no columns to plot.",
+        };
+      }
+      const picks = suggestTimeSeriesColumns(columns, {
+        measurementHint: patch.measurement,
+      });
+      const columnId = patch.columnId ?? picks.columnId;
+      const timeColumnId = patch.timeColumnId ?? picks.timeColumnId;
+      if (!timeColumnId) {
+        return {
+          status: "error" as const,
+          message:
+            "No column on that sheet reads as a date or timestamp, so there is no x axis. Name the time column with timeColumnId.",
+        };
+      }
+      if (!columnId) {
+        const names = picks.measurementCandidates
+          .map((candidate) => `${candidate.name} (${candidate.columnId})`)
+          .join(", ");
+        return {
+          status: "error" as const,
+          message: names
+            ? `Several columns could be plotted: ${names}. Ask which one, or pass measurement with the engineer's own words.`
+            : "No numeric column on that sheet varies enough to plot over time.",
+        };
+      }
+      return {
+        columnId,
+        timeColumnId,
+        clockColumnId: patch.clockColumnId ?? picks.clockColumnId,
+        conditionColumnId:
+          patch.conditionColumnId ?? picks.conditionColumnId ?? null,
+      };
+    }
+
     statsTools.plot_time_series = tool({
       description:
         "Plot or update a measurement against a clock on the Results tab, with the out-of-band runs detected and listed. Use this for instrument trends, historian exports, datalogger dumps, stability timepoints — anything where the question is when a value left its band, for how long, and how far. Create: columnId (the measurement) and timeColumnId (the date, or a full date-time) are required; pass clockColumnId when the print splits date and time of day into two columns. Fixed limits are lsl/usl. When the band depends on another column — a recorded setpoint, a timepoint, a grade — pass conditionColumnId and bands [{when, lsl, usl}] instead; a band list without conditionColumnId is rejected because it would silently apply the fallback to every reading. showSpecLimits and showExcursions default on. Edit: pass analysisId and only the fields that change. Cannot edit a sixpack, ANOVA, scatter, boxplot, or histogram. Do not substitute a sixpack or an XY scatter for this — neither takes a timestamp. Report the excursion count and each run's readings and elapsed minutes separately; they are different numbers.",
@@ -2371,9 +2449,12 @@ export function buildAnalyticsChatTools(opts: {
           }
           return timeSeriesToolResult(result.analysis, result.analytics, true);
         }
+        const resolved = await resolveTimeSeriesColumnsForChat(patch);
+        if ("status" in resolved) return resolved;
         const result = await createAnalysisAndRecord({
           kind: TIME_SERIES,
           ...patch,
+          ...resolved,
         });
         if (!result.ok) {
           return { status: "error" as const, message: result.error };
