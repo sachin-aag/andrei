@@ -16,6 +16,7 @@ import {
   createOneWayAnova,
   createBoxplot,
   createHistogram,
+  createTimeSeries,
   createXyScatter,
   deleteCapabilitySixpack,
   getReportAnalytics,
@@ -49,11 +50,13 @@ import {
   BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
   HISTOGRAM,
+  TIME_SERIES,
   ONE_WAY_ANOVA,
   XY_SCATTER,
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
+  isTimeSeriesAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -76,7 +79,9 @@ import { CapabilityDialog } from "@/components/statistical-analysis/capability-d
 import { AnovaDialog } from "@/components/statistical-analysis/anova-dialog";
 import { BoxplotDialog } from "@/components/statistical-analysis/boxplot-dialog";
 import { HistogramDialog } from "@/components/statistical-analysis/histogram-dialog";
+import { TimeSeriesDialog } from "@/components/statistical-analysis/time-series-dialog";
 import { HistogramView } from "@/components/statistical-analysis/histogram-view";
+import { TimeSeriesView } from "@/components/statistical-analysis/time-series-view";
 import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-measurements-dialog";
 import { XyScatterDialog } from "@/components/statistical-analysis/xy-scatter-dialog";
 import { ScatterView } from "@/components/statistical-analysis/scatter-view";
@@ -198,6 +203,10 @@ export function StatisticalWorkspace({
   const [histogramRowEnd, setHistogramRowEnd] = useState<number | null>(null);
   const [histogramSubmitting, setHistogramSubmitting] = useState(false);
   const [histogramError, setHistogramError] = useState<string | null>(null);
+  const [timeSeriesOpen, setTimeSeriesOpen] = useState(false);
+  const [timeSeriesColumnId, setTimeSeriesColumnId] = useState("");
+  const [timeSeriesSubmitting, setTimeSeriesSubmitting] = useState(false);
+  const [timeSeriesError, setTimeSeriesError] = useState<string | null>(null);
   const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetNameDraft, setSheetNameDraft] = useState("");
@@ -539,6 +548,12 @@ export function StatisticalWorkspace({
         setHistogramOpen(true);
         return;
       }
+      if (isTimeSeriesAnalysis(analysis)) {
+        setTimeSeriesColumnId(analysis.config.columnId);
+        setTimeSeriesError(null);
+        setTimeSeriesOpen(true);
+        return;
+      }
       if (isScatterAnalysis(analysis)) {
         setPlotError(null);
         setPlotOpen(true);
@@ -643,6 +658,15 @@ export function StatisticalWorkspace({
     setHistogramOpen(true);
   };
 
+  const openTimeSeries = async (columnId: string) => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
+    setTimeSeriesColumnId(columnId);
+    setTimeSeriesError(null);
+    setTimeSeriesOpen(true);
+  };
+
   const openWorksheetPlot = (kind: WorksheetPlotKind, columnId: string) => {
     switch (kind) {
       case CAPABILITY_SIXPACK_NORMAL:
@@ -655,6 +679,8 @@ export function StatisticalWorkspace({
         return openBoxplot(columnId);
       case XY_SCATTER:
         return openXyScatter(columnId);
+      case TIME_SERIES:
+        return openTimeSeries(columnId);
       default: {
         const exhaustive: never = kind;
         return exhaustive;
@@ -1048,6 +1074,35 @@ export function StatisticalWorkspace({
                     editing={Boolean(editingAnalysisId)}
                     recomputing={recomputingAnalysisId === selectedAnalysis.id}
                     onRecompute={() => void recomputeSelectedAnalysis(selectedAnalysis)}
+                    onEdit={() => openAnalysisEdit(selectedAnalysis)}
+                    onDelete={async () => {
+                      try {
+                        const next = await deleteCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not delete the analysis."
+                        );
+                      }
+                    }}
+                  />
+                ) : selectedAnalysis &&
+                  isTimeSeriesAnalysis(selectedAnalysis) ? (
+                  <TimeSeriesView
+                    analysis={selectedAnalysis}
+                    reportId={reportId}
+                    onPreviewUploaded={applyAnalytics}
+                    readOnly={readOnly}
+                    editing={Boolean(editingAnalysisId)}
+                    recomputing={recomputingAnalysisId === selectedAnalysis.id}
+                    onRecompute={() =>
+                      void recomputeSelectedAnalysis(selectedAnalysis)
+                    }
                     onEdit={() => openAnalysisEdit(selectedAnalysis)}
                     onDelete={async () => {
                       try {
@@ -1582,6 +1637,127 @@ export function StatisticalWorkspace({
             );
           } finally {
             setHistogramSubmitting(false);
+          }
+        }}
+      />
+
+      <TimeSeriesDialog
+        key={
+          timeSeriesOpen
+            ? `time-series-${editingAnalysisId ?? "new"}`
+            : "time-series-closed"
+        }
+        open={timeSeriesOpen}
+        worksheet={worksheet}
+        defaultColumnId={timeSeriesColumnId || selectedColumnId}
+        defaultTimeColumnId={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.timeColumnId
+            : ""
+        }
+        defaultClockColumnId={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.clockColumnId ?? null
+            : null
+        }
+        defaultRowStart={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.rowStart ?? null
+            : null
+        }
+        defaultRowEnd={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.rowEnd ?? null
+            : null
+        }
+        defaultTitle={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        defaultLsl={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.lsl
+            : null
+        }
+        defaultUsl={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.usl
+            : null
+        }
+        defaultConditionColumnId={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.conditionColumnId ?? null
+            : null
+        }
+        defaultBands={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.bands ?? null
+            : null
+        }
+        defaultShowSpecLimits={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showSpecLimits !== false
+            : true
+        }
+        defaultShowExcursions={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showExcursions !== false
+            : true
+        }
+        editMode={Boolean(
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+        )}
+        submitting={timeSeriesSubmitting}
+        error={timeSeriesError}
+        onOpenChange={(open) => {
+          setTimeSeriesOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
+        onSubmit={async (values) => {
+          setTimeSeriesSubmitting(true);
+          setTimeSeriesError(null);
+          try {
+            await flush().catch(() => undefined);
+            const payload = {
+              columnId: values.columnId,
+              timeColumnId: values.timeColumnId,
+              clockColumnId: values.clockColumnId,
+              title: values.title || undefined,
+              lsl: values.lsl,
+              usl: values.usl,
+              conditionColumnId: values.conditionColumnId,
+              bands: values.bands,
+              showSpecLimits: values.showSpecLimits,
+              showExcursions: values.showExcursions,
+              rowStart: values.rowStart,
+              rowEnd: values.rowEnd,
+            };
+            if (editingAnalysisId && isTimeSeriesAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(
+                reportId,
+                editingAnalysisId,
+                payload
+              );
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("Time series updated.");
+            } else {
+              const created = await createTimeSeries(reportId, payload);
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
+            setTimeSeriesOpen(false);
+            clearAnalysisEdit();
+            setTab("results");
+          } catch (error) {
+            setTimeSeriesError(
+              error instanceof Error
+                ? error.message
+                : "Could not run the time series."
+            );
+          } finally {
+            setTimeSeriesSubmitting(false);
           }
         }}
       />

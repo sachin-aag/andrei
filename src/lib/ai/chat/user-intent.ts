@@ -36,6 +36,7 @@ export const ANALYTICS_WRITE_TOOLS = [
   "plot_xy_scatter",
   "plot_boxplot",
   "plot_histogram",
+  "plot_time_series",
   "plot_measurements",
 ] as const;
 

@@ -12,6 +12,7 @@ import {
   BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
   HISTOGRAM,
+  TIME_SERIES,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
@@ -476,6 +477,8 @@ function graphKindLabel(kind: AnalysisKind): string {
       return "boxplot";
     case HISTOGRAM:
       return "histogram";
+    case TIME_SERIES:
+      return "time series";
     case ONE_WAY_ANOVA:
       return "ANOVA";
     default: {

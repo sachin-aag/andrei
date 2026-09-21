@@ -39,6 +39,7 @@ const WRITE_AFTER_SEARCH_TOOLS = [
   "manage_worksheet",
   "extract_sheet",
   "load_table",
+  "plot_time_series",
   "run_capability_sixpack",
   "run_one_way_anova",
   "plot_xy_scatter",
@@ -426,6 +427,7 @@ export function analyticsGatherDirective(
 
 const PLOT_TOOLS = [
   "run_capability_sixpack",
+  "plot_time_series",
   "run_one_way_anova",
   "plot_xy_scatter",
   "plot_boxplot",

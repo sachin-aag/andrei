@@ -6,6 +6,7 @@ import {
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
+  isTimeSeriesAnalysis,
   isXyScatterAnalysis,
   xyScatterVersusLabel,
   type AnovaAnalysisSummary,
@@ -13,6 +14,7 @@ import {
   type HistogramAnalysisSummary,
   type ScatterAnalysisSummary,
   type StatisticalAnalysisSummary,
+  type TimeSeriesAnalysisSummary,
   type WorksheetData,
   type XyScatterAnalysisSummary,
 } from "./types";
@@ -24,6 +26,7 @@ import {
   xyScatterSourceKey,
 } from "./worksheet";
 import { formatSpecSummary, formatStat } from "./format";
+import { timeSeriesSourceKey } from "./time-series";
 import { formatChartProvenance } from "@/lib/charts/chart-spec";
 
 export function withLocalStale(
@@ -44,6 +47,9 @@ export function withLocalStale(
     }
     if (isHistogramAnalysis(analysis)) {
       return withHistogramLocalStale(analysis, worksheet, persisted);
+    }
+    if (isTimeSeriesAnalysis(analysis)) {
+      return withTimeSeriesLocalStale(analysis, worksheet, persisted);
     }
     if (!isSixpackAnalysis(analysis)) {
       const exhaustive: never = analysis;
@@ -170,6 +176,51 @@ function withHistogramLocalStale(
   return { ...analysis, stale: analysis.stale || changed };
 }
 
+function withTimeSeriesLocalStale(
+  analysis: TimeSeriesAnalysisSummary,
+  worksheet: WorksheetData,
+  persisted: WorksheetData
+): TimeSeriesAnalysisSummary {
+  const { config } = analysis;
+  const current = timeSeriesColumnsFor(worksheet, config);
+  if (!current) return { ...analysis, stale: true };
+  const saved = timeSeriesColumnsFor(persisted, config);
+  if (!saved) return analysis;
+  const selection = normalizeRowSelection(config);
+  const changed =
+    timeSeriesSourceKey(
+      current.column,
+      current.timeColumn,
+      current.clockColumn,
+      current.conditionColumn,
+      selection
+    ) !==
+    timeSeriesSourceKey(
+      saved.column,
+      saved.timeColumn,
+      saved.clockColumn,
+      saved.conditionColumn,
+      selection
+    );
+  return { ...analysis, stale: analysis.stale || changed };
+}
+
+function timeSeriesColumnsFor(
+  worksheet: WorksheetData,
+  config: TimeSeriesAnalysisSummary["config"]
+) {
+  const column = findColumn(worksheet, config.columnId);
+  const timeColumn = findColumn(worksheet, config.timeColumnId);
+  if (!column || !timeColumn) return null;
+  const clockColumn = config.clockColumnId
+    ? findColumn(worksheet, config.clockColumnId) ?? null
+    : null;
+  const conditionColumn = config.conditionColumnId
+    ? findColumn(worksheet, config.conditionColumnId) ?? null
+    : null;
+  return { column, timeColumn, clockColumn, conditionColumn };
+}
+
 export function analysisListSubtitle(analysis: StatisticalAnalysisSummary): string {
   if (isScatterAnalysis(analysis)) {
     return scatterListSubtitle(analysis);
@@ -185,6 +236,9 @@ export function analysisListSubtitle(analysis: StatisticalAnalysisSummary): stri
   }
   if (isHistogramAnalysis(analysis)) {
     return histogramListSubtitle(analysis);
+  }
+  if (isTimeSeriesAnalysis(analysis)) {
+    return timeSeriesListSubtitle(analysis);
   }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
@@ -253,6 +307,25 @@ function histogramListSubtitle(analysis: HistogramAnalysisSummary): string {
   });
   const rows = formatRowSelection(normalizeRowSelection(analysis.config));
   return [analysis.config.columnName, rows, specs, "Histogram"]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function timeSeriesListSubtitle(analysis: TimeSeriesAnalysisSummary): string {
+  const { excursions, n } = analysis.results;
+  const rows = formatRowSelection(normalizeRowSelection(analysis.config));
+  // The excursion count is the finding; leading with n would bury it.
+  const runs =
+    excursions.length === 0
+      ? "no excursions"
+      : `${excursions.length} excursion${excursions.length === 1 ? "" : "s"}`;
+  return [
+    analysis.config.columnName,
+    rows,
+    `${n} reading${n === 1 ? "" : "s"}`,
+    runs,
+    "Time series",
+  ]
     .filter(Boolean)
     .join(" · ");
 }

@@ -10,7 +10,9 @@ import {
   XY_SCATTER,
   BOXPLOT,
   HISTOGRAM,
+  TIME_SERIES,
   MAX_BOXPLOT_CATEGORIES,
+  MAX_TIME_SERIES_BANDS,
 } from "./types";
 
 const worksheetColumnCitationSchema = z.object({
@@ -554,6 +556,138 @@ export const xyScatterUpdateSchema = z
     refineDistinctXyColumns(value, ctx);
     refineAxisBounds(value, ctx);
   });
+
+const timeSeriesRowFields = anovaRowFields;
+
+const timeSeriesBandSchema = z.object({
+  /** Condition-column value this band applies to, e.g. "800". */
+  when: z.string().trim().min(1).max(64),
+  lsl: z.number().finite().nullable(),
+  usl: z.number().finite().nullable(),
+});
+
+const timeSeriesSpecFields = {
+  lsl: z.number().finite().nullable().optional(),
+  usl: z.number().finite().nullable().optional(),
+  conditionColumnId: z.string().trim().min(1).nullable().optional(),
+  bands: z
+    .array(timeSeriesBandSchema)
+    .max(MAX_TIME_SERIES_BANDS)
+    .nullable()
+    .optional(),
+  showSpecLimits: z.boolean().optional(),
+  showExcursions: z.boolean().optional(),
+} as const;
+
+const timeSeriesColumnFields = {
+  columnId: z.string().trim().min(1),
+  timeColumnId: z.string().trim().min(1),
+  clockColumnId: z.string().trim().min(1).nullable().optional(),
+} as const;
+
+function refineTimeSeriesSpecs(
+  value: {
+    lsl?: number | null;
+    usl?: number | null;
+    conditionColumnId?: string | null;
+    bands?: Array<{ when: string }> | null;
+    columnId?: string;
+    timeColumnId?: string;
+    clockColumnId?: string | null;
+  },
+  ctx: z.RefinementCtx
+): void {
+  if (value.lsl != null && value.usl != null && !(value.lsl < value.usl)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Lower spec must be less than upper spec.",
+      path: ["lsl"],
+    });
+  }
+  // A band list without the column that selects it would silently apply the
+  // fallback to every reading, which is the wrong band reported as the right one.
+  if (value.bands && value.bands.length > 0 && !value.conditionColumnId) {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        "Conditional bands need conditionColumnId — the column whose value picks the band.",
+      path: ["conditionColumnId"],
+    });
+  }
+  if (value.bands && value.bands.length > 0) {
+    const seen = new Set<string>();
+    for (const band of value.bands) {
+      const key = band.when.trim();
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Two bands both apply to ${key}.`,
+          path: ["bands"],
+        });
+        break;
+      }
+      seen.add(key);
+    }
+  }
+  const measurement = value.columnId?.trim();
+  for (const [field, other] of [
+    ["timeColumnId", value.timeColumnId],
+    ["clockColumnId", value.clockColumnId],
+  ] as const) {
+    if (measurement && other?.trim() && other.trim() === measurement) {
+      ctx.addIssue({
+        code: "custom",
+        message: "The measurement column cannot also be the time column.",
+        path: [field],
+      });
+    }
+  }
+}
+
+/** Chat tool body — create (columns required) or update (analysisId + changed fields). */
+export const timeSeriesBodySchema = z
+  .object({
+    analysisId: z.string().trim().min(1).max(128).optional(),
+    columnId: z.string().trim().min(1).optional(),
+    timeColumnId: z.string().trim().min(1).optional(),
+    clockColumnId: z.string().trim().min(1).nullable().optional(),
+    title: z.string().trim().max(120).optional(),
+    ...timeSeriesSpecFields,
+    ...timeSeriesRowFields,
+  })
+  .superRefine((value, ctx) => {
+    if (!value.analysisId && (!value.columnId || !value.timeColumnId)) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "columnId and timeColumnId are required when creating a new time series.",
+        path: ["columnId"],
+      });
+    }
+    refineTimeSeriesSpecs(value, ctx);
+  });
+
+export const timeSeriesInputSchema = z
+  .object({
+    kind: z.literal(TIME_SERIES),
+    ...timeSeriesColumnFields,
+    title: z.string().trim().max(120).optional(),
+    ...timeSeriesSpecFields,
+    ...timeSeriesRowFields,
+  })
+  .superRefine(refineTimeSeriesSpecs);
+
+/** Edit/update from the Time series dialog or chat (omitted fields keep the saved config). */
+export const timeSeriesUpdateSchema = z
+  .object({
+    columnId: z.string().trim().min(1).optional(),
+    timeColumnId: z.string().trim().min(1).optional(),
+    clockColumnId: z.string().trim().min(1).nullable().optional(),
+    title: z.string().trim().max(120).optional(),
+    ...timeSeriesSpecFields,
+    ...timeSeriesRowFields,
+  })
+  .superRefine(refineTimeSeriesSpecs);
 
 export const patchAnalyticsBodySchema = z
   .object({

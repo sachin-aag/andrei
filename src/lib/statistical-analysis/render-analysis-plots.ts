@@ -18,6 +18,7 @@ import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
+  isTimeSeriesAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -54,7 +55,11 @@ export async function renderAnalysisPlotImages(
 ): Promise<AnalysisPlotImage[]> {
   const packId = resolveCustomerId();
 
-  if (isScatterAnalysis(analysis) || isXyScatterAnalysis(analysis)) {
+  if (
+    isScatterAnalysis(analysis) ||
+    isXyScatterAnalysis(analysis) ||
+    isTimeSeriesAnalysis(analysis)
+  ) {
     const images: AnalysisPlotImage[] = [];
     for (const spec of analysis.results.specs) {
       const rendered = await renderChartPng(spec, { packId });

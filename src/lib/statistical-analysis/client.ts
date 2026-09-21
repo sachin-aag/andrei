@@ -200,6 +200,30 @@ export async function createHistogram(
   });
 }
 
+export async function createTimeSeries(
+  reportId: string,
+  input: {
+    columnId: string;
+    timeColumnId: string;
+    clockColumnId?: string | null;
+    title?: string;
+    lsl?: number | null;
+    usl?: number | null;
+    conditionColumnId?: string | null;
+    bands?: Array<{ when: string; lsl: number | null; usl: number | null }> | null;
+    showSpecLimits?: boolean;
+    showExcursions?: boolean;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "time_series",
+    ...input,
+  });
+}
+
 async function postAnalysis(
   reportId: string,
   input: unknown

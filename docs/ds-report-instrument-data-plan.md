@@ -3,8 +3,8 @@
 Living plan. Update it whenever a phase lands or a locked decision changes.
 Architecture that disagrees with code loses — fix this file.
 
-Status: **Phase 1 (1.1–1.4) and 2.1/2.2 landed** on `feat/IR_DS`.
-Everything else is specified but not built.
+Status: **Phases 1, 2 and 3 landed** on `feat/IR_DS`. Phases 4 and 5 are
+specified but not built.
 
 ## What this is
 
@@ -171,30 +171,50 @@ document is still findable; the 74 identical pages between them cost nothing.
 `read_document_page` still serves every page, and the rows are in
 `document_tables` verbatim, so nothing becomes unreachable.
 
-## Pending
+### Phase 2.3 / 3 — the `time_series` analysis kind
 
-### Phase 2.3 — excursions as a saved analysis
+**Locked decision — 2.3 and 3 are one kind, not two.** The plan had excursions
+as a saved analysis and the plot as a separate kind. They are two views of one
+computation, and splitting them would mean two `sourceHash` definitions that
+could disagree about the same rows. `computeTimeSeries` returns the points, the
+band segments, *and* the detected runs; the view draws the figure above the
+excursion table.
 
-A Results row like any other plot, so it is versioned, re-runnable and citable,
-going stale via `sourceHash` when analysed rows change. Without this the
-analysis is a one-off and the report is not reproducible.
+Full CRUD in `store.ts` (create / recompute / update), staleness in `stale.ts`,
+CSV and XLSX download, `plot_time_series` in Analytics chat, and registration in
+`WORKSHEET_PLOT_CATALOG` so Plot and Analyze-data cannot drift.
 
-### Phase 3 — `time_series` analysis kind
-
-All six existing `AnalysisKind`s require a **numeric** X, so no current plot can
-take a timestamp. Add a new kind rather than stretching `xy_scatter`: axis
-handling, default mark and spec rendering all differ.
-
-- Parse the timestamp column to epoch for scaling; keep the original string for
-  tick labels (the source stacks time over date).
-- Step interpolation by default — this is sampled data, not a continuous signal.
-- Band shading from the conditional spec.
-- Register in `WORKSHEET_PLOT_CATALOG` so Plot and Analyze-data cannot drift.
-- *Export with Excel charts* must produce a native chart. Decide downsampling
-  for a 15,000-point series deliberately.
+- **Excursions survive decimation.** A saved series caps at
+  `MAX_TIME_SERIES_POINTS` (4,000); every out-of-band reading and its immediate
+  neighbours are kept, with a uniform stride for the rest. A figure that lost the
+  excursion would be worse than no figure. Asserted by test.
+- **The band is drawn per segment.** A conditional band steps when the setpoint
+  does, so shading is one rect per run of the condition column rather than one
+  pair of lines across the cycle.
+- **`ChartLimits` holds one pair, so a stepped band leaves it empty**
+  (`showSpecLimits: false` on the spec). Drawing the first band across the whole
+  cycle would assert limits that were not in force. The stepped band lives in
+  `bandSegments` and is what the time-series view draws.
+- **Excursion shading matches on worksheet row, not the printed label.** A clock
+  repeats every day; a label lookup shades the wrong stretch of a multi-day
+  cycle. This was found by a test helper that generated `120:00:11` — worth
+  keeping in mind that the oracle prints are single-cycle and would not have
+  caught it.
+- `ChartLayout.xTickFormat: "time"` is presentation only — geometry is unchanged,
+  `x` stays epoch milliseconds, and `formatTimeAxisTick` picks resolution from
+  the span. It reads UTC deliberately: instrument stamps are wall-clock
+  readings, not zoned instants, and localising them would move an excursion.
 - The source figure's `00:13:39 / −192.1` cursor readout is the excursion
-  duration and depth — render it from the detected run rather than asking anyone
-  to place cursors.
+  duration and depth. It is computed, not placed by hand.
+
+**Still open on this kind:** *Export with Excel charts* routes through the
+`ChartSpec` path, so a time series exports as an XY chart with numeric (epoch)
+x values rather than a native Excel date axis. The data tabs and the excursion
+table are correct; the chart's x labels are not yet dates. Converting means
+writing the x column as an Excel serial (`ms / 86_400_000 + 25569`) with a date
+`numFmt` in `excel-chart-source.ts`.
+
+## Pending
 
 ### Phase 4 — computed facts must survive grounding
 

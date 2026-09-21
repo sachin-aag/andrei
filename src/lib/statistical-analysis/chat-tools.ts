@@ -32,7 +32,7 @@ import {
 } from "@/lib/extraction/metric-series";
 import { buildAnalyticsSearchDocumentsTool } from "./search-documents";
 import { runScanAttachments } from "./scan-attachments";
-import { boxplotBodySchema, capabilitySixpackInputSchema, histogramBodySchema, measurementScatterToolInputSchema, oneWayAnovaBodySchema, xyScatterBodySchema } from "./schemas";
+import { boxplotBodySchema, capabilitySixpackInputSchema, histogramBodySchema, measurementScatterToolInputSchema, oneWayAnovaBodySchema, timeSeriesBodySchema, xyScatterBodySchema } from "./schemas";
 import { tryRecordAnalyticsChange } from "@/lib/analytics-revisions/record-change";
 import type { AuditActorSnapshot } from "@/lib/audit";
 import {
@@ -45,6 +45,7 @@ import {
 import {
   BOXPLOT,
   HISTOGRAM,
+  TIME_SERIES,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
@@ -54,10 +55,13 @@ import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
+  isTimeSeriesAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
+  type ReportAnalyticsView,
+  type TimeSeriesAnalysisSummary,
   type WorksheetData,
 } from "./types";
 import {
@@ -124,6 +128,7 @@ export const ANALYTICS_CHAT_WRITE_TOOL_NAMES = [
   "plot_xy_scatter",
   "plot_boxplot",
   "plot_histogram",
+  "plot_time_series",
   "plot_measurements",
 ] as const;
 
@@ -257,6 +262,19 @@ function analysisIndexItem(
       lsl: item.config.lsl,
       usl: item.config.usl,
       n: item.results.n,
+    };
+  }
+  if (isTimeSeriesAnalysis(item)) {
+    return {
+      id: item.id,
+      title: item.title,
+      kind: item.kind,
+      stale: item.stale,
+      columnId: item.config.columnId,
+      lsl: item.config.lsl,
+      usl: item.config.usl,
+      n: item.results.n,
+      excursions: item.results.excursions.length,
     };
   }
   if (!isSixpackAnalysis(item)) {
@@ -838,6 +856,55 @@ function worksheetWithPreferredSheet(
   }
   return worksheet;
 }
+
+/**
+ * Excursions are the finding, so they come back in full rather than as a
+ * count. `readings` and `elapsedMinutes` stay separate fields: eight readings
+ * one minute apart span seven minutes, and collapsing them is how one
+ * excursion ended up with four different durations in a filed report.
+ */
+function timeSeriesToolResult(
+  analysis: TimeSeriesAnalysisSummary,
+  analytics: ReportAnalyticsView,
+  updated: boolean
+) {
+  return {
+    status: "ok" as const,
+    updated,
+    analysisId: analysis.id,
+    title: analysis.title,
+    columnId: analysis.config.columnId,
+    columnName: analysis.config.columnName,
+    timeColumnName: analysis.config.timeColumnName,
+    clockColumnName: analysis.config.clockColumnName ?? null,
+    conditionColumnName: analysis.config.conditionColumnName ?? null,
+    n: analysis.results.n,
+    skipped: analysis.results.skipped,
+    decimated: analysis.results.decimated,
+    excursionCount: analysis.results.excursions.length,
+    excursionReadings: analysis.results.excursionReadings,
+    excursions: analysis.results.excursions
+      .slice(0, MAX_REPORTED_EXCURSIONS)
+      .map((run) => ({
+        start: run.startLabel,
+        end: run.endLabel,
+        readings: run.readings,
+        elapsedMinutes: run.elapsedMinutes,
+        direction: run.direction,
+        min: run.min,
+        max: run.max,
+        condition: run.condition,
+        lsl: run.lsl,
+        usl: run.usl,
+      })),
+    analysisCount: analytics.analyses.length,
+    stale: analysis.stale,
+    openResultsTab: true,
+  };
+}
+
+/** Enough to write up; a cycle with more than this is a trend, not a finding. */
+const MAX_REPORTED_EXCURSIONS = 25;
 
 export function buildAnalyticsChatTools(opts: {
   reportId: string;
@@ -2237,6 +2304,60 @@ export function buildAnalyticsChatTools(opts: {
       },
     });
 
+    statsTools.plot_time_series = tool({
+      description:
+        "Plot or update a measurement against a clock on the Results tab, with the out-of-band runs detected and listed. Use this for instrument trends, historian exports, datalogger dumps, stability timepoints — anything where the question is when a value left its band, for how long, and how far. Create: columnId (the measurement) and timeColumnId (the date, or a full date-time) are required; pass clockColumnId when the print splits date and time of day into two columns. Fixed limits are lsl/usl. When the band depends on another column — a recorded setpoint, a timepoint, a grade — pass conditionColumnId and bands [{when, lsl, usl}] instead; a band list without conditionColumnId is rejected because it would silently apply the fallback to every reading. showSpecLimits and showExcursions default on. Edit: pass analysisId and only the fields that change. Cannot edit a sixpack, ANOVA, scatter, boxplot, or histogram. Do not substitute a sixpack or an XY scatter for this — neither takes a timestamp. Report the excursion count and each run's readings and elapsed minutes separately; they are different numbers.",
+      inputSchema: timeSeriesBodySchema,
+      execute: async (input) => {
+        const { analysisId, ...patch } = input;
+        if (analysisId) {
+          const analytics = await getOrCreateReportAnalytics(reportId);
+          const existing = analytics.analyses.find(
+            (item) => item.id === analysisId
+          );
+          if (!existing) {
+            return {
+              status: "error" as const,
+              message:
+                "No Results plot with that id. Use an id from the Analyses list or a tagged @ plot.",
+            };
+          }
+          if (!isTimeSeriesAnalysis(existing)) {
+            return {
+              status: "error" as const,
+              message:
+                "That Results row is not a time series. plot_time_series can only edit time series (kind=time_series).",
+            };
+          }
+          const result = await updateAnalysisAndRecord(analysisId, patch);
+          if (!result.ok) {
+            return { status: "error" as const, message: result.error };
+          }
+          if (!isTimeSeriesAnalysis(result.analysis)) {
+            return {
+              status: "error" as const,
+              message: "Saved analysis was not a time series.",
+            };
+          }
+          return timeSeriesToolResult(result.analysis, result.analytics, true);
+        }
+        const result = await createAnalysisAndRecord({
+          kind: TIME_SERIES,
+          ...patch,
+        });
+        if (!result.ok) {
+          return { status: "error" as const, message: result.error };
+        }
+        if (!isTimeSeriesAnalysis(result.analysis)) {
+          return {
+            status: "error" as const,
+            message: "Saved analysis was not a time series.",
+          };
+        }
+        return timeSeriesToolResult(result.analysis, result.analytics, false);
+      },
+    });
+
     statsTools.plot_measurements = tool({
       description:
         "Extract cited numeric measurements from this report's attachments and save a scatter of those values vs observation index on the Results tab. One series, one color — cannot color by serial number or overlay groups. Call when they asked for a measurement plot or requirement chart from attachments (e.g. M3-SYS-FN-037). Do not use this for two worksheet columns — that is plot_xy_scatter. Optional lsl/usl override extracted acceptance limits; omit them to keep cited limits. Does not insert into the document. Tell them to open Results. Never invent data points.",
@@ -2287,6 +2408,7 @@ export function buildAnalyticsChatTools(opts: {
       "plot_xy_scatter",
       "plot_boxplot",
       "plot_histogram",
+      "plot_time_series",
       "plot_measurements",
     ] as const) {
       delete tools[name];
