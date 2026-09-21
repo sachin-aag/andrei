@@ -12,6 +12,7 @@ import { firChatContextIdentity } from "./fir/chat-identity";
 import {
   checkActionsOwnedAndDated,
   checkBatchDisposition,
+  checkAttachmentListConsistent,
   checkCapaEffectiveness,
   checkHistoricReview,
   checkHumanErrorEvaluation,
@@ -322,7 +323,23 @@ const EFFECTIVENESS_CRITERIA: CriterionDefinition[] = [
   ),
 ];
 
+/**
+ * Sections whose prose cites attachments. Everything but the list itself —
+ * a citation can appear anywhere, and the two enum-only sections carry no
+ * prose to scan.
+ */
+const ATTACHMENT_CITING_SECTIONS = FIR_SECTION_KEYS.filter(
+  (key) => key !== "fir_attachments" && key !== "fir_investigation_tools"
+);
+
 const ATTACHMENT_CRITERIA: CriterionDefinition[] = [
+  det(
+    "attachments.consistent",
+    "Attachment numbering is consistent with the body",
+    "Every attachment cited in the report is listed here, no number is used twice, and the numbering has no gaps.",
+    checkAttachmentListConsistent,
+    [...ATTACHMENT_CITING_SECTIONS]
+  ),
   llm(
     "attachments.match_references",
     "Attachment list matches what the report cites",

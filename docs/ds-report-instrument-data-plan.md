@@ -3,8 +3,8 @@
 Living plan. Update it whenever a phase lands or a locked decision changes.
 Architecture that disagrees with code loses — fix this file.
 
-Status: **Phases 1–4 landed** on `feat/IR_DS`. Phase 5 is specified but not
-built.
+Status: **Phases 1–5 landed** on `feat/IR_DS`. What is left is verification
+against a live environment, not construction — see *Before MJ sees this* below.
 
 ## What this is
 
@@ -258,18 +258,53 @@ The exemption is narrow and stays narrow:
 
 Every existing ELR / QRA / IR grounding test passes unchanged.
 
-### Phase 5 — report assembly (MJ)
+### Phase 5 — report assembly
 
-- **Historic batch comparison.** The source's 10-column table is one row per
-  detected run across every attached trend. Once 2.2 runs per batch this is a
-  table build, not a document walk — which is the only way it fits, since
-  inventory review caps at `REVIEW_INVENTORY_WALK_CAP` (48) against ~530 pages.
-- **COA and calibration extraction.** Small tables, few pages; existing
-  `extract_sheet` should cover it. Confirm rather than assume.
-- **Figure placement.** `insert_image` with `source=analytics` already works.
-- **Attachment list consistency.** The review found Attachment 2 used for two
-  documents and references to a non-existent Attachment 12. The structured
-  attachment table makes a deterministic check possible.
+**5.1 Historic batch comparison.** `excursion-comparison.ts` flattens every
+out-of-band run across every saved time series into one comparable list, oldest
+first. A batch with no excursion is kept as a result rather than dropped — a
+comparison that lists only failures reads as if nothing was checked.
+
+The findings also go into the Document-chat context map, one line per saved
+time series. That is what makes the table a build rather than a document walk:
+comprehensive review caps at `REVIEW_INVENTORY_WALK_CAP` (48) pages against
+~530, and counting excursions by eye across 15,900 readings is the exact step
+that produced the wrong numbers in ERF/26/022. Every number in that line is
+analysis-backed, so it survives the gate (Phase 4) and cites the analysis plus
+its source pages.
+
+**5.2 COA and calibration extraction.** Small tables, few pages — `extract_sheet`
+covers them, and `load_table` now covers them better when ingest parsed them.
+Not separately built; confirm on the shakedown rather than assuming.
+
+**5.3 Figure placement.** `time_series` is a graph kind and an insertable graph
+kind, so `insert_image source=analytics` copies the figure into a narrative
+once the plot has been opened in Analytics (that is what captures the preview).
+
+**5.4 Attachment list consistency.** `checkAttachmentListConsistent` on
+`fir_attachments`, reading every other FIR section through `dependsOn`. It
+catches the two defects the review found in ERF/26/022 — the same number used
+for two documents, and a citation to an Attachment 12 that was never listed —
+plus gaps in the numbering and rows with no description. An attachment listed
+but never cited is `partially_met`, not a failure: enclosing one for
+completeness is legitimate. A defect outranks that downgrade.
+
+## Before MJ sees this
+
+Construction is done; none of it has been through a live environment.
+
+1. **Apply migrations `0065` and `0066`** to preview and production. A redeploy
+   applies them.
+2. **Run `pnpm check-table-extract` against the eight trend prints.** Still the
+   one test that gates everything downstream: the parser was validated on Google
+   Drive's text extraction, and ingest uses unpdf. Expect ~2,142 rows, 11
+   columns, `date|time|value x9` on RIG25014.
+3. **Upload one print and confirm the chain end to end** — ingest parses the
+   table, `load_table` lists and loads it, a time series finds the one
+   excursion, and the excursion count survives into a drafted narrative.
+4. **Open a DOCX export in Word.** Every layout check so far has been
+   LibreOffice.
+5. **Stage the prints in CI** so the oracle tests stop skipping silently.
 
 ## General vs MJ
 

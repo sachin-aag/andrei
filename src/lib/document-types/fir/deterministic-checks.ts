@@ -13,6 +13,7 @@ import {
 } from "./sections";
 import {
   parseFirActionMatrix,
+  parseFirAttachmentMatrix,
   parseFirEffectivenessMatrix,
   parseFirHistoricMatrix,
   parseFirHumanErrorMatrix,
@@ -504,3 +505,128 @@ export type FirCheck = (ctx: EvaluationContext) => {
 };
 
 export type { FirBatchDisposition, FirInvestigationTool };
+
+// ----------------------------------------------------------------- attachments
+
+/** `Attachment 4`, `Attachment No. 4`, `Attachment-4`, `Attachments 2 and 3`. */
+const ATTACHMENT_REFERENCE_RE =
+  /\battachments?\s*(?:no\.?|number)?\s*[-–:]?\s*(\d{1,3})(?:\s*(?:,|and|&|to|–|-)\s*(\d{1,3}))*/gi;
+
+function attachmentNumbersInText(text: string): number[] {
+  const found: number[] = [];
+  for (const match of text.matchAll(ATTACHMENT_REFERENCE_RE)) {
+    // The regex's repeated group only keeps the last capture, so re-scan the
+    // matched span for every number in a list like "Attachments 2, 3 and 4".
+    for (const token of match[0].match(/\d{1,3}/g) ?? []) {
+      const value = Number(token);
+      if (Number.isInteger(value) && value >= 1) found.push(value);
+    }
+  }
+  return [...new Set(found)].sort((a, b) => a - b);
+}
+
+/** The numeric part of an "Attachment No." cell — `04`, `Attachment 4`, `4.`. */
+function attachmentNumber(cell: string): number | null {
+  const match = /\d{1,3}/.exec(cell);
+  if (!match) return null;
+  const value = Number(match[0]);
+  return Number.isInteger(value) && value >= 1 ? value : null;
+}
+
+/**
+ * The attachment list has to agree with the body.
+ *
+ * ERF/26/022 numbered two different documents "Attachment 2" and cited an
+ * Attachment 12 that was never listed. Neither is a judgement call, and
+ * neither is something a reviewer reliably catches by eye across twenty
+ * sections — so it is checked rather than asked about.
+ */
+export function checkAttachmentListConsistent(ctx: EvaluationContext) {
+  const parsed = parseFirAttachmentMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+
+  const problems: string[] = [];
+  const listed: number[] = [];
+  const duplicates = new Set<number>();
+  const seen = new Set<number>();
+
+  for (const row of parsed.rows) {
+    const number = attachmentNumber(row.attachmentNo);
+    if (number == null) {
+      if (row.description.trim()) {
+        problems.push(
+          `An attachment row ("${row.description.trim().slice(0, 40)}") has no attachment number`
+        );
+      }
+      continue;
+    }
+    if (seen.has(number)) duplicates.add(number);
+    seen.add(number);
+    listed.push(number);
+    if (!row.description.trim()) {
+      problems.push(`Attachment ${number} has no description`);
+    }
+  }
+
+  if (duplicates.size > 0) {
+    problems.push(
+      `Two rows share the same number: Attachment ${[...duplicates]
+        .sort((a, b) => a - b)
+        .join(", Attachment ")}`
+    );
+  }
+
+  if (listed.length === 0) {
+    problems.push("List the attachments referenced in the report");
+  } else {
+    const sorted = [...new Set(listed)].sort((a, b) => a - b);
+    const gaps: number[] = [];
+    for (let n = 1; n <= sorted[sorted.length - 1]!; n += 1) {
+      if (!seen.has(n)) gaps.push(n);
+    }
+    if (gaps.length > 0) {
+      problems.push(
+        `The numbering skips ${gaps.map((n) => `Attachment ${n}`).join(", ")}`
+      );
+    }
+  }
+
+  const referenced = new Set<number>();
+  for (const content of Object.values(ctx.dependencies ?? {})) {
+    for (const number of attachmentNumbersInText(plainText(content))) {
+      referenced.add(number);
+    }
+  }
+  const missing = [...referenced]
+    .filter((number) => !seen.has(number))
+    .sort((a, b) => a - b);
+  if (missing.length > 0) {
+    problems.push(
+      `The report cites ${missing
+        .map((n) => `Attachment ${n}`)
+        .join(", ")}, which ${missing.length === 1 ? "is" : "are"} not in this list`
+    );
+  }
+
+  // A duplicate, a gap, or a citation with no entry is a defect. Only when
+  // none of those are present does an uncited-but-listed attachment downgrade
+  // the verdict — an attachment can legitimately be enclosed for completeness.
+  if (problems.length > 0) return listProblems(problems, "");
+
+  const unreferenced = listed
+    .filter((number) => !referenced.has(number))
+    .sort((a, b) => a - b);
+  if (unreferenced.length > 0 && referenced.size > 0) {
+    return verdict(
+      "partially_met",
+      `${unreferenced
+        .map((n) => `Attachment ${n}`)
+        .join(", ")} ${unreferenced.length === 1 ? "is" : "are"} listed but never cited in the report`
+    );
+  }
+
+  return listProblems(
+    problems,
+    `${listed.length} attachment(s) listed, every citation matched`
+  );
+}

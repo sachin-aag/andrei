@@ -8,6 +8,7 @@ import type { EvaluationContext } from "./types";
 import {
   EMPTY_FIR_CONTENT,
   FIR_ACTION_HEADERS,
+  FIR_ATTACHMENT_HEADERS,
   FIR_CHRONOLOGY_HEADERS,
   FIR_TEAM_HEADERS,
   FIR_CAPA_EFFECTIVENESS_HEADERS,
@@ -17,6 +18,7 @@ import {
 } from "./fir/sections";
 import {
   checkActionsOwnedAndDated,
+  checkAttachmentListConsistent,
   checkBatchDisposition,
   checkCapaEffectiveness,
   checkHistoricReview,
@@ -815,5 +817,116 @@ describe("FIR table structures", () => {
       table: table(FIR_TEAM_HEADERS, [["Sachin Kumbhar", ""]]),
     };
     expect(checkInvestigationTeam(ctx(content)).status).toBe("not_met");
+  });
+});
+
+// --------------------------------------------------------------- attachments
+
+describe("checkAttachmentListConsistent", () => {
+  const HEADERS = FIR_ATTACHMENT_HEADERS;
+
+  function attachments(rows: string[][]) {
+    return { table: table(HEADERS, rows) };
+  }
+
+  it("passes a list whose numbering matches every citation", () => {
+    const result = checkAttachmentListConsistent(
+      ctx(
+        attachments([
+          ["1", "Trend print RIG25014", "TP-001", "76"],
+          ["2", "Calibration certificate", "CAL-221", "2"],
+        ]),
+        {
+          fir_event_description: doc(
+            "The trend print is enclosed as Attachment 1."
+          ),
+          fir_impact_assessment: doc("Calibration is Attachment 2."),
+        }
+      )
+    );
+    expect(result.status).toBe("met");
+  });
+
+  it("catches the same number used for two documents", () => {
+    // ERF/26/022 numbered two different documents "Attachment 2".
+    const result = checkAttachmentListConsistent(
+      ctx(
+        attachments([
+          ["1", "Trend print", "TP-001", "76"],
+          ["2", "Calibration certificate", "CAL-221", "2"],
+          ["2", "Batch record extract", "BMR-88", "4"],
+        ]),
+        { fir_event_description: doc("See Attachment 1 and Attachment 2.") }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/share the same number/i);
+  });
+
+  it("catches a citation to an attachment that was never listed", () => {
+    // ERF/26/022 cited an Attachment 12 that did not exist.
+    const result = checkAttachmentListConsistent(
+      ctx(attachments([["1", "Trend print", "TP-001", "76"]]), {
+        fir_investigation_details: doc(
+          "The maintenance log is attached as Attachment 12."
+        ),
+      })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/Attachment 12/);
+  });
+
+  it("reads every number in a list of citations", () => {
+    const result = checkAttachmentListConsistent(
+      ctx(attachments([["1", "Trend print", "TP-001", "76"]]), {
+        fir_investigation_details: doc("Refer to Attachments 1, 2 and 3."),
+      })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/Attachment 2, Attachment 3/);
+  });
+
+  it("catches a gap in the numbering", () => {
+    const result = checkAttachmentListConsistent(
+      ctx(
+        attachments([
+          ["1", "Trend print", "TP-001", "76"],
+          ["3", "Calibration certificate", "CAL-221", "2"],
+        ]),
+        { fir_event_description: doc("See Attachment 1 and Attachment 3.") }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/skips Attachment 2/);
+  });
+
+  it("flags a listed attachment the report never cites, without failing it", () => {
+    const result = checkAttachmentListConsistent(
+      ctx(
+        attachments([
+          ["1", "Trend print", "TP-001", "76"],
+          ["2", "Calibration certificate", "CAL-221", "2"],
+        ]),
+        { fir_event_description: doc("See Attachment 1.") }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/Attachment 2 is listed but never cited/);
+  });
+
+  it("asks for a description when a row has none", () => {
+    const result = checkAttachmentListConsistent(
+      ctx(attachments([["1", "", "TP-001", "76"]]), {
+        fir_event_description: doc("See Attachment 1."),
+      })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/no description/);
+  });
+
+  it("asks for attachments when the list is empty", () => {
+    const result = checkAttachmentListConsistent(ctx(attachments([]), {}));
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/List the attachments/);
   });
 });

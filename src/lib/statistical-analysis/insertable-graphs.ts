@@ -3,11 +3,13 @@ import {
   CAPABILITY_SIXPACK_NORMAL,
   HISTOGRAM,
   MEASUREMENT_SCATTER,
+  TIME_SERIES,
   XY_SCATTER,
   isBoxplotAnalysis,
   isHistogramAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
+  isTimeSeriesAnalysis,
   isXyScatterAnalysis,
   type AnalysisKind,
   type StatisticalAnalysisSummary,
@@ -19,7 +21,8 @@ export function isGraphAnalysisKind(kind: AnalysisKind): boolean {
     kind === MEASUREMENT_SCATTER ||
     kind === XY_SCATTER ||
     kind === BOXPLOT ||
-    kind === HISTOGRAM
+    kind === HISTOGRAM ||
+    kind === TIME_SERIES
   );
 }
 
@@ -38,7 +41,8 @@ export function isInsertableGraphAnalysis(
       isScatterAnalysis(analysis) ||
       isXyScatterAnalysis(analysis) ||
       isBoxplotAnalysis(analysis) ||
-      isHistogramAnalysis(analysis)) &&
+      isHistogramAnalysis(analysis) ||
+      isTimeSeriesAnalysis(analysis)) &&
     analysis.previewImage != null
   );
 }

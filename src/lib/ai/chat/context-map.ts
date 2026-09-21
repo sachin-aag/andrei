@@ -27,7 +27,11 @@ import {
   isGraphAnalysisKind,
   isInsertableGraphAnalysis,
 } from "@/lib/statistical-analysis/insertable-graphs";
-import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
+import {
+  isTimeSeriesAnalysis,
+  type StatisticalAnalysisSummary,
+} from "@/lib/statistical-analysis/types";
+import { summarizeTimeSeriesForPrompt } from "@/lib/statistical-analysis/excursion-comparison";
 
 export type ContextMapReport = {
   documentNo: string;
@@ -226,8 +230,15 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
       const previewNote = isInsertableGraphAnalysis(plot)
         ? ""
         : " — no preview yet; open it in Analytics first";
+      // A time series carries findings, not just a picture: the excursion runs
+      // are what the report has to state, and they are computed values the
+      // grounding gate will accept (analysis-evidence.ts). Listing them here
+      // saves walking hundreds of instrument pages to re-derive them by eye.
+      const findings = isTimeSeriesAnalysis(plot)
+        ? ` — ${summarizeTimeSeriesForPrompt(plot)}`
+        : "";
       lines.push(
-        `- ${quotePromptMetadata(title)} [${plot.id}] kind=${plot.kind}${previewNote}`
+        `- ${quotePromptMetadata(title)} [${plot.id}] kind=${plot.kind}${previewNote}${findings}`
       );
     }
   }
