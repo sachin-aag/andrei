@@ -55,6 +55,13 @@ const MIN_COLUMNS = 3;
 /** Numeric columns are what make a table worth extracting. */
 const MIN_NUMERIC_COLUMNS = 1;
 
+/**
+ * Minimum share of a row that must be numeric or temporal. Below this the
+ * "row" is prose that happens to contain a figure — a page footer, a revision
+ * line, a sentence with a date in it.
+ */
+const DATA_CELL_RATIO = 0.5;
+
 const DATE_RE = /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/;
 const TIME_RE = /^\d{1,2}:\d{2}(:\d{2})?$/;
 // Accepts 1000.0000, -45.0, 1,234.5, +3, 12%. Rejects bare "-" and "1.2.3".
@@ -114,9 +121,18 @@ type Candidate = {
 
 function isDataShape(shape: readonly CellType[]): boolean {
   if (shape.length < MIN_COLUMNS) return false;
+  const numeric = shape.filter((t) => t === "number").length;
   // At least one genuinely numeric cell, so a repeated header or units line
   // never opens a group of its own.
-  return shape.filter((t) => t === "number").length >= MIN_NUMERIC_COLUMNS;
+  if (numeric < MIN_NUMERIC_COLUMNS) return false;
+  // A record is mostly data. A running footer such as
+  // "Requirements Document Template, 731-00003 Rev. A Page 1 of 49" repeats on
+  // every page and carries two numbers, so a bare "has a number" test detects
+  // it as a 49-row table. Require data cells to be at least half the row.
+  const structural = shape.filter(
+    (t) => t === "date" || t === "time"
+  ).length;
+  return (numeric + structural) / shape.length >= DATA_CELL_RATIO;
 }
 
 /**

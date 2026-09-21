@@ -22,6 +22,7 @@
     "build-fir-template": "node scripts/build-mj-fir-template.mjs",
     "extract-fir-chrome": "node scripts/extract-mj-fir-chrome.mjs",
     "preview-fir-docx": "node scripts/preview-fir-docx.mjs",
+    "check-table-extract": "tsx scripts/check-table-extract.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/drizzle-migrate.ts",
     "db:ensure": "npm run db:migrate-suggested-fix && drizzle-kit push",

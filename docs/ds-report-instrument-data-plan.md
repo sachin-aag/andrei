@@ -116,6 +116,30 @@ implicitly.
 
 ## Pending
 
+### Before 1.2 — run the real-path check
+
+`pnpm check-table-extract <file.pdf>` runs `readPdfTextLayer` (what ingest
+actually uses) into `detectTables` and reports what comes out. **Run it against
+the eight trend prints before writing storage code.** The parser was validated
+against Google Drive's text extraction, which is not the same extractor.
+
+Two things that check already surfaced on an unrelated 49-page PDF:
+
+- **A single thin page flips the whole document to the vision path.**
+  `readPdfTextLayer.usable` requires *every* page to clear 180 characters. One
+  sparse page — a divider, a figure page, a signature page — makes `usable`
+  false, ingest takes the vision branch, and the table parser never runs even
+  though 48 pages were perfectly extractable. Decide before 1.2 whether the
+  parser should run per-page on `layout === "mixed"` rather than only when the
+  whole document is usable. **This is the most likely reason Phase 1 silently
+  does nothing in production.**
+- **Running footers were detected as tables.** "Requirements Document Template,
+  731-00003 Rev. A Page 1 of 49" repeats on every page and carries two numbers,
+  so a bare has-a-number test read it as a 49-row table — which would have gone
+  straight into `document_tables` as junk. Fixed by requiring numeric plus
+  temporal cells to be at least half the row (`DATA_CELL_RATIO`). Keep a
+  regression test if you touch `isDataShape`.
+
 ### Phase 1.2 — structured storage
 
 `document_tables` (attachment, page span, column schema) and
@@ -229,6 +253,8 @@ and the grounding gate are platform layers.
   committing.
 - Layout verification so far is **LibreOffice**, not Word. Open an export in
   Word before MJ does.
+- The parser was validated on Google Drive's text extraction, not unpdf's. Use
+  `pnpm check-table-extract` to compare, and do not assume they agree.
 - **The report being reproduced has defects.** Four wrong numbers, two
   undisclosed excursions. A correct build will disagree with it — 18 readings
   where it says 16. Build so the durations come out right, not so they match the

@@ -172,3 +172,30 @@ describe.skipIf(realFiles.length === 0)("real lyophilizer prints", () => {
     }
   });
 });
+
+describe("prose that merely contains numbers", () => {
+  it("does not detect a running footer as a table", () => {
+    // Found by running the real readPdfTextLayer over a 49-page requirements
+    // document: the repeating footer carries "Page 1 of 49", which a bare
+    // has-a-number test read as a 49-row, 10-column table.
+    const pages: ExtractablePage[] = Array.from({ length: 49 }, (_, i) => ({
+      pageNumber: i + 1,
+      text: `Requirements Document Template, 731-00003 Rev. A Page ${i + 1} of 49`,
+    }));
+    expect(detectTables(pages)).toEqual([]);
+  });
+
+  it("still accepts a record whose row is mostly data", () => {
+    const pages: ExtractablePage[] = [
+      {
+        pageNumber: 1,
+        text: [
+          "ID VALUE LIMIT RESULT",
+          ...Array.from({ length: 10 }, (_, i) => `R-${i} ${i}.5 6.0 1`),
+        ].join("\n"),
+      },
+    ];
+    const [table] = detectTables(pages);
+    expect(table?.rows).toHaveLength(10);
+  });
+});
