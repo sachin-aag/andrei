@@ -20,6 +20,7 @@ import {
   normalizeRowSelection,
 } from "@/lib/statistical-analysis/row-selection";
 import { timeSeriesOverlays } from "@/lib/statistical-analysis/types";
+import { worstExcursion } from "@/lib/statistical-analysis/time-series";
 import type {
   ReportAnalyticsView,
   TimeSeriesAnalysisSummary,
@@ -413,13 +414,31 @@ function ExcursionTable({
       </p>
     );
   }
+  const worst = worstExcursion(excursions);
+  const brief = excursions.filter((run) => run.readings === 1).length;
   return (
     <div className="overflow-x-auto">
       <p className="pb-2 text-xs text-[var(--muted-foreground)]">
         {excursions.length} excursion{excursions.length === 1 ? "" : "s"} ·{" "}
         {excursionReadings} out-of-band reading
         {excursionReadings === 1 ? "" : "s"}
+        {brief > 0 ? ` · ${brief} of one reading` : ""}
       </p>
+      {/* The table below is chronological, which is right for reading a cycle
+          and wrong for finding its worst moment — that run is often last. */}
+      {worst && excursions.length > 1 ? (
+        <p
+          className="pb-2 text-xs font-medium text-[var(--foreground)]"
+          data-testid="time-series-worst-excursion"
+        >
+          Longest: {worst.startLabel} → {worst.endLabel} · {worst.readings}{" "}
+          readings
+          {worst.elapsedMinutes == null ? "" : ` / ${worst.elapsedMinutes} min`}{" "}
+          · {worst.direction} to{" "}
+          {formatStat(worst.direction === "high" ? worst.max : worst.min)}
+          {worst.condition ? ` at ${worst.condition}` : ""}
+        </p>
+      ) : null}
       <table
         data-testid="time-series-excursions"
         className="w-full min-w-[46rem] border-collapse text-sm"

@@ -93,7 +93,9 @@ import {
 import { suggestTimeSeriesColumns } from "./column-roles";
 import {
   detectSetpointColumn,
+  rankExcursionsBySeverity,
   steppedSetpointWarning,
+  worstExcursion,
 } from "./time-series";
 import {
   applyManageWorksheet,
@@ -890,6 +892,7 @@ function timeSeriesToolResult(
           : " Search the attachments for the acceptance range, then re-run with lsl/usl — or ask the engineer.")
     );
   }
+  const worst = worstExcursion(analysis.results.excursions);
   const stepped = steppedSetpointWarning(analytics.worksheet, analysis.config);
   if (stepped) {
     warnings.push(
@@ -918,8 +921,12 @@ function timeSeriesToolResult(
     decimated: analysis.results.decimated,
     excursionCount: analysis.results.excursions.length,
     excursionReadings: analysis.results.excursionReadings,
-    excursions: analysis.results.excursions
+    // Most severe first, then back into time order. Taking the first N
+    // chronologically drops the longest run when it happens late — which is
+    // exactly where a cycle's worst excursion tends to be.
+    excursions: rankExcursionsBySeverity(analysis.results.excursions)
       .slice(0, MAX_REPORTED_EXCURSIONS)
+      .sort((a, b) => a.startRow - b.startRow)
       .map((run) => ({
         start: run.startLabel,
         end: run.endLabel,
@@ -932,6 +939,24 @@ function timeSeriesToolResult(
         lsl: run.lsl,
         usl: run.usl,
       })),
+    excursionsOmitted: Math.max(
+      0,
+      analysis.results.excursions.length - MAX_REPORTED_EXCURSIONS
+    ),
+    ...(worst
+      ? {
+          longestExcursion: {
+            start: worst.startLabel,
+            end: worst.endLabel,
+            readings: worst.readings,
+            elapsedMinutes: worst.elapsedMinutes,
+            direction: worst.direction,
+            min: worst.min,
+            max: worst.max,
+            condition: worst.condition,
+          },
+        }
+      : {}),
     analysisCount: analytics.analyses.length,
     stale: analysis.stale,
     openResultsTab: true,

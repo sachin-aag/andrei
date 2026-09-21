@@ -3,11 +3,14 @@ import {
   computeTimeSeries,
   parseTimestampCell,
   detectSetpointColumn,
+  rankExcursionsBySeverity,
   steppedSetpointWarning,
+  worstExcursion,
 } from "./time-series";
 import {
   MAX_TIME_SERIES_POINTS,
   type TimeSeriesConfig,
+  type TimeSeriesExcursion,
   type WorksheetData,
 } from "./types";
 import { createEmptyWorksheet } from "./worksheet";
@@ -504,5 +507,46 @@ describe("detectSetpointColumn", () => {
     );
     expect(found?.columnName).toBe("VAC2");
     expect(found?.values).toEqual(["250.0", "500.0", "600.0", "800.0"]);
+  });
+});
+
+describe("rankExcursionsBySeverity", () => {
+  function runOf(readings: number, startRow: number, max = 700): TimeSeriesExcursion {
+    return {
+      startLabel: `r${startRow}`,
+      endLabel: `r${startRow + readings}`,
+      startRow,
+      endRow: startRow + readings,
+      readings,
+      elapsedMs: readings * 60_000,
+      elapsedMinutes: readings,
+      elapsedClock: null,
+      min: 500,
+      max,
+      direction: "high",
+      lsl: 380,
+      usl: 620,
+      condition: "500",
+    };
+  }
+
+  it("puts the longest run first however late it happened", () => {
+    // RIG23001: 27 runs, 18 of them single readings, and the hundred-minute
+    // excursion at position 26. A first-N cap keeps only the blips.
+    const noise = Array.from({ length: 25 }, (_, i) => runOf(1, i * 10));
+    const real = runOf(101, 900);
+    const ranked = rankExcursionsBySeverity([...noise, real]);
+    expect(ranked[0]).toBe(real);
+    expect(worstExcursion([...noise, real])).toBe(real);
+  });
+
+  it("breaks a tie on how far outside the band the run went", () => {
+    const mild = runOf(3, 0, 640);
+    const severe = runOf(3, 50, 900);
+    expect(rankExcursionsBySeverity([mild, severe])[0]).toBe(severe);
+  });
+
+  it("returns null for a cycle with no excursion", () => {
+    expect(worstExcursion([])).toBeNull();
   });
 });

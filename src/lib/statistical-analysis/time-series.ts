@@ -591,3 +591,36 @@ export function steppedSetpointWarning(
   if (config.lsl == null && config.usl == null) return null;
   return detectSetpointColumn(worksheet, config);
 }
+
+/**
+ * The runs worth reporting when there are too many to list, most severe first.
+ *
+ * Chronological order is right for reading a cycle and wrong for truncating
+ * one. RIG23001 has 27 runs, 18 of them single readings of control noise, and
+ * its hundred-minute excursion falls at position 26 — a first-N cap drops the
+ * only one that matters and leaves a tidy list of blips.
+ *
+ * Duration ranks first because that is what an investigation asks about;
+ * depth breaks ties, so a brief severe spike still outranks a brief mild one.
+ */
+export function rankExcursionsBySeverity(
+  excursions: readonly TimeSeriesExcursion[]
+): TimeSeriesExcursion[] {
+  return [...excursions].sort((a, b) => {
+    if (b.readings !== a.readings) return b.readings - a.readings;
+    return depthOutsideBand(b) - depthOutsideBand(a);
+  });
+}
+
+function depthOutsideBand(run: TimeSeriesExcursion): number {
+  const below = run.lsl != null ? run.lsl - run.min : 0;
+  const above = run.usl != null ? run.max - run.usl : 0;
+  return Math.max(below, above, 0);
+}
+
+/** The single run an investigation leads with, or null when there were none. */
+export function worstExcursion(
+  excursions: readonly TimeSeriesExcursion[]
+): TimeSeriesExcursion | null {
+  return rankExcursionsBySeverity(excursions)[0] ?? null;
+}

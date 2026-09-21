@@ -3,6 +3,7 @@ import {
   type StatisticalAnalysisSummary,
   type TimeSeriesAnalysisSummary,
 } from "./types";
+import { rankExcursionsBySeverity } from "./time-series";
 
 /**
  * Every out-of-band run across every saved time series on a report, as one
@@ -114,7 +115,9 @@ export function summarizeTimeSeriesForPrompt(
   if (results.excursions.length === 0) {
     return `${results.n} readings of ${config.columnName} (${results.judgedReadings} assessed against limits), no excursion`;
   }
-  const runs = results.excursions
+  // Severity, not chronology: a cycle's worst run is often its last, and this
+  // line is what Document chat reads before drafting the report.
+  const runs = rankExcursionsBySeverity(results.excursions)
     .slice(0, 6)
     .map(
       (run) =>
