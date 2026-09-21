@@ -158,3 +158,29 @@ export async function plotImagesForExport(
   }
   return renderAnalysisPlotImages(analysis);
 }
+
+/**
+ * A figure for document insert when nobody has opened the plot in Analytics.
+ *
+ * The preview is captured from the rendered DOM, so a plot created by chat has
+ * none until a human clicks it — which meant eight headless plots were eight
+ * figures that could not be inserted, for no reason the engineer could see.
+ * Every analysis kind has a server-side renderer already (it is what puts
+ * plots into a DOCX export), so use it and leave the captured preview as the
+ * preferred path rather than the only one.
+ *
+ * Null when canvas is unavailable, which is not an error: the caller falls
+ * back to asking the engineer to open the plot.
+ */
+export async function renderAnalyticsInsertImage(
+  analysis: StatisticalAnalysisSummary
+): Promise<{ dataUrl: string; widthPx: number; heightPx: number } | null> {
+  const images = await renderAnalysisPlotImages(analysis);
+  const first = images[0];
+  if (!first) return null;
+  return {
+    dataUrl: `data:image/png;base64,${first.buffer.toString("base64")}`,
+    widthPx: first.width,
+    heightPx: first.height,
+  };
+}

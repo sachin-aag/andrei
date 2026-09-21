@@ -3425,7 +3425,7 @@ describe("buildChatTools propose edits", () => {
     expect(dbInsertMock).toHaveBeenCalled();
   });
 
-  it("refuses an Analytics plot with no captured preview", async () => {
+  it("falls back to a server render when a plot has no captured preview", async () => {
     getReportAnalyticsMock.mockResolvedValue({
       analyses: [
         {
@@ -3470,8 +3470,13 @@ describe("buildChatTools propose edits", () => {
       },
       TEST_TOOL_OPTIONS
     );
+    // A missing preview is no longer a dead end: insert_image renders the plot
+    // server-side first. It refuses only when that also fails — as here, where
+    // canvas is unavailable under the test runner.
     expect(result).toMatchObject({ status: "image_not_found" });
-    expect((result as { message: string }).message).toContain("no captured preview");
+    expect((result as { message: string }).message).toContain(
+      "could not be rendered as a figure"
+    );
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 

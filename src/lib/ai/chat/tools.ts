@@ -42,6 +42,7 @@ import {
 import {
   ALREADY_LISTED_PLOTS_COPY,
   latestUserMessageText,
+  analyticsImageFromRender,
   resolveAnalyticsImage,
   resolveNamedAnalyticsPlot,
   resolveChatImage,
@@ -51,6 +52,7 @@ import {
 } from "@/lib/ai/chat/insert-image";
 import { executePlotMeasurements } from "@/lib/charts/plot-measurements";
 import { getReportAnalytics } from "@/lib/statistical-analysis/store";
+import { renderAnalyticsInsertImage } from "@/lib/statistical-analysis/render-analysis-plots";
 import {
   analysisEvidenceForReport,
   type AnalysisEvidence,
@@ -2687,7 +2689,7 @@ export function buildChatTools(opts: {
         let sameFieldSectionSource = false;
         let resolved:
           | { ok: true; image: SuggestionImageInsert }
-          | { ok: false; message: string };
+          | { ok: false; message: string; reason?: "no_preview" };
         if (source.source === "chat") {
           resolved = resolveChatImage(messages, source.index);
         } else if (source.source === "analytics") {
@@ -2711,6 +2713,21 @@ export function buildChatTools(opts: {
           }
           const analysis = analyses.find((item) => item.id === named.analysisId);
           resolved = resolveAnalyticsImage(analysis, named.analysisId);
+          // A plot created by chat has no captured preview until someone opens
+          // it in Analytics. Render it here instead of making the engineer go
+          // and click eight figures.
+          if (!resolved.ok && resolved.reason === "no_preview" && analysis) {
+            const rendered = await renderAnalyticsInsertImage(analysis);
+            const image = rendered
+              ? analyticsImageFromRender(analysis, rendered)
+              : null;
+            resolved = image
+              ? { ok: true, image }
+              : {
+                  ok: false,
+                  message: `'${analysis.title}' could not be rendered as a figure. Open it in Analytics so the preview can be saved, then retry insert_image with source=analytics.`,
+                };
+          }
         } else {
           const locator = resolveSectionImageLocator({
             destSection: section,

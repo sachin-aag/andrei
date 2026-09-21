@@ -227,9 +227,9 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     );
     for (const plot of plots) {
       const title = sanitizePromptMetadata(plot.title, 180) || "untitled plot";
-      const previewNote = isInsertableGraphAnalysis(plot)
-        ? ""
-        : " — no preview yet; open it in Analytics first";
+      // Every kind renders server-side on demand now, so a plot nobody has
+      // opened is still insertable.
+      const previewNote = "";
       // A time series carries findings, not just a picture: the excursion runs
       // are what the report has to state, and they are computed values the
       // grounding gate will accept (analysis-evidence.ts). Listing them here
