@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import { timeSeriesFallbackTitle } from "@/lib/statistical-analysis/types";
+import { suggestTimeSeriesColumns } from "@/lib/statistical-analysis/column-roles";
 import {
   parseTimestampCell,
   timeSeriesLimitsFromColumnSpecs,
@@ -177,16 +178,22 @@ export function TimeSeriesDialog({
     { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
   );
   const [columnId, setColumnId] = useState(defaultColumnId);
+  // Same inference the chat tool uses, so the dialog and a prompt agree about
+  // which column is the clock and which carries the setpoint.
+  const suggested = suggestTimeSeriesColumns(
+    sheets.flatMap((sheet) => sheet.columns),
+    { measurementHint: findColumn(worksheet, defaultColumnId)?.name }
+  );
   const [timeColumnId, setTimeColumnId] = useState(
-    defaultTimeColumnId || guessTimeColumnId(worksheet, defaultColumnId)
+    defaultTimeColumnId || suggested.timeColumnId || ""
   );
   const [clockColumnId, setClockColumnId] = useState(
-    defaultClockColumnId ?? guessClockColumnId(worksheet, defaultColumnId)
+    defaultClockColumnId ?? suggested.clockColumnId ?? ""
   );
   const [lsl, setLsl] = useState(initialLimits.lsl);
   const [usl, setUsl] = useState(initialLimits.usl);
   const [conditionColumnId, setConditionColumnId] = useState(
-    defaultConditionColumnId ?? ""
+    defaultConditionColumnId ?? (editMode ? "" : (suggested.conditionColumnId ?? ""))
   );
   const [bandText, setBandText] = useState(
     defaultBands ? formatBandLines(defaultBands) : ""
@@ -218,6 +225,24 @@ export function TimeSeriesDialog({
     : 0;
   const rowLabel = formatRowSelection(rowSelection);
   const parsedBands = parseBandLines(bandText);
+  const conditionColumn = conditionColumnId
+    ? findColumn(worksheet, conditionColumnId)
+    : undefined;
+  // Knowing which values the column takes is the hard part of writing bands —
+  // the engineer should not have to scroll 2,000 rows to find out.
+  const conditionValues = conditionColumn
+    ? [
+        ...new Set(
+          conditionColumn.values
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+        ),
+      ]
+        .sort((a, b) => Number(a) - Number(b) || a.localeCompare(b))
+        .slice(0, 16)
+    : [];
+  const bandedValues = new Set(parsedBands.bands.map((band) => band.when.trim()));
+  const unbanded = conditionValues.filter((value) => !bandedValues.has(value));
   const suggestedTitle = selectedColumn
     ? timeSeriesFallbackTitle(selectedColumn.name, rowLabel)
     : "Time series title";
@@ -235,6 +260,12 @@ export function TimeSeriesDialog({
   );
 
   const bandsInvalid = parsedBands.invalid.length > 0;
+  // Mirrors `judgedReadings === 0` on the server: a plot with no limits is a
+  // legitimate thing to want, but it must never look like a pass.
+  const nothingWillBeJudged =
+    parseOptionalNumber(lsl) == null &&
+    parseOptionalNumber(usl) == null &&
+    !(conditionColumnId && parsedBands.bands.length > 0);
   const bandsNeedColumn = parsedBands.bands.length > 0 && !conditionColumnId;
 
   return (
@@ -488,6 +519,17 @@ export function TimeSeriesDialog({
                   ? ` ${parsedBands.bands.length} band${parsedBands.bands.length === 1 ? "" : "s"} read.`
                   : ""}
               </p>
+              {conditionValues.length > 0 ? (
+                <p
+                  className="text-xs text-[var(--muted-foreground)]"
+                  data-testid="time-series-condition-values"
+                >
+                  {conditionColumn?.name} takes: {conditionValues.join(", ")}.
+                  {unbanded.length > 0
+                    ? ` Rows at ${unbanded.join(", ")} have no band and will not be assessed.`
+                    : ""}
+                </p>
+              ) : null}
               {bandsInvalid ? (
                 <p className="text-xs text-[var(--destructive)]" role="alert">
                   Could not read: {parsedBands.invalid.join("; ")}
@@ -527,6 +569,17 @@ export function TimeSeriesDialog({
             </div>
           </div>
 
+          {nothingWillBeJudged ? (
+            <p
+              className="text-sm text-[var(--destructive)]"
+              role="alert"
+              data-testid="time-series-no-limits-warning"
+            >
+              No acceptance limits set, so excursions will not be assessed —
+              the result will say so rather than reporting none. Set LSL/USL,
+              or a column the limits depend on and its bands.
+            </p>
+          ) : null}
           {bandsNeedColumn ? (
             <p className="text-sm text-[var(--destructive)]" role="alert">
               Choose the column those bands depend on.
@@ -614,37 +667,4 @@ function countReadableTimestamps(
     if (parseTimestampCell(dates[i] ?? "", clocks[i]) !== null) count += 1;
   }
   return count;
-}
-
-/** First column whose filled cells read as dates — usually DATE, next to the values. */
-function guessTimeColumnId(worksheet: WorksheetData, exceptId: string): string {
-  return (
-    guessColumnId(worksheet, exceptId, (cell) =>
-      /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$|^\d{4}-\d{2}-\d{2}/.test(cell)
-    ) ?? ""
-  );
-}
-
-function guessClockColumnId(worksheet: WorksheetData, exceptId: string): string {
-  return (
-    guessColumnId(worksheet, exceptId, (cell) =>
-      /^\d{1,2}:\d{2}(:\d{2})?$/.test(cell)
-    ) ?? ""
-  );
-}
-
-function guessColumnId(
-  worksheet: WorksheetData,
-  exceptId: string,
-  looksRight: (cell: string) => boolean
-): string | null {
-  for (const sheet of dataSheets(worksheet)) {
-    for (const column of sheet.columns) {
-      if (column.id === exceptId) continue;
-      const filled = column.values.filter((value) => value.trim()).slice(0, 5);
-      if (filled.length === 0) continue;
-      if (filled.every((value) => looksRight(value.trim()))) return column.id;
-    }
-  }
-  return null;
 }

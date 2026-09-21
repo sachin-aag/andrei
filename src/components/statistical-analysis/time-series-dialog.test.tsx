@@ -47,3 +47,27 @@ describe("parseBandLines", () => {
     expect(parseBandLines(formatBandLines(bands)).bands).toEqual(bands);
   });
 });
+
+describe("band entry against a condition column", () => {
+  it("accepts the four lyophilizer setpoint bands", () => {
+    const parsed = parseBandLines(
+      "800 650 950\n600 480 720\n500 380 620\n250 200 600"
+    );
+    expect(parsed.invalid).toEqual([]);
+    expect(parsed.bands.map((band) => band.when)).toEqual([
+      "800",
+      "600",
+      "500",
+      "250",
+    ]);
+    // The 250 band is deliberately asymmetric — it is a per-step value from a
+    // document, not a formula around the setpoint.
+    expect(parsed.bands.at(-1)).toEqual({ when: "250", lsl: 200, usl: 600 });
+  });
+
+  it("keeps a decimal selector, since a setpoint column prints 800.0", () => {
+    expect(parseBandLines("800.0 650 950").bands).toEqual([
+      { when: "800.0", lsl: 650, usl: 950 },
+    ]);
+  });
+});
