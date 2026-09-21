@@ -183,6 +183,9 @@ full factorial. Zero categories is one box of all Y. Empty category cells
 are labeled `(blank)`. Agent Analytics chat can create a boxplot or edit
 an existing one with `analysisId` (including `showMeanLine`). Ask mode cannot. Time series is not
 supported.
+Right-click a data-sheet tab to rename it, or to delete it when another sheet
+remains. Double-click the tab, or Data → Rename data sheet, also renames the
+active sheet.
 Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
 assistant write; Agent `write_column` / `manage_worksheet` run one at a time
 per report and re-apply onto the latest sheet on 409 (parallel column dumps

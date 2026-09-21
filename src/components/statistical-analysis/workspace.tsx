@@ -88,6 +88,7 @@ import {
   WorksheetGrid,
   type ColumnMenuAction,
 } from "@/components/statistical-analysis/worksheet-grid";
+import { WorksheetSheetTabs } from "@/components/statistical-analysis/worksheet-sheet-tabs";
 import { WorkspaceMenubar } from "@/components/statistical-analysis/workspace-menubar";
 
 /** Coalesce mid-turn grid reloads so parallel column writes paint once. */
@@ -205,7 +206,6 @@ export function StatisticalWorkspace({
   const [recomputingAnalysisId, setRecomputingAnalysisId] = useState<string | null>(
     null
   );
-  const sheetNameInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [version, setVersion] = useState(1);
@@ -573,10 +573,6 @@ export function StatisticalWorkspace({
     [applyAnalytics, flush, readOnly, reportId]
   );
 
-  useEffect(() => {
-    if (editingSheetId !== null) sheetNameInputRef.current?.focus();
-  }, [editingSheetId]);
-
   const openAnalyzeForColumn = async (columnId: string) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
@@ -807,72 +803,27 @@ export function StatisticalWorkspace({
           className="mt-0 min-h-0 flex-1 overflow-hidden"
         >
           <div className="flex h-full min-h-0 flex-col">
-            <div
-              data-testid="worksheet-sheet-tabs"
-              className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-4 py-1.5"
-            >
-              {worksheet.sheets.map((sheet) => {
-                const active = worksheet.activeSheetId === sheet.id;
-                const editing = editingSheetId === sheet.id;
-                return editing ? (
-                  <input
-                    key={sheet.id}
-                    ref={sheetNameInputRef}
-                    value={sheetNameDraft}
-                    aria-label="Data sheet name"
-                    data-testid={`worksheet-sheet-rename-${sheet.id}`}
-                    className="h-7 max-w-[10rem] rounded-md border border-[var(--ring)] bg-[var(--input)] px-2 text-xs font-medium"
-                    onChange={(event) => setSheetNameDraft(event.target.value)}
-                    onBlur={commitSheetRename}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        commitSheetRename();
-                      }
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        cancelSheetRename();
-                      }
-                    }}
-                  />
-                ) : (
-                  <button
-                    key={sheet.id}
-                    type="button"
-                    aria-label={`${sheet.name} sheet`}
-                    data-testid={`worksheet-sheet-tab-${sheet.id}`}
-                    onClick={() =>
-                      setWorksheet((current) =>
-                        switchWorksheetTab(current, sheet.id)
-                      )
-                    }
-                    onDoubleClick={() => beginRenameSheet(sheet.id)}
-                    className={`rounded-md px-2 py-1 text-xs ${
-                      active
-                        ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"
-                        : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
-                    }`}
-                  >
-                    {sheet.name}
-                  </button>
+            <WorksheetSheetTabs
+              worksheet={worksheet}
+              readOnly={readOnly}
+              editingSheetId={editingSheetId}
+              sheetNameDraft={sheetNameDraft}
+              onSheetNameDraftChange={setSheetNameDraft}
+              onBeginRename={beginRenameSheet}
+              onCommitRename={commitSheetRename}
+              onCancelRename={cancelSheetRename}
+              onActivate={(sheetId) => {
+                setWorksheet((current) =>
+                  current.activeSheetId === sheetId
+                    ? current
+                    : switchWorksheetTab(current, sheetId)
                 );
-              })}
-              {readOnly || worksheet.sheets.length <= 1 ? null : (
-                <button
-                  type="button"
-                  data-testid="delete-data-sheet"
-                  onClick={() => {
-                    setWorksheet((current) =>
-                      deleteDataSheet(current, current.activeSheetId)
-                    );
-                    setSelection(collapseSelection(0, 0));
-                  }}
-                  className="ml-auto rounded-md px-2 py-1 text-xs text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
-                >
-                  Delete sheet
-                </button>
-              )}
-            </div>
+              }}
+              onDelete={(sheetId) => {
+                setWorksheet((current) => deleteDataSheet(current, sheetId));
+                setSelection(collapseSelection(0, 0));
+              }}
+            />
             <WorksheetGrid
               worksheet={worksheet}
               selection={selection}
