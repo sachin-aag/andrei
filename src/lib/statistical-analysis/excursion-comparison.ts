@@ -41,6 +41,8 @@ export type ExcursionComparison = {
   rows: ExcursionComparisonRow[];
   /** Series that were analysed and had no excursion — a finding in itself. */
   clean: Array<{ analysisId: string; series: string; n: number }>;
+  /** Series with no acceptance limits in force. Not clean — unchecked. */
+  unassessed: Array<{ analysisId: string; series: string; n: number }>;
 };
 
 export function buildExcursionComparison(
@@ -49,8 +51,19 @@ export function buildExcursionComparison(
   const series = analyses.filter(isTimeSeriesAnalysis);
   const rows: ExcursionComparisonRow[] = [];
   const clean: ExcursionComparison["clean"] = [];
+  const unassessed: ExcursionComparison["unassessed"] = [];
 
   for (const analysis of series) {
+    if (analysis.results.judgedReadings === 0) {
+      // Not a clean batch — an unchecked one. Filing it under "clean" is how a
+      // comparison table ends up asserting compliance nobody verified.
+      unassessed.push({
+        analysisId: analysis.id,
+        series: analysis.title,
+        n: analysis.results.n,
+      });
+      continue;
+    }
     if (analysis.results.excursions.length === 0) {
       // "No excursion in this cycle" is as much a result as a run, and a
       // comparison that only lists failures reads as if nothing was checked.
@@ -82,7 +95,7 @@ export function buildExcursionComparison(
   // Oldest first: a history table reads forward to the event under
   // investigation, not backward from it.
   rows.sort((a, b) => a.start.localeCompare(b.start));
-  return { rows, clean };
+  return { rows, clean, unassessed };
 }
 
 /** One line per saved time series for the chat context map. */
@@ -90,8 +103,16 @@ export function summarizeTimeSeriesForPrompt(
   analysis: TimeSeriesAnalysisSummary
 ): string {
   const { results, config } = analysis;
+  // Never let "no band was set" reach the model as "no excursion". It would
+  // write that the batch was compliant, and nothing would have checked it.
+  if (results.judgedReadings === 0) {
+    return (
+      `${results.n} readings of ${config.columnName}, NO ACCEPTANCE LIMITS SET ` +
+      "— excursions were not assessed. Do not state that there were none; say the limits are missing."
+    );
+  }
   if (results.excursions.length === 0) {
-    return `${results.n} readings of ${config.columnName}, no excursion`;
+    return `${results.n} readings of ${config.columnName} (${results.judgedReadings} assessed against limits), no excursion`;
   }
   const runs = results.excursions
     .slice(0, 6)

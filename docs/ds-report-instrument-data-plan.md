@@ -254,6 +254,22 @@ index and is the wrong band.
 **The measurement is never guessed when several fit and none was named.**
 Plotting one of nine instrument channels at random is worse than listing them.
 
+**Acceptance limits are never inferred — and "no band" is never a pass.**
+A band is a specification; deriving one from the data would be inventing the
+criterion the data is judged against. `judgedReadings` counts the readings that
+had a band in force, and when it is zero the figure, the CSV, the XLSX, the
+chat result and the Document-chat context line all say *excursions were not
+assessed* rather than *no excursions*. That distinction is the whole point: the
+first is a gap, the second is a compliance claim, and they are one careless
+sentence apart in a regulated document. A band with neither limit set counts as
+no band.
+
+Where the limits actually come from, for this investigation: the trend print's
+own header carries `DRYING START P : 800 uBAR`, `ALARM:P1 : 900`, `ALARM:P2 :
+950` — so 950 is citable from page 1. **650, 480, 380 and 200 are not in the
+print**; they come from the BMR or SOP and must be retrieved and cited from
+there, or supplied by the engineer.
+
 **Still open on this kind:** *Export with Excel charts* routes through the
 `ChartSpec` path, so a time series exports as an XY chart with numeric (epoch)
 x values rather than a native Excel date axis. The data tabs and the excursion

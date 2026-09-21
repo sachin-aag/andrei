@@ -884,6 +884,14 @@ function timeSeriesToolResult(
     conditionColumnName: analysis.config.conditionColumnName ?? null,
     n: analysis.results.n,
     skipped: analysis.results.skipped,
+    judgedReadings: analysis.results.judgedReadings,
+    ...(analysis.results.judgedReadings === 0
+      ? {
+          notAssessed: true,
+          warning:
+            "No acceptance limits were in force, so excursions were NOT assessed. Do not report that there were none — say the limits are missing and ask for them.",
+        }
+      : {}),
     decimated: analysis.results.decimated,
     excursionCount: analysis.results.excursions.length,
     excursionReadings: analysis.results.excursionReadings,

@@ -149,6 +149,7 @@ export function TimeSeriesView({
         excursions={results.excursions}
         conditionLabel={config.conditionColumnName ?? null}
         excursionReadings={results.excursionReadings}
+        judgedReadings={results.judgedReadings}
       />
     </div>
   );
@@ -380,18 +381,35 @@ function ExcursionTable({
   excursions,
   conditionLabel,
   excursionReadings,
+  judgedReadings,
 }: {
   excursions: readonly TimeSeriesExcursion[];
   conditionLabel: string | null;
   excursionReadings: number;
+  judgedReadings: number;
 }) {
+  // No band in force is not a pass. Saying "no reading left the acceptance
+  // band" when there was no band to leave is a fabricated compliance claim,
+  // and it is the kind that reads as reassuring.
+  if (judgedReadings === 0) {
+    return (
+      <p
+        data-testid="time-series-not-assessed"
+        className="text-sm font-medium text-[var(--destructive)]"
+      >
+        No acceptance limits were in force, so excursions were not assessed.
+        Set LSL/USL — or a condition column and its bands — and recompute.
+      </p>
+    );
+  }
   if (excursions.length === 0) {
     return (
       <p
         data-testid="time-series-no-excursions"
         className="text-sm text-[var(--muted-foreground)]"
       >
-        No reading left the acceptance band.
+        No reading left the acceptance band ({judgedReadings} reading
+        {judgedReadings === 1 ? "" : "s"} assessed).
       </p>
     );
   }

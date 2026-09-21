@@ -16,6 +16,7 @@ import { normalizeRowSelection, type AnalysisRowSelection } from "./row-selectio
 import type { ChartSpec } from "@/lib/charts/chart-spec";
 import { cellsForRowSelection, findColumn, specRowForColumn } from "./worksheet";
 import {
+  bandForRow,
   detectExcursions,
   elapsedMinutes,
   formatElapsed,
@@ -373,6 +374,16 @@ export function computeTimeSeries(
     for (let i = run.startIndex; i <= run.endIndex; i += 1) outOfBand.add(i);
   }
 
+  // A reading with no band in force was never judged. Counting these is what
+  // lets the report distinguish "we checked and found none" from "we did not
+  // check" — the difference between a finding and a fabricated pass.
+  let judgedReadings = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const band = bandForRow(spec, conditions[i]);
+    // A band with neither limit set judges nothing, so it does not count.
+    if (band && (band.lsl !== null || band.usl !== null)) judgedReadings += 1;
+  }
+
   const numbers = points.map((point) => point.value);
   const decimated = decimatePoints(points, outOfBand);
   const overlays = timeSeriesOverlays(config);
@@ -388,6 +399,7 @@ export function computeTimeSeries(
       ],
       n: points.length,
       skipped,
+      judgedReadings,
       points: decimated.points,
       decimated: decimated.decimated,
       start: points[0]!.t,

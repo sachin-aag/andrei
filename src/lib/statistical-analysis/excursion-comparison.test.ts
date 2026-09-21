@@ -57,6 +57,7 @@ function series(
       specs: [],
       n,
       skipped: 0,
+      judgedReadings: n,
       points: [],
       decimated: false,
       start: 0,
@@ -128,5 +129,32 @@ describe("summarizeTimeSeriesForPrompt", () => {
     const line = summarizeTimeSeriesForPrompt(series("a", "RIG24003", many));
     expect(line).toContain("10 excursions");
     expect(line).toContain("(+4 more)");
+  });
+});
+
+describe("unassessed series", () => {
+  function unjudged(id: string, title: string) {
+    const base = series(id, title, []);
+    return { ...base, results: { ...base.results, judgedReadings: 0 } };
+  }
+
+  it("files a series with no limits as unassessed, not clean", () => {
+    // Filing it under "clean" is how a comparison table ends up asserting
+    // compliance nobody verified.
+    const comparison = buildExcursionComparison([
+      series("a", "RIG25014", [run()]),
+      unjudged("b", "RIG24003"),
+    ] as StatisticalAnalysisSummary[]);
+    expect(comparison.clean).toEqual([]);
+    expect(comparison.unassessed).toEqual([
+      { analysisId: "b", series: "RIG24003", n: 2142 },
+    ]);
+  });
+
+  it("tells the model not to claim there were none", () => {
+    const line = summarizeTimeSeriesForPrompt(unjudged("b", "RIG24003"));
+    expect(line).toContain("NO ACCEPTANCE LIMITS SET");
+    expect(line).toContain("not assessed");
+    expect(line).not.toMatch(/no excursion(?!s were)/);
   });
 });

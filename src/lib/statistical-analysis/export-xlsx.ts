@@ -674,13 +674,19 @@ function timeSeriesRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
       ["Kind", "Time series"],
       ["N", results.n],
       ["Skipped", results.skipped],
+      ["Readings assessed against limits", results.judgedReadings],
       ["Mean", statCell(results.mean)],
       ["Min", statCell(results.min)],
       ["Max", statCell(results.max)],
       ["Condition column", config.conditionColumnName ?? ""],
       ["LSL", config.lsl == null ? "" : statCell(config.lsl)],
       ["USL", config.usl == null ? "" : statCell(config.usl)],
-      ["Excursions", results.excursions.length],
+      [
+        "Excursions",
+        results.judgedReadings === 0
+          ? "not assessed — no acceptance limits in force"
+          : results.excursions.length,
+      ],
       ["Out-of-band readings", results.excursionReadings],
       ["Created", analysis.createdAt],
     ],

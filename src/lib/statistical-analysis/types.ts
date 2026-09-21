@@ -748,6 +748,12 @@ export type TimeSeriesResult = {
   n: number;
   /** Rows dropped for a non-numeric value or an unparseable timestamp. */
   skipped: number;
+  /**
+   * Readings that had an acceptance band in force. Zero means nothing was
+   * assessed — which is emphatically not the same as nothing being out of
+   * band, and must never be reported as a pass.
+   */
+  judgedReadings: number;
   points: TimeSeriesPoint[];
   /** True when `points` is a decimated view of `n` readings. */
   decimated: boolean;

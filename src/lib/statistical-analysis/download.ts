@@ -346,13 +346,19 @@ function timeSeriesToCsv(analysis: TimeSeriesAnalysisSummary): string {
     ["Kind", "Time series"],
     ["N", String(results.n)],
     ["Skipped", String(results.skipped)],
+    ["Readings assessed against limits", String(results.judgedReadings)],
     ["Mean", csvNumber(results.mean)],
     ["Min", csvNumber(results.min)],
     ["Max", csvNumber(results.max)],
     ["Condition column", config.conditionColumnName ?? ""],
     ["LSL", config.lsl == null ? "" : csvNumber(config.lsl)],
     ["USL", config.usl == null ? "" : csvNumber(config.usl)],
-    ["Excursions", String(results.excursions.length)],
+    [
+      "Excursions",
+      results.judgedReadings === 0
+        ? "not assessed — no acceptance limits in force"
+        : String(results.excursions.length),
+    ],
     ["Out-of-band readings", String(results.excursionReadings)],
     ["Created", analysis.createdAt],
   ];

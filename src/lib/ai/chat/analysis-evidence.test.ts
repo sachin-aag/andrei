@@ -39,6 +39,7 @@ function timeSeries(
       specs: [],
       n: 2142,
       skipped: 0,
+      judgedReadings: 2142,
       points: [],
       decimated: true,
       start: 0,

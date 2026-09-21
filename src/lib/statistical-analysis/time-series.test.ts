@@ -269,6 +269,51 @@ describe("computeTimeSeries", () => {
     expect(outcome.result.points.map((point) => point.row)).toEqual([2, 3, 4]);
   });
 
+  it("reports nothing assessed when no band is in force", () => {
+    // The dangerous case: zero excursions because nothing was checked. A
+    // report must never read that as a pass.
+    const values = ["800", "810", "820"];
+    const worksheet = sheetWith([
+      { id: "c1", name: "VAC1", values },
+      { id: "c2", name: "DATE", values: dates(3) },
+      { id: "c3", name: "TIME", values: minuteStamps(3) },
+    ]);
+    const outcome = computeTimeSeries(
+      worksheet,
+      config({ lsl: null, usl: null })
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.judgedReadings).toBe(0);
+    expect(outcome.result.excursions).toEqual([]);
+  });
+
+  it("counts only the rows a conditional band actually covered", () => {
+    // Idle rows carry setpoint 0, which matches no band and is left unjudged.
+    const values = ["800", "800", "800", "800"];
+    const setpoints = ["0", "0", "800", "800"];
+    const worksheet = sheetWith([
+      { id: "c1", name: "VAC1", values },
+      { id: "c2", name: "DATE", values: dates(4) },
+      { id: "c3", name: "TIME", values: minuteStamps(4) },
+      { id: "c4", name: "VAC2", values: setpoints },
+    ]);
+    const outcome = computeTimeSeries(
+      worksheet,
+      config({
+        lsl: null,
+        usl: null,
+        conditionColumnId: "c4",
+        conditionColumnName: "VAC2",
+        bands: [{ when: "800", lsl: 650, usl: 950 }],
+      })
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.n).toBe(4);
+    expect(outcome.result.judgedReadings).toBe(2);
+  });
+
   it("plots without a spec at all", () => {
     const values = ["800", "810", "820"];
     const worksheet = sheetWith([
