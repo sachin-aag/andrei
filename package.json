@@ -27,6 +27,7 @@
     "db:migrate": "tsx scripts/drizzle-migrate.ts",
     "db:ensure": "npm run db:migrate-suggested-fix && drizzle-kit push",
     "db:ensure-workspace-users": "tsx --env-file=.env --env-file=.env.local scripts/ensure-workspace-users.ts",
+    "backfill-document-tables": "tsx --env-file=.env --env-file=.env.local scripts/backfill-document-tables.ts",
     "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
     "db:push": "drizzle-kit push",
     "db:local:up": "docker compose up -d",

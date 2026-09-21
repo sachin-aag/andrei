@@ -294,7 +294,14 @@ completeness is legitimate. A defect outranks that downgrade.
 Construction is done; none of it has been through a live environment.
 
 1. **Apply migrations `0065` and `0066`** to preview and production. A redeploy
-   applies them.
+   applies them — `vercel:build` runs `drizzle-migrate.ts` before `next build`.
+   **Attachments uploaded before this shipped have no parsed tables**, and the
+   Reprocess button will not fix that: `canReprocessAttachment` only accepts
+   failed or incompletely-indexed attachments, not healthy ones. Re-uploading is
+   the wrong fix — detection reads `document_pages.transcript`, which is already
+   stored verbatim. Run `pnpm backfill-document-tables <reportId>` instead (add
+   `--dry-run` to see what it would find first). No Vertex calls, no page
+   budget, no re-upload.
 2. **Run `pnpm check-table-extract` against the eight trend prints.** Still the
    one test that gates everything downstream: the parser was validated on Google
    Drive's text extraction, and ingest uses unpdf. Expect ~2,142 rows, 11
