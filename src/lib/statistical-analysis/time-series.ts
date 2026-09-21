@@ -547,25 +547,20 @@ export function timeSeriesSourceKey(
 }
 
 /**
- * A fixed band applied to a series whose setpoint steps.
+ * The setpoint column beside this measurement, and the values it steps
+ * through.
  *
- * Judging a whole lyophilization cycle against one overall operating range
- * (200–1000 µbar) is not wrong — that range is a real criterion — but it is
- * the weakest test available, and it reports a clean pass while a reading that
- * breached its *step's* band sails through. RIG23001 sat at 844 µbar during a
- * 380–620 step: inside 200–1000, and a hundred minutes out of band.
- *
- * The data says this happened: a setpoint column with several values, and a
- * band that does not vary with it. Returns what to say, or null when the
- * analysis is already conditional or has no band at all.
+ * Used for two different warnings, which is why it does not judge on its own:
+ * a series plotted with no limits at all, and a series plotted against one
+ * fixed band while its setpoint moves. The second is the subtler failure —
+ * judging a whole lyophilization cycle against an overall 200–1000 µbar range
+ * is not wrong, but RIG23001 sat at 844 µbar through a 380–620 step, inside
+ * that range and a hundred minutes out of band.
  */
-export function steppedSetpointWarning(
+export function detectSetpointColumn(
   worksheet: WorksheetData,
   config: TimeSeriesConfig
 ): { columnName: string; values: string[] } | null {
-  if (config.bands && config.bands.length > 0) return null;
-  if (config.lsl == null && config.usl == null) return null;
-
   const sheetId = findSheetIdForColumn(worksheet, config.columnId);
   const sheet = sheetId ? findSheet(worksheet, sheetId) : undefined;
   const columns = sheet?.columns ?? worksheet.columns;
@@ -581,4 +576,18 @@ export function steppedSetpointWarning(
   );
   if (!column) return null;
   return { columnName: column.name, values: picks.conditionValues };
+}
+
+/**
+ * A fixed band applied to a series whose setpoint steps. Null when the bands
+ * are already conditional, or when there is no band to be wrong about — that
+ * case is covered by `judgedReadings === 0`.
+ */
+export function steppedSetpointWarning(
+  worksheet: WorksheetData,
+  config: TimeSeriesConfig
+): { columnName: string; values: string[] } | null {
+  if (config.bands && config.bands.length > 0) return null;
+  if (config.lsl == null && config.usl == null) return null;
+  return detectSetpointColumn(worksheet, config);
 }

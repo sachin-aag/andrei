@@ -296,6 +296,21 @@ rather than the turn: a sheet filled on an earlier turn is still filled, and
 searching for the *specification* is not gathering data. Intent classification
 was never the problem — "lets plot a time series" is `produce_request`/write.
 
+**Inference must run even when the model names columns.** The first version
+skipped it whenever `columnId` and `timeColumnId` were both given — and the
+model reads the worksheet and names those two almost every time. The column it
+never names is the setpoint, which is exactly the one worth working out. Seen
+in Langfuse: `plot_time_series` called with `columnId`, `timeColumnId`,
+`clockColumnId` and nothing else, `conditionColumnName: null`, 2,022 readings,
+`judgedReadings: 0`. Inference now fills whatever was left out.
+
+**A warning has to say what to do next.** "No acceptance limits were in force"
+is true and useless. It now names the steps: *this series steps through VAC2 =
+250, 500, 600, 800, so it needs one band per step — find those ranges in the
+attachments and re-run with conditionColumnId and bands.* `detectSetpointColumn`
+is deliberately separate from `steppedSetpointWarning` so it can fire when
+there is no band at all, not only when there is a wrong one.
+
 A related bug the test for this found: `suggestTimeSeriesColumns` could pick
 the **measurement itself** as its condition column. A flat channel classifies
 as a setpoint and trivially shares its own name stem, so it would have been

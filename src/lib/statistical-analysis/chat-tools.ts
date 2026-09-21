@@ -91,7 +91,10 @@ import {
   loadDetectedTable,
 } from "@/lib/attachments/document-tables";
 import { suggestTimeSeriesColumns } from "./column-roles";
-import { steppedSetpointWarning } from "./time-series";
+import {
+  detectSetpointColumn,
+  steppedSetpointWarning,
+} from "./time-series";
 import {
   applyManageWorksheet,
   manageWorksheetInputSchema,
@@ -876,9 +879,15 @@ function timeSeriesToolResult(
   // Both warnings can fire at once, so they share one list rather than one key
   // that the second would silently overwrite.
   const warnings: string[] = [];
+  const setpoint = detectSetpointColumn(analytics.worksheet, analysis.config);
   if (analysis.results.judgedReadings === 0) {
     warnings.push(
-      "No acceptance limits were in force, so excursions were NOT assessed. Do not report that there were none — say the limits are missing and ask for them."
+      "No acceptance limits were in force, so excursions were NOT assessed. Do not report that there were none — say the limits are missing." +
+        (setpoint
+          ? ` This series steps through ${setpoint.columnName} = ${setpoint.values.join(", ")}, so it needs one band per step, not a single range. ` +
+            "Find the acceptance range for each of those setpoints in the attachments (the BMR, the SOP, a justification or control document), then call plot_time_series again with this analysisId, " +
+            `conditionColumnId for ${setpoint.columnName}, and bands [{when, lsl, usl}] — one entry per value above. If you cannot find them, ask the engineer for those ranges.`
+          : " Search the attachments for the acceptance range, then re-run with lsl/usl — or ask the engineer.")
     );
   }
   const stepped = steppedSetpointWarning(analytics.worksheet, analysis.config);
@@ -2475,12 +2484,18 @@ export function buildAnalyticsChatTools(opts: {
         }
       | { status: "error"; message: string }
     > {
-      if (patch.columnId && patch.timeColumnId) {
+      // Do not skip inference just because the measurement and time columns
+      // were named. The model reads the worksheet and names those two almost
+      // every time, and the column it never names is the setpoint — which is
+      // precisely the one worth working out.
+      const fullySpecified =
+        patch.columnId && patch.timeColumnId && patch.conditionColumnId;
+      if (fullySpecified) {
         return {
-          columnId: patch.columnId,
-          timeColumnId: patch.timeColumnId,
+          columnId: patch.columnId!,
+          timeColumnId: patch.timeColumnId!,
           clockColumnId: patch.clockColumnId ?? null,
-          conditionColumnId: patch.conditionColumnId ?? null,
+          conditionColumnId: patch.conditionColumnId!,
         };
       }
       const analytics = await getOrCreateReportAnalytics(reportId);

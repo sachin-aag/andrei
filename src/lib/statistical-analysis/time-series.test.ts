@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeTimeSeries,
   parseTimestampCell,
+  detectSetpointColumn,
   steppedSetpointWarning,
 } from "./time-series";
 import {
@@ -477,3 +478,31 @@ function dates40(): string[] {
 function varyingVac(count: number): string[] {
   return Array.from({ length: count }, (_, i) => (780 + i * 1.3).toFixed(1));
 }
+
+describe("detectSetpointColumn", () => {
+  function steppedSheet(): WorksheetData {
+    return sheetWith([
+      { id: "c1", name: "VAC1", values: varyingVac(40) },
+      { id: "c2", name: "DATE", values: dates40() },
+      { id: "c3", name: "TIME", values: minuteStamps(40) },
+      {
+        id: "c4",
+        name: "VAC2",
+        values: Array.from({ length: 40 }, (_, i) =>
+          i < 10 ? "800.0" : i < 20 ? "600.0" : i < 30 ? "500.0" : "250.0"
+        ),
+      },
+    ]);
+  }
+
+  it("finds the setpoint column even with no band set at all", () => {
+    // This is what makes the "no limits" warning actionable: it can name the
+    // steps whose ranges have to be looked up.
+    const found = detectSetpointColumn(
+      steppedSheet(),
+      config({ lsl: null, usl: null })
+    );
+    expect(found?.columnName).toBe("VAC2");
+    expect(found?.values).toEqual(["250.0", "500.0", "600.0", "800.0"]);
+  });
+});
