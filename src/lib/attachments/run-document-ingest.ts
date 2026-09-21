@@ -24,6 +24,10 @@ import {
   extractDocxEmbeddedImages,
   formatDocxPageVisualInterpretation,
 } from "@/lib/attachments/docx-images";
+import {
+  interiorTablePages,
+  persistDocumentTablesForRun,
+} from "@/lib/attachments/persist-document-tables";
 import { syncAssetProcessing } from "@/lib/attachments/sync-asset-processing";
 import { storageSourceForAttachment } from "@/lib/attachments/resolve-attachment";
 import {
@@ -958,6 +962,37 @@ async function persistOutlineSpansForRun(input: IngestInit): Promise<void> {
   );
 }
 
+/**
+ * Deterministic table recovery from the transcripts just persisted. Runs off
+ * stored page text rather than the PDF, so a mixed document still yields its
+ * tables, and never fails the ingest: a document with no table is the norm.
+ */
+async function persistDetectedTablesForRun(
+  input: IngestInit,
+  pages: ReadonlyArray<{ pageNumber: number; transcript: string }>
+): Promise<Set<number>> {
+  try {
+    const result = await persistDocumentTablesForRun({
+      runId: input.runId,
+      attachmentId: input.attachmentId,
+      assetId: input.assetId,
+      reportId: input.reportId,
+      pages,
+    });
+    if (result.tableCount > 0) {
+      console.info(
+        `[document-ingest] ${input.filename}: stored ${result.tableCount} table(s), ${result.rowCount} row(s)`
+      );
+    }
+    return interiorTablePages(result.spans);
+  } catch (error) {
+    console.warn(`[document-ingest] Table detection failed for ${input.filename}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return new Set<number>();
+  }
+}
+
 async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number }> {
   await persistOutlineSpansForRun(input);
   const pages = await db
@@ -972,9 +1007,18 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
     .where(eq(documentPages.ingestRunId, input.runId))
     .orderBy(asc(documentPages.pageNumber));
 
+  // Interior pages of a long instrument table are skipped: they all embed to
+  // the same point, their rows are already stored verbatim in document_tables,
+  // and read_document_page still serves them.
+  const skipPages = await persistDetectedTablesForRun(input, pages);
+  const chunkablePages =
+    skipPages.size === 0
+      ? pages
+      : pages.filter((page) => !skipPages.has(page.pageNumber));
+
   const chunks = chunkDocumentPages({
     filename: input.filename,
-    pages,
+    pages: chunkablePages,
   });
   await db.delete(documentChunks).where(eq(documentChunks.ingestRunId, input.runId));
   if (chunks.length === 0) {

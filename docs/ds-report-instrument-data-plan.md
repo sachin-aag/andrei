@@ -3,7 +3,7 @@
 Living plan. Update it whenever a phase lands or a locked decision changes.
 Architecture that disagrees with code loses — fix this file.
 
-Status: **Phase 1.1 and 2.1/2.2 landed** (`e87246e5` on `feat/IR_DS`).
+Status: **Phase 1 (1.1–1.4) and 2.1/2.2 landed** on `feat/IR_DS`.
 Everything else is specified but not built.
 
 ## What this is
@@ -94,6 +94,13 @@ and keeps date/time structural. Do not "tighten" this.
 **Locked decision — a mixed column types as text.** One non-numeric cell
 demotes the whole column rather than the outlier being silently dropped.
 
+**Locked decision — a data row is at least half numeric or temporal**
+(`DATA_CELL_RATIO`). A running footer such as "Requirements Document Template,
+731-00003 Rev. A Page 1 of 49" repeats on every page and carries two numbers, so
+a bare has-a-number test read it as a 49-row table and would have written page
+furniture into `document_tables`. Keep the regression test if you touch
+`isDataShape`.
+
 ### Phase 2.1 / 2.2 — `src/lib/statistical-analysis/excursions.ts`
 
 Contiguous out-of-band runs with start, end, reading count, elapsed time,
@@ -114,55 +121,57 @@ four different durations for one excursion in ERF/26/022 (`08 min`,
 `087 min elapsed`, `87 Minutes`, `7 min`). Never derive one from the other
 implicitly.
 
-## Pending
+### Phase 1.2 — `document_tables` / `document_table_rows`
 
-### Before 1.2 — run the real-path check
+Schema in `src/db/schema/index.ts`, migration `0066`, persistence in
+`src/lib/attachments/persist-document-tables.ts`, reads in
+`src/lib/attachments/document-tables.ts`.
 
-`pnpm check-table-extract <file.pdf>` runs `readPdfTextLayer` (what ingest
-actually uses) into `detectTables` and reports what comes out. **Run it against
-the eight trend prints before writing storage code.** The parser was validated
-against Google Drive's text extraction, which is not the same extractor.
+**Locked decision — detection runs over stored transcripts, not the PDF.** The
+original plan was to gate on `textLayer.usable`, and that would have been the
+bug the check script warned about: `usable` requires *every* page to clear 180
+characters, so one thin divider page in an 80-page print flips the whole
+document to the vision path and the parser never runs. But
+`extractMixedPagesWithDocumentAi` keeps the verbatim text layer for every
+born-digital page even in a mixed document, so `document_pages.transcript` is
+already exact per page. Detecting from there is both more robust and cheaper —
+no second read of the PDF. **Do not re-gate this on `usable`.**
 
-Two things that check already surfaced on an unrelated 49-page PDF:
+Reads are scoped to `report_attachments.active_ingest_run_id`. A re-ingest
+leaves the old run's tables in place, and offering both would hand the engineer
+two copies of the same series.
 
-- **A single thin page flips the whole document to the vision path.**
-  `readPdfTextLayer.usable` requires *every* page to clear 180 characters. One
-  sparse page — a divider, a figure page, a signature page — makes `usable`
-  false, ingest takes the vision branch, and the table parser never runs even
-  though 48 pages were perfectly extractable. Decide before 1.2 whether the
-  parser should run per-page on `layout === "mixed"` rather than only when the
-  whole document is usable. **This is the most likely reason Phase 1 silently
-  does nothing in production.**
-- **Running footers were detected as tables.** "Requirements Document Template,
-  731-00003 Rev. A Page 1 of 49" repeats on every page and carries two numbers,
-  so a bare has-a-number test read it as a 49-row table — which would have gone
-  straight into `document_tables` as junk. Fixed by requiring numeric plus
-  temporal cells to be at least half the row (`DATA_CELL_RATIO`). Keep a
-  regression test if you touch `isDataShape`.
-
-### Phase 1.2 — structured storage
-
-`document_tables` (attachment, page span, column schema) and
-`document_table_rows` (typed cells, ordinal, source page). Migration follows the
-convention in `src/db/migrations/` — see `0065` for the enum-value pattern.
-
-Wire `detectTables` into `runDocumentIngest`, gated on `textLayer.usable`.
-Scanned tables keep falling through to the vision path.
+Budgets: 20,000 rows per table, 10 tables and 60,000 rows per run. A table that
+straddles the run budget is kept in part and flagged `truncated` rather than
+dropped — a partial series is still evidence.
 
 ### Phase 1.3 — `load_table`
 
-Analytics chat tool: load a parsed table straight into a worksheet sheet. No
-LLM, no page cap, exact values, page citations preserved on the column spec the
-way `write_column` already does. Bump `ANALYTICS_CHAT_PROMPT_VERSION`.
+Analytics chat tool. No arguments lists the parsed tables; a `tableId` loads one
+onto a sheet with `rowStart` / `rowLimit` paging against `MAX_WORKSHEET_ROWS`
+(10,000). Row page numbers become column citations, so a loaded column cites its
+source exactly as a read-and-write dump does.
 
-`WorksheetColumn.values` is `string[]`, so a timestamp column needs no schema
-change.
+Three wiring points that are easy to miss, all covered by tests:
+
+- `load_table` counts as a **dump source** in `search-loop.ts`. Without that the
+  "you greped but read nothing" guard hides the plot tools after a load, and the
+  turn stalls waiting for a page read that would add nothing.
+- Two listings without a load hides the tool (`analyticsLoadTableDirective`). A
+  model that keeps listing will not start loading on the third try.
+- Sheet workers do not get it. Table selection is the orchestrator's job; a
+  worker loading a parsed table creates a second tab holding the data it was
+  sent to dump.
 
 ### Phase 1.4 — ingest at volume
 
-613 pages for one investigation. The page budget (100,000/month) is not the
-concern; wall-clock time is. Consider skipping chunk+embed for pages that parse
-cleanly as tables — nothing will ever retrieve them by similarity.
+Interior pages of a table spanning 8+ pages are skipped by chunk + embed
+(`interiorTablePages`). The first and last page of each span stay chunked so the
+document is still findable; the 74 identical pages between them cost nothing.
+`read_document_page` still serves every page, and the rows are in
+`document_tables` verbatim, so nothing becomes unreachable.
+
+## Pending
 
 ### Phase 2.3 — excursions as a saved analysis
 

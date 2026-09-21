@@ -879,6 +879,88 @@ export const documentOutlineSpans = pgTable(
   })
 );
 
+/**
+ * A repeating tabular grammar recovered from a document's page transcripts.
+ *
+ * Instrument prints are tables of numbers that retrieval cannot serve — every
+ * page embeds to nearly the same point and FTS on "192.4" is noise — so the
+ * rows are stored as data rather than only as prose. Detection is deterministic
+ * (`src/lib/attachments/table-extract.ts`); no model is involved.
+ */
+export const documentTables = pgTable(
+  "document_tables",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    ingestRunId: text("ingest_run_id")
+      .notNull()
+      .references(() => attachmentIngestRuns.id, { onDelete: "cascade" }),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    assetId: text("asset_id").references(() => attachmentAssets.id, {
+      onDelete: "cascade",
+    }),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    /** Position within the run, largest table first. */
+    ordinal: integer("ordinal").notNull(),
+    /** Column names and inferred cell types, in column order. */
+    columns: jsonb("columns")
+      .$type<Array<{ name: string; type: string }>>()
+      .notNull(),
+    /** Cell-shape signature, e.g. "date|time|value x9". Diagnostics only. */
+    signature: text("signature").notNull(),
+    pageStart: integer("page_start").notNull(),
+    pageEnd: integer("page_end").notNull(),
+    /** Rows actually stored, after any truncation. */
+    rowCount: integer("row_count").notNull(),
+    /** True when the detected table was longer than the per-table cap. */
+    truncated: boolean("truncated").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    runOrdinalUnique: uniqueIndex("document_tables_run_ordinal_unique").on(
+      t.ingestRunId,
+      t.ordinal
+    ),
+    reportIdx: index("document_tables_report_idx").on(t.reportId),
+    attachmentIdx: index("document_tables_attachment_idx").on(t.attachmentId),
+  })
+);
+
+/**
+ * One record of a detected table. Cells stay raw strings: the point is to hand
+ * back exactly what the instrument printed, and the worksheet parses numbers
+ * itself. `pageNumber` is what makes a loaded column citable.
+ */
+export const documentTableRows = pgTable(
+  "document_table_rows",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    tableId: text("table_id")
+      .notNull()
+      .references(() => documentTables.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    pageNumber: integer("page_number").notNull(),
+    values: text("values")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+  },
+  (t) => ({
+    tableOrdinalUnique: uniqueIndex(
+      "document_table_rows_table_ordinal_unique"
+    ).on(t.tableId, t.ordinal),
+  })
+);
+
 export const documentChunks = pgTable(
   "document_chunks",
   {
@@ -1499,6 +1581,31 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
     references: [documentPages.id],
   }),
 }));
+
+export const documentTablesRelations = relations(
+  documentTables,
+  ({ one, many }) => ({
+    ingestRun: one(attachmentIngestRuns, {
+      fields: [documentTables.ingestRunId],
+      references: [attachmentIngestRuns.id],
+    }),
+    attachment: one(reportAttachments, {
+      fields: [documentTables.attachmentId],
+      references: [reportAttachments.id],
+    }),
+    rows: many(documentTableRows),
+  })
+);
+
+export const documentTableRowsRelations = relations(
+  documentTableRows,
+  ({ one }) => ({
+    table: one(documentTables, {
+      fields: [documentTableRows.tableId],
+      references: [documentTables.id],
+    }),
+  })
+);
 
 export const statisticalWorkspaces = pgTable(
   "statistical_workspaces",

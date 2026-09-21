@@ -38,6 +38,7 @@ const WRITE_AFTER_SEARCH_TOOLS = [
   "write_column",
   "manage_worksheet",
   "extract_sheet",
+  "load_table",
   "run_capability_sixpack",
   "run_one_way_anova",
   "plot_xy_scatter",
@@ -76,11 +77,17 @@ const WRITE_COLUMN_TOOL = "write_column";
 const MANAGE_WORKSHEET_TOOL = "manage_worksheet";
 const ASK_USER_TOOL = "ask_user";
 
-/** Page text the model can copy from — outline is not enough to dump. */
+/**
+ * Page text the model can copy from — outline is not enough to dump.
+ * `load_table` counts: it writes the parsed rows verbatim, so the readiness
+ * guard ("you greped but have not read anything") is already satisfied and
+ * plots must not stay hidden behind a page read that would add nothing.
+ */
 const DUMP_SOURCE_TOOLS = new Set([
   "read_document_page",
   "scan_attachments",
   "extract_numeric_series",
+  "load_table",
 ]);
 
 function withoutTools(
@@ -441,6 +448,29 @@ function stepsHadDumpSource(steps: readonly AnalyticsChatStep[]): boolean {
   return steps.some((step) => stepReadDumpSource(step));
 }
 
+const LOAD_TABLE_TOOL = "load_table";
+/** Listing the parsed tables twice without loading one is a stuck turn. */
+const LOAD_TABLE_LIST_LIMIT = 2;
+
+/**
+ * `load_table` with no tableId lists what was parsed; with one it loads. A
+ * model that keeps listing is not going to start loading on the third try, so
+ * hide the tool and let it fall back to reading pages.
+ */
+export function analyticsLoadTableDirective(
+  steps: readonly AnalyticsChatStep[]
+): "continue" | "finish" {
+  let lists = 0;
+  for (const step of steps) {
+    eachNamedToolOutput(step, LOAD_TABLE_TOOL, (output) => {
+      const record = writeColumnRecord(output);
+      if (record?.status === "loaded") lists = -Infinity;
+      else if (record?.status === "listed") lists += 1;
+    });
+  }
+  return lists >= LOAD_TABLE_LIST_LIMIT ? "finish" : "continue";
+}
+
 function readTools(hidden: ReadonlySet<string>): string[] {
   const tools = [...READ_AFTER_SEARCH_TOOLS, SEARCH_TOOL];
   return hidden.size > 0 ? withoutTools(tools, hidden) : tools;
@@ -494,6 +524,9 @@ export function prepareAnalyticsChatStep(input: {
         locateIntent ||
         intent === "read"));
   const hidden = new Set<string>();
+  if (analyticsLoadTableDirective(input.steps) === "finish") {
+    hidden.add(LOAD_TABLE_TOOL);
+  }
   if (hideWrite) hidden.add(WRITE_COLUMN_TOOL);
   if (hideManage) hidden.add(MANAGE_WORKSHEET_TOOL);
   if (hideAsk) hidden.add(ASK_USER_TOOL);

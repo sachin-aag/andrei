@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   analyticsDumpReadinessDirective,
+  analyticsLoadTableDirective,
   analyticsGatherDirective,
   analyticsManageLoopDirective,
   analyticsPartialDumpDirective,
@@ -779,5 +780,71 @@ describe("analyticsGatherDirective", () => {
     });
     expect(prepared?.activeTools).not.toContain("write_column");
     expect(prepared?.toolChoice).toBe("required");
+  });
+});
+
+function loadTableStep(status: "listed" | "loaded"): AnalyticsChatStep {
+  return {
+    toolCalls: [{ toolName: "load_table" }],
+    toolResults: [{ toolName: "load_table", output: { status } }],
+  };
+}
+
+describe("analyticsLoadTableDirective", () => {
+  it("lets the first listing through so the model can pick a table", () => {
+    expect(analyticsLoadTableDirective([loadTableStep("listed")])).toBe(
+      "continue"
+    );
+  });
+
+  it("hides load_table after two listings without a load", () => {
+    expect(
+      analyticsLoadTableDirective([
+        loadTableStep("listed"),
+        loadTableStep("listed"),
+      ])
+    ).toBe("finish");
+  });
+
+  it("keeps load_table open once a table actually loaded", () => {
+    // Loading several prints in one turn is the point — one sheet per file.
+    expect(
+      analyticsLoadTableDirective([
+        loadTableStep("listed"),
+        loadTableStep("loaded"),
+        loadTableStep("loaded"),
+      ])
+    ).toBe("continue");
+  });
+});
+
+describe("load_table in the analytics step plan", () => {
+  it("is offered to an agent write turn", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 3)],
+      canEdit: true,
+      intent: "write",
+    });
+    expect(prepared?.activeTools).toContain("load_table");
+  });
+
+  it("counts as a dump source, so plots are not hidden behind a page read", () => {
+    // Loaded rows are the verbatim parse; a page read would add nothing.
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 3), loadTableStep("loaded")],
+      canEdit: true,
+      intent: "write",
+    });
+    expect(prepared?.activeTools).toContain("plot_xy_scatter");
+    expect(prepared?.activeTools).toContain("write_column");
+  });
+
+  it("drops out once the model has only listed twice", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: [loadTableStep("listed"), loadTableStep("listed")],
+      canEdit: true,
+      intent: "write",
+    });
+    expect(prepared?.activeTools ?? []).not.toContain("load_table");
   });
 });

@@ -61,6 +61,7 @@ import {
   type WorksheetData,
 } from "./types";
 import {
+  addDataSheet,
   columnNumericValues,
   dataSheets,
   findColumn,
@@ -79,6 +80,11 @@ import {
   trimTrailingEmpty,
   upsertSpecRow,
 } from "./worksheet";
+import {
+  columnCellsFromLoadedTable,
+  listDetectedTablesForReport,
+  loadDetectedTable,
+} from "@/lib/attachments/document-tables";
 import {
   applyManageWorksheet,
   manageWorksheetInputSchema,
@@ -112,6 +118,7 @@ export const ANALYTICS_CHAT_WRITE_TOOL_NAMES = [
   "write_column",
   "manage_worksheet",
   "extract_sheet",
+  "load_table",
   "run_capability_sixpack",
   "run_one_way_anova",
   "plot_xy_scatter",
@@ -1643,6 +1650,217 @@ export function buildAnalyticsChatTools(opts: {
       });
     }
 
+    statsTools.load_table = tool({
+      description:
+        "Load a table that was parsed from an attachment straight into a worksheet sheet — exact values, every row, no page limit and no reading. Call this FIRST for instrument prints, historian trends, datalogger dumps, chromatography runs and any long numeric table: it is faster and exact where extract_sheet re-reads pages a model already transcribed. Call with no tableId to list what was parsed from the attached files, then call again with that tableId. Pass sheetName for the destination tab. Pass columns to load only the ones you need. rowStart/rowLimit page through a table longer than the worksheet holds. If the file you want is not listed, nothing tabular was parsed from it — fall back to extract_sheet.",
+      inputSchema: z
+        .object({
+          tableId: z
+            .string()
+            .trim()
+            .min(1)
+            .optional()
+            .describe(
+              "Table to load, from a previous no-argument call. Omit to list the parsed tables."
+            ),
+          attachmentId: z
+            .string()
+            .trim()
+            .min(1)
+            .optional()
+            .describe("Restrict the listing to one attachment id."),
+          sheetName: z
+            .string()
+            .trim()
+            .min(1)
+            .max(80)
+            .optional()
+            .describe(
+              "Destination tab name. Defaults to the source filename. An existing tab with this name is reused."
+            ),
+          columns: z
+            .array(z.string().trim().min(1).max(80))
+            .max(MAX_WRITE_COLUMNS)
+            .optional()
+            .describe(
+              "Column names (or 1-based positions) to load, in order. Omit to load every column."
+            ),
+          rowStart: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
+            .describe("1-based first row to load. Default 1."),
+          rowLimit: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_WORKSHEET_ROWS)
+            .optional()
+            .describe(
+              `Rows to load. Default and maximum ${MAX_WORKSHEET_ROWS} — the worksheet cap.`
+            ),
+        })
+        .describe(
+          "No arguments lists the parsed tables. tableId loads one into a sheet."
+        ),
+      execute: async (input) => {
+        const outOfScope = attachmentOutOfScope(input.attachmentId?.trim());
+        if (outOfScope) return outOfScope;
+
+        if (!input.tableId) {
+          const tables = await listDetectedTablesForReport(reportId, {
+            attachmentIds: input.attachmentId
+              ? [input.attachmentId]
+              : pinnedAttachmentIds,
+          });
+          return {
+            status: "listed" as const,
+            tableCount: tables.length,
+            tables: tables.map((table) => ({
+              tableId: table.tableId,
+              attachmentId: table.attachmentId,
+              filename: table.filename,
+              rowCount: table.rowCount,
+              pages: `${table.pageStart}-${table.pageEnd}`,
+              truncated: table.truncated,
+              columns: table.columns.map((column) => `${column.name} (${column.type})`),
+            })),
+            note:
+              tables.length === 0
+                ? "No table was parsed from the attached files. Use extract_sheet or read pages instead."
+                : "Call load_table again with one tableId to load it into a sheet.",
+          };
+        }
+
+        const limit = Math.min(input.rowLimit ?? MAX_WORKSHEET_ROWS, MAX_WORKSHEET_ROWS);
+        const table = await loadDetectedTable(reportId, input.tableId, {
+          rowStart: input.rowStart,
+          limit,
+        });
+        if (!table) {
+          return {
+            status: "not_found" as const,
+            message:
+              "No parsed table with that id on this report. Call load_table with no arguments to list them.",
+          };
+        }
+        if (table.rows.length === 0) {
+          return {
+            status: "empty" as const,
+            rowCount: table.rowCount,
+            message: `That table has ${table.rowCount} row(s); rowStart is past the end.`,
+          };
+        }
+
+        const requested = input.columns?.length
+          ? input.columns
+          : table.columns.map((column) => column.name);
+        const entries: WriteColumnEntry[] = [];
+        const missing: string[] = [];
+        for (const ref of requested) {
+          const cells = columnCellsFromLoadedTable(table, ref);
+          if (!cells) {
+            missing.push(ref);
+            continue;
+          }
+          entries.push({ name: cells.name, values: cells.values });
+        }
+        if (entries.length === 0) {
+          return {
+            status: "not_found" as const,
+            message: `None of those columns are in this table. It has: ${table.columns
+              .map((column) => column.name)
+              .join(", ")}.`,
+          };
+        }
+
+        // Every loaded row carries the page it was printed on, so the written
+        // columns cite the source pages the same way a read-and-write dump does.
+        const citations = uniqueChartCitations(
+          table.rows
+            .map((row) => row.pageNumber)
+            .filter((page, index, all) => all.indexOf(page) === index)
+            .slice(0, MAX_WRITE_SOURCE_PAGES)
+            .map((page) => ({
+              attachmentId: table.attachmentId,
+              page,
+              filename: table.filename,
+            }))
+        );
+
+        const sheetName = (input.sheetName?.trim() || table.filename).slice(0, 40);
+        return withWorksheetMutationLock(reportId, async () => {
+          const analytics = await getOrCreateReportAnalytics(reportId);
+          const keepActiveId = analytics.worksheet.activeSheetId;
+          // addDataSheet reuses a same-named tab and switches to it, so this
+          // both creates the destination and resolves its id.
+          const writeOnto = async (base: WorksheetData, version: number) => {
+            const withSheet = addDataSheet(base, sheetName);
+            const applied = applyWriteColumnEntries(
+              withSheet,
+              entries,
+              citations,
+              withSheet.activeSheetId,
+              "replace"
+            );
+            if (!applied.ok) return { applied };
+            const saved = await persistAndRecord(
+              restoreActiveSheet(applied.worksheet, keepActiveId),
+              version
+            );
+            return { applied, saved };
+          };
+
+          let outcome = await writeOnto(analytics.worksheet, analytics.version);
+          if (
+            outcome.saved &&
+            !outcome.saved.ok &&
+            outcome.saved.reason === "conflict"
+          ) {
+            outcome = await writeOnto(
+              outcome.saved.analytics.worksheet,
+              outcome.saved.analytics.version
+            );
+          }
+          if (outcome.applied.ok === false) {
+            return {
+              status: "error" as const,
+              message: `Could not write to sheet ${sheetName}.`,
+            };
+          }
+          const savedResult = outcome.saved;
+          if (!savedResult?.ok) {
+            return {
+              status: "error" as const,
+              message: persistErrorMessage(
+                savedResult ?? { ok: false, reason: "not_found" }
+              ),
+            };
+          }
+          const saved = savedResult.analytics;
+          const writtenSheetId = outcome.applied.worksheet.activeSheetId;
+          const sheet = findSheet(saved.worksheet, writtenSheetId);
+          return {
+            status: "loaded" as const,
+            sheetId: sheet?.id ?? writtenSheetId,
+            sheetName: sheet?.name ?? sheetName,
+            filename: table.filename,
+            columnNames: entries.map((entry) => entry.name),
+            rowsWritten: table.rows.length,
+            rowStart: table.rowStart,
+            rowCount: table.rowCount,
+            hasMore: table.hasMore,
+            pages: `${table.pageStart}-${table.pageEnd}`,
+            ...(missing.length > 0 ? { missingColumns: missing } : {}),
+            note: table.hasMore
+              ? `Loaded rows ${table.rowStart}–${table.rowStart + table.rows.length - 1} of ${table.rowCount}. Call again with rowStart ${table.rowStart + table.rows.length} for the rest.`
+              : "Every row of this table is on the sheet.",
+          };
+        });
+      },
+    });
+
     statsTools.run_capability_sixpack = tool({
       description:
         "Compute and save a new Normal Capability Sixpack (I-MR) for a worksheet column. Requires LSL and/or USL. Call only when they asked for capability / sixpack / Cp Cpk — not when they asked for a scatter, XY plot, or colored-by-group chart. Optional rowStart/rowEnd (1-based inclusive) or rows (1-based row numbers) limits the sixpack to those observations. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
@@ -2060,6 +2278,9 @@ export function buildAnalyticsChatTools(opts: {
   if (opts.role === "sheet_worker") {
     delete tools.ask_user;
     delete tools.extract_sheet;
+    // Table selection belongs to the orchestrator. A worker loading a parsed
+    // table would create a second tab holding the data it was sent to dump.
+    delete tools.load_table;
     for (const name of [
       "run_capability_sixpack",
       "run_one_way_anova",

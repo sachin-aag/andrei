@@ -30,6 +30,7 @@ export const ANALYTICS_WRITE_TOOLS = [
   "write_column",
   "manage_worksheet",
   "extract_sheet",
+  "load_table",
   "run_capability_sixpack",
   "run_one_way_anova",
   "plot_xy_scatter",
