@@ -624,3 +624,59 @@ export function worstExcursion(
 ): TimeSeriesExcursion | null {
   return rankExcursionsBySeverity(excursions)[0] ?? null;
 }
+
+export type SuspectBand = {
+  when: string;
+  reason: "off_setpoint" | "cannot_fail";
+  message: string;
+};
+
+const OFF_SELECTORS = new Set(["off", "none", "idle", "stop", "stopped", "na", "n/a"]);
+
+/**
+ * Bands that are probably not real acceptance criteria.
+ *
+ * A band is a specification, and the tool cannot check one against the
+ * document it should have come from. It can check two things that no genuine
+ * criterion looks like.
+ *
+ * **A band keyed to an off setpoint.** At setpoint 0 the equipment is not
+ * controlling to anything — during freezing there is no vacuum target — so a
+ * band there judges rows that were never under control.
+ *
+ * **A band that cannot fail.** One whose limits sit outside every reading in
+ * the whole series, other steps included, excludes nothing by construction.
+ * `0–1050` against a series spanning 235.5–1000 is a catch-all, not a limit.
+ * Note this is deliberately not "no excursions in this band" — a compliant
+ * step is supposed to look like that.
+ */
+export function suspectBands(
+  config: TimeSeriesConfig,
+  results: { min: number; max: number }
+): SuspectBand[] {
+  const bands = config.bands ?? [];
+  const suspect: SuspectBand[] = [];
+  for (const band of bands) {
+    const when = band.when.trim();
+    const numeric = Number(when);
+    if (when && (numeric === 0 || OFF_SELECTORS.has(when.toLowerCase()))) {
+      suspect.push({
+        when,
+        reason: "off_setpoint",
+        message: `${config.conditionColumnName ?? "The setpoint column"} = ${when} means the equipment is not controlling to a setpoint, so those readings should be left unjudged rather than given a band.`,
+      });
+      continue;
+    }
+    const coversEverything =
+      (band.lsl == null || band.lsl <= results.min) &&
+      (band.usl == null || band.usl >= results.max);
+    if (coversEverything && (band.lsl != null || band.usl != null)) {
+      suspect.push({
+        when,
+        reason: "cannot_fail",
+        message: `The band for ${when} (${band.lsl ?? "—"}–${band.usl ?? "—"}) is wider than every reading in this series (${results.min}–${results.max}), so it cannot fail. That is a catch-all, not an acceptance limit — check it against the specification.`,
+      });
+    }
+  }
+  return suspect;
+}

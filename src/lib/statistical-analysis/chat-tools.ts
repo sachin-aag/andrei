@@ -95,6 +95,7 @@ import {
   detectSetpointColumn,
   rankExcursionsBySeverity,
   steppedSetpointWarning,
+  suspectBands,
   worstExcursion,
 } from "./time-series";
 import {
@@ -893,6 +894,11 @@ function timeSeriesToolResult(
     );
   }
   const worst = worstExcursion(analysis.results.excursions);
+  for (const band of suspectBands(analysis.config, analysis.results)) {
+    warnings.push(
+      `Check the band for ${band.when}. ${band.message} Re-run with that band removed, or corrected against the cited specification.`
+    );
+  }
   const stepped = steppedSetpointWarning(analytics.worksheet, analysis.config);
   if (stepped) {
     warnings.push(

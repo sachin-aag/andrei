@@ -5,6 +5,7 @@ import {
   detectSetpointColumn,
   rankExcursionsBySeverity,
   steppedSetpointWarning,
+  suspectBands,
   worstExcursion,
 } from "./time-series";
 import {
@@ -548,5 +549,76 @@ describe("rankExcursionsBySeverity", () => {
 
   it("returns null for a cycle with no excursion", () => {
     expect(worstExcursion([])).toBeNull();
+  });
+});
+
+describe("suspectBands", () => {
+  const seriesRange = { min: 235.5, max: 1000 };
+
+  it("flags a band keyed to an off setpoint", () => {
+    // VAC2 = 0 is freezing: no vacuum target, so nothing to judge against.
+    const suspect = suspectBands(
+      config({
+        lsl: null,
+        usl: null,
+        conditionColumnName: "VAC2",
+        bands: [{ when: "0", lsl: 0, usl: 1050 }],
+      }),
+      seriesRange
+    );
+    expect(suspect).toHaveLength(1);
+    expect(suspect[0]?.reason).toBe("off_setpoint");
+  });
+
+  it("flags a band wider than every reading in the series", () => {
+    const suspect = suspectBands(
+      config({
+        lsl: null,
+        usl: null,
+        conditionColumnName: "VAC2",
+        bands: [{ when: "800", lsl: 0, usl: 1050 }],
+      }),
+      seriesRange
+    );
+    expect(suspect[0]?.reason).toBe("cannot_fail");
+    expect(suspect[0]?.message).toContain("catch-all");
+  });
+
+  it("leaves the real lyophilizer bands alone", () => {
+    expect(
+      suspectBands(
+        config({
+          lsl: null,
+          usl: null,
+          conditionColumnName: "VAC2",
+          bands: [
+            { when: "800", lsl: 650, usl: 950 },
+            { when: "600", lsl: 480, usl: 720 },
+            { when: "500", lsl: 380, usl: 620 },
+            { when: "250", lsl: 200, usl: 600 },
+          ],
+        }),
+        seriesRange
+      )
+    ).toEqual([]);
+  });
+
+  it("does not flag a band merely because nothing breached it", () => {
+    // A compliant step is supposed to look like this. Only a band that spans
+    // the whole series — other steps included — is a catch-all.
+    expect(
+      suspectBands(
+        config({
+          lsl: null,
+          usl: null,
+          bands: [{ when: "250", lsl: 200, usl: 600 }],
+        }),
+        seriesRange
+      )
+    ).toEqual([]);
+  });
+
+  it("says nothing about a plain fixed band", () => {
+    expect(suspectBands(config({ lsl: 650, usl: 950 }), seriesRange)).toEqual([]);
   });
 });

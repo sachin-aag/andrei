@@ -20,7 +20,10 @@ import {
   normalizeRowSelection,
 } from "@/lib/statistical-analysis/row-selection";
 import { timeSeriesOverlays } from "@/lib/statistical-analysis/types";
-import { worstExcursion } from "@/lib/statistical-analysis/time-series";
+import {
+  suspectBands,
+  worstExcursion,
+} from "@/lib/statistical-analysis/time-series";
 import type {
   ReportAnalyticsView,
   TimeSeriesAnalysisSummary,
@@ -65,6 +68,9 @@ export function TimeSeriesView({
   const { config, results, stale, title } = analysis;
   const overlays = timeSeriesOverlays(config);
   const rowLabel = formatRowSelection(normalizeRowSelection(config));
+  // A band is a specification the figure cannot verify — but it can say when
+  // one could never have failed.
+  const suspect = suspectBands(config, results);
 
   return (
     <div
@@ -145,6 +151,17 @@ export function TimeSeriesView({
           excursions={overlays.showExcursions ? results.excursions : []}
         />
       </div>
+
+      {suspect.length > 0 ? (
+        <ul
+          className="space-y-1 text-sm text-[var(--destructive)]"
+          data-testid="time-series-suspect-bands"
+        >
+          {suspect.map((band) => (
+            <li key={`${band.reason}-${band.when}`}>{band.message}</li>
+          ))}
+        </ul>
+      ) : null}
 
       <ExcursionTable
         excursions={results.excursions}

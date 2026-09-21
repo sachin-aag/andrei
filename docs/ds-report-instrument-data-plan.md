@@ -311,6 +311,18 @@ attachments and re-run with conditionColumnId and bands.* `detectSetpointColumn`
 is deliberately separate from `steppedSetpointWarning` so it can fire when
 there is no band at all, not only when there is a wrong one.
 
+**A band that cannot fail is caught.** The first real run supplied
+`VAC2 = 0 → 0–1050`, a band for the freezing phase where the equipment is not
+controlling to any vacuum setpoint. It judged ~600 idle readings against limits
+that excluded nothing. `suspectBands` flags two shapes no genuine criterion
+has: a band keyed to an **off** setpoint (`0`, `off`, `idle`), and a band whose
+limits sit outside **every reading in the whole series** — `0–1050` against a
+series spanning 235.5–1000 is a catch-all, not a limit.
+
+Deliberately *not* flagged: a band that simply had no excursions. A compliant
+step is supposed to look like that, and warning about it would train people to
+ignore the warning.
+
 A related bug the test for this found: `suggestTimeSeriesColumns` could pick
 the **measurement itself** as its condition column. A flat channel classifies
 as a setpoint and trivially shares its own name stem, so it would have been
