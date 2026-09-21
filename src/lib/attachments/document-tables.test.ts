@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 // The module imports `@/db`, which reads DATABASE_URL at import time.
 vi.mock("@/db", () => ({ db: {} }));
+vi.mock("@/lib/attachments/persist-document-tables", () => ({
+  persistDocumentTablesForRun: vi.fn(),
+}));
 
 import {
   columnCellsFromLoadedTable,

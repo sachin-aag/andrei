@@ -86,6 +86,7 @@ import {
 } from "./worksheet";
 import {
   columnCellsFromLoadedTable,
+  ensureDocumentTablesForReport,
   listDetectedTablesForReport,
   loadDetectedTable,
 } from "@/lib/attachments/document-tables";
@@ -906,6 +907,59 @@ function timeSeriesToolResult(
 /** Enough to write up; a cycle with more than this is a trend, not a finding. */
 const MAX_REPORTED_EXCURSIONS = 25;
 
+/** No arguments lists the parsed tables; a tableId loads one. */
+const loadTableInputSchema = z
+  .object({
+    tableId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "Table to load, from a previous no-argument call. Omit to list the parsed tables."
+      ),
+    attachmentId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe("Restrict the listing to one attachment id."),
+    sheetName: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(
+        "Destination tab name. Defaults to the source filename. An existing tab with this name is reused."
+      ),
+    columns: z
+      .array(z.string().trim().min(1).max(80))
+      .max(MAX_WRITE_COLUMNS)
+      .optional()
+      .describe(
+        "Column names (or 1-based positions) to load, in order. Omit to load every column."
+      ),
+    rowStart: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe("1-based first row to load. Default 1."),
+    rowLimit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_WORKSHEET_ROWS)
+      .optional()
+      .describe(
+        `Rows to load. Default and maximum ${MAX_WORKSHEET_ROWS} — the worksheet cap.`
+      ),
+  })
+  .describe(
+    "No arguments lists the parsed tables. tableId loads one into a sheet."
+  );
+
 export function buildAnalyticsChatTools(opts: {
   reportId: string;
   canEdit: boolean;
@@ -1720,62 +1774,38 @@ export function buildAnalyticsChatTools(opts: {
     statsTools.load_table = tool({
       description:
         "Load a table that was parsed from an attachment straight into a worksheet sheet — exact values, every row, no page limit and no reading. Call this FIRST for instrument prints, historian trends, datalogger dumps, chromatography runs and any long numeric table: it is faster and exact where extract_sheet re-reads pages a model already transcribed. Call with no tableId to list what was parsed from the attached files, then call again with that tableId. Pass sheetName for the destination tab. Pass columns to load only the ones you need. rowStart/rowLimit page through a table longer than the worksheet holds. If the file you want is not listed, nothing tabular was parsed from it — fall back to extract_sheet.",
-      inputSchema: z
-        .object({
-          tableId: z
-            .string()
-            .trim()
-            .min(1)
-            .optional()
-            .describe(
-              "Table to load, from a previous no-argument call. Omit to list the parsed tables."
-            ),
-          attachmentId: z
-            .string()
-            .trim()
-            .min(1)
-            .optional()
-            .describe("Restrict the listing to one attachment id."),
-          sheetName: z
-            .string()
-            .trim()
-            .min(1)
-            .max(80)
-            .optional()
-            .describe(
-              "Destination tab name. Defaults to the source filename. An existing tab with this name is reused."
-            ),
-          columns: z
-            .array(z.string().trim().min(1).max(80))
-            .max(MAX_WRITE_COLUMNS)
-            .optional()
-            .describe(
-              "Column names (or 1-based positions) to load, in order. Omit to load every column."
-            ),
-          rowStart: z
-            .number()
-            .int()
-            .min(1)
-            .optional()
-            .describe("1-based first row to load. Default 1."),
-          rowLimit: z
-            .number()
-            .int()
-            .min(1)
-            .max(MAX_WORKSHEET_ROWS)
-            .optional()
-            .describe(
-              `Rows to load. Default and maximum ${MAX_WORKSHEET_ROWS} — the worksheet cap.`
-            ),
-        })
-        .describe(
-          "No arguments lists the parsed tables. tableId loads one into a sheet."
-        ),
+      inputSchema: loadTableInputSchema,
       execute: async (input) => {
         const outOfScope = attachmentOutOfScope(input.attachmentId?.trim());
         if (outOfScope) return outOfScope;
+        try {
+          return await runLoadTable(input);
+        } catch (error) {
+          // Distinguish "nothing parsed" from "the store is unavailable".
+          // Reporting the second as the first sends the model off to read
+          // hundreds of pages and blames the document for a deploy problem.
+          console.warn("[load_table] Unavailable", {
+            reportId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return {
+            status: "unavailable" as const,
+            message:
+              "Parsed tables could not be read on this deployment. Do not treat this as the file having no table — say the table store is unavailable.",
+          };
+        }
+      },
+    });
 
+    async function runLoadTable(
+      input: z.infer<typeof loadTableInputSchema>
+    ) {
+      {
         if (!input.tableId) {
+          // Attachments ingested before table detection shipped have nothing
+          // stored. Parse them now rather than sending the model off to read
+          // 76 pages of numbers a parser can read exactly in milliseconds.
+          await ensureDocumentTablesForReport(reportId);
           const tables = await listDetectedTablesForReport(reportId, {
             attachmentIds: input.attachmentId
               ? [input.attachmentId]
@@ -1925,8 +1955,8 @@ export function buildAnalyticsChatTools(opts: {
               : "Every row of this table is on the sheet.",
           };
         });
-      },
-    });
+      }
+    }
 
     statsTools.run_capability_sixpack = tool({
       description:

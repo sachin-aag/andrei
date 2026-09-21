@@ -107,3 +107,12 @@ describe("interiorTablePages", () => {
     expect(interiorTablePages([]).size).toBe(0);
   });
 });
+
+describe("parse-once marking", () => {
+  it("is what stops a table-free document being re-parsed forever", () => {
+    // `tablesParsedAt` is stamped even when nothing is found. Without that,
+    // every later load_table would re-read the transcripts of every document
+    // that legitimately contains no table.
+    expect(planTablesForPersistence([])).toEqual([]);
+  });
+});

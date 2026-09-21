@@ -730,6 +730,12 @@ export const attachmentIngestRuns = pgTable(
     batchCount: integer("batch_count"),
     completedBatchCount: integer("completed_batch_count").notNull().default(0),
     documentSummary: text("document_summary"),
+    /**
+     * When deterministic table detection last ran over this run's pages. Null
+     * means never — either the run predates the feature or it failed — and is
+     * what lets `load_table` parse on demand instead of needing a backfill.
+     */
+    tablesParsedAt: timestamp("tables_parsed_at", { withTimezone: true }),
     error: text("error"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),

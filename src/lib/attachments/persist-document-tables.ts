@@ -1,6 +1,10 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { documentTableRows, documentTables } from "@/db/schema";
+import {
+  attachmentIngestRuns,
+  documentTableRows,
+  documentTables,
+} from "@/db/schema";
 import { detectTables, type DetectedTable } from "@/lib/attachments/table-extract";
 
 /**
@@ -132,8 +136,19 @@ export async function persistDocumentTablesForRun(
     .delete(documentTables)
     .where(eq(documentTables.ingestRunId, input.runId));
 
+  // Stamped even when nothing was found, so a document that genuinely has no
+  // table is not re-parsed on every later request.
+  const markParsed = () =>
+    db
+      .update(attachmentIngestRuns)
+      .set({ tablesParsedAt: new Date() })
+      .where(eq(attachmentIngestRuns.id, input.runId));
+
   const planned = planTablesForPersistence(detected);
-  if (planned.length === 0) return { tableCount: 0, rowCount: 0, spans: [] };
+  if (planned.length === 0) {
+    await markParsed();
+    return { tableCount: 0, rowCount: 0, spans: [] };
+  }
 
   let rowCount = 0;
   for (const [ordinal, entry] of planned.entries()) {
@@ -172,6 +187,8 @@ export async function persistDocumentTablesForRun(
     }
     rowCount += rows.length;
   }
+
+  await markParsed();
 
   return {
     tableCount: planned.length,

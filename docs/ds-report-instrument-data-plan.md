@@ -318,9 +318,20 @@ Construction is done; none of it has been through a live environment.
    Reprocess button will not fix that: `canReprocessAttachment` only accepts
    failed or incompletely-indexed attachments, not healthy ones. Re-uploading is
    the wrong fix — detection reads `document_pages.transcript`, which is already
-   stored verbatim. Run `pnpm backfill-document-tables <reportId>` instead (add
-   `--dry-run` to see what it would find first). No Vertex calls, no page
-   budget, no re-upload.
+   stored verbatim.
+
+   **`load_table` now heals this itself.** Its listing branch calls
+   `ensureDocumentTablesForReport`, which parses any run whose
+   `tablesParsedAt` is null. The stamp is written even when nothing is found,
+   so a document that genuinely has no table is not re-parsed on every request.
+   `pnpm backfill-document-tables <reportId>` stays useful for doing a whole
+   report up front (`--dry-run` shows what it would find) — but it is no longer
+   a prerequisite.
+
+   `load_table` also distinguishes *nothing parsed* from *the table store is
+   unavailable*. Reporting a missing migration as "this file has no table"
+   sends the model off to read hundreds of pages and blames the document for a
+   deploy problem.
 2. **Run `pnpm check-table-extract` against the eight trend prints.** Still the
    one test that gates everything downstream: the parser was validated on Google
    Drive's text extraction, and ingest uses unpdf. Expect ~2,142 rows, 11
