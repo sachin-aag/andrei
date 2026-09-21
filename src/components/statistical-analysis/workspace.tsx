@@ -1,7 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import { Loader2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -207,6 +215,15 @@ export function StatisticalWorkspace({
   const [timeSeriesColumnId, setTimeSeriesColumnId] = useState("");
   const [timeSeriesSubmitting, setTimeSeriesSubmitting] = useState(false);
   const [timeSeriesError, setTimeSeriesError] = useState<string | null>(null);
+  /**
+   * Switching to a filled sheet mounts every row — a 2,000-row instrument
+   * table is ~23,000 cells — which blocks the click if it runs urgently. The
+   * transition lets the current sheet stay interactive while the new one
+   * renders, and `pendingSheetId` is set urgently so the tab acknowledges the
+   * click on the very next paint.
+   */
+  const [switchingSheet, startSheetSwitch] = useTransition();
+  const [pendingSheetId, setPendingSheetId] = useState<string | null>(null);
   const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetNameDraft, setSheetNameDraft] = useState("");
@@ -658,6 +675,19 @@ export function StatisticalWorkspace({
     setHistogramOpen(true);
   };
 
+  const switchToSheet = useCallback(
+    (sheetId: string) => {
+      // `switchWorksheetTab` always returns a new object, so re-clicking the
+      // active tab would re-mount every row and flash a spinner for nothing.
+      if (worksheetRef.current.activeSheetId === sheetId) return;
+      setPendingSheetId(sheetId);
+      startSheetSwitch(() => {
+        setWorksheet((current) => switchWorksheetTab(current, sheetId));
+      });
+    },
+    [startSheetSwitch]
+  );
+
   const openTimeSeries = async (columnId: string) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
@@ -838,7 +868,12 @@ export function StatisticalWorkspace({
               className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-4 py-1.5"
             >
               {worksheet.sheets.map((sheet) => {
-                const active = worksheet.activeSheetId === sheet.id;
+                // `pendingSheetId` only counts while the transition is in
+                // flight, so a stale id can never mark the wrong tab.
+                const switchingToThis =
+                  switchingSheet && pendingSheetId === sheet.id;
+                const active =
+                  worksheet.activeSheetId === sheet.id || switchingToThis;
                 const editing = editingSheetId === sheet.id;
                 return editing ? (
                   <input
@@ -867,19 +902,24 @@ export function StatisticalWorkspace({
                     type="button"
                     aria-label={`${sheet.name} sheet`}
                     data-testid={`worksheet-sheet-tab-${sheet.id}`}
-                    onClick={() =>
-                      setWorksheet((current) =>
-                        switchWorksheetTab(current, sheet.id)
-                      )
-                    }
+                    aria-busy={switchingToThis || undefined}
+                    data-switching={switchingToThis ? "true" : undefined}
+                    onClick={() => switchToSheet(sheet.id)}
                     onDoubleClick={() => beginRenameSheet(sheet.id)}
-                    className={`rounded-md px-2 py-1 text-xs ${
+                    className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
                       active
                         ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"
                         : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
                     }`}
                   >
                     {sheet.name}
+                    {switchingToThis ? (
+                      <Loader2
+                        className="size-3 animate-spin"
+                        aria-hidden="true"
+                        data-testid={`worksheet-sheet-tab-spinner-${sheet.id}`}
+                      />
+                    ) : null}
                   </button>
                 );
               })}
