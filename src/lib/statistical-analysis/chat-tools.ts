@@ -91,6 +91,7 @@ import {
   loadDetectedTable,
 } from "@/lib/attachments/document-tables";
 import { suggestTimeSeriesColumns } from "./column-roles";
+import { steppedSetpointWarning } from "./time-series";
 import {
   applyManageWorksheet,
   manageWorksheetInputSchema,
@@ -872,7 +873,27 @@ function timeSeriesToolResult(
   analytics: ReportAnalyticsView,
   updated: boolean
 ) {
+  // Both warnings can fire at once, so they share one list rather than one key
+  // that the second would silently overwrite.
+  const warnings: string[] = [];
+  if (analysis.results.judgedReadings === 0) {
+    warnings.push(
+      "No acceptance limits were in force, so excursions were NOT assessed. Do not report that there were none — say the limits are missing and ask for them."
+    );
+  }
+  const stepped = steppedSetpointWarning(analytics.worksheet, analysis.config);
+  if (stepped) {
+    warnings.push(
+      `This series was judged against one fixed band, but ${stepped.columnName} steps through ` +
+        `${stepped.values.join(", ")} — so a reading that breached its own step's limits is reported as passing. ` +
+        "If the specification gives a range per step, call plot_time_series again with that analysisId, " +
+        `conditionColumnId for ${stepped.columnName}, and one band per value. Tell the engineer which test was run.`
+    );
+  }
   return {
+    ...(warnings.length > 0 ? { warnings } : {}),
+    notAssessed: analysis.results.judgedReadings === 0,
+    fixedBandOverSteppedSetpoint: stepped != null,
     status: "ok" as const,
     updated,
     analysisId: analysis.id,
@@ -885,13 +906,6 @@ function timeSeriesToolResult(
     n: analysis.results.n,
     skipped: analysis.results.skipped,
     judgedReadings: analysis.results.judgedReadings,
-    ...(analysis.results.judgedReadings === 0
-      ? {
-          notAssessed: true,
-          warning:
-            "No acceptance limits were in force, so excursions were NOT assessed. Do not report that there were none — say the limits are missing and ask for them.",
-        }
-      : {}),
     decimated: analysis.results.decimated,
     excursionCount: analysis.results.excursions.length,
     excursionReadings: analysis.results.excursionReadings,

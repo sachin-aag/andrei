@@ -14,7 +14,14 @@ import {
 } from "./types";
 import { normalizeRowSelection, type AnalysisRowSelection } from "./row-selection";
 import type { ChartSpec } from "@/lib/charts/chart-spec";
-import { cellsForRowSelection, findColumn, specRowForColumn } from "./worksheet";
+import {
+  cellsForRowSelection,
+  findColumn,
+  findSheet,
+  findSheetIdForColumn,
+  specRowForColumn,
+} from "./worksheet";
+import { suggestTimeSeriesColumns } from "./column-roles";
 import {
   bandForRow,
   detectExcursions,
@@ -537,4 +544,41 @@ export function timeSeriesSourceKey(
       ? cellsForRowSelection(conditionColumn, selection)
       : null,
   });
+}
+
+/**
+ * A fixed band applied to a series whose setpoint steps.
+ *
+ * Judging a whole lyophilization cycle against one overall operating range
+ * (200–1000 µbar) is not wrong — that range is a real criterion — but it is
+ * the weakest test available, and it reports a clean pass while a reading that
+ * breached its *step's* band sails through. RIG23001 sat at 844 µbar during a
+ * 380–620 step: inside 200–1000, and a hundred minutes out of band.
+ *
+ * The data says this happened: a setpoint column with several values, and a
+ * band that does not vary with it. Returns what to say, or null when the
+ * analysis is already conditional or has no band at all.
+ */
+export function steppedSetpointWarning(
+  worksheet: WorksheetData,
+  config: TimeSeriesConfig
+): { columnName: string; values: string[] } | null {
+  if (config.bands && config.bands.length > 0) return null;
+  if (config.lsl == null && config.usl == null) return null;
+
+  const sheetId = findSheetIdForColumn(worksheet, config.columnId);
+  const sheet = sheetId ? findSheet(worksheet, sheetId) : undefined;
+  const columns = sheet?.columns ?? worksheet.columns;
+  const picks = suggestTimeSeriesColumns(columns, {
+    measurementHint: config.columnName,
+  });
+  if (!picks.conditionColumnId) return null;
+  // One value is a constant, not a schedule of steps.
+  if (picks.conditionValues.length < 2) return null;
+
+  const column = columns.find(
+    (candidate) => candidate.id === picks.conditionColumnId
+  );
+  if (!column) return null;
+  return { columnName: column.name, values: picks.conditionValues };
 }

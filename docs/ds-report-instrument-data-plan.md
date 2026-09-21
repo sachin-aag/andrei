@@ -266,9 +266,27 @@ no band.
 
 Where the limits actually come from, for this investigation: the trend print's
 own header carries `DRYING START P : 800 uBAR`, `ALARM:P1 : 900`, `ALARM:P2 :
-950` — so 950 is citable from page 1. **650, 480, 380 and 200 are not in the
-print**; they come from the BMR or SOP and must be retrieved and cited from
-there, or supplied by the engineer.
+950`, so 950 is citable from page 1. The rest are in **Justification Report for
+LYO excursion Proposed Controls 11.09.2026.docx, p. 4**, which states them as
+setpoint ± controlling band — 800 ±150, 600 ±120, 500 ±120 — confirming the
+oracle from a source rather than from my reconstruction.
+
+**That document also gives an overall operating range of 200–1000 µbar, and
+that is the trap.** Judged against it, a whole cycle passes: RIG23001's hundred
+minutes at 844 µbar during a 380–620 step sits comfortably inside 200–1000. An
+overall range and a per-step range are different tests, and the weaker one
+reports a clean pass.
+
+`steppedSetpointWarning` detects it from the data — a fixed band on a series
+whose setpoint column takes several values — and the chat result carries
+`fixedBandOverSteppedSetpoint` so the assistant has to say which test it ran.
+It is a warning, not a refusal: the overall range is a real criterion, just not
+a sufficient one.
+
+A related bug the test for this found: `suggestTimeSeriesColumns` could pick
+the **measurement itself** as its condition column. A flat channel classifies
+as a setpoint and trivially shares its own name stem, so it would have been
+selected to set the limits it was judged against.
 
 **Still open on this kind:** *Export with Excel charts* routes through the
 `ChartSpec` path, so a time series exports as an XY chart with numeric (epoch)

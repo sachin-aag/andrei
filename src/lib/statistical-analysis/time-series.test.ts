@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeTimeSeries,
   parseTimestampCell,
+  steppedSetpointWarning,
 } from "./time-series";
 import {
   MAX_TIME_SERIES_POINTS,
@@ -404,3 +405,75 @@ describe("computeTimeSeries", () => {
   });
 });
 
+describe("steppedSetpointWarning", () => {
+  function sheetWithSetpoints(): WorksheetData {
+    return sheetWith([
+      { id: "c1", name: "VAC1", values: varyingVac(40) },
+      { id: "c2", name: "DATE", values: dates40() },
+      { id: "c3", name: "TIME", values: minuteStamps(40) },
+      {
+        id: "c4",
+        name: "VAC2",
+        values: Array.from({ length: 40 }, (_, i) =>
+          i < 10 ? "800.0" : i < 20 ? "600.0" : i < 30 ? "500.0" : "250.0"
+        ),
+      },
+    ]);
+  }
+
+  it("flags one overall band applied to a stepping process", () => {
+    // 200-1000 passes everything while a reading that breached its own step's
+    // 380-620 limits sails through — RIG23001 exactly.
+    const warning = steppedSetpointWarning(
+      sheetWithSetpoints(),
+      config({ lsl: 200, usl: 1000 })
+    );
+    expect(warning?.columnName).toBe("VAC2");
+    expect(warning?.values).toEqual(["250.0", "500.0", "600.0", "800.0"]);
+  });
+
+  it("says nothing once the bands are conditional", () => {
+    expect(
+      steppedSetpointWarning(
+        sheetWithSetpoints(),
+        config({
+          lsl: null,
+          usl: null,
+          conditionColumnId: "c4",
+          bands: [{ when: "800.0", lsl: 650, usl: 950 }],
+        })
+      )
+    ).toBeNull();
+  });
+
+  it("says nothing when there is no band to be wrong about", () => {
+    // That case is already covered by judgedReadings === 0.
+    expect(
+      steppedSetpointWarning(
+        sheetWithSetpoints(),
+        config({ lsl: null, usl: null })
+      )
+    ).toBeNull();
+  });
+
+  it("says nothing when the setpoint never moves", () => {
+    const flat = sheetWith([
+      { id: "c1", name: "VAC1", values: varyingVac(40) },
+      { id: "c2", name: "DATE", values: dates40() },
+      { id: "c3", name: "TIME", values: minuteStamps(40) },
+      { id: "c4", name: "VAC2", values: Array(40).fill("800.0") },
+    ]);
+    expect(
+      steppedSetpointWarning(flat, config({ lsl: 200, usl: 1000 }))
+    ).toBeNull();
+  });
+});
+
+function dates40(): string[] {
+  return Array(40).fill("22/05/2026");
+}
+
+/** A real channel moves every reading; a flat one would read as a setpoint. */
+function varyingVac(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => (780 + i * 1.3).toFixed(1));
+}

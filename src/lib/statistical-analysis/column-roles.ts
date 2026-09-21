@@ -225,7 +225,11 @@ export function suggestTimeSeriesColumns(
   const measurement =
     hintedMeasurement ?? (measurements.length === 1 ? measurements[0]! : null);
 
-  const setpoints = byRole("setpoint");
+  // A flat channel classifies as a setpoint too, and it shares its own stem —
+  // without this it would be selected as the column that sets its own band.
+  const setpoints = byRole("setpoint").filter(
+    (guess) => guess.columnId !== measurement?.columnId
+  );
   const condition = measurement
     ? (setpoints.find((guess) => stem(guess.name) === stem(measurement.name)) ??
       nearestByIndex(setpoints, measurement.index))

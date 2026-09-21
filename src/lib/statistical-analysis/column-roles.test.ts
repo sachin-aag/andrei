@@ -140,3 +140,20 @@ describe("suggestTimeSeriesColumns", () => {
     expect(picks.clockColumnId).toBeNull();
   });
 });
+
+describe("a column never sets its own band", () => {
+  it("does not offer the measurement as its own condition column", () => {
+    // A flat channel classifies as a setpoint and shares its own stem, so
+    // without a guard it would be picked to set the limits it is judged by.
+    const flat = Array.from({ length: 40 }, () => "800.0");
+    const picks = suggestTimeSeriesColumns(
+      [
+        col("c1", "Date", Array.from({ length: 40 }, () => "01/01/2026")),
+        col("c2", "VAC1", flat),
+      ],
+      { measurementHint: "VAC1" }
+    );
+    expect(picks.columnId).toBe("c2");
+    expect(picks.conditionColumnId).not.toBe("c2");
+  });
+});
