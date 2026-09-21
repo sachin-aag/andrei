@@ -410,6 +410,35 @@ plus gaps in the numbering and rows with no description. An attachment listed
 but never cited is `partially_met`, not a failure: enclosing one for
 completeness is legitimate. A defect outranks that downgrade.
 
+## Where this stopped (21 Sep 2026)
+
+Working end to end on the MJ preview: eight trend prints parsed, loaded to
+sheets, and RIG23001 plotted with conditional bands — **27 runs, 160
+out-of-band readings, longest 22/03/2024 10:08:01→11:48:01 at 101 readings /
+100 min / 844.1 high @ SP=500**, independently verified against the raw print
+and matching the oracle.
+
+All eight batches share one setpoint schedule (`0 / 250 / 500 / 600 / 800`), so
+the same four bands apply to every one.
+
+Next: plot the remaining seven, then draft. Two judgement calls are still open
+and both change the report — whether a **pull-down transient** counts as an
+excursion (every batch has one at every step), and whether a **single-reading
+blip** does (18 of RIG23001's 27; excluding them takes the count to 9).
+
+**Reading Langfuse settled two bugs today that the transcript could not.**
+Credentials are in `.env.local`; `listRootObservations(range)` filtered to
+`name === "analytics-chat"`, then `listObservationsForTrace(traceId, range)`
+for `type === "TOOL"`, gives the exact tool inputs and outputs per turn. That
+is how "time series plots are not supported" was traced to a hidden tool rather
+than a missing feature, and how the un-banded call was caught. Note browser
+timestamps are local and Langfuse is UTC — widen the window before concluding a
+trace is absent.
+
+**Still unverified.** Everything above is Analytics. Nothing has yet gone
+through the Document side: the grounding gate on computed values (Phase 4), the
+context-map findings line, or a DOCX export.
+
 ## Before MJ sees this
 
 Construction is done; none of it has been through a live environment.
