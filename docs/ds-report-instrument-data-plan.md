@@ -3,8 +3,8 @@
 Living plan. Update it whenever a phase lands or a locked decision changes.
 Architecture that disagrees with code loses — fix this file.
 
-Status: **Phases 1, 2 and 3 landed** on `feat/IR_DS`. Phases 4 and 5 are
-specified but not built.
+Status: **Phases 1–4 landed** on `feat/IR_DS`. Phase 5 is specified but not
+built.
 
 ## What this is
 
@@ -216,35 +216,47 @@ writing the x column as an Excel serial (`ms / 86_400_000 + 25569`) with a date
 
 ## Pending
 
-### Phase 4 — computed facts must survive grounding
+### Phase 4 — computed facts and the grounding gate
 
-**The highest-risk item here. Do not rush it.**
+**The premise in this plan was wrong, and the truth was worse.** It said
+derived values like *"8 consecutive readings"* and *"7 minutes elapsed"* would
+be blocked under MJ's `unsupportedFactPolicy: "block"`. They were not — because
+`extractHardFacts` did not recognise them as facts **at all**. Nor did it
+recognise `192.4 µbar`, `802.4 mbar`, `1.33`, `105 minutes` or `00:13:39`.
 
-`groundDraftText` validates hard facts against the citation ledger's served page
-quotes, and MJ runs `unsupportedFactPolicy: "block"`. `192.40 µbar` survives
-because it is printed on a page. *"8 consecutive one-minute readings"* and
-*"7 minutes elapsed"* appear nowhere — they are derived, so they are blocked and
-the draft silently loses them.
+So the gate was not too strict about instrument quantities. **It was blind to
+them.** A model could write any vacuum figure, any excursion duration, any
+capability index, and nothing checked it. On the one document type made
+entirely of those numbers, the gate did nothing.
 
-The precedent is already set, in `agent-generated-charts-plan.md`:
+Phase 4 therefore had to do two things at once, and neither is safe alone:
 
-> a chart is a faithful rendering of numbers that exist on a cited page, not an
-> invention — but only if the rendering stays *derivable*
+1. **Teach the extractor the quantities.** `claim-facts.ts` now recognises
+   minutes and seconds, `HH:MM:SS` clock deltas (how an instrument cursor
+   reports a duration), and instrument units — µbar / mbar / bar / kPa / Pa /
+   psi / mmHg / torr / rpm / Hz / lpm / µm / mm / ppm / µS·cm⁻¹ alongside the
+   lab units already there.
+2. **Give legitimate derived values a source.** `analysis-evidence.ts` turns a
+   saved analysis into citable evidence for the values it computed. Adding (1)
+   without (2) would have created the blocking problem the plan feared.
 
-The same argument applies to scalars. A value computed by a saved analysis over
-cited rows is derivable in exactly that sense. So this is not "weaken the gate",
-it is "apply the charts precedent to numbers".
+The exemption is narrow and stays narrow:
 
-Required behaviour:
+- **Only computed outputs.** A config limit the engineer typed (LSL/USL) is not
+  something the analysis verified, so it is deliberately not in the value set.
+- **Every numeric token in the fact must match**, so `7 minutes` and `7 min`
+  both match a computed 7 while `9 minutes` matches nothing. A number that
+  contradicts the analysis it cites is still blocked.
+- **Never a date or an identifier.** An analysis computes quantities, not
+  document numbers; those stay with the page ledger.
+- **Not pack-gated.** A grounding gate that behaves differently per tenant is
+  how invented facts reach a regulated document.
+- The claim is cited to the analysis **and** to the pages its rows came from
+  (taken from the worksheet column citations `load_table` wrote), so the
+  derivation stays checkable end to end. The suggestion card says *Computed by
+  {analysis}*.
 
-- A value backed by a saved analysis is written, cited to the analysis **and**
-  its source pages.
-- An unbacked number is still blocked.
-- A number contradicting the analysis it cites is still blocked.
-- Existing ELR / QRA / IR grounding tests unchanged. Widening the gate for one
-  document type must not widen it for all.
-- **Do not pack-gate this.** A grounding gate that behaves differently per
-  tenant is how invented facts reach a regulated document.
+Every existing ELR / QRA / IR grounding test passes unchanged.
 
 ### Phase 5 — report assembly (MJ)
 

@@ -28,6 +28,10 @@ import {
   rewriteTableOperationCitations,
 } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
+import {
+  analysisSupportingFact,
+  type AnalysisEvidence,
+} from "@/lib/ai/chat/analysis-evidence";
 import type { UnsupportedFactPolicy } from "@/lib/customers/packs";
 import {
   isExemptFrameFact,
@@ -171,7 +175,11 @@ function rankMoveTarget(input: {
 function resolveFact(
   fact: HardFact,
   ledger: CitationPageLedger,
-  extras: { sentence: string; context?: string }
+  extras: {
+    sentence: string;
+    context?: string;
+    analyses?: readonly AnalysisEvidence[];
+  }
 ): ClaimProvenanceRecord {
   const pages = ledger.recordedPages();
   const cited = uniqueCited([
@@ -256,6 +264,26 @@ function resolveFact(
       status: "verified",
       cited: cited[0] ?? null,
       source: sourceFromPage(primaryCited),
+    };
+  }
+
+  // A value a saved analysis computed over cited rows is derivable, not
+  // invented — the charts precedent applied to scalars. It is cited to the
+  // analysis and to the pages those rows came from. A number no analysis
+  // computed, or one that contradicts the analysis, still falls through.
+  const backing = analysisSupportingFact(fact, extras.analyses ?? []);
+  if (backing) {
+    return {
+      text: fact.text,
+      kind: fact.kind,
+      status: "verified",
+      cited: cited[0] ?? null,
+      source: null,
+      analysis: {
+        analysisId: backing.analysisId,
+        title: backing.title,
+        pages: backing.pages,
+      },
     };
   }
 
@@ -430,6 +458,8 @@ export function groundDraftText(input: {
   grounding?: GroundDraftGrounding;
   /** Sibling table-row text (documentRef, etc.) used to rank citation moves. */
   context?: string;
+  /** Saved analyses whose computed values count as evidence. */
+  analyses?: readonly AnalysisEvidence[];
 }): GroundDraftResult {
   const cited = rewriteCitationPagesInText(input.text, input.ledger);
   const mode = input.grounding?.mode ?? "strict";
@@ -463,6 +493,7 @@ export function groundDraftText(input: {
     return resolveFact(fact, input.ledger, {
       sentence: sentenceAround(cited, fact.start, fact.end),
       context: input.context,
+      analyses: input.analyses,
     });
   });
   const withMoved = applyMovedCitations(cited, facts, records);
@@ -484,8 +515,13 @@ export function groundDraftText(input: {
       )
     : withMoved;
 
+  // A verified fact with no source is a frame exemption — identity, a date
+  // bound, something already in the report — and has nothing to trace. One
+  // backed by a saved analysis does: Traceability shows the analysis and the
+  // pages its rows came from.
   const provenanceClaims = records.filter(
-    (record) => !(record.status === "verified" && !record.source)
+    (record) =>
+      !(record.status === "verified" && !record.source && !record.analysis)
   );
 
   return {
@@ -501,6 +537,8 @@ export function groundTableOperation(input: {
   ledger: CitationPageLedger;
   policy: UnsupportedFactPolicy;
   grounding?: GroundDraftGrounding;
+  /** Saved analyses whose computed values count as evidence. */
+  analyses?: readonly AnalysisEvidence[];
 }): {
   operation: TableOperation;
   provenance: ClaimProvenance;
@@ -527,6 +565,7 @@ export function groundTableOperation(input: {
       policy: input.policy,
       grounding: input.grounding,
       context,
+      analyses: input.analyses,
     });
     claims.push(...grounded.provenance.claims);
     unsupported.push(...grounded.unsupported);

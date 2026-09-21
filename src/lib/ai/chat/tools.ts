@@ -52,6 +52,10 @@ import {
 import { executePlotMeasurements } from "@/lib/charts/plot-measurements";
 import { getReportAnalytics } from "@/lib/statistical-analysis/store";
 import {
+  analysisEvidenceForReport,
+  type AnalysisEvidence,
+} from "@/lib/ai/chat/analysis-evidence";
+import {
   markdownHasImage,
   markdownHasTable,
   markdownToDoc,
@@ -1249,6 +1253,25 @@ export function buildChatTools(opts: {
   }
   const unsupportedFactPolicy: UnsupportedFactPolicy =
     opts.unsupportedFactPolicy ?? getCustomerPack().unsupportedFactPolicy;
+  /**
+   * Saved analyses stand behind the values they computed. Loaded once per
+   * turn and lazily: most turns never write a derived number, and grounding
+   * must not fail because analytics could not be read — a missing analysis
+   * only means a computed value stays unsourced.
+   */
+  let analysisEvidenceCache: AnalysisEvidence[] | null = null;
+  const loadAnalysisEvidence = async (): Promise<AnalysisEvidence[]> => {
+    if (analysisEvidenceCache) return analysisEvidenceCache;
+    try {
+      const analytics = await getReportAnalytics(reportId);
+      analysisEvidenceCache = analytics
+        ? analysisEvidenceForReport(analytics)
+        : [];
+    } catch {
+      analysisEvidenceCache = [];
+    }
+    return analysisEvidenceCache;
+  };
   const sameTurnStated = new Map<string, string>();
   let tablePlaceholderLookupBounced = false;
   const rememberSameTurnStated = (
@@ -2223,11 +2246,13 @@ export function buildChatTools(opts: {
           "propose_edit",
           loaded.content as Record<string, unknown>
         );
+        const analysisFacts = await loadAnalysisEvidence();
         let groundedInsert = groundDraftText({
           text: insertText,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
           grounding: insertGrounding,
+          analyses: analysisFacts,
         });
         let groundedSecond = rawSecond
           ? groundDraftText({
@@ -2235,6 +2260,7 @@ export function buildChatTools(opts: {
               ledger: citationLedger,
               policy: unsupportedFactPolicy,
               grounding: insertGrounding,
+              analyses: analysisFacts,
             })
           : null;
         const leftoverInsert = `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`;
@@ -2259,6 +2285,7 @@ export function buildChatTools(opts: {
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
             grounding: insertGrounding,
+            analyses: analysisFacts,
           });
           groundedSecond = rawSecond
             ? groundDraftText({
@@ -2266,6 +2293,7 @@ export function buildChatTools(opts: {
                 ledger: citationLedger,
                 policy: unsupportedFactPolicy,
                 grounding: insertGrounding,
+                analyses: analysisFacts,
               })
             : null;
         }
@@ -3340,11 +3368,13 @@ export function buildChatTools(opts: {
           "edit_table",
           loaded.content as Record<string, unknown>
         );
+        const tableAnalysisFacts = await loadAnalysisEvidence();
         let groundedTable = groundTableOperation({
           operation: originalTableOp,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
+          analyses: tableAnalysisFacts,
         });
         const tableNeedsRepair =
           citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
@@ -3362,6 +3392,7 @@ export function buildChatTools(opts: {
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
+            analyses: tableAnalysisFacts,
           });
         }
         if (groundedTable.blocked) {
@@ -3723,11 +3754,13 @@ export function buildChatTools(opts: {
           "draft_field",
           loaded.content as Record<string, unknown>
         );
+        const draftAnalysisFacts = await loadAnalysisEvidence();
         let groundedDraft = groundDraftText({
           text: normalizedMarkdown,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
           grounding: draftGrounding,
+          analyses: draftAnalysisFacts,
         });
         const repair =
           citationGroundingRunsRepair(draftGrounding.mode ?? "strict") &&
@@ -3744,6 +3777,7 @@ export function buildChatTools(opts: {
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
             grounding: draftGrounding,
+            analyses: draftAnalysisFacts,
           });
         }
         if (groundedDraft.blocked) {
