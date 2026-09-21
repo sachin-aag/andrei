@@ -24,6 +24,7 @@ import {
 import { FieldInfoIcon } from "@/components/statistical-analysis/field-info";
 import { timeSeriesFallbackTitle } from "@/lib/statistical-analysis/types";
 import { suggestTimeSeriesColumns } from "@/lib/statistical-analysis/column-roles";
+import { timeSeriesBandsFromColumnSpecs } from "@/lib/statistical-analysis/time-series";
 import {
   parseTimestampCell,
   timeSeriesLimitsFromColumnSpecs,
@@ -177,6 +178,13 @@ export function TimeSeriesDialog({
     findColumn(worksheet, defaultColumnId) ?? worksheet.columns[0],
     { rowStart: defaultRowStart, rowEnd: defaultRowEnd }
   );
+  // Bands already saved against this column, so they are stated once and then
+  // inherited by every other batch sheet.
+  const savedBands = timeSeriesBandsFromColumnSpecs(
+    worksheet,
+    defaultColumnId,
+    findColumn(worksheet, defaultColumnId)?.name ?? ""
+  );
   const [columnId, setColumnId] = useState(defaultColumnId);
   // Same inference the chat tool uses, so the dialog and a prompt agree about
   // which column is the clock and which carries the setpoint.
@@ -193,10 +201,12 @@ export function TimeSeriesDialog({
   const [lsl, setLsl] = useState(initialLimits.lsl);
   const [usl, setUsl] = useState(initialLimits.usl);
   const [conditionColumnId, setConditionColumnId] = useState(
-    defaultConditionColumnId ?? (editMode ? "" : (suggested.conditionColumnId ?? ""))
+    defaultConditionColumnId ??
+      savedBands.conditionColumnId ??
+      (editMode ? "" : (suggested.conditionColumnId ?? ""))
   );
   const [bandText, setBandText] = useState(
-    defaultBands ? formatBandLines(defaultBands) : ""
+    formatBandLines(defaultBands ?? savedBands.bands ?? [])
   );
   const [showSpecLimits, setShowSpecLimits] = useState(defaultShowSpecLimits);
   const [showExcursions, setShowExcursions] = useState(defaultShowExcursions);

@@ -49,6 +49,7 @@ import type {
   SixpackAnalysisSummary,
   StatisticalAnalysisSummary,
   TimeSeriesAnalysisSummary,
+  TimeSeriesBand,
   TimeSeriesConfig,
   TimeSeriesResult,
   WorksheetData,
@@ -62,6 +63,7 @@ import {
   findColumn,
   findSheetIdForColumn,
   normalizeWorksheet,
+  specRowForColumn,
   upsertSpecRow,
   worksheetsEqual,
 } from "./worksheet";
@@ -83,6 +85,7 @@ import {
   computeTimeSeries,
   mergeTimeSeriesPatch,
   resolveTimeSeriesColumns,
+  timeSeriesBandsFromColumnSpecs,
   timeSeriesLimitsFromColumnSpecs,
 } from "./time-series";
 import {
@@ -1198,6 +1201,16 @@ async function createTimeSeriesAnalysisForReport(
     analytics.worksheet,
     resolved.column.name
   );
+  // Bands saved against this column apply to every sheet that has one, so a
+  // specification read from a document once covers every batch after it.
+  const savedBands = timeSeriesBandsFromColumnSpecs(
+    analytics.worksheet,
+    resolved.column.id,
+    resolved.column.name
+  );
+  const useSavedBands =
+    (parsed.data.bands == null || parsed.data.bands.length === 0) &&
+    savedBands.bands != null;
   const title = nextAnalysisTitle(
     analytics.analyses.map((item) => item.title),
     parsed.data.title?.trim() ||
@@ -1214,9 +1227,13 @@ async function createTimeSeriesAnalysisForReport(
     title,
     lsl: parsed.data.lsl !== undefined ? parsed.data.lsl : namedSpecs.lsl,
     usl: parsed.data.usl !== undefined ? parsed.data.usl : namedSpecs.usl,
-    conditionColumnId: resolved.conditionColumn?.id ?? null,
-    conditionColumnName: resolved.conditionColumn?.name ?? null,
-    bands: parsed.data.bands ?? null,
+    conditionColumnId: useSavedBands
+      ? savedBands.conditionColumnId
+      : (resolved.conditionColumn?.id ?? null),
+    conditionColumnName: useSavedBands
+      ? savedBands.conditionColumnName
+      : (resolved.conditionColumn?.name ?? null),
+    bands: useSavedBands ? savedBands.bands : (parsed.data.bands ?? null),
     showSpecLimits: overlays.showSpecLimits,
     showExcursions: overlays.showExcursions,
     ...rowFields,
@@ -1225,6 +1242,17 @@ async function createTimeSeriesAnalysisForReport(
   const outcome = computeTimeSeries(analytics.worksheet, config);
   if (!outcome.ok) {
     return { ok: false, status: 400, error: outcome.message };
+  }
+
+  // Remember a band that was supplied explicitly, so the next batch inherits
+  // it. This is the step that turns "state the limits once" into the default
+  // rather than an instruction somebody has to remember.
+  if (!useSavedBands && config.bands?.length && config.conditionColumnName) {
+    await rememberColumnBands(analytics.id, analytics.worksheet, {
+      columnName: config.columnName,
+      conditionColumnName: config.conditionColumnName,
+      bands: config.bands,
+    });
   }
 
   return insertAnalysisRow({
@@ -1242,6 +1270,43 @@ async function createTimeSeriesAnalysisForReport(
       rowSelection
     ),
   });
+}
+
+/**
+ * Save conditional bands onto the measurement's column spec.
+ *
+ * Best-effort: a failure here means the next plot needs its bands restated,
+ * never that this analysis fails. The worksheet write is unversioned because
+ * it only touches the spec row for one column — it cannot clobber cell edits.
+ */
+async function rememberColumnBands(
+  workspaceId: string,
+  worksheet: WorksheetData,
+  input: {
+    columnName: string;
+    conditionColumnName: string;
+    bands: TimeSeriesBand[];
+  }
+): Promise<void> {
+  try {
+    const existing = specRowForColumn(worksheet, input.columnName);
+    const next = upsertSpecRow(worksheet, {
+      columnName: input.columnName,
+      lsl: existing?.lsl ?? "",
+      usl: existing?.usl ?? "",
+      target: existing?.target ?? "",
+      conditionColumnName: input.conditionColumnName,
+      bands: input.bands,
+    });
+    await db
+      .update(statisticalWorkspaces)
+      .set({ worksheet: next, updatedAt: new Date() })
+      .where(eq(statisticalWorkspaces.id, workspaceId));
+  } catch (error) {
+    console.warn("[time-series] Could not save bands onto the column spec", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function insertAnalysisRow(input: {

@@ -123,6 +123,46 @@ export function timeSeriesLimitsFromColumnSpecs(
   return { lsl: parseSpecNumber(named.lsl), usl: parseSpecNumber(named.usl) };
 }
 
+/**
+ * Conditional bands saved against this column, resolved to the sheet in hand.
+ *
+ * Specs are workbook-global and keyed by column name, so limits stated once
+ * for VAC1 apply to every batch sheet that has a VAC1 — which is the point.
+ * The condition column is matched by name on the *same sheet* as the
+ * measurement, because each sheet has its own VAC2.
+ */
+export function timeSeriesBandsFromColumnSpecs(
+  worksheet: WorksheetData,
+  measurementColumnId: string,
+  measurementColumnName: string
+): {
+  conditionColumnId: string | null;
+  conditionColumnName: string | null;
+  bands: TimeSeriesBand[] | null;
+} {
+  const empty = {
+    conditionColumnId: null,
+    conditionColumnName: null,
+    bands: null,
+  };
+  const named = specRowForColumn(worksheet, measurementColumnName);
+  if (!named?.conditionColumnName || !named.bands?.length) return empty;
+
+  const sheetId = findSheetIdForColumn(worksheet, measurementColumnId);
+  const sheet = sheetId ? findSheet(worksheet, sheetId) : undefined;
+  const columns = sheet?.columns ?? worksheet.columns;
+  const key = named.conditionColumnName.trim().toLowerCase();
+  const condition = columns.find(
+    (column) => column.name.trim().toLowerCase() === key
+  );
+  if (!condition) return empty;
+  return {
+    conditionColumnId: condition.id,
+    conditionColumnName: condition.name,
+    bands: named.bands,
+  };
+}
+
 export type ResolvedTimeSeriesColumns =
   | {
       ok: true;

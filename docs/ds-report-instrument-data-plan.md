@@ -323,6 +323,22 @@ Deliberately *not* flagged: a band that simply had no excursions. A compliant
 step is supposed to look like that, and warning about it would train people to
 ignore the warning.
 
+**Bands belong to the column, not to each plot.** `WorksheetSpecRow` carries
+`conditionColumnName` + `bands` beside the existing LSL/USL, and specs are
+workbook-global keyed by column name — so limits stated once for VAC1 apply to
+every batch sheet that has a VAC1. A plot supplied with bands saves them; a
+plot without them inherits them. Eight batches, one statement of the
+specification, one chance to get it wrong instead of eight.
+
+The condition column is resolved by name **on the measurement's own sheet**,
+because each batch sheet has its own VAC2.
+
+**Whether a column needs bands at all is a data question, not a template
+one.** A measurement paired with a stepping setpoint column needs them;
+everything else is served by plain LSL/USL. `detectSetpointColumn` already
+answers it, so no template registry is required and other document types never
+see this machinery.
+
 A related bug the test for this found: `suggestTimeSeriesColumns` could pick
 the **measurement itself** as its condition column. A flat channel classifies
 as a setpoint and trivially shares its own name stem, so it would have been

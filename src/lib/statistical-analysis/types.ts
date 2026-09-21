@@ -177,6 +177,18 @@ export type WorksheetSpecRow = {
   lsl: string;
   usl: string;
   target: string;
+  /**
+   * Conditional acceptance limits for this column — the setpoint / timepoint /
+   * grade column whose value picks the band, and one band per value.
+   *
+   * A specification belongs to the measurement, not to each plot of it. Stored
+   * here, limits taken from a cited document once apply to every sheet that
+   * has a column of this name, so plotting eight batches does not mean
+   * restating the bands eight times (or re-deriving them eight times, which is
+   * eight chances to get one wrong).
+   */
+  conditionColumnName?: string;
+  bands?: TimeSeriesBand[];
 };
 
 /**

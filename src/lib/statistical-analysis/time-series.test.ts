@@ -6,6 +6,7 @@ import {
   rankExcursionsBySeverity,
   steppedSetpointWarning,
   suspectBands,
+  timeSeriesBandsFromColumnSpecs,
   worstExcursion,
 } from "./time-series";
 import {
@@ -620,5 +621,56 @@ describe("suspectBands", () => {
 
   it("says nothing about a plain fixed band", () => {
     expect(suspectBands(config({ lsl: 650, usl: 950 }), seriesRange)).toEqual([]);
+  });
+});
+
+describe("bands saved on the column spec", () => {
+  function workbook(specs: WorksheetData["specs"]): WorksheetData {
+    const base = sheetWith([
+      { id: "c1", name: "VAC1", values: varyingVac(40) },
+      { id: "c2", name: "DATE", values: dates40() },
+      { id: "c3", name: "TIME", values: minuteStamps(40) },
+      { id: "c4", name: "VAC2", values: Array(40).fill("800.0") },
+    ]);
+    return { ...base, specs };
+  }
+
+  const bands = [
+    { when: "800", lsl: 650, usl: 950 },
+    { when: "600", lsl: 480, usl: 720 },
+  ];
+
+  it("resolves the condition column by name on the measurement's own sheet", () => {
+    // Specs are workbook-global, so VAC1's bands have to bind to *this*
+    // sheet's VAC2 — every batch sheet has one of its own.
+    const found = timeSeriesBandsFromColumnSpecs(
+      workbook([
+        { columnName: "VAC1", lsl: "", usl: "", target: "", conditionColumnName: "VAC2", bands },
+      ]),
+      "c1",
+      "VAC1"
+    );
+    expect(found.conditionColumnId).toBe("c4");
+    expect(found.bands).toEqual(bands);
+  });
+
+  it("returns nothing when the spec names a column this sheet does not have", () => {
+    const found = timeSeriesBandsFromColumnSpecs(
+      workbook([
+        { columnName: "VAC1", lsl: "", usl: "", target: "", conditionColumnName: "NOPE", bands },
+      ]),
+      "c1",
+      "VAC1"
+    );
+    expect(found.bands).toBeNull();
+  });
+
+  it("returns nothing for a column with only plain limits", () => {
+    const found = timeSeriesBandsFromColumnSpecs(
+      workbook([{ columnName: "VAC1", lsl: "650", usl: "950", target: "" }]),
+      "c1",
+      "VAC1"
+    );
+    expect(found.bands).toBeNull();
   });
 });

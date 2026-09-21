@@ -47,6 +47,7 @@ import {
   normalizeWorksheet,
   renameDataSheet,
   restoreActiveSheet,
+  findColumn,
   specRowForColumn,
   switchWorksheetTab,
   upsertSpecRow,
@@ -1759,6 +1760,25 @@ export function StatisticalWorkspace({
           setTimeSeriesError(null);
           try {
             await flush().catch(() => undefined);
+            // Save the bands onto the column spec so the next batch sheet
+            // inherits them instead of being retyped.
+            if (values.conditionColumnId && values.bands?.length) {
+              const measurement = findColumn(worksheet, values.columnId);
+              const condition = findColumn(worksheet, values.conditionColumnId);
+              if (measurement && condition) {
+                setWorksheet((current) =>
+                  upsertSpecRow(current, {
+                    columnName: measurement.name,
+                    lsl: specRowForColumn(current, measurement.name)?.lsl ?? "",
+                    usl: specRowForColumn(current, measurement.name)?.usl ?? "",
+                    target:
+                      specRowForColumn(current, measurement.name)?.target ?? "",
+                    conditionColumnName: condition.name,
+                    bands: values.bands ?? undefined,
+                  })
+                );
+              }
+            }
             const payload = {
               columnId: values.columnId,
               timeColumnId: values.timeColumnId,

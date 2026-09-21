@@ -39,6 +39,23 @@ export const worksheetSpecRowSchema = z.object({
   lsl: z.string().max(MAX_CELL_LENGTH).default(""),
   usl: z.string().max(MAX_CELL_LENGTH).default(""),
   target: z.string().max(MAX_CELL_LENGTH).default(""),
+  /** Conditional limits: the column whose value picks the band, one per value. */
+  conditionColumnName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_COLUMN_NAME_LENGTH)
+    .optional(),
+  bands: z
+    .array(
+      z.object({
+        when: z.string().trim().min(1).max(64),
+        lsl: z.number().finite().nullable(),
+        usl: z.number().finite().nullable(),
+      })
+    )
+    .max(MAX_TIME_SERIES_BANDS)
+    .optional(),
 });
 
 export const worksheetDataSchema = z.preprocess(
