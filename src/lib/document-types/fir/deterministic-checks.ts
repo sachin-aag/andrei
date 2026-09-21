@@ -94,12 +94,12 @@ export function checkInvestigationTeam(ctx: EvaluationContext) {
     return verdict("not_met", "No investigation team members are listed");
   }
   const incomplete = parsed.rows.filter(
-    (r) => !r.name.trim() || !r.department.trim()
+    (r) => !r.name.trim() || !r.departmentRole.trim()
   );
   if (incomplete.length > 0) {
     return verdict(
       "not_met",
-      `${incomplete.length} team row(s) are missing a name or department`
+      `${incomplete.length} team row(s) are missing a name or department/role`
     );
   }
   return verdict("met", `${parsed.rows.length} team member(s) listed`);

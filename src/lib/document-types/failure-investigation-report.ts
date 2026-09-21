@@ -161,7 +161,7 @@ const CHRONOLOGY_CRITERIA: CriterionDefinition[] = [
   llm(
     "chronology.ordered_timeline",
     "Chronology is an ordered timeline with times",
-    "Do the rows run in time order and carry a date or clock time, from the start of the operation through detection and escalation?"
+    "Do the rows run in time order, from the start of the operation through detection and escalation, with the clock time stated inside the observation text? The form has no separate time column."
   ),
 ];
 

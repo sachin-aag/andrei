@@ -54,7 +54,8 @@ These are picked from fixed lists, never written as prose:
 Use these columns exactly; they match the Word template.
 
 - Investigation Team: ${columns(FIR_TEAM_HEADERS)}
-- Chronology: ${columns(FIR_CHRONOLOGY_HEADERS)}
+- Chronology: ${columns(FIR_CHRONOLOGY_HEADERS)} (no time column — put the
+  clock time in the observation text, as MJ's own reports do)
 - Historical Data Compilation: ${columns(FIR_HISTORIC_REVIEW_HEADERS)}
 - Human Error Evaluation: ${columns(FIR_HUMAN_ERROR_HEADERS)}
 - Corrective / Interim / Preventive Action: ${columns(FIR_ACTION_HEADERS)}

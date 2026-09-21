@@ -89,24 +89,24 @@ const data = {
     "At the time the event was raised, product, process, equipment and documentation impact were assessed. Shelf and product temperature trends were reviewed and found within established operating ranges. Product impact was held pending completion of finished-product analytical testing."
   ),
   teamTableXml: table(
-    ["Sr. No.", "Name", "Department", "Role / Responsibility"],
+    ["Name", "Department (Role/Responsibility)"],
     [
-      ["1", "Sachin Kumbhar", "Engineering", "Team Lead"],
-      ["2", "Gaurav Shelar", "Engineering", "Team Member"],
-      ["3", "Harshdeep Thakkar", "Production", "Team Member"],
-      ["4", "Akash Kengar", "Quality Assurance", "Team Member"],
+      ["Sachin Kumbhar", "Engineering – Team Lead"],
+      ["Gaurav Shelar", "Engineering – Team Member"],
+      ["Harshdeep Thakkar", "Production – Team Member"],
+      ["Akash Kengar", "Quality Assurance – Team Member"],
     ]
   ),
   toolsNarrativeXml: para("Documents review was also performed alongside the Why-Why analysis."),
   chronologyNarrativeXml: para("The sequence of events during the lyophilization cycle is tabulated below."),
   chronologyTableXml: table(
-    ["Sr. No.", "Date / Time", "Activity / Step", "Observation / Details"],
+    ["Activity / Step", "Observation / Details"],
     [
-      ["1", "22/05/2026 14:16", "Lyophilization cycle initiation", "Cycle for batch RIG25014 initiated as per defined process parameters."],
-      ["2", "22/05/2026 20:58", "Primary Drying Step 1 initiation", "Set temperature -45°C, ramp 2 min, soak 60 min, chamber pressure 800 µbar."],
-      ["3", "22/05/2026 20:59–21:06", "Observation during Step 1", "Chamber vacuum below the lower acceptance limit for 8 consecutive readings."],
-      ["4", "22/05/2026 21:04", "Lowest vacuum recorded", "192.40 µbar against the specified band of 650 to 950 µbar."],
-      ["5", "22/05/2026 21:08", "Recovery", "Vacuum restored to 806.0 µbar and stable thereafter."],
+      ["Lyophilization cycle initiation", "Lyophilization cycle for batch no. RIG25014 was initiated at 14:16 hrs as per defined process parameters."],
+      ["Primary Drying Step 1 initiation", "Step 1 was initiated at 20:58 hrs with set temperature -45°C, ramp duration of 2 minutes, soak duration of 60 minutes and chamber pressure of 800 µbar."],
+      ["Observation during Primary Drying Step 1", "Between 20:59:11 and 21:06:11 the chamber vacuum was observed below the lower acceptance limit for 8 consecutive one-minute readings."],
+      ["Lowest vacuum pressure observed", "The lowest recorded chamber vacuum during the event was 192.40 µbar against the specified control band of 650 to 950 µbar."],
+      ["Recovery", "Following needle-valve adjustment the vacuum was restored to 806.0 µbar at 21:08 hrs and remained stable thereafter."],
     ]
   ),
   investigationDetailsXml: para(

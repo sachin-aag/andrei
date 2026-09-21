@@ -8,6 +8,8 @@ import type { EvaluationContext } from "./types";
 import {
   EMPTY_FIR_CONTENT,
   FIR_ACTION_HEADERS,
+  FIR_CHRONOLOGY_HEADERS,
+  FIR_TEAM_HEADERS,
   FIR_CAPA_EFFECTIVENESS_HEADERS,
   FIR_HISTORIC_REVIEW_HEADERS,
   FIR_SECTION_KEYS,
@@ -19,6 +21,7 @@ import {
   checkCapaEffectiveness,
   checkHistoricReview,
   checkHumanErrorEvaluation,
+  checkInvestigationTeam,
   checkImpactAssessmentResultsStatus,
   checkInitialImpactPresent,
   checkInterimControl,
@@ -755,5 +758,62 @@ describe("FIR template identity block", () => {
     // Non-breaking space, so a wrap never orphans a box from its label.
     expect(data.batchDispositionCheckboxes).toContain("☒ Batch Approved");
     expect(data.batchDispositionCheckboxes).not.toContain("☒ Batch Approved");
+  });
+});
+
+// --------------------------------------------------- table structure parity
+
+describe("FIR table structures", () => {
+  it("uses the two-column team table R01 and MJ's own reports both use", () => {
+    expect([...FIR_TEAM_HEADERS]).toEqual([
+      "Name",
+      "Department (Role/Responsibility)",
+    ]);
+    // A Sr. No. column here is ours, not MJ's.
+    expect(FIR_TEAM_HEADERS).not.toContain("Sr. No.");
+  });
+
+  it("uses the two-column chronology MJ's reports use", () => {
+    expect([...FIR_CHRONOLOGY_HEADERS]).toEqual([
+      "Activity / Step",
+      "Observation / Details",
+    ]);
+    // The clock time belongs in the observation text; the form has no column.
+    expect(FIR_CHRONOLOGY_HEADERS).not.toContain("Date / Time");
+  });
+
+  it("keeps R01's prescribed historic columns, not the source report's", () => {
+    // ERF/26/022 used an ad-hoc 5-column layout (Sr.No / Event Description /
+    // Root Cause / Corrective Action / Preventive Action) that drops Date,
+    // Event No. and Batch No. as distinct fields. R01 prescribes these seven,
+    // and checkHistoricReview depends on them.
+    expect([...FIR_HISTORIC_REVIEW_HEADERS]).toEqual([
+      "Sr. No.",
+      "Date",
+      "Event No.",
+      "Batch No.",
+      "Event Details",
+      "Root Cause",
+      "CAPA",
+    ]);
+  });
+
+  it("parses a team table written with the R01 headers", () => {
+    const content = {
+      table: table(FIR_TEAM_HEADERS, [
+        ["Sachin Kumbhar", "Engineering – Team Lead"],
+        ["Akash Kengar", "Quality Assurance – Team Member"],
+      ]),
+    };
+    const result = checkInvestigationTeam(ctx(content));
+    expect(result.status).toBe("met");
+    expect(result.reasoning).toContain("2 team member(s)");
+  });
+
+  it("flags a team row missing its department/role", () => {
+    const content = {
+      table: table(FIR_TEAM_HEADERS, [["Sachin Kumbhar", ""]]),
+    };
+    expect(checkInvestigationTeam(ctx(content)).status).toBe("not_met");
   });
 });

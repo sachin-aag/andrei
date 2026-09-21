@@ -6,53 +6,29 @@ import type { MatrixColumnSchema } from "@/lib/document-types/design-verificatio
  * a colocated test asserts parity in both directions.
  */
 
-export type FirTeamColumnId = "srNo" | "name" | "department" | "role";
+export type FirTeamColumnId = "name" | "departmentRole";
 
 export const FIR_TEAM_COLUMN_SCHEMA: readonly MatrixColumnSchema<FirTeamColumnId>[] =
   [
-    {
-      id: "srNo",
-      label: "Sr. No.",
-      aliases: ["sr no", "sr. no.", "s no", "sl no", "id"],
-      inferFromContent: "idLike",
-    },
     { id: "name", label: "Name", aliases: ["name", "member", "person"] },
     {
-      id: "department",
-      label: "Department",
-      aliases: ["department", "dept", "function"],
-    },
-    {
-      id: "role",
-      label: "Role / Responsibility",
+      id: "departmentRole",
+      label: "Department (Role/Responsibility)",
       aliases: [
+        "department role responsibility",
+        "department roleresponsibility",
+        "department",
         "role responsibility",
         "role",
         "responsibility",
-        "department role responsibility",
       ],
     },
   ];
 
-export type FirChronologyColumnId =
-  | "srNo"
-  | "timestamp"
-  | "activity"
-  | "observation";
+export type FirChronologyColumnId = "activity" | "observation";
 
 export const FIR_CHRONOLOGY_COLUMN_SCHEMA: readonly MatrixColumnSchema<FirChronologyColumnId>[] =
   [
-    {
-      id: "srNo",
-      label: "Sr. No.",
-      aliases: ["sr no", "sr. no.", "s no", "sl no"],
-      inferFromContent: "idLike",
-    },
-    {
-      id: "timestamp",
-      label: "Date / Time",
-      aliases: ["date time", "date", "time", "date and time"],
-    },
     {
       id: "activity",
       label: "Activity / Step",

@@ -155,16 +155,17 @@ export const FIR_RESULTS_STATUS_LABELS: Record<FirResultsStatus, string> = {
 // templates/mj-failure-investigation-report-template.docx. A colocated test
 // asserts parity in both directions.
 
+/** R01 and MJ's own reports both use two columns here, with no Sr. No. */
 export const FIR_TEAM_HEADERS = [
-  "Sr. No.",
   "Name",
-  "Department",
-  "Role / Responsibility",
+  "Department (Role/Responsibility)",
 ] as const;
 
+/**
+ * R01 prescribes no chronology table; MJ's own reports use these two columns
+ * and put the clock time inside the observation text rather than in a column.
+ */
 export const FIR_CHRONOLOGY_HEADERS = [
-  "Sr. No.",
-  "Date / Time",
   "Activity / Step",
   "Observation / Details",
 ] as const;
