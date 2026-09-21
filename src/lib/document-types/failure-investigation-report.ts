@@ -509,8 +509,12 @@ function checkboxRow<T extends string>(
   labels: Record<T, string>,
   selected: readonly string[]
 ): string {
+  // Non-breaking space keeps the box with its label when the row wraps.
   return options
-    .map((option) => `${selected.includes(option) ? "\u2612" : "\u2610"} ${labels[option]}`)
+    .map(
+      (option) =>
+        `${selected.includes(option) ? "\u2612" : "\u2610"}\u00a0${labels[option]}`
+    )
     .join("   ");
 }
 
@@ -671,14 +675,12 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         disposition?: string;
       };
       return {
-        documentNo: report.documentNo,
-        unit: meta.unit ?? "",
-        referenceSopNo: meta.referenceSopNo ?? "",
+        // The R01 form header carries only these two. Unit and reference SOP
+        // are printed by the page header; product, batch and equipment live in
+        // reports.metadata for chat grounding and are named in the event
+        // description prose, as they are in MJ's own reports.
         dateOfNonConformance: meta.dateOfNonConformance ?? "",
         sourceDocumentNo: meta.sourceDocumentNo ?? report.documentNo ?? "",
-        productName: meta.productName ?? "",
-        batchNo: meta.batchNo ?? "",
-        equipmentId: meta.equipmentId ?? "",
         // Checkbox rows are rendered from these selections, not from prose.
         toolsCheckboxes: checkboxRow(
           FIR_INVESTIGATION_TOOLS,

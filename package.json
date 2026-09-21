@@ -21,6 +21,7 @@
     "build-elr-template": "node scripts/build-mj-elr-template.mjs",
     "build-fir-template": "node scripts/build-mj-fir-template.mjs",
     "extract-fir-chrome": "node scripts/extract-mj-fir-chrome.mjs",
+    "preview-fir-docx": "node scripts/preview-fir-docx.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/drizzle-migrate.ts",
     "db:ensure": "npm run db:migrate-suggested-fix && drizzle-kit push",

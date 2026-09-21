@@ -3,6 +3,7 @@ import PizZip from "pizzip";
 import { describe, expect, it } from "vitest";
 import type { DocumentType } from "@/db/schema";
 import { getDocumentType } from "./index";
+import { MJ_FIR_DOCX_RUN_STYLE } from "@/lib/export/docx-export-context";
 import type { EvaluationContext } from "./types";
 import {
   EMPTY_FIR_CONTENT,
@@ -644,10 +645,10 @@ describe("FIR docx template contract", () => {
       comments: [],
     }) as Record<string, string>;
 
-    expect(data.rootCauseClassificationCheckboxes).toContain("☒ Root Cause");
-    expect(data.rootCauseClassificationCheckboxes).toContain("☐ Assignable Cause");
-    expect(data.rootCauseGroupCheckboxes).toContain("☒ Machine");
-    expect(data.batchDispositionCheckboxes).toContain("☒ Batch Approved");
+    expect(data.rootCauseClassificationCheckboxes).toContain("☒ Root Cause");
+    expect(data.rootCauseClassificationCheckboxes).toContain("☐ Assignable Cause");
+    expect(data.rootCauseGroupCheckboxes).toContain("☒ Machine");
+    expect(data.batchDispositionCheckboxes).toContain("☒ Batch Approved");
   });
 });
 
@@ -692,5 +693,67 @@ describe("FIR chat context identity", () => {
     );
     expect(joined).toContain("Drug Substance");
     expect(joined).toContain("Do not draft Define / Measure");
+  });
+});
+
+// ------------------------------------------------------ visual fidelity
+
+describe("FIR export run style", () => {
+  it("matches the source report rather than the shared defaults", () => {
+    // Every value here was measured off a real SOP/QA/017-F01 report; see
+    // scripts/preview-fir-docx.mjs to re-render and look.
+    expect(MJ_FIR_DOCX_RUN_STYLE.font).toBe("Times New Roman");
+    expect(MJ_FIR_DOCX_RUN_STYLE.sizeHalfPoints).toBe("24");
+    // The shared default is light blue D9E2F3 — the clearest giveaway that a
+    // document did not come out of MJ's own template.
+    expect(MJ_FIR_DOCX_RUN_STYLE.tableHeaderFill).toBe("D9D9D9");
+    expect(MJ_FIR_DOCX_RUN_STYLE.paragraphAlign).toBe("both");
+    // Omitted (-> null): cell paragraph spacing doubled every table row height.
+    expect(MJ_FIR_DOCX_RUN_STYLE.paragraphSpacingBefore).toBeUndefined();
+    expect(MJ_FIR_DOCX_RUN_STYLE.paragraphSpacingAfter).toBeUndefined();
+    // Without this, inner tables stop short of the right border.
+    expect(MJ_FIR_DOCX_RUN_STYLE.tableWidthPct).toBe("5000");
+  });
+});
+
+describe("FIR template identity block", () => {
+  it("carries the single identity row the form actually has", () => {
+    const def = getDocumentType(TYPE);
+    const zip = new PizZip(fs.readFileSync(def.export.templatePath));
+    const body = zip.file("word/document.xml")!.asText();
+
+    expect(body).toContain("Date:");
+    expect(body).toContain("Source Document No.");
+    // Product, batch and equipment live in reports.metadata for chat grounding;
+    // MJ's form has no rows for them and inventing rows broke the resemblance.
+    for (const invented of [
+      "Product Name:",
+      "Batch No.:",
+      "Equipment ID:",
+      "Report No.:",
+    ]) {
+      expect(body).not.toContain(invented);
+    }
+  });
+
+  it("keeps checkbox glyphs attached to their labels", () => {
+    const def = getDocumentType(TYPE);
+    const data = def.export.buildTemplateData({
+      report: {
+        documentNo: "ERF/26/022",
+        metadata: {},
+      } as unknown as Parameters<typeof def.export.buildTemplateData>[0]["report"],
+      sections: [
+        {
+          section: "fir_batch_disposition",
+          content: { disposition: "approved", narrative: doc("") },
+        },
+      ],
+      ctx: undefined,
+      comments: [],
+    }) as Record<string, string>;
+    // Non-breaking space, so a wrap never orphans a box from its label.
+    expect(data.batchDispositionCheckboxes).toContain("☒ Batch Approved");
+    expect(data.batchDispositionCheckboxes).not.toContain("☒ Batch Approved");
   });
 });

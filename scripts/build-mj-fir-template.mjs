@@ -167,21 +167,12 @@ function approvalTable() {
 
 function bodyXml() {
   const rows =
+    // The form carries exactly one identity row. Product, batch and equipment
+    // live in reports.metadata for chat grounding, but MJ's form has no rows
+    // for them — the event description names them in prose.
     identityRow([
-      ["Date of non conformance:", "dateOfNonConformance"],
-      ["Source Document No.:", "sourceDocumentNo"],
-    ]) +
-    identityRow([
-      ["Product Name:", "productName"],
-      ["Batch No.:", "batchNo"],
-    ]) +
-    identityRow([
-      ["Equipment ID:", "equipmentId"],
-      ["Unit:", "unit"],
-    ]) +
-    identityRow([
-      ["Reference SOP No.:", "referenceSopNo"],
-      ["Report No.:", "documentNo"],
+      ["Date:", "dateOfNonConformance"],
+      ["Source Document No.", "sourceDocumentNo"],
     ]) +
     section(
       "Non-Conformance Description/ Description of event:",

@@ -36,6 +36,7 @@ import { applyInvestigationToolCheckboxes } from "@/lib/export/docx-form-checkbo
 import { applyInlineMediaToDocxZip } from "@/lib/export/docx-inline-media";
 import {
   CONVERGENT_DOCX_RUN_STYLE,
+  MJ_FIR_DOCX_RUN_STYLE,
   createDocxExportContext,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
@@ -713,7 +714,11 @@ async function generateDesignVerificationDocx({
   const pageSetup = loadDocxPageSetupFromZip(zip);
   const ctx = createDocxExportContext(
     numberingBases,
-    pack.id === "convergent" ? CONVERGENT_DOCX_RUN_STYLE : undefined,
+    documentType === "failure_investigation_report"
+      ? MJ_FIR_DOCX_RUN_STYLE
+      : pack.id === "convergent"
+        ? CONVERGENT_DOCX_RUN_STYLE
+        : undefined,
     { pageSetup }
   );
   const def = getDocumentType(documentType);
