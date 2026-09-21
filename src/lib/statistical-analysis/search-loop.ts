@@ -486,6 +486,12 @@ export function prepareAnalyticsChatStep(input: {
   sheetJob?: "extract" | "edit";
   /** `skip_page_and_search` / `locate_request` must not open another page form. */
   intentReason?: string;
+  /**
+   * The worksheet already holds data. Set from the report, not from this
+   * turn's steps: searching a document for the *specification* is not
+   * gathering data, and a sheet filled on an earlier turn is still filled.
+   */
+  worksheetHasData?: boolean;
 }): AnalyticsPrepareStep | undefined {
   if (input.intent === "social") {
     return { activeTools: [] };
@@ -510,7 +516,11 @@ export function prepareAnalyticsChatStep(input: {
   const stillGathering = dumpReady === "read_first" || gather === "gather";
   const hideWrite = writeDirective === "finish" || stillGathering;
   const hideManage = manageDirective === "finish";
-  const hidePlots = stillGathering;
+  // Plots are hidden while data is still being gathered — but only when there
+  // is no data yet. With a filled worksheet, a grep for the acceptance limits
+  // is exactly the right move before plotting, and hiding the plot tools for
+  // it makes the model conclude the plot kind does not exist.
+  const hidePlots = stillGathering && !input.worksheetHasData;
   const dumpSource = stepsHadDumpSource(input.steps);
   const locateIntent =
     input.intentReason === "skip_page_and_search" ||

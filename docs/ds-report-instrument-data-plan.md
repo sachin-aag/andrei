@@ -283,6 +283,19 @@ whose setpoint column takes several values — and the chat result carries
 It is a warning, not a refusal: the overall range is a real criterion, just not
 a sufficient one.
 
+**The gather guard hid the plot tools from a legitimate spec lookup.** Asked to
+plot a time series, the assistant greped for the acceptance limits — correct —
+and `analyticsDumpReadinessDirective` read a cited search with no page read yet
+as "still gathering", which hides `PLOT_TOOLS`. Never offered the tool, the
+model truthfully reported that timestamp-based time series are not supported at
+all. Confirmed in Langfuse: the turn ran `search_documents → read_worksheet →
+document_outline → read_document_page` and never attempted the plot.
+
+`prepareAnalyticsChatStep` now takes `worksheetHasData`, set from the report
+rather than the turn: a sheet filled on an earlier turn is still filled, and
+searching for the *specification* is not gathering data. Intent classification
+was never the problem — "lets plot a time series" is `produce_request`/write.
+
 A related bug the test for this found: `suggestTimeSeriesColumns` could pick
 the **measurement itself** as its condition column. A flat channel classifies
 as a setpoint and trivially shares its own name stem, so it would have been

@@ -860,3 +860,31 @@ describe("load_table batching", () => {
     ).toBe("continue");
   });
 });
+
+describe("plot tools and the gather guard", () => {
+  // A grep with cited hits and no page read yet marks the turn "gathering".
+  const gathering = [step(["search_documents"], 5)];
+
+  it("hides plots while gathering into an empty worksheet", () => {
+    const prepared = prepareAnalyticsChatStep({
+      steps: gathering,
+      canEdit: true,
+      intent: "write",
+    });
+    expect(prepared?.activeTools ?? []).not.toContain("plot_time_series");
+  });
+
+  it("keeps plots available once the worksheet holds data", () => {
+    // Searching a document for the acceptance limits is exactly the right move
+    // before plotting. Hiding the plot tools for it made the model report that
+    // time series plots are not supported at all.
+    const prepared = prepareAnalyticsChatStep({
+      steps: gathering,
+      canEdit: true,
+      intent: "write",
+      worksheetHasData: true,
+    });
+    expect(prepared?.activeTools).toContain("plot_time_series");
+    expect(prepared?.activeTools).toContain("run_capability_sixpack");
+  });
+});
