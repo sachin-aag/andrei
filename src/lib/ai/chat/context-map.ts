@@ -23,10 +23,7 @@ import {
 } from "@/lib/analyze/method";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import { getDocumentType } from "@/lib/document-types";
-import {
-  isGraphAnalysisKind,
-  isInsertableGraphAnalysis,
-} from "@/lib/statistical-analysis/insertable-graphs";
+import { isGraphAnalysisKind } from "@/lib/statistical-analysis/insertable-graphs";
 import {
   isTimeSeriesAnalysis,
   type StatisticalAnalysisSummary,

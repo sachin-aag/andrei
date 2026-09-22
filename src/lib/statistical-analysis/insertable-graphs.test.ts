@@ -112,20 +112,25 @@ const histogram = {
   },
 } satisfies StatisticalAnalysisSummary;
 
-const legacySixpack = {
+/** Never opened in Analytics, so nothing captured a preview from the DOM. */
+const unopenedSixpack = {
   ...sixpack,
   id: "a4",
   previewImage: null,
 };
 
 describe("insertable-graphs", () => {
-  it("includes graph analyses with a stored preview only", () => {
+  it("includes every chart kind, whether or not a preview was captured", () => {
+    // previewImage comes from the rendered DOM. Requiring it hid every plot
+    // nobody had opened — including a whole batch created by chat — behind an
+    // "open it in Analytics first" message. The server renders these anyway.
     expect(isInsertableGraphAnalysis(sixpack)).toBe(true);
     expect(isInsertableGraphAnalysis(scatter)).toBe(true);
     expect(isInsertableGraphAnalysis(boxplot)).toBe(true);
     expect(isInsertableGraphAnalysis(histogram)).toBe(true);
+    expect(isInsertableGraphAnalysis(unopenedSixpack)).toBe(true);
+    // Still excluded: ANOVA is a table of statistics, not a figure.
     expect(isInsertableGraphAnalysis(anova)).toBe(false);
-    expect(isInsertableGraphAnalysis(legacySixpack)).toBe(false);
     expect(
       listInsertableGraphAnalyses([
         sixpack,
@@ -133,9 +138,9 @@ describe("insertable-graphs", () => {
         boxplot,
         histogram,
         anova,
-        legacySixpack,
+        unopenedSixpack,
       ])
-    ).toEqual([sixpack, scatter, boxplot, histogram]);
+    ).toEqual([sixpack, scatter, boxplot, histogram, unopenedSixpack]);
     expect(
       listGraphAnalyses([
         sixpack,
@@ -143,8 +148,8 @@ describe("insertable-graphs", () => {
         boxplot,
         histogram,
         anova,
-        legacySixpack,
+        unopenedSixpack,
       ])
-    ).toEqual([sixpack, scatter, boxplot, histogram, legacySixpack]);
+    ).toEqual([sixpack, scatter, boxplot, histogram, unopenedSixpack]);
   });
 });
