@@ -1097,6 +1097,10 @@ function timeSeriesRunForChat(run: TimeSeriesExcursion) {
   return {
     start: run.startLabel,
     end: run.endLabel,
+    // Worksheet rows, so a follow-up plot can be windowed onto this run
+    // (plot_time_series rowStart/rowEnd) without counting rows by hand.
+    startRow: run.startRow,
+    endRow: run.endRow,
     readings: run.readings,
     elapsedMinutes: run.elapsedMinutes,
     elapsedClock: run.elapsedClock,

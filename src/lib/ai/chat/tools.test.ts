@@ -4854,6 +4854,23 @@ describe("read_analysis", () => {
     expect(String(result.note)).toContain("omitted");
   });
 
+  it("exposes worksheet rows so a follow-up plot can zoom to the run", async () => {
+    // Figure-01 in a real report is the event window, not the whole cycle.
+    // Without these the engineer has to count rows to window the plot.
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [
+        timeSeries("anl_1", "RIG25014", [
+          excursion({ startRow: 1187, endRow: 1194 }),
+        ]),
+      ],
+    });
+    const result = await readAnalysis({ analysisId: "anl_1" });
+    const runs = result.runs as Array<{ startRow: number; endRow: number }>;
+    expect(runs[0]?.startRow).toBe(1187);
+    expect(runs[0]?.endRow).toBe(1194);
+  });
+
   it("carries the source pages so a computed value can be cited to paper", async () => {
     getReportAnalyticsMock.mockResolvedValue({
       worksheet,
