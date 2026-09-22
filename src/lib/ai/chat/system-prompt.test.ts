@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v128-tabular-shape");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v129-claim-strength");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -709,5 +709,34 @@ describe("tabular shape recognition", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent", intent: "write" });
     expect(prompt).toContain("create_table with the rows, and propose_edit deleting the bullets");
     expect(prompt).toContain("Do not leave both");
+  });
+});
+
+describe("claim strength", () => {
+  it("forbids permanence claims and requires bounded scope", () => {
+    // Shipped reports carried "permanently fixed" and "all batches met all
+    // specifications" when the evidence covered a handful.
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent", intent: "write" });
+    expect(prompt).toContain("## Claim strength (required)");
+    expect(prompt).toContain("Never claim permanence or absolutes");
+    expect(prompt).toContain("refused and not saved");
+    expect(prompt).toContain("Bound every claim to the set you actually checked");
+    expect(prompt).toContain("Absence of evidence is not evidence of absence");
+  });
+
+  it("applies on every pack and document type, not just MJ", () => {
+    for (const documentType of [
+      "investigation_report",
+      "design_verification",
+      "failure_investigation_report",
+    ] as const) {
+      const prompt = buildChatSystemPrompt({
+        ...opts,
+        mode: "agent",
+        intent: "write",
+        documentType,
+      });
+      expect(prompt).toContain("## Claim strength (required)");
+    }
   });
 });

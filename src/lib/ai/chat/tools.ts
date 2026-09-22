@@ -67,6 +67,13 @@ import {
 } from "@/lib/ai/chat/analysis-evidence";
 import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
 import {
+  detectOverclaims,
+  permanenceBounceMessage,
+  permanenceClaims,
+  unboundedScopeClaims,
+  unboundedScopeWarning,
+} from "@/lib/ai/chat/overclaim";
+import {
   markdownHasImage,
   markdownHasTable,
   markdownToDoc,
@@ -270,6 +277,7 @@ import {
   groundTableOperation,
   tableOperationContainsPlaceholders,
   tablePlaceholderLabels,
+  tableOperationPlainText,
   tablePlaceholderLookupMessage,
   unsupportedFactsToolResult,
   type UnsupportedFactsToolResult,
@@ -317,6 +325,13 @@ type AgentCommitOutcome =
   | { status: "invalid"; hint: string }
   | { status: "conflict"; hint: string };
 
+/** A permanence claim ("permanently fixed") does not persist; the model rewords and retries. */
+export type OverclaimBounceResult = {
+  status: "overclaim";
+  message: string;
+  overclaims: Array<{ phrase: string; kind: string }>;
+};
+
 export type ProposeEditResult =
   | {
       status: "proposed";
@@ -325,11 +340,13 @@ export type ProposeEditResult =
       targetField: string;
       summary: string;
       supersededSuggestionIds?: string[];
+      warning?: string;
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "review_incomplete"; message: string }
+  | OverclaimBounceResult
   | UnsupportedFactsToolResult;
 
 export type InsertImageResult =
@@ -366,11 +383,13 @@ export type EditTableResult =
       summary: string;
       supersededSuggestionIds?: string[];
       tableNumber?: number;
+      warning?: string;
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "review_incomplete"; message: string }
+  | OverclaimBounceResult
   | UnsupportedFactsToolResult;
 
 export type DraftFieldResult =
@@ -382,7 +401,9 @@ export type DraftFieldResult =
       summary: string;
       supersededSuggestionIds?: string[];
       tableNumber?: number;
+      warning?: string;
     }
+  | OverclaimBounceResult
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
@@ -1368,6 +1389,39 @@ export function buildChatTools(opts: {
   };
   const sameTurnStated = new Map<string, string>();
   let tablePlaceholderLookupBounced = false;
+  let overclaimBounced = false;
+  /**
+   * The grounding gate checks whether a number is on a cited page; it cannot
+   * see that the sentence around it claims more than the evidence carries.
+   *
+   * A permanence claim ("permanently fixed", "will not recur") is never right
+   * in an investigation, so it does not persist — once per turn, so a false
+   * positive cannot loop the draft. An unbounded scope claim ("all batches met
+   * all specifications") may be legitimate, so it saves with a warning instead
+   * of being refused. Not pack-gated: an overclaim is as wrong on demo as on
+   * MJ.
+   */
+  const checkOverclaims = (text: string) => {
+    const found = detectOverclaims(text);
+    const permanence = permanenceClaims(found);
+    if (permanence.length > 0 && !overclaimBounced) {
+      overclaimBounced = true;
+      return {
+        bounce: {
+          status: "overclaim" as const,
+          message: permanenceBounceMessage(permanence),
+          overclaims: permanence.map((item) => ({
+            phrase: item.phrase,
+            kind: item.kind,
+          })),
+        },
+      };
+    }
+    const scope = unboundedScopeClaims(found);
+    return scope.length > 0
+      ? { warning: unboundedScopeWarning(scope) }
+      : {};
+  };
   const rememberSameTurnStated = (
     section: SectionType,
     targetField: string,
@@ -2540,6 +2594,12 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
           });
         }
+        const editOverclaims = checkOverclaims(
+          [groundedInsert.text, groundedSecond?.text ?? ""]
+            .filter(Boolean)
+            .join("\n")
+        );
+        if (editOverclaims.bounce) return editOverclaims.bounce;
         const claimProvenance = {
           claims: [
             ...groundedInsert.provenance.claims,
@@ -2667,6 +2727,9 @@ export function buildChatTools(opts: {
                   section,
                   targetField: resolvedField,
                   summary: folded.payload.reasoning,
+                  ...(editOverclaims.warning
+                    ? { warning: editOverclaims.warning }
+                    : {}),
                 },
                 supersededSuggestionIds
               );
@@ -2762,6 +2825,9 @@ export function buildChatTools(opts: {
               section,
               targetField: resolvedField,
               summary: reasoning,
+              ...(editOverclaims.warning
+                ? { warning: editOverclaims.warning }
+                : {}),
             },
             supersededSuggestionIds
           );
@@ -3659,6 +3725,12 @@ export function buildChatTools(opts: {
             message: tablePlaceholderLookupMessage(leftoverLabels),
           });
         }
+        // Cell text overclaims the same way prose does — a Remark column
+        // reading "all batches compliant" is the case that prompted this.
+        const tableOverclaims = checkOverclaims(
+          tableOperationPlainText(groundedTable.operation)
+        );
+        if (tableOverclaims.bounce) return tableOverclaims.bounce;
         if (groundedTable.provenance.claims.length > 0) {
           void scoreDraftEntailment({
             draft: JSON.stringify(groundedTable.operation),
@@ -3786,6 +3858,9 @@ export function buildChatTools(opts: {
             summary: reasoning,
             ...(applied.tableNumber !== undefined
               ? { tableNumber: applied.tableNumber }
+              : {}),
+            ...(tableOverclaims.warning
+              ? { warning: tableOverclaims.warning }
               : {}),
           },
           supersededSuggestionIds
@@ -4042,6 +4117,8 @@ export function buildChatTools(opts: {
             reportId,
           });
         }
+        const draftOverclaims = checkOverclaims(groundedDraft.text);
+        if (draftOverclaims.bounce) return draftOverclaims.bounce;
         const draftMarkdown = citationsAtEndOfSection
           ? moveCitationsToEndOfText(groundedDraft.text)
           : groundedDraft.text;
@@ -4098,6 +4175,9 @@ export function buildChatTools(opts: {
             targetField: resolvedField,
             summary: reasoning,
             ...(tableNumber !== undefined ? { tableNumber } : {}),
+            ...(draftOverclaims.warning
+              ? { warning: draftOverclaims.warning }
+              : {}),
           },
           supersededSuggestionIds
         );

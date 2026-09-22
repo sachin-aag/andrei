@@ -690,6 +690,16 @@ export function tablePlaceholderLabels(operation: TableOperation): string[] {
   return labels;
 }
 
+/** Every text value in a table operation, joined so prose-level checks can run on cells. */
+export function tableOperationPlainText(operation: TableOperation): string {
+  const parts: string[] = [];
+  mapTableOperationText(operation, (value) => {
+    if (value.trim()) parts.push(value);
+    return value;
+  });
+  return parts.join("\n");
+}
+
 export function tableOperationContainsPlaceholders(
   operation: TableOperation
 ): boolean {

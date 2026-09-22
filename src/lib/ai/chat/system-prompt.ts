@@ -19,7 +19,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v128-tabular-shape";
+export const CHAT_PROMPT_VERSION = "chat-v129-claim-strength";
 
 export type ChatMode = "plan" | "agent";
 
@@ -82,6 +82,12 @@ The engineer tagged **${label}** for this conversation. Focus Ask questions and 
 - Ask mode: answer questions about ${label}; do not address other sections unless they tag a different @ section.
 ${agentLine}`;
 }
+
+const CLAIM_STRENGTH_RULES = `## Claim strength (required)
+Write the weakest claim the evidence supports. Two overstatements are rejected or flagged by the server, so write them correctly the first time.
+- **Never claim permanence or absolutes.** An investigation can show what was done and what has been observed since; it cannot show a cause is gone forever. Write "corrected", not "permanently corrected". Write "no recurrence in the 3 batches processed since", not "will not recur" / "cannot recur" / "completely eliminates the risk" / "permanent solution" / "100% effective". A draft containing these is refused and not saved.
+- **Bound every claim to the set you actually checked.** "All batches met all specifications" is unsupported when the evidence covers three of them, even if every number in the sentence is cited. Name the set and its size: "the 3 batches reviewed (A, B, C) met their release specifications". If evidence covers part of a set, say which part and say the rest was not assessed.
+- Absence of evidence is not evidence of absence. "No excursion was detected in the data reviewed" is supportable; "there were no excursions" is not, unless everything was assessed. Where nothing was checked, say so rather than reporting a pass.`;
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -431,6 +437,8 @@ export function buildChatSystemPrompt(opts: {
 ${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}${planBlock}
 
 ${LANGUAGE_RULES}
+
+${CLAIM_STRENGTH_RULES}
 
 ${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements, writesLoaded)}${draftedBlock}${mentions}
 

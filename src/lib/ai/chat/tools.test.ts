@@ -5061,3 +5061,72 @@ describe("finish_document_review hands a write turn back to the write tool", () 
     expect(finished.reviewedPages).toBe(1);
   });
 });
+
+describe("overclaim gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getReportAnalyticsMock.mockResolvedValue(null);
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async () => {}),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: () => ({ where: vi.fn(async () => {}) }),
+    }));
+  });
+
+  function draft(markdown: string) {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    return tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown,
+        reasoning: "Draft.",
+      },
+      TEST_TOOL_OPTIONS
+    ) as Promise<Record<string, unknown>>;
+  }
+
+  it("refuses to save a permanence claim", async () => {
+    const result = await draft("The deviation was permanently resolved.");
+    expect(result.status).toBe("overclaim");
+    expect(String(result.message)).toContain("was not saved");
+    expect(String(result.message)).toContain("permanently resolved");
+  });
+
+  it("bounces only once so a false positive cannot loop the turn", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const call = () =>
+      tools.draft_field!.execute!(
+        {
+          section: "define",
+          targetField: "narrative",
+          markdown: "The deviation was permanently resolved.",
+          reasoning: "Draft.",
+        },
+        TEST_TOOL_OPTIONS
+      ) as Promise<Record<string, unknown>>;
+    expect((await call()).status).toBe("overclaim");
+    // Same wording again: the model kept it deliberately, so it saves rather
+    // than blocking the turn forever.
+    expect((await call()).status).toBe("drafted");
+  });
+
+  it("saves an unbounded scope claim but warns about it", async () => {
+    const result = await draft(
+      "All batches met their release specifications."
+    );
+    expect(result.status).toBe("drafted");
+    expect(String(result.warning)).toContain("Name the set you actually checked");
+  });
+
+  it("leaves a properly bounded draft alone", async () => {
+    const result = await draft(
+      "The 3 batches reviewed met their release specifications. The valve was corrected."
+    );
+    expect(result.status).toBe("drafted");
+    expect(result.warning).toBeUndefined();
+  });
+});
