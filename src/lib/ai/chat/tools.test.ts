@@ -4955,3 +4955,78 @@ describe("read_analysis", () => {
     expect(result.error).toBe("no_analyses");
   });
 });
+
+describe("finish_document_review hands a write turn back to the write tool", () => {
+  function reviewSession() {
+    listDocumentPagesForReviewMock.mockResolvedValue([
+      {
+        attachmentId: "att_a",
+        filename: "RIG25014.pdf",
+        pageNumber: 1,
+        transcript: "BATCH START 22/05/2026 14:16:11 DRYING START P 800.000 uBAR",
+        visualInterpretation: null,
+      },
+    ]);
+    listReadyDocumentsForReportMock.mockResolvedValue([
+      {
+        attachmentId: "att_a",
+        filename: "RIG25014.pdf",
+        pageCount: 1,
+        ingestRunId: "run_a",
+        status: "ready",
+      },
+    ]);
+    return new DocumentReviewSession();
+  }
+
+  async function finishWith(userIntentKind: "write" | "read" | undefined, canEdit = true) {
+    const session = reviewSession();
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit,
+      retrievalPolicy: "comprehensive",
+      documentReview: session,
+      ...(userIntentKind ? { userIntentKind } : {}),
+    });
+    await tools.start_document_review!.execute!(
+      { objective: "event description for RIG25014" },
+      TEST_TOOL_OPTIONS
+    );
+    let guard = 0;
+    while (session.phase() === "in_progress") {
+      guard += 1;
+      expect(guard).toBeLessThan(80);
+      await tools.continue_document_review!.execute!({}, TEST_TOOL_OPTIONS);
+    }
+    return (await tools.finish_document_review!.execute!(
+      {},
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+  }
+
+  it("names the write tool so the turn does not end on findings", async () => {
+    // start and continue both hand off with nextAction. Without the same
+    // handoff here the model ends holding an evidence package and describes
+    // it in chat, leaving the field empty.
+    const finished = await finishWith("write");
+    expect(finished.deliverNow).toBe("draft_field | propose_edit | edit_table");
+    expect(String(finished.deliverNote)).toContain("does not put it in the document");
+  });
+
+  it("stays silent on a read turn, where answering in chat is correct", async () => {
+    const finished = await finishWith("read");
+    expect(finished.deliverNow).toBeUndefined();
+    expect(finished.deliverNote).toBeUndefined();
+  });
+
+  it("stays silent when the report is read-only", async () => {
+    const finished = await finishWith("write", false);
+    expect(finished.deliverNow).toBeUndefined();
+  });
+
+  it("still returns the evidence package alongside the handoff", async () => {
+    const finished = await finishWith("write");
+    expect(finished.status).toBe("complete");
+    expect(finished.reviewedPages).toBe(1);
+  });
+});

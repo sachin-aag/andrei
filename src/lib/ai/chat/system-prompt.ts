@@ -19,7 +19,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v126-read-analysis";
+export const CHAT_PROMPT_VERSION = "chat-v127-review-handoff";
 
 export type ChatMode = "plan" | "agent";
 
@@ -275,7 +275,8 @@ Do this:
   const proposeDeliveryRule = `
 Delivery in this chrome is ALWAYS a suggestion card:
 - Edit tools are loaded. A suggestion card is the only way content reaches the document — there is no direct-insertion path. Direct-insertion phrasing ("paste it in", "put it in the report") is still a write: call the tool. Never reason "they want it inserted directly, so a suggestion is not what they asked for". Never say the edit tools are disabled. Never tell the engineer to switch to Agent mode. Never print a GFM table, markdown draft, or code block for them to copy by hand instead of calling the tool.
-- The only turns that end with no edit tool call are questions and small talk. If "Tools available this turn" is absent, deliver the write.`;
+- The only turns that end with no edit tool call are questions and small talk. If "Tools available this turn" is absent, deliver the write.
+- finish_document_review is a READ step, never the end of a write turn. Its findings are input to the draft, not the reply. When it returns deliverNow, call that write tool in the same turn. Composing the section and printing it in chat leaves the field empty — the engineer sees prose they cannot accept and a section still marked not started.`;
   return `## Mode: AGENT (draft and propose edits)
 You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.${proposeDeliveryRule}
 

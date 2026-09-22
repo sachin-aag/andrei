@@ -65,6 +65,7 @@ import {
   analysisEvidenceForReport,
   type AnalysisEvidence,
 } from "@/lib/ai/chat/analysis-evidence";
+import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
 import {
   markdownHasImage,
   markdownHasTable,
@@ -1208,6 +1209,11 @@ export function buildChatTools(opts: {
   reportMetadata?: Record<string, unknown> | null;
   /** Live section JSON so recaps of this document are exempt (not the field being written). */
   reportSections?: Partial<Record<SectionType, Record<string, unknown>>> | null;
+  /**
+   * This turn's classified intent. Only `finish_document_review` reads it, to
+   * hand a write turn back to the write tool instead of ending on findings.
+   */
+  userIntentKind?: ChatUserIntentKind;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -2276,6 +2282,17 @@ export function buildChatTools(opts: {
           ...finished,
           citationRule,
           trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+          // start and continue each name the next tool; without the same
+          // handoff here a write turn ends holding an evidence package, and
+          // the natural thing to do with one is describe it. That is how a
+          // finished draft gets printed into chat instead of the document.
+          ...(canEdit && opts.userIntentKind === "write"
+            ? {
+                deliverNow: "draft_field | propose_edit | edit_table",
+                deliverNote:
+                  "The review is finished — this was the last read step of a write turn. Call the write tool NOW: draft_field for an empty field, propose_edit for a filled one, edit_table for a table. Printing the draft in chat does not put it in the document and never ends a write turn.",
+              }
+            : {}),
         };
       },
     }),

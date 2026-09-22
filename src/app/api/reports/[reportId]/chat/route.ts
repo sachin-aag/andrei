@@ -594,6 +594,7 @@ async function handleChatPost(
         ? (report.metadata as Record<string, unknown>)
         : null,
     reportSections: mergedSections,
+    userIntentKind: userIntent.kind,
   });
   const scopedTools: ToolSet =
     mode === "plan"
