@@ -22,6 +22,7 @@ import {
   readDocumentPage,
 } from "@/lib/attachments/retrieval";
 import { withWorksheetMutationLock } from "./worksheet-write-lock";
+import { raggedColumns, raggedColumnsNote } from "./ragged-columns";
 import { runSheetExtractJob } from "./extract-sheet";
 import { createAnalyticsSearchGate } from "./search-loop";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
@@ -1664,6 +1665,8 @@ export function buildAnalyticsChatTools(opts: {
           if (!first) {
             return { status: "error" as const, message: "Column missing after save." };
           }
+          const ragged = raggedColumns(columns);
+          const raggedNote = ragged.length > 0 ? raggedColumnsNote(ragged) : "";
           const sheet =
             findSheet(saved.worksheet, writtenSheetId) ??
             dataSheets(saved.worksheet)[0];
@@ -1690,7 +1693,9 @@ export function buildAnalyticsChatTools(opts: {
             numericCount: first.numericCells,
             numericCells: first.numericCells,
             nonNumericCells: first.nonNumericCells,
-            note: first.note,
+            // Both notes matter: a short column and a non-numeric column are
+            // different defects and one must not hide the other.
+            note: [raggedNote, first.note].filter(Boolean).join(" ") || undefined,
             columns,
             columnCount: columns.length,
             blankedCells: [] as Array<{
@@ -1699,7 +1704,11 @@ export function buildAnalyticsChatTools(opts: {
               columnName: string | null;
             }>,
             blankedCount: 0,
-            incomplete: false,
+            // rowsWritten above is the FIRST column's. Without this, a dump
+            // where the data columns filled and the date/time columns got two
+            // rows reports as a clean write of the full height.
+            ragged,
+            incomplete: ragged.length > 0,
           };
         });
       },
