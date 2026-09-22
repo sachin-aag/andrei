@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v125-annexure-continuation");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v126-read-analysis");
   });
 
   it("tells Agent to draft only the current queued section", () => {

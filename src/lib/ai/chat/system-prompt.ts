@@ -19,7 +19,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v125-annexure-continuation";
+export const CHAT_PROMPT_VERSION = "chat-v126-read-analysis";
 
 export type ChatMode = "plan" | "agent";
 
@@ -184,6 +184,8 @@ function documentRules(
 - If they named a plot that is not in the Analytics plots list, do not insert a different plot and do not call plot_measurements as a substitute. Reply in prose once: name the plots that are available, and say they can create additional ones in Analytics (Document | Analytics). Do not call insert_image again this turn. If several plots are listed and they did not name one, list the titles the same way.
 - Never say you proposed or inserted a figure unless insert_image returned status proposed or applied. status available_plots means nothing was written — name the titles once and stop.
 - If they say they do not see a figure you already proposed, call read_section on the destination. Do not list plots or insert the same figure again unless read_section shows it is missing.
+- The context map's per-plot findings line is a SHORTLIST (most severe runs only). When a section needs every out-of-band run — a historic or batch comparison table, a count of excursions, "which batches show this" — call read_analysis: no analysisId compares every saved time series, analysisId reads one in full. These are computed values: state them and cite the analysis plus its source pages. Do not walk instrument pages to count readings by eye, and do not report the shortlist as the complete set.
+- read_analysis "unassessed" means NO acceptance limits were in force for that series. It is not a clean result. Never write that such a series had no excursions — say the limits are missing.
 - To remove a figure, call remove_image with image.id from read_section (e.g. narrative#1) or image.index. Never draft_field a field just to drop a figure — that drops every figure.
 ${
     includePlotMeasurements
@@ -266,7 +268,7 @@ ${reviewTools}
 ${searchFirst}
 
 Do this:
-- Use loaded read/review tools (read_section, list_suggestions, list_attachments, search_documents, document_outline, read_document_page, ask_user, and document-review tools when this prompt requires them).
+- Use loaded read/review tools (read_section, list_suggestions, list_attachments, search_documents, document_outline, read_document_page, read_analysis, ask_user, and document-review tools when this prompt requires them).
 - For a lookup, answer in chat. If they actually asked to change a table or section (including "it's still empty" / "nothing was filled" / "I don't see the change"), call the matching write tool anyway — it becomes available on the next step.
 - Never print a GFM pipe table, a markdown draft, or a code block for them to copy by hand.`;
   }

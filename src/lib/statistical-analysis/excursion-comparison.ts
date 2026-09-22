@@ -99,6 +99,48 @@ export function buildExcursionComparison(
   return { rows, clean, unassessed };
 }
 
+/** Enough of a run to rank it: how long it lasted and how far outside it went. */
+type SeverityShape = {
+  readings: number;
+  min: number;
+  max: number;
+  lsl: number | null;
+  usl: number | null;
+};
+
+function depthOutsideBand(run: SeverityShape): number {
+  const below = run.lsl != null ? run.lsl - run.min : 0;
+  const above = run.usl != null ? run.max - run.usl : 0;
+  return Math.max(below, above, 0);
+}
+
+/**
+ * Trim a run list to `cap` without hiding the worst run.
+ *
+ * Taking the first N is what made RIG23001's real event invisible: 101
+ * readings over 100 minutes, sitting at chronological position 26 of 27
+ * behind 18 single-reading blips. Select by severity so the event always
+ * survives, then restore the caller's ordering so the table still reads
+ * forward in time.
+ */
+export function capBySeverityKeepingOrder<T extends SeverityShape>(
+  items: readonly T[],
+  cap: number
+): { kept: T[]; omitted: number } {
+  if (items.length <= cap) return { kept: [...items], omitted: 0 };
+  const indexed = items.map((item, index) => ({ item, index }));
+  const bySeverity = [...indexed].sort((a, b) => {
+    if (b.item.readings !== a.item.readings)
+      return b.item.readings - a.item.readings;
+    return depthOutsideBand(b.item) - depthOutsideBand(a.item);
+  });
+  const kept = bySeverity
+    .slice(0, cap)
+    .sort((a, b) => a.index - b.index)
+    .map((entry) => entry.item);
+  return { kept, omitted: items.length - cap };
+}
+
 /** One line per saved time series for the chat context map. */
 export function summarizeTimeSeriesForPrompt(
   analysis: TimeSeriesAnalysisSummary

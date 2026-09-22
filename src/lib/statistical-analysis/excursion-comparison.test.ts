@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildExcursionComparison,
+  capBySeverityKeepingOrder,
   summarizeTimeSeriesForPrompt,
 } from "./excursion-comparison";
 import type {
@@ -156,5 +157,46 @@ describe("unassessed series", () => {
     expect(line).toContain("NO ACCEPTANCE LIMITS SET");
     expect(line).toContain("not assessed");
     expect(line).not.toMatch(/no excursion(?!s were)/);
+  });
+});
+
+describe("capBySeverityKeepingOrder", () => {
+  it("returns everything under the cap, untouched", () => {
+    const runs = [run({ readings: 1 }), run({ readings: 2 })];
+    const { kept, omitted } = capBySeverityKeepingOrder(runs, 10);
+    expect(kept).toEqual(runs);
+    expect(omitted).toBe(0);
+  });
+
+  it("keeps the worst run even when it is last", () => {
+    // RIG23001's real event sits at chronological position 26 of 27, behind
+    // 18 single-reading blips. First-N truncation is what hid it.
+    const blips = Array.from({ length: 25 }, (_, i) =>
+      run({ readings: 1, startRow: i, elapsedMinutes: 1 })
+    );
+    const event = run({ readings: 101, startRow: 25, elapsedMinutes: 100 });
+    const { kept, omitted } = capBySeverityKeepingOrder([...blips, event], 6);
+    expect(kept).toHaveLength(6);
+    expect(kept.some((r) => r.readings === 101)).toBe(true);
+    expect(omitted).toBe(20);
+  });
+
+  it("restores the caller's ordering after selecting by severity", () => {
+    const runs = [
+      run({ readings: 1, startRow: 0 }),
+      run({ readings: 50, startRow: 1 }),
+      run({ readings: 2, startRow: 2 }),
+      run({ readings: 30, startRow: 3 }),
+    ];
+    const { kept } = capBySeverityKeepingOrder(runs, 2);
+    // 50 and 30 are the severe pair; they come back in row order, not rank.
+    expect(kept.map((r) => r.startRow)).toEqual([1, 3]);
+  });
+
+  it("breaks ties on how far outside the band the run went", () => {
+    const shallow = run({ readings: 5, min: 640, lsl: 650, startRow: 0 });
+    const deep = run({ readings: 5, min: 192.4, lsl: 650, startRow: 1 });
+    const { kept } = capBySeverityKeepingOrder([shallow, deep], 1);
+    expect(kept[0]?.min).toBe(192.4);
   });
 });

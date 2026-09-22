@@ -125,12 +125,20 @@ the honest failure is an empty field rather than a plausible one.
 review cannot be completed from trend prints — it needs the prior deviation
 records. Check with `list_attachments` before planning a drafting session.
 
-## Known gaps in the plumbing
+## Reading the analyses while drafting
 
-- **No `read_analysis` tool.** Document chat sees one summary line per saved
-  time series (top 6 runs by severity) and can insert the figure. It cannot
-  pull the full run list, so a 27-run batch is visible only in part.
-- **`buildExcursionComparison` is written, tested, and called by nothing.** It
-  produces exactly the one-row-per-run table `fir_historic_review` wants,
-  across all eight batches. Wiring it to a `read_analysis` tool is the next
-  piece of work.
+`read_analysis` (Document chat) reads the saved results directly:
+
+- **no `analysisId`** — every out-of-band run across every saved time series,
+  one row each, oldest first, plus the series that were clean and the series
+  that had no limits in force. This is the batch comparison
+  `fir_historic_review` wants.
+- **`analysisId`** — one series in full.
+
+The context map's per-plot line is only the six most severe runs, so a 27-run
+batch needs this tool before its table can be written. Numbers it returns are
+computed values: `groundDraftText` accepts them and cites the analysis plus the
+pages its rows came from, so they do not need re-deriving by page walk.
+
+A series with no acceptance band comes back under `unassessed`, never `clean` —
+nothing was checked, which is not the same as nothing being out of band.

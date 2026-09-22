@@ -52,6 +52,14 @@ import {
 } from "@/lib/ai/chat/insert-image";
 import { executePlotMeasurements } from "@/lib/charts/plot-measurements";
 import { getReportAnalytics } from "@/lib/statistical-analysis/store";
+import {
+  buildExcursionComparison,
+  capBySeverityKeepingOrder,
+} from "@/lib/statistical-analysis/excursion-comparison";
+import {
+  isTimeSeriesAnalysis,
+  type TimeSeriesExcursion,
+} from "@/lib/statistical-analysis/types";
 import { renderAnalyticsInsertImage } from "@/lib/statistical-analysis/render-analysis-plots";
 import {
   analysisEvidenceForReport,
@@ -1069,6 +1077,69 @@ const LIST_SUGGESTIONS_MAX = 40;
 const SUGGESTION_LIST_STATUSES = ["open", "resolved", "dismissed"] as const;
 type SuggestionListStatus = (typeof SUGGESTION_LIST_STATUSES)[number];
 
+/**
+ * High enough that a real comparison arrives whole: eight lyophilizer cycles
+ * come to roughly 60 runs, and the point of this tool is to see all of them
+ * rather than the context map's shortlist.
+ */
+const READ_ANALYSIS_MAX_RUNS = 200;
+const READ_ANALYSIS_MAX_SOURCE_PAGES = 6;
+
+function bandLabelForChat(lsl: number | null, usl: number | null): string {
+  if (lsl != null && usl != null) return `${lsl}–${usl}`;
+  if (lsl != null) return `≥ ${lsl}`;
+  if (usl != null) return `≤ ${usl}`;
+  return "none";
+}
+
+function timeSeriesRunForChat(run: TimeSeriesExcursion) {
+  return {
+    start: run.startLabel,
+    end: run.endLabel,
+    readings: run.readings,
+    elapsedMinutes: run.elapsedMinutes,
+    elapsedClock: run.elapsedClock,
+    direction: run.direction,
+    // The extreme that breached; the other bound is noise on a one-sided run.
+    observed: run.direction === "high" ? run.max : run.min,
+    min: run.min,
+    max: run.max,
+    band: bandLabelForChat(run.lsl, run.usl),
+    setpoint: run.condition,
+  };
+}
+
+function omittedNote(omitted: number): string {
+  return omitted > 0
+    ? ` ${omitted} less severe run(s) omitted by the limit — raise limit to see them, and do not report the listed runs as the complete set.`
+    : "";
+}
+
+function readAnalysisNote(judgedReadings: number, omitted: number): string {
+  if (judgedReadings === 0) {
+    return (
+      "NO ACCEPTANCE LIMITS WERE IN FORCE — nothing was assessed. Do not write that there were no excursions; " +
+      "say the limits are missing for this series."
+    );
+  }
+  return (
+    "Computed values. State them directly and cite this analysis plus its source pages; do not walk instrument pages to re-derive them." +
+    omittedNote(omitted)
+  );
+}
+
+function comparisonNote(unassessedCount: number, omitted: number): string {
+  const unassessed =
+    unassessedCount > 0
+      ? ` ${unassessedCount} series had NO acceptance limits in force and were not assessed — they are listed under unassessed, not clean. Never report them as having no excursions.`
+      : "";
+  return (
+    "One row per out-of-band run across every saved time series, oldest first. 'clean' series were assessed and had none." +
+    unassessed +
+    omittedNote(omitted)
+  );
+}
+
 function isSuggestionListStatus(value: string): value is SuggestionListStatus {
   return (SUGGESTION_LIST_STATUSES as readonly string[]).includes(value);
 }
@@ -1700,6 +1771,126 @@ export function buildChatTools(opts: {
           truncated: listed.length > cap,
           suggestions: listed.slice(0, cap),
           note: "open = waiting for Apply/Dismiss (proposed, not landed). resolved = approved. dismissed = rejected. Never say a prior proposal is still waiting unless status is open.",
+        };
+      },
+    }),
+
+    read_analysis: tool({
+      description:
+        "Read the computed results behind a saved Analytics time series: every out-of-band run, not the shortlist in the context map. Call with no analysisId for one comparable table across every time series on this report (one row per run, oldest first) — that is the historic/batch comparison. Call with analysisId for one series in full. These are computed values: state them directly, do not re-derive them by walking instrument pages.",
+      inputSchema: z.object({
+        analysisId: z
+          .string()
+          .optional()
+          .describe(
+            "One saved analysis (the id in brackets in the context map). Omit to compare every time series on the report."
+          ),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(READ_ANALYSIS_MAX_RUNS)
+          .optional()
+          .describe(
+            `Max runs to return (default ${READ_ANALYSIS_MAX_RUNS}). Over the cap, the most severe runs are kept.`
+          ),
+      }),
+      execute: async ({ analysisId, limit }) => {
+        const cap = limit ?? READ_ANALYSIS_MAX_RUNS;
+        const analytics = await getReportAnalytics(reportId);
+        const analyses = analytics?.analyses ?? [];
+        if (analyses.length === 0) {
+          return {
+            error: "no_analyses",
+            message:
+              "No saved analyses on this report. Plots are created on the Analytics tab; this tool only reads ones that already exist.",
+          };
+        }
+        // Source pages per analysis, so a value read here can be cited to the
+        // paper its rows came from rather than to the plot alone.
+        const evidence = await loadAnalysisEvidence();
+        const sourcesFor = (id: string) => {
+          const pages = evidence.find((e) => e.analysisId === id)?.pages ?? [];
+          return {
+            pages: pages
+              .slice(0, READ_ANALYSIS_MAX_SOURCE_PAGES)
+              .map((page) => `${page.filename}, p. ${page.page}`),
+            pageCount: pages.length,
+          };
+        };
+
+        if (analysisId) {
+          const analysis = analyses.find((item) => item.id === analysisId);
+          if (!analysis) {
+            return {
+              error: "not_found",
+              message: `No saved analysis ${analysisId} on this report. The context map lists the ids in brackets.`,
+            };
+          }
+          if (!isTimeSeriesAnalysis(analysis)) {
+            return {
+              error: "not_a_time_series",
+              message: `'${analysis.title}' is a ${analysis.kind}, which has no excursion runs. Insert it as a figure with insert_image source=analytics.`,
+            };
+          }
+          const { config, results } = analysis;
+          const { kept, omitted } = capBySeverityKeepingOrder(
+            results.excursions,
+            cap
+          );
+          return {
+            analysisId: analysis.id,
+            title: analysis.title,
+            column: config.columnName,
+            conditionColumn: config.conditionColumnName ?? null,
+            readings: results.n,
+            skipped: results.skipped,
+            judgedReadings: results.judgedReadings,
+            excursionCount: results.excursions.length,
+            excursionReadings: results.excursionReadings,
+            runs: kept.map(timeSeriesRunForChat),
+            runsOmitted: omitted,
+            ...sourcesFor(analysis.id),
+            note: readAnalysisNote(results.judgedReadings, omitted),
+          };
+        }
+
+        const comparison = buildExcursionComparison(analyses);
+        const { kept, omitted } = capBySeverityKeepingOrder(
+          comparison.rows,
+          cap
+        );
+        return {
+          seriesCompared:
+            comparison.rows.length > 0 || comparison.clean.length > 0
+              ? new Set([
+                  ...comparison.rows.map((row) => row.analysisId),
+                  ...comparison.clean.map((entry) => entry.analysisId),
+                ]).size
+              : 0,
+          rows: kept.map((row) => ({
+            series: row.series,
+            analysisId: row.analysisId,
+            start: row.start,
+            end: row.end,
+            readings: row.readings,
+            elapsedMinutes: row.elapsedMinutes,
+            direction: row.direction,
+            observed: row.direction === "high" ? row.max : row.min,
+            band: bandLabelForChat(row.lsl, row.usl),
+            setpoint: row.condition,
+            sources: sourcesFor(row.analysisId).pages,
+          })),
+          rowsOmitted: omitted,
+          clean: comparison.clean.map((entry) => ({
+            series: entry.series,
+            readings: entry.n,
+          })),
+          unassessed: comparison.unassessed.map((entry) => ({
+            series: entry.series,
+            readings: entry.n,
+          })),
+          note: comparisonNote(comparison.unassessed.length, omitted),
         };
       },
     }),
