@@ -4966,6 +4966,20 @@ describe("read_analysis", () => {
     expect(String(result.message)).toContain("insert_image");
   });
 
+  it("tells the model not to cite the analysisId as a source", async () => {
+    // A report shipped with half its Citations list reading
+    // [zbud2fet70yu88pvfpccjtko] — the internal handle, written as a filename.
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [timeSeries("anl_1", "RIG25014", [excursion()])],
+    });
+    const comparison = await readAnalysis({});
+    expect(String(comparison.note)).toContain("never write it into the document");
+    expect(String(comparison.note)).toContain("Cite only the filenames and pages");
+    const single = await readAnalysis({ analysisId: "anl_1" });
+    expect(String(single.note)).toContain("never write it into the document");
+  });
+
   it("says there is nothing saved rather than returning an empty table", async () => {
     getReportAnalyticsMock.mockResolvedValue({ worksheet, analyses: [] });
     const result = await readAnalysis({});

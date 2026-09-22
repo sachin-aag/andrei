@@ -1114,6 +1114,15 @@ function timeSeriesRunForChat(run: TimeSeriesExcursion) {
   };
 }
 
+/**
+ * analysisId is an internal handle for plot_time_series, not a source. Left
+ * unsaid, it gets written into the Citations list as if it were a filename —
+ * a regulated report came back with half its citations reading
+ * `[zbud2fet70yu88pvfpccjtko]`.
+ */
+const CITE_SOURCES_NOT_IDS =
+  " Cite only the filenames and pages in 'sources'. analysisId is an internal handle for editing a plot — never write it into the document or a Citations list.";
+
 function omittedNote(omitted: number): string {
   return omitted > 0
     ? ` ${omitted} less severe run(s) omitted by the limit — raise limit to see them, and do not report the listed runs as the complete set.`
@@ -1129,6 +1138,7 @@ function readAnalysisNote(judgedReadings: number, omitted: number): string {
   }
   return (
     "Computed values. State them directly and cite this analysis plus its source pages; do not walk instrument pages to re-derive them." +
+    CITE_SOURCES_NOT_IDS +
     omittedNote(omitted)
   );
 }
@@ -1140,6 +1150,7 @@ function comparisonNote(unassessedCount: number, omitted: number): string {
       : "";
   return (
     "One row per out-of-band run across every saved time series, oldest first. 'clean' series were assessed and had none." +
+    CITE_SOURCES_NOT_IDS +
     unassessed +
     omittedNote(omitted)
   );

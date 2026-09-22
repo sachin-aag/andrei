@@ -28,6 +28,7 @@ import {
   timeSeriesOverlays,
   xyScatterFallbackTitle,
 } from "./types";
+import { isInsertableGraphAnalysis } from "./insertable-graphs";
 import type {
   AnalysisKind,
   AnalysisPreviewImage,
@@ -2147,13 +2148,12 @@ export async function saveAnalysisPreviewForReport(
   if (!analytics) return { ok: false, status: 404, error: "Not found" };
   const existing = analytics.analyses.find((item) => item.id === analysisId);
   if (!existing) return { ok: false, status: 404, error: "Not found" };
-  if (
-    !isSixpackAnalysis(existing) &&
-    !isScatterAnalysis(existing) &&
-    !isXyScatterAnalysis(existing) &&
-    !isBoxplotAnalysis(existing) &&
-    !isHistogramAnalysis(existing)
-  ) {
+  // Keep this in step with isInsertableGraphAnalysis. A chart kind missing
+  // here 400s every preview save the grid attempts, forever — which is what
+  // left every time series without a previewImage and made Insert graph look
+  // empty. A string of type guards gets no exhaustiveness check, so adding an
+  // AnalysisKind does not fail the build here.
+  if (!isInsertableGraphAnalysis(existing)) {
     return {
       ok: false,
       status: 400,
