@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v127-review-handoff");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v128-tabular-shape");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -691,5 +691,23 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("title-page container format");
     expect(prompt).toMatch(/pick the\s+first PRQR/);
     expect(prompt).toContain("do not infer it from the first PRQR");
+  });
+});
+
+describe("tabular shape recognition", () => {
+  it("tells the model to decide table vs prose from content shape", () => {
+    // Standard Procedures has no prescribed table, so a five-step parameter
+    // set came back as bullets that repeated the same labels every line.
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent", intent: "write" });
+    expect(prompt).toContain("Decide table vs prose from the SHAPE");
+    expect(prompt).toContain("same two or more attributes");
+    expect(prompt).toContain("Derive the schema yourself");
+    expect(prompt).toContain("Keep genuinely unlike items, single records, and reasoning in prose");
+  });
+
+  it("gives the bullets-to-table conversion a one-turn path", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent", intent: "write" });
+    expect(prompt).toContain("create_table with the rows, and propose_edit deleting the bullets");
+    expect(prompt).toContain("Do not leave both");
   });
 });
