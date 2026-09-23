@@ -112,9 +112,6 @@ docs/convergent-onboarding-temporary-passwords.md
 # must stay tracked.
 /*.docx
 
-# VQ template / export scratch (repo root)
-/.vq-*.png
-
 # Local chart fixture renders (`scripts/render-chart-fixture.ts`)
 /tmp/
 .tmp/
@@ -143,8 +140,8 @@ scripts/eval/retrieval-cases.local.json
 *.rar
 /.swc
 
-# Local DS investigation working copies. The rest of docs/sample_files stays
-# tracked. These are a real customer report (reviewer comments and tracked
-# changes) and our own dev exports.
+# Local VQ / investigation working copies (not in tests; keep on disk locally).
+# The rest of docs/sample_files stays tracked.
+/.vq-*.png
 docs/sample_files/Investigation report_ERF-26-022 11.09.2026.docx
 docs/sample_files/Investigation_Report_DS_*.docx
