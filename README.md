@@ -2,7 +2,7 @@
 
 Andrei is a Next.js app for drafting, reviewing, and exporting regulated quality documents. It replaces the Word-over-email loop with an in-browser editor, AI checks against quality criteria, manager review, attachment evidence, and one-click DOCX export.
 
-The same engine ships as three customer packs: **demo** (Andrei branding, investigation reports plus design verification plus a free-form Document), **mj** (M.J. Biopharm SOP/DP/QA/008 overlay), and **convergent** (Convergent Dental branding, design verification only).
+The same engine ships as customer packs: **demo** (Andrei branding, investigation reports plus design verification plus a free-form Document), **mj** (M.J. Biopharm SOP/DP/QA/008 overlay), **convergent** (Convergent Dental branding, design verification only), and **3xper** (3xper Innoventure, vendor qualification only). New pack: [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer).
 
 **Release notes:** use the project skill **release-notes** (`.agents/skills/release-notes/SKILL.md`) to draft paste-ready markdown for GitHub Releases. Do not paste long release notes here.
 
@@ -20,7 +20,7 @@ The same engine ships as three customer packs: **demo** (Andrei branding, invest
 - **DOCX export** (and MJ Word import) matching the customer template.
 - **Admin** — users, password policy, retention, audit trail, and e-signatures (21 CFR Part 11-style hash chain).
 
-Insights dashboards exist under `/insights` on the **demo** pack (`insightsEnabled`). MJ and Convergent hide the nav item and redirect those routes home. The dashboards are currently backed by mock data.
+Insights dashboards exist under `/insights` on the **demo** pack (`insightsEnabled`). MJ, Convergent, and 3xper hide the nav item and redirect those routes home. The dashboards are currently backed by mock data.
 
 The workspace **Document vault** is a primary sidebar item under Reports (`/vault`): upload PDFs and Word files once, then attach them to reports.
 
@@ -33,6 +33,7 @@ The workspace **Document vault** is a primary sidebar item under Reports (`/vaul
 | `investigation_report` | deviation | DMAIC + conclusion + attachments / approvals |
 | `design_verification` | design verification | demo: cover page + 10 sections; Convergent pack: 9 Solea DV sections |
 | `generic_document` | document | one continuous `body` section (demo pack only; no criteria) |
+| `vendor_qualification` | vendor qualification | Cover + A–N + scoring (`vq_*`; 3xper pack only) |
 
 Which types and sections appear is a **customer pack** decision, not a feature flag.
 
@@ -41,8 +42,9 @@ Which types and sections appear is a **customer pack** decision, not a feature f
 | `demo` (default) | `ANDREI_CUSTOMER=demo` | Andrei branding, investigation + design verification + Document, conclusion visible |
 | `mj` | `ANDREI_CUSTOMER=mj` | MJ branding, SOP/DP/QA/008 criteria and Word template, Word import, investigation only (no conclusion, no design verification) |
 | `convergent` | `ANDREI_CUSTOMER=convergent` | Convergent Dental branding, design verification only (9-section Solea DV template) |
+| `3xper` | `ANDREI_CUSTOMER=3xper` | 3xper Innoventure branding, vendor qualification only (QAD-SOP-MS-001-F04) |
 
-Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value. They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md).
+Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value. They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Live projects and the stand-up checklist: [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md). 3xper product notes: [docs/3xper-deployment.md](docs/3xper-deployment.md).
 
 ---
 
@@ -102,6 +104,7 @@ Default is **demo**. To exercise another overlay, set both in `.env.local`:
 ANDREI_CUSTOMER=mj
 NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 # or: ANDREI_CUSTOMER=convergent and NEXT_PUBLIC_ANDREI_CUSTOMER=convergent
+# or: ANDREI_CUSTOMER=3xper and NEXT_PUBLIC_ANDREI_CUSTOMER=3xper
 ```
 
 ---
@@ -129,8 +132,8 @@ Copy `.env.example` and fill `.env.local`. The important ones:
 | `AUTH_URL` | Public origin users actually open. A leftover `*.vercel.app` value after a custom-domain cutover breaks sessions. |
 | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | AI Check, suggestions, chat. |
 | `GOOGLE_VERTEX_PROJECT` | **Required** for PDF/DOCX ingest + embeddings. Pair with WIF on Vercel. |
-| `GCS_BUCKET` | Production attachment bytes. |
-| `ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER` | Customer pack (`demo`, `mj`, or `convergent`). |
+| `GCS_BUCKET` | Production attachment bytes (one bucket per pack on Vercel; see [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer)). |
+| `ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER` | Customer pack (`demo`, `mj`, `convergent`, or `3xper`). |
 | `SITE_ACCESS_PASSWORD` | Optional site-wide gate at `/unlock`. Unset = disabled. |
 
 **Never set `ALLOW_TEST_*` on Vercel.** Playwright injects those locally (`ALLOW_TEST_LOGIN`, skip-eval/suggest, stub ingest/chat, local attachment storage).
@@ -193,7 +196,8 @@ Release-candidate manual cases: [docs/manual-test-cases.md](docs/manual-test-cas
 | [TESTING.md](TESTING.md) | How to run and catalog tests |
 | [docs/database-environments.md](docs/database-environments.md) | Local Docker vs Neon vs CI |
 | [docs/database-schema.md](docs/database-schema.md) | Tables and recovery |
-| [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md) | `andrei-v2` (MJ) vs `andrei-demo` |
+| [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md) | Live packs + **Add a customer** (the stand-up checklist) |
+| [docs/3xper-deployment.md](docs/3xper-deployment.md) | 3xper VQ product notes (not a second infra plan) |
 | [docs/email-deliverability.md](docs/email-deliverability.md) | Resend / magic-link deliverability |
 | [docs/pdf-evidence-deployment-checklist.md](docs/pdf-evidence-deployment-checklist.md) | Attachment ingest release gates |
 | [docs/neon-vercel-setup.md](docs/neon-vercel-setup.md) | Neon ↔ Vercel integration |

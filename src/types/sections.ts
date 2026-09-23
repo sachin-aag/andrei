@@ -192,12 +192,30 @@ export const SECTION_LABELS: Record<string, string> = {
   qra_periodic_review: "Periodic Review",
   qra_post_conclusion: "Summary and Conclusion (After Implementation)",
   qra_revision_history: "Revision History",
+  vq_cover: "Cover",
+  vq_section_a: "A. General Company Information and Quality Management",
+  vq_section_b: "B. TSE/BSE Risk Analysis Questionnaire",
+  vq_section_c: "C. GMO – Vegetable Origin Questionnaire",
+  vq_section_d: "D. Allergen Questionnaire",
+  vq_section_e: "E. Extended Quality Questionnaire",
+  vq_section_f: "F. Packaging Material Questionnaire",
+  vq_section_g: "G. Elemental Impurities Questionnaire",
+  vq_section_h: "H. Residual Solvent Questionnaire",
+  vq_section_i: "I. Potential Genotoxic Impurity (PGI) Questionnaire",
+  vq_section_j: "J. Nitrosamine Impurity Questionnaire",
+  vq_section_k: "K. Willingness to Inspection",
+  vq_section_l: "L. Change Notification",
+  vq_section_m: "M. Quality Agreement",
+  vq_section_n: "N. Audit Checklist",
+  vq_scoring: "Approval of Vendor Qualification",
 };
 
 /** Title-case a section key so Criteria and comments never show `revision_history`. */
 export function humanizeSectionKey(section: string): string {
   return section
     .replace(/^qra_/, "")
+    .replace(/^elr_/, "")
+    .replace(/^vq_/, "")
     .split("_")
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))

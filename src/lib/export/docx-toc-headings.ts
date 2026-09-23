@@ -197,6 +197,38 @@ export const ELR_TOC_HEADINGS: readonly TocHeadingSpec[] = [
   heading("10.0 CITATIONS", "Heading1"),
 ];
 
+/** 3xper vendor qualification (`3xper-vendor-qualification-template.docx`). */
+export const VQ_TOC_HEADINGS: readonly TocHeadingSpec[] = [
+  heading("COVER — 3xPER ISSUANCE", "Heading1"),
+  heading(
+    "A. GENERAL COMPANY INFORMATION AND QUALITY MANAGEMENT",
+    "Heading1"
+  ),
+  heading("B. TSE/BSE RISK ANALYSIS SURVEY", "Heading1"),
+  heading(
+    "C. TRACEABILITY OF INGREDIENTS POTENTIALLY DERIVED FROM GMO",
+    "Heading1"
+  ),
+  heading("D. ALLERGEN", "Heading1"),
+  heading("E. EXTENDED QUALITY QUESTIONNAIRE", "Heading1"),
+  heading("F. PACKAGING MATERIAL", "Heading1"),
+  heading("G. ELEMENTAL IMPURITIES QUESTIONNAIRE", "Heading1"),
+  heading("H. RESIDUAL SOLVENT QUESTIONNAIRE", "Heading1"),
+  heading(
+    "I. POTENTIAL GENOTOXIC IMPURITY (PGI) QUESTIONNAIRE",
+    "Heading1"
+  ),
+  heading("J. NITROSAMINE IMPURITY QUESTIONNAIRE", "Heading1"),
+  heading("K. WILLINGNESS TO INSPECTION", "Heading1"),
+  heading("L. CHANGE NOTIFICATION", "Heading1"),
+  heading("M. QUALITY AGREEMENT", "Heading1"),
+  heading("N. AUDIT CHECKLIST", "Heading1"),
+  heading(
+    "APPROVAL OF VENDOR QUALIFICATION (3xPER INNOVENTURE LTD)",
+    "Heading1"
+  ),
+];
+
 export function tocHeadingSpecsForDocumentType(
   documentType: DocumentType
 ): readonly TocHeadingSpec[] | null {
@@ -211,6 +243,8 @@ export function tocHeadingSpecsForDocumentType(
       return QRA_TOC_HEADINGS;
     case "equipment_lifecycle_report":
       return ELR_TOC_HEADINGS;
+    case "vendor_qualification":
+      return VQ_TOC_HEADINGS;
     case "failure_investigation_report":
       return FIR_TOC_HEADINGS;
     case "generic_document":

@@ -19,6 +19,8 @@ function untitledFallback(documentType: DocumentType | undefined): string {
       return "Untitled quality risk assessment";
     case "equipment_lifecycle_report":
       return "Untitled equipment lifecycle report";
+    case "vendor_qualification":
+      return "Untitled vendor qualification";
     case "failure_investigation_report":
       return "Untitled DS investigation";
     case "investigation_report":

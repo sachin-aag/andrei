@@ -23,6 +23,8 @@ jobs:
             label: demo
           - neon_project_id: ${{ vars.NEON_PROJECT_ID_CONVERGENT }}
             label: convergent
+          - neon_project_id: ${{ vars.NEON_PROJECT_ID_3XPER }}
+            label: 3xper
           # Back-compat: older repos only set NEON_PROJECT_ID (MJ / Andrei V2).
           - neon_project_id: ${{ vars.NEON_PROJECT_ID }}
             label: mj-legacy

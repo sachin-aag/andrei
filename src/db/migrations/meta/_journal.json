@@ -484,6 +484,13 @@
       "when": 1789159200000,
       "tag": "0067_tables_parsed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1789245600000,
+      "tag": "0068_vendor_qualification_type",
+      "breakpoints": true
     }
   ]
 }

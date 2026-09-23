@@ -592,6 +592,7 @@ export function buildDesignVerificationDefinition(
       return convergentDesignVerificationDefinition;
     case "demo":
     case "mj":
+    case "3xper":
       return defaultDesignVerificationDefinition;
     default: {
       const exhaustive: never = pack.id;

@@ -6,6 +6,7 @@ import { genericDocumentDefinition } from "./generic-document";
 import { mechanicalDesignVerificationDefinition } from "./mechanical-design-verification";
 import { qualityRiskAssessmentDefinition } from "./quality-risk-assessment";
 import { equipmentLifecycleReportDefinition } from "./equipment-lifecycle-report";
+import { vendorQualificationDefinition } from "./vendor-qualification";
 import { failureInvestigationReportDefinition } from "./failure-investigation-report";
 import type {
   CriterionDefinition,
@@ -35,6 +36,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return qualityRiskAssessmentDefinition;
     case "equipment_lifecycle_report":
       return equipmentLifecycleReportDefinition;
+    case "vendor_qualification":
+      return vendorQualificationDefinition;
     case "failure_investigation_report":
       return failureInvestigationReportDefinition;
     default: {
@@ -54,6 +57,7 @@ export function resolveDocumentType(
     type === "generic_document" ||
     type === "quality_risk_assessment" ||
     type === "equipment_lifecycle_report" ||
+    type === "vendor_qualification" ||
     type === "failure_investigation_report"
   ) {
     return type;

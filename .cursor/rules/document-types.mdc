@@ -19,7 +19,8 @@ alwaysApply: false
 Reports are `investigation_report`, `failure_investigation_report` (MJ
 Investigation Report DS, `fir_*`), `design_verification`,
 `mechanical_design_verification`, `quality_risk_assessment`,
-`equipment_lifecycle_report`, or `generic_document` (demo pack only). The registry is
+`equipment_lifecycle_report`, `generic_document` (demo pack only), or
+`vendor_qualification` (3xper pack only). The registry is
 `src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
 prompts, chat persona, and merge.
 
@@ -58,7 +59,8 @@ const sections = getWorkspaceSections(report.documentType);
   `getDocumentType()`, then editors / chat / eval. DOCX export uses each type's
   `export.templatePath` and `buildTemplateData` (investigation still has an
   explicit DMAIC branch in `generate-docx.ts`; generic documents use
-  `templates/generic-document-template.docx`).
+  `templates/generic-document-template.docx`; 3xper VQ uses
+  `templates/3xper-vendor-qualification-template.docx` via the DV xml merge).
 - `generic_document` is demo-only: one `body` section, `evaluation.kind === "none"`
   (hide Criteria / Run AI Check), headings enabled, Word import is type-owned
   (`wordImport.kind === "generic_body"` — do **not** set pack `wordImportEnabled`

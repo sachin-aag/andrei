@@ -98,6 +98,34 @@ html[data-customer="convergent"] {
   --brand-900: #02243b;
 }
 
+/* 3xper Innoventure — navy #0a4e9b / magenta accent #ed1c6f */
+html[data-customer="3xper"] {
+  --foreground: #0a2748;
+  --card-foreground: #0a2748;
+  --popover-foreground: #0a2748;
+  --primary: #0a4e9b;
+  --secondary: #eef4fb;
+  --secondary-foreground: #0a2748;
+  --muted: #eef4fb;
+  --muted-foreground: #4d6780;
+  --accent: #ed1c6f;
+  --accent-foreground: #ffffff;
+  --border: #d5e0ec;
+  --ring: #3d7ec4;
+
+  --brand: #0a4e9b;
+  --brand-50: #e8f1fa;
+  --brand-100: #d0e3f4;
+  --brand-200: #a1c7e9;
+  --brand-300: #72abd9;
+  --brand-400: #3d8ac7;
+  --brand-500: #1a6bb3;
+  --brand-600: #0a4e9b;
+  --brand-700: #083d78;
+  --brand-800: #062b54;
+  --brand-900: #041a33;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
