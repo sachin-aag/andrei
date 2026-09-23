@@ -705,8 +705,7 @@ describe("FIR chat context identity", () => {
 
 describe("FIR export run style", () => {
   it("matches the source report rather than the shared defaults", () => {
-    // Every value here was measured off a real SOP/QA/017-F01 report; see
-    // scripts/preview-fir-docx.mjs to re-render and look.
+    // Every value here was measured off a real SOP/QA/017-F01 report.
     expect(MJ_FIR_DOCX_RUN_STYLE.font).toBe("Times New Roman");
     expect(MJ_FIR_DOCX_RUN_STYLE.sizeHalfPoints).toBe("24");
     // The shared default is light blue D9E2F3 — the clearest giveaway that a

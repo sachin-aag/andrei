@@ -2,9 +2,8 @@
 
 Status: **shipped** — `plot_measurements`, `measurement_scatter` and
 `insert_image` are live; see `CLAUDE.md`. Written 2026-08-25 and left here for
-the reasoning, not the task list. The derivability principle below is
-load-bearing for computed-fact grounding in
-[`ds-report-instrument-data-plan.md`](ds-report-instrument-data-plan.md).
+the reasoning, not the task list. The derivability principle below is what
+`src/lib/ai/chat/analysis-evidence.ts` uses for computed-fact grounding.
 
 ## What this is
 

@@ -22,11 +22,12 @@ cover only non-obvious, durable setup/run caveats for this environment.
 ## What this app is
 
 Next.js 16 App Router (Turbopack, React 19, Drizzle, TipTap, AI SDK v6).
-Pharmaceutical quality documents for M.J. Biopharm and Convergent Dental — **five** `documentType`s (pack-gated):
+Pharmaceutical quality documents for M.J. Biopharm and Convergent Dental — **six** `documentType`s (pack-gated):
 
 | `documentType` | Noun | Packs | Sections |
 |----------------|------|-------|----------|
-| `investigation_report` | deviation | demo, MJ | DMAIC + conclusion + attachments/approvals |
+| `investigation_report` | deviation (MJ: Investigation Report DP) | demo, MJ | DMAIC + conclusion + attachments/approvals |
+| `failure_investigation_report` | Investigation Report DS | MJ | SOP/QA/017-F01 (`fir_*` keys); not DMAIC |
 | `design_verification` | design verification | demo, Convergent | demo: cover page + 10 sections; Convergent: 9 Solea DV sections |
 | `mechanical_design_verification` | mechanical DV | Convergent | 14-section Solea mechanical DV |
 | `quality_risk_assessment` | quality risk assessment | MJ | SOP/DP/QA/010 F02 + F04 (`qra_*` keys) |
