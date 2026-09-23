@@ -53,7 +53,7 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
     expect(DEMO_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
     expect(MJ_PACK.voiceInputLanguageCodes).toEqual(["en-IN", "hi-IN", "mr-IN"]);
-    expect(CONVERGENT_PACK.unsupportedFactPolicy).toBe("flag");
+    expect(CONVERGENT_PACK.unsupportedFactPolicy).toBe("block");
     expect(MJ_PACK.unsupportedFactPolicy).toBe("block");
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."

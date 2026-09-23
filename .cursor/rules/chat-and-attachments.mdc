@@ -127,17 +127,16 @@ section. Exempt title-page / user-confirmed identity, the ELR
 a page in Purpose, Responsibilities, assessments, and recaps. Tables
 stay strict. Finish seeds `reviewedEvidence` (every walked page, not the
 60-finding sample) so those transcripts can hydrate. Empty ledger or
-pages with no quotes fail open. MJ `unsupportedFactPolicy: block` (no
-persist; `unsupported_facts`). On a blocked MJ write, those tools run
+pages with no quotes fail open. Every pack uses `unsupportedFactPolicy: block`
+(no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover
 `<date>` / `<identifier>` / `<number>` persist after that lookup when
 the facts are still missing. Table leftovers bounce once
 (`unsupported_facts` + `keepSearchOpen`) so a subsequent grep can still
 fill the cell; a retry in the same turn may persist leftovers. Uncited
-numbers do not `citation_move` onto a coincidental ledger page. Demo/Convergent `flag` (persist with
-Traceability). Analytics `write_column` stays ungated. Pack identity,
-not a feature flag.
+numbers do not `citation_move` onto a coincidental ledger page. Analytics
+`write_column` stays ungated.
 
 ## Spectrum
 

@@ -49,8 +49,8 @@ describe("customer packs (demo)", () => {
     expect(DEMO_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
   });
 
-  it("flags unsupported facts on demo instead of blocking the draft", () => {
-    expect(DEMO_PACK.unsupportedFactPolicy).toBe("flag");
+  it("blocks unsupported hard facts on demo", () => {
+    expect(DEMO_PACK.unsupportedFactPolicy).toBe("block");
   });
 
   it("lists investigation, design verification, and document types on demo", () => {

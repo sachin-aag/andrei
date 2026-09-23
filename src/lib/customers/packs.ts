@@ -15,9 +15,8 @@ export type LogoLayout = "icon" | "wordmark";
 
 /**
  * What chat does when a draft states a hard fact that was not on any
- * retrieved page. Shared gate; only the disposition is pack-owned.
- * MJ blocks (placeholders + tool failure). Demo, Convergent, and 3xper
- * persist and flag the claim as unsourced.
+ * retrieved page. Every live pack blocks (placeholders + tool failure).
+ * `flag` remains so older suggestion cards can still record an unsourced claim.
  */
 export type UnsupportedFactPolicy = "block" | "flag";
 
@@ -190,7 +189,7 @@ export const DEMO_PACK: CustomerPack = {
   statisticalAnalysisEnabled: true,
   insightsEnabled: true,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
-  unsupportedFactPolicy: "flag",
+  unsupportedFactPolicy: "block",
   branding: ANDREI_BRANDING,
 };
 
@@ -215,7 +214,7 @@ export const CONVERGENT_PACK: CustomerPack = {
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
-  unsupportedFactPolicy: "flag",
+  unsupportedFactPolicy: "block",
   branding: CONVERGENT_BRANDING,
 };
 
@@ -281,7 +280,7 @@ export const XPER_PACK: CustomerPack = {
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
-  unsupportedFactPolicy: "flag",
+  unsupportedFactPolicy: "block",
   branding: XPER_BRANDING,
 };
 

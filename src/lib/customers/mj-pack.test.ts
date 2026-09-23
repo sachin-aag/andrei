@@ -51,9 +51,9 @@ describe("MJ customer pack content", () => {
     expect(demo.prompts.perSection.conclusion).toBeTruthy();
   });
 
-  it("blocks unsupported hard facts on MJ instead of flagging them", () => {
+  it("blocks unsupported hard facts on MJ and demo", () => {
     expect(MJ_PACK.unsupportedFactPolicy).toBe("block");
-    expect(DEMO_PACK.unsupportedFactPolicy).toBe("flag");
+    expect(DEMO_PACK.unsupportedFactPolicy).toBe("block");
   });
 
   it("hides conclusion from sections, criteria, chat, and evaluable section list", () => {

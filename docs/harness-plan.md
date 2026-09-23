@@ -197,13 +197,13 @@ for partially-filled tables goes away.
   `inScopeEmptyInventoryNeedsReview` must stay strictly about *empty*
   inventories. Placeholders in a populated table route to C1.
 - **C3. Ground the fill.** Pages retrieved by C1 seed the
-  `CitationPageLedger` in the same turn, so MJ's `block` policy has real
+  `CitationPageLedger` in the same turn, so the `block` policy has real
   quotes and stops returning `unsupported_facts` on facts that are in the
   PDFs.
 - **C4. Repair on the write, not a later fill turn.** Round-1 drafts
   still dump `<date>` / `<identifier>` after a document review of the
   wrong page (planner vs certificate). Prompt-only "if unsupported_facts,
-  search then fill" does not run under the 270s abort. On a blocked MJ
+  search then fill" does not run under the 270s abort. On a blocked
   write, `draft_field` / `edit_table` / `propose_edit` run the same
   closed-set search as C1 once, seed new quotes, and re-ground the
   *original* text. New pages keep the write from persisting; the tool
@@ -372,7 +372,7 @@ turns). The replacement must produce the **same** answer.
   2. The `CitationPageLedger` after compact contains at least the pages
      the uncompacted turn contained.
   3. A greeting / social turn still has `activeTools: []`.
-  Compaction that drops a quote the MJ `block` policy needs will show up
+  Compaction that drops a quote the `block` policy needs will show up
   as `unsupported_facts` in layer 3; layer 1 must catch the dropped
   quote before that.
 

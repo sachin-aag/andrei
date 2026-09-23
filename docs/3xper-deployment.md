@@ -15,7 +15,7 @@ This pack enables **one** document type: Vendor Qualification (`vendor_qualifica
 | Insights | Off (`/insights` redirects home) |
 | Analytics | On (same worksheet/plots as demo) |
 | Word import | Off |
-| Unsupported facts | Flag (persist + Traceability), not MJ-style block |
+| Unsupported facts | Block (do not persist invented hard facts) |
 
 Header **Document Number** on the form is always `QAD-SOP-MS-001-F04`. The unique Andrei id is `reports.document_no` (the VQ number).
 
