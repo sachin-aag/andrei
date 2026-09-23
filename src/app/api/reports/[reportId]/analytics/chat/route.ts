@@ -16,6 +16,7 @@ import {
   prepareAnalyticsChatStep,
 } from "@/lib/statistical-analysis/search-loop";
 import { getOrCreateReportAnalytics } from "@/lib/statistical-analysis/store";
+import { rowCount } from "@/lib/statistical-analysis/worksheet";
 import { buildStubAnalyticsChatModel } from "@/lib/statistical-analysis/stub-chat-model";
 import {
   CHAT_EXTRACT_GOOGLE_MODEL_ID,
@@ -226,6 +227,10 @@ async function handleAnalyticsChatPost(
     getOrCreateReportAnalytics(reportId),
   ]);
 
+  // A filled worksheet means a plot request is not premature, whatever this
+  // turn has done so far.
+  const worksheetHasData = rowCount(analytics.worksheet) > 0;
+
   const requestedMentions = parseAnalyticsChatMentions(body.mentions);
   const requestedDocumentIds = new Set(
     requestedMentions
@@ -347,6 +352,7 @@ async function handleAnalyticsChatPost(
           searchGate,
           intent: userIntent.kind,
           intentReason: userIntent.reason,
+          worksheetHasData,
         });
         const compacted = compactInTurnModelMessages(messages);
         if (!prepared) return { messages: compacted };

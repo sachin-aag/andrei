@@ -198,6 +198,7 @@ export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v7";
 export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v2";
 export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
 export const ELR_PROMPT_VERSION = "mj-elr-sop-014-r04-v19";
+export const FIR_PROMPT_VERSION = "mj-fir-sop-017-f01-r01-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
@@ -222,6 +223,7 @@ export const MJ_PACK: CustomerPack = {
   id: "mj",
   enabledDocumentTypes: [
     "investigation_report",
+    "failure_investigation_report",
     "quality_risk_assessment",
     "equipment_lifecycle_report",
   ],

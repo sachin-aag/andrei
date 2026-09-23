@@ -370,9 +370,12 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("insert_image source=analytics");
     expect(map).toContain("create additional ones in Analytics");
     expect(map).toContain('"Torque scatter" [anl_1] kind=measurement_scatter');
+    // A plot nobody has opened is still insertable: insert_image renders it
+    // server-side rather than sending the engineer off to click it.
     expect(map).toContain(
-      '"Assay sixpack" [anl_2] kind=capability_sixpack_normal — no preview yet'
+      '"Assay sixpack" [anl_2] kind=capability_sixpack_normal'
     );
+    expect(map).not.toContain("no preview yet");
     expect(map).not.toContain("anl_3");
   });
 

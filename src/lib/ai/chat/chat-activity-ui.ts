@@ -862,6 +862,33 @@ function buildGenericNode(info: ChatToolPartInfo): ActivitySurfaceNode {
       children: [],
     };
   }
+  if (info.toolName === "read_analysis") {
+    const pending = isToolPending(info);
+    const single = typeof info.input?.analysisId === "string";
+    const runs = Array.isArray(info.output?.runs)
+      ? info.output.runs.length
+      : Array.isArray(info.output?.rows)
+        ? info.output.rows.length
+        : null;
+    const message =
+      typeof info.output?.message === "string" ? info.output.message : null;
+    return {
+      kind: "generic",
+      label: pending
+        ? single
+          ? "Reading analysis…"
+          : "Comparing analyses…"
+        : runs != null
+          ? `Read ${runs} excursion run${runs === 1 ? "" : "s"}`
+          : single
+            ? "Read analysis"
+            : "Compared analyses",
+      pending,
+      tone: "muted",
+      expandable: Boolean(message),
+      children: message ? [{ kind: "detail", label: message }] : [],
+    };
+  }
   if (isUnsupportedChatToolName(info.toolName)) {
     const pending = isToolPending(info);
     const requested =

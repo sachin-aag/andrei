@@ -11,19 +11,24 @@ import {
   XY_SCATTER,
   BOXPLOT,
   HISTOGRAM,
+  TIME_SERIES,
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
+  isTimeSeriesAnalysis,
   isXyScatterAnalysis,
   OBSERVATION_X_LABEL,
   boxplotFallbackTitle,
   histogramFallbackTitle,
   histogramOverlays,
+  timeSeriesFallbackTitle,
+  timeSeriesOverlays,
   xyScatterFallbackTitle,
 } from "./types";
+import { isInsertableGraphAnalysis } from "./insertable-graphs";
 import type {
   AnalysisKind,
   AnalysisPreviewImage,
@@ -44,6 +49,10 @@ import type {
   ScatterAnalysisSummary,
   SixpackAnalysisSummary,
   StatisticalAnalysisSummary,
+  TimeSeriesAnalysisSummary,
+  TimeSeriesBand,
+  TimeSeriesConfig,
+  TimeSeriesResult,
   WorksheetData,
   XyScatterAnalysisSummary,
   XyScatterConfig,
@@ -55,10 +64,11 @@ import {
   findColumn,
   findSheetIdForColumn,
   normalizeWorksheet,
+  specRowForColumn,
   upsertSpecRow,
   worksheetsEqual,
 } from "./worksheet";
-import { hashAnovaSource, hashBoxplotSource, hashColumnSource, hashScatterSource, hashXyScatterSource } from "./hash";
+import { hashAnovaSource, hashBoxplotSource, hashColumnSource, hashScatterSource, hashTimeSeriesSource, hashXyScatterSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
 import { computeOneWayAnova } from "./anova";
 import {
@@ -72,6 +82,13 @@ import {
   mergeHistogramPatch,
   resolveHistogramColumn,
 } from "./histogram";
+import {
+  computeTimeSeries,
+  mergeTimeSeriesPatch,
+  resolveTimeSeriesColumns,
+  timeSeriesBandsFromColumnSpecs,
+  timeSeriesLimitsFromColumnSpecs,
+} from "./time-series";
 import {
   computeXyScatter,
   mergeXyScatterPatch,
@@ -90,6 +107,9 @@ import {
   boxplotInputSchema,
   boxplotUpdateSchema,
   histogramInputSchema,
+  timeSeriesBodySchema,
+  timeSeriesInputSchema,
+  timeSeriesUpdateSchema,
   histogramUpdateSchema,
 } from "./schemas";
 import {
@@ -162,6 +182,7 @@ function asKind(value: string): AnalysisKind {
   if (value === XY_SCATTER) return XY_SCATTER;
   if (value === BOXPLOT) return BOXPLOT;
   if (value === HISTOGRAM) return HISTOGRAM;
+  if (value === TIME_SERIES) return TIME_SERIES;
   return CAPABILITY_SIXPACK_NORMAL;
 }
 
@@ -347,6 +368,56 @@ function asHistogramResults(value: unknown): HistogramResult {
   return value as HistogramResult;
 }
 
+function asTimeSeriesConfig(value: unknown): TimeSeriesConfig {
+  const parsed = value as TimeSeriesConfig;
+  const rows = Array.isArray(parsed.rows)
+    ? parsed.rows.filter((row) => Number.isInteger(row) && row >= 1)
+    : null;
+  const overlays = timeSeriesOverlays(parsed);
+  return {
+    columnId: parsed.columnId,
+    columnName: parsed.columnName,
+    timeColumnId: parsed.timeColumnId,
+    timeColumnName: parsed.timeColumnName,
+    clockColumnId: parsed.clockColumnId ?? null,
+    clockColumnName: parsed.clockColumnName ?? null,
+    title: parsed.title,
+    lsl: parsed.lsl ?? null,
+    usl: parsed.usl ?? null,
+    conditionColumnId: parsed.conditionColumnId ?? null,
+    conditionColumnName: parsed.conditionColumnName ?? null,
+    bands: Array.isArray(parsed.bands) && parsed.bands.length > 0
+      ? parsed.bands
+      : null,
+    showSpecLimits: overlays.showSpecLimits,
+    showExcursions: overlays.showExcursions,
+    rowStart: parsed.rowStart ?? null,
+    rowEnd: parsed.rowEnd ?? null,
+    rows: rows && rows.length > 0 ? rows : null,
+  };
+}
+
+function asTimeSeriesResults(value: unknown): TimeSeriesResult {
+  return value as TimeSeriesResult;
+}
+
+/** The four columns a saved time series reads, or null when one is gone. */
+function timeSeriesColumns(worksheet: WorksheetData, config: TimeSeriesConfig) {
+  const column = findColumn(worksheet, config.columnId);
+  const timeColumn = findColumn(worksheet, config.timeColumnId);
+  if (!column || !timeColumn) return null;
+  return {
+    column,
+    timeColumn,
+    clockColumn: config.clockColumnId
+      ? findColumn(worksheet, config.clockColumnId) ?? null
+      : null,
+    conditionColumn: config.conditionColumnId
+      ? findColumn(worksheet, config.conditionColumnId) ?? null
+      : null,
+  };
+}
+
 function iso(value: Date): string {
   return value.toISOString();
 }
@@ -455,6 +526,33 @@ function toAnalysisSummary(
       title: row.title,
       config,
       results: asBoxplotResults(row.results),
+      sourceHash: row.sourceHash,
+      stale: currentHash !== row.sourceHash,
+      createdAt: iso(row.createdAt),
+      previewImage: asPreviewImage(row.previewImage),
+    };
+    return summary;
+  }
+
+  if (kind === TIME_SERIES) {
+    const config = asTimeSeriesConfig(row.config);
+    const columns = timeSeriesColumns(worksheet, config);
+    const currentHash = columns
+      ? hashTimeSeriesSource(
+          columns.column,
+          columns.timeColumn,
+          columns.clockColumn,
+          columns.conditionColumn,
+          normalizeRowSelection(config)
+        )
+      : "";
+    const summary: TimeSeriesAnalysisSummary = {
+      id: row.id,
+      workspaceId: row.workspaceId,
+      kind: TIME_SERIES,
+      title: row.title,
+      config,
+      results: asTimeSeriesResults(row.results),
       sourceHash: row.sourceHash,
       stale: currentHash !== row.sourceHash,
       createdAt: iso(row.createdAt),
@@ -652,6 +750,9 @@ export async function createAnalysisForReport(
   }
   if (kind === HISTOGRAM) {
     return createHistogramAnalysisForReport(reportId, input);
+  }
+  if (kind === TIME_SERIES) {
+    return createTimeSeriesAnalysisForReport(reportId, input);
   }
   return createSixpackAnalysisForReport(reportId, input);
 }
@@ -1069,13 +1170,153 @@ async function createHistogramAnalysisForReport(
   });
 }
 
+async function createTimeSeriesAnalysisForReport(
+  reportId: string,
+  input: unknown
+): Promise<
+  | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const parsed = timeSeriesInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      error: parsed.error.issues[0]?.message ?? "Invalid time series options.",
+    };
+  }
+
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return { ok: false, status: 404, error: "Not found" };
+
+  const resolved = resolveTimeSeriesColumns(analytics.worksheet, parsed.data);
+  if (!resolved.ok) {
+    return { ok: false, status: 400, error: resolved.message };
+  }
+
+  const rowSelection = normalizeRowSelection(parsed.data);
+  const rowFields = configRowFields(rowSelection);
+  const rowLabel = formatRowSelection(rowSelection);
+  const overlays = timeSeriesOverlays(parsed.data);
+  const namedSpecs = timeSeriesLimitsFromColumnSpecs(
+    analytics.worksheet,
+    resolved.column.name
+  );
+  // Bands saved against this column apply to every sheet that has one, so a
+  // specification read from a document once covers every batch after it.
+  const savedBands = timeSeriesBandsFromColumnSpecs(
+    analytics.worksheet,
+    resolved.column.id,
+    resolved.column.name
+  );
+  const useSavedBands =
+    (parsed.data.bands == null || parsed.data.bands.length === 0) &&
+    savedBands.bands != null;
+  const title = nextAnalysisTitle(
+    analytics.analyses.map((item) => item.title),
+    parsed.data.title?.trim() ||
+      timeSeriesFallbackTitle(resolved.column.name, rowLabel)
+  );
+
+  const config: TimeSeriesConfig = {
+    columnId: resolved.column.id,
+    columnName: resolved.column.name,
+    timeColumnId: resolved.timeColumn.id,
+    timeColumnName: resolved.timeColumn.name,
+    clockColumnId: resolved.clockColumn?.id ?? null,
+    clockColumnName: resolved.clockColumn?.name ?? null,
+    title,
+    lsl: parsed.data.lsl !== undefined ? parsed.data.lsl : namedSpecs.lsl,
+    usl: parsed.data.usl !== undefined ? parsed.data.usl : namedSpecs.usl,
+    conditionColumnId: useSavedBands
+      ? savedBands.conditionColumnId
+      : (resolved.conditionColumn?.id ?? null),
+    conditionColumnName: useSavedBands
+      ? savedBands.conditionColumnName
+      : (resolved.conditionColumn?.name ?? null),
+    bands: useSavedBands ? savedBands.bands : (parsed.data.bands ?? null),
+    showSpecLimits: overlays.showSpecLimits,
+    showExcursions: overlays.showExcursions,
+    ...rowFields,
+  };
+
+  const outcome = computeTimeSeries(analytics.worksheet, config);
+  if (!outcome.ok) {
+    return { ok: false, status: 400, error: outcome.message };
+  }
+
+  // Remember a band that was supplied explicitly, so the next batch inherits
+  // it. This is the step that turns "state the limits once" into the default
+  // rather than an instruction somebody has to remember.
+  if (!useSavedBands && config.bands?.length && config.conditionColumnName) {
+    await rememberColumnBands(analytics.id, analytics.worksheet, {
+      columnName: config.columnName,
+      conditionColumnName: config.conditionColumnName,
+      bands: config.bands,
+    });
+  }
+
+  return insertAnalysisRow({
+    reportId,
+    workspaceId: analytics.id,
+    kind: TIME_SERIES,
+    title: config.title,
+    config,
+    results: outcome.result,
+    sourceHash: hashTimeSeriesSource(
+      resolved.column,
+      resolved.timeColumn,
+      resolved.clockColumn,
+      resolved.conditionColumn,
+      rowSelection
+    ),
+  });
+}
+
+/**
+ * Save conditional bands onto the measurement's column spec.
+ *
+ * Best-effort: a failure here means the next plot needs its bands restated,
+ * never that this analysis fails. The worksheet write is unversioned because
+ * it only touches the spec row for one column — it cannot clobber cell edits.
+ */
+async function rememberColumnBands(
+  workspaceId: string,
+  worksheet: WorksheetData,
+  input: {
+    columnName: string;
+    conditionColumnName: string;
+    bands: TimeSeriesBand[];
+  }
+): Promise<void> {
+  try {
+    const existing = specRowForColumn(worksheet, input.columnName);
+    const next = upsertSpecRow(worksheet, {
+      columnName: input.columnName,
+      lsl: existing?.lsl ?? "",
+      usl: existing?.usl ?? "",
+      target: existing?.target ?? "",
+      conditionColumnName: input.conditionColumnName,
+      bands: input.bands,
+    });
+    await db
+      .update(statisticalWorkspaces)
+      .set({ worksheet: next, updatedAt: new Date() })
+      .where(eq(statisticalWorkspaces.id, workspaceId));
+  } catch (error) {
+    console.warn("[time-series] Could not save bands onto the column spec", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 async function insertAnalysisRow(input: {
   reportId: string;
   workspaceId: string;
   kind: AnalysisKind;
   title: string;
-  config: CapabilitySixpackConfig | MeasurementScatterConfig | OneWayAnovaConfig | XyScatterConfig | BoxplotConfig | HistogramConfig;
-  results: CapabilitySixpackResult | MeasurementScatterResult | OneWayAnovaResult | XyScatterResult | BoxplotResult | HistogramResult;
+  config: CapabilitySixpackConfig | MeasurementScatterConfig | OneWayAnovaConfig | XyScatterConfig | BoxplotConfig | HistogramConfig | TimeSeriesConfig;
+  results: CapabilitySixpackResult | MeasurementScatterResult | OneWayAnovaResult | XyScatterResult | BoxplotResult | HistogramResult | TimeSeriesResult;
   sourceHash: string;
 }): Promise<
   | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
@@ -1279,6 +1520,47 @@ export async function recomputeAnalysisForReport(
         sourceHash: hashBoxplotSource(
           resolved.yColumn,
           resolved.categoryColumns,
+          normalizeRowSelection(config)
+        ),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
+  } else if (isTimeSeriesAnalysis(existing)) {
+    const columns = timeSeriesColumns(analytics.worksheet, existing.config);
+    if (!columns) {
+      return {
+        ok: false,
+        status: 400,
+        error: "The original columns are no longer in the worksheet.",
+      };
+    }
+    const config: TimeSeriesConfig = {
+      ...existing.config,
+      columnName: columns.column.name,
+      timeColumnName: columns.timeColumn.name,
+      clockColumnName: columns.clockColumn?.name ?? null,
+      conditionColumnName: columns.conditionColumn?.name ?? null,
+    };
+    const outcome = computeTimeSeries(analytics.worksheet, config);
+    if (!outcome.ok) {
+      return { ok: false, status: 400, error: outcome.message };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: config.title,
+        config,
+        results: outcome.result,
+        previewImage: null,
+        sourceHash: hashTimeSeriesSource(
+          columns.column,
+          columns.timeColumn,
+          columns.clockColumn,
+          columns.conditionColumn,
           normalizeRowSelection(config)
         ),
       })
@@ -1641,6 +1923,73 @@ export async function updateAnalysisForReport(
           eq(statisticalAnalyses.workspaceId, analytics.id)
         )
       );
+  } else if (isTimeSeriesAnalysis(existing)) {
+    const parsed = timeSeriesUpdateSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        status: 400,
+        error:
+          parsed.error.issues[0]?.message ?? "Invalid time series options.",
+      };
+    }
+    const merged = mergeTimeSeriesPatch(existing.config, parsed.data);
+    const resolved = resolveTimeSeriesColumns(analytics.worksheet, merged);
+    if (!resolved.ok) {
+      return { ok: false, status: 400, error: resolved.message };
+    }
+    const rowSelection = normalizeRowSelection(merged);
+    const rowFields = configRowFields(rowSelection);
+    const rowLabel = formatRowSelection(rowSelection);
+    const overlays = timeSeriesOverlays(merged);
+    const title = titleForUpdate(
+      existingTitles,
+      existing.config.title,
+      parsed.data.title,
+      timeSeriesFallbackTitle(resolved.column.name, rowLabel)
+    );
+    const config: TimeSeriesConfig = {
+      columnId: resolved.column.id,
+      columnName: resolved.column.name,
+      timeColumnId: resolved.timeColumn.id,
+      timeColumnName: resolved.timeColumn.name,
+      clockColumnId: resolved.clockColumn?.id ?? null,
+      clockColumnName: resolved.clockColumn?.name ?? null,
+      title,
+      lsl: merged.lsl ?? null,
+      usl: merged.usl ?? null,
+      conditionColumnId: resolved.conditionColumn?.id ?? null,
+      conditionColumnName: resolved.conditionColumn?.name ?? null,
+      bands: merged.bands ?? null,
+      showSpecLimits: overlays.showSpecLimits,
+      showExcursions: overlays.showExcursions,
+      ...rowFields,
+    };
+    const outcome = computeTimeSeries(analytics.worksheet, config);
+    if (!outcome.ok) {
+      return { ok: false, status: 400, error: outcome.message };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: config.title,
+        config,
+        results: outcome.result,
+        previewImage: null,
+        sourceHash: hashTimeSeriesSource(
+          resolved.column,
+          resolved.timeColumn,
+          resolved.clockColumn,
+          resolved.conditionColumn,
+          rowSelection
+        ),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
   } else if (isHistogramAnalysis(existing)) {
     const parsed = histogramUpdateSchema.safeParse(input);
     if (!parsed.success) {
@@ -1799,13 +2148,12 @@ export async function saveAnalysisPreviewForReport(
   if (!analytics) return { ok: false, status: 404, error: "Not found" };
   const existing = analytics.analyses.find((item) => item.id === analysisId);
   if (!existing) return { ok: false, status: 404, error: "Not found" };
-  if (
-    !isSixpackAnalysis(existing) &&
-    !isScatterAnalysis(existing) &&
-    !isXyScatterAnalysis(existing) &&
-    !isBoxplotAnalysis(existing) &&
-    !isHistogramAnalysis(existing)
-  ) {
+  // Keep this in step with isInsertableGraphAnalysis. A chart kind missing
+  // here 400s every preview save the grid attempts, forever — which is what
+  // left every time series without a previewImage and made Insert graph look
+  // empty. A string of type guards gets no exhaustiveness check, so adding an
+  // AnalysisKind does not fail the build here.
+  if (!isInsertableGraphAnalysis(existing)) {
     return {
       ok: false,
       status: 400,

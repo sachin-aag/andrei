@@ -365,3 +365,39 @@ describe("compactInTurnModelMessages", () => {
     );
   });
 });
+
+describe("finish_document_review delivery handoff", () => {
+  it("survives in-turn compaction", () => {
+    // The handoff is read on the step AFTER finish, and finish is compacted
+    // in-turn. If compaction dropped these the directive would never be seen.
+    const messages = [
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolName: "finish_document_review",
+            output: {
+              status: "complete",
+              reviewedPages: 81,
+              deliverNow: "draft_field | propose_edit | edit_table",
+              deliverNote: "Call the write tool NOW.",
+              findings: [
+                { id: "d1", filename: "RIG25014.pdf", pageNumber: 13, summary: "x" },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const [compacted] = compactInTurnModelMessages(messages as never) as never as [
+      { content: [{ output: Record<string, unknown> }] },
+    ];
+    const output = compacted.content[0].output;
+    expect(output.deliverNow).toBe("draft_field | propose_edit | edit_table");
+    expect(output.deliverNote).toBe("Call the write tool NOW.");
+    // The findings themselves are still compacted away as before.
+    expect(output.findings).toEqual([]);
+    expect(output.findingsOmitted).toBe(1);
+  });
+});

@@ -16,9 +16,10 @@ alwaysApply: false
 
 # Document types
 
-Reports are `investigation_report`, `design_verification`,
-`mechanical_design_verification`, `quality_risk_assessment`, or
-`generic_document` (demo pack only). The registry is
+Reports are `investigation_report`, `failure_investigation_report` (MJ
+Investigation Report DS, `fir_*`), `design_verification`,
+`mechanical_design_verification`, `quality_risk_assessment`,
+`equipment_lifecycle_report`, or `generic_document` (demo pack only). The registry is
 `src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
 prompts, chat persona, and merge.
 

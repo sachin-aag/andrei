@@ -200,6 +200,30 @@ export async function createHistogram(
   });
 }
 
+export async function createTimeSeries(
+  reportId: string,
+  input: {
+    columnId: string;
+    timeColumnId: string;
+    clockColumnId?: string | null;
+    title?: string;
+    lsl?: number | null;
+    usl?: number | null;
+    conditionColumnId?: string | null;
+    bands?: Array<{ when: string; lsl: number | null; usl: number | null }> | null;
+    showSpecLimits?: boolean;
+    showExcursions?: boolean;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "time_series",
+    ...input,
+  });
+}
+
 async function postAnalysis(
   reportId: string,
   input: unknown
@@ -307,7 +331,22 @@ export async function saveAnalysisPreview(
     }
   );
   if (response.status === 409) return null;
-  if (!response.ok) throw new Error(await readError(response));
+  if (!response.ok) {
+    // The caller needs the status, not just the message: a 4xx will fail the
+    // same way on every retry, and retrying means rasterizing the plot again.
+    const error: PreviewSaveError = new Error(await readError(response));
+    error.status = response.status;
+    throw error;
+  }
   const body = (await response.json()) as { analytics: ReportAnalyticsView };
   return body.analytics;
+}
+
+/** An Error from `saveAnalysisPreview`, carrying the HTTP status. */
+export type PreviewSaveError = Error & { status?: number };
+
+/** 4xx (other than the 409 handled above) will not succeed on a retry. */
+export function isPermanentPreviewSaveError(error: unknown): boolean {
+  const status = (error as PreviewSaveError | null)?.status;
+  return typeof status === "number" && status >= 400 && status < 500;
 }

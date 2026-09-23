@@ -54,7 +54,8 @@ function scanBlockForCitations(
   block: PMNode,
   blockPos: number,
   numberedSources: ReadonlyMap<number, string>,
-  knownFilenames: readonly string[]
+  knownFilenames: readonly string[],
+  knownAttachmentIds: readonly string[]
 ): CitationHighlight[] {
   const chunks: TextChunk[] = [];
   block.forEach((child, offset) => {
@@ -81,7 +82,7 @@ function scanBlockForCitations(
         const number = numbers[0]!;
         const parked = numberedSources.get(number);
         const parkedSpans = parked
-          ? sourceCitationLinkSpans(parked, knownFilenames)
+          ? sourceCitationLinkSpans(parked, knownFilenames, knownAttachmentIds)
           : [];
         highlights.push({
           fromPos,
@@ -104,7 +105,7 @@ function scanBlockForCitations(
       for (const span of numericCitationLinkSpans(text)) {
         const parked = numberedSources.get(span.number);
         const parkedSpans = parked
-          ? sourceCitationLinkSpans(parked, knownFilenames)
+          ? sourceCitationLinkSpans(parked, knownFilenames, knownAttachmentIds)
           : [];
         highlights.push({
           fromPos: pmOffsetToPos(chunks, match.index + span.from),
@@ -120,7 +121,7 @@ function scanBlockForCitations(
     }
 
     if (isSourceCitationBracket(text)) {
-      for (const span of sourceCitationLinkSpans(text, knownFilenames)) {
+      for (const span of sourceCitationLinkSpans(text, knownFilenames, knownAttachmentIds)) {
         highlights.push({
           fromPos: pmOffsetToPos(chunks, match.index + span.from),
           toPos: pmOffsetToPos(chunks, match.index + span.to),
@@ -146,7 +147,8 @@ const CITATION_BLOCK_NAMES = new Set([
 
 export function findCitationHighlightsInPmDoc(
   doc: PMNode,
-  knownFilenames: readonly string[] = []
+  knownFilenames: readonly string[] = [],
+  knownAttachmentIds: readonly string[] = []
 ): CitationHighlight[] {
   const numberedSources = sourceCitationsByNumber(
     doc.textBetween(0, doc.content.size, "\n")
@@ -156,7 +158,13 @@ export function findCitationHighlightsInPmDoc(
   doc.descendants((node, pos) => {
     if (!CITATION_BLOCK_NAMES.has(node.type.name)) return true;
     highlights.push(
-      ...scanBlockForCitations(node, pos, numberedSources, knownFilenames)
+      ...scanBlockForCitations(
+        node,
+        pos,
+        numberedSources,
+        knownFilenames,
+        knownAttachmentIds
+      )
     );
     return true;
   });
@@ -236,7 +244,8 @@ export const citationRefreshMeta = "citationRefresh";
 
 export function createCitationHighlightExtension(
   getHandlers?: () => CitationOpenHandlers,
-  getKnownFilenames?: () => readonly string[]
+  getKnownFilenames?: () => readonly string[],
+  getKnownAttachmentIds?: () => readonly string[]
 ) {
   return Extension.create({
     name: "citationHighlights",
@@ -244,7 +253,11 @@ export function createCitationHighlightExtension(
       const rebuild = (doc: PMNode) =>
         buildCitationDecorations(
           doc,
-          findCitationHighlightsInPmDoc(doc, getKnownFilenames?.() ?? [])
+          findCitationHighlightsInPmDoc(
+            doc,
+            getKnownFilenames?.() ?? [],
+            getKnownAttachmentIds?.() ?? []
+          )
         );
 
       return [

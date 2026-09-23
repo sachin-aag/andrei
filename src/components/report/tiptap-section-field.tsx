@@ -400,6 +400,7 @@ export function TiptapSectionField({
     onOpenCitation: () => {},
   });
   const knownCitationFilenamesRef = useRef<string[]>([]);
+  const knownAttachmentIdsRef = useRef<string[]>([]);
   useLayoutEffect(() => {
     citationHandlersRef.current = {
       onOpenCitation: (raw) =>
@@ -407,6 +408,11 @@ export function TiptapSectionField({
     };
     knownCitationFilenamesRef.current = attachments.map(
       (attachment) => attachment.filename
+    );
+    // An analysis id is the same 24-char shape as an attachment id; without
+    // the real list one rendered as a live citation link.
+    knownAttachmentIdsRef.current = attachments.map(
+      (attachment) => attachment.id
     );
   }, [attachments, openDocument]);
 
@@ -418,6 +424,10 @@ export function TiptapSectionField({
   );
   const getKnownCitationFilenames = useCallback(
     () => knownCitationFilenamesRef.current,
+    []
+  );
+  const getKnownAttachmentIds = useCallback(
+    () => knownAttachmentIdsRef.current,
     []
   );
 
@@ -454,9 +464,10 @@ export function TiptapSectionField({
       // eslint-disable-next-line react-hooks/refs -- ProseMirror calls this getter on click, not during render
       createCitationHighlightExtension(
         getCitationHandlers,
-        getKnownCitationFilenames
+        getKnownCitationFilenames,
+        getKnownAttachmentIds
       ),
-    [getCitationHandlers, getKnownCitationFilenames]
+    [getCitationHandlers, getKnownCitationFilenames, getKnownAttachmentIds]
   );
 
   const filteredRanges = useMemo(() => {

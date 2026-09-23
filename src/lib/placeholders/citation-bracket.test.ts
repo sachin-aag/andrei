@@ -604,3 +604,42 @@ describe("canonicalizeSourceCitationBracket", () => {
     );
   });
 });
+
+describe("id-shaped cites are checked against this report's attachments", () => {
+  const attachmentId = "me1q4zzhb1me0wwskpmqfw7i";
+  const analysisId = "zbud2fet70yu88pvfpccjtko";
+
+  it("does not linkify an id that is not an attachment on this report", () => {
+    // An analysis id is the same 24 lowercase chars as an attachment id. One
+    // reached a report's Citations list rendered as a live source link.
+    expect(
+      sourceCitationLinkSpans(`[${analysisId}]`, [], [attachmentId])
+    ).toEqual([]);
+  });
+
+  it("still linkifies a real attachment id", () => {
+    expect(
+      sourceCitationLinkSpans(`[${attachmentId}]`, [], [attachmentId])
+    ).toHaveLength(1);
+  });
+
+  it("keeps shape-only behaviour when the caller has no id list", () => {
+    // Chat and suggestion surfaces do not all know the attachment ids; they
+    // must not lose citation links because of this guard.
+    expect(sourceCitationLinkSpans(`[${analysisId}]`)).toHaveLength(1);
+  });
+
+  it("matches ids case-insensitively and handles a page suffix", () => {
+    expect(
+      sourceCitationLinkSpans(`[${attachmentId}, p. 3]`, [], [
+        attachmentId.toUpperCase(),
+      ])
+    ).toHaveLength(1);
+  });
+
+  it("leaves ordinary filename cites alone", () => {
+    expect(
+      sourceCitationLinkSpans("[RIG25014.pdf, p. 13]", [], [attachmentId])
+    ).toHaveLength(1);
+  });
+});

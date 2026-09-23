@@ -23,11 +23,12 @@ import {
 } from "@/lib/analyze/method";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import { getDocumentType } from "@/lib/document-types";
+import { isGraphAnalysisKind } from "@/lib/statistical-analysis/insertable-graphs";
 import {
-  isGraphAnalysisKind,
-  isInsertableGraphAnalysis,
-} from "@/lib/statistical-analysis/insertable-graphs";
-import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
+  isTimeSeriesAnalysis,
+  type StatisticalAnalysisSummary,
+} from "@/lib/statistical-analysis/types";
+import { summarizeTimeSeriesForPrompt } from "@/lib/statistical-analysis/excursion-comparison";
 
 export type ContextMapReport = {
   documentNo: string;
@@ -223,11 +224,18 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     );
     for (const plot of plots) {
       const title = sanitizePromptMetadata(plot.title, 180) || "untitled plot";
-      const previewNote = isInsertableGraphAnalysis(plot)
-        ? ""
-        : " — no preview yet; open it in Analytics first";
+      // Every kind renders server-side on demand now, so a plot nobody has
+      // opened is still insertable.
+      const previewNote = "";
+      // A time series carries findings, not just a picture: the excursion runs
+      // are what the report has to state, and they are computed values the
+      // grounding gate will accept (analysis-evidence.ts). Listing them here
+      // saves walking hundreds of instrument pages to re-derive them by eye.
+      const findings = isTimeSeriesAnalysis(plot)
+        ? ` — ${summarizeTimeSeriesForPrompt(plot)}`
+        : "";
       lines.push(
-        `- ${quotePromptMetadata(title)} [${plot.id}] kind=${plot.kind}${previewNote}`
+        `- ${quotePromptMetadata(title)} [${plot.id}] kind=${plot.kind}${previewNote}${findings}`
       );
     }
   }

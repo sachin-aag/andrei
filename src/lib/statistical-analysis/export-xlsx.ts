@@ -25,6 +25,7 @@ import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
+  isTimeSeriesAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
@@ -136,6 +137,13 @@ function columnIdsForAnalysis(analysis: StatisticalAnalysisSummary): string[] {
     pushColumnId(ids, analysis.config.yColumnId);
     pushColumnId(ids, analysis.config.xColumnId);
     pushColumnId(ids, analysis.config.legendColumnId);
+    return ids;
+  }
+  if (isTimeSeriesAnalysis(analysis)) {
+    pushColumnId(ids, analysis.config.columnId);
+    pushColumnId(ids, analysis.config.timeColumnId);
+    pushColumnId(ids, analysis.config.clockColumnId);
+    pushColumnId(ids, analysis.config.conditionColumnId);
     return ids;
   }
   if (isScatterAnalysis(analysis)) {
@@ -651,6 +659,76 @@ function histogramRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
   ];
 }
 
+function timeSeriesRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
+  if (!isTimeSeriesAnalysis(analysis)) return [];
+  const { config, results } = analysis;
+  const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
+  return [
+    [
+      ["Field", "Value"],
+      ["Title", analysis.title],
+      ["Column", config.columnName],
+      ["Time column", config.timeColumnName],
+      ["Time-of-day column", config.clockColumnName ?? ""],
+      ["Rows", rows],
+      ["Kind", "Time series"],
+      ["N", results.n],
+      ["Skipped", results.skipped],
+      ["Readings assessed against limits", results.judgedReadings],
+      ["Mean", statCell(results.mean)],
+      ["Min", statCell(results.min)],
+      ["Max", statCell(results.max)],
+      ["Condition column", config.conditionColumnName ?? ""],
+      ["LSL", config.lsl == null ? "" : statCell(config.lsl)],
+      ["USL", config.usl == null ? "" : statCell(config.usl)],
+      [
+        "Excursions",
+        results.judgedReadings === 0
+          ? "not assessed — no acceptance limits in force"
+          : results.excursions.length,
+      ],
+      ["Out-of-band readings", results.excursionReadings],
+      ["Created", analysis.createdAt],
+    ],
+    [
+      [
+        "Start",
+        "End",
+        "Readings",
+        "Elapsed (min)",
+        "Elapsed",
+        "Direction",
+        "Min",
+        "Max",
+        "Condition",
+        "LSL",
+        "USL",
+      ],
+      ...results.excursions.map((run) => [
+        run.startLabel,
+        run.endLabel,
+        run.readings,
+        run.elapsedMinutes ?? "",
+        run.elapsedClock ?? "",
+        run.direction,
+        statCell(run.min),
+        statCell(run.max),
+        run.condition ?? "",
+        run.lsl == null ? "" : statCell(run.lsl),
+        run.usl == null ? "" : statCell(run.usl),
+      ]),
+    ],
+    [
+      ["Row", "Timestamp", config.columnName],
+      ...results.points.map((point) => [
+        point.row,
+        point.label,
+        statCell(point.value),
+      ]),
+    ],
+  ];
+}
+
 function analysisSections(
   analysis: StatisticalAnalysisSummary
 ): SheetSection[] {
@@ -659,6 +737,7 @@ function analysisSections(
   if (isAnovaAnalysis(analysis)) return anovaRows(analysis);
   if (isBoxplotAnalysis(analysis)) return boxplotRows(analysis);
   if (isHistogramAnalysis(analysis)) return histogramRows(analysis);
+  if (isTimeSeriesAnalysis(analysis)) return timeSeriesRows(analysis);
   if (isSixpackAnalysis(analysis)) return sixpackRows(analysis);
   const exhaustive: never = analysis;
   return exhaustive;

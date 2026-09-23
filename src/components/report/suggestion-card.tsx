@@ -147,6 +147,15 @@ function SuggestionTraceability({
   const verified = provenance.claims.filter((c) => c.status === "verified").length;
   const unsourced = provenance.claims.filter((c) => c.status === "unsourced").length;
   const moved = provenance.claims.filter((c) => c.status === "citation_moved").length;
+  // A value a saved analysis computed is verified, but not off a page — name
+  // the analysis so the reader can check the derivation, not just the paper.
+  const computedTitles = [
+    ...new Set(
+      provenance.claims
+        .map((claim) => claim.analysis?.title?.trim())
+        .filter((title): title is string => Boolean(title))
+    ),
+  ];
   return (
     <div
       className="text-[10px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2 space-y-0.5"
@@ -160,6 +169,11 @@ function SuggestionTraceability({
         {unsourced > 0 && moved > 0 ? " · " : null}
         {moved > 0 ? `Citation moved ${moved}` : null}
       </p>
+      {computedTitles.length > 0 ? (
+        <p data-testid="suggestion-traceability-computed">
+          Computed by {computedTitles.join(", ")}
+        </p>
+      ) : null}
     </div>
   );
 }

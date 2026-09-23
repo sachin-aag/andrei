@@ -67,3 +67,42 @@ describe("replaceFactsWithPlaceholders", () => {
     );
   });
 });
+
+describe("instrument quantities", () => {
+  function kinds(text: string): Array<[string, string]> {
+    return extractHardFacts(text).map((fact) => [fact.kind, fact.text]);
+  }
+
+  it("sees a vacuum reading, which the gate was previously blind to", () => {
+    // Until these units were listed a model could write any vacuum figure and
+    // nothing checked it — the opposite of the risk the plan anticipated.
+    expect(kinds("the low was 192.4 µbar")).toContainEqual([
+      "number",
+      "192.4 µbar",
+    ]);
+    expect(kinds("held at 802.4 mbar")).toContainEqual(["number", "802.4 mbar"]);
+    expect(kinds("2.1 bar in the jacket")).toContainEqual(["number", "2.1 bar"]);
+  });
+
+  it("sees minutes and seconds, which an excursion is measured in", () => {
+    expect(kinds("for 7 minutes")).toContainEqual(["duration", "7 minutes"]);
+    expect(kinds("for 105 min")).toContainEqual(["duration", "105 min"]);
+    expect(kinds("after 30 seconds")).toContainEqual(["duration", "30 seconds"]);
+  });
+
+  it("sees a clock delta the way an instrument cursor reports one", () => {
+    expect(kinds("the cursor read 00:13:39")).toContainEqual([
+      "duration",
+      "00:13:39",
+    ]);
+  });
+
+  it("still sees the lab units it always did", () => {
+    expect(kinds("10 mL withdrawn")).toContainEqual(["number", "10 mL"]);
+    expect(kinds("2 hours later")).toContainEqual(["duration", "2 hours"]);
+  });
+
+  it("does not turn a section number into a quantity", () => {
+    expect(extractHardFacts("5.1 System Trends")).toEqual([]);
+  });
+});

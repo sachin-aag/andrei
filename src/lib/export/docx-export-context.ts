@@ -107,6 +107,28 @@ export const CONVERGENT_DOCX_RUN_STYLE: DocxRunStyle = {
   tableBorderColor: "000000",
 };
 
+/**
+ * Matches a real SOP/QA/017-F01 report: 12pt serif body, justified, with grey
+ * table headers. The shared default fills table headers light blue (D9E2F3),
+ * which is the most obvious giveaway that a document did not come from MJ.
+ */
+export const MJ_FIR_DOCX_RUN_STYLE: DocxRunStyle = {
+  font: "Times New Roman",
+  sizeHalfPoints: "24",
+  forceBlackText: true,
+  tableHeaderFill: "D9D9D9",
+  paragraphAlign: "both",
+  // Spacing intentionally omitted (-> null): source table rows are tight, and
+  // paragraph spacing inside cells is what made our first render roughly twice
+  // as tall per row.
+  listParagraphStyle: true,
+  tableKeepTogetherWrapper: false,
+  // Fill the form cell. Without this, tables stop short of the right border and
+  // leave a gutter the source report does not have.
+  tableWidthPct: "5000",
+  tableBorderColor: "000000",
+};
+
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
   decimal: 0,
   disc: 0,

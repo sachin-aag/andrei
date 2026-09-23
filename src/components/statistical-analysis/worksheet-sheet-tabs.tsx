@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Loader2 } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -20,6 +21,7 @@ export function WorksheetSheetTabs({
   onCancelRename,
   onActivate,
   onDelete,
+  busySheetId = null,
 }: {
   worksheet: WorksheetData;
   readOnly?: boolean;
@@ -31,6 +33,8 @@ export function WorksheetSheetTabs({
   onCancelRename: () => void;
   onActivate: (sheetId: string) => void;
   onDelete: (sheetId: string) => void;
+  /** Sheet whose rows are still rendering, so its tab can acknowledge the click. */
+  busySheetId?: string | null;
 }) {
   const sheetNameInputRef = useRef<HTMLInputElement>(null);
   const canDelete = worksheet.sheets.length > 1;
@@ -49,7 +53,8 @@ export function WorksheetSheetTabs({
       className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-4 py-1.5"
     >
       {worksheet.sheets.map((sheet) => {
-        const active = worksheet.activeSheetId === sheet.id;
+        const busy = busySheetId === sheet.id;
+        const active = worksheet.activeSheetId === sheet.id || busy;
         const editing = editingSheetId === sheet.id;
         if (editing) {
           return (
@@ -80,6 +85,7 @@ export function WorksheetSheetTabs({
             key={sheet.id}
             sheet={sheet}
             active={active}
+            busy={busy}
             readOnly={readOnly}
             canDelete={canDelete}
             onActivate={() => onActivate(sheet.id)}
@@ -105,6 +111,7 @@ export function WorksheetSheetTabs({
 function SheetTab({
   sheet,
   active,
+  busy,
   readOnly,
   canDelete,
   onActivate,
@@ -113,6 +120,7 @@ function SheetTab({
 }: {
   sheet: WorksheetSheet;
   active: boolean;
+  busy: boolean;
   readOnly: boolean;
   canDelete: boolean;
   onActivate: () => void;
@@ -120,7 +128,7 @@ function SheetTab({
   onDelete: () => void;
 }) {
   const pendingRename = useRef(false);
-  const tabClass = `rounded-md px-2 py-1 text-xs ${
+  const tabClass = `flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
     active
       ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"
       : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
@@ -130,11 +138,20 @@ function SheetTab({
       type="button"
       aria-label={`${sheet.name} sheet`}
       data-testid={`worksheet-sheet-tab-${sheet.id}`}
+      aria-busy={busy || undefined}
+      data-switching={busy ? "true" : undefined}
       onClick={onActivate}
       onDoubleClick={onBeginRename}
       className={tabClass}
     >
       {sheet.name}
+      {busy ? (
+        <Loader2
+          className="size-3 animate-spin"
+          aria-hidden="true"
+          data-testid={`worksheet-sheet-tab-spinner-${sheet.id}`}
+        />
+      ) : null}
     </button>
   );
 
