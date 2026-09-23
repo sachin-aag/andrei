@@ -112,6 +112,9 @@ docs/convergent-onboarding-temporary-passwords.md
 # must stay tracked.
 /*.docx
 
+# VQ template / export scratch (repo root)
+/.vq-*.png
+
 # Local chart fixture renders (`scripts/render-chart-fixture.ts`)
 /tmp/
 .tmp/
