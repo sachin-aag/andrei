@@ -10,10 +10,10 @@ import { continuationPageNumber } from "@/lib/ai/chat/page-continuation";
 export const ELR_ASSESSMENT_SECTIONS = [
   "elr_qualification",
   "elr_media_fill",
+  "elr_alarms",
   "elr_monitoring",
   "elr_calibration",
   "elr_preventive_maintenance",
-  "elr_alarms",
   "elr_breakdowns",
   "elr_qms",
   "elr_access_control",

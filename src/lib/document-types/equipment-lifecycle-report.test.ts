@@ -32,6 +32,7 @@ import {
   checkRiskActionRows,
   checkRiskActionsNotBloated,
   checkRiskGradeConsistent,
+  checkSystemDescriptionStationsListed,
   checkSystemTrendRows,
   checkSystemTrendsCoverFlaggedFindings,
 } from "./elr/deterministic-checks";
@@ -151,24 +152,30 @@ function completeRecapTable(
   ]);
 }
 
-function bulletDoc(items: string[]): JSONContent {
-  return {
-    type: "doc",
+function listItems(items: string[]): JSONContent[] {
+  return items.map((text) => ({
+    type: "listItem",
     content: [
       {
-        type: "bulletList",
-        content: items.map((text) => ({
-          type: "listItem",
-          content: [
-            {
-              type: "paragraph",
-              content: [{ type: "text", text }],
-            },
-          ],
-        })),
+        type: "paragraph",
+        content: [{ type: "text", text }],
       },
     ],
+  }));
+}
+
+function listDoc(
+  type: "bulletList" | "orderedList",
+  items: string[]
+): JSONContent {
+  return {
+    type: "doc",
+    content: [{ type, content: listItems(items) }],
   };
+}
+
+function bulletDoc(items: string[]): JSONContent {
+  return listDoc("bulletList", items);
 }
 
 function completeConclusionRecap(
@@ -247,13 +254,30 @@ describe("equipment lifecycle report definition", () => {
       sections.indexOf("elr_conclusion")
     );
     expect(sections.indexOf("elr_alarms")).toBeLessThan(
+      sections.indexOf("elr_monitoring")
+    );
+    expect(sections.indexOf("elr_monitoring")).toBeLessThan(
+      sections.indexOf("elr_calibration")
+    );
+    expect(sections.indexOf("elr_calibration")).toBeLessThan(
+      sections.indexOf("elr_preventive_maintenance")
+    );
+    expect(sections.indexOf("elr_preventive_maintenance")).toBeLessThan(
       sections.indexOf("elr_breakdowns")
     );
     expect(sections.indexOf("elr_breakdowns")).toBeLessThan(
       sections.indexOf("elr_qms")
     );
-    const draft = getDocumentType(TYPE).chat.draftOrder;
-    expect(draft.indexOf("elr_alarms")).toBeLessThan(draft.indexOf("elr_breakdowns"));
+    const def = getDocumentType(TYPE);
+    const draft = def.chat.draftOrder;
+    expect(draft.indexOf("elr_alarms")).toBeLessThan(draft.indexOf("elr_monitoring"));
+    expect(draft.indexOf("elr_monitoring")).toBeLessThan(
+      draft.indexOf("elr_breakdowns")
+    );
+    expect(draft).not.toContain("elr_attachments");
+    expect(def.sections.find((s) => s.key === "elr_attachments")?.editable).toBe(
+      false
+    );
   });
 
   it("seeds a starter glossary that no criterion enforces", () => {
@@ -286,7 +310,7 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.inventorySections).not.toContain("elr_system_trends");
     expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
     expect(def.chat.inventorySections).not.toContain("elr_media_fill");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v16");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v19");
   });
 
   it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
@@ -302,8 +326,31 @@ describe("equipment lifecycle report definition", () => {
       "Secondary (cartoning, labelling) and tertiary (palletizing, wrapping)"
     );
     expect(def.prompts.perSection.elr_system_description).toContain(
-      "omit MOC are met on that point"
+      "omit MOC (and omit that heading) are met on that point"
     );
+    expect(def.prompts.perSection.elr_system_description).toContain(
+      "numbered or bulleted list"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "stations as a list"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Core Functional Stations and Sub-Assemblies"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Do not** add a **Materials of Construction (MOC)** heading"
+    );
+    expect(def.chat.draftingGuidance).not.toMatch(
+      /5\. \*\*Materials of Construction/
+    );
+    expect(def.chat.draftingGuidance).not.toMatch(
+      /Packed paragraph: Equipment description/
+    );
+    const listed = getCriteria(TYPE, "elr_system_description").find(
+      (item) => item.key === "system_description.stations_listed"
+    );
+    expect(listed?.kind).toBe("deterministic");
+    expect(listed?.description).toContain("packed paragraph");
   });
 
   it("requires CSV revalidation due dates in the table, assessment, and eval prompt", () => {
@@ -335,7 +382,13 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.draftingGuidance).not.toMatch(/Indian Financial Year/i);
     expect(def.chat.draftingGuidance).not.toMatch(/Indian FY\b/i);
     expect(def.chat.draftingGuidance).toContain("one row per Grade A / environmental **method**");
-    expect(def.chat.draftingGuidance).toContain("compact process-alarm");
+    expect(def.chat.draftingGuidance).toContain("[[table:Alarm Trends]]");
+    expect(def.chat.draftingGuidance).not.toContain("compact process-alarm");
+    expect(
+      (def.chat.draftingGuidance ?? "").split(
+        "Breakdowns and Trends (elr_breakdowns):"
+      ).length - 1
+    ).toBe(1);
     expect(def.chat.draftingGuidance).toContain("product-contact MOC");
     expect(def.chat.draftingGuidance).toContain("secondary packaging");
     expect(def.chat.draftingGuidance).toContain("tertiary");
@@ -698,6 +751,10 @@ describe("ELR criteria wiring", () => {
       }
       expect(criteria.length).toBeGreaterThan(0);
     }
+    expect(
+      getDocumentType(TYPE).sections.find((s) => s.key === "elr_attachments")
+        ?.evaluable
+    ).toBe(false);
   });
 
   it("routes the conclusion through the discrepancy section", () => {
@@ -1143,16 +1200,20 @@ describe("ELR docx template contract", () => {
     expect(xml).not.toContain("TABLE OF CONTENTS");
   });
 
-  it("places Alarm Trends above Breakdowns", () => {
+  it("places Alarm Trends above Monitoring", () => {
     const def = getDocumentType(TYPE);
     const zip = new PizZip(fs.readFileSync(def.export.templatePath));
     const xml = zip.file("word/document.xml")!.asText();
-    const alarmAt = xml.indexOf("3.9 ALARM TRENDS");
+    const alarmAt = xml.indexOf("3.6 ALARM TRENDS");
+    const monitoringAt = xml.indexOf("3.7 MONITORING");
     const breakdownAt = xml.indexOf("3.10 BREAKDOWNS AND TRENDS");
     const qmsAt = xml.indexOf("3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION");
     expect(alarmAt).toBeGreaterThan(-1);
-    expect(breakdownAt).toBeGreaterThan(alarmAt);
+    expect(monitoringAt).toBeGreaterThan(alarmAt);
+    expect(breakdownAt).toBeGreaterThan(monitoringAt);
     expect(qmsAt).toBeGreaterThan(breakdownAt);
+    expect(xml).not.toContain("3.6 MONITORING");
+    expect(xml).not.toContain("3.9 ALARM");
     expect(xml).not.toContain("3.9 BREAKDOWNS");
     expect(xml).not.toContain("3.11 ALARM");
   });
@@ -1792,6 +1853,109 @@ describe("ELR assessment, trends and risk checks", () => {
     ).toBe("met");
   });
 
+  it("fails a packed 3.3 description and ignores a trailing Citations list", () => {
+    const empty = checkSystemDescriptionStationsListed(
+      ctx({ narrative: narrative("") }, { section: "elr_system_description" })
+    );
+    expect(empty.status).toBe("not_met");
+    expect(empty.reasoning).toMatch(/empty/i);
+
+    const packed = checkSystemDescriptionStationsListed(
+      ctx(
+        {
+          narrative: narrative(
+            "The filling line includes infeed, filling, stoppering, capping and a tray loader in one paragraph."
+          ),
+        },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(packed.status).toBe("partially_met");
+    expect(packed.reasoning).toMatch(/packed/i);
+
+    const citationsOnly = checkSystemDescriptionStationsListed(
+      ctx(
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "The filling line includes infeed, filling, stoppering, capping and a tray loader in one paragraph.",
+                  },
+                ],
+              },
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Citations:" }],
+              },
+              {
+                type: "orderedList",
+                content: listItems(["URS, p. 4", "DQ, p. 2"]),
+              },
+            ],
+          },
+        },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(citationsOnly.status).toBe("partially_met");
+  });
+
+  it("passes 3.3 when stations are a body list before Citations", () => {
+    const bullets = checkSystemDescriptionStationsListed(
+      ctx(
+        { narrative: bulletDoc(["Infeed conveyor", "Filling station"]) },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(bullets.status).toBe("met");
+    expect(bullets.reasoning).toMatch(/2 station/i);
+
+    const numbered = checkSystemDescriptionStationsListed(
+      ctx(
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    marks: [{ type: "bold" }],
+                    text: "Core Functional Stations and Sub-Assemblies",
+                  },
+                ],
+              },
+              {
+                type: "orderedList",
+                content: listItems([
+                  "Infeed conveyor — vial infeed from the washer.",
+                  "Filling station — peristaltic dosing.",
+                ]),
+              },
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Citations:" }],
+              },
+              {
+                type: "orderedList",
+                content: listItems(["URS, p. 4"]),
+              },
+            ],
+          },
+        },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(numbered.status).toBe("met");
+    expect(numbered.reasoning).toMatch(/2 station/i);
+  });
+
   it("seeds 5.1 with one recap row per Observations subsection and Discrepancy", () => {
     const parsed = parseSystemTrendsMatrix(EMPTY_ELR_CONTENT.elr_system_trends);
     expect(parsed.ok).toBe(true);
@@ -1808,24 +1972,24 @@ describe("ELR assessment, trends and risk checks", () => {
     expect(parsed.rows.some((row) => row.section.includes("2.0"))).toBe(false);
   });
 
-  it("matches recap rows by section number so 3.9 cannot steal 3.6", () => {
-    const monitoring = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.6");
-    const alarms = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.9");
-    expect(monitoring && recapSourceMatchesText(monitoring, "3.6 Monitoring")).toBe(
+  it("matches recap rows by section number so 3.6 cannot steal 3.7", () => {
+    const monitoring = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.7");
+    const alarms = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.6");
+    expect(monitoring && recapSourceMatchesText(monitoring, "3.7 Monitoring")).toBe(
       true
     );
     expect(
       monitoring &&
         recapSourceMatchesText(
           monitoring,
-          "3.9 Alarm Trends — monitoring of codes is still appropriate"
+          "3.6 Alarm Trends — monitoring of codes is still appropriate"
         )
     ).toBe(false);
     expect(
       alarms &&
         recapSourceMatchesText(
           alarms,
-          "3.9 Alarm Trends — monitoring of codes is still appropriate"
+          "3.6 Alarm Trends — monitoring of codes is still appropriate"
         )
     ).toBe(true);
   });

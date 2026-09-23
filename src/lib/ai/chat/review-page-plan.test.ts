@@ -285,7 +285,7 @@ describe("planReviewPages", () => {
     expect(selected.map((page) => page.attachmentId)).toEqual(["prqr"]);
   });
 
-  it("queues PRQR methods and the alarm-trend PDF together", () => {
+  it("does not queue the alarm-trend PDF on a monitoring walk", () => {
     const header =
       "UNCONTROLLED COPY Sign/Date Reviewed By QA Confidential and Proprietary ";
     const pages = [
@@ -317,10 +317,7 @@ describe("planReviewPages", () => {
       },
     ];
     const selected = planReviewPages(pages, "elr_monitoring", 2500);
-    expect(selected.map((page) => page.attachmentId).sort()).toEqual([
-      "alarm",
-      "prqr",
-    ]);
+    expect(selected.map((page) => page.attachmentId)).toEqual(["prqr"]);
   });
 
   it("queues a differential-pressure monitoring row from column hits", () => {

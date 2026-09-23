@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v129-claim-strength");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v130-claim-strength");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -529,10 +529,14 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Indian FY");
     expect(prompt).not.toContain("Indian Financial Year");
     expect(prompt).toContain("does not unlock edit_table");
-    expect(prompt).toContain("compact process-alarm rows");
-    expect(prompt).toContain("alarm-trend PDF");
     expect(prompt).toContain("[[table:Alarm Trends]]");
+    expect(prompt).toContain("On ELR monitoring");
     expect(prompt).toContain("On ELR breakdowns");
+    expect(prompt).not.toContain("compact process-alarm rows");
+    expect(prompt).not.toContain("on monitoring also queue the alarm-trend PDF");
+    expect(prompt).toContain(
+      "Do not restart monitoring or breakdowns because the alarm-trend PDF was skipped"
+    );
     expect(prompt).not.toContain(
       "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
     );
@@ -691,6 +695,29 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("title-page container format");
     expect(prompt).toMatch(/pick the\s+first PRQR/);
     expect(prompt).toContain("do not infer it from the first PRQR");
+  });
+
+  it("tells ELR Agent to list equipment stations instead of packing them", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "equipment_lifecycle_report",
+    });
+    expect(prompt).toContain("stations as a list");
+    expect(prompt).toContain("Core Functional Stations and Sub-Assemblies");
+    expect(prompt).not.toMatch(/Packed paragraph: Equipment description/);
+  });
+
+  it("does not list ELR Attachments as an editable field", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "equipment_lifecycle_report",
+    });
+    expect(prompt).toContain("not a drafted section");
+    expect(prompt).toContain("export rebuilds that table from every live file");
+    expect(prompt).not.toContain("Attachments [elr_attachments]");
+    expect(prompt).not.toContain("- elr_attachments:");
   });
 });
 

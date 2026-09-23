@@ -113,6 +113,22 @@ describe("seedSectionQueuePlan", () => {
       })
     ).toBeNull();
   });
+
+  it("does not queue ELR Attachments even when that table is empty", () => {
+    const seeded = seedSectionQueuePlan({
+      userText: "Draft the remaining sections",
+      documentType: "equipment_lifecycle_report",
+      sections: {
+        elr_objective: emptyNarrative,
+        elr_scope: emptyNarrative,
+        elr_attachments: EMPTY_ELR_CONTENT.elr_attachments,
+      },
+      promptVersion: "chat-v94-section-plan",
+    });
+    expect(seeded?.items.some((item) => item.sectionKey === "elr_attachments")).toBe(
+      false
+    );
+  });
 });
 
 describe("advancePlanAfterTurn", () => {
@@ -371,6 +387,18 @@ describe("advancePlanAfterTurn", () => {
         (item) => item.sectionKey
       )
     ).toEqual(["elr_objective", "elr_scope"]);
+  });
+
+  it("does not pair Alarm Trends with Monitoring on one remaining-section turn", () => {
+    const started = plan([
+      { sectionKey: "elr_alarms", label: "Alarm Trends", state: "in_progress" },
+      { sectionKey: "elr_monitoring", label: "Monitoring", state: "queued" },
+    ]);
+    expect(
+      currentPlanTurnSections(started, "equipment_lifecycle_report").map(
+        (item) => item.sectionKey
+      )
+    ).toEqual(["elr_alarms"]);
   });
 });
 
@@ -1155,7 +1183,7 @@ describe("plan prompt and metadata", () => {
         queuedFilenames: ["PRQR-25-PR-005 Report.pdf"],
         skippedFilenames: ["Alarm trend Q2 2025.pdf"],
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("keeps comprehensive retrieval for a queued inventory section", () => {

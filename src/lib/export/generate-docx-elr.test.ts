@@ -100,8 +100,8 @@ function qualificationTableSlice(xml: string): string {
 }
 
 function monitoringSlice(xml: string): string {
-  const start = xml.indexOf("3.6 MONITORING");
-  const end = xml.indexOf("3.7 CALIBRATION");
+  const start = xml.indexOf("3.7 MONITORING");
+  const end = xml.indexOf("3.8 CALIBRATION");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
@@ -116,8 +116,8 @@ function breakdownSlice(xml: string): string {
 }
 
 function alarmSlice(xml: string): string {
-  const start = xml.indexOf("3.9 ALARM TRENDS");
-  const end = xml.indexOf("3.10 BREAKDOWNS");
+  const start = xml.indexOf("3.6 ALARM TRENDS");
+  const end = xml.indexOf("3.7 MONITORING");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
@@ -191,8 +191,11 @@ describe("ELR DOCX template", () => {
     const xml = zip.file("word/document.xml")?.asText() ?? "";
     expect(xml).not.toContain("TABLE OF CONTENTS");
     expect(xml).toContain("1.0 PURPOSE");
-    expect(xml.indexOf("3.9 ALARM TRENDS")).toBeGreaterThan(-1);
-    expect(xml.indexOf("3.9 ALARM TRENDS")).toBeLessThan(
+    expect(xml.indexOf("3.6 ALARM TRENDS")).toBeGreaterThan(-1);
+    expect(xml.indexOf("3.6 ALARM TRENDS")).toBeLessThan(
+      xml.indexOf("3.7 MONITORING")
+    );
+    expect(xml.indexOf("3.7 MONITORING")).toBeLessThan(
       xml.indexOf("3.10 BREAKDOWNS AND TRENDS")
     );
     expect(xml.indexOf("3.10 BREAKDOWNS AND TRENDS")).toBeLessThan(
@@ -353,7 +356,7 @@ describe("ELR DOCX export", () => {
 
     const alarms = alarmSlice(xml);
     const alarmNarrative = alarms.indexOf("Alarm 1951 repeated");
-    const alarmHeading = alarms.indexOf("3.9.1 ALARM TREND SUMMARY");
+    const alarmHeading = alarms.indexOf("3.6.1 ALARM TREND SUMMARY");
     const alarmTrend = alarms.indexOf("The trended alarm set still covers");
     const alarmTable = alarms.indexOf("<w:tbl");
     expect(alarmNarrative).toBeGreaterThan(-1);
