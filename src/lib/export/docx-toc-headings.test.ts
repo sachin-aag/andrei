@@ -6,6 +6,7 @@ import {
   ELR_TOC_HEADINGS,
   INVESTIGATION_TOC_HEADINGS,
   QRA_TOC_HEADINGS,
+  VQ_TOC_HEADINGS,
   docxParagraphPlainText,
   forceBlackHeadingStyleColors,
   tocHeadingSpecsForDocumentType,
@@ -34,6 +35,9 @@ describe("tocHeadingSpecsForDocumentType", () => {
       ELR_TOC_HEADINGS
     );
     expect(tocHeadingSpecsForDocumentType("generic_document")).toBeNull();
+    expect(tocHeadingSpecsForDocumentType("vendor_qualification")).toBe(
+      VQ_TOC_HEADINGS
+    );
   });
 });
 

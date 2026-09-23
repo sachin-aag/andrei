@@ -1,17 +1,17 @@
-# Customer deploys — one trunk, three Vercel projects
+# Customer deploys — one trunk, four Vercel projects
 
 One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER` packs, not in long-lived SHA pins or a second product branch.
 
-| | MJ production | Customer demo | Convergent Dental |
-|--|---------------|---------------|-------------------|
-| **Vercel project** | `andrei-v2` | `andrei-demo` | `andrei-convergent` |
-| **Git production branch** | `main` | `main` | `main` |
-| **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) | `ANDREI_CUSTOMER=convergent` |
-| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://convergent.andreihealth.com |
-| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` (`cold-thunder-36255681`) |
-| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create | Convergent branding, design verification only (9-section Solea DV template) |
+| | MJ production | Customer demo | Convergent Dental | 3xper Innoventure |
+|--|---------------|---------------|-------------------|-------------------|
+| **Vercel project** | `andrei-v2` | `andrei-demo` | `andrei-convergent` | `andrei-3xper` (create) |
+| **Git production branch** | `main` | `main` | `main` | `main` |
+| **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) | `ANDREI_CUSTOMER=convergent` | `ANDREI_CUSTOMER=3xper` |
+| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://convergent.andreihealth.com | https://3xper.andreihealth.com (suggested) |
+| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` (`cold-thunder-36255681`) | create (`docs/3xper-deployment.md`) |
+| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create | Convergent branding, design verification only (9-section Solea DV template) | 3xper branding, vendor qualification only (QAD-SOP-MS-001-F04) |
 
-Release valve: **the same git SHA on all three Production deploys**. Pack env chooses MJ vs demo vs Convergent. There is no long-lived product branch.
+Release valve: **the same git SHA on all Production deploys**. Pack env chooses MJ vs demo vs Convergent vs 3xper. There is no long-lived product branch.
 
 ## Pack vs flags vs pins
 
@@ -41,8 +41,9 @@ Set on **each** project → Settings → Environment Variables → Production, P
 | **andrei-demo** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
 | **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
 | **andrei-convergent** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
+| **andrei-3xper** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `3xper` |
 
-**Neon preview branching:** keep **Create a branch for each preview deployment** **on** for `andrei-v2`, `andrei-demo`, and `andrei-convergent`. Each git ref gets `preview/<git-branch>` on that project's Neon. Production stays on the default Neon branch. Enable cleanup when the preview deployment / git branch is removed (`neon-preview-cleanup.yml` plus the integration toggle).
+**Neon preview branching:** keep **Create a branch for each preview deployment** **on** for `andrei-v2`, `andrei-demo`, `andrei-convergent`, and `andrei-3xper`. Each git ref gets `preview/<git-branch>` on that project's Neon. Production stays on the default Neon branch. Enable cleanup when the preview deployment / git branch is removed (`neon-preview-cleanup.yml` plus the integration toggle).
 
 The integration injects **Preview / git-branch** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (Neon logo, branch name truncated) for that ref only. Those are not pack env. Do not hand-edit them.
 
@@ -52,9 +53,19 @@ The integration injects **Preview / git-branch** `DATABASE_URL` and `DATABASE_UR
 
 ## Environment variables
 
-### All projects
+### Shared (team) vs per project
 
-Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACKEND=local` on Vercel Production.
+Stop copying Vertex / AI Gateway / Resend / Langfuse / PostHog onto every new Vercel project. Create them once as [Shared Environment Variables](https://vercel.com/docs/environment-variables/shared-environment-variables) (team **Settings** → **Environment Variables**, Pro / Enterprise) and **link** `andrei-demo`, `andrei-v2`, `andrei-convergent`, and `andrei-3xper`. Updating the shared row updates every linked project; redeploy to pick it up.
+
+`vercel env add` only writes to the **linked** project. Shared vars are team-level (dashboard or `POST /v1/env?teamId=`). A project-level var with the same key + environment **overrides** the shared one — delete those duplicates or rotations never land. Shared vars cannot be git-branch-specific (Neon preview URLs stay an integration inject).
+
+**Share:** `AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM` (if one From address), `AI_GATEWAY_API_KEY` (or OIDC), `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_VERTEX_PROJECT`, `GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`, Langfuse keys, `NEXT_PUBLIC_POSTHOG_KEY`. Use **Secret** for tokens.
+
+**Never share:** pack identity (`ANDREI_CUSTOMER`, `NEXT_PUBLIC_ANDREI_CUSTOMER`, `ANDREI_VERCEL_DEPLOY_SCOPE`), `DATABASE_URL`, `AUTH_SECRET`, `AUTH_URL`, `GCS_BUCKET`.
+
+Stand-up for a fifth customer is: pack env + Neon + `AUTH_SECRET` + `AUTH_URL` + `GCS_BUCKET`, then link the existing shared rows. Detail: [docs/3xper-deployment.md](./3xper-deployment.md#shared-env-team--do-this-instead-of-copy-paste).
+
+Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACKEND=local` on Vercel Production.
 
 ### andrei-demo (Production + Preview)
 
@@ -93,9 +104,26 @@ MJ `promptVersion` is `mj-sop-dp-qa-008-v2`. Existing evaluations go stale on cu
 | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
 | `DATABASE_URL` | Neon **andrei-convergent** pooled URL |
 | `AUTH_URL` | `https://convergent.andreihealth.com` (must match the public host; do not leave `https://andrei-convergent.vercel.app`) |
-| `GOOGLE_VERTEX_PROJECT` / WIF / `GCS_BUCKET` | Copy from `andrei-demo` (never `ALLOW_TEST_*`) |
+| Vertex / AI / Resend | **Link** team shared vars (do not paste from `andrei-demo`) |
+| `GCS_BUCKET` | Project-level bucket (never `ALLOW_TEST_*`) |
 
 Keep Neon **Create a branch for each preview deployment** on. Convergent `promptVersion` is `convergent-dv-v5`.
+
+### andrei-3xper (Production + Preview)
+
+Stand-up steps (Neon, auth, Vertex/GCS, first user, smoke): **[docs/3xper-deployment.md](./3xper-deployment.md)**.
+
+| Variable | Value |
+|----------|--------|
+| `ANDREI_CUSTOMER` | `3xper` |
+| `NEXT_PUBLIC_ANDREI_CUSTOMER` | `3xper` |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `3xper` |
+| `DATABASE_URL` | Neon **andrei-3xper** pooled URL (create this project) |
+| `AUTH_URL` | Public host (suggested `https://3xper.andreihealth.com`; do not leave `https://andrei-3xper.vercel.app`) |
+| Vertex / AI / Resend | **Link** team shared vars — do not paste from `andrei-demo` |
+| `GCS_BUCKET` | Project-level; new bucket or prefix (never `ALLOW_TEST_*`) |
+
+Keep Neon **Create a branch for each preview deployment** on. 3xper `promptVersion` is `3xper-vq-f04-v1`.
 
 ## MJ database cutover
 
@@ -205,7 +233,7 @@ Same emails as demo (`sachin@` / `aditya@` plus `+manager` / `+admin`). Temporar
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
 | Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |
-| Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com` / `https://demo.andreihealth.com` / `https://convergent.andreihealth.com`). Add that Origin to GCS CORS (`infra/gcs/cors.json` + `gsutil cors set`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
+| Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com` / `https://demo.andreihealth.com` / `https://convergent.andreihealth.com` / `https://3xper.andreihealth.com`). Add that Origin to GCS CORS (`infra/gcs/cors.json` + `gsutil cors set`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
 | Auto-save / API `401 Unauthorized` on the custom domain | Same `AUTH_URL` mismatch: Auth.js was rewriting requests to the old `*.vercel.app` host so the session cookie missed. Redeploy after setting `AUTH_URL`. |
 | `document_no` missing after deploy | Journal was stamped without running 0037. Restore from PITR; do not re-run `db:migrate` until the baseline guard is live |
 | AI Check stale on MJ day one | Expected `promptVersion` bump; re-run AI Check |

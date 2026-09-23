@@ -186,6 +186,7 @@ import {
   ElrSystemDescriptionEditor,
   ElrSystemTrendsEditor,
 } from "./sections/elr/elr-section-editors";
+import { VQ_SECTION_EDITORS } from "./sections/vq/vq-section-editors";
 
 export type { WorkspaceMode };
 
@@ -297,6 +298,7 @@ const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   generic_document: { body: GenericDocumentEditor },
   quality_risk_assessment: QRA_SECTION_EDITORS,
   equipment_lifecycle_report: ELR_SECTION_EDITORS,
+  vendor_qualification: VQ_SECTION_EDITORS,
 };
 
 export function ReportWorkspace({

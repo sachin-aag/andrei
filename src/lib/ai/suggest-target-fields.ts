@@ -95,6 +95,26 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   elr_conclusion: ["narrative", "recommendation", "recommendationNarrative"],
   elr_attachments: ["table"],
   elr_revision_history: ["table"],
+  vq_cover: [
+    "answers.cover_manufacturer",
+    "answers.cover_material",
+    "answers.cover_remarks",
+  ],
+  vq_section_a: ["narrative", "table"],
+  vq_section_b: ["narrative"],
+  vq_section_c: ["narrative"],
+  vq_section_d: ["narrative"],
+  vq_section_e: ["narrative"],
+  vq_section_f: ["narrative"],
+  vq_section_g: ["narrative", "table"],
+  vq_section_h: ["narrative", "table"],
+  vq_section_i: ["narrative", "table"],
+  vq_section_j: ["narrative", "table"],
+  vq_section_k: ["narrative"],
+  vq_section_l: ["narrative"],
+  vq_section_m: ["narrative"],
+  vq_section_n: ["narrative", "table"],
+  vq_scoring: ["narrative"],
 };
 
 function patternToRegex(pattern: string): RegExp {
@@ -215,6 +235,21 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   elr_conclusion: ["narrative", "recommendationNarrative"],
   elr_attachments: ["table"],
   elr_revision_history: ["table"],
+  vq_section_a: ["narrative", "table"],
+  vq_section_b: ["narrative"],
+  vq_section_c: ["narrative"],
+  vq_section_d: ["narrative"],
+  vq_section_e: ["narrative"],
+  vq_section_f: ["narrative"],
+  vq_section_g: ["narrative", "table"],
+  vq_section_h: ["narrative", "table"],
+  vq_section_i: ["narrative", "table"],
+  vq_section_j: ["narrative", "table"],
+  vq_section_k: ["narrative"],
+  vq_section_l: ["narrative"],
+  vq_section_m: ["narrative"],
+  vq_section_n: ["narrative", "table"],
+  vq_scoring: ["narrative"],
 };
 
 export function isRichTargetField(section: SectionType, contentPath: string): boolean {

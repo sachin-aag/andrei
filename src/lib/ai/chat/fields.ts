@@ -90,6 +90,17 @@ export function primaryFieldForSection(section: SectionType): string {
     case "results_and_discussions":
       return "table";
     default:
+      if (
+        section === "vq_section_g" ||
+        section === "vq_section_h" ||
+        section === "vq_section_i" ||
+        section === "vq_section_j" ||
+        section === "vq_section_n" ||
+        section === "vq_section_a"
+      ) {
+        return "table";
+      }
+      if (section === "vq_cover") return "answers.cover_manufacturer";
       return "narrative";
   }
 }
@@ -300,7 +311,40 @@ export function sectionFillState(
     : states.some((state) => state === "filled")
       ? "filled"
       : "partial";
-  return capElrSectionFillState(content, section, aggregated);
+  return capVqSectionFillState(
+    content,
+    section,
+    capElrSectionFillState(content, section, aggregated)
+  );
+}
+
+function answersFillState(
+  content: Record<string, unknown> | undefined
+): SectionFillState {
+  const answers = content?.answers;
+  if (!answers || typeof answers !== "object" || Array.isArray(answers)) {
+    return "empty";
+  }
+  const values = Object.values(answers).filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+  if (values.length === 0) return "empty";
+  const chars = values.join(" ").replace(/\s+/g, " ").trim().length;
+  if (chars < SECTION_PARTIAL_CHAR_LIMIT) return "partial";
+  return "filled";
+}
+
+function capVqSectionFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType,
+  aggregated: SectionFillState
+): SectionFillState {
+  if (!section.startsWith("vq_")) return aggregated;
+  const answerState = answersFillState(content);
+  if (aggregated === "empty") return answerState;
+  if (answerState === "filled" || aggregated === "filled") return "filled";
+  if (answerState === "partial" || aggregated === "partial") return "partial";
+  return aggregated;
 }
 
 /**
@@ -365,6 +409,7 @@ const ALL_DOCUMENT_TYPES: Record<DocumentType, true> = {
   generic_document: true,
   quality_risk_assessment: true,
   equipment_lifecycle_report: true,
+  vendor_qualification: true,
 };
 
 /** Human label for a section (registry, then shared map, then title-cased key). */

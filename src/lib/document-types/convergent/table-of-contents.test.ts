@@ -275,6 +275,13 @@ describe("getReportTableOfContents", () => {
       { label: "1. Document", sectionKey: "body" },
     ]);
   });
+
+  it("numbers 3xper vendor qualification Cover through scoring", () => {
+    const toc = getReportTableOfContents("vendor_qualification", "3xper");
+    expect(toc[0]).toEqual({ label: "1. Cover", sectionKey: "vq_cover" });
+    expect(toc.at(-1)?.sectionKey).toBe("vq_scoring");
+    expect(toc).toHaveLength(16);
+  });
 });
 
 describe("numberTableOfContents", () => {

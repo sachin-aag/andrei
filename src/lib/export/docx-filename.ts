@@ -18,6 +18,8 @@ export function reportExportDocxFileName(
       return `Quality_Risk_Assessment_${safe}${suffix}.docx`;
     case "equipment_lifecycle_report":
       return `Equipment_Lifecycle_Report_${safe}${suffix}.docx`;
+    case "vendor_qualification":
+      return `Vendor_Qualification_${safe}${suffix}.docx`;
     case "investigation_report":
       return `Investigation_Report_${safe}${suffix}.docx`;
     case "generic_document":
@@ -39,6 +41,8 @@ export function reportExportDocxArchiveName(documentType: DocumentType): string 
       return "quality-risk-assessment.docx";
     case "equipment_lifecycle_report":
       return "equipment-lifecycle-report.docx";
+    case "vendor_qualification":
+      return "vendor-qualification.docx";
     case "investigation_report":
       return "investigation-report.docx";
     case "generic_document":

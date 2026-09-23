@@ -6,6 +6,7 @@ function isKnownCustomerId(value: string | undefined): boolean {
     normalized === "mj" ||
     normalized === "demo" ||
     normalized === "convergent" ||
+    normalized === "3xper" ||
     !normalized
   );
 }

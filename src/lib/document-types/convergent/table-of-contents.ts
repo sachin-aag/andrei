@@ -3,6 +3,7 @@ import { getCustomerPack } from "@/lib/customers/packs";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
 import { DV_SECTION_LABELS } from "@/lib/document-types/design-verification/sections";
 import { GENERIC_DOCUMENT_SECTION_LABEL } from "@/lib/document-types/generic/sections";
+import { VQ_SECTION_LABELS } from "@/lib/document-types/vq/sections";
 
 /** One row in the left-rail table of contents (Word-recipe hierarchy). */
 export type TableOfContentsEntry = {
@@ -317,6 +318,25 @@ const GENERIC_DOCUMENT_TOC: TableOfContentsEntry[] = [
   { label: GENERIC_DOCUMENT_SECTION_LABEL, sectionKey: "body" },
 ];
 
+const VQ_TOC: TableOfContentsEntry[] = [
+  { label: "Cover", sectionKey: "vq_cover" },
+  { label: VQ_SECTION_LABELS.vq_section_a, sectionKey: "vq_section_a" },
+  { label: VQ_SECTION_LABELS.vq_section_b, sectionKey: "vq_section_b" },
+  { label: VQ_SECTION_LABELS.vq_section_c, sectionKey: "vq_section_c" },
+  { label: VQ_SECTION_LABELS.vq_section_d, sectionKey: "vq_section_d" },
+  { label: VQ_SECTION_LABELS.vq_section_e, sectionKey: "vq_section_e" },
+  { label: VQ_SECTION_LABELS.vq_section_f, sectionKey: "vq_section_f" },
+  { label: VQ_SECTION_LABELS.vq_section_g, sectionKey: "vq_section_g" },
+  { label: VQ_SECTION_LABELS.vq_section_h, sectionKey: "vq_section_h" },
+  { label: VQ_SECTION_LABELS.vq_section_i, sectionKey: "vq_section_i" },
+  { label: VQ_SECTION_LABELS.vq_section_j, sectionKey: "vq_section_j" },
+  { label: VQ_SECTION_LABELS.vq_section_k, sectionKey: "vq_section_k" },
+  { label: VQ_SECTION_LABELS.vq_section_l, sectionKey: "vq_section_l" },
+  { label: VQ_SECTION_LABELS.vq_section_m, sectionKey: "vq_section_m" },
+  { label: VQ_SECTION_LABELS.vq_section_n, sectionKey: "vq_section_n" },
+  { label: VQ_SECTION_LABELS.vq_scoring, sectionKey: "vq_scoring" },
+];
+
 export function getConvergentTableOfContents(
   documentType: DocumentType
 ): TableOfContentsEntry[] | null {
@@ -418,6 +438,8 @@ function reportTableOfContentsRecipe(
       return ELR_TOC;
     case "generic_document":
       return GENERIC_DOCUMENT_TOC;
+    case "vendor_qualification":
+      return VQ_TOC;
     default: {
       const _exhaustive: never = documentType;
       return _exhaustive;

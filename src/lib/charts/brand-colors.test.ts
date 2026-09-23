@@ -42,7 +42,12 @@ describe("chartBrandColors", () => {
       "#d97706",
       "#15803d",
     ]);
-    for (const packId of ["demo", "mj", "convergent"] as const) {
+    expect(chartBrandColors("3xper").series.slice(0, 3)).toEqual([
+      "#0a4e9b",
+      "#ed1c6f",
+      "#0d9488",
+    ]);
+    for (const packId of ["demo", "mj", "convergent", "3xper"] as const) {
       const series = chartBrandColors(packId).series;
       expect(new Set(series).size).toBe(series.length);
       expect(series.every((hex) => hex.toLowerCase() !== SPEC_LIMIT_RED)).toBe(
@@ -55,12 +60,14 @@ describe("chartBrandColors", () => {
     expect(chartBrandColors("demo").limit).toBe("#dc2626");
     expect(chartBrandColors("mj").limit).toBe("#dc2626");
     expect(chartBrandColors("convergent").limit).toBe("#dc2626");
+    expect(chartBrandColors("3xper").limit).toBe("#dc2626");
   });
 
   it("uses pack brand-800 for axis/title text", () => {
     expect(chartBrandColors("demo").brand800).toBe("#061528");
     expect(chartBrandColors("mj").brand800).toBe("#13122e");
     expect(chartBrandColors("convergent").brand800).toBe("#043e64");
+    expect(chartBrandColors("3xper").brand800).toBe("#062b54");
   });
 });
 
@@ -88,6 +95,7 @@ describe("palette agrees with the CSS ramp", () => {
     demo: root,
     mj: { ...root, ...block('html[data-customer="mj"]') },
     convergent: { ...root, ...block('html[data-customer="convergent"]') },
+    "3xper": { ...root, ...block('html[data-customer="3xper"]') },
   };
 
   // The SVG views style from these CSS tokens; the Excel export styles from the

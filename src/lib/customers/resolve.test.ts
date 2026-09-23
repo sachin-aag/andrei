@@ -59,4 +59,8 @@ describe("resolveCustomerId", () => {
       "convergent"
     );
   });
+
+  it("accepts 3xper as a customer id", () => {
+    expect(resolveCustomerId({ ANDREI_CUSTOMER: "3xper" })).toBe("3xper");
+  });
 });
