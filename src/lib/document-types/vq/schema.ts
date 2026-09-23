@@ -40,6 +40,11 @@ export type VqFormSection = {
   narrativeLabel?: string;
 };
 
+/** Paper form stars live in `required`, not in the question text. */
+export function stripVqLeadingStar(label: string): string {
+  return label.replace(/^\*\s*/, "");
+}
+
 function f(
   id: string,
   number: string,
@@ -47,7 +52,15 @@ function f(
   kind: VqFieldKind,
   required = false
 ): VqField {
-  return { id, number, kind, label, required };
+  return { id, number, kind, label: stripVqLeadingStar(label), required };
+}
+
+/** Editor / Word caption: `1.6.2 * Please give…` — one star, original casing. */
+export function vqFieldCaption(field: VqField): string {
+  const label = stripVqLeadingStar(field.label);
+  const number = field.number?.trim() ? `${field.number} ` : "";
+  const star = field.required ? "* " : "";
+  return `${number}${star}${label}`;
 }
 
 function text(

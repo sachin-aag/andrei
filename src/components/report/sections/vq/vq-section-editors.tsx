@@ -12,7 +12,13 @@ import {
   useReportData,
 } from "@/providers/report-provider";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
-import { VQ_DEFAULT_CONTACTS, VQ_FORM, type VqField, type VqFieldKind } from "@/lib/document-types/vq/schema";
+import {
+  VQ_DEFAULT_CONTACTS,
+  VQ_FORM,
+  vqFieldCaption,
+  type VqField,
+  type VqFieldKind,
+} from "@/lib/document-types/vq/schema";
 import {
   EMPTY_VQ_CONTENT,
   VQ_SECTION_KEYS,
@@ -22,10 +28,13 @@ import {
   type VqSectionContent,
   type VqSectionKey,
 } from "@/lib/document-types/vq/sections";
-import { cn } from "@/lib/utils";
 
 const TABLE_PLACEHOLDER =
   "Use the table toolbar to add rows. Keep the header columns unchanged.";
+
+/** Shared Label is uppercase tracking-wide — wrong for full questionnaire questions. */
+const QUESTION_LABEL_CLASS =
+  "normal-case tracking-normal text-sm font-medium leading-snug text-[var(--foreground)]";
 
 function coverPlaceholder(fieldId: string): string | undefined {
   switch (fieldId) {
@@ -124,6 +133,7 @@ function FieldControl({
   if (field.kind === "text") {
     return (
       <Input
+        id={field.id}
         value={value}
         disabled={disabled}
         placeholder={coverPlaceholder(field.id)}
@@ -134,6 +144,7 @@ function FieldControl({
   if (field.kind === "textarea") {
     return (
       <Textarea
+        id={field.id}
         value={value}
         disabled={disabled}
         placeholder={coverPlaceholder(field.id)}
@@ -196,14 +207,20 @@ function VqQuestionnaireEditor({ section }: { section: VqSectionKey }) {
           ) : null}
           <div className="space-y-4">
             {group.fields.map((field) => (
-              <div key={field.id} className="grid gap-1.5">
+              <div
+                key={field.id}
+                className="grid gap-1.5"
+                data-testid={`vq-field-${field.id}`}
+              >
                 <Label
-                  htmlFor={field.id}
-                  className={cn(field.required && "text-[var(--foreground)]")}
+                  htmlFor={
+                    field.kind === "text" || field.kind === "textarea"
+                      ? field.id
+                      : undefined
+                  }
+                  className={QUESTION_LABEL_CLASS}
                 >
-                  {field.number ? `${field.number} ` : ""}
-                  {field.required ? "* " : ""}
-                  {field.label}
+                  {vqFieldCaption(field)}
                 </Label>
                 <FieldControl
                   field={field}

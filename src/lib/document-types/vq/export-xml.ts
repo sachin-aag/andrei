@@ -1,4 +1,4 @@
-import { VQ_FORM, type VqField, type VqFieldKind } from "./schema";
+import { VQ_FORM, vqFieldCaption, type VqField, type VqFieldKind } from "./schema";
 import { fieldRefId, type VqAnswers } from "./sections";
 
 function esc(text: string): string {
@@ -123,10 +123,7 @@ function fieldsTable(fields: VqField[], answers: VqAnswers): string {
         cell(
           colQ,
           para(
-            textRun(
-              `${field.required ? "* " : ""}${field.label}`,
-              { sz: 16 }
-            )
+            textRun(vqFieldCaption(field), { sz: 16 })
           )
         ) +
         cell(colAns, para(textRun(answer, { sz: 16 }))) +
