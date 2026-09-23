@@ -6,7 +6,11 @@ import {
   isWordImportAvailable,
 } from "@/lib/document-types";
 import { XPER_PACK } from "@/lib/customers/packs";
-import { VQ_FORM, fieldsForSection } from "@/lib/document-types/vq/schema";
+import {
+  VQ_FORM,
+  fieldsForSection,
+  vqFieldCaption,
+} from "@/lib/document-types/vq/schema";
 import { EMPTY_VQ_CONTENT, VQ_SECTION_KEYS } from "@/lib/document-types/vq/sections";
 import { questionnaireXml, vqTemplateKey } from "@/lib/document-types/vq/export-xml";
 import { sectionFillState } from "@/lib/ai/chat/fields";
@@ -49,6 +53,13 @@ describe("vendor qualification type", () => {
     expect(xml).toContain("Acme API Pvt Ltd");
     expect(xml).toContain("Lactose monohydrate");
     expect(xml).toContain("<w:tbl>");
+  });
+
+  it("does not double-star required questions in Word XML", () => {
+    const xml = questionnaireXml("vq_section_a", { a_1_6_2: "yes" });
+    expect(xml).toContain("1.6.2 * Please give a brief structure-diagram");
+    expect(xml).not.toContain("* *Please");
+    expect(xml).not.toContain("* * Please");
   });
 
   it("maps section keys onto the Word template camelCase tags", () => {
@@ -100,5 +111,30 @@ describe("vendor qualification type", () => {
         ],
       })
     ).toEqual({ ok: true });
+  });
+
+  it("prints one required star and keeps question casing", () => {
+    const structure = fieldsForSection("vq_section_a").find(
+      (field) => field.id === "a_1_6_2"
+    );
+    expect(structure).toBeDefined();
+    expect(structure?.label.startsWith("*")).toBe(false);
+    expect(vqFieldCaption(structure!)).toBe(
+      "1.6.2 * Please give a brief structure-diagram"
+    );
+    expect(vqFieldCaption(structure!)).not.toMatch(/\* \*/);
+
+    const enclose = fieldsForSection("vq_section_a").find(
+      (field) => field.id === "a_1_6_5"
+    );
+    expect(vqFieldCaption(enclose!)).toBe(
+      "1.6.5 If yes, please enclose the annual report / Sustainable report / declaration"
+    );
+
+    const citationStar = fieldsForSection("vq_section_a").find(
+      (field) => field.id === "a_2_3_2"
+    );
+    expect(vqFieldCaption(citationStar!)).toContain("Dir. 95/2/EC*");
+    expect(vqFieldCaption(citationStar!).startsWith("2.3.2 * ")).toBe(true);
   });
 });
