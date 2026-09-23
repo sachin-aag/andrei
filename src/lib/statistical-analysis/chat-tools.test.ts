@@ -124,6 +124,7 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_boxplot");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_histogram");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("scan_attachments");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("load_table");
   });
 
   it("picks only the document tools the analytics assistant is allowed to call", () => {

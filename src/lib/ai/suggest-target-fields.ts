@@ -115,6 +115,29 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   vq_section_m: ["narrative"],
   vq_section_n: ["narrative", "table"],
   vq_scoring: ["narrative"],
+  // MJ-only Investigation Report DS (SOP/QA/017-F01 R01). The fixed-list fields
+  // (tools, classification, groups, applicable, resultsStatus, disposition) are
+  // selects, so they are not suggestion targets.
+  fir_event_description: ["narrative"],
+  fir_standard_procedures: ["narrative"],
+  fir_immediate_action: ["narrative"],
+  fir_initial_impact: ["narrative"],
+  fir_investigation_team: ["table"],
+  fir_investigation_tools: ["narrative"],
+  fir_chronology: ["narrative", "table"],
+  fir_investigation_details: ["narrative"],
+  fir_historic_review: ["narrative", "table"],
+  fir_root_cause: ["narrative"],
+  fir_human_error: ["table"],
+  fir_impact_assessment: ["narrative"],
+  fir_scope_assessment: ["narrative"],
+  fir_batch_disposition: ["narrative"],
+  fir_correction: ["narrative"],
+  fir_corrective_action: ["narrative", "table"],
+  fir_interim_control: ["narrative", "table"],
+  fir_preventive_action: ["narrative", "table"],
+  fir_capa_effectiveness: ["table"],
+  fir_attachments: ["table"],
 };
 
 function patternToRegex(pattern: string): RegExp {
@@ -250,6 +273,29 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   vq_section_m: ["narrative"],
   vq_section_n: ["narrative", "table"],
   vq_scoring: ["narrative"],
+  // Investigation Report DS: the fixed-list fields are selects, not rich fields.
+  fir_event_description: ["narrative"],
+  fir_standard_procedures: ["narrative"],
+  fir_immediate_action: ["narrative"],
+  fir_initial_impact: ["narrative"],
+  fir_investigation_team: ["table"],
+  fir_investigation_tools: ["narrative"],
+  fir_chronology: ["narrative", "table"],
+  fir_investigation_details: ["narrative"],
+  fir_historic_review: ["narrative", "table"],
+  fir_root_cause: ["narrative"],
+  fir_human_error: ["table"],
+  fir_impact_assessment: ["narrative"],
+  fir_scope_assessment: ["narrative"],
+  fir_batch_disposition: ["narrative"],
+  fir_correction: ["narrative"],
+  fir_corrective_action: ["narrative", "table"],
+  fir_interim_control: ["narrative", "table"],
+  fir_preventive_action: ["narrative", "table"],
+  fir_capa_effectiveness: ["table"],
+  fir_attachments: ["table"],
+  /** Virtual DV section: values live in reports.metadata, no rich field. */
+  cover_page: [],
 };
 
 export function isRichTargetField(section: SectionType, contentPath: string): boolean {

@@ -409,6 +409,7 @@ const ALL_DOCUMENT_TYPES: Record<DocumentType, true> = {
   generic_document: true,
   quality_risk_assessment: true,
   equipment_lifecycle_report: true,
+  failure_investigation_report: true,
   vendor_qualification: true,
 };
 

@@ -16,7 +16,8 @@ alwaysApply: false
 
 # Document types
 
-Reports are `investigation_report`, `design_verification`,
+Reports are `investigation_report`, `failure_investigation_report` (MJ
+Investigation Report DS, `fir_*`), `design_verification`,
 `mechanical_design_verification`, `quality_risk_assessment`,
 `equipment_lifecycle_report`, `generic_document` (demo pack only), or
 `vendor_qualification` (3xper pack only). The registry is

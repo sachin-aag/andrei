@@ -139,3 +139,9 @@ scripts/eval/retrieval-cases.local.json
 *.7z
 *.rar
 /.swc
+
+# Local DS investigation working copies. The rest of docs/sample_files stays
+# tracked. These are a real customer report (reviewer comments and tracked
+# changes) and our own dev exports.
+docs/sample_files/Investigation report_ERF-26-022 11.09.2026.docx
+docs/sample_files/Investigation_Report_DS_*.docx

@@ -11,6 +11,7 @@ import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
+  isTimeSeriesAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
@@ -18,6 +19,7 @@ import {
   type AnovaAnalysisSummary,
   type BoxplotAnalysisSummary,
   type HistogramAnalysisSummary,
+  type TimeSeriesAnalysisSummary,
   type StatisticalAnalysisSummary,
   type XyScatterAnalysisSummary,
 } from "./types";
@@ -59,6 +61,9 @@ export function analysisDownloadFilename(
   if (isHistogramAnalysis(analysis)) {
     return `${safeFilenameBase(analysis.title, "histogram")}-histogram.csv`;
   }
+  if (isTimeSeriesAnalysis(analysis)) {
+    return `${safeFilenameBase(analysis.title, "time-series")}-time-series.csv`;
+  }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
     return exhaustive;
@@ -87,6 +92,9 @@ export function analysisToCsv(analysis: StatisticalAnalysisSummary): string {
   }
   if (isHistogramAnalysis(analysis)) {
     return histogramToCsv(analysis);
+  }
+  if (isTimeSeriesAnalysis(analysis)) {
+    return timeSeriesToCsv(analysis);
   }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
@@ -317,6 +325,85 @@ function histogramToCsv(analysis: HistogramAnalysisSummary): string {
     "Bins",
     csvRow(["x0", "x1", "Count"]),
     ...binRows,
+  ];
+  return `\uFEFF${lines.join("\n")}\n`;
+}
+
+/**
+ * Two blocks: the excursions, then the readings. The excursion table is what
+ * an investigation quotes, so it comes first and carries readings and elapsed
+ * minutes as separate columns — they are different numbers.
+ */
+function timeSeriesToCsv(analysis: TimeSeriesAnalysisSummary): string {
+  const { config, results } = analysis;
+  const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
+  const summary: Array<[string, string]> = [
+    ["Title", analysis.title],
+    ["Column", config.columnName],
+    ["Time column", config.timeColumnName],
+    ["Time-of-day column", config.clockColumnName ?? ""],
+    ["Rows", rows],
+    ["Kind", "Time series"],
+    ["N", String(results.n)],
+    ["Skipped", String(results.skipped)],
+    ["Readings assessed against limits", String(results.judgedReadings)],
+    ["Mean", csvNumber(results.mean)],
+    ["Min", csvNumber(results.min)],
+    ["Max", csvNumber(results.max)],
+    ["Condition column", config.conditionColumnName ?? ""],
+    ["LSL", config.lsl == null ? "" : csvNumber(config.lsl)],
+    ["USL", config.usl == null ? "" : csvNumber(config.usl)],
+    [
+      "Excursions",
+      results.judgedReadings === 0
+        ? "not assessed — no acceptance limits in force"
+        : String(results.excursions.length),
+    ],
+    ["Out-of-band readings", String(results.excursionReadings)],
+    ["Created", analysis.createdAt],
+  ];
+  const excursionRows = results.excursions.map((run) =>
+    csvRow([
+      run.startLabel,
+      run.endLabel,
+      String(run.readings),
+      run.elapsedMinutes == null ? "" : String(run.elapsedMinutes),
+      run.elapsedClock ?? "",
+      run.direction,
+      csvNumber(run.min),
+      csvNumber(run.max),
+      run.condition ?? "",
+      run.lsl == null ? "" : csvNumber(run.lsl),
+      run.usl == null ? "" : csvNumber(run.usl),
+    ])
+  );
+  const pointRows = results.points.map((point) =>
+    csvRow([String(point.row), point.label, csvNumber(point.value)])
+  );
+  const lines = [
+    "Summary",
+    csvRow(["Field", "Value"]),
+    ...summary.map(([field, value]) => csvRow([field, value])),
+    "",
+    "Excursions",
+    csvRow([
+      "Start",
+      "End",
+      "Readings",
+      "Elapsed (min)",
+      "Elapsed",
+      "Direction",
+      "Min",
+      "Max",
+      "Condition",
+      "LSL",
+      "USL",
+    ]),
+    ...excursionRows,
+    "",
+    results.decimated ? "Readings (plotted sample)" : "Readings",
+    csvRow(["Row", "Timestamp", config.columnName]),
+    ...pointRows,
   ];
   return `\uFEFF${lines.join("\n")}\n`;
 }

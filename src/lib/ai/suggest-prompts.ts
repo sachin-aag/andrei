@@ -40,7 +40,11 @@ function fieldHintForSection(section: SectionType): string {
 }
 
 export function buildSuggestionSystemPrompt(section: SectionType): string {
-  const fields = SUGGEST_TARGET_FIELD_PATTERNS[section].join(", ");
+  // A section missing from the map is a registration bug, not a user error —
+  // fall back to the common field rather than throwing on undefined.join().
+  const fields = (SUGGEST_TARGET_FIELD_PATTERNS[section] ?? ["narrative"]).join(
+    ", "
+  );
   const fieldHint = fieldHintForSection(section);
   const tableFormatBlock = isDvTableSection(section)
     ? `\n\n${dvFixedTableFormatGuidance({ section, surface: "suggest" })}`

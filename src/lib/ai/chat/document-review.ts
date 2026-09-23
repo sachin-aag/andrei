@@ -905,6 +905,9 @@ export const PLAN_MODE_CHAT_TOOL_NAMES = [
   "search_documents",
   "read_document_page",
   "document_outline",
+  // Reads saved analysis results. Plan is exactly where an engineer inspects
+  // the excursion comparison before deciding what the section should say.
+  "read_analysis",
   "start_document_review",
   "continue_document_review",
   "finish_document_review",

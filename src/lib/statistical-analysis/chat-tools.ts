@@ -22,6 +22,7 @@ import {
   readDocumentPage,
 } from "@/lib/attachments/retrieval";
 import { withWorksheetMutationLock } from "./worksheet-write-lock";
+import { raggedColumns, raggedColumnsNote } from "./ragged-columns";
 import { runSheetExtractJob } from "./extract-sheet";
 import { createAnalyticsSearchGate } from "./search-loop";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
@@ -32,7 +33,7 @@ import {
 } from "@/lib/extraction/metric-series";
 import { buildAnalyticsSearchDocumentsTool } from "./search-documents";
 import { runScanAttachments } from "./scan-attachments";
-import { boxplotBodySchema, capabilitySixpackInputSchema, histogramBodySchema, measurementScatterToolInputSchema, oneWayAnovaBodySchema, xyScatterBodySchema } from "./schemas";
+import { boxplotBodySchema, capabilitySixpackInputSchema, histogramBodySchema, measurementScatterToolInputSchema, oneWayAnovaBodySchema, timeSeriesBodySchema, xyScatterBodySchema } from "./schemas";
 import { tryRecordAnalyticsChange } from "@/lib/analytics-revisions/record-change";
 import type { AuditActorSnapshot } from "@/lib/audit";
 import {
@@ -45,6 +46,7 @@ import {
 import {
   BOXPLOT,
   HISTOGRAM,
+  TIME_SERIES,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
@@ -54,13 +56,17 @@ import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
+  isTimeSeriesAnalysis,
   isObservationXyScatter,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
+  type ReportAnalyticsView,
+  type TimeSeriesAnalysisSummary,
   type WorksheetData,
 } from "./types";
 import {
+  addDataSheet,
   columnNumericValues,
   dataSheets,
   findColumn,
@@ -79,6 +85,20 @@ import {
   trimTrailingEmpty,
   upsertSpecRow,
 } from "./worksheet";
+import {
+  columnCellsFromLoadedTable,
+  ensureDocumentTablesForReport,
+  listDetectedTablesForReport,
+  loadDetectedTable,
+} from "@/lib/attachments/document-tables";
+import { suggestTimeSeriesColumns } from "./column-roles";
+import {
+  detectSetpointColumn,
+  rankExcursionsBySeverity,
+  steppedSetpointWarning,
+  suspectBands,
+  worstExcursion,
+} from "./time-series";
 import {
   applyManageWorksheet,
   manageWorksheetInputSchema,
@@ -112,11 +132,13 @@ export const ANALYTICS_CHAT_WRITE_TOOL_NAMES = [
   "write_column",
   "manage_worksheet",
   "extract_sheet",
+  "load_table",
   "run_capability_sixpack",
   "run_one_way_anova",
   "plot_xy_scatter",
   "plot_boxplot",
   "plot_histogram",
+  "plot_time_series",
   "plot_measurements",
 ] as const;
 
@@ -252,6 +274,19 @@ function analysisIndexItem(
       n: item.results.n,
     };
   }
+  if (isTimeSeriesAnalysis(item)) {
+    return {
+      id: item.id,
+      title: item.title,
+      kind: item.kind,
+      stale: item.stale,
+      columnId: item.config.columnId,
+      lsl: item.config.lsl,
+      usl: item.config.usl,
+      n: item.results.n,
+      excursions: item.results.excursions.length,
+    };
+  }
   if (!isSixpackAnalysis(item)) {
     const exhaustive: never = item;
     return exhaustive;
@@ -274,6 +309,8 @@ function optionalSpecString(value: number | null | undefined): string {
 
 const MAX_WRITE_COLUMNS = 40;
 const MAX_WRITE_SOURCE_PAGES = 12;
+/** Tables one load_table call may write. `MAX_DATA_SHEETS` is 12. */
+const MAX_TABLES_PER_LOAD = 12;
 
 function rememberCitation(
   bucket: ChartCitation[],
@@ -831,6 +868,177 @@ function worksheetWithPreferredSheet(
   }
   return worksheet;
 }
+
+/**
+ * Excursions are the finding, so they come back in full rather than as a
+ * count. `readings` and `elapsedMinutes` stay separate fields: eight readings
+ * one minute apart span seven minutes, and collapsing them is how one
+ * excursion ended up with four different durations in a filed report.
+ */
+function timeSeriesToolResult(
+  analysis: TimeSeriesAnalysisSummary,
+  analytics: ReportAnalyticsView,
+  updated: boolean
+) {
+  // Both warnings can fire at once, so they share one list rather than one key
+  // that the second would silently overwrite.
+  const warnings: string[] = [];
+  const setpoint = detectSetpointColumn(analytics.worksheet, analysis.config);
+  if (analysis.results.judgedReadings === 0) {
+    warnings.push(
+      "No acceptance limits were in force, so excursions were NOT assessed. Do not report that there were none — say the limits are missing." +
+        (setpoint
+          ? ` This series steps through ${setpoint.columnName} = ${setpoint.values.join(", ")}, so it needs one band per step, not a single range. ` +
+            "Find the acceptance range for each of those setpoints in the attachments (the BMR, the SOP, a justification or control document), then call plot_time_series again with this analysisId, " +
+            `conditionColumnId for ${setpoint.columnName}, and bands [{when, lsl, usl}] — one entry per value above. If you cannot find them, ask the engineer for those ranges.`
+          : " Search the attachments for the acceptance range, then re-run with lsl/usl — or ask the engineer.")
+    );
+  }
+  const worst = worstExcursion(analysis.results.excursions);
+  for (const band of suspectBands(analysis.config, analysis.results)) {
+    warnings.push(
+      `Check the band for ${band.when}. ${band.message} Re-run with that band removed, or corrected against the cited specification.`
+    );
+  }
+  const stepped = steppedSetpointWarning(analytics.worksheet, analysis.config);
+  if (stepped) {
+    warnings.push(
+      `This series was judged against one fixed band, but ${stepped.columnName} steps through ` +
+        `${stepped.values.join(", ")} — so a reading that breached its own step's limits is reported as passing. ` +
+        "If the specification gives a range per step, call plot_time_series again with that analysisId, " +
+        `conditionColumnId for ${stepped.columnName}, and one band per value. Tell the engineer which test was run.`
+    );
+  }
+  return {
+    ...(warnings.length > 0 ? { warnings } : {}),
+    notAssessed: analysis.results.judgedReadings === 0,
+    fixedBandOverSteppedSetpoint: stepped != null,
+    status: "ok" as const,
+    updated,
+    analysisId: analysis.id,
+    title: analysis.title,
+    columnId: analysis.config.columnId,
+    columnName: analysis.config.columnName,
+    timeColumnName: analysis.config.timeColumnName,
+    clockColumnName: analysis.config.clockColumnName ?? null,
+    conditionColumnName: analysis.config.conditionColumnName ?? null,
+    n: analysis.results.n,
+    skipped: analysis.results.skipped,
+    judgedReadings: analysis.results.judgedReadings,
+    decimated: analysis.results.decimated,
+    excursionCount: analysis.results.excursions.length,
+    excursionReadings: analysis.results.excursionReadings,
+    // Most severe first, then back into time order. Taking the first N
+    // chronologically drops the longest run when it happens late — which is
+    // exactly where a cycle's worst excursion tends to be.
+    excursions: rankExcursionsBySeverity(analysis.results.excursions)
+      .slice(0, MAX_REPORTED_EXCURSIONS)
+      .sort((a, b) => a.startRow - b.startRow)
+      .map((run) => ({
+        start: run.startLabel,
+        end: run.endLabel,
+        readings: run.readings,
+        elapsedMinutes: run.elapsedMinutes,
+        direction: run.direction,
+        min: run.min,
+        max: run.max,
+        condition: run.condition,
+        lsl: run.lsl,
+        usl: run.usl,
+      })),
+    excursionsOmitted: Math.max(
+      0,
+      analysis.results.excursions.length - MAX_REPORTED_EXCURSIONS
+    ),
+    ...(worst
+      ? {
+          longestExcursion: {
+            start: worst.startLabel,
+            end: worst.endLabel,
+            readings: worst.readings,
+            elapsedMinutes: worst.elapsedMinutes,
+            direction: worst.direction,
+            min: worst.min,
+            max: worst.max,
+            condition: worst.condition,
+          },
+        }
+      : {}),
+    analysisCount: analytics.analyses.length,
+    stale: analysis.stale,
+    openResultsTab: true,
+  };
+}
+
+/** Enough to write up; a cycle with more than this is a trend, not a finding. */
+const MAX_REPORTED_EXCURSIONS = 25;
+
+/** No arguments lists the parsed tables; a tableId loads one. */
+const loadTableInputSchema = z
+  .object({
+    tableId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "One table to load, from a previous no-argument call. Omit to list the parsed tables."
+      ),
+    tableIds: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .max(MAX_TABLES_PER_LOAD)
+      .optional()
+      .describe(
+        "Several tables in one call, each onto its own sheet named after its file. Prefer this over one call per table — it is a single worksheet write."
+      ),
+    loadAll: z
+      .boolean()
+      .optional()
+      .describe(
+        "Load every parsed table on the report, each onto its own sheet. Use for \"load all the trends into sheets\" — no listing call needed first."
+      ),
+    attachmentId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe("Restrict the listing to one attachment id."),
+    sheetName: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(
+        "Destination tab name. Defaults to the source filename. An existing tab with this name is reused."
+      ),
+    columns: z
+      .array(z.string().trim().min(1).max(80))
+      .max(MAX_WRITE_COLUMNS)
+      .optional()
+      .describe(
+        "Column names (or 1-based positions) to load, in order. Omit to load every column."
+      ),
+    rowStart: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe("1-based first row to load. Default 1."),
+    rowLimit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_WORKSHEET_ROWS)
+      .optional()
+      .describe(
+        `Rows to load. Default and maximum ${MAX_WORKSHEET_ROWS} — the worksheet cap.`
+      ),
+  })
+  .describe(
+    "No arguments lists the parsed tables. tableId loads one into a sheet."
+  );
 
 export function buildAnalyticsChatTools(opts: {
   reportId: string;
@@ -1457,6 +1665,8 @@ export function buildAnalyticsChatTools(opts: {
           if (!first) {
             return { status: "error" as const, message: "Column missing after save." };
           }
+          const ragged = raggedColumns(columns);
+          const raggedNote = ragged.length > 0 ? raggedColumnsNote(ragged) : "";
           const sheet =
             findSheet(saved.worksheet, writtenSheetId) ??
             dataSheets(saved.worksheet)[0];
@@ -1483,7 +1693,9 @@ export function buildAnalyticsChatTools(opts: {
             numericCount: first.numericCells,
             numericCells: first.numericCells,
             nonNumericCells: first.nonNumericCells,
-            note: first.note,
+            // Both notes matter: a short column and a non-numeric column are
+            // different defects and one must not hide the other.
+            note: [raggedNote, first.note].filter(Boolean).join(" ") || undefined,
             columns,
             columnCount: columns.length,
             blankedCells: [] as Array<{
@@ -1492,7 +1704,11 @@ export function buildAnalyticsChatTools(opts: {
               columnName: string | null;
             }>,
             blankedCount: 0,
-            incomplete: false,
+            // rowsWritten above is the FIRST column's. Without this, a dump
+            // where the data columns filled and the date/time columns got two
+            // rows reports as a clean write of the full height.
+            ragged,
+            incomplete: ragged.length > 0,
           };
         });
       },
@@ -1641,6 +1857,272 @@ export function buildAnalyticsChatTools(opts: {
           });
         },
       });
+    }
+
+    statsTools.load_table = tool({
+      description:
+        "Load tables that were parsed from attachments straight onto worksheet sheets — exact values, every row, no page limit and no reading. Call this FIRST for instrument prints, historian trends, datalogger dumps, chromatography runs and any long numeric table: it is faster and exact where extract_sheet re-reads pages a model already transcribed. **To load every trend/print at once, call it once with loadAll true** — one sheet per file, named after the file, in a single worksheet write. That is one call, not one per file, and it needs no listing call first. Pass tableIds for a specific subset, tableId for exactly one. Call with no arguments to list what was parsed. Pass columns to load only the ones you need; rowStart/rowLimit page through a table longer than the worksheet holds. Do not call extract_sheet or read pages for a table this tool offers. If a file is not listed, nothing tabular was parsed from it — fall back to extract_sheet.",
+      inputSchema: loadTableInputSchema,
+      execute: async (input) => {
+        const outOfScope = attachmentOutOfScope(input.attachmentId?.trim());
+        if (outOfScope) return outOfScope;
+        try {
+          return await runLoadTable(input);
+        } catch (error) {
+          // Distinguish "nothing parsed" from "the store is unavailable".
+          // Reporting the second as the first sends the model off to read
+          // hundreds of pages and blames the document for a deploy problem.
+          console.warn("[load_table] Unavailable", {
+            reportId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return {
+            status: "unavailable" as const,
+            message:
+              "Parsed tables could not be read on this deployment. Do not treat this as the file having no table — say the table store is unavailable.",
+          };
+        }
+      },
+    });
+
+    async function runLoadTable(
+      input: z.infer<typeof loadTableInputSchema>
+    ) {
+      {
+        const wantsLoad =
+          Boolean(input.tableId) ||
+          Boolean(input.tableIds?.length) ||
+          input.loadAll === true;
+        if (!wantsLoad) {
+          // Attachments ingested before table detection shipped have nothing
+          // stored. Parse them now rather than sending the model off to read
+          // 76 pages of numbers a parser can read exactly in milliseconds.
+          await ensureDocumentTablesForReport(reportId);
+          const tables = await listDetectedTablesForReport(reportId, {
+            attachmentIds: input.attachmentId
+              ? [input.attachmentId]
+              : pinnedAttachmentIds,
+          });
+          return {
+            status: "listed" as const,
+            tableCount: tables.length,
+            tables: tables.map((table) => ({
+              tableId: table.tableId,
+              attachmentId: table.attachmentId,
+              filename: table.filename,
+              rowCount: table.rowCount,
+              pages: `${table.pageStart}-${table.pageEnd}`,
+              truncated: table.truncated,
+              columns: table.columns.map((column) => `${column.name} (${column.type})`),
+            })),
+            note:
+              tables.length === 0
+                ? "No table was parsed from the attached files. Use extract_sheet or read pages instead."
+                : "Call load_table again with one tableId to load it into a sheet.",
+          };
+        }
+
+        const limit = Math.min(input.rowLimit ?? MAX_WORKSHEET_ROWS, MAX_WORKSHEET_ROWS);
+        let tableIds: string[];
+        if (input.loadAll) {
+          // Healing runs in the listing branch, which loadAll skips.
+          await ensureDocumentTablesForReport(reportId);
+          const all = await listDetectedTablesForReport(reportId, {
+            attachmentIds: input.attachmentId
+              ? [input.attachmentId]
+              : pinnedAttachmentIds,
+          });
+          if (all.length === 0) {
+            return {
+              status: "listed" as const,
+              tableCount: 0,
+              tables: [],
+              note: "No table was parsed from the attached files. Use extract_sheet or read pages instead.",
+            };
+          }
+          tableIds = all.slice(0, MAX_TABLES_PER_LOAD).map((t) => t.tableId);
+        } else if (input.tableIds?.length) {
+          tableIds = input.tableIds.slice(0, MAX_TABLES_PER_LOAD);
+        } else {
+          tableIds = [input.tableId!];
+        }
+
+        type Loaded = {
+          table: Awaited<ReturnType<typeof loadDetectedTable>>;
+          entries: WriteColumnEntry[];
+          citations: ChartCitation[];
+          sheetName: string;
+          missing: string[];
+        };
+        const loaded: Loaded[] = [];
+
+        for (const tableId of tableIds) {
+          const table = await loadDetectedTable(reportId, tableId, {
+            rowStart: input.rowStart,
+            limit,
+          });
+          if (!table) {
+            return {
+              status: "not_found" as const,
+              message: `No parsed table with id ${tableId} on this report. Call load_table with no arguments to list them.`,
+            };
+          }
+          if (table.rows.length === 0) {
+            return {
+              status: "empty" as const,
+              rowCount: table.rowCount,
+              message: `${table.filename} has ${table.rowCount} row(s); rowStart is past the end.`,
+            };
+          }
+
+          const requested = input.columns?.length
+            ? input.columns
+            : table.columns.map((column) => column.name);
+          const entries: WriteColumnEntry[] = [];
+          const missing: string[] = [];
+          for (const ref of requested) {
+            const cells = columnCellsFromLoadedTable(table, ref);
+            if (!cells) {
+              missing.push(ref);
+              continue;
+            }
+            entries.push({ name: cells.name, values: cells.values });
+          }
+          if (entries.length === 0) {
+            return {
+              status: "not_found" as const,
+              message: `None of those columns are in ${table.filename}. It has: ${table.columns
+                .map((column) => column.name)
+                .join(", ")}.`,
+            };
+          }
+
+          // Every loaded row carries the page it was printed on, so the written
+          // columns cite the source pages the same way a read-and-write dump does.
+          const citations = uniqueChartCitations(
+            table.rows
+              .map((row) => row.pageNumber)
+              .filter((page, index, all) => all.indexOf(page) === index)
+              .slice(0, MAX_WRITE_SOURCE_PAGES)
+              .map((page) => ({
+                attachmentId: table.attachmentId,
+                page,
+                filename: table.filename,
+              }))
+          );
+
+          // One sheet per table. A caller-supplied name only makes sense for a
+          // single load; several tables on one named tab would overwrite each
+          // other, so a batch always names each sheet after its file.
+          const sheetName = (
+            tableIds.length === 1
+              ? input.sheetName?.trim() || table.filename
+              : table.filename
+          ).slice(0, 40);
+
+          loaded.push({ table, entries, citations, sheetName, missing });
+        }
+
+        return withWorksheetMutationLock(reportId, async () => {
+          const analytics = await getOrCreateReportAnalytics(reportId);
+          const keepActiveId = analytics.worksheet.activeSheetId;
+
+          // Every table is applied to one in-memory workbook and saved once.
+          // Persisting per table would rewrite the whole workbook N times, and
+          // the workbook grows with each one — eight 2,000-row instrument
+          // tables would mean nine cumulative writes of up to ~2 MB.
+          const writeAll = async (base: WorksheetData, version: number) => {
+            let next = base;
+            const written: Array<{ sheetId: string; entry: Loaded }> = [];
+            for (const entry of loaded) {
+              const withSheet = addDataSheet(next, entry.sheetName);
+              const applied = applyWriteColumnEntries(
+                withSheet,
+                entry.entries,
+                entry.citations,
+                withSheet.activeSheetId,
+                "replace"
+              );
+              if (!applied.ok) return { failed: entry.sheetName };
+              next = applied.worksheet;
+              written.push({ sheetId: applied.worksheet.activeSheetId, entry });
+            }
+            const saved = await persistAndRecord(
+              restoreActiveSheet(next, keepActiveId),
+              version
+            );
+            return { saved, written };
+          };
+
+          let outcome = await writeAll(analytics.worksheet, analytics.version);
+          if (
+            "saved" in outcome &&
+            outcome.saved &&
+            !outcome.saved.ok &&
+            outcome.saved.reason === "conflict"
+          ) {
+            outcome = await writeAll(
+              outcome.saved.analytics.worksheet,
+              outcome.saved.analytics.version
+            );
+          }
+          if ("failed" in outcome) {
+            return {
+              status: "error" as const,
+              message: `Could not write to sheet ${outcome.failed}.`,
+            };
+          }
+          const savedResult = outcome.saved;
+          if (!savedResult?.ok) {
+            return {
+              status: "error" as const,
+              message: persistErrorMessage(
+                savedResult ?? { ok: false, reason: "not_found" }
+              ),
+            };
+          }
+          const saved = savedResult.analytics;
+
+          const sheets = outcome.written.map(({ sheetId, entry }) => {
+            const sheet = findSheet(saved.worksheet, sheetId);
+            const table = entry.table!;
+            return {
+              sheetId: sheet?.id ?? sheetId,
+              sheetName: sheet?.name ?? entry.sheetName,
+              filename: table.filename,
+              columnNames: entry.entries.map((column) => column.name),
+              rowsWritten: table.rows.length,
+              rowStart: table.rowStart,
+              rowCount: table.rowCount,
+              hasMore: table.hasMore,
+              pages: `${table.pageStart}-${table.pageEnd}`,
+              ...(entry.missing.length > 0
+                ? { missingColumns: entry.missing }
+                : {}),
+            };
+          });
+          const first = sheets[0]!;
+          const incomplete = sheets.filter((sheet) => sheet.hasMore);
+
+          return {
+            status: "loaded" as const,
+            ...first,
+            sheets,
+            sheetCount: sheets.length,
+            note:
+              incomplete.length > 0
+                ? `${incomplete
+                    .map(
+                      (sheet) =>
+                        `${sheet.sheetName}: rows ${sheet.rowStart}–${sheet.rowStart + sheet.rowsWritten - 1} of ${sheet.rowCount}`
+                    )
+                    .join("; ")}. Call again with rowStart for the rest.`
+                : sheets.length === 1
+                  ? "Every row of this table is on the sheet."
+                  : `Every row of all ${sheets.length} tables is on its own sheet.`,
+          };
+        });
+      }
     }
 
     statsTools.run_capability_sixpack = tool({
@@ -2019,6 +2501,146 @@ export function buildAnalyticsChatTools(opts: {
       },
     });
 
+    /**
+     * Fill in whichever of the four columns the caller left out.
+     *
+     * The measurement is never guessed when several fit and none was named:
+     * plotting one of nine instrument channels at random is worse than saying
+     * which nine there are. Everything else is unambiguous from the cells.
+     */
+    async function resolveTimeSeriesColumnsForChat(patch: {
+      columnId?: string;
+      measurement?: string;
+      sheetId?: string;
+      timeColumnId?: string;
+      clockColumnId?: string | null;
+      conditionColumnId?: string | null;
+    }): Promise<
+      | {
+          columnId: string;
+          timeColumnId: string;
+          clockColumnId: string | null;
+          conditionColumnId: string | null;
+        }
+      | { status: "error"; message: string }
+    > {
+      // Do not skip inference just because the measurement and time columns
+      // were named. The model reads the worksheet and names those two almost
+      // every time, and the column it never names is the setpoint — which is
+      // precisely the one worth working out.
+      const fullySpecified =
+        patch.columnId && patch.timeColumnId && patch.conditionColumnId;
+      if (fullySpecified) {
+        return {
+          columnId: patch.columnId!,
+          timeColumnId: patch.timeColumnId!,
+          clockColumnId: patch.clockColumnId ?? null,
+          conditionColumnId: patch.conditionColumnId!,
+        };
+      }
+      const analytics = await getOrCreateReportAnalytics(reportId);
+      const sheet = patch.sheetId
+        ? findSheet(analytics.worksheet, patch.sheetId)
+        : (findSheet(analytics.worksheet, focusedSheetId ?? "") ??
+          dataSheets(analytics.worksheet).find(
+            (item) => item.id === analytics.worksheet.activeSheetId
+          ));
+      const columns = (sheet ?? dataSheets(analytics.worksheet)[0])?.columns;
+      if (!columns || columns.length === 0) {
+        return {
+          status: "error" as const,
+          message: "That sheet has no columns to plot.",
+        };
+      }
+      const picks = suggestTimeSeriesColumns(columns, {
+        measurementHint: patch.measurement,
+      });
+      const columnId = patch.columnId ?? picks.columnId;
+      const timeColumnId = patch.timeColumnId ?? picks.timeColumnId;
+      if (!timeColumnId) {
+        return {
+          status: "error" as const,
+          message:
+            "No column on that sheet reads as a date or timestamp, so there is no x axis. Name the time column with timeColumnId.",
+        };
+      }
+      if (!columnId) {
+        const names = picks.measurementCandidates
+          .map((candidate) => `${candidate.name} (${candidate.columnId})`)
+          .join(", ");
+        return {
+          status: "error" as const,
+          message: names
+            ? `Several columns could be plotted: ${names}. Ask which one, or pass measurement with the engineer's own words.`
+            : "No numeric column on that sheet varies enough to plot over time.",
+        };
+      }
+      return {
+        columnId,
+        timeColumnId,
+        clockColumnId: patch.clockColumnId ?? picks.clockColumnId,
+        conditionColumnId:
+          patch.conditionColumnId ?? picks.conditionColumnId ?? null,
+      };
+    }
+
+    statsTools.plot_time_series = tool({
+      description:
+        "Plot or update a measurement against a clock on the Results tab, with the out-of-band runs detected and listed. Use this for instrument trends, historian exports, datalogger dumps, stability timepoints — anything where the question is when a value left its band, for how long, and how far. Create: columnId (the measurement) and timeColumnId (the date, or a full date-time) are required; pass clockColumnId when the print splits date and time of day into two columns. Fixed limits are lsl/usl. When the band depends on another column — a recorded setpoint, a timepoint, a grade — pass conditionColumnId and bands [{when, lsl, usl}] instead; a band list without conditionColumnId is rejected because it would silently apply the fallback to every reading. showSpecLimits and showExcursions default on. Edit: pass analysisId and only the fields that change. Cannot edit a sixpack, ANOVA, scatter, boxplot, or histogram. Do not substitute a sixpack or an XY scatter for this — neither takes a timestamp. Report the excursion count and each run's readings and elapsed minutes separately; they are different numbers.",
+      inputSchema: timeSeriesBodySchema,
+      execute: async (input) => {
+        const { analysisId, ...patch } = input;
+        if (analysisId) {
+          const analytics = await getOrCreateReportAnalytics(reportId);
+          const existing = analytics.analyses.find(
+            (item) => item.id === analysisId
+          );
+          if (!existing) {
+            return {
+              status: "error" as const,
+              message:
+                "No Results plot with that id. Use an id from the Analyses list or a tagged @ plot.",
+            };
+          }
+          if (!isTimeSeriesAnalysis(existing)) {
+            return {
+              status: "error" as const,
+              message:
+                "That Results row is not a time series. plot_time_series can only edit time series (kind=time_series).",
+            };
+          }
+          const result = await updateAnalysisAndRecord(analysisId, patch);
+          if (!result.ok) {
+            return { status: "error" as const, message: result.error };
+          }
+          if (!isTimeSeriesAnalysis(result.analysis)) {
+            return {
+              status: "error" as const,
+              message: "Saved analysis was not a time series.",
+            };
+          }
+          return timeSeriesToolResult(result.analysis, result.analytics, true);
+        }
+        const resolved = await resolveTimeSeriesColumnsForChat(patch);
+        if ("status" in resolved) return resolved;
+        const result = await createAnalysisAndRecord({
+          kind: TIME_SERIES,
+          ...patch,
+          ...resolved,
+        });
+        if (!result.ok) {
+          return { status: "error" as const, message: result.error };
+        }
+        if (!isTimeSeriesAnalysis(result.analysis)) {
+          return {
+            status: "error" as const,
+            message: "Saved analysis was not a time series.",
+          };
+        }
+        return timeSeriesToolResult(result.analysis, result.analytics, false);
+      },
+    });
+
     statsTools.plot_measurements = tool({
       description:
         "Extract cited numeric measurements from this report's attachments and save a scatter of those values vs observation index on the Results tab. One series, one color — cannot color by serial number or overlay groups. Call when they asked for a measurement plot or requirement chart from attachments (e.g. M3-SYS-FN-037). Do not use this for two worksheet columns — that is plot_xy_scatter. Optional lsl/usl override extracted acceptance limits; omit them to keep cited limits. Does not insert into the document. Tell them to open Results. Never invent data points.",
@@ -2060,12 +2682,16 @@ export function buildAnalyticsChatTools(opts: {
   if (opts.role === "sheet_worker") {
     delete tools.ask_user;
     delete tools.extract_sheet;
+    // Table selection belongs to the orchestrator. A worker loading a parsed
+    // table would create a second tab holding the data it was sent to dump.
+    delete tools.load_table;
     for (const name of [
       "run_capability_sixpack",
       "run_one_way_anova",
       "plot_xy_scatter",
       "plot_boxplot",
       "plot_histogram",
+      "plot_time_series",
       "plot_measurements",
     ] as const) {
       delete tools[name];

@@ -3425,7 +3425,7 @@ describe("buildChatTools propose edits", () => {
     expect(dbInsertMock).toHaveBeenCalled();
   });
 
-  it("refuses an Analytics plot with no captured preview", async () => {
+  it("falls back to a server render when a plot has no captured preview", async () => {
     getReportAnalyticsMock.mockResolvedValue({
       analyses: [
         {
@@ -3470,8 +3470,13 @@ describe("buildChatTools propose edits", () => {
       },
       TEST_TOOL_OPTIONS
     );
+    // A missing preview is no longer a dead end: insert_image renders the plot
+    // server-side first. It refuses only when that also fails — as here, where
+    // canvas is unavailable under the test runner.
     expect(result).toMatchObject({ status: "image_not_found" });
-    expect((result as { message: string }).message).toContain("no captured preview");
+    expect((result as { message: string }).message).toContain(
+      "could not be rendered as a figure"
+    );
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
@@ -4727,5 +4732,401 @@ describe("buildChatTools annexure continuation", () => {
     expect(result.nextPage).toBeUndefined();
     expect(result.continuation).toBeUndefined();
     expect(readDocumentPageMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("read_analysis", () => {
+  function excursion(over: Record<string, unknown> = {}) {
+    return {
+      startLabel: "22/05/2026 20:59:11",
+      endLabel: "22/05/2026 21:06:11",
+      startRow: 300,
+      endRow: 307,
+      readings: 8,
+      elapsedMs: 420_000,
+      elapsedMinutes: 7,
+      elapsedClock: "0:07:00",
+      min: 192.4,
+      max: 649.1,
+      direction: "low",
+      lsl: 650,
+      usl: 950,
+      condition: "800",
+      ...over,
+    };
+  }
+
+  function timeSeries(
+    id: string,
+    title: string,
+    excursions: unknown[],
+    over: Record<string, unknown> = {}
+  ) {
+    return {
+      id,
+      workspaceId: "ws",
+      kind: "time_series",
+      title,
+      sourceHash: "h",
+      stale: false,
+      createdAt: "2026-05-23T00:00:00.000Z",
+      previewImage: null,
+      config: {
+        columnId: "c1",
+        columnName: "VAC1",
+        timeColumnId: "c2",
+        timeColumnName: "DATE",
+        title,
+        lsl: 650,
+        usl: 950,
+        conditionColumnId: "c3",
+        conditionColumnName: "VAC2",
+      },
+      results: {
+        specs: [],
+        n: 2142,
+        skipped: 0,
+        judgedReadings: 2142,
+        points: [],
+        decimated: false,
+        start: 0,
+        end: 1,
+        min: 192.4,
+        max: 951.2,
+        mean: 801.5,
+        excursions,
+        excursionReadings: excursions.length * 8,
+        bandSegments: [],
+        ...((over.results as object) ?? {}),
+      },
+    };
+  }
+
+  const worksheet = {
+    sheets: [
+      {
+        id: "s1",
+        columns: [
+          {
+            id: "c1",
+            citations: [{ filename: "RIG25014.pdf", page: 3 }],
+          },
+        ],
+      },
+    ],
+  };
+
+  async function readAnalysis(input: Record<string, unknown>) {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    return (await tools.read_analysis!.execute!(
+      input,
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+  }
+
+  it("returns every run for one series, not the context map's shortlist", async () => {
+    const runs = Array.from({ length: 27 }, (_, i) =>
+      excursion({ readings: i === 26 ? 101 : 1, startRow: i })
+    );
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [timeSeries("anl_1", "RIG23001", runs)],
+    });
+    const result = await readAnalysis({ analysisId: "anl_1" });
+    expect(result.excursionCount).toBe(27);
+    expect(result.runs).toHaveLength(27);
+    expect(result.runsOmitted).toBe(0);
+  });
+
+  it("keeps the worst run when the limit truncates", async () => {
+    const runs = Array.from({ length: 27 }, (_, i) =>
+      excursion({ readings: i === 26 ? 101 : 1, startRow: i })
+    );
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [timeSeries("anl_1", "RIG23001", runs)],
+    });
+    const result = await readAnalysis({ analysisId: "anl_1", limit: 5 });
+    const kept = result.runs as Array<{ readings: number }>;
+    expect(kept).toHaveLength(5);
+    expect(kept.some((run) => run.readings === 101)).toBe(true);
+    expect(result.runsOmitted).toBe(22);
+    expect(String(result.note)).toContain("omitted");
+  });
+
+  it("exposes worksheet rows so a follow-up plot can zoom to the run", async () => {
+    // Figure-01 in a real report is the event window, not the whole cycle.
+    // Without these the engineer has to count rows to window the plot.
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [
+        timeSeries("anl_1", "RIG25014", [
+          excursion({ startRow: 1187, endRow: 1194 }),
+        ]),
+      ],
+    });
+    const result = await readAnalysis({ analysisId: "anl_1" });
+    const runs = result.runs as Array<{ startRow: number; endRow: number }>;
+    expect(runs[0]?.startRow).toBe(1187);
+    expect(runs[0]?.endRow).toBe(1194);
+  });
+
+  it("carries the source pages so a computed value can be cited to paper", async () => {
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [timeSeries("anl_1", "RIG25014", [excursion()])],
+    });
+    const result = await readAnalysis({ analysisId: "anl_1" });
+    expect(result.pages).toEqual(["RIG25014.pdf, p. 3"]);
+  });
+
+  it("never lets a series with no limits read as clean", async () => {
+    const unjudged = timeSeries("anl_2", "RIG24003", [], {
+      results: { judgedReadings: 0 },
+    });
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [timeSeries("anl_1", "RIG25014", [excursion()]), unjudged],
+    });
+    const result = await readAnalysis({});
+    expect(result.clean).toEqual([]);
+    expect(result.unassessed).toEqual([
+      { series: "RIG24003", readings: 2142 },
+    ]);
+    expect(String(result.note)).toContain("NO acceptance limits");
+  });
+
+  it("says so plainly on the single-series read too", async () => {
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [
+        timeSeries("anl_1", "RIG24003", [], { results: { judgedReadings: 0 } }),
+      ],
+    });
+    const result = await readAnalysis({ analysisId: "anl_1" });
+    // The note must forbid the clean reading, not assert one. Zero excursions
+    // with zero judged readings means nothing was checked.
+    expect(String(result.note)).toContain("NO ACCEPTANCE LIMITS");
+    expect(String(result.note)).toContain("Do not write that there were no");
+    expect(result.excursionCount).toBe(0);
+    expect(result.judgedReadings).toBe(0);
+  });
+
+  it("compares every series oldest first", async () => {
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [
+        timeSeries("anl_1", "RIG25014", [excursion()]),
+        timeSeries("anl_2", "RIG23008", [
+          excursion({ startLabel: "20/04/2024 18:55:02", readings: 16 }),
+        ]),
+      ],
+    });
+    const result = await readAnalysis({});
+    const rows = result.rows as Array<{ series: string }>;
+    expect(rows.map((row) => row.series)).toEqual(["RIG23008", "RIG25014"]);
+    expect(result.seriesCompared).toBe(2);
+  });
+
+  it("reports the breaching extreme as observed", async () => {
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [
+        timeSeries("anl_1", "RIG23001", [
+          excursion({ direction: "high", min: 900, max: 1000 }),
+        ]),
+      ],
+    });
+    const result = await readAnalysis({ analysisId: "anl_1" });
+    const runs = result.runs as Array<{ observed: number; band: string }>;
+    expect(runs[0]?.observed).toBe(1000);
+    expect(runs[0]?.band).toBe("650–950");
+  });
+
+  it("points a non-time-series analysis at insert_image instead of erroring blankly", async () => {
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [
+        {
+          id: "anl_9",
+          workspaceId: "ws",
+          kind: "boxplot",
+          title: "Assay by lot",
+          sourceHash: "h",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: null,
+          config: { yColumnId: "c1", categoryColumnIds: [], title: "Assay by lot" },
+          results: {},
+        },
+      ],
+    });
+    const result = await readAnalysis({ analysisId: "anl_9" });
+    expect(result.error).toBe("not_a_time_series");
+    expect(String(result.message)).toContain("insert_image");
+  });
+
+  it("tells the model not to cite the analysisId as a source", async () => {
+    // A report shipped with half its Citations list reading
+    // [zbud2fet70yu88pvfpccjtko] — the internal handle, written as a filename.
+    getReportAnalyticsMock.mockResolvedValue({
+      worksheet,
+      analyses: [timeSeries("anl_1", "RIG25014", [excursion()])],
+    });
+    const comparison = await readAnalysis({});
+    expect(String(comparison.note)).toContain("never write it into the document");
+    expect(String(comparison.note)).toContain("Cite only the filenames and pages");
+    const single = await readAnalysis({ analysisId: "anl_1" });
+    expect(String(single.note)).toContain("never write it into the document");
+  });
+
+  it("says there is nothing saved rather than returning an empty table", async () => {
+    getReportAnalyticsMock.mockResolvedValue({ worksheet, analyses: [] });
+    const result = await readAnalysis({});
+    expect(result.error).toBe("no_analyses");
+  });
+});
+
+describe("finish_document_review hands a write turn back to the write tool", () => {
+  function reviewSession() {
+    listDocumentPagesForReviewMock.mockResolvedValue([
+      {
+        attachmentId: "att_a",
+        filename: "RIG25014.pdf",
+        pageNumber: 1,
+        transcript: "BATCH START 22/05/2026 14:16:11 DRYING START P 800.000 uBAR",
+        visualInterpretation: null,
+      },
+    ]);
+    listReadyDocumentsForReportMock.mockResolvedValue([
+      {
+        attachmentId: "att_a",
+        filename: "RIG25014.pdf",
+        pageCount: 1,
+        ingestRunId: "run_a",
+        status: "ready",
+      },
+    ]);
+    return new DocumentReviewSession();
+  }
+
+  async function finishWith(userIntentKind: "write" | "read" | undefined, canEdit = true) {
+    const session = reviewSession();
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit,
+      retrievalPolicy: "comprehensive",
+      documentReview: session,
+      ...(userIntentKind ? { userIntentKind } : {}),
+    });
+    await tools.start_document_review!.execute!(
+      { objective: "event description for RIG25014" },
+      TEST_TOOL_OPTIONS
+    );
+    let guard = 0;
+    while (session.phase() === "in_progress") {
+      guard += 1;
+      expect(guard).toBeLessThan(80);
+      await tools.continue_document_review!.execute!({}, TEST_TOOL_OPTIONS);
+    }
+    return (await tools.finish_document_review!.execute!(
+      {},
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+  }
+
+  it("names the write tool so the turn does not end on findings", async () => {
+    // start and continue both hand off with nextAction. Without the same
+    // handoff here the model ends holding an evidence package and describes
+    // it in chat, leaving the field empty.
+    const finished = await finishWith("write");
+    expect(finished.deliverNow).toBe("draft_field | propose_edit | edit_table");
+    expect(String(finished.deliverNote)).toContain("does not put it in the document");
+  });
+
+  it("stays silent on a read turn, where answering in chat is correct", async () => {
+    const finished = await finishWith("read");
+    expect(finished.deliverNow).toBeUndefined();
+    expect(finished.deliverNote).toBeUndefined();
+  });
+
+  it("stays silent when the report is read-only", async () => {
+    const finished = await finishWith("write", false);
+    expect(finished.deliverNow).toBeUndefined();
+  });
+
+  it("still returns the evidence package alongside the handoff", async () => {
+    const finished = await finishWith("write");
+    expect(finished.status).toBe("complete");
+    expect(finished.reviewedPages).toBe(1);
+  });
+});
+
+describe("overclaim gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getReportAnalyticsMock.mockResolvedValue(null);
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    mockDefineSectionSelect({ type: "doc", content: [] });
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async () => {}),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: () => ({ where: vi.fn(async () => {}) }),
+    }));
+  });
+
+  function draft(markdown: string) {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    return tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown,
+        reasoning: "Draft.",
+      },
+      TEST_TOOL_OPTIONS
+    ) as Promise<Record<string, unknown>>;
+  }
+
+  it("refuses to save a permanence claim", async () => {
+    const result = await draft("The deviation was permanently resolved.");
+    expect(result.status).toBe("overclaim");
+    expect(String(result.message)).toContain("was not saved");
+    expect(String(result.message)).toContain("permanently resolved");
+  });
+
+  it("bounces only once so a false positive cannot loop the turn", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const call = () =>
+      tools.draft_field!.execute!(
+        {
+          section: "define",
+          targetField: "narrative",
+          markdown: "The deviation was permanently resolved.",
+          reasoning: "Draft.",
+        },
+        TEST_TOOL_OPTIONS
+      ) as Promise<Record<string, unknown>>;
+    expect((await call()).status).toBe("overclaim");
+    // Same wording again: the model kept it deliberately, so it saves rather
+    // than blocking the turn forever.
+    expect((await call()).status).toBe("drafted");
+  });
+
+  it("saves an unbounded scope claim but warns about it", async () => {
+    const result = await draft(
+      "All batches met their release specifications."
+    );
+    expect(result.status).toBe("drafted");
+    expect(String(result.warning)).toContain("Name the set you actually checked");
+  });
+
+  it("leaves a properly bounded draft alone", async () => {
+    const result = await draft(
+      "The 3 batches reviewed met their release specifications. The valve was corrected."
+    );
+    expect(result.status).toBe("drafted");
+    expect(result.warning).toBeUndefined();
   });
 });

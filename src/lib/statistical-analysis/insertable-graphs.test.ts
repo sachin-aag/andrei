@@ -57,6 +57,39 @@ const scatter = {
   results: { specs: [], n: 0, uom: "Nm" },
 } satisfies StatisticalAnalysisSummary;
 
+/** The kind whose absence from the preview allowlist 400'd every save. */
+const timeSeries = {
+  ...sixpack,
+  id: "a5",
+  kind: "time_series",
+  title: "RIG25014 vacuum",
+  config: {
+    columnId: "c1",
+    columnName: "VAC1",
+    timeColumnId: "c2",
+    timeColumnName: "DATE",
+    title: "RIG25014 vacuum",
+    lsl: 650,
+    usl: 950,
+  },
+  results: {
+    specs: [],
+    n: 2142,
+    skipped: 0,
+    judgedReadings: 2142,
+    points: [],
+    decimated: false,
+    start: 0,
+    end: 1,
+    min: 192.4,
+    max: 951.2,
+    mean: 801.5,
+    excursions: [],
+    excursionReadings: 0,
+    bandSegments: [],
+  },
+} as unknown as StatisticalAnalysisSummary;
+
 const anova = {
   ...sixpack,
   id: "a3",
@@ -112,20 +145,25 @@ const histogram = {
   },
 } satisfies StatisticalAnalysisSummary;
 
-const legacySixpack = {
+/** Never opened in Analytics, so nothing captured a preview from the DOM. */
+const unopenedSixpack = {
   ...sixpack,
   id: "a4",
   previewImage: null,
 };
 
 describe("insertable-graphs", () => {
-  it("includes graph analyses with a stored preview only", () => {
+  it("includes every chart kind, whether or not a preview was captured", () => {
+    // previewImage comes from the rendered DOM. Requiring it hid every plot
+    // nobody had opened — including a whole batch created by chat — behind an
+    // "open it in Analytics first" message. The server renders these anyway.
     expect(isInsertableGraphAnalysis(sixpack)).toBe(true);
     expect(isInsertableGraphAnalysis(scatter)).toBe(true);
     expect(isInsertableGraphAnalysis(boxplot)).toBe(true);
     expect(isInsertableGraphAnalysis(histogram)).toBe(true);
+    expect(isInsertableGraphAnalysis(unopenedSixpack)).toBe(true);
+    // Still excluded: ANOVA is a table of statistics, not a figure.
     expect(isInsertableGraphAnalysis(anova)).toBe(false);
-    expect(isInsertableGraphAnalysis(legacySixpack)).toBe(false);
     expect(
       listInsertableGraphAnalyses([
         sixpack,
@@ -133,9 +171,9 @@ describe("insertable-graphs", () => {
         boxplot,
         histogram,
         anova,
-        legacySixpack,
+        unopenedSixpack,
       ])
-    ).toEqual([sixpack, scatter, boxplot, histogram]);
+    ).toEqual([sixpack, scatter, boxplot, histogram, unopenedSixpack]);
     expect(
       listGraphAnalyses([
         sixpack,
@@ -143,8 +181,29 @@ describe("insertable-graphs", () => {
         boxplot,
         histogram,
         anova,
-        legacySixpack,
+        unopenedSixpack,
       ])
-    ).toEqual([sixpack, scatter, boxplot, histogram, legacySixpack]);
+    ).toEqual([sixpack, scatter, boxplot, histogram, unopenedSixpack]);
+  });
+});
+
+describe("preview-save allowlist parity", () => {
+  it("covers every kind the Insert graph menu offers", () => {
+    // saveAnalysisPreviewForReport gates on isInsertableGraphAnalysis. When
+    // that gate was its own chain of type guards it silently omitted
+    // time_series, so every time-series preview save 400'd forever and the
+    // plots looked previewless. Sharing one predicate is what keeps a new
+    // AnalysisKind from reintroducing that.
+    for (const analysis of [
+      sixpack,
+      scatter,
+      boxplot,
+      histogram,
+      timeSeries,
+      unopenedSixpack,
+    ]) {
+      expect(isInsertableGraphAnalysis(analysis)).toBe(true);
+    }
+    expect(isInsertableGraphAnalysis(anova)).toBe(false);
   });
 });

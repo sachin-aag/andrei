@@ -12,6 +12,7 @@ import {
   BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
   HISTOGRAM,
+  TIME_SERIES,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
   XY_SCATTER,
@@ -155,12 +156,15 @@ export type InsertImageSource =
   | SectionImageSource
   | AnalyticsImageSource;
 
+export type ResolveAnalyticsImageResult =
+  | { ok: true; image: SuggestionImageInsert }
+  /** `no_preview` is recoverable: the figure can be rendered server-side. */
+  | { ok: false; message: string; reason?: "no_preview" };
+
 export function resolveAnalyticsImage(
   analysis: StatisticalAnalysisSummary | undefined,
   analysisId: string
-):
-  | { ok: true; image: SuggestionImageInsert }
-  | { ok: false; message: string } {
+): ResolveAnalyticsImageResult {
   const id = analysisId.trim();
   if (!id) {
     return {
@@ -184,7 +188,8 @@ export function resolveAnalyticsImage(
   if (!isInsertableGraphAnalysis(analysis) || !analysis.previewImage) {
     return {
       ok: false,
-      message: `'${analysis.title}' has no captured preview yet. Open it in Analytics so the preview can be saved, then retry insert_image with source=analytics.`,
+      reason: "no_preview",
+      message: `'${analysis.title}' has no captured preview yet.`,
     };
   }
   const preview = analysis.previewImage;
@@ -476,6 +481,8 @@ function graphKindLabel(kind: AnalysisKind): string {
       return "boxplot";
     case HISTOGRAM:
       return "histogram";
+    case TIME_SERIES:
+      return "time series";
     case ONE_WAY_ANOVA:
       return "ANOVA";
     default: {
@@ -765,4 +772,19 @@ export function resolveChatImage(
 
 function stripExtension(filename: string): string {
   return filename.replace(/\.[^.]+$/, "").trim();
+}
+
+/** Build an insertable figure from a server-rendered PNG. */
+export function analyticsImageFromRender(
+  analysis: StatisticalAnalysisSummary,
+  rendered: { dataUrl: string; widthPx: number; heightPx: number }
+): SuggestionImageInsert | null {
+  if (!isValidSuggestionImageSrc(rendered.dataUrl)) return null;
+  return {
+    src: rendered.dataUrl,
+    alt: analysis.title,
+    width: documentInsertedPlotWidth(rendered),
+    mediaId: null,
+    chartSpec: null,
+  };
 }

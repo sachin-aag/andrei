@@ -75,6 +75,7 @@ describe("Convergent customer pack", () => {
     ]);
     expect(MJ_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",
+      "failure_investigation_report",
       "quality_risk_assessment",
       "equipment_lifecycle_report",
     ]);

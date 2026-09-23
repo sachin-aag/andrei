@@ -30,6 +30,16 @@ export type ClaimProvenanceRecord = {
   status: ClaimProvenanceStatus;
   cited?: CitedPage | null;
   source?: { filename: string; page: number; attachmentId: string } | null;
+  /**
+   * Set when a saved analysis computed this value rather than a page printing
+   * it. Traceability shows both the analysis and the pages its rows came from,
+   * so the claim stays checkable end to end.
+   */
+  analysis?: {
+    analysisId: string;
+    title: string;
+    pages: CitedPage[];
+  } | null;
 };
 
 export type UnsupportedFactPolicy = "block" | "flag";
@@ -56,8 +66,13 @@ const DATE_RE = new RegExp(
   "gi"
 );
 
+/**
+ * Minutes and seconds are here because an excursion is measured in them. A
+ * clock delta (`00:13:39`) counts too — that is how an instrument cursor
+ * reports a duration, and it is copied into reports verbatim.
+ */
 const DURATION_RE =
-  /\b\d+(?:\.\d+)?\s*(?:days?|d|hours?|hrs?|h|weeks?|wk)\b/gi;
+  /\b\d{1,3}:\d{2}:\d{2}\b|\b\d+(?:\.\d+)?\s*(?:days?|d|hours?|hrs?|h|min(?:ute)?s?|sec(?:ond)?s?|weeks?|wk)\b/gi;
 
 const TEMPERATURE_RE =
   /\b\d+(?:\.\d+)?\s*[–-]\s*\d+(?:\.\d+)?\s*°?\s*C\b|\b\d+(?:\.\d+)?\s*°\s*C\b/gi;
@@ -65,8 +80,20 @@ const TEMPERATURE_RE =
 const IDENTIFIER_RE =
   /\b(?:SOP\/[A-Z]{2,}\/[A-Z]{2,}\/\d{3}(?:\s*R\d+)?|[A-Z]\/[A-Z]{2}\/\d{3}|[A-Z]{2,5}-\d{2}-[A-Z0-9]+(?:-[A-Z0-9]+)+|[A-Z]{2,8}(?:\/[A-Z]{2,8})+\/\d{2,}(?:\/[A-Z0-9]+)*)\b/g;
 
-const NUMBER_WITH_UNIT_RE =
-  /\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*(?:mL|ml|µL|CFU|cfu|units?|%|kg|g)?\b|\b\d+(?:\.\d+)?\s*(?:mL|ml|µL|CFU|cfu|units?|%)\b/gi;
+/**
+ * Instrument units matter as much as lab units here: a vacuum reading, a
+ * chamber pressure, a flow rate and a conductivity are the quantities a
+ * process investigation is made of, and until they were listed the gate could
+ * not see them at all — a model could write any vacuum figure and nothing
+ * checked it.
+ */
+const INSTRUMENT_UNIT =
+  "(?:mL|ml|µL|uL|L|CFU|cfu|units?|%|kg|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
+
+const NUMBER_WITH_UNIT_RE = new RegExp(
+  String.raw`\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*${INSTRUMENT_UNIT}?\b|\b\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}\b`,
+  "gi"
+);
 
 const BARE_THOUSANDS_RE = /\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b/g;
 const BARE_ZERO_RE = /\b0\b/g;

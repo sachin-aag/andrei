@@ -14,11 +14,13 @@ import {
   investigationOtherTools,
   investigationToolsUsed,
   elrMetadata,
+  firMetadata,
   qraMetadata,
   type ReportRecord,
 } from "@/types/report";
 import type { QraMetadata } from "@/lib/document-types/qra/sections";
 import type { ElrMetadata } from "@/lib/document-types/elr/sections";
+import type { FirMetadata } from "@/lib/document-types/fir/sections";
 
 function ReportHeaderForm({
   report,
@@ -515,11 +517,138 @@ function QraIdentityForm({
   );
 }
 
+function FirIdentityForm({
+  report,
+  setReport,
+  readOnly,
+}: {
+  report: ReportRecord;
+  setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
+  readOnly: boolean;
+}) {
+  const [date, setDate] = useState(report.date.slice(0, 10));
+  const [documentNo, setDocumentNo] = useState(report.documentNo);
+  const [meta, setMeta] = useState<FirMetadata>(() => firMetadata(report));
+
+  const { status, lastSavedAt } = useAutoSave({
+    enabled: !readOnly,
+    value: { date, documentNo, meta },
+    onSave: async (v, context) => {
+      const res = await fetch(`/api/reports/${report.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: new Date(v.date).toISOString(),
+          documentNo: v.documentNo.trim(),
+          metadata: v.meta,
+        }),
+        signal: context?.signal,
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const data = await res.json();
+      setReport(data.report);
+    },
+  });
+
+  const set = (key: keyof FirMetadata) => (next: string) =>
+    setMeta((prev) => ({ ...prev, [key]: next }));
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Identity fields print in the R01 header. The assistant is told which
+            of these are unset so it does not take them from an attachment.
+          </p>
+          {!readOnly && <SaveStatus status={status} lastSavedAt={lastSavedAt} />}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <IdentityField
+            id="fir-source-doc-no"
+            label="Source Document No."
+            value={documentNo}
+            placeholder="ERF/26/022"
+            disabled={readOnly}
+            onChange={setDocumentNo}
+          />
+          <div className="grid gap-1.5">
+            <Label htmlFor="fir-date">
+              Date of non-conformance
+              <CalendarDays className="ml-1 inline size-3" />
+            </Label>
+            <Input
+              id="fir-date"
+              type="date"
+              value={date}
+              disabled={readOnly}
+              onChange={(e) => {
+                setDate(e.target.value);
+                // The R01 header prints this field; keep it in step with the
+                // report date rather than making the engineer type it twice.
+                set("dateOfNonConformance")(e.target.value);
+              }}
+            />
+          </div>
+          <IdentityField
+            id="fir-product"
+            label="Product name"
+            value={meta.productName}
+            placeholder="r-Insulin Glargine"
+            disabled={readOnly}
+            onChange={set("productName")}
+          />
+          <IdentityField
+            id="fir-batch"
+            label="Batch No."
+            value={meta.batchNo}
+            placeholder="RIG25014"
+            disabled={readOnly}
+            onChange={set("batchNo")}
+          />
+          <IdentityField
+            id="fir-equipment-id"
+            label="Equipment ID"
+            value={meta.equipmentId}
+            placeholder="L-1901"
+            disabled={readOnly}
+            onChange={set("equipmentId")}
+          />
+          <IdentityField
+            id="fir-unit"
+            label="Unit"
+            value={meta.unit}
+            disabled={readOnly}
+            onChange={set("unit")}
+          />
+          <IdentityField
+            id="fir-reference-sop"
+            label="Reference SOP No."
+            value={meta.referenceSopNo}
+            disabled={readOnly}
+            onChange={set("referenceSopNo")}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ReportHeader() {
   const { report, setReport, readOnly } = useReportData();
   if (report.documentType === "equipment_lifecycle_report") {
     return (
       <ElrIdentityForm
+        key={report.id}
+        report={report}
+        setReport={setReport}
+        readOnly={readOnly}
+      />
+    );
+  }
+  if (report.documentType === "failure_investigation_report") {
+    return (
+      <FirIdentityForm
         key={report.id}
         report={report}
         setReport={setReport}

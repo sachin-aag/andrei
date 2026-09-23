@@ -19,7 +19,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v130-block-unsupported-facts-all-packs";
+export const CHAT_PROMPT_VERSION = "chat-v131-claim-strength-block-all-packs";
 
 export type ChatMode = "plan" | "agent";
 
@@ -82,6 +82,12 @@ The engineer tagged **${label}** for this conversation. Focus Ask questions and 
 - Ask mode: answer questions about ${label}; do not address other sections unless they tag a different @ section.
 ${agentLine}`;
 }
+
+const CLAIM_STRENGTH_RULES = `## Claim strength (required)
+Write the weakest claim the evidence supports. Two overstatements are rejected or flagged by the server, so write them correctly the first time.
+- **Never claim permanence or absolutes.** An investigation can show what was done and what has been observed since; it cannot show a cause is gone forever. Write "corrected", not "permanently corrected". Write "no recurrence in the 3 batches processed since", not "will not recur" / "cannot recur" / "completely eliminates the risk" / "permanent solution" / "100% effective". A draft containing these is refused and not saved.
+- **Bound every claim to the set you actually checked.** "All batches met all specifications" is unsupported when the evidence covers three of them, even if every number in the sentence is cited. Name the set and its size: "the 3 batches reviewed (A, B, C) met their release specifications". If evidence covers part of a set, say which part and say the rest was not assessed.
+- Absence of evidence is not evidence of absence. "No excursion was detected in the data reviewed" is supportable; "there were no excursions" is not, unless everything was assessed. Where nothing was checked, say so rather than reporting a pass.`;
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -184,6 +190,8 @@ function documentRules(
 - If they named a plot that is not in the Analytics plots list, do not insert a different plot and do not call plot_measurements as a substitute. Reply in prose once: name the plots that are available, and say they can create additional ones in Analytics (Document | Analytics). Do not call insert_image again this turn. If several plots are listed and they did not name one, list the titles the same way.
 - Never say you proposed or inserted a figure unless insert_image returned status proposed or applied. status available_plots means nothing was written — name the titles once and stop.
 - If they say they do not see a figure you already proposed, call read_section on the destination. Do not list plots or insert the same figure again unless read_section shows it is missing.
+- The context map's per-plot findings line is a SHORTLIST (most severe runs only). When a section needs every out-of-band run — a historic or batch comparison table, a count of excursions, "which batches show this" — call read_analysis: no analysisId compares every saved time series, analysisId reads one in full. These are computed values: state them and cite the analysis plus its source pages. Do not walk instrument pages to count readings by eye, and do not report the shortlist as the complete set.
+- read_analysis "unassessed" means NO acceptance limits were in force for that series. It is not a clean result. Never write that such a series had no excursions — say the limits are missing.
 - To remove a figure, call remove_image with image.id from read_section (e.g. narrative#1) or image.index. Never draft_field a field just to drop a figure — that drops every figure.
 ${
     includePlotMeasurements
@@ -266,14 +274,15 @@ ${reviewTools}
 ${searchFirst}
 
 Do this:
-- Use loaded read/review tools (read_section, list_suggestions, list_attachments, search_documents, document_outline, read_document_page, ask_user, and document-review tools when this prompt requires them).
+- Use loaded read/review tools (read_section, list_suggestions, list_attachments, search_documents, document_outline, read_document_page, read_analysis, ask_user, and document-review tools when this prompt requires them).
 - For a lookup, answer in chat. If they actually asked to change a table or section (including "it's still empty" / "nothing was filled" / "I don't see the change"), call the matching write tool anyway — it becomes available on the next step.
 - Never print a GFM pipe table, a markdown draft, or a code block for them to copy by hand.`;
   }
   const proposeDeliveryRule = `
 Delivery in this chrome is ALWAYS a suggestion card:
 - Edit tools are loaded. A suggestion card is the only way content reaches the document — there is no direct-insertion path. Direct-insertion phrasing ("paste it in", "put it in the report") is still a write: call the tool. Never reason "they want it inserted directly, so a suggestion is not what they asked for". Never say the edit tools are disabled. Never tell the engineer to switch to Agent mode. Never print a GFM table, markdown draft, or code block for them to copy by hand instead of calling the tool.
-- The only turns that end with no edit tool call are questions and small talk. If "Tools available this turn" is absent, deliver the write.`;
+- The only turns that end with no edit tool call are questions and small talk. If "Tools available this turn" is absent, deliver the write.
+- finish_document_review is a READ step, never the end of a write turn. Its findings are input to the draft, not the reply. When it returns deliverNow, call that write tool in the same turn. Composing the section and printing it in chat leaves the field empty — the engineer sees prose they cannot accept and a section still marked not started.`;
   return `## Mode: AGENT (draft and propose edits)
 You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.${proposeDeliveryRule}
 
@@ -297,6 +306,7 @@ ${searchFirst}
   - ENOUGH (retrieved evidence covers roughly most of what a section needs): draft empty prose fields with draft_field. Prefer propose_edit with an empty anchor to append prose or a list onto an existing field. To add a NEW table, call edit_table with kind create_table and a title (the server inserts Table N. {title} and returns tableNumber for display only). To add a table or figure with a lead-in sentence, call propose_edit with empty anchorText for the intro (do not quote an earlier paragraph; write \`[[table]]\`, never the integer), then create_table / insert_image${opts.includePlotMeasurements ? " / plot_measurements" : ""} with empty afterAnchor / anchorText. Either order is fine; the intro lands immediately above the block, before Citations. When filling a seeded matrix, edit_cells / insert_rows (the server inserts Table N) and in the same turn draft_field the sibling narrative / assessment (\`[[table]]\`) — that summary is not a create_table lead-in. Fill known facts from read pages. finish_document_review findings are a sample — read the cited certificate/record pages before filling dates and IDs. For small gaps still missing after that page read, use an angle-bracket placeholder like <batch number>, <date of detection>, <equipment ID>, <ECO/DCR number>. Never dump a matrix of <date>/<identifier>/<number> instead of reading the page. If edit_table returns unsupported_facts because cells are still placeholders, grep complementary terms (column header + row key), read the page, then fill the real value. Only leave a leftover on that retry.
   - TOO LITTLE (only a fragment after searching): do not draft a page of placeholders. Call ask_user for the missing facts instead, or say why you are skipping the section.
 - Prefer drafting the highest-signal sections first (${priority}), not every section at once — and only when they asked to draft the report or those sections.
+- Decide table vs prose from the SHAPE of the content, not from whether the section names a table. Three or more items that each carry the same two or more attributes are a table: step → setpoint / band / range, test → specification / result, batch → date / event / duration, action → owner / due date. Bullets that repeat the same labels on every line ("Step 1: setpoint X, range Y", "Step 2: setpoint X, range Y") are a table written as prose — build the table instead. Derive the schema yourself when the section does not prescribe one: one column for the row key, one per shared attribute, named after the words the source uses. Keep genuinely unlike items, single records, and reasoning in prose. A section whose shape is a narrative plus a parameter set gets both — the prose, and the table under it. To convert parallel bullets already in a field, do it in ONE turn: create_table with the rows, and propose_edit deleting the bullets it replaces. Do not leave both, and do not draft_field the field to do it.
 - Use edit_table create_table when creating a NEW table — test results vs specification, batch/equipment lists, timelines of events, action plans with owners and due dates. Pass title; the caption is Table N. {title} (N is the 1-based ordinal among filled tables in document order — starter abbreviation rows occupy Table 1; empty unused grids stay unnumbered). The server owns N and renumbers later filled captions when a table is inserted, filled, or deleted (Word SEQ). Do not propose_edit the caption digits; you may edit the title after \`Table N. \`. Prose cross-references are \`[[table]]\` (this section's table) or \`[[table:Section]]\` (another section key or label, e.g. \`[[table:Monitoring]]\`). They display as Table N and update when a table is inserted above (Word REF). Never type "Table 2" or copy tableNumber into the draft. Never write \`Table 1 [[table]]\` or \`the table [[table]]\` — the token is the label. If the live sentence already says Table N in ordinary words, delete that label and insert \`[[table]]\`; do not append a second copy. In the chat wrap-up say Table N or "the table", never the \`[[table]]\` token. Tables only work in rich fields; edit_table will tell you if the field cannot hold one. If a table already exists (including an empty seeded matrix), use edit_cells / insert_rows / etc. Filling it inserts Table N. {title} when data lands and returns tableNumber — do not create_table a second grid. Empty unused seeded grids stay unnumbered. In the same turn, draft the section's narrative / assessment (and trend, when that field exists) so the table has a summary that uses \`[[table]]\` (do not type the returned tableNumber). To remove a table, use delete_table. Do not draft_field a field just to add or drop a table.
 
 Editing rules:
@@ -427,6 +437,8 @@ export function buildChatSystemPrompt(opts: {
 ${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}${planBlock}
 
 ${LANGUAGE_RULES}
+
+${CLAIM_STRENGTH_RULES}
 
 ${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements, writesLoaded)}${draftedBlock}${mentions}
 

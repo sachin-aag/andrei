@@ -468,7 +468,28 @@
       "idx": 66,
       "version": "7",
       "when": 1788986400000,
-      "tag": "0065_vendor_qualification_type",
+      "tag": "0065_failure_investigation_report_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1789072800000,
+      "tag": "0066_document_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1789159200000,
+      "tag": "0067_tables_parsed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1789245600000,
+      "tag": "0068_vendor_qualification_type",
       "breakpoints": true
     }
   ]

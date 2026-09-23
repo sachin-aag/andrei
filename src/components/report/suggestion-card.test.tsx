@@ -162,6 +162,45 @@ describe("SuggestionCardFace", () => {
     expect(screen.getByTestId("suggestion-traceability")).toHaveTextContent(
       "Unsourced 1"
     );
+    expect(
+      screen.queryByTestId("suggestion-traceability-computed")
+    ).toBeNull();
+  });
+
+  it("names the analysis behind a computed value", () => {
+    // A derived number is verified but not off a page; the reader has to be
+    // able to check the derivation, not just the paper.
+    renderFixCard({
+      kind: "fix",
+      comment,
+      linkedEval: undefined,
+      queueIndex: 1,
+      queueTotal: 1,
+      payload: {
+        deleteText: "",
+        insertText: "out of band for 7 minutes",
+        reasoning: "State the excursion duration.",
+        claimProvenance: {
+          policy: "block",
+          claims: [
+            {
+              text: "7 minutes",
+              kind: "duration",
+              status: "verified",
+              analysis: {
+                analysisId: "an-1",
+                title: "VAC1 over time",
+                pages: [{ filename: "trend.pdf", page: 12 }],
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(
+      screen.getByTestId("suggestion-traceability-computed")
+    ).toHaveTextContent("Computed by VAC1 over time");
   });
 
   it("summarizes a table edit without listing cell text", () => {

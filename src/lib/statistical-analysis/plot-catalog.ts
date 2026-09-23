@@ -4,6 +4,7 @@ import {
   HISTOGRAM,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
+  TIME_SERIES,
   XY_SCATTER,
   type AnalysisKind,
 } from "./types";
@@ -57,6 +58,12 @@ export const WORKSHEET_PLOT_CATALOG = [
     kind: XY_SCATTER,
     label: "Plot measurements",
     menuTestId: "stat-xy-scatter",
+    analyzeInline: false,
+  },
+  {
+    kind: TIME_SERIES,
+    label: "Time series",
+    menuTestId: "stat-time-series",
     analyzeInline: false,
   },
 ] as const satisfies readonly WorksheetPlotCatalogEntry[];

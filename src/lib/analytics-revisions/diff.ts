@@ -87,6 +87,8 @@ export function analyticsPlotKindLabel(kind: AnalysisKind): string {
       return "boxplot";
     case "histogram":
       return "histogram";
+    case "time_series":
+      return "time series";
     default: {
       const exhaustive: never = kind;
       return exhaustive;

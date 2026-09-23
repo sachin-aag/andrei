@@ -6,7 +6,7 @@ import {
   getInvestigationEvaluatableSections,
 } from "@/lib/ai/criteria";
 import { buildInvestigationReportDefinition } from "@/lib/document-types/investigation-report";
-import { engineerReportsSubtitle } from "@/lib/document-types";
+import { engineerReportsSubtitle, getDocumentType } from "@/lib/document-types";
 import { seedableSections } from "@/lib/document-types/types";
 import { MJ_CRITERION_DESCRIPTION_OVERRIDES } from "./mj/criterion-overrides";
 import { MJ_PROMPT_VERSION } from "./mj/prompts";
@@ -99,6 +99,7 @@ describe("MJ customer pack content", () => {
   it("disables design verification and enables the MJ-only types", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",
+      "failure_investigation_report",
       "quality_risk_assessment",
       "equipment_lifecycle_report",
     ]);
@@ -107,6 +108,18 @@ describe("MJ customer pack content", () => {
     expect(isDocumentTypeEnabled("quality_risk_assessment", MJ_PACK)).toBe(true);
     expect(isDocumentTypeEnabled("equipment_lifecycle_report", MJ_PACK)).toBe(
       true
+    );
+    // Both investigation forms are live at MJ: SOP/DP/QA/008 (Drug Product,
+    // DMAIC) and SOP/QA/017-F01 R01 (Drug Substance). Neither replaces the
+    // other, so MJ labels them by unit.
+    expect(
+      isDocumentTypeEnabled("failure_investigation_report", MJ_PACK)
+    ).toBe(true);
+    expect(buildInvestigationReportDefinition(MJ_PACK).label).toBe(
+      "Investigation Report DP"
+    );
+    expect(getDocumentType("failure_investigation_report").label).toBe(
+      "Investigation Report DS"
     );
     expect(
       engineerReportsSubtitle([

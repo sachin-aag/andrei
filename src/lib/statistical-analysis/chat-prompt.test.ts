@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v51-write-unlock"
+      "analytics-chat-v61-ragged-columns"
     );
   });
 
@@ -196,5 +196,22 @@ describe("analytics chat prompt", () => {
     expect(two).toContain("Ready documents (index only");
     expect(two).toContain("list_attachments");
     expect(two).not.toContain("do not recount the list");
+  });
+});
+
+describe("ragged column guidance", () => {
+  it("tells the model a short column means the dump is not done", () => {
+    const prompt = buildAnalyticsChatSystemPrompt({
+      documentNo: "DEV-1",
+      status: "draft",
+      documents: [],
+      analytics: emptyAnalytics,
+      canEdit: true,
+      mode: "agent",
+      intent: "write",
+    });
+    expect(prompt).toContain("ragged / incomplete true is NOT a completed dump");
+    expect(prompt).toContain("columns of one table are the same height");
+    expect(prompt).toContain("Do not run an analysis on it");
   });
 });

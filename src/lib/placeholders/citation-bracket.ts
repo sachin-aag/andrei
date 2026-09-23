@@ -412,9 +412,23 @@ export type SourceCitationLinkSpan = {
  */
 export function sourceCitationLinkSpans(
   match: string,
-  knownFilenames?: readonly string[]
+  knownFilenames?: readonly string[],
+  knownAttachmentIds?: readonly string[]
 ): SourceCitationLinkSpan[] {
   if (!isSourceCitationBracket(match) || isNumericCitationMarker(match)) {
+    return [];
+  }
+  // A bare CUID2 is accepted as a cite because the model copies attachment ids
+  // out of the document index — but an analysis id is the same 24 chars in a
+  // different namespace, and one reached a report's Citations list rendered as
+  // a live link. When the caller knows this report's attachment ids, an
+  // id-shaped token that is not one of them is not a source. Callers without
+  // that list keep the old shape-only behaviour.
+  if (
+    knownAttachmentIds &&
+    isAttachmentIdCite(citationCoreFromInner(match.slice(1, -1)) || "") &&
+    !attachmentIdCiteIsKnown(match, knownAttachmentIds)
+  ) {
     return [];
   }
   const inner = match.slice(1, -1);
@@ -581,6 +595,22 @@ function isAttachmentIdCite(core: string): boolean {
     .map((part) => part.trim())
     .filter(Boolean);
   return parts.length > 0 && parts.every((part) => ATTACHMENT_ID_TOKEN.test(part));
+}
+
+/** True when every id-shaped token in the cite is an attachment on this report. */
+function attachmentIdCiteIsKnown(
+  match: string,
+  knownAttachmentIds: readonly string[]
+): boolean {
+  const known = new Set(knownAttachmentIds.map((id) => id.toLowerCase()));
+  const core = citeCoreWithoutPage(
+    citationCoreFromInner(match.slice(1, -1)) || ""
+  );
+  const parts = core
+    .split(/\s*,\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 && parts.every((part) => known.has(part.toLowerCase()));
 }
 
 function isCitationShapedCore(core: string): boolean {

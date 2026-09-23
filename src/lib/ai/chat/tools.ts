@@ -42,6 +42,7 @@ import {
 import {
   ALREADY_LISTED_PLOTS_COPY,
   latestUserMessageText,
+  analyticsImageFromRender,
   resolveAnalyticsImage,
   resolveNamedAnalyticsPlot,
   resolveChatImage,
@@ -51,6 +52,27 @@ import {
 } from "@/lib/ai/chat/insert-image";
 import { executePlotMeasurements } from "@/lib/charts/plot-measurements";
 import { getReportAnalytics } from "@/lib/statistical-analysis/store";
+import {
+  buildExcursionComparison,
+  capBySeverityKeepingOrder,
+} from "@/lib/statistical-analysis/excursion-comparison";
+import {
+  isTimeSeriesAnalysis,
+  type TimeSeriesExcursion,
+} from "@/lib/statistical-analysis/types";
+import { renderAnalyticsInsertImage } from "@/lib/statistical-analysis/render-analysis-plots";
+import {
+  analysisEvidenceForReport,
+  type AnalysisEvidence,
+} from "@/lib/ai/chat/analysis-evidence";
+import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
+import {
+  detectOverclaims,
+  permanenceBounceMessage,
+  permanenceClaims,
+  unboundedScopeClaims,
+  unboundedScopeWarning,
+} from "@/lib/ai/chat/overclaim";
 import {
   markdownHasImage,
   markdownHasTable,
@@ -255,6 +277,7 @@ import {
   groundTableOperation,
   tableOperationContainsPlaceholders,
   tablePlaceholderLabels,
+  tableOperationPlainText,
   tablePlaceholderLookupMessage,
   unsupportedFactsToolResult,
   type UnsupportedFactsToolResult,
@@ -302,6 +325,13 @@ type AgentCommitOutcome =
   | { status: "invalid"; hint: string }
   | { status: "conflict"; hint: string };
 
+/** A permanence claim ("permanently fixed") does not persist; the model rewords and retries. */
+export type OverclaimBounceResult = {
+  status: "overclaim";
+  message: string;
+  overclaims: Array<{ phrase: string; kind: string }>;
+};
+
 export type ProposeEditResult =
   | {
       status: "proposed";
@@ -310,11 +340,13 @@ export type ProposeEditResult =
       targetField: string;
       summary: string;
       supersededSuggestionIds?: string[];
+      warning?: string;
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "review_incomplete"; message: string }
+  | OverclaimBounceResult
   | UnsupportedFactsToolResult;
 
 export type InsertImageResult =
@@ -351,11 +383,13 @@ export type EditTableResult =
       summary: string;
       supersededSuggestionIds?: string[];
       tableNumber?: number;
+      warning?: string;
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "review_incomplete"; message: string }
+  | OverclaimBounceResult
   | UnsupportedFactsToolResult;
 
 export type DraftFieldResult =
@@ -367,7 +401,9 @@ export type DraftFieldResult =
       summary: string;
       supersededSuggestionIds?: string[];
       tableNumber?: number;
+      warning?: string;
     }
+  | OverclaimBounceResult
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
@@ -1063,6 +1099,84 @@ const LIST_SUGGESTIONS_MAX = 40;
 const SUGGESTION_LIST_STATUSES = ["open", "resolved", "dismissed"] as const;
 type SuggestionListStatus = (typeof SUGGESTION_LIST_STATUSES)[number];
 
+/**
+ * High enough that a real comparison arrives whole: eight lyophilizer cycles
+ * come to roughly 60 runs, and the point of this tool is to see all of them
+ * rather than the context map's shortlist.
+ */
+const READ_ANALYSIS_MAX_RUNS = 200;
+const READ_ANALYSIS_MAX_SOURCE_PAGES = 6;
+
+function bandLabelForChat(lsl: number | null, usl: number | null): string {
+  if (lsl != null && usl != null) return `${lsl}–${usl}`;
+  if (lsl != null) return `≥ ${lsl}`;
+  if (usl != null) return `≤ ${usl}`;
+  return "none";
+}
+
+function timeSeriesRunForChat(run: TimeSeriesExcursion) {
+  return {
+    start: run.startLabel,
+    end: run.endLabel,
+    // Worksheet rows, so a follow-up plot can be windowed onto this run
+    // (plot_time_series rowStart/rowEnd) without counting rows by hand.
+    startRow: run.startRow,
+    endRow: run.endRow,
+    readings: run.readings,
+    elapsedMinutes: run.elapsedMinutes,
+    elapsedClock: run.elapsedClock,
+    direction: run.direction,
+    // The extreme that breached; the other bound is noise on a one-sided run.
+    observed: run.direction === "high" ? run.max : run.min,
+    min: run.min,
+    max: run.max,
+    band: bandLabelForChat(run.lsl, run.usl),
+    setpoint: run.condition,
+  };
+}
+
+/**
+ * analysisId is an internal handle for plot_time_series, not a source. Left
+ * unsaid, it gets written into the Citations list as if it were a filename —
+ * a regulated report came back with half its citations reading
+ * `[zbud2fet70yu88pvfpccjtko]`.
+ */
+const CITE_SOURCES_NOT_IDS =
+  " Cite only the filenames and pages in 'sources'. analysisId is an internal handle for editing a plot — never write it into the document or a Citations list.";
+
+function omittedNote(omitted: number): string {
+  return omitted > 0
+    ? ` ${omitted} less severe run(s) omitted by the limit — raise limit to see them, and do not report the listed runs as the complete set.`
+    : "";
+}
+
+function readAnalysisNote(judgedReadings: number, omitted: number): string {
+  if (judgedReadings === 0) {
+    return (
+      "NO ACCEPTANCE LIMITS WERE IN FORCE — nothing was assessed. Do not write that there were no excursions; " +
+      "say the limits are missing for this series."
+    );
+  }
+  return (
+    "Computed values. State them directly and cite this analysis plus its source pages; do not walk instrument pages to re-derive them." +
+    CITE_SOURCES_NOT_IDS +
+    omittedNote(omitted)
+  );
+}
+
+function comparisonNote(unassessedCount: number, omitted: number): string {
+  const unassessed =
+    unassessedCount > 0
+      ? ` ${unassessedCount} series had NO acceptance limits in force and were not assessed — they are listed under unassessed, not clean. Never report them as having no excursions.`
+      : "";
+  return (
+    "One row per out-of-band run across every saved time series, oldest first. 'clean' series were assessed and had none." +
+    CITE_SOURCES_NOT_IDS +
+    unassessed +
+    omittedNote(omitted)
+  );
+}
+
 function isSuggestionListStatus(value: string): value is SuggestionListStatus {
   return (SUGGESTION_LIST_STATUSES as readonly string[]).includes(value);
 }
@@ -1131,6 +1245,11 @@ export function buildChatTools(opts: {
   reportMetadata?: Record<string, unknown> | null;
   /** Live section JSON so recaps of this document are exempt (not the field being written). */
   reportSections?: Partial<Record<SectionType, Record<string, unknown>>> | null;
+  /**
+   * This turn's classified intent. Only `finish_document_review` reads it, to
+   * hand a write turn back to the write tool instead of ending on findings.
+   */
+  userIntentKind?: ChatUserIntentKind;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1249,8 +1368,60 @@ export function buildChatTools(opts: {
   }
   const unsupportedFactPolicy: UnsupportedFactPolicy =
     opts.unsupportedFactPolicy ?? getCustomerPack().unsupportedFactPolicy;
+  /**
+   * Saved analyses stand behind the values they computed. Loaded once per
+   * turn and lazily: most turns never write a derived number, and grounding
+   * must not fail because analytics could not be read — a missing analysis
+   * only means a computed value stays unsourced.
+   */
+  let analysisEvidenceCache: AnalysisEvidence[] | null = null;
+  const loadAnalysisEvidence = async (): Promise<AnalysisEvidence[]> => {
+    if (analysisEvidenceCache) return analysisEvidenceCache;
+    try {
+      const analytics = await getReportAnalytics(reportId);
+      analysisEvidenceCache = analytics
+        ? analysisEvidenceForReport(analytics)
+        : [];
+    } catch {
+      analysisEvidenceCache = [];
+    }
+    return analysisEvidenceCache;
+  };
   const sameTurnStated = new Map<string, string>();
   let tablePlaceholderLookupBounced = false;
+  let overclaimBounced = false;
+  /**
+   * The grounding gate checks whether a number is on a cited page; it cannot
+   * see that the sentence around it claims more than the evidence carries.
+   *
+   * A permanence claim ("permanently fixed", "will not recur") is never right
+   * in an investigation, so it does not persist — once per turn, so a false
+   * positive cannot loop the draft. An unbounded scope claim ("all batches met
+   * all specifications") may be legitimate, so it saves with a warning instead
+   * of being refused. Not pack-gated: an overclaim is as wrong on demo as on
+   * MJ.
+   */
+  const checkOverclaims = (text: string) => {
+    const found = detectOverclaims(text);
+    const permanence = permanenceClaims(found);
+    if (permanence.length > 0 && !overclaimBounced) {
+      overclaimBounced = true;
+      return {
+        bounce: {
+          status: "overclaim" as const,
+          message: permanenceBounceMessage(permanence),
+          overclaims: permanence.map((item) => ({
+            phrase: item.phrase,
+            kind: item.kind,
+          })),
+        },
+      };
+    }
+    const scope = unboundedScopeClaims(found);
+    return scope.length > 0
+      ? { warning: unboundedScopeWarning(scope) }
+      : {};
+  };
   const rememberSameTurnStated = (
     section: SectionType,
     targetField: string,
@@ -1679,6 +1850,126 @@ export function buildChatTools(opts: {
       },
     }),
 
+    read_analysis: tool({
+      description:
+        "Read the computed results behind a saved Analytics time series: every out-of-band run, not the shortlist in the context map. Call with no analysisId for one comparable table across every time series on this report (one row per run, oldest first) — that is the historic/batch comparison. Call with analysisId for one series in full. These are computed values: state them directly, do not re-derive them by walking instrument pages.",
+      inputSchema: z.object({
+        analysisId: z
+          .string()
+          .optional()
+          .describe(
+            "One saved analysis (the id in brackets in the context map). Omit to compare every time series on the report."
+          ),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(READ_ANALYSIS_MAX_RUNS)
+          .optional()
+          .describe(
+            `Max runs to return (default ${READ_ANALYSIS_MAX_RUNS}). Over the cap, the most severe runs are kept.`
+          ),
+      }),
+      execute: async ({ analysisId, limit }) => {
+        const cap = limit ?? READ_ANALYSIS_MAX_RUNS;
+        const analytics = await getReportAnalytics(reportId);
+        const analyses = analytics?.analyses ?? [];
+        if (analyses.length === 0) {
+          return {
+            error: "no_analyses",
+            message:
+              "No saved analyses on this report. Plots are created on the Analytics tab; this tool only reads ones that already exist.",
+          };
+        }
+        // Source pages per analysis, so a value read here can be cited to the
+        // paper its rows came from rather than to the plot alone.
+        const evidence = await loadAnalysisEvidence();
+        const sourcesFor = (id: string) => {
+          const pages = evidence.find((e) => e.analysisId === id)?.pages ?? [];
+          return {
+            pages: pages
+              .slice(0, READ_ANALYSIS_MAX_SOURCE_PAGES)
+              .map((page) => `${page.filename}, p. ${page.page}`),
+            pageCount: pages.length,
+          };
+        };
+
+        if (analysisId) {
+          const analysis = analyses.find((item) => item.id === analysisId);
+          if (!analysis) {
+            return {
+              error: "not_found",
+              message: `No saved analysis ${analysisId} on this report. The context map lists the ids in brackets.`,
+            };
+          }
+          if (!isTimeSeriesAnalysis(analysis)) {
+            return {
+              error: "not_a_time_series",
+              message: `'${analysis.title}' is a ${analysis.kind}, which has no excursion runs. Insert it as a figure with insert_image source=analytics.`,
+            };
+          }
+          const { config, results } = analysis;
+          const { kept, omitted } = capBySeverityKeepingOrder(
+            results.excursions,
+            cap
+          );
+          return {
+            analysisId: analysis.id,
+            title: analysis.title,
+            column: config.columnName,
+            conditionColumn: config.conditionColumnName ?? null,
+            readings: results.n,
+            skipped: results.skipped,
+            judgedReadings: results.judgedReadings,
+            excursionCount: results.excursions.length,
+            excursionReadings: results.excursionReadings,
+            runs: kept.map(timeSeriesRunForChat),
+            runsOmitted: omitted,
+            ...sourcesFor(analysis.id),
+            note: readAnalysisNote(results.judgedReadings, omitted),
+          };
+        }
+
+        const comparison = buildExcursionComparison(analyses);
+        const { kept, omitted } = capBySeverityKeepingOrder(
+          comparison.rows,
+          cap
+        );
+        return {
+          seriesCompared:
+            comparison.rows.length > 0 || comparison.clean.length > 0
+              ? new Set([
+                  ...comparison.rows.map((row) => row.analysisId),
+                  ...comparison.clean.map((entry) => entry.analysisId),
+                ]).size
+              : 0,
+          rows: kept.map((row) => ({
+            series: row.series,
+            analysisId: row.analysisId,
+            start: row.start,
+            end: row.end,
+            readings: row.readings,
+            elapsedMinutes: row.elapsedMinutes,
+            direction: row.direction,
+            observed: row.direction === "high" ? row.max : row.min,
+            band: bandLabelForChat(row.lsl, row.usl),
+            setpoint: row.condition,
+            sources: sourcesFor(row.analysisId).pages,
+          })),
+          rowsOmitted: omitted,
+          clean: comparison.clean.map((entry) => ({
+            series: entry.series,
+            readings: entry.n,
+          })),
+          unassessed: comparison.unassessed.map((entry) => ({
+            series: entry.series,
+            readings: entry.n,
+          })),
+          note: comparisonNote(comparison.unassessed.length, omitted),
+        };
+      },
+    }),
+
     search_documents: buildSearchDocumentsTool({
       reportId,
       pinnedAttachmentIds,
@@ -2060,6 +2351,17 @@ export function buildChatTools(opts: {
           ...finished,
           citationRule,
           trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+          // start and continue each name the next tool; without the same
+          // handoff here a write turn ends holding an evidence package, and
+          // the natural thing to do with one is describe it. That is how a
+          // finished draft gets printed into chat instead of the document.
+          ...(canEdit && opts.userIntentKind === "write"
+            ? {
+                deliverNow: "draft_field | propose_edit | edit_table",
+                deliverNote:
+                  "The review is finished — this was the last read step of a write turn. Call the write tool NOW: draft_field for an empty field, propose_edit for a filled one, edit_table for a table. Printing the draft in chat does not put it in the document and never ends a write turn.",
+              }
+            : {}),
         };
       },
     }),
@@ -2223,11 +2525,13 @@ export function buildChatTools(opts: {
           "propose_edit",
           loaded.content as Record<string, unknown>
         );
+        const analysisFacts = await loadAnalysisEvidence();
         let groundedInsert = groundDraftText({
           text: insertText,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
           grounding: insertGrounding,
+          analyses: analysisFacts,
         });
         let groundedSecond = rawSecond
           ? groundDraftText({
@@ -2235,6 +2539,7 @@ export function buildChatTools(opts: {
               ledger: citationLedger,
               policy: unsupportedFactPolicy,
               grounding: insertGrounding,
+              analyses: analysisFacts,
             })
           : null;
         const leftoverInsert = `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`;
@@ -2259,6 +2564,7 @@ export function buildChatTools(opts: {
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
             grounding: insertGrounding,
+            analyses: analysisFacts,
           });
           groundedSecond = rawSecond
             ? groundDraftText({
@@ -2266,6 +2572,7 @@ export function buildChatTools(opts: {
                 ledger: citationLedger,
                 policy: unsupportedFactPolicy,
                 grounding: insertGrounding,
+                analyses: analysisFacts,
               })
             : null;
         }
@@ -2287,6 +2594,12 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
           });
         }
+        const editOverclaims = checkOverclaims(
+          [groundedInsert.text, groundedSecond?.text ?? ""]
+            .filter(Boolean)
+            .join("\n")
+        );
+        if (editOverclaims.bounce) return editOverclaims.bounce;
         const claimProvenance = {
           claims: [
             ...groundedInsert.provenance.claims,
@@ -2414,6 +2727,9 @@ export function buildChatTools(opts: {
                   section,
                   targetField: resolvedField,
                   summary: folded.payload.reasoning,
+                  ...(editOverclaims.warning
+                    ? { warning: editOverclaims.warning }
+                    : {}),
                 },
                 supersededSuggestionIds
               );
@@ -2509,6 +2825,9 @@ export function buildChatTools(opts: {
               section,
               targetField: resolvedField,
               summary: reasoning,
+              ...(editOverclaims.warning
+                ? { warning: editOverclaims.warning }
+                : {}),
             },
             supersededSuggestionIds
           );
@@ -2659,7 +2978,7 @@ export function buildChatTools(opts: {
         let sameFieldSectionSource = false;
         let resolved:
           | { ok: true; image: SuggestionImageInsert }
-          | { ok: false; message: string };
+          | { ok: false; message: string; reason?: "no_preview" };
         if (source.source === "chat") {
           resolved = resolveChatImage(messages, source.index);
         } else if (source.source === "analytics") {
@@ -2683,6 +3002,21 @@ export function buildChatTools(opts: {
           }
           const analysis = analyses.find((item) => item.id === named.analysisId);
           resolved = resolveAnalyticsImage(analysis, named.analysisId);
+          // A plot created by chat has no captured preview until someone opens
+          // it in Analytics. Render it here instead of making the engineer go
+          // and click eight figures.
+          if (!resolved.ok && resolved.reason === "no_preview" && analysis) {
+            const rendered = await renderAnalyticsInsertImage(analysis);
+            const image = rendered
+              ? analyticsImageFromRender(analysis, rendered)
+              : null;
+            resolved = image
+              ? { ok: true, image }
+              : {
+                  ok: false,
+                  message: `'${analysis.title}' could not be rendered as a figure. Open it in Analytics so the preview can be saved, then retry insert_image with source=analytics.`,
+                };
+          }
         } else {
           const locator = resolveSectionImageLocator({
             destSection: section,
@@ -3340,11 +3674,13 @@ export function buildChatTools(opts: {
           "edit_table",
           loaded.content as Record<string, unknown>
         );
+        const tableAnalysisFacts = await loadAnalysisEvidence();
         let groundedTable = groundTableOperation({
           operation: originalTableOp,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
+          analyses: tableAnalysisFacts,
         });
         const tableNeedsRepair =
           citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
@@ -3362,6 +3698,7 @@ export function buildChatTools(opts: {
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
+            analyses: tableAnalysisFacts,
           });
         }
         if (groundedTable.blocked) {
@@ -3388,6 +3725,12 @@ export function buildChatTools(opts: {
             message: tablePlaceholderLookupMessage(leftoverLabels),
           });
         }
+        // Cell text overclaims the same way prose does — a Remark column
+        // reading "all batches compliant" is the case that prompted this.
+        const tableOverclaims = checkOverclaims(
+          tableOperationPlainText(groundedTable.operation)
+        );
+        if (tableOverclaims.bounce) return tableOverclaims.bounce;
         if (groundedTable.provenance.claims.length > 0) {
           void scoreDraftEntailment({
             draft: JSON.stringify(groundedTable.operation),
@@ -3515,6 +3858,9 @@ export function buildChatTools(opts: {
             summary: reasoning,
             ...(applied.tableNumber !== undefined
               ? { tableNumber: applied.tableNumber }
+              : {}),
+            ...(tableOverclaims.warning
+              ? { warning: tableOverclaims.warning }
               : {}),
           },
           supersededSuggestionIds
@@ -3723,11 +4069,13 @@ export function buildChatTools(opts: {
           "draft_field",
           loaded.content as Record<string, unknown>
         );
+        const draftAnalysisFacts = await loadAnalysisEvidence();
         let groundedDraft = groundDraftText({
           text: normalizedMarkdown,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
           grounding: draftGrounding,
+          analyses: draftAnalysisFacts,
         });
         const repair =
           citationGroundingRunsRepair(draftGrounding.mode ?? "strict") &&
@@ -3744,6 +4092,7 @@ export function buildChatTools(opts: {
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
             grounding: draftGrounding,
+            analyses: draftAnalysisFacts,
           });
         }
         if (groundedDraft.blocked) {
@@ -3768,6 +4117,8 @@ export function buildChatTools(opts: {
             reportId,
           });
         }
+        const draftOverclaims = checkOverclaims(groundedDraft.text);
+        if (draftOverclaims.bounce) return draftOverclaims.bounce;
         const draftMarkdown = citationsAtEndOfSection
           ? moveCitationsToEndOfText(groundedDraft.text)
           : groundedDraft.text;
@@ -3824,6 +4175,9 @@ export function buildChatTools(opts: {
             targetField: resolvedField,
             summary: reasoning,
             ...(tableNumber !== undefined ? { tableNumber } : {}),
+            ...(draftOverclaims.warning
+              ? { warning: draftOverclaims.warning }
+              : {}),
           },
           supersededSuggestionIds
         );
