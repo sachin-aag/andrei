@@ -145,3 +145,8 @@ scripts/eval/retrieval-cases.local.json
 /.vq-*.png
 docs/sample_files/Investigation report_ERF-26-022 11.09.2026.docx
 docs/sample_files/Investigation_Report_DS_*.docx
+
+# Claude Code local settings and doctor backups (machine-specific, not shared)
+.claude/settings.local.json
+.claude/*.doctor-backup
+.claude/**/*.doctor-backup
