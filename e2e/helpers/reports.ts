@@ -23,12 +23,31 @@ export function newReportButton(page: Page) {
     .or(page.getByRole("button", { name: /^New Report$/ }));
 }
 
+export async function openDemoTemplate(
+  page: Page,
+  title: string
+): Promise<void> {
+  await expect(page).toHaveURL(/\/templates/);
+  await expect(page.getByRole("heading", { name: /^templates$/i })).toBeVisible();
+  const tile = page.getByRole("button", { name: new RegExp(`^${title}$`, "i") });
+  await tile.scrollIntoViewIfNeeded();
+  await expect(tile).toBeVisible();
+  await tile.click();
+  await expect(
+    page.getByRole("heading", { name: new RegExp(`^create ${title}$`, "i") })
+  ).toBeVisible();
+}
+
+/** Open the create dialog: gallery tile on demo, type dropdown elsewhere. */
 export async function openNewReportDialog(page: Page): Promise<void> {
   await newReportButton(page).click();
-  if (page.url().includes("/templates")) {
-    await page.getByRole("button", { name: /^Deviations$/i }).click();
+  try {
+    await expect(page).toHaveURL(/\/templates/, { timeout: 5_000 });
+  } catch {
+    await expect(page.getByRole("heading", { name: /^create /i })).toBeVisible();
+    return;
   }
-  await expect(page.getByRole("heading", { name: /^create /i })).toBeVisible();
+  await openDemoTemplate(page, "Vendor Qualification");
 }
 
 export async function selectCreateReportType(

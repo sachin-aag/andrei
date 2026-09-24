@@ -4,6 +4,7 @@ import {
   createReport,
   deleteReport,
   newReportButton,
+  openDemoTemplate,
   openNewReportDialog,
   uniqueDeviationNo,
 } from "./helpers/reports";
@@ -13,11 +14,7 @@ test.describe.configure({ mode: "serial" });
 
 async function openDeviationsTemplate(page: import("@playwright/test").Page) {
   await newReportButton(page).click();
-  await expect(page).toHaveURL(/\/templates/);
-  await page.getByRole("button", { name: /^Deviations$/i }).click();
-  await expect(
-    page.getByRole("heading", { name: /create deviations/i })
-  ).toBeVisible();
+  await openDemoTemplate(page, "Deviations");
 }
 
 test.describe("create report", () => {
