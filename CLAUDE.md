@@ -67,7 +67,7 @@ Password lifecycle is enforced beyond NextAuth: `mustChangePassword`/`passwordEx
 
 ### Customer packs
 
-`src/lib/customers/` resolves `ANDREI_CUSTOMER` (default `demo`). Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Packs overlay criteria descriptions, eval prompts (`promptVersion` is distinct for MJ, Convergent, and 3xper), export template, hidden sections, enabled document types, Word import, branding, and `insightsEnabled` (demo-only Insights nav). Do not use feature flags for customer identity. Deploys: `docs/whitelabel-vercel-deploy.md` (Add a customer for a new pack). 3xper product notes: `docs/3xper-deployment.md`.
+`src/lib/customers/` resolves `ANDREI_CUSTOMER` (default `demo`). Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Packs overlay criteria descriptions, eval prompts (`promptVersion` is distinct for MJ, Convergent, and 3xper), export template, hidden sections, enabled document types, Word import, branding, `insightsEnabled` (demo-only Insights nav), and `documentTemplatesEnabled` (demo-only Templates gallery). Do not use feature flags for customer identity. Deploys: `docs/whitelabel-vercel-deploy.md` (Add a customer for a new pack). 3xper product notes: `docs/3xper-deployment.md`.
 
 ## Environment variables
 

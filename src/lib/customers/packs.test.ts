@@ -45,6 +45,10 @@ describe("customer packs (demo)", () => {
     expect(isInsightsEnabled(DEMO_PACK)).toBe(true);
   });
 
+  it("keeps the document template gallery on demo", () => {
+    expect(DEMO_PACK.documentTemplatesEnabled).toBe(true);
+  });
+
   it("dictates English only on demo", () => {
     expect(DEMO_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
   });

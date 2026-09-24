@@ -144,7 +144,10 @@ describe("AppShell primary navigation", () => {
         <div>main</div>
       </AppShell>
     );
-    expect(primaryNavHrefs()).toEqual(["/", "/vault", "/insights"]);
+    expect(primaryNavHrefs()).toEqual(["/", "/templates", "/vault", "/insights"]);
+    expect(
+      screen.getByRole("link", { name: "Templates" })
+    ).toHaveAttribute("data-walkthrough", "nav-templates");
     expect(
       screen.getByRole("link", { name: "Document vault" })
     ).toHaveAttribute("data-walkthrough", "nav-vault");

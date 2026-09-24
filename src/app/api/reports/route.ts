@@ -62,6 +62,12 @@ import {
   isCreatePreloadDocumentNo,
 } from "@/lib/reports/create-preload";
 import { visibleReportsFilter } from "@/lib/reports/tombstone";
+import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import {
+  demoTemplateMetadata,
+  resolveEnabledDemoTemplate,
+  type DemoDocumentTemplate,
+} from "@/lib/document-templates";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -137,6 +143,7 @@ const createSchema = z.object({
   assignedManagerId: z.string().nullable().optional(),
   assignedManagerIds: z.array(z.string()).optional(),
   preload: z.boolean().optional(),
+  templateId: z.string().min(1).optional(),
 });
 
 function documentTypeFromForm(value: FormDataEntryValue | null): DocumentType {
@@ -185,6 +192,7 @@ export async function POST(req: Request) {
     let genericImported: GenericImportedDocument | null = null;
     let sourceUpload: { buffer: Buffer; filename: string } | null = null;
     let preload = false;
+    let templateId: string | undefined;
 
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
@@ -193,6 +201,8 @@ export async function POST(req: Request) {
         form.get("documentNo") ?? form.get("deviationNo") ?? ""
       ).trim();
       assignedManagerIds = managerIdsFromFormData(form);
+      const formTemplateId = String(form.get("templateId") ?? "").trim();
+      templateId = formTemplateId || undefined;
       const file = form.get("file");
       const hasFile = file instanceof File && file.size > 0;
 
@@ -289,6 +299,7 @@ export async function POST(req: Request) {
         ? normalizeAssignedManagerIds(parse.data.assignedManagerIds)
         : normalizeAssignedManagerIds([parse.data.assignedManagerId ?? null]);
       preload = parse.data.preload === true;
+      templateId = parse.data.templateId;
     }
 
     if (!isDocumentTypeEnabled(documentType, getCustomerPack())) {
@@ -299,10 +310,34 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    let template: DemoDocumentTemplate | undefined;
+    if (templateId) {
+      template = resolveEnabledDemoTemplate(templateId);
+      if (!template) {
+        return NextResponse.json(
+          { error: "Unknown document template." },
+          { status: 400 }
+        );
+      }
+      if (template.documentType !== documentType) {
+        return NextResponse.json(
+          { error: "Template does not match the selected document type." },
+          { status: 400 }
+        );
+      }
+    }
+
     if (preload) {
       if (importedContent || genericImported || sourceUpload) {
         return NextResponse.json(
           { error: "Word import cannot be preloaded" },
+          { status: 400 }
+        );
+      }
+      if (template) {
+        return NextResponse.json(
+          { error: "Templates cannot be preloaded" },
           { status: 400 }
         );
       }
@@ -345,7 +380,7 @@ export async function POST(req: Request) {
     }
 
     const assignedManagerId = primaryAssignedManagerId(assignedManagerIds);
-    const metadata =
+    const baseMetadata =
       importedContent && documentType === "investigation_report"
         ? investigationMetadataFromImport(importedContent)
         : genericImported
@@ -354,6 +389,18 @@ export async function POST(req: Request) {
               importedFromFilename: sourceUpload?.filename,
             }
           : def.defaultMetadata;
+    const metadata = template
+      ? { ...baseMetadata, ...demoTemplateMetadata(template) }
+      : baseMetadata;
+    const templateNarrative =
+      !genericImported && template?.outlineMarkdown
+        ? markdownToDoc(template.outlineMarkdown, { headingNodes: true })
+        : null;
+    const genericBody = genericImported
+      ? { narrative: genericImported.narrative }
+      : templateNarrative
+        ? { narrative: templateNarrative }
+        : null;
     const [report] = await db
       .insert(reports)
       .values({
@@ -378,7 +425,7 @@ export async function POST(req: Request) {
       sectionRowsForCreate(
         documentType,
         importedContent,
-        genericImported ? { narrative: genericImported.narrative } : null
+        genericBody
       ).map((row) => ({
         reportId: report.id,
         section: row.section,
@@ -426,7 +473,7 @@ export async function POST(req: Request) {
 
     const snapshotKeys = sectionKeysToSnapshotOnCreate(
       importedContent,
-      genericImported ? { narrative: genericImported.narrative } : null
+      genericBody
     );
     if (snapshotKeys.size > 0) {
       const sectionRows = await db

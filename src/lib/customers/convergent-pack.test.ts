@@ -50,6 +50,9 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.insightsEnabled).toBe(false);
     expect(DEMO_PACK.insightsEnabled).toBe(true);
     expect(MJ_PACK.insightsEnabled).toBe(false);
+    expect(CONVERGENT_PACK.documentTemplatesEnabled).toBe(false);
+    expect(DEMO_PACK.documentTemplatesEnabled).toBe(true);
+    expect(MJ_PACK.documentTemplatesEnabled).toBe(false);
     expect(CONVERGENT_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
     expect(DEMO_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
     expect(MJ_PACK.voiceInputLanguageCodes).toEqual(["en-IN", "hi-IN", "mr-IN"]);

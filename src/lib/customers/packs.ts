@@ -80,6 +80,12 @@ export type CustomerPack = {
    */
   insightsEnabled: boolean;
   /**
+   * Demo-only template gallery (`/templates`) grouped into Supply Chain,
+   * Design, Operations, and Quality. Other packs keep the create-dialog
+   * document-type dropdown.
+   */
+  documentTemplatesEnabled: boolean;
+  /**
    * Spoken locales for composer voice dictation (Vertex Gemini, same
    * resolver as chat). MJ includes Hindi and Marathi; other packs are
    * English-only. Transcripts stay in the spoken script (Devanagari is
@@ -188,6 +194,7 @@ export const DEMO_PACK: CustomerPack = {
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
   insightsEnabled: true,
+  documentTemplatesEnabled: true,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
   unsupportedFactPolicy: "block",
   branding: ANDREI_BRANDING,
@@ -214,6 +221,7 @@ export const CONVERGENT_PACK: CustomerPack = {
   expertReviewEnabled: true,
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
+  documentTemplatesEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
   unsupportedFactPolicy: "block",
   branding: CONVERGENT_BRANDING,
@@ -238,6 +246,7 @@ export const MJ_PACK: CustomerPack = {
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
+  documentTemplatesEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_MJ_CODES,
   unsupportedFactPolicy: "block",
   branding: MJ_BRANDING,
@@ -281,6 +290,7 @@ export const XPER_PACK: CustomerPack = {
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
+  documentTemplatesEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
   unsupportedFactPolicy: "block",
   branding: XPER_BRANDING,
@@ -320,6 +330,12 @@ export function isInsightsEnabled(
   pack: CustomerPack = getCustomerPack()
 ): boolean {
   return pack.insightsEnabled;
+}
+
+export function isDocumentTemplatesEnabled(
+  pack: CustomerPack = getCustomerPack()
+): boolean {
+  return pack.documentTemplatesEnabled;
 }
 
 export function voiceInputLanguageCodes(

@@ -12,7 +12,7 @@ One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER`
 | **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://convergent.andreihealth.com | https://3xper.andreihealth.com |
 | **Neon** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` (`cold-thunder-36255681`) | `andrei-3xper` (`dark-salad-24878113`) |
 | **GCS_BUCKET** | `andrei-493614-attachments` (shared) | same shared bucket | same shared bucket | `andrei-493614-3xper-attachments` |
-| **What users see** | MJ criteria, MJ Word template, Word import, QRA + ELR, no DV, no conclusion | Andrei branding, investigation + DV + Document | Convergent branding, Solea DV only | 3xper branding, vendor qualification only |
+| **What users see** | MJ criteria, MJ Word template, Word import, QRA + ELR, no DV, no conclusion | Andrei branding, investigation + DV + Document, Templates gallery | Convergent branding, Solea DV only | 3xper branding, vendor qualification only |
 
 Release valve: **the same git SHA on all Production deploys**. Pack env chooses the overlay. There is no long-lived product branch.
 

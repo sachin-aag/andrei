@@ -302,6 +302,176 @@ describe("/api/reports", () => {
     expect(recordSectionVersion).not.toHaveBeenCalled();
   });
 
+  it("seeds a demo template outline into a generic document", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
+    const { values } = mockSuccessfulCreate("report-capa");
+    mockSectionRowsSelect("report-capa", ["body"]);
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "generic_document",
+          documentNo: "CAPA-001",
+          templateId: "capa",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "generic_document",
+        documentNo: "CAPA-001",
+        metadata: expect.objectContaining({
+          demoTemplateId: "capa",
+          demoTemplateTitle: "CAPA",
+          demoTemplateSection: "quality",
+        }),
+      })
+    );
+    expect(values).toHaveBeenNthCalledWith(
+      2,
+      expect.arrayContaining([
+        expect.objectContaining({
+          section: "body",
+          content: expect.objectContaining({
+            narrative: expect.objectContaining({ type: "doc" }),
+          }),
+        }),
+      ])
+    );
+    const sectionRows = values.mock.calls[1]?.[0] as Array<{
+      content: { narrative?: { content?: Array<{ type?: string; content?: Array<{ text?: string }> }> } };
+    }>;
+    const headingTexts = (sectionRows[0]?.content.narrative?.content ?? [])
+      .filter((node) => node.type === "heading")
+      .map((node) => node.content?.[0]?.text);
+    expect(headingTexts).toContain("CAPA");
+    expect(headingTexts).toContain("1. Description");
+    expect(recordSectionVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it("stamps a structured template without replacing its sections", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
+    const { values } = mockSuccessfulCreate("report-dv");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "design_verification",
+          documentNo: "DVR-001",
+          templateId: "design-verification",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "design_verification",
+        metadata: expect.objectContaining({
+          demoTemplateId: "design-verification",
+          demoTemplateTitle: "Design Verification Testing",
+        }),
+      })
+    );
+    expect(recordSectionVersion).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown template id", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "generic_document",
+          documentNo: "DOC-001",
+          templateId: "not-a-template",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Unknown document template.",
+    });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a template whose document type does not match", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "generic_document",
+          documentNo: "DOC-001",
+          templateId: "deviations",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Template does not match the selected document type.",
+    });
+  });
+
+  it("rejects templates on packs without the gallery", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "investigation_report",
+          documentNo: "DEV-001",
+          templateId: "deviations",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Unknown document template.",
+    });
+  });
+
+  it("rejects preloading a template", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "generic_document",
+          preload: true,
+          templateId: "capa",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Templates cannot be preloaded",
+    });
+  });
+
   it("creates a mechanical DV report from JSON payload", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);

@@ -22,6 +22,7 @@ describe("3xper customer pack", () => {
     expect(XPER_PACK.expertReviewEnabled).toBe(false);
     expect(isStatisticalAnalysisEnabled(XPER_PACK)).toBe(true);
     expect(isInsightsEnabled(XPER_PACK)).toBe(false);
+    expect(XPER_PACK.documentTemplatesEnabled).toBe(false);
     expect(XPER_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
     expect(XPER_PACK.unsupportedFactPolicy).toBe("block");
     expect(XPER_PACK.promptVersion).toBe(VQ_PROMPT_VERSION);

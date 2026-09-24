@@ -96,6 +96,11 @@ describe("MJ customer pack content", () => {
     expect(DEMO_PACK.insightsEnabled).toBe(true);
   });
 
+  it("hides the document template gallery on MJ", () => {
+    expect(MJ_PACK.documentTemplatesEnabled).toBe(false);
+    expect(DEMO_PACK.documentTemplatesEnabled).toBe(true);
+  });
+
   it("disables design verification and enables the MJ-only types", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",

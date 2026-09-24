@@ -16,16 +16,18 @@ export function uniqueDeviationNo(prefix = "E2E"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Header "New Report" on the engineer dashboard. */
+/** Header "New Report" on the engineer dashboard (link on demo, button elsewhere). */
 export function newReportButton(page: Page) {
-  return page.getByRole("button", { name: /new report/i });
+  return page.locator("a, button").filter({ hasText: /^New Report$/ });
 }
 
 export async function openNewReportDialog(page: Page): Promise<void> {
   await newReportButton(page).click();
-  await expect(
-    page.getByRole("heading", { name: /^create report$/i })
-  ).toBeVisible();
+  if (page.url().includes("/templates")) {
+    await page.getByRole("button", { name: /^Quality$/i }).click();
+    await page.getByRole("button", { name: /^Deviations$/i }).click();
+  }
+  await expect(page.getByRole("heading", { name: /^create /i })).toBeVisible();
 }
 
 export async function selectCreateReportType(

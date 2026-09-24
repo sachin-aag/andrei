@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { FileText, Loader2, Plus, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,15 +22,30 @@ import { ManagerSelector } from "@/components/report/manager-selector";
 import type { DocumentType } from "@/db/schema";
 import { isWordImportAvailable, listDocumentTypes } from "@/lib/document-types";
 import { useReportCreatePreload } from "@/components/dashboard/use-report-create-preload";
+import { getCustomerPack } from "@/lib/customers/packs";
+import type { DemoDocumentTemplate } from "@/lib/document-templates";
 
-type CreateReportButtonProps = {
-  managers: Pick<WorkspaceUser, "id" | "name" | "title">[];
+type Managers = Pick<WorkspaceUser, "id" | "name" | "title">[];
+
+type CreateReportDialogProps = {
+  managers: Managers;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  template?: DemoDocumentTemplate | null;
 };
 
-export function CreateReportButton({ managers }: CreateReportButtonProps) {
+export function CreateReportDialog({
+  managers,
+  open,
+  onOpenChange,
+  template = null,
+}: CreateReportDialogProps) {
   const availableTypes = listDocumentTypes();
-  const [open, setOpen] = useState(false);
-  const [documentType, setDocumentType] = useState<DocumentType | "">("");
+  const lockedType = template?.documentType ?? null;
+  const [pickedDocumentType, setPickedDocumentType] = useState<
+    DocumentType | ""
+  >("");
+  const documentType = lockedType ?? pickedDocumentType;
   const [documentNo, setDocumentNo] = useState("");
   const [managerIds, setManagerIds] = useState<string[]>([]);
   const [draftFile, setDraftFile] = useState<File | null>(null);
@@ -46,23 +61,27 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     : false;
   const busy = creating || previewLoading;
   const { takeForFinalize, releaseWithoutDiscard } = useReportCreatePreload({
-    enabled: open && !draftFile && Boolean(documentType),
+    enabled: open && !draftFile && Boolean(documentType) && !template,
     documentType: selectedType?.key ?? null,
   });
   const documentNoLabel = selectedType?.documentNoLabel ?? "Document Number";
-  const dialogTitle = selectedType
-    ? `Create ${selectedType.label.toLowerCase()}`
-    : "Create report";
-  const dialogDescription = !selectedType
-    ? "Choose a document type to start a new draft."
-    : showWordImport
-      ? selectedType.key === "generic_document"
-        ? "Starts a new document as a draft. Optionally upload an existing Word file to fill the body. Some Word features (SmartArt, text boxes, headers) are dropped on import."
-        : "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document to fill Define through Control."
-      : `Starts a new ${selectedType.label.toLowerCase()} as a draft.`;
+  const dialogTitle = template
+    ? `Create ${template.title}`
+    : selectedType
+      ? `Create ${selectedType.label.toLowerCase()}`
+      : "Create report";
+  const dialogDescription = template
+    ? template.description
+    : !selectedType
+      ? "Choose a document type to start a new draft."
+      : showWordImport
+        ? selectedType.key === "generic_document"
+          ? "Starts a new document as a draft. Optionally upload an existing Word file to fill the body. Some Word features (SmartArt, text boxes, headers) are dropped on import."
+          : "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document to fill Define through Control."
+        : `Starts a new ${selectedType.label.toLowerCase()} as a draft.`;
 
   const resetForm = () => {
-    setDocumentType("");
+    setPickedDocumentType("");
     setDocumentNo("");
     setManagerIds([]);
     setDraftFile(null);
@@ -77,7 +96,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   };
 
   const handleDocumentTypeChange = (next: DocumentType) => {
-    setDocumentType(next);
+    setPickedDocumentType(next);
     if (!isWordImportAvailable(next)) clearDraftFile();
   };
 
@@ -118,7 +137,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
 
   const handleOpenChange = (next: boolean) => {
     if (!next && busy) return;
-    setOpen(next);
+    onOpenChange(next);
     if (!next) resetForm();
   };
 
@@ -137,12 +156,17 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     const type = documentType;
     const number = documentNo.trim();
     const reviewers = managerIds;
+    const selectedTemplateId = template?.id ?? null;
     setCreating(true);
     void (async () => {
       try {
-        const finalizePreloadId = useMultipart
-          ? null
-          : await takeForFinalize(type);
+        const finalizePreloadId =
+          useMultipart || selectedTemplateId
+            ? null
+            : await takeForFinalize(type);
+        const appendTemplate = (fd: FormData) => {
+          if (selectedTemplateId) fd.append("templateId", selectedTemplateId);
+        };
         const res = useMultipart
           ? await fetch("/api/reports", {
               method: "POST",
@@ -153,6 +177,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 for (const managerId of reviewers) {
                   fd.append("assignedManagerIds", managerId);
                 }
+                appendTemplate(fd);
                 fd.append("file", importedFile);
                 return fd;
               })(),
@@ -173,6 +198,9 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                   documentType: type,
                   documentNo: number,
                   assignedManagerIds: reviewers,
+                  ...(selectedTemplateId
+                    ? { templateId: selectedTemplateId }
+                    : {}),
                 }),
               });
         if (!res.ok) {
@@ -193,8 +221,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
         });
         toast.success("Report created");
 
-        setOpen(false);
-        resetForm();
+        handleOpenChange(false);
         router.push(`/reports/${reportId}/edit`);
         router.refresh();
       } catch {
@@ -205,13 +232,19 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     })();
   };
 
+  const documentNoPlaceholder =
+    template?.documentNoPlaceholder ??
+    selectedType?.documentNoPlaceholder ??
+    (documentType === "design_verification"
+      ? "e.g. DVR-2026-001"
+      : documentType === "mechanical_design_verification"
+        ? "e.g. 825-00101"
+        : documentType === "quality_risk_assessment"
+          ? "e.g. RA/DP/QA/26/001"
+          : "e.g. DEV/PK/26/001");
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button data-walkthrough="create-report">
-          <Plus className="size-4" /> New Report
-        </Button>
-      </DialogTrigger>
       <DialogContent
         className="max-h-[90vh] overflow-y-auto overflow-x-hidden"
         onInteractOutside={(event) => {
@@ -242,46 +275,44 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
             <DialogDescription>{dialogDescription}</DialogDescription>
           </DialogHeader>
           <div className="grid min-w-0 gap-4 py-2">
-            <div className="grid gap-2">
-              <Label htmlFor="documentType">Document type</Label>
-              <select
-                id="documentType"
-                className="h-9 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 text-sm"
-                value={documentType}
-                disabled={busy}
-                required
-                onChange={(e) => {
-                  const next = e.target.value;
-                  if (!availableTypes.some((type) => type.key === next)) return;
-                  handleDocumentTypeChange(next as DocumentType);
-                }}
-              >
-                <option value="" disabled>
-                  Select a document type
-                </option>
-                {availableTypes.map((type) => (
-                  <option key={type.key} value={type.key}>
-                    {type.label}
+            {template ? (
+              <div className="grid gap-1">
+                <Label>Template</Label>
+                <p className="text-sm">{template.title}</p>
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                <Label htmlFor="documentType">Document type</Label>
+                <select
+                  id="documentType"
+                  className="h-9 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 text-sm"
+                  value={documentType}
+                  disabled={busy}
+                  required
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (!availableTypes.some((type) => type.key === next)) return;
+                    handleDocumentTypeChange(next as DocumentType);
+                  }}
+                >
+                  <option value="" disabled>
+                    Select a document type
                   </option>
-                ))}
-              </select>
-            </div>
+                  {availableTypes.map((type) => (
+                    <option key={type.key} value={type.key}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {selectedType ? (
               <div className="grid gap-2">
                 <Label htmlFor="documentNo">{documentNoLabel}</Label>
                 <div className="relative">
                   <Input
                     id="documentNo"
-                    placeholder={
-                      selectedType.documentNoPlaceholder ??
-                      (documentType === "design_verification"
-                        ? "e.g. DVR-2026-001"
-                        : documentType === "mechanical_design_verification"
-                          ? "e.g. 825-00101"
-                          : documentType === "quality_risk_assessment"
-                            ? "e.g. RA/DP/QA/26/001"
-                            : "e.g. DEV/PK/26/001")
-                    }
+                    placeholder={documentNoPlaceholder}
                     value={documentNo}
                     disabled={busy}
                     className={previewLoading ? "pr-9" : undefined}
@@ -291,7 +322,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                     <Loader2
                       className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--muted-foreground)]"
                       aria-hidden="true"
-                    />
+                      />
                   ) : null}
                 </div>
                 {previewLoading ? (
@@ -381,5 +412,36 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type CreateReportButtonProps = {
+  managers: Managers;
+};
+
+export function CreateReportButton({ managers }: CreateReportButtonProps) {
+  const [open, setOpen] = useState(false);
+
+  if (getCustomerPack().documentTemplatesEnabled) {
+    return (
+      <Button asChild data-walkthrough="create-report">
+        <Link href="/templates" transitionTypes={["nav-forward"]}>
+          <Plus className="size-4" /> New Report
+        </Link>
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <Button data-walkthrough="create-report" onClick={() => setOpen(true)}>
+        <Plus className="size-4" /> New Report
+      </Button>
+      <CreateReportDialog
+        managers={managers}
+        open={open}
+        onOpenChange={setOpen}
+      />
+    </>
   );
 }
