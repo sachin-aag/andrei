@@ -133,8 +133,12 @@ function deleteRowsInvalidates(
       return older.cells.some((cell) => deleted.has(cell.row));
     case "insert_rows":
       return older.afterRow !== undefined && deleted.has(older.afterRow);
-    case "delete_rows":
-      return older.rows.every((row) => deleted.has(row.row));
+    case "delete_rows": {
+      const minDeleted = Math.min(...newer.rows.map((row) => row.row));
+      return older.rows.some(
+        (row) => deleted.has(row.row) || row.row > minDeleted
+      );
+    }
     case "insert_column":
     case "delete_column":
     case "delete_table":
@@ -206,8 +210,11 @@ function editCellsInvalidates(
   switch (older.kind) {
     case "edit_cells":
       return editCellsCoverOlder(newer, older);
-    case "insert_rows":
     case "delete_rows":
+      return older.rows.some((row) =>
+        newer.cells.some((cell) => cell.row === row.row)
+      );
+    case "insert_rows":
     case "insert_column":
     case "delete_column":
     case "delete_table":
@@ -223,6 +230,9 @@ function editCellsInvalidates(
 /**
  * True when applying `newer` covers or invalidates `older` on the same table.
  * Complementary ops (fill existing row 1, then append rows) stay both open.
+ * A later delete invalidates an older delete if any of those rows is removed
+ * or would shift up (below the smallest deleted row). A later cell edit
+ * invalidates an older delete of the same row.
  */
 function tableOpInvalidates(newer: TableOperation, older: TableOperation): boolean {
   switch (newer.kind) {
@@ -245,6 +255,24 @@ function tableOpInvalidates(newer: TableOperation, older: TableOperation): boole
       return _exhaustive;
     }
   }
+}
+
+/**
+ * Same field + tableIndex, and `newer`'s table op covers or invalidates
+ * `older`. Does not require `newer` to have a later createdAt — Apply all
+ * uses this after an earlier-in-batch apply.
+ */
+export function tableOpSupersedes(
+  newer: CommentRecord,
+  older: CommentRecord
+): boolean {
+  const keyNewer = tableSupersessionKey(newer);
+  const keyOlder = tableSupersessionKey(older);
+  if (!keyNewer || keyNewer !== keyOlder) return false;
+  const opNewer = tableOpFromComment(newer);
+  const opOlder = tableOpFromComment(older);
+  if (!opNewer || !opOlder) return false;
+  return tableOpInvalidates(opNewer, opOlder);
 }
 
 function rememberNewest(

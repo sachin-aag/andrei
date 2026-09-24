@@ -5,6 +5,7 @@ import {
   formatReplacedOlderSuggestionsNote,
   formatSupersedesBadge,
   isSupersededDismissal,
+  tableOpSupersedes,
   parseSupersededById,
   resolutionReasonSupersededBy,
   stripResolutionReason,
@@ -560,6 +561,98 @@ describe("findSupersededSuggestions", () => {
         { supersededId: "b", supersededBy: "c" },
       ])
     );
+  });
+
+  it("supersedes an older delete_rows when a later delete shifts those rows", () => {
+    const older = comment("delete-high", {
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [
+          { row: 9, expectedCells: ["9"] },
+          { row: 10, expectedCells: ["10"] },
+          { row: 15, expectedCells: ["15"] },
+        ],
+      },
+      anchor: "delete rows 9-15",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const newer = comment("delete-report", {
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [
+          { row: 2, expectedCells: ["2"] },
+          { row: 4, expectedCells: ["4"] },
+          { row: 6, expectedCells: ["6"] },
+          { row: 8, expectedCells: ["8"] },
+        ],
+      },
+      anchor: "delete report rows",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    });
+    expect(
+      findSupersededSuggestions({
+        section: "define",
+        comments: [older, newer],
+        sectionContent,
+      })
+    ).toEqual([{ supersededId: "delete-high", supersededBy: "delete-report" }]);
+  });
+
+  it("supersedes an older delete_rows when a later edit_cells edits a deleted row", () => {
+    const older = comment("delete-rows", {
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [
+          { row: 2, expectedCells: ["2"] },
+          { row: 4, expectedCells: ["4"] },
+        ],
+      },
+      anchor: "delete rows",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const newer = comment("edit-row-2", {
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 2, col: 0, expectedText: "2", insertText: "" }],
+      },
+      anchor: "edit cells",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    });
+    expect(
+      findSupersededSuggestions({
+        section: "define",
+        comments: [older, newer],
+        sectionContent,
+      })
+    ).toEqual([{ supersededId: "delete-rows", supersededBy: "edit-row-2" }]);
+  });
+});
+
+describe("tableOpSupersedes", () => {
+  it("is true for a delete that shifts an older delete, without createdAt order", () => {
+    const leftover = comment("delete-high", {
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [{ row: 9, expectedCells: ["9"] }],
+      },
+      anchor: "delete row 9",
+      createdAt: "2026-01-01T00:02:00.000Z",
+    });
+    const applied = comment("delete-low", {
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [{ row: 2, expectedCells: ["2"] }],
+      },
+      anchor: "delete row 2",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(tableOpSupersedes(applied, leftover)).toBe(true);
   });
 });
 

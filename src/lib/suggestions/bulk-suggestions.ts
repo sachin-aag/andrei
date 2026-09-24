@@ -11,6 +11,7 @@ import { partitionBulkApplies } from "@/lib/suggestions/suggestion-overlap";
 import {
   findSupersededSuggestions,
   resolutionReasonSupersededBy,
+  tableOpSupersedes,
   withResolutionReason,
 } from "@/lib/suggestions/supersession";
 import {
@@ -66,6 +67,13 @@ type ReportBulkArgs = {
   onSectionEnd?: (section: SectionType) => void;
 };
 
+function appliedCommentThatSupersedesTableOp(
+  appliedComments: readonly CommentRecord[],
+  leftover: CommentRecord
+): CommentRecord | undefined {
+  return appliedComments.find((applied) => tableOpSupersedes(applied, leftover));
+}
+
 function applyOneInMemory(args: {
   section: SectionType;
   comment: CommentRecord;
@@ -73,7 +81,10 @@ function applyOneInMemory(args: {
   applyMode?: SuggestionApplyMode;
   applied: Set<string>;
   appliedIds: string[];
+  appliedComments: CommentRecord[];
   skippedIds: string[];
+  dismissedIds: string[];
+  supersededById: Map<string, string>;
   ignorePlaceBeforePairedBlock?: boolean;
   documentContents?: readonly DocumentTableContent[];
 }): Record<string, unknown> {
@@ -87,15 +98,24 @@ function applyOneInMemory(args: {
     ignorePlaceBeforePairedBlock: args.ignorePlaceBeforePairedBlock,
     documentContents: args.documentContents,
   });
-  if (!result.ok) {
+  if (!result.ok || result.remainder === "conflict") {
+    const supersededBy = appliedCommentThatSupersedesTableOp(
+      args.appliedComments,
+      args.comment
+    );
+    if (supersededBy) {
+      args.dismissedIds.push(args.comment.id);
+      args.supersededById.set(args.comment.id, supersededBy.id);
+      return args.sectionContent;
+    }
     args.skippedIds.push(args.comment.id);
+    if (result.ok && result.remainder === "conflict") {
+      return result.nextSection;
+    }
     return args.sectionContent;
   }
-  if (result.remainder === "conflict") {
-    args.skippedIds.push(args.comment.id);
-    return result.nextSection;
-  }
   args.appliedIds.push(args.comment.id);
+  args.appliedComments.push(args.comment);
   return result.nextSection;
 }
 
@@ -134,9 +154,14 @@ export async function acceptAllSuggestions(args: {
     sectionContent: args.sectionContent,
   });
   const supersededIds = new Set(supersededPairs.map((pair) => pair.supersededId));
+  const supersededById = new Map(
+    supersededPairs.map((pair) => [pair.supersededId, pair.supersededBy])
+  );
 
   let current = args.sectionContent;
   const appliedIds: string[] = [];
+  const appliedComments: CommentRecord[] = [];
+  const dismissedIds: string[] = [...supersededIds];
   // Leave unlocatable leftovers open. Dismissing them is a silent failure;
   // the toast reports the skip and the card stays so the engineer can act.
   const skippedIds: string[] = partition.unlocatableIds.filter(
@@ -166,6 +191,17 @@ export async function acceptAllSuggestions(args: {
         })
       : undefined;
 
+  const applyArgs = {
+    section: args.section,
+    applyMode: args.applyMode,
+    applied,
+    appliedIds,
+    appliedComments,
+    skippedIds,
+    dismissedIds,
+    supersededById,
+  };
+
   for (const comment of args.comments) {
     if (applied.has(comment.id)) continue;
     if (overlappingIds.has(comment.id)) {
@@ -179,13 +215,9 @@ export async function acceptAllSuggestions(args: {
         if (supersededIds.has(member.id)) continue;
         const payload = parseAiFixCommentContent(member.content);
         current = applyOneInMemory({
-          section: args.section,
+          ...applyArgs,
           comment: member,
           sectionContent: current,
-          applyMode: args.applyMode,
-          applied,
-          appliedIds,
-          skippedIds,
           ignorePlaceBeforePairedBlock: Boolean(
             payload.pairedBlockSuggestionId &&
               clusterIds.has(payload.pairedBlockSuggestionId)
@@ -196,18 +228,13 @@ export async function acceptAllSuggestions(args: {
       continue;
     }
     current = applyOneInMemory({
-      section: args.section,
+      ...applyArgs,
       comment,
       sectionContent: current,
-      applyMode: args.applyMode,
-      applied,
-      appliedIds,
-      skippedIds,
       documentContents: contentsFor(comment.id, current),
     });
   }
 
-  const dismissedIds = [...supersededIds];
   if (
     appliedIds.length === 0 &&
     dismissedIds.length === 0 &&
@@ -285,9 +312,6 @@ export async function acceptAllSuggestions(args: {
     args.reportId,
     appliedIds,
     "resolved"
-  );
-  const supersededById = new Map(
-    supersededPairs.map((pair) => [pair.supersededId, pair.supersededBy])
   );
   const commentById = new Map(args.comments.map((c) => [c.id, c]));
   const dismissContent: Record<string, string> = {};
@@ -522,20 +546,41 @@ async function runReportBulk(
 
 export function formatBulkApplyToast(
   applied: number,
-  skipped: number
+  skipped: number,
+  dismissed = 0
 ): string {
-  if (applied === 0 && skipped === 0) return "No suggestions to apply.";
+  if (applied === 0 && skipped === 0 && dismissed === 0) {
+    return "No suggestions to apply.";
+  }
   if (applied === 0) {
+    if (dismissed > 0 && skipped === 0) {
+      return dismissed === 1
+        ? "1 suggestion was already replaced and was dismissed."
+        : `${dismissed} suggestions were already replaced and were dismissed.`;
+    }
     return skipped === 1
       ? "This suggestion no longer fits. Dismiss it or run Suggest fixes again."
       : "None of these suggestions could be applied. Dismiss them or run Suggest fixes again.";
   }
   const appliedText =
     applied === 1 ? "Applied 1 suggestion" : `Applied ${applied} suggestions`;
-  if (skipped === 0) return appliedText;
-  return skipped === 1
-    ? `${appliedText}. 1 no longer fits and was left open.`
-    : `${appliedText}. ${skipped} no longer fit and were left open.`;
+  const extras: string[] = [];
+  if (dismissed > 0) {
+    extras.push(
+      dismissed === 1
+        ? "1 replaced by it was dismissed"
+        : `${dismissed} replaced by them were dismissed`
+    );
+  }
+  if (skipped > 0) {
+    extras.push(
+      skipped === 1
+        ? "1 no longer fits and was left open"
+        : `${skipped} no longer fit and were left open`
+    );
+  }
+  if (extras.length === 0) return appliedText;
+  return `${appliedText}. ${extras.join(". ")}.`;
 }
 
 export function formatBulkDismissToast(

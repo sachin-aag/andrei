@@ -14,7 +14,6 @@ import {
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
-import { countOpenAiSuggestions } from "@/lib/ai/suggestion-gating";
 import { getDocumentType, suggestionApplyModeFor } from "@/lib/document-types";
 import {
   acceptAllSuggestionsInReport,
@@ -23,6 +22,7 @@ import {
   formatBulkDismissToast,
   shouldShowSuggestionBulkActions,
 } from "@/lib/suggestions/bulk-suggestions";
+import { countOpenSuggestionsForReport } from "@/lib/suggestions/validate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
 import type { SectionType } from "@/db/schema";
 
@@ -47,11 +47,20 @@ export function ReportBulkSuggestionActions() {
     (currentUserId === report.authorId ||
       getUser(currentUserId)?.role === "manager");
 
-  const openTotal = countOpenAiSuggestions(comments);
-
   const sectionOrder = useMemo(
     () => suggestionCardSectionKeys(report.documentType),
     [report.documentType]
+  );
+
+  const { total: openTotal, locatable } = useMemo(
+    () =>
+      countOpenSuggestionsForReport(
+        sectionOrder,
+        comments,
+        evaluations,
+        (section) => sections[section]
+      ),
+    [sectionOrder, comments, evaluations, sections]
   );
 
   const releaseBulkHolds = useCallback(() => {
@@ -119,7 +128,8 @@ export function ReportBulkSuggestionActions() {
 
       const message = formatBulkApplyToast(
         result.appliedIds.length,
-        result.skippedIds.length
+        result.skippedIds.length,
+        result.dismissedIds.length
       );
       if (result.failedIds.length > 0) {
         toast.error(`${message}. Some sections stopped after a save error.`);
@@ -186,22 +196,24 @@ export function ReportBulkSuggestionActions() {
 
   return (
     <div className="flex items-center gap-2" data-testid="report-bulk-suggestion-actions">
-      <Button
-        type="button"
-        size="sm"
-        disabled={busy}
-        title={`Apply all ${openTotal} open suggestions across the document`}
-        onClick={() => {
-          void handleAcceptAll();
-        }}
-      >
-        {running === "accept" ? (
-          <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
-        ) : (
-          <CheckCheck className="size-4 shrink-0" aria-hidden="true" />
-        )}
-        Apply all {openTotal}
-      </Button>
+      {locatable >= 1 ? (
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy}
+          title={`Apply all ${locatable} open suggestions across the document`}
+          onClick={() => {
+            void handleAcceptAll();
+          }}
+        >
+          {running === "accept" ? (
+            <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+          ) : (
+            <CheckCheck className="size-4 shrink-0" aria-hidden="true" />
+          )}
+          Apply all {locatable}
+        </Button>
+      ) : null}
       <Button
         type="button"
         size="sm"
