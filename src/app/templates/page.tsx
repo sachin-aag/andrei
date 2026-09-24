@@ -43,7 +43,7 @@ export default async function TemplatesPage() {
               Templates
             </h1>
             <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-              Open a section, then pick a document tile to start a draft.
+              Pick a document tile to start a draft.
             </p>
           </div>
           <div className="flex-1 overflow-auto px-10 py-6">

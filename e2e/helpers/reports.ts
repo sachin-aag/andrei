@@ -18,7 +18,9 @@ export function uniqueDeviationNo(prefix = "E2E"): string {
 
 /** Header "New Report" on the engineer dashboard (link on demo, button elsewhere). */
 export function newReportButton(page: Page) {
-  return page.locator("a, button").filter({ hasText: /^New Report$/ });
+  return page
+    .getByRole("link", { name: /^New Report$/ })
+    .or(page.getByRole("button", { name: /^New Report$/ }));
 }
 
 export async function openNewReportDialog(page: Page): Promise<void> {
