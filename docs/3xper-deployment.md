@@ -11,7 +11,7 @@ Infra stand-up is **[Add a customer](./whitelabel-vercel-deploy.md#add-a-custome
 | `GCS_BUCKET` | `andrei-493614-3xper-attachments` |
 | `promptVersion` | `3xper-vq-f04-v1` |
 
-This pack enables **two** document types: Vendor Qualification (`vendor_qualification`, form **QAD-SOP-MS-001-F04** Rev 01) and the Qualification Summary Report (`qualification_summary_report`, form **QAD/016/F06-00**, `promptVersion` `3xper-qsr-f06-v1`). Investigation, DV, QRA, ELR, and generic Document are off.
+This pack enables **two** document types: Vendor Qualification (`vendor_qualification`, form **QAD-SOP-MS-001-F04** Rev 01) and the Qualification Summary Report (`qualification_summary_report`, form **QAD/016/F06-00**, `promptVersion` `3xper-qsr-f06-v2`). Investigation, DV, QRA, ELR, and generic Document are off.
 
 ## What users see
 

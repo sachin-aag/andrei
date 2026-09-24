@@ -16,14 +16,14 @@ import {
 } from "@/lib/document-types/qsr/sections";
 
 const TABLE_DESCRIPTION =
-  "Keep the header columns unchanged. A row with only a bold first cell prints as a full-width group row in Word.";
+  "Keep the header columns unchanged. Select cells and Merge for a group heading, or put only bold text in the first cell.";
 
 function sectionDescription(section: QsrSectionKey): string | undefined {
   if (section === "qsr_volumetric_details") {
     return "One bold heading line, then each Parameter / Details table. The Word export keeps the form layout.";
   }
   if (section === "qsr_qualification_documents") {
-    return "Leave S.No and Stage blank on a report row to merge it with the protocol row above.";
+    return "Select the protocol and report cells and Merge, or leave Document Name blank on the report row so Word still merges them.";
   }
   if (section === "qsr_operating_range") {
     return "Range is only used for Temperature; leave it blank elsewhere and the Details cell spans both columns.";

@@ -168,30 +168,52 @@ function textParagraph(text: string, bold = false): JSONContent {
   };
 }
 
-function cell(type: "tableHeader" | "tableCell", text: string): JSONContent {
-  return { type, attrs: { ...CELL_ATTRS }, content: [textParagraph(text)] };
+function cell(
+  type: "tableHeader" | "tableCell",
+  text: string,
+  attrs: { colspan?: number; bold?: boolean } = {}
+): JSONContent {
+  return {
+    type,
+    attrs: { ...CELL_ATTRS, colspan: attrs.colspan ?? 1 },
+    content: [textParagraph(text, attrs.bold)],
+  };
 }
+
+type SeedRow = readonly string[] | { banner: string };
 
 function table(
   headers: readonly string[],
-  rows: ReadonlyArray<readonly string[]>
+  rows: readonly SeedRow[] = []
 ): JSONContent {
-  const body = rows.length ? rows : [headers.map(() => "")];
+  const body: readonly SeedRow[] = rows.length ? rows : [headers.map(() => "")];
   return {
     type: "table",
     content: [
       { type: "tableRow", content: headers.map((h) => cell("tableHeader", h)) },
-      ...body.map((row) => ({
-        type: "tableRow",
-        content: headers.map((_, i) => cell("tableCell", row[i] ?? "")),
-      })),
+      ...body.map((row) =>
+        "banner" in row
+          ? {
+              type: "tableRow",
+              content: [
+                cell("tableCell", row.banner, {
+                  bold: true,
+                  colspan: headers.length,
+                }),
+              ],
+            }
+          : {
+              type: "tableRow",
+              content: headers.map((_, i) => cell("tableCell", row[i] ?? "")),
+            }
+      ),
     ],
   };
 }
 
 function tableDoc(
   headers: readonly string[],
-  rows: ReadonlyArray<readonly string[]> = []
+  rows: readonly SeedRow[] = []
 ): JSONContent {
   return { type: "doc", content: [table(headers, rows)] };
 }
@@ -221,23 +243,12 @@ const ACRONYM_ROWS = [
   ["SISPQ", "Safety, Identity, Strength, Purity, and Quality", "FAT", "Factory Acceptance Test"],
 ];
 
-/**
- * A blank Document Name on a row that has a Document Number continues the
- * row above (protocol → report); export merges those cells like the form.
- */
-const QUALIFICATION_DOCUMENT_ROWS = [
-  ["User Requirement Specification"],
-  ["Data Sheet"],
-  ["Failure Mode Effect Analysis"],
-  ["Design Qualification"],
+/** 5.1 group rows from the form, without equipment-specific banners. */
+const PROCESS_REQUIREMENT_ROWS: SeedRow[] = [
+  ["URS-1"],
+  { banner: "ANY SPECIFIC REQUIREMENTS" },
   [""],
-  ["Factory Acceptance Test"],
-  ["Site Acceptance Test Checklist"],
-  ["Installation Qualification"],
-  [""],
-  ["Operational Qualification"],
-  [""],
-  ["Performance Qualification"],
+  { banner: "OTHER AUXILIARY REQUIREMENT" },
   [""],
 ];
 
@@ -311,12 +322,11 @@ export function emptyQsrContent(key: QsrSectionKey): QsrSectionContent {
     case "qsr_acronyms":
       return { table: tableDoc(QSR_ACRONYMS_HEADERS, ACRONYM_ROWS) };
     case "qsr_qualification_documents":
-      return {
-        table: tableDoc(QSR_QUALIFICATION_DOCUMENT_HEADERS, QUALIFICATION_DOCUMENT_ROWS),
-      };
+      return { table: tableDoc(QSR_QUALIFICATION_DOCUMENT_HEADERS) };
     case "qsr_sops":
       return { table: tableDoc(QSR_SOP_HEADERS, SOP_ROWS) };
     case "qsr_rtm_process":
+      return { table: tableDoc(QSR_RTM_HEADERS, PROCESS_REQUIREMENT_ROWS) };
     case "qsr_rtm_gmp":
     case "qsr_rtm_safety":
     case "qsr_rtm_csv":

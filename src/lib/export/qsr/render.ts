@@ -26,6 +26,7 @@ import {
   withChildren,
   type RunMarks,
 } from "./ooxml";
+import { fillQsrIndexPageNumbers } from "./index-pages";
 import {
   QSR_BANNER_MARKER,
   QSR_HEADING_MARKER,
@@ -488,5 +489,10 @@ export function applyQsrSlotsToDocxZip(zip: PizZip, input: QsrSlotInput): void {
     out.push(rendered);
     i = end;
   }
-  zip.file("word/document.xml", `${xml.slice(0, bodyStart)}${out.join("")}${xml.slice(bodyEnd)}`);
+  zip.file(
+    "word/document.xml",
+    fillQsrIndexPageNumbers(
+      `${xml.slice(0, bodyStart)}${out.join("")}${xml.slice(bodyEnd)}`
+    )
+  );
 }

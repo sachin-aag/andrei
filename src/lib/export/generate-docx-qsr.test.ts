@@ -157,10 +157,25 @@ describe("qualification summary report DOCX export", () => {
     const ends = [...document.matchAll(/<w:bookmarkEnd w:id="(\d+)"/g)].map((m) => m[1]);
     expect(new Set(starts.map((m) => m[1])).size).toBe(starts.length);
     expect(ends.toSorted()).toEqual(starts.map((m) => m[1]).toSorted());
-    const names = new Set(starts.map((m) => m[2]));
-    for (const [, target] of document.matchAll(/PAGEREF (\S+)/g)) {
-      expect(names.has(target), target).toBe(true);
-    }
+    expect(document).not.toMatch(/PAGEREF /);
+
+    const indexTable = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) => visibleText(tbl).includes("Sr. No.") && visibleText(tbl).includes("Page No")
+    );
+    expect(indexTable, "Index table").toBeTruthy();
+    const indexRows = indexTable!.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) ?? [];
+    const firstEntry = indexRows[1] ?? "";
+    expect(visibleText(firstEntry)).toMatch(/5/);
+
+    expect(body).not.toContain("Site Acceptance Test Checklist");
+    expect(rowContaining(document, "ANY SPECIFIC REQUIREMENTS")).toContain(
+      '<w:gridSpan w:val="6"/>'
+    );
+    expect(rowContaining(document, "OTHER AUXILIARY REQUIREMENT")).toContain(
+      '<w:gridSpan w:val="6"/>'
+    );
+    expect(document).not.toContain("PRIMARY CONDENSER");
+    expect(document).not.toContain("MOTOR & GEARBOX");
   });
 
   it("keeps user text that looks like a template tag literal", async () => {
