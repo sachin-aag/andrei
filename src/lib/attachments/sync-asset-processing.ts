@@ -38,6 +38,25 @@ export async function syncAssetProcessing(
     .where(eq(reportAttachments.assetId, assetId));
 }
 
+/**
+ * The documents list reads ingest fields from the linked vault asset. A
+ * report-link-only write leaves the bar stuck at the last asset value.
+ */
+export async function patchLinkedProcessing(
+  attachmentId: string,
+  assetId: string | null | undefined,
+  patch: ProcessingPatch
+): Promise<void> {
+  if (assetId) {
+    await syncAssetProcessing(assetId, patch);
+    return;
+  }
+  await db
+    .update(reportAttachments)
+    .set(patch)
+    .where(eq(reportAttachments.id, attachmentId));
+}
+
 export async function loadAssetForAttachment(
   attachment: Pick<typeof reportAttachments.$inferSelect, "assetId">
 ) {

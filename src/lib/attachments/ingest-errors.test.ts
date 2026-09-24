@@ -48,6 +48,16 @@ describe("sanitizeIngestError", () => {
     );
   });
 
+  it("keeps a failed resume instead of a generic ingest failed", () => {
+    expect(
+      sanitizeIngestError(
+        new Error("Could not continue document ingest (401): Authentication Required")
+      )
+    ).toBe(
+      "Document ingestion stopped between batches and could not resume. Reprocess the attachment to continue."
+    );
+  });
+
   it("does not claim ingest 'could not be started'", () => {
     expect(sanitizeIngestError(new Error("boom"))).toBe(
       "Document ingestion failed"
