@@ -84,13 +84,16 @@ import {
 } from "@/lib/export/docx-toc-headings";
 import { applyElrLiveAttachmentsTable } from "@/lib/export/elr-attachments-table";
 import {
+  citationsAppendixXml as reportCitationsAppendixXml,
   elrCitationsAppendixXml,
   insertXmlBeforeLastSectPr,
   unifyElrCitationsForExport,
+  unifyReportCitationsForExport,
 } from "@/lib/export/elr-unified-citations";
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
 import { applyQsrSlotsToDocxZip } from "@/lib/export/qsr/render";
-import { qsrMetadataFrom } from "@/lib/document-types/qsr/sections";
+import { QSR_SECTION_KEYS, qsrMetadataFrom } from "@/lib/document-types/qsr/sections";
+import { VQ_SECTION_KEYS } from "@/lib/document-types/vq/sections";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
@@ -550,6 +553,19 @@ export async function generateReportDocx({
       exportSections = unified.sections;
       citationsAppendixXml = elrCitationsAppendixXml(unified.bibliography);
     }
+  }
+  if (
+    !omitCitations &&
+    (report.documentType === "vendor_qualification" ||
+      report.documentType === "qualification_summary_report")
+  ) {
+    const sectionKeys =
+      report.documentType === "vendor_qualification"
+        ? VQ_SECTION_KEYS
+        : QSR_SECTION_KEYS;
+    const unified = unifyReportCitationsForExport(exportSections, sectionKeys);
+    exportSections = unified.sections;
+    citationsAppendixXml = reportCitationsAppendixXml(unified.bibliography, "CITATIONS");
   }
   if (report.documentType === "generic_document") {
     return generateGenericDocumentDocx({

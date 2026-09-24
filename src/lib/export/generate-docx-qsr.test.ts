@@ -11,6 +11,7 @@ import {
   QSR_QUALIFICATION_DOCUMENT_HEADERS,
   QSR_RTM_HEADERS,
   QSR_SECTION_KEYS,
+  shapeOperatingRangeTable,
   type QsrSectionContent,
   type QsrSectionKey,
 } from "@/lib/document-types/qsr/sections";
@@ -263,5 +264,63 @@ describe("qualification summary report DOCX export", () => {
     );
     expect(listParagraph).toContain("<w:numPr>");
     expect(visibleText(rowContaining(document, "URS-1"))).toBe("URS-1Capacity3.0 KLIQ8.1Complies");
+  });
+
+  it("shows the operating range table as the form, without a Range header", () => {
+    const shaped = shapeOperatingRangeTable(
+      tableDoc(QSR_OPERATING_RANGE_HEADERS, [
+        ["1.", "Pressure", "", ""],
+        ["4.", "Temperature", "Minimum", "-20 °C"],
+        ["", "", "Maximum", "150 °C"],
+      ])
+    );
+    const table = shaped.content?.[0];
+    const label = (cell: JSONContent | undefined) =>
+      (cell?.content ?? [])
+        .flatMap((paragraph) => paragraph.content ?? [])
+        .map((node) => node.text ?? "")
+        .join("");
+    expect((table?.content?.[0]?.content ?? []).map(label)).toEqual([
+      "S.No",
+      "Parameter",
+      "Details",
+    ]);
+    const pressure = table?.content?.[1];
+    expect(pressure?.content).toHaveLength(3);
+    expect(pressure?.content?.[2]?.attrs?.colspan).toBe(2);
+    const temperature = table?.content?.[2];
+    expect(temperature?.content?.[0]?.attrs?.rowspan).toBe(2);
+    expect(temperature?.content?.[1]?.attrs?.rowspan).toBe(2);
+    expect(table?.content?.[3]?.content).toHaveLength(2);
+  });
+
+  it("unifies citations at the end of the form", async () => {
+    function cited(body: string, source: string): JSONContent {
+      return {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [text(body)] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [text("Citations:")] },
+          { type: "paragraph", content: [text(`1. ${source}`)] },
+        ],
+      };
+    }
+    const { document } = await exportXml(
+      sectionsWith({
+        qsr_conclusion: { narrative: cited("The system is qualified [1].", "[iq.pdf, p. 4]") },
+        qsr_objective: { narrative: cited("The URS was approved [1].", "[urs.pdf, p. 2]") },
+      })
+    );
+    const body = visibleText(document);
+    const citationsAt = body.indexOf("CITATIONS");
+    expect(citationsAt).toBeGreaterThan(body.indexOf("CONCLUSION:"));
+    expect(body).toContain("The URS was approved");
+    expect(body).toContain("The system is qualified");
+    expect(document).toContain('<w:vertAlign w:val="superscript"/>');
+    expect(body).not.toContain("Citations:");
+    expect(body).toContain("1. [urs.pdf, p. 2]");
+    expect(body).toContain("2. [iq.pdf, p. 4]");
+    expect(body.indexOf("1. [urs.pdf, p. 2]")).toBeGreaterThan(citationsAt);
   });
 });

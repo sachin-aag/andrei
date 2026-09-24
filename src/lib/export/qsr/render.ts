@@ -7,6 +7,7 @@ import {
   type QsrMetadata,
   type QsrSectionKey,
 } from "@/lib/document-types/qsr/sections";
+import { citationNumbersFromDoc } from "@/lib/suggestions/citations-at-end";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import {
   appendToLastParagraph,
@@ -84,8 +85,53 @@ function marksOf(node: JSONContent): RunMarks {
   };
 }
 
+const CITATION_MARKER_RE = /\[(\d+)\]/g;
+
+/** Split `[n]` into a superscript run when `n` is a citation in this field. */
+function textRuns(
+  text: string,
+  rPr: string,
+  marks: RunMarks,
+  citationNumbers: ReadonlySet<number> | undefined
+): string {
+  if (!citationNumbers || citationNumbers.size === 0) {
+    return `<w:r>${mergeRunProperties(rPr, marks)}<w:t xml:space="preserve">${escapeXmlText(text)}</w:t></w:r>`;
+  }
+  const parts: string[] = [];
+  const markerRe = new RegExp(CITATION_MARKER_RE.source, "g");
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = markerRe.exec(text)) !== null) {
+    const n = Number(match[1]);
+    if (!citationNumbers.has(n)) continue;
+    if (match.index > last) {
+      parts.push(
+        `<w:r>${mergeRunProperties(rPr, marks)}<w:t xml:space="preserve">${escapeXmlText(text.slice(last, match.index))}</w:t></w:r>`
+      );
+    }
+    parts.push(
+      `<w:r>${mergeRunProperties(rPr, { ...marks, vertAlign: "superscript" })}<w:t xml:space="preserve">${escapeXmlText(String(n))}</w:t></w:r>`
+    );
+    last = match.index + match[0].length;
+  }
+  if (parts.length === 0) {
+    return `<w:r>${mergeRunProperties(rPr, marks)}<w:t xml:space="preserve">${escapeXmlText(text)}</w:t></w:r>`;
+  }
+  if (last < text.length) {
+    parts.push(
+      `<w:r>${mergeRunProperties(rPr, marks)}<w:t xml:space="preserve">${escapeXmlText(text.slice(last))}</w:t></w:r>`
+    );
+  }
+  return parts.join("");
+}
+
 /** Runs for a paragraph, or null when it needs the generic renderer. */
-function inlineRuns(nodes: JSONContent[], rPr: string, forceBold = false): string | null {
+function inlineRuns(
+  nodes: JSONContent[],
+  rPr: string,
+  forceBold = false,
+  citationNumbers?: ReadonlySet<number>
+): string | null {
   let xml = "";
   for (const node of nodes) {
     if (node.type === "hardBreak") {
@@ -96,7 +142,7 @@ function inlineRuns(nodes: JSONContent[], rPr: string, forceBold = false): strin
     if ((node.marks ?? []).some((m) => !PLAIN_MARKS.has(m.type))) return null;
     const marks = marksOf(node);
     if (forceBold) marks.bold = true;
-    xml += `<w:r>${mergeRunProperties(rPr, marks)}<w:t xml:space="preserve">${escapeXmlText(node.text)}</w:t></w:r>`;
+    xml += textRuns(node.text, rPr, marks, citationNumbers);
   }
   return xml;
 }
@@ -105,9 +151,15 @@ function paragraphXml(
   node: JSONContent,
   proto: ParagraphProto,
   ctx: DocxExportContext,
-  forceBold = false
+  forceBold = false,
+  citationNumbers?: ReadonlySet<number>
 ): string {
-  const runs = inlineRuns(node.content ?? [], proto.rPr, forceBold || node.type === "heading");
+  const runs = inlineRuns(
+    node.content ?? [],
+    proto.rPr,
+    forceBold || node.type === "heading",
+    citationNumbers
+  );
   if (runs === null) return fallbackXml([node], ctx);
   return `<w:p>${proto.pPr}${runs}</w:p>`;
 }
@@ -116,11 +168,12 @@ function blocksXml(
   nodes: JSONContent[],
   proto: ParagraphProto,
   ctx: DocxExportContext,
-  forceBold = false
+  forceBold = false,
+  citationNumbers?: ReadonlySet<number>
 ): string {
   const parts = nodes.map((node) =>
     node.type === "paragraph" || node.type === "heading"
-      ? paragraphXml(node, proto, ctx, forceBold)
+      ? paragraphXml(node, proto, ctx, forceBold, citationNumbers)
       : fallbackXml([node], ctx)
   );
   return parts.join("") || `<w:p>${proto.pPr}</w:p>`;
@@ -295,16 +348,33 @@ function sumWidths(widths: number[], from: number, span: number): number {
   return widths.slice(from, from + span).reduce((a, b) => a + b, 0);
 }
 
-function bannerRowXml(cell: GridCell, proto: TableProto, ctx: DocxExportContext): string {
+function bannerRowXml(
+  cell: GridCell,
+  proto: TableProto,
+  ctx: DocxExportContext,
+  citationNumbers?: ReadonlySet<number>
+): string {
   const source = proto.bannerRow ?? proto.dataRow;
   const tc = childElements(source).find((c) => isElement(c, "w:tc")) ?? "";
   const { tcPr, paragraph } = cellProto(tc);
   const shape = { width: sumWidths(proto.widths, 0, proto.widths.length), gridSpan: proto.widths.length, vMerge: null };
-  const content = blocksXml(cell.node.content ?? [], paragraph, ctx, proto.bannerRow === null);
+  const content = blocksXml(
+    cell.node.content ?? [],
+    paragraph,
+    ctx,
+    proto.bannerRow === null,
+    citationNumbers
+  );
   return `<w:tr>${trPrOf(source)}<w:tc>${buildCellProperties(tcPr, shape)}${content}</w:tc></w:tr>`;
 }
 
-function bodyRowXml(grid: Grid, r: number, proto: TableProto, ctx: DocxExportContext): string {
+function bodyRowXml(
+  grid: Grid,
+  r: number,
+  proto: TableProto,
+  ctx: DocxExportContext,
+  citationNumbers?: ReadonlySet<number>
+): string {
   const cells: string[] = [];
   const row = grid.rows[r];
   for (let c = 0; c < row.length; ) {
@@ -314,7 +384,7 @@ function bodyRowXml(grid: Grid, r: number, proto: TableProto, ctx: DocxExportCon
     if (cell.row === r) {
       const vMerge = cell.rowspan > 1 ? "restart" : null;
       cells.push(
-        `<w:tc>${buildCellProperties(tcPr, { width, gridSpan: cell.colspan, vMerge })}${blocksXml(cell.node.content ?? [], paragraph, ctx)}</w:tc>`
+        `<w:tc>${buildCellProperties(tcPr, { width, gridSpan: cell.colspan, vMerge })}${blocksXml(cell.node.content ?? [], paragraph, ctx, false, citationNumbers)}</w:tc>`
       );
     } else {
       cells.push(
@@ -330,7 +400,8 @@ function tableXml(
   table: JSONContent,
   protoTbl: string,
   rules: QsrTableMergeRules | undefined,
-  ctx: DocxExportContext
+  ctx: DocxExportContext,
+  citationNumbers?: ReadonlySet<number>
 ): string {
   const proto = readTableProto(protoTbl);
   const allRows = table.content ?? [];
@@ -342,14 +413,16 @@ function tableXml(
   if (!proto || !grid) return fallbackXml([table], ctx);
   applyMergeRules(grid, rules);
   const rows = grid.rows.map((row, r) =>
-    grid.banners.has(r) ? bannerRowXml(row[0]!, proto, ctx) : bodyRowXml(grid, r, proto, ctx)
+    grid.banners.has(r)
+      ? bannerRowXml(row[0]!, proto, ctx, citationNumbers)
+      : bodyRowXml(grid, r, proto, ctx, citationNumbers)
   );
   if (!rows.length) {
     const emptyGrid = buildGrid(
       [{ type: "tableRow", content: proto.widths.map(() => ({ type: "tableCell", content: [] })) }],
       proto.widths.length
     )!;
-    rows.push(bodyRowXml(emptyGrid, 0, proto, ctx));
+    rows.push(bodyRowXml(emptyGrid, 0, proto, ctx, citationNumbers));
   }
   return withChildren(protoTbl, [...proto.prefix, ...proto.headerRows, ...rows]);
 }
@@ -375,7 +448,13 @@ function firstOfType(protos: string[], name: string): string | undefined {
 }
 
 function narrativeSlotXml(doc: JSONContent, protos: string[], ctx: DocxExportContext): string {
-  return blocksXml(doc.content ?? [], paragraphProto(firstOfType(protos, "w:p")), ctx);
+  return blocksXml(
+    doc.content ?? [],
+    paragraphProto(firstOfType(protos, "w:p")),
+    ctx,
+    false,
+    citationNumbersFromDoc(doc)
+  );
 }
 
 function tableSlotXml(
@@ -385,13 +464,16 @@ function tableSlotXml(
   ctx: DocxExportContext
 ): string {
   const protoTbl = firstOfType(protos, "w:tbl") ?? "";
+  const citationNumbers = citationNumbersFromDoc(doc);
   const tables = (doc.content ?? []).filter((node) => node.type === "table");
   if (!tables.length) {
-    return tableXml({ type: "table", content: [] }, protoTbl, rules, ctx);
+    return tableXml({ type: "table", content: [] }, protoTbl, rules, ctx, citationNumbers);
   }
   return (doc.content ?? [])
     .map((node) =>
-      node.type === "table" ? tableXml(node, protoTbl, rules, ctx) : fallbackXml([node], ctx)
+      node.type === "table"
+        ? tableXml(node, protoTbl, rules, ctx, citationNumbers)
+        : fallbackXml([node], ctx)
     )
     .join("");
 }
@@ -405,6 +487,7 @@ function volumetricSlotXml(
   const heading = paragraphProto(protos.find((el) => elementText(el) === QSR_HEADING_MARKER));
   const spacer = paragraphProto(protos.find((el) => elementText(el) === QSR_SPACER_MARKER));
   const protoTbl = firstOfType(protos, "w:tbl") ?? "";
+  const citationNumbers = citationNumbersFromDoc(doc);
   const parts: string[] = [];
   (doc.content ?? []).forEach((node, index) => {
     if (node.type === "paragraph" || node.type === "heading") {
@@ -421,11 +504,14 @@ function volumetricSlotXml(
         }
         return;
       }
-      parts.push(paragraphXml(node, heading, ctx));
+      parts.push(paragraphXml(node, heading, ctx, false, citationNumbers));
       return;
     }
     if (node.type === "table") {
-      parts.push(tableXml(node, protoTbl, undefined, ctx), `<w:p>${spacer.pPr}</w:p>`);
+      parts.push(
+        tableXml(node, protoTbl, undefined, ctx, citationNumbers),
+        `<w:p>${spacer.pPr}</w:p>`
+      );
       return;
     }
     parts.push(fallbackXml([node], ctx));

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentType } from "react";
+import { useMemo, type ComponentType } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
@@ -11,6 +11,7 @@ import {
   QSR_SECTION_KEYS,
   QSR_SECTION_LABELS,
   isQsrTableSectionKey,
+  shapeOperatingRangeTable,
   type QsrSectionContent,
   type QsrSectionKey,
 } from "@/lib/document-types/qsr/sections";
@@ -26,7 +27,7 @@ function sectionDescription(section: QsrSectionKey): string | undefined {
     return "Select the protocol and report cells and Merge, or leave Document Name blank on the report row so Word still merges them.";
   }
   if (section === "qsr_operating_range") {
-    return "Range is only used for Temperature; leave it blank elsewhere and the Details cell spans both columns.";
+    return "Details spans the row. Temperature uses Minimum and Maximum on two rows under one S.No and Parameter.";
   }
   return isQsrTableSectionKey(section) ? TABLE_DESCRIPTION : undefined;
 }
@@ -39,6 +40,13 @@ function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
     (value as QsrSectionContent | undefined) ?? EMPTY_QSR_CONTENT[section];
   const field = isQsrTableSectionKey(section) ? "table" : "narrative";
   const doc = (content as Record<string, JSONContent | undefined>)[field];
+  const shown = useMemo(
+    () =>
+      section === "qsr_operating_range" && doc
+        ? shapeOperatingRangeTable(doc)
+        : doc,
+    [section, doc]
+  );
 
   return (
     <SectionShell
@@ -58,7 +66,7 @@ function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
             : "Write this section…"
         }
         className="grid gap-2"
-        value={doc as JSONContent}
+        value={shown as JSONContent}
         onChange={(next) =>
           update(() => ({ [field]: next }) as QsrSectionContent)
         }

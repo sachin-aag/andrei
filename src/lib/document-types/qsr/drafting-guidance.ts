@@ -14,7 +14,7 @@ Tables (keep the header row and column order exactly as seeded):
 - Standard Operation Procedures: SOP numbers and effective dates for operation & cleaning, calibration, preventive maintenance, and training.
 - Requirement Traceability Matrix (5.1–5.6): one row per URS ID from the approved URS; Reference – Qualification Stage is DQ/IQ/OQ/PQ, Reference – Section is the protocol section that verified it. 5.1 is seeded with URS-1 plus merged group rows ANY SPECIFIC REQUIREMENTS and OTHER AUXILIARY REQUIREMENT; add further group rows the same way (Merge across the row, or bold text only in the first cell).
 - Volumetric Details: a paragraph naming each equipment (main equipment first, then "Auxiliary Equipment: <ID>"), each followed by its S.No / Parameter / Details table.
-- Operating Range: Details from the OQ/PQ. Leave Range empty except Temperature's Minimum / Maximum rows.
+- Operating Range: the form header is S.No, Parameter, Details (Details spans two columns). Pressure, Vacuum, and Agitator RPM keep that span. Temperature uses two rows — Minimum, then Maximum — under one S.No and Parameter, with the value in Details. Do not add a Range column.
 - Other Details: bold label then value, e.g. "Agitator Type: Cryo-Fix Anchor".
 
 Never invent document numbers, revisions, dates, volumes or ranges — copy them from a cited attachment page or leave the cell empty.`;

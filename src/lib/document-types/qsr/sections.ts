@@ -132,7 +132,10 @@ export const QSR_SOP_HEADERS = ["SOP Name", "SOP Number", "Effective Date"] as c
 
 export const QSR_VOLUMETRIC_HEADERS = ["S.No", "Parameter", "Details"] as const;
 
-/** Temperature's Minimum / Maximum sit in the Range column. */
+/**
+ * Flat grid the export still accepts. The form itself has no Range header:
+ * Details spans that column, and Temperature's Minimum / Maximum are body cells.
+ */
 export const QSR_OPERATING_RANGE_HEADERS = [
   "S.No",
   "Parameter",
@@ -171,11 +174,15 @@ function textParagraph(text: string, bold = false): JSONContent {
 function cell(
   type: "tableHeader" | "tableCell",
   text: string,
-  attrs: { colspan?: number; bold?: boolean } = {}
+  attrs: { colspan?: number; rowspan?: number; bold?: boolean } = {}
 ): JSONContent {
   return {
     type,
-    attrs: { ...CELL_ATTRS, colspan: attrs.colspan ?? 1 },
+    attrs: {
+      ...CELL_ATTRS,
+      colspan: attrs.colspan ?? 1,
+      rowspan: attrs.rowspan ?? 1,
+    },
     content: [textParagraph(text, attrs.bold)],
   };
 }
@@ -276,14 +283,123 @@ export const QSR_AUXILIARY_VOLUMETRIC_ROWS = [
   ["3", "Over flow volume (L)"],
 ];
 
-/** A blank Range cell merges with Details; blank S.No/Parameter continue the row above. */
-const OPERATING_RANGE_ROWS = [
-  ["1.", "Pressure", "", ""],
-  ["2.", "Vacuum", "", ""],
-  ["3.", "Agitator RPM", "", ""],
-  ["4.", "Temperature", "Minimum", ""],
-  ["", "", "Maximum", ""],
-];
+/** Matches the form: Details spans the unused Range column; Temperature splits it. */
+function operatingRangeDoc(): JSONContent {
+  const span = (no: string, parameter: string): JSONContent => ({
+    type: "tableRow",
+    content: [
+      cell("tableCell", no),
+      cell("tableCell", parameter),
+      cell("tableCell", "", { colspan: 2 }),
+    ],
+  });
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [
+              cell("tableHeader", "S.No"),
+              cell("tableHeader", "Parameter"),
+              cell("tableHeader", "Details", { colspan: 2 }),
+            ],
+          },
+          span("1.", "Pressure"),
+          span("2.", "Vacuum"),
+          span("3.", "Agitator RPM"),
+          {
+            type: "tableRow",
+            content: [
+              cell("tableCell", "4.", { rowspan: 2 }),
+              cell("tableCell", "Temperature", { rowspan: 2 }),
+              cell("tableCell", "Minimum"),
+              cell("tableCell", ""),
+            ],
+          },
+          {
+            type: "tableRow",
+            content: [cell("tableCell", "Maximum"), cell("tableCell", "")],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function cellPlain(node: JSONContent | undefined): string {
+  if (!node) return "";
+  if (typeof node.text === "string") return node.text;
+  return (node.content ?? []).map((child) => cellPlain(child)).join("");
+}
+
+/**
+ * The form has no Range header. A saved four-column grid (Range between
+ * Parameter and Details) is shown as the form: a blank Range cell joins
+ * Details, and a following row with only a Range label continues Temperature.
+ */
+export function shapeOperatingRangeTable(doc: JSONContent): JSONContent {
+  const table = doc.content?.find((node) => node.type === "table");
+  const rows = table?.content ?? [];
+  const labels = (rows[0]?.content ?? []).map((node) => cellPlain(node).trim());
+  if (labels.join("\0") !== QSR_OPERATING_RANGE_HEADERS.join("\0")) return doc;
+
+  const body = rows.slice(1).map((row) => row.content ?? []);
+  const out: JSONContent[] = [
+    {
+      type: "tableRow",
+      content: [
+        cell("tableHeader", "S.No"),
+        cell("tableHeader", "Parameter"),
+        cell("tableHeader", "Details", { colspan: 2 }),
+      ],
+    },
+  ];
+  for (let i = 0; i < body.length; i += 1) {
+    const sno = cellPlain(body[i]?.[0]).trim();
+    const parameter = cellPlain(body[i]?.[1]).trim();
+    const range = cellPlain(body[i]?.[2]).trim();
+    const details = cellPlain(body[i]?.[3]).trim();
+    const extras: Array<{ range: string; details: string }> = [];
+    while (i + extras.length + 1 < body.length) {
+      const next = body[i + extras.length + 1] ?? [];
+      const nextRange = cellPlain(next[2]).trim();
+      if (cellPlain(next[0]).trim() || cellPlain(next[1]).trim() || !nextRange) break;
+      extras.push({ range: nextRange, details: cellPlain(next[3]).trim() });
+    }
+    if (extras.length === 0 && !range) {
+      out.push({
+        type: "tableRow",
+        content: [
+          cell("tableCell", sno),
+          cell("tableCell", parameter),
+          cell("tableCell", details, { colspan: 2 }),
+        ],
+      });
+      continue;
+    }
+    const rowspan = extras.length + 1;
+    out.push({
+      type: "tableRow",
+      content: [
+        cell("tableCell", sno, rowspan > 1 ? { rowspan } : {}),
+        cell("tableCell", parameter, rowspan > 1 ? { rowspan } : {}),
+        cell("tableCell", range),
+        cell("tableCell", details),
+      ],
+    });
+    for (const extra of extras) {
+      out.push({
+        type: "tableRow",
+        content: [cell("tableCell", extra.range), cell("tableCell", extra.details)],
+      });
+    }
+    i += extras.length;
+  }
+  return { type: "doc", content: [{ type: "table", content: out }] };
+}
 
 function volumetricDoc(): JSONContent {
   return {
@@ -335,7 +451,7 @@ export function emptyQsrContent(key: QsrSectionKey): QsrSectionContent {
     case "qsr_rtm_control":
       return { table: tableDoc(QSR_CONTROL_HEADERS) };
     case "qsr_operating_range":
-      return { table: tableDoc(QSR_OPERATING_RANGE_HEADERS, OPERATING_RANGE_ROWS) };
+      return { table: operatingRangeDoc() };
     default: {
       const exhaustive: never = key;
       throw new Error(`Unknown QSR section: ${String(exhaustive)}`);
