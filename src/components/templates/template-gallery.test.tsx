@@ -4,7 +4,10 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { TemplateGallery } from "@/components/templates/template-gallery";
-import { listedDemoTemplatesInSection } from "@/lib/document-templates";
+import {
+  DEMO_TEMPLATE_SECTIONS,
+  listedDemoTemplatesInSection,
+} from "@/lib/document-templates";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -23,52 +26,19 @@ const managers = [
 ];
 
 describe("TemplateGallery", () => {
-  it("opens Supply Chain by default with the vendor qualification tile", () => {
+  it("keeps every section open with its tiles", () => {
     render(<TemplateGallery managers={managers} />);
 
-    expect(
-      screen.getByRole("button", { name: /^Supply Chain$/i })
-    ).toHaveAttribute("aria-expanded", "true");
-    expect(
-      screen.getByRole("button", { name: /^Vendor Qualification$/i })
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^DFMEA$/i })).not.toBeInTheDocument();
-  });
-
-  it("expands Design and shows product-design tiles", async () => {
-    const user = userEvent.setup();
-    render(<TemplateGallery managers={managers} />);
-
-    await user.click(screen.getByRole("button", { name: /^Design$/i }));
-
-    expect(
-      screen.getByRole("button", { name: /^User Requirements$/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^Design Verification Testing$/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /^Vendor Qualification$/i })
-    ).not.toBeInTheDocument();
-  });
-
-  it("lists every operations and quality template when those sections open", async () => {
-    const user = userEvent.setup();
-    render(<TemplateGallery managers={managers} />);
-
-    await user.click(screen.getByRole("button", { name: /^Operations$/i }));
-    for (const template of listedDemoTemplatesInSection("operations")) {
+    for (const section of DEMO_TEMPLATE_SECTIONS) {
       expect(
-        screen.getByRole("button", { name: template.title })
+        screen.getByRole("heading", { name: section.title })
       ).toBeInTheDocument();
+      for (const template of listedDemoTemplatesInSection(section.id)) {
+        expect(
+          screen.getByRole("button", { name: template.title })
+        ).toBeInTheDocument();
+      }
     }
-
-    await user.click(screen.getByRole("button", { name: /^Quality$/i }));
-    expect(screen.getByRole("button", { name: /^CAPA$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Deviations$/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^Change Control$/i })
-    ).toBeInTheDocument();
   });
 
   it("opens the create dialog from a tile", async () => {

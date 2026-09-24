@@ -24,7 +24,6 @@ export function newReportButton(page: Page) {
 export async function openNewReportDialog(page: Page): Promise<void> {
   await newReportButton(page).click();
   if (page.url().includes("/templates")) {
-    await page.getByRole("button", { name: /^Quality$/i }).click();
     await page.getByRole("button", { name: /^Deviations$/i }).click();
   }
   await expect(page.getByRole("heading", { name: /^create /i })).toBeVisible();

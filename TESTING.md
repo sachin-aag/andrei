@@ -167,8 +167,8 @@ Engineer steps include Document \| Agent chrome, Analytics, and the Document vau
 
 | Test | What it verifies |
 |------|------------------|
-| opens the template gallery from New Report | Demo New Report → `/templates` with section dropdowns |
-| opens create dialog from a template tile | Quality → Deviations dialog fields and actions |
+| opens the template gallery from New Report | Demo New Report → `/templates` with Supply Chain, Design, Operations, and Quality open |
+| opens create dialog from a template tile | Deviations dialog fields and actions |
 | shows toast when deviation number is empty | Sonner validation |
 | shows toast for duplicate deviation number | Duplicate guard |
 | creates blank report and navigates to editor | `/reports/[id]/edit` |

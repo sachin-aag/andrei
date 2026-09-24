@@ -14,7 +14,6 @@ test.describe.configure({ mode: "serial" });
 async function openDeviationsTemplate(page: import("@playwright/test").Page) {
   await newReportButton(page).click();
   await expect(page).toHaveURL(/\/templates/);
-  await page.getByRole("button", { name: /^Quality$/i }).click();
   await page.getByRole("button", { name: /^Deviations$/i }).click();
   await expect(
     page.getByRole("heading", { name: /create deviations/i })
@@ -40,7 +39,16 @@ test.describe("create report", () => {
     await expect(page).toHaveURL(/\/templates/);
     await expect(page.getByRole("heading", { name: /^templates$/i })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /^Supply Chain$/i })
+      page.getByRole("heading", { name: /^Supply Chain$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Design$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Operations$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Quality$/i })
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: /^Vendor Qualification$/i })
