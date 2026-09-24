@@ -205,6 +205,7 @@ export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v2";
 export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
 export const ELR_PROMPT_VERSION = "mj-elr-sop-014-r04-v19";
 export const VQ_PROMPT_VERSION = "3xper-vq-f04-v1";
+export const QSR_PROMPT_VERSION = "3xper-qsr-f06-v1";
 export const FIR_PROMPT_VERSION = "mj-fir-sop-017-f01-r01-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
@@ -255,11 +256,11 @@ export const MJ_PACK: CustomerPack = {
 const XPER_BRANDING: CustomerBranding = {
   productName: "3xper Innoventure Limited",
   productNameShort: "3xper",
-  documentReviewTitle: "3xper — Vendor Qualification",
+  documentReviewTitle: "3xper — Quality Documents",
   documentReviewDescription:
-    "AI document review and drafting for 3xper Innoventure vendor qualification",
+    "AI document review and drafting for 3xper Innoventure vendor qualification and equipment qualification summary reports",
   tagline: "Empowering Innovation",
-  shellTagline: "Vendor Qualification",
+  shellTagline: "Quality Documents",
   logoSrc: "/logo-3xper.png",
   logoWhiteSrc: "/logo-3xper-white.png",
   logoMarkSrc: "/logo-3xper-mark.png",
@@ -269,16 +270,16 @@ const XPER_BRANDING: CustomerBranding = {
   heroLogoOnWhite: true,
   auditExportTitle: "3xper Innoventure Ltd — Audit Trail Export",
   passwordResetSubject: "Reset your password — 3xper",
-  loginHeadline: "Vendor qualification,\naccelerated.",
+  loginHeadline: "Qualification,\naccelerated.",
   loginSubhead:
-    "Draft KSM, KRM, and critical raw material vendor qualifications with AI-assisted review and one-click DOCX export matching QAD-SOP-MS-001-F04.",
+    "Draft vendor qualifications and equipment qualification summary reports with AI-assisted review and one-click DOCX export matching the 3xper forms.",
   loginFooter: "3xper Innoventure Limited",
   aiAttribution: "by Andrei",
 };
 
 export const XPER_PACK: CustomerPack = {
   id: "3xper",
-  enabledDocumentTypes: ["vendor_qualification"],
+  enabledDocumentTypes: ["vendor_qualification", "qualification_summary_report"],
   hiddenInvestigationSections: [],
   investigationTemplateFile: "investigation-report-template.docx",
   promptVersion: VQ_PROMPT_VERSION,

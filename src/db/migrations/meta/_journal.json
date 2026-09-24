@@ -491,6 +491,13 @@
       "when": 1789245600000,
       "tag": "0068_vendor_qualification_type",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1789332000000,
+      "tag": "0069_qualification_summary_report_type",
+      "breakpoints": true
     }
   ]
 }

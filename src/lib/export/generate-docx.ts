@@ -37,6 +37,7 @@ import { applyInlineMediaToDocxZip } from "@/lib/export/docx-inline-media";
 import {
   CONVERGENT_DOCX_RUN_STYLE,
   MJ_FIR_DOCX_RUN_STYLE,
+  QSR_DOCX_RUN_STYLE,
   createDocxExportContext,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
@@ -88,6 +89,8 @@ import {
   unifyElrCitationsForExport,
 } from "@/lib/export/elr-unified-citations";
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
+import { applyQsrSlotsToDocxZip } from "@/lib/export/qsr/render";
+import { qsrMetadataFrom } from "@/lib/document-types/qsr/sections";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
@@ -562,7 +565,8 @@ export async function generateReportDocx({
     report.documentType === "quality_risk_assessment" ||
     report.documentType === "equipment_lifecycle_report" ||
     report.documentType === "vendor_qualification" ||
-    report.documentType === "failure_investigation_report"
+    report.documentType === "failure_investigation_report" ||
+    report.documentType === "qualification_summary_report"
   ) {
     return generateDesignVerificationDocx({
       documentType: report.documentType,
@@ -717,7 +721,9 @@ async function generateDesignVerificationDocx({
     numberingBases,
     documentType === "failure_investigation_report"
       ? MJ_FIR_DOCX_RUN_STYLE
-      : pack.id === "convergent"
+      : documentType === "qualification_summary_report"
+        ? QSR_DOCX_RUN_STYLE
+        : pack.id === "convergent"
         ? CONVERGENT_DOCX_RUN_STYLE
         : undefined,
     { pageSetup }
@@ -768,6 +774,13 @@ async function generateDesignVerificationDocx({
   }
 
   doc.render(data);
+  if (documentType === "qualification_summary_report") {
+    applyQsrSlotsToDocxZip(doc.getZip(), {
+      sections: mergedSections,
+      metadata: qsrMetadataFrom(report.metadata),
+      ctx,
+    });
+  }
   if (citationsAppendixXml) {
     const zip = doc.getZip();
     const document = zip.file("word/document.xml");

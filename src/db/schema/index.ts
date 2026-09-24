@@ -57,6 +57,7 @@ export const documentTypeEnum = pgEnum("document_type", [
   "equipment_lifecycle_report",
   "failure_investigation_report",
   "vendor_qualification",
+  "qualification_summary_report",
 ]);
 
 /**
