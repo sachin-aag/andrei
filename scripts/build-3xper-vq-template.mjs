@@ -1,7 +1,9 @@
 /**
  * Builds templates/3xper-vendor-qualification-template.docx from the A4
- * generic document template: swap the header logo, retitle header/footer to
- * QAD-SOP-MS-001-F04, and rewrite the body to Cover + A–N + scoring.
+ * generic document template: the paper form's header table (logo, Document
+ * Name / Number / Revision, Page N of M) on every page, a footer slot for the
+ * per-page signature table, and one body slot. The body and footer XML are
+ * generated at export time by src/lib/document-types/vq/export-xml.ts.
  *
  * PizZip is used (not Python zipfile) so [Content_Types].xml stays the first
  * entry — Word rejects the file otherwise.
@@ -20,9 +22,10 @@ const DEST = path.join(
 );
 const LOGO = path.join(ROOT, "public/logo-3xper.png");
 
-const BORDER = (side) =>
-  `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`;
-const TBL_BORDERS = `<w:tblBorders>${BORDER("top")}${BORDER("left")}${BORDER("bottom")}${BORDER("right")}${BORDER("insideH")}${BORDER("insideV")}</w:tblBorders>`;
+const FONT = "Times New Roman";
+const W = 10440;
+/** Header columns measured off the paper form (logo | label | value | page label | page value). */
+const COLS = [1378, 2248, 3625, 1522, 1667];
 
 function esc(text) {
   return text
@@ -31,204 +34,131 @@ function esc(text) {
     .replaceAll(">", "&gt;");
 }
 
-function rPr({ bold = false, sz = 20 } = {}) {
-  return `<w:rPr>${bold ? "<w:b/><w:bCs/>" : ""}<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/></w:rPr>`;
+function rPr({ bold = false, sz = 22 } = {}) {
+  return `<w:rPr><w:rFonts w:ascii="${FONT}" w:hAnsi="${FONT}" w:eastAsia="${FONT}" w:cs="${FONT}"/>${bold ? "<w:b/><w:bCs/>" : ""}<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/></w:rPr>`;
 }
 
 function textRun(text, opts = {}) {
   return `<w:r>${rPr(opts)}<w:t xml:space="preserve">${esc(text)}</w:t></w:r>`;
 }
 
-function tagRun(tag, opts = {}) {
-  return `<w:r>${rPr(opts)}<w:t xml:space="preserve">${tag}</w:t></w:r>`;
-}
-
-function para(runs, extraPPr = "") {
-  return `<w:p><w:pPr><w:spacing w:before="80" w:after="80"/>${extraPPr}</w:pPr>${runs}</w:p>`;
-}
-
-function heading(text, sz = 24) {
-  return para(
-    textRun(text, { bold: true, sz }),
-    `<w:spacing w:before="240" w:after="80"/>`
+function field(instr, placeholder, opts = {}) {
+  return (
+    `<w:r>${rPr(opts)}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rPr(opts)}<w:instrText xml:space="preserve"> ${instr} </w:instrText></w:r>` +
+    `<w:r>${rPr(opts)}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rPr(opts)}<w:t>${placeholder}</w:t></w:r>` +
+    `<w:r>${rPr(opts)}<w:fldChar w:fldCharType="end"/></w:r>`
   );
 }
 
-function bodyText(text, opts = {}) {
-  return para(textRun(text, { sz: 20, ...opts }));
+function para(runs, { jc = "left", sz = 22 } = {}) {
+  return `<w:p><w:pPr><w:spacing w:before="20" w:after="20" w:line="240" w:lineRule="auto"/><w:jc w:val="${jc}"/><w:rPr><w:sz w:val="${sz}"/></w:rPr></w:pPr>${runs}</w:p>`;
 }
 
-function field(tag) {
-  return para(tagRun(`{@${tag}}`));
+function tc(width, body, { span = 1, vMerge = null } = {}) {
+  return `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${span > 1 ? `<w:gridSpan w:val="${span}"/>` : ""}${vMerge ? `<w:vMerge w:val="${vMerge}"/>` : ""}<w:vAlign w:val="center"/></w:tcPr>${body}</w:tc>`;
 }
 
-function pageBreak() {
-  return `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+function tr(cells, height) {
+  return `<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="${height}" w:hRule="atLeast"/><w:jc w:val="center"/></w:trPr>${cells}</w:tr>`;
 }
 
-function cellPara(width, runs, { span = 1, fill = null } = {}) {
-  const spanXml = span > 1 ? `<w:gridSpan w:val="${span}"/>` : "";
-  const fillXml = fill
-    ? `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>`
-    : "";
-  return `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${spanXml}${fillXml}<w:vAlign w:val="center"/></w:tcPr>${para(runs, '<w:spacing w:before="40" w:after="40"/>')}</w:tc>`;
+const BORDER = (side) =>
+  `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`;
+
+/** 3xper logo, 250x100 px at 0.85 in wide. */
+function logo() {
+  const cx = 777240;
+  const cy = 310896;
+  return `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="1" name="3xper logo"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="logo-3xper.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
 }
 
-function tbl(colWidths, rowXml) {
-  const total = colWidths.reduce((a, b) => a + b, 0);
-  const grid = colWidths.map((w) => `<w:gridCol w:w="${w}"/>`).join("");
-  return `<w:tbl><w:tblPr><w:tblW w:w="${total}" w:type="dxa"/><w:jc w:val="center"/>${TBL_BORDERS}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rowXml}</w:tbl>`;
-}
-
-function tr(cells) {
-  return `<w:tr>${cells}</w:tr>`;
-}
-
-function identityTable() {
-  const labelW = 3600;
-  const valueW = 6800;
-  const row = (label, tag) =>
+/** Page header: the Document Name / Number / Revision / Page No block. */
+function headerTable() {
+  const [logoW, labelW, valueW, pageLabelW, pageValueW] = COLS;
+  const addressW = pageLabelW + pageValueW;
+  const address = [
+    "3xper Innoventure Ltd,",
+    "Plot No. 53, Part 54 & 55,",
+    "Palachur Village,",
+    "Naidupeta SEZ – 524421",
+  ]
+    .map((line) => para(textRun(line), { jc: "center" }))
+    .join("");
+  const rows =
     tr(
-      cellPara(labelW, textRun(label, { bold: true, sz: 18 }), { fill: "E7E6E6" }) +
-        cellPara(valueW, tagRun(tag, { sz: 18 }))
+      tc(logoW, para(logo(), { jc: "center" }), { vMerge: "restart" }) +
+        tc(labelW, para(textRun("Document Name", { bold: true }))) +
+        tc(
+          valueW,
+          para(textRun("VENDOR QUALIFICATION", { bold: true }), { jc: "center" }) +
+            para(textRun("FOR KSM/KRM/ CRITICAL", { bold: true }), { jc: "center" }) +
+            para(textRun("RAW MATERIALS", { bold: true }), { jc: "center" })
+        ) +
+        tc(addressW, address, { span: 2, vMerge: "restart" }),
+      760
+    ) +
+    tr(
+      tc(logoW, para(""), { vMerge: "continue" }) +
+        tc(labelW, para(textRun("Document Number", { bold: true }))) +
+        tc(valueW, para(textRun("QAD-SOP-MS-001-F04"), { jc: "center" })) +
+        tc(addressW, para(""), { span: 2, vMerge: "continue" }),
+      480
+    ) +
+    tr(
+      tc(logoW, para(""), { vMerge: "continue" }) +
+        tc(labelW, para(textRun("Revision Number", { bold: true }))) +
+        tc(valueW, para(textRun("01", { bold: true }), { jc: "center" })) +
+        tc(pageLabelW, para(textRun("Page No", { bold: true }))) +
+        tc(
+          pageValueW,
+          para(field("PAGE", "1") + textRun(" of ") + field("NUMPAGES", "1"), {
+            jc: "center",
+          })
+        ),
+      440
     );
-  return tbl(
-    [labelW, valueW],
-    row("Form number", "{formNo}") +
-      row("Revision", "{revision}") +
-      row("VQ number", "{documentNo}") +
-      row("Date", "{date}")
-  );
+  const grid = COLS.map((w) => `<w:gridCol w:w="${w}"/>`).join("");
+  return `<w:tbl><w:tblPr><w:tblW w:w="${W}" w:type="dxa"/><w:jc w:val="center"/><w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"].map(BORDER).join("")}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`;
 }
 
-const SECTIONS = [
-  ["COVER — 3xPER ISSUANCE", "vqCoverXml", "vqCoverNarrativeXml", null],
-  [
-    "A. GENERAL COMPANY INFORMATION AND QUALITY MANAGEMENT",
-    "vqSectionAXml",
-    "vqSectionANarrativeXml",
-    "vqSectionATableXml",
-  ],
-  [
-    "B. TSE/BSE RISK ANALYSIS SURVEY",
-    "vqSectionBXml",
-    "vqSectionBNarrativeXml",
-    null,
-  ],
-  [
-    "C. TRACEABILITY OF INGREDIENTS POTENTIALLY DERIVED FROM GMO",
-    "vqSectionCXml",
-    "vqSectionCNarrativeXml",
-    null,
-  ],
-  ["D. ALLERGEN", "vqSectionDXml", "vqSectionDNarrativeXml", null],
-  [
-    "E. EXTENDED QUALITY QUESTIONNAIRE",
-    "vqSectionEXml",
-    "vqSectionENarrativeXml",
-    null,
-  ],
-  ["F. PACKAGING MATERIAL", "vqSectionFXml", "vqSectionFNarrativeXml", null],
-  [
-    "G. ELEMENTAL IMPURITIES QUESTIONNAIRE",
-    "vqSectionGXml",
-    "vqSectionGNarrativeXml",
-    "vqSectionGTableXml",
-  ],
-  [
-    "H. RESIDUAL SOLVENT QUESTIONNAIRE",
-    "vqSectionHXml",
-    "vqSectionHNarrativeXml",
-    "vqSectionHTableXml",
-  ],
-  [
-    "I. POTENTIAL GENOTOXIC IMPURITY (PGI) QUESTIONNAIRE",
-    "vqSectionIXml",
-    "vqSectionINarrativeXml",
-    "vqSectionITableXml",
-  ],
-  [
-    "J. NITROSAMINE IMPURITY QUESTIONNAIRE",
-    "vqSectionJXml",
-    "vqSectionJNarrativeXml",
-    "vqSectionJTableXml",
-  ],
-  ["K. WILLINGNESS TO INSPECTION", "vqSectionKXml", "vqSectionKNarrativeXml", null],
-  ["L. CHANGE NOTIFICATION", "vqSectionLXml", "vqSectionLNarrativeXml", null],
-  ["M. QUALITY AGREEMENT", "vqSectionMXml", "vqSectionMNarrativeXml", null],
-  [
-    "N. AUDIT CHECKLIST",
-    "vqSectionNXml",
-    "vqSectionNNarrativeXml",
-    "vqSectionNTableXml",
-  ],
-  [
-    "APPROVAL OF VENDOR QUALIFICATION (3xPER INNOVENTURE LTD)",
-    "vqScoringXml",
-    "vqScoringNarrativeXml",
-    null,
-  ],
-];
+/** Word requires a paragraph after a table at the end of a header/footer. */
+const TINY_PARA =
+  '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="120" w:lineRule="exact"/><w:rPr><w:sz w:val="4"/></w:rPr></w:pPr></w:p>';
+
+function headerXml(originalHeaderXml) {
+  const open = originalHeaderXml.slice(
+    0,
+    originalHeaderXml.indexOf(">", originalHeaderXml.indexOf("<w:hdr")) + 1
+  );
+  return `${open}${headerTable()}${TINY_PARA}</w:hdr>`;
+}
+
+/**
+ * Footer body is one raw-XML tag: the export fills in the per-page signature
+ * table (Name of the Activity / Name / Designation / Signature / Date) and
+ * the `Format: - QAD-SOP-MS-001-F04` line from the cover section.
+ */
+function footerXml(originalFooterXml) {
+  const open = originalFooterXml.slice(
+    0,
+    originalFooterXml.indexOf(">", originalFooterXml.indexOf("<w:ftr")) + 1
+  );
+  return `${open}<w:p><w:r><w:t>{@vqFooterXml}</w:t></w:r></w:p></w:ftr>`;
+}
 
 function bodyXml() {
-  const chunks = [
-    para(
-      textRun("VENDOR QUALIFICATION FOR KSM/KRM/ CRITICAL RAW MATERIALS", {
-        bold: true,
-        sz: 28,
-      }),
-      `<w:jc w:val="center"/>`
-    ),
-    para(
-      textRun("QAD-SOP-MS-001-F04  Rev 01", { bold: true, sz: 20 }),
-      `<w:jc w:val="center"/>`
-    ),
-    bodyText(
-      "3xper Innoventure Ltd, Plot No. 53, Part 54 & 55, Palachur Village, Naidupeta SEZ – 524421"
-    ),
-    identityTable(),
-    pageBreak(),
-  ];
-  for (const [title, fieldsTag, narrativeTag, tableTag] of SECTIONS) {
-    chunks.push(heading(title));
-    chunks.push(field(fieldsTag));
-    if (narrativeTag) chunks.push(field(narrativeTag));
-    if (tableTag) chunks.push(field(tableTag));
-    chunks.push(pageBreak());
-  }
-  return chunks.join("");
+  return `<w:p><w:r><w:t>{@vqBodyXml}</w:t></w:r></w:p>`;
 }
 
-function patchHeader(xml) {
-  let out = xml.replaceAll("<w:t>Andrei</w:t>", "<w:t>3xper</w:t>");
-  out = out.replace(
-    "<w:t>Investigation Report</w:t>",
-    "<w:t>Vendor Qualification</w:t>"
-  );
-  out = out.replace(
-    "<w:t xml:space=\"preserve\">                      </w:t>",
-    "<w:t xml:space=\"preserve\">MASTER COPY</w:t>"
-  );
-  return out;
-}
-
-function patchFooter(xml) {
-  let out = xml.replace(
-    "<w:t>Andrei — Document Review</w:t>",
-    "<w:t>Prepared: Anantha Kumar D · Reviewed: Sarat Kumar Y · Approved: Narayan Kumar S</w:t>"
-  );
-  out = out.replace("<w:t>SOP</w:t>", "<w:t>QAD</w:t>");
-  out = out.replace(
-    "<w:t>/DP/QA/008/F04</w:t>",
-    "<w:t>-SOP-MS-001-F04</w:t>"
-  );
-  out = out.replace("<w:t>-R0</w:t>", "<w:t> Rev </w:t>");
-  out = out.replace(
-    '<w:r w:rsidR="00421388"><w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t>2</w:t></w:r>',
-    "<w:r><w:rPr><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/></w:rPr><w:t>01</w:t></w:r>"
-  );
-  return out;
-}
+/**
+ * A4, 12.7 mm side margins. The header starts 35 mm down and the footer ends
+ * 30 mm up, as on the paper form — the band above the header is where 3xper
+ * document control stamps MASTER COPY / Issued By / Issued On.
+ */
+const SECT_PR = (refs) =>
+  `<w:sectPr>${refs}<w:pgSz w:w="11909" w:h="16834" w:code="9"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="1985" w:footer="1700" w:gutter="0"/><w:cols w:space="720"/><w:docGrid w:linePitch="272"/></w:sectPr>`;
 
 if (!fs.existsSync(SOURCE)) {
   throw new Error(`Missing source template: ${SOURCE}`);
@@ -245,30 +175,39 @@ zip.file("word/media/image1.png", fs.readFileSync(LOGO));
 
 const documentXml = zip.file("word/document.xml").asText();
 const bodyOpen = documentXml.indexOf("<w:body>");
-const sectPr = documentXml.lastIndexOf("<w:sectPr");
-if (bodyOpen < 0 || sectPr < 0) {
+const sectPrStart = documentXml.lastIndexOf("<w:sectPr");
+const sectPrEnd = documentXml.indexOf("</w:sectPr>", sectPrStart);
+if (bodyOpen < 0 || sectPrStart < 0 || sectPrEnd < 0) {
   throw new Error("Could not find w:body / w:sectPr in the generic template");
 }
+const refs = (documentXml.slice(sectPrStart, sectPrEnd).match(
+  /<w:(?:header|footer)Reference [^>]*\/>/g
+) ?? []).join("");
 zip.file(
   "word/document.xml",
   documentXml.slice(0, bodyOpen + "<w:body>".length) +
     bodyXml() +
-    documentXml.slice(sectPr)
+    SECT_PR(refs) +
+    documentXml.slice(sectPrEnd + "</w:sectPr>".length)
 );
 
-zip.file("word/header2.xml", patchHeader(zip.file("word/header2.xml").asText()));
-zip.file("word/footer1.xml", patchFooter(zip.file("word/footer1.xml").asText()));
+const headerRels = zip.file("word/_rels/header2.xml.rels").asText();
+for (const name of ["header1", "header2", "header3"]) {
+  zip.file(`word/${name}.xml`, headerXml(zip.file(`word/${name}.xml`).asText()));
+  zip.file(`word/_rels/${name}.xml.rels`, headerRels);
+}
+zip.file("word/footer1.xml", footerXml(zip.file("word/footer1.xml").asText()));
 
 fs.writeFileSync(DEST, zip.generate({ type: "nodebuffer", compression: "DEFLATE" }));
 
 const out = new PizZip(fs.readFileSync(DEST));
 console.log(`Wrote ${path.relative(ROOT, DEST)}`);
 console.log(
-  `  header: ${/Vendor Qualification/.test(out.file("word/header2.xml").asText())}`
+  `  header: ${/QAD-SOP-MS-001-F04/.test(out.file("word/header2.xml").asText())}`
 );
 console.log(
-  `  footer form: ${/MS-001-F04/.test(out.file("word/footer1.xml").asText())}`
+  `  footer tag: ${/vqFooterXml/.test(out.file("word/footer1.xml").asText())}`
 );
 console.log(
-  `  cover tag: ${/vqCoverXml/.test(out.file("word/document.xml").asText())}`
+  `  body tag: ${/vqBodyXml/.test(out.file("word/document.xml").asText())}`
 );

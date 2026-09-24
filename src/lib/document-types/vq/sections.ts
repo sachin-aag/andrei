@@ -4,6 +4,7 @@ import { seededTableDoc } from "@/lib/document-types/design-verification/section
 import {
   VQ_FORM,
   VQ_FORM_NO,
+  VQ_FORM_OWNERS,
   VQ_FORM_REVISION,
   VQ_REQUIRED_SECTION_TITLES,
   type VqChoice,
@@ -32,11 +33,61 @@ export type VqSectionKey = (typeof VQ_SECTION_KEYS)[number];
 
 export type VqAnswers = Record<string, string>;
 
+/** One row of the signature table printed at the bottom of every page. */
+export type VqPageSignatureRow = {
+  activity: string;
+  name: string;
+  designation: string;
+  signature: string;
+  date: string;
+};
+
 export type VqSectionContent = {
   answers: VqAnswers;
   narrative?: JSONContent;
   table?: JSONContent;
+  /** Cover only: filled once, repeated in every page footer of the export. */
+  pageSignatures?: VqPageSignatureRow[];
 };
+
+export const VQ_PAGE_SIGNATURE_COLUMNS = [
+  "activity",
+  "name",
+  "designation",
+  "signature",
+  "date",
+] as const satisfies ReadonlyArray<keyof VqPageSignatureRow>;
+
+export function defaultVqPageSignatures(): VqPageSignatureRow[] {
+  return VQ_FORM_OWNERS.map((owner) => ({
+    activity: owner.activity,
+    name: owner.name,
+    designation: owner.designation,
+    signature: "",
+    date: "",
+  }));
+}
+
+export function emptyVqPageSignatureRow(): VqPageSignatureRow {
+  return { activity: "", name: "", designation: "", signature: "", date: "" };
+}
+
+/** Keeps only well-formed rows; falls back to the defaults when absent. */
+export function parseVqPageSignatures(raw: unknown): VqPageSignatureRow[] {
+  if (!Array.isArray(raw)) return defaultVqPageSignatures();
+  return raw
+    .filter((row): row is Record<string, unknown> =>
+      Boolean(row) && typeof row === "object" && !Array.isArray(row)
+    )
+    .map((row) => {
+      const next = emptyVqPageSignatureRow();
+      for (const column of VQ_PAGE_SIGNATURE_COLUMNS) {
+        const value = row[column];
+        if (typeof value === "string") next[column] = value;
+      }
+      return next;
+    });
+}
 
 export const VQ_SECTION_LABELS: Record<VqSectionKey, string> = {
   vq_cover: "Cover",
@@ -76,6 +127,9 @@ function emptyFor(key: VqSectionKey): VqSectionContent {
   }
   if (spec?.matrix) {
     content.table = seededTableDoc(spec.matrix.headers);
+  }
+  if (key === "vq_cover") {
+    content.pageSignatures = defaultVqPageSignatures();
   }
   return content;
 }

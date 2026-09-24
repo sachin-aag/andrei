@@ -1,5 +1,5 @@
 import type { EvaluationContext } from "../types";
-import { VQ_FORM } from "./schema";
+import { fieldsForSection, vqFieldAnswerIds } from "./schema";
 import { parseVqChoice, type VqSectionContent } from "./sections";
 
 function asVq(content: unknown): VqSectionContent {
@@ -60,12 +60,13 @@ export function checkScoringGrade(ctx: EvaluationContext) {
 
 export function checkSectionHasResponses(ctx: EvaluationContext) {
   const { answers } = asVq(ctx.content);
-  const spec = VQ_FORM[ctx.section];
-  const answered = spec
-    ? spec.groups
-        .flatMap((group) => group.fields)
-        .some((field) => filled(answers[field.id]))
-    : Object.values(answers).some((value) => filled(value));
+  const fields = fieldsForSection(ctx.section);
+  const answered =
+    fields.length > 0
+      ? fields
+          .flatMap(vqFieldAnswerIds)
+          .some((id) => filled(answers[id]))
+      : Object.values(answers).some((value) => filled(value));
   const narrative = (ctx.content as { narrative?: unknown } | null)?.narrative;
   const hasNarrative =
     narrative != null &&
