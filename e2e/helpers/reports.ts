@@ -16,16 +16,38 @@ export function uniqueDeviationNo(prefix = "E2E"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Header "New Report" on the engineer dashboard. */
+/** Header "New Report" on the engineer dashboard (link on demo, button elsewhere). */
 export function newReportButton(page: Page) {
-  return page.getByRole("button", { name: /new report/i });
+  return page
+    .getByRole("link", { name: /^New Report$/ })
+    .or(page.getByRole("button", { name: /^New Report$/ }));
 }
 
+export async function openDemoTemplate(
+  page: Page,
+  title: string
+): Promise<void> {
+  await expect(page).toHaveURL(/\/templates/);
+  await expect(page.getByRole("heading", { name: /^templates$/i })).toBeVisible();
+  const tile = page.getByRole("button", { name: new RegExp(`^${title}$`, "i") });
+  await tile.scrollIntoViewIfNeeded();
+  await expect(tile).toBeVisible();
+  await tile.click();
+  await expect(
+    page.getByRole("heading", { name: new RegExp(`^create ${title}$`, "i") })
+  ).toBeVisible();
+}
+
+/** Open the create dialog: gallery tile on demo, type dropdown elsewhere. */
 export async function openNewReportDialog(page: Page): Promise<void> {
   await newReportButton(page).click();
-  await expect(
-    page.getByRole("heading", { name: /^create report$/i })
-  ).toBeVisible();
+  try {
+    await expect(page).toHaveURL(/\/templates/, { timeout: 5_000 });
+  } catch {
+    await expect(page.getByRole("heading", { name: /^create /i })).toBeVisible();
+    return;
+  }
+  await openDemoTemplate(page, "Vendor Qualification");
 }
 
 export async function selectCreateReportType(

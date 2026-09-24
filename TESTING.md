@@ -167,13 +167,12 @@ Engineer steps include Document \| Agent chrome, Analytics, and the Document vau
 
 | Test | What it verifies |
 |------|------------------|
-| opens create dialog from New Report button | Dialog fields and actions |
-| upload pre-fills deviation number | `e2e/fixtures/minimal-report.docx` |
-| clear file resets upload | Clear button |
+| opens the template gallery from New Report | Demo New Report → `/templates` with Supply Chain, Design, Operations, and Quality open |
+| opens create dialog from a template tile | Deviations dialog fields and actions |
 | shows toast when deviation number is empty | Sonner validation |
 | shows toast for duplicate deviation number | Duplicate guard |
 | creates blank report and navigates to editor | `/reports/[id]/edit` |
-| cancel closes dialog | Dialog dismiss |
+| cancel closes dialog | Dialog dismiss, gallery remains |
 | manager does not see New Report button | Role gate |
 | deletes report from dashboard | Delete confirmation + toast |
 
@@ -401,9 +400,9 @@ File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 
 **CreateReportButton** (`create-report-button.test.tsx`)
 
-- Opens dialog
-- Toast on empty deviation number
-- Cancel closes dialog
+- Demo New Report links to `/templates`
+- MJ still opens the create dialog
+- CreateReportDialog: toast on empty deviation number, cancel, templateId POST
 
 **SaveStatus** (`save-status.test.tsx`)
 

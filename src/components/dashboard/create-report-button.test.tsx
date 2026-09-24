@@ -2,8 +2,13 @@
 
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CreateReportButton } from "@/components/dashboard/create-report-button";
+import {
+  CreateReportButton,
+  CreateReportDialog,
+} from "@/components/dashboard/create-report-button";
+import { demoTemplateById } from "@/lib/document-templates";
 
 const prefetch = vi.fn();
 const push = vi.fn();
@@ -15,6 +20,23 @@ vi.mock("next/navigation", () => ({
     refresh,
     prefetch,
   }),
+}));
+
+vi.mock("next/link", () => ({
+  default: function MockLink({
+    children,
+    href,
+    ...rest
+  }: {
+    children: ReactNode;
+    href: string;
+  }) {
+    return (
+      <a href={href} {...rest}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 vi.mock("sonner", () => ({
@@ -43,6 +65,27 @@ vi.mock("@/lib/customers/packs", async (importOriginal) => {
 const managers = [
   { id: "manager-1", name: "Test Manager", title: "QA Manager" },
 ];
+
+function DialogHarness({
+  template,
+}: {
+  template?: ReturnType<typeof demoTemplateById>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        New Report
+      </button>
+      <CreateReportDialog
+        managers={managers}
+        open={open}
+        onOpenChange={setOpen}
+        template={template ?? null}
+      />
+    </>
+  );
+}
 
 async function pickDocumentType(
   user: ReturnType<typeof userEvent.setup>,
@@ -85,6 +128,34 @@ function mockFetchApi() {
 }
 
 describe("CreateReportButton", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
+  });
+
+  it("sends demo engineers to the template gallery", () => {
+    render(<CreateReportButton managers={managers} />);
+    expect(screen.getByRole("link", { name: /new report/i })).toHaveAttribute(
+      "href",
+      "/templates"
+    );
+  });
+
+  it("opens the create dialog on packs without the gallery", async () => {
+    vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
+    const user = userEvent.setup();
+    render(<CreateReportButton managers={managers} />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+
+    expect(
+      screen.getByRole("heading", { name: /^create report$/i })
+    ).toBeInTheDocument();
+  });
+});
+
+describe("CreateReportDialog", () => {
   let fetchMock: ReturnType<typeof mockFetchApi>;
 
   beforeEach(() => {
@@ -96,7 +167,7 @@ describe("CreateReportButton", () => {
 
   it("opens the create dialog with no document type selected", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
 
@@ -115,7 +186,7 @@ describe("CreateReportButton", () => {
   ] as const)("starts with no document type on %s", async (_name, pack) => {
     vi.mocked(getCustomerPack).mockReturnValue(pack);
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
 
@@ -130,7 +201,7 @@ describe("CreateReportButton", () => {
 
   it("preloads a blank draft when a document type is selected", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await pickDocumentType(user, "investigation_report");
@@ -158,7 +229,7 @@ describe("CreateReportButton", () => {
 
   it("discards the preload when the document type changes", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await pickDocumentType(user, "investigation_report");
@@ -190,7 +261,7 @@ describe("CreateReportButton", () => {
 
   it("finalizes the preloaded draft on create", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await pickDocumentType(user, "investigation_report");
@@ -220,7 +291,7 @@ describe("CreateReportButton", () => {
 
   it("discards the preload when the dialog is cancelled", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await pickDocumentType(user, "investigation_report");
@@ -242,7 +313,7 @@ describe("CreateReportButton", () => {
 
   it("shows toast when document type is empty", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await user.click(screen.getByRole("button", { name: /^create$/i }));
@@ -252,7 +323,7 @@ describe("CreateReportButton", () => {
 
   it("shows toast when deviation number is empty", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await pickDocumentType(user, "investigation_report");
@@ -263,7 +334,7 @@ describe("CreateReportButton", () => {
 
   it("closes the dialog on cancel", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await user.click(screen.getByRole("button", { name: /^cancel$/i }));
@@ -275,7 +346,7 @@ describe("CreateReportButton", () => {
 
   it("does not show a Word-body field or attachment dropzone on demo", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
 
@@ -290,7 +361,7 @@ describe("CreateReportButton", () => {
 
   it("shows a Word upload field when Document is selected on demo", async () => {
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await user.selectOptions(
@@ -308,7 +379,7 @@ describe("CreateReportButton", () => {
   it("shows a Word-body field without an attachment dropzone when the MJ pack is active", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     expect(screen.queryByLabelText(/existing report/i)).not.toBeInTheDocument();
@@ -324,7 +395,7 @@ describe("CreateReportButton", () => {
   it("offers software and mechanical DV on Convergent, not investigation", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
 
@@ -347,7 +418,7 @@ describe("CreateReportButton", () => {
       vi.fn().mockRejectedValue(new Error("Failed to fetch"))
     );
     const user = userEvent.setup();
-    render(<CreateReportButton managers={managers} />);
+    render(<DialogHarness />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await pickDocumentType(user, "investigation_report");
@@ -360,5 +431,37 @@ describe("CreateReportButton", () => {
     expect(
       screen.getByRole("heading", { name: /create investigation report/i })
     ).toBeInTheDocument();
+  });
+
+  it("posts the selected template id without preloading", async () => {
+    const user = userEvent.setup();
+    render(<DialogHarness template={demoTemplateById("capa")} />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+    expect(screen.getByRole("heading", { name: /create capa/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/document type/i)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/document number/i), "CAPA-1");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/reports",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            documentType: "generic_document",
+            documentNo: "CAPA-1",
+            assignedManagerIds: [],
+            templateId: "capa",
+          }),
+        })
+      );
+    });
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/reports",
+      expect.objectContaining({
+        body: expect.stringContaining('"preload":true'),
+      })
+    );
   });
 });

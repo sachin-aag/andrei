@@ -12,11 +12,13 @@ const copy = {
   documentTypeLabels: ["Investigation Report", "Design Verification Report"],
   insightsEnabled: true,
   statisticalAnalysisEnabled: true,
+  documentTemplatesEnabled: true,
 };
 
 const mjCopy = {
   ...copy,
   insightsEnabled: false,
+  documentTemplatesEnabled: false,
 };
 
 describe("stepsForRole", () => {
@@ -43,6 +45,9 @@ describe("stepsForRole", () => {
     expect(ids).not.toContain("improve-ai");
     expect(steps.find((step) => step.id === "create-report")?.startHere).toBe(
       true
+    );
+    expect(steps.find((step) => step.id === "create-report")?.href).toBe(
+      "/templates"
     );
     expect(steps.find((step) => step.id === "chrome")?.startHere).toBe(true);
   });

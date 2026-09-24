@@ -312,6 +312,9 @@ export type DesignVerificationMetadata = {
 export type GenericDocumentMetadata = {
   importWarnings?: string[];
   importedFromFilename?: string;
+  demoTemplateId?: string;
+  demoTemplateTitle?: string;
+  demoTemplateSection?: string;
 };
 
 export type ReportMetadata =

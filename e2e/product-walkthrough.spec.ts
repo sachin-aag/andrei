@@ -121,7 +121,7 @@ test.describe("product walkthrough", () => {
       ).toBeVisible();
       await dialog.getByRole("button", { name: /^next$/i }).click();
       await expect(
-        dialog.getByRole("heading", { name: /start here: create a report/i })
+        dialog.getByRole("heading", { name: /start here: pick a template/i })
       ).toBeVisible();
       await dialog.getByRole("button", { name: /^next$/i }).click();
       await expect(dialog).toHaveCount(0);

@@ -10,6 +10,7 @@ export {
   isDocumentTypeEnabled,
   isStatisticalAnalysisEnabled,
   isInsightsEnabled,
+  isDocumentTemplatesEnabled,
   voiceInputLanguageCodes,
   DEMO_PACK,
   MJ_PACK,
