@@ -312,6 +312,11 @@ async function initializeIngestRun(
 
 /** PDF path: split into batches, extract each, then chunk+embed. */
 async function runPdfIngest(init: IngestInit): Promise<void> {
+  if (!isDocumentAiConfigured()) {
+    throw new Error(
+      "DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION are required. PDF indexing does not fall back to the slow page loop."
+    );
+  }
   await assertAttachmentCurrent(init);
   const existingBatches = await listBatches(init.runId);
   if (existingBatches.length === 0) {
@@ -555,13 +560,7 @@ async function listBatches(runId: string): Promise<
 }
 
 async function splitPdfForIngest(sourceBuffer: Buffer) {
-  // Searchable scans and born-digital files have a text layer. They used to
-  // skip this path and fall into Gemini's 3-page sequential insight loop.
-  // Enterprise OCR batching is 15 pages × 3 in flight (45 pages).
-  if (isDocumentAiConfigured()) {
-    return splitPdfIntoBatches(sourceBuffer, documentAiIngestSplitOptions());
-  }
-  return splitPdfIntoBatches(sourceBuffer);
+  return splitPdfIntoBatches(sourceBuffer, documentAiIngestSplitOptions());
 }
 
 function usesParallelOcrBatches(

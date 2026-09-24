@@ -27,9 +27,11 @@ export async function syncAssetProcessing(
   assetId: string,
   patch: ProcessingPatch
 ): Promise<void> {
+  const next =
+    patch.processingStatus === "ready" ? { ...patch, listedInLibrary: true } : patch;
   await db
     .update(attachmentAssets)
-    .set(patch)
+    .set(next)
     .where(eq(attachmentAssets.id, assetId));
 
   await db

@@ -31,6 +31,7 @@ export async function canAccessAttachmentAsset(
       and(
         eq(attachmentAssets.id, assetId),
         isNull(attachmentAssets.deletedAt),
+        eq(attachmentAssets.listedInLibrary, true),
         or(
           eq(attachmentAssets.ownerId, user.id),
           eq(attachmentAccessGrants.granteeUserId, user.id)
@@ -59,7 +60,11 @@ export async function loadAccessibleAsset(
       .select()
       .from(attachmentAssets)
       .where(
-        and(eq(attachmentAssets.id, assetId), isNull(attachmentAssets.deletedAt))
+        and(
+          eq(attachmentAssets.id, assetId),
+          isNull(attachmentAssets.deletedAt),
+          eq(attachmentAssets.listedInLibrary, true)
+        )
       )
       .limit(1);
     return asset ?? null;
@@ -79,6 +84,7 @@ export async function loadAccessibleAsset(
       and(
         eq(attachmentAssets.id, assetId),
         isNull(attachmentAssets.deletedAt),
+        eq(attachmentAssets.listedInLibrary, true),
         or(
           eq(attachmentAssets.ownerId, user.id),
           eq(attachmentAccessGrants.granteeUserId, user.id)
@@ -117,7 +123,11 @@ async function listOwnedAssetIds(userId: string): Promise<string[]> {
     .select({ id: attachmentAssets.id })
     .from(attachmentAssets)
     .where(
-      and(eq(attachmentAssets.ownerId, userId), isNull(attachmentAssets.deletedAt))
+      and(
+        eq(attachmentAssets.ownerId, userId),
+        isNull(attachmentAssets.deletedAt),
+        eq(attachmentAssets.listedInLibrary, true)
+      )
     );
   return rows.map((row) => row.id);
 }
@@ -133,7 +143,8 @@ async function listGrantedAssetIds(userId: string): Promise<string[]> {
     .where(
       and(
         eq(attachmentAccessGrants.granteeUserId, userId),
-        isNull(attachmentAssets.deletedAt)
+        isNull(attachmentAssets.deletedAt),
+        eq(attachmentAssets.listedInLibrary, true)
       )
     );
   return rows.map((row) => row.id);
@@ -151,7 +162,12 @@ export async function listAccessibleAssetIds(
       const rows = await db
         .select({ id: attachmentAssets.id })
         .from(attachmentAssets)
-        .where(isNull(attachmentAssets.deletedAt));
+        .where(
+          and(
+            isNull(attachmentAssets.deletedAt),
+            eq(attachmentAssets.listedInLibrary, true)
+          )
+        );
       return rows.map((row) => row.id);
     }
     case "shared":

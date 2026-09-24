@@ -13,6 +13,9 @@ export function sanitizeIngestError(error: unknown): string {
   if (error.message.includes("Could not continue document ingest")) {
     return "Document ingestion stopped between batches and could not resume. Reprocess the attachment to continue.";
   }
+  if (error.message.includes("DOCUMENT_AI_PROCESSOR_ID")) {
+    return "Document ingestion requires Document AI OCR. Set DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION.";
+  }
   if (error.message.includes("GOOGLE_VERTEX_PROJECT")) {
     return "Document ingestion requires Vertex AI credentials";
   }
