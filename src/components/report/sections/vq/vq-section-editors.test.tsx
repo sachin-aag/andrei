@@ -87,4 +87,25 @@ describe("VQ section editors", () => {
       "1.6.5 If yes, please enclose the annual report / Sustainable report / declaration"
     );
   });
+
+  it("shows the fields that were missing from the old form", () => {
+    const Cover = VQ_SECTION_EDITORS.vq_cover;
+    const { unmount } = render(<Cover />);
+    expect(screen.getByTestId("vq-field-cover_filled_by")).toHaveTextContent(
+      "3XPER INNOVENTURE LTD"
+    );
+    expect(screen.getByLabelText("Key Starting Material (KSM)")).toBeInTheDocument();
+    const signatures = screen.getByTestId("vq-page-signatures");
+    expect(signatures).toHaveTextContent("Name of the Activity");
+    expect(screen.getByLabelText("Name row 1")).toHaveValue("Anantha Kumar D");
+    expect(screen.getByLabelText("Name of the Activity row 3")).toHaveValue(
+      "Approved By"
+    );
+    unmount();
+
+    const SectionB = VQ_SECTION_EDITORS.vq_section_b;
+    render(<SectionB />);
+    expect(screen.getByTestId("vq-field-b_1_7")).toBeInTheDocument();
+    expect(screen.getByLabelText("To the slaughterhouse?")).toBeInTheDocument();
+  });
 });

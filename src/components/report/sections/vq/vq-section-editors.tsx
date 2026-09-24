@@ -12,19 +12,26 @@ import {
   useReportData,
 } from "@/providers/report-provider";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
+import { Button } from "@/components/ui/button";
 import {
   VQ_DEFAULT_CONTACTS,
   VQ_FORM,
+  VQ_PAGE_SIGNATURE_HEADERS,
   vqFieldCaption,
+  vqGridCellId,
   type VqField,
   type VqFieldKind,
+  type VqGroup,
 } from "@/lib/document-types/vq/schema";
 import {
   EMPTY_VQ_CONTENT,
+  VQ_PAGE_SIGNATURE_COLUMNS,
   VQ_SECTION_KEYS,
   VQ_SECTION_LABELS,
+  emptyVqPageSignatureRow,
   fieldRefId,
-  parseVqChoice,
+  parseVqPageSignatures,
+  type VqPageSignatureRow,
   type VqSectionContent,
   type VqSectionKey,
 } from "@/lib/document-types/vq/sections";
@@ -55,15 +62,34 @@ function coverPlaceholder(fieldId: string): string | undefined {
   }
 }
 
-function choiceOptions(kind: VqFieldKind): ReadonlyArray<"yes" | "no" | "na"> {
+type ChoiceOption = { value: string; label: string };
+
+/** Radio options for single-answer kinds; empty for everything else. */
+function choiceOptions(field: VqField, naLabel = "N.A."): ChoiceOption[] {
+  const yes = { value: "yes", label: "Yes" };
+  const no = { value: "no", label: "No" };
+  const na = { value: "na", label: naLabel };
+  const kind: VqFieldKind = field.kind;
   switch (kind) {
     case "yes_no":
-      return ["yes", "no"];
+      return [yes, no];
     case "yes_no_na":
     case "yes_no_na_ref":
-      return ["yes", "no", "na"];
+    case "yes_ref_no_na":
+      return [yes, no, na];
+    case "enclosed_ref_na":
+      return [{ value: "yes", label: "Enclosed" }, na];
+    case "choice":
+      return [...(field.options ?? [])];
     case "text":
     case "textarea":
+    case "ref":
+    case "ref_note":
+    case "checks":
+    case "check":
+    case "label":
+    case "static":
+    case "grid":
       return [];
     default: {
       const exhaustive: never = kind;
@@ -72,104 +98,348 @@ function choiceOptions(kind: VqFieldKind): ReadonlyArray<"yes" | "no" | "na"> {
   }
 }
 
-function choiceLabel(value: "yes" | "no" | "na"): string {
-  switch (value) {
-    case "yes":
-      return "Yes";
-    case "no":
-      return "No";
-    case "na":
-      return "N.A.";
-    default: {
-      const exhaustive: never = value;
-      return exhaustive;
-    }
-  }
+/** Kinds that also carry a `Ref:` / comment text in `${id}__ref`. */
+function hasRefText(kind: VqFieldKind): boolean {
+  return (
+    kind === "yes_no_na_ref" ||
+    kind === "yes_ref_no_na" ||
+    kind === "enclosed_ref_na"
+  );
+}
+
+function isTicked(value: string | undefined): boolean {
+  return value === "yes";
 }
 
 function ChoiceRow({
   field,
   value,
+  naLabel,
   disabled,
   onChange,
 }: {
   field: VqField;
   value: string;
+  naLabel?: string;
   disabled: boolean;
   onChange: (next: string) => void;
 }) {
-  const selected = parseVqChoice(value);
   return (
     <div className="flex flex-wrap gap-3">
-      {choiceOptions(field.kind).map((option) => (
-        <label key={option} className="flex items-center gap-1.5 text-sm">
+      {choiceOptions(field, naLabel).map((option) => (
+        <label key={option.value} className="flex items-center gap-1.5 text-sm">
           <input
             type="radio"
             name={field.id}
-            value={option}
-            checked={selected === option}
+            value={option.value}
+            checked={value === option.value}
             disabled={disabled}
-            onChange={() => onChange(option)}
+            onChange={() => onChange(option.value)}
           />
-          {choiceLabel(option)}
+          {option.label}
         </label>
       ))}
     </div>
   );
 }
 
+function TickBox({
+  id,
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-sm" htmlFor={id}>
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      {label}
+    </label>
+  );
+}
+
+function refPlaceholder(kind: VqFieldKind): string {
+  return kind === "yes_no_na_ref" ? "Comments / reference" : "Ref / attachment number";
+}
+
 function FieldControl({
   field,
+  group,
   answers,
   disabled,
   onAnswer,
 }: {
   field: VqField;
+  group: VqGroup;
   answers: Record<string, string>;
   disabled: boolean;
   onAnswer: (id: string, value: string) => void;
 }) {
   const value = answers[field.id] ?? "";
-  if (field.kind === "text") {
-    return (
-      <Input
-        id={field.id}
-        value={value}
-        disabled={disabled}
-        placeholder={coverPlaceholder(field.id)}
-        onChange={(event) => onAnswer(field.id, event.target.value)}
-      />
-    );
-  }
-  if (field.kind === "textarea") {
-    return (
-      <Textarea
-        id={field.id}
-        value={value}
-        disabled={disabled}
-        placeholder={coverPlaceholder(field.id)}
-        onChange={(event) => onAnswer(field.id, event.target.value)}
-      />
-    );
-  }
-  return (
-    <div className="space-y-2">
-      <ChoiceRow
-        field={field}
-        value={value}
-        disabled={disabled}
-        onChange={(next) => onAnswer(field.id, next)}
-      />
-      {field.kind === "yes_no_na_ref" ? (
-        <Input
-          value={answers[fieldRefId(field.id)] ?? ""}
+  switch (field.kind) {
+    case "label":
+      return null;
+    case "static":
+      return <p className="text-sm font-semibold">{field.value}</p>;
+    case "text":
+      return (
+        <div className="flex items-center gap-2">
+          {field.prefix ? <span className="text-sm">{field.prefix}</span> : null}
+          <Input
+            id={field.id}
+            value={value}
+            disabled={disabled}
+            placeholder={coverPlaceholder(field.id)}
+            onChange={(event) => onAnswer(field.id, event.target.value)}
+          />
+          {field.suffix ? <span className="text-sm">{field.suffix}</span> : null}
+        </div>
+      );
+    case "textarea":
+      return (
+        <Textarea
+          id={field.id}
+          value={value}
           disabled={disabled}
-          placeholder="Ref / attachment number"
-          onChange={(event) =>
-            onAnswer(fieldRefId(field.id), event.target.value)
-          }
+          placeholder={coverPlaceholder(field.id)}
+          onChange={(event) => onAnswer(field.id, event.target.value)}
         />
-      ) : null}
+      );
+    case "ref":
+    case "ref_note":
+      return (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Input
+            id={field.id}
+            aria-label="Ref"
+            value={value || (answers[fieldRefId(field.id)] ?? "")}
+            disabled={disabled}
+            placeholder="Ref / attachment number"
+            onChange={(event) => onAnswer(field.id, event.target.value)}
+          />
+          {field.kind === "ref_note" ? (
+            <Input
+              aria-label="Reference note"
+              value={answers[`${field.id}__note`] ?? ""}
+              disabled={disabled}
+              placeholder="Reference note"
+              onChange={(event) =>
+                onAnswer(`${field.id}__note`, event.target.value)
+              }
+            />
+          ) : null}
+        </div>
+      );
+    case "checks":
+      return (
+        <div
+          className={
+            field.vertical ? "grid gap-1.5" : "flex flex-wrap gap-x-4 gap-y-1.5"
+          }
+        >
+          {(field.checks ?? []).map((option) => (
+            <TickBox
+              key={option.id}
+              id={option.id}
+              label={option.label}
+              checked={isTicked(answers[option.id])}
+              disabled={disabled}
+              onChange={(next) => onAnswer(option.id, next ? "yes" : "")}
+            />
+          ))}
+        </div>
+      );
+    case "check":
+      return (
+        <TickBox
+          id={field.id}
+          label={field.detail ?? field.label}
+          checked={isTicked(value)}
+          disabled={disabled}
+          onChange={(next) => onAnswer(field.id, next ? "yes" : "")}
+        />
+      );
+    case "grid": {
+      const columns = field.columns ?? [];
+      return (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                {columns.map((heading) => (
+                  <th
+                    key={heading}
+                    className="border border-[var(--border)] px-2 py-1 text-left font-medium"
+                  >
+                    {heading.replace("\n", " ")}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: field.rows ?? 0 }, (_, r) => (
+                <tr key={r}>
+                  {columns.map((heading, c) => {
+                    const id = vqGridCellId(field.id, r, c);
+                    return (
+                      <td key={heading} className="border border-[var(--border)] p-1">
+                        <Input
+                          aria-label={`${heading} row ${r + 1}`}
+                          value={answers[id] ?? ""}
+                          disabled={disabled}
+                          onChange={(event) => onAnswer(id, event.target.value)}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    case "yes_no":
+    case "yes_no_na":
+    case "yes_no_na_ref":
+    case "yes_ref_no_na":
+    case "enclosed_ref_na":
+    case "choice":
+      return (
+        <div className="space-y-2">
+          <ChoiceRow
+            field={field}
+            value={value}
+            naLabel={group.naLabel}
+            disabled={disabled}
+            onChange={(next) => onAnswer(field.id, next)}
+          />
+          {hasRefText(field.kind) ? (
+            <Input
+              aria-label={refPlaceholder(field.kind)}
+              value={answers[fieldRefId(field.id)] ?? ""}
+              disabled={disabled}
+              placeholder={refPlaceholder(field.kind)}
+              onChange={(event) =>
+                onAnswer(fieldRefId(field.id), event.target.value)
+              }
+            />
+          ) : null}
+        </div>
+      );
+    default: {
+      const exhaustive: never = field.kind;
+      return exhaustive;
+    }
+  }
+}
+
+/** Group heading as printed on the form (`1.2 Is the address…`). */
+function groupHeading(group: VqGroup): string {
+  const title = group.title.replace(/^\*\s*/, "");
+  return group.number ? `${group.number} ${title}` : title;
+}
+
+/** Lead rows (A 1.2 / 1.3) ask the banner question; the caption is its follow-up. */
+function fieldCaption(field: VqField, group: VqGroup): string {
+  if (field.lead) return groupHeading(group);
+  return vqFieldCaption(field);
+}
+
+function PageSignaturesEditor({
+  rows,
+  disabled,
+  onChange,
+}: {
+  rows: VqPageSignatureRow[];
+  disabled: boolean;
+  onChange: (next: VqPageSignatureRow[]) => void;
+}) {
+  const setCell = (
+    index: number,
+    column: keyof VqPageSignatureRow,
+    value: string
+  ) => {
+    onChange(
+      rows.map((row, i) => (i === index ? { ...row, [column]: value } : row))
+    );
+  };
+  return (
+    <div className="space-y-3" data-testid="vq-page-signatures">
+      <div>
+        <h3 className="text-sm font-semibold">Page signature block</h3>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Filled once. The Word export prints this table at the bottom of every page.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              {VQ_PAGE_SIGNATURE_HEADERS.map((heading) => (
+                <th
+                  key={heading}
+                  className="border border-[var(--border)] px-2 py-1 text-left font-medium"
+                >
+                  {heading}
+                </th>
+              ))}
+              <th className="w-10 border border-[var(--border)]" aria-label="Row actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                {VQ_PAGE_SIGNATURE_COLUMNS.map((column, c) => (
+                  <td key={column} className="border border-[var(--border)] p-1">
+                    <Input
+                      aria-label={`${VQ_PAGE_SIGNATURE_HEADERS[c]} row ${index + 1}`}
+                      value={row[column]}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        setCell(index, column, event.target.value)
+                      }
+                    />
+                  </td>
+                ))}
+                <td className="border border-[var(--border)] p-1 text-center">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={disabled}
+                    aria-label={`Remove row ${index + 1}`}
+                    onClick={() => onChange(rows.filter((_, i) => i !== index))}
+                  >
+                    ×
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={disabled}
+        onClick={() => onChange([...rows, emptyVqPageSignatureRow()])}
+      >
+        Add row
+      </Button>
     </div>
   );
 }
@@ -199,11 +469,24 @@ function VqQuestionnaireEditor({ section }: { section: VqSectionKey }) {
       lastSavedAt={lastSavedAt}
       section={section}
     >
-      {spec?.groups.map((group) => (
-        <div key={group.title} className="space-y-3">
-          <h3 className="text-sm font-semibold">{group.title}</h3>
+      {section === "vq_cover" ? (
+        <PageSignaturesEditor
+          rows={parseVqPageSignatures(content.pageSignatures)}
+          disabled={readOnly}
+          onChange={(next) =>
+            update((prev) => ({ ...prev, pageSignatures: next }))
+          }
+        />
+      ) : null}
+      {[...(spec?.groups ?? []), ...(spec?.afterMatrix ?? [])].map((group, index) => (
+        <div key={`${group.title}-${index}`} className="space-y-3">
+          {group.title ? (
+            <h3 className="text-sm font-semibold">{groupHeading(group)}</h3>
+          ) : null}
           {group.note ? (
-            <p className="text-sm text-[var(--muted-foreground)]">{group.note}</p>
+            <p className="whitespace-pre-line text-sm text-[var(--muted-foreground)]">
+              {group.note}
+            </p>
           ) : null}
           <div className="space-y-4">
             {group.fields.map((field) => (
@@ -220,10 +503,11 @@ function VqQuestionnaireEditor({ section }: { section: VqSectionKey }) {
                   }
                   className={QUESTION_LABEL_CLASS}
                 >
-                  {vqFieldCaption(field)}
+                  {fieldCaption(field, group)}
                 </Label>
                 <FieldControl
                   field={field}
+                  group={group}
                   answers={answers}
                   disabled={readOnly}
                   onAnswer={onAnswer}

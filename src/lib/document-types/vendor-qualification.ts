@@ -1,4 +1,6 @@
 import path from "node:path";
+import type { DocxExportContext } from "@/lib/export/docx-export-context";
+import { narrativeToDocxXmlWithContext } from "@/lib/export/narrative-to-docx-xml";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import { VQ_PROMPT_VERSION } from "@/lib/customers/packs";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
@@ -8,7 +10,7 @@ import {
   checkScoringGrade,
   checkSectionHasResponses,
 } from "./vq/deterministic-checks";
-import { questionnaireXml, vqTemplateKey } from "./vq/export-xml";
+import { vqBodyXml, vqPageFooterXml, vqPageSignaturesFor } from "./vq/export-xml";
 import { VQ_DEFAULT_CONTACTS, VQ_FORM, VQ_FORM_NO, VQ_FORM_TITLE } from "./vq/schema";
 import {
   EMPTY_VQ_CONTENT,
@@ -16,6 +18,7 @@ import {
   VQ_SECTION_KEYS,
   VQ_SECTION_LABELS,
   isVqSectionKey,
+  parseVqPageSignatures,
   type VqSectionContent,
   type VqSectionKey,
 } from "./vq/sections";
@@ -75,6 +78,9 @@ function mergeVqSection(key: string, raw: unknown): unknown {
       answers: { ...base.answers },
       ...(base.narrative ? { narrative: base.narrative } : {}),
       ...(base.table ? { table: base.table } : {}),
+      ...(base.pageSignatures
+        ? { pageSignatures: base.pageSignatures.map((row) => ({ ...row })) }
+        : {}),
     };
   }
   const o = raw as Partial<VqSectionContent>;
@@ -86,6 +92,9 @@ function mergeVqSection(key: string, raw: unknown): unknown {
   }
   if (base.table || o.table) {
     merged.table = normalizeRichField(o.table ?? base.table);
+  }
+  if (base.pageSignatures) {
+    merged.pageSignatures = parseVqPageSignatures(o.pageSignatures);
   }
   return merged;
 }
@@ -218,7 +227,7 @@ The engineer fills Yes/No/N.A. boxes in the editor. You draft comments, conclusi
       "templates",
       "3xper-vendor-qualification-template.docx"
     ),
-    buildTemplateData: ({ report, sections }) => {
+    buildTemplateData: ({ report, sections, ctx }) => {
       const byKey = Object.fromEntries(
         sections.map((row) => [row.section, row.content])
       );
@@ -226,28 +235,44 @@ The engineer fills Yes/No/N.A. boxes in the editor. You draft comments, conclusi
         report.metadata && typeof report.metadata === "object"
           ? (report.metadata as Partial<typeof VQ_DEFAULT_METADATA>)
           : {};
-      const data: Record<string, unknown> = {
+      const content: Partial<Record<VqSectionKey, VqSectionContent>> = {};
+      for (const key of VQ_SECTION_KEYS) {
+        content[key] = (byKey[key] ?? EMPTY_VQ_CONTENT[key]) as VqSectionContent;
+      }
+      const cover = content.vq_cover!;
+      content.vq_cover = {
+        ...cover,
+        answers: {
+          ...cover.answers,
+          cover_contact_name:
+            cover.answers.cover_contact_name || VQ_DEFAULT_CONTACTS.contactName,
+          cover_contact_title:
+            cover.answers.cover_contact_title || VQ_DEFAULT_CONTACTS.contactTitle,
+          cover_contact_site:
+            cover.answers.cover_contact_site || VQ_DEFAULT_CONTACTS.contactSite,
+          cover_contact_address:
+            cover.answers.cover_contact_address ||
+            VQ_DEFAULT_CONTACTS.contactAddress,
+          cover_contact_phone:
+            cover.answers.cover_contact_phone || VQ_DEFAULT_CONTACTS.contactPhone,
+          cover_contact_email:
+            cover.answers.cover_contact_email || VQ_DEFAULT_CONTACTS.contactEmail,
+        },
+      };
+      return {
         documentNo: report.documentNo,
         formNo: meta.formNo ?? VQ_FORM_NO,
         revision: meta.revision ?? VQ_DEFAULT_METADATA.revision,
+        vqBodyXml: vqBodyXml({
+          sections: content,
+          render: (doc) =>
+            narrativeToDocxXmlWithContext(
+              normalizeRichField(doc),
+              ctx as DocxExportContext
+            ).xml,
+        }),
+        vqFooterXml: vqPageFooterXml(vqPageSignaturesFor(content.vq_cover)),
       };
-      for (const key of VQ_SECTION_KEYS) {
-        const content = (byKey[key] ?? EMPTY_VQ_CONTENT[key]) as VqSectionContent;
-        const tags = vqTemplateKey(key);
-        const answers = { ...content.answers };
-        if (key === "vq_cover") {
-          answers.cover_contact_name ||= VQ_DEFAULT_CONTACTS.contactName;
-          answers.cover_contact_title ||= VQ_DEFAULT_CONTACTS.contactTitle;
-          answers.cover_contact_site ||= VQ_DEFAULT_CONTACTS.contactSite;
-          answers.cover_contact_address ||= VQ_DEFAULT_CONTACTS.contactAddress;
-          answers.cover_contact_phone ||= VQ_DEFAULT_CONTACTS.contactPhone;
-          answers.cover_contact_email ||= VQ_DEFAULT_CONTACTS.contactEmail;
-        }
-        data[tags.fields] = questionnaireXml(key, answers);
-        data[tags.narrative] = content.narrative ?? "";
-        if (content.table) data[tags.table] = content.table;
-      }
-      return data;
     },
   },
   submitValidation: ({ sections }) => {

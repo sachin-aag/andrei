@@ -81,17 +81,24 @@ describe("3xper VQ DOCX template", () => {
     }).not.toThrow();
 
     const header = partText(zip, "word/header2.xml");
-    const footer = partText(zip, "word/footer1.xml");
-    const body = partText(zip, "word/document.xml");
-    expect(header).toContain("3xper");
-    expect(header).toContain("Vendor Qualification");
-    expect(header).toContain("MASTER COPY");
-    expect(footer).toContain("QAD-SOP-MS-001-F04");
-    expect(body).toContain("QAD-SOP-MS-001-F04");
-    expect(body).toContain("Palachur");
-    expect(xml).toContain("{@vqCoverXml}");
-    expect(xml).toContain("{@vqSectionGXml}");
-    expect(xml).toContain("{@vqScoringXml}");
+    const footer = zip.file("word/footer1.xml")?.asText() ?? "";
+    for (const text of [
+      "Document Name",
+      "VENDOR QUALIFICATION",
+      "Document Number",
+      "QAD-SOP-MS-001-F04",
+      "Revision Number",
+      "Page No",
+      "Palachur Village,",
+    ]) {
+      expect(header, text).toContain(text);
+    }
+    expect(zip.file("word/header2.xml")?.asText()).toContain("NUMPAGES");
+    for (const name of ["word/header1.xml", "word/header3.xml"]) {
+      expect(partText(zip, name)).toBe(header);
+    }
+    expect(footer).toContain("{@vqFooterXml}");
+    expect(xml).toContain("{@vqBodyXml}");
     expect(xml).not.toContain("TABLE OF CONTENTS");
     expect(xml).toContain('w:w="11909"');
   });
@@ -117,7 +124,7 @@ describe("3xper VQ DOCX export", () => {
     }
   });
 
-  it("renders cover identity and the VQ number", async () => {
+  it("renders cover identity, the form header and the page signature footer", async () => {
     const buf = await generateReportDocx({
       report: vqReport(),
       sections: vqSections(),
@@ -127,10 +134,33 @@ describe("3xper VQ DOCX export", () => {
     expect(xml).not.toMatch(/\{@?\w+Xml\}/);
     expect(xml).toContain("Acme API Pvt Ltd");
     expect(xml).toContain("Lactose monohydrate");
-    expect(xml).toContain("VQ-2026-001");
-    expect(xml).toContain(VQ_FORM_NO);
-    expect(partText(zip, "word/header2.xml")).toContain("3xper");
-    expect(partText(zip, "word/footer1.xml")).toContain("Anantha Kumar D");
+    expect(partText(zip, "word/header2.xml")).toContain(VQ_FORM_NO);
+    const footer = partText(zip, "word/footer1.xml");
+    expect(footer).not.toContain("{@vqFooterXml}");
+    for (const text of ["Name of the Activity", "Prepared By", "Anantha Kumar D", "Head Quality", `Format: - ${VQ_FORM_NO}`]) {
+      expect(footer, text).toContain(text);
+    }
+  });
+
+  it("prints the cover's page signature rows in the footer", async () => {
+    const sections = vqSections().map((row) =>
+      row.section === "vq_cover"
+        ? {
+            ...row,
+            content: {
+              ...(row.content as object),
+              pageSignatures: [
+                { activity: "Prepared By", name: "Priya S", designation: "QA Officer", signature: "PS", date: "01-09-2026" },
+              ],
+            },
+          }
+        : row
+    );
+    const zip = new PizZip(await generateReportDocx({ report: vqReport(), sections }));
+    const footer = partText(zip, "word/footer1.xml");
+    expect(footer).toContain("Priya S");
+    expect(footer).toContain("01-09-2026");
+    expect(footer).not.toContain("Anantha Kumar D");
   });
 
   it("names the exported file for the VQ type", () => {
