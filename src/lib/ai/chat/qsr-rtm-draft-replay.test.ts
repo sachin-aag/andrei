@@ -650,4 +650,111 @@ describe("QSR RTM section 5 draft replay", () => {
     const rows = op.kind === "insert_rows" ? op.rows : [];
     expect(rows.flat().join(" ")).toContain("760 mmHg");
   });
+
+  it("unlocks 5.2 after a control-philosophy URS walk that never stamped qsr_rtm_control", async () => {
+    mockSection("qsr_rtm_control");
+    const ursReviewPages = Array.from({ length: 12 }, (_, index) => {
+      const pageNumber = index + 1;
+      const fixture = URS_PAGES[pageNumber];
+      return {
+        attachmentId: URS_ID,
+        filename: URS_FILENAME,
+        pageNumber,
+        transcript:
+          fixture?.transcript ?? `URS-${pageNumber + 1} process requirement`,
+        pageContext: null,
+        printedPageLabel: String(pageNumber),
+      };
+    });
+    listDocumentPagesForReviewMock.mockResolvedValue(ursReviewPages);
+    loadDocumentPageEvidenceMock.mockImplementation(
+      async ({
+        pages,
+      }: {
+        pages: Array<{ attachmentId: string; pageNumber: number }>;
+      }) =>
+        pages.flatMap((page) => {
+          const fixture = URS_PAGES[page.pageNumber];
+          const quote =
+            fixture?.transcript ??
+            `URS-${page.pageNumber + 1} process requirement`;
+          return [
+            {
+              attachmentId: URS_ID,
+              filename: URS_FILENAME,
+              pageNumber: page.pageNumber,
+              quote,
+              ingestRunId: "run",
+              citationId: `att:${URS_ID}:p:${page.pageNumber}`,
+            },
+          ];
+        })
+    );
+
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const tools = buildChatTools({
+      reportId: REPORT_ID,
+      canEdit: true,
+      actor: ACTOR,
+      documentType: "qualification_summary_report",
+      sectionScope: "all",
+      reviewCoverageObjective: "perfect now draft 5.2,5.3, 5.4",
+      documentReview: session,
+      unsupportedFactPolicy: "block",
+      retrievalPolicy: "comprehensive",
+    });
+
+    const started = await tools.start_document_review!.execute!(
+      {
+        objective:
+          "Extract all requirements for Control Philosophy (5.2), GMP Requirements (5.3), and Safety Requirements (5.4) from the URS.",
+        attachmentIds: [URS_ID],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(started).toMatchObject({ status: "started" });
+    expect(String((started as { coverageKey?: string }).coverageKey ?? "")).toContain(
+      "|obj:qsr_rtm"
+    );
+
+    let guard = 0;
+    while (session.phase() === "in_progress") {
+      guard += 1;
+      expect(guard).toBeLessThan(40);
+      await tools.continue_document_review!.execute!({}, TEST_TOOL_OPTIONS);
+    }
+    const finished = (await tools.finish_document_review!.execute!(
+      {},
+      TEST_TOOL_OPTIONS
+    )) as { status: string; coverageKey?: string | null };
+    expect(finished).toMatchObject({ status: "complete" });
+    expect(String(finished.coverageKey ?? "")).toContain("|obj:qsr_rtm");
+
+    const drafted = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_control",
+        targetField: "table",
+        reasoning: "Fill 5.2 from the finished URS walk.",
+        operation: {
+          kind: "insert_rows",
+          rows: [
+            [
+              "URS-35",
+              "Vacuum gauge",
+              "Vacuum gauge to measure the vacuum produced",
+              "0 to 760 mmHg",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).not.toMatchObject({ status: "review_incomplete" });
+    expect(drafted).toMatchObject({ status: "proposed" });
+  });
 });
