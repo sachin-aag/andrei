@@ -11,6 +11,7 @@ import {
   inventorySectionForObjective,
   preferredInventoryEvidenceSkipped,
 } from "@/lib/ai/chat/inventory-review-schema";
+import { isQsrRtmSection } from "@/lib/ai/chat/qsr-row-grounding";
 import { getDocumentType } from "@/lib/document-types";
 import {
   elrIncompleteSectionKeysFromParts,
@@ -235,13 +236,16 @@ export function inventoryFinishSatisfiesEmptyTable(input: {
   queuedFilenames?: readonly string[];
   skippedFilenames?: readonly string[];
 }): boolean {
+  const section = inventorySectionForObjective(input.objective);
+  const qsrUrsInventory =
+    isQsrRtmSection(section) || section === "qsr_operating_range";
   if (
     input.reviewedPages <= REVIEW_OBJECTIVE_PAGE_FLOOR &&
-    input.skippedAttachmentIds.length > 0
+    input.skippedAttachmentIds.length > 0 &&
+    !qsrUrsInventory
   ) {
     return false;
   }
-  const section = inventorySectionForObjective(input.objective);
   if (
     section &&
     preferredInventoryEvidenceSkipped(

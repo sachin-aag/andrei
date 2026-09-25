@@ -97,7 +97,10 @@ function stableQsrCoverageObjective(normalized: string): string | null {
   ) {
     return "qsr_qualification_documents";
   }
-  if (normalized === "qsr_references" || normalized.includes("qsr_references")) {
+  if (
+    normalized === "qsr_references" ||
+    normalized.includes("qsr_references")
+  ) {
     return "qsr_references";
   }
   if (
@@ -105,6 +108,13 @@ function stableQsrCoverageObjective(normalized: string): string | null {
     (normalized.includes("qsr") || normalized.includes("qualification summary"))
   ) {
     return "qsr_references";
+  }
+  if (
+    normalized === "qsr_rtm" ||
+    /^qsr_rtm_/.test(normalized) ||
+    normalized.includes("qsr_rtm_")
+  ) {
+    return "qsr_rtm";
   }
   return null;
 }
@@ -256,6 +266,7 @@ function qsrInventorySectionForObjective(
   const digest = coverageObjectiveDigest(objective);
   if (!digest) return null;
   const keys = qsrInventorySectionKeys();
+  if (digest === "qsr_rtm") return "qsr_rtm_process";
   if (keys.includes(digest)) return digest;
   if (
     digest.includes("qualification document") ||

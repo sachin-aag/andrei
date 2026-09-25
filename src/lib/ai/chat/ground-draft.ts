@@ -39,9 +39,9 @@ import {
 } from "@/lib/ai/chat/citation-exemption";
 import {
   documentFamilyFromContext,
-  evidenceContainsFactNearKey,
   extraQsrUnsupported,
   factIsRowKey,
+  factSupportedForRowKey,
   filenameMatchesFamily,
   qsrFailClosedReason,
   rowKeyFromContext,
@@ -188,7 +188,7 @@ function pageSupportsFact(
   rowKey: string | null
 ): boolean {
   if (rowKey && !factIsRowKey(fact, rowKey)) {
-    return evidenceContainsFactNearKey(quote, fact, rowKey);
+    return factSupportedForRowKey(quote, fact, rowKey);
   }
   return evidenceContainsFact(quote, fact);
 }

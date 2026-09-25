@@ -18,13 +18,14 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v136-no-table-banners");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v137-qsr-rtm-cover-facts");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
-    expect(prompt).toContain("same URS-ID window");
+    expect(prompt).toContain("neighbour URS-ID window");
     expect(prompt).toContain("do not copy URS-37's range onto URS-5");
+    expect(prompt).toContain("URS cover");
     expect(prompt).toContain("stock Complies / Section 13");
   });
 

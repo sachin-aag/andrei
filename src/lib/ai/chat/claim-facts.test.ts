@@ -121,4 +121,11 @@ describe("instrument quantities", () => {
   it("does not turn a section number into a quantity", () => {
     expect(extractHardFacts("5.1 System Trends")).toEqual([]);
   });
+
+  it("does not treat stainless 316L as a litre quantity", () => {
+    expect(extractHardFacts("Glass lined / SS 316L").map((fact) => fact.text)).not.toContain(
+      "316L"
+    );
+    expect(extractHardFacts("Capacity 8000 L").map((fact) => fact.text)).toContain("8000 L");
+  });
 });

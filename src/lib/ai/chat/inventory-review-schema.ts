@@ -359,6 +359,7 @@ export function inventorySectionForObjective(
   if (!objective) return null;
   const digest = objective.trim().toLowerCase().replace(/\s+/g, " ");
   if (!digest) return null;
+  if (digest === "qsr_rtm") return "qsr_rtm_process";
   if (isQsrRtmSection(digest) || digest === "qsr_operating_range") {
     return digest as SectionType;
   }
