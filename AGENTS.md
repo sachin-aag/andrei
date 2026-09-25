@@ -359,6 +359,9 @@ optionally `rm -rf .next`. Not a code bug.
   its test file — do not leave `section-scope.test.ts` after `section-scope.ts`
   is gone, and do not keep tombstone `not.toContain("old dropdown")` tests.
   Grep the old symbol in `*.test.*` and `e2e/` before calling a removal done.
+  Production grounding incidents (QSR section 5 overblock): replay
+  `edit_table` through `buildChatTools` with mocked retrieval
+  (`qsr-rtm-draft-replay.test.ts`). Playwright stub chat cannot assert tools.
 - Playwright: `pnpm test:e2e` — needs `DATABASE_URL`, serves
   `http://127.0.0.1:3000` with stub flags. Catalog: `TESTING.md`.
 - Local `reuseExistingServer` is on. Whatever already owns port 3000 is reused
