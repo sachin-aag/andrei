@@ -56,18 +56,34 @@ function blockLine(node: JSONContent): string {
  * by tableIndex + [row,col]. Every cell is tagged with its 0-based [r,c];
  * the visible cell text is exactly the locator's per-cell match string.
  */
+function cellColspan(cell: JSONContent): number {
+  const raw = cell.attrs?.colspan;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 1
+    ? Math.floor(raw)
+    : 1;
+}
+
 function renderTableGrid(table: JSONContent, tableIndex: number): string {
   const rows = (table.content ?? []).filter((r) => r.type === "tableRow");
   const lines: string[] = [
-    `Table tableIndex=${tableIndex} — each cell is tagged [row,col] (0-based). Row 0 is the header and cannot be deleted; row 1 is the first data row. Use edit_table with this tableIndex. Do not quote the [row,col] tags.`,
+    `Table tableIndex=${tableIndex} — each cell is tagged [row,col] (0-based). Row 0 is the header and cannot be deleted; row 1 is the first data row. Use edit_table with this tableIndex. Prefer insert_rows afterRowKey (first-cell text) over afterRow. A merged group row is { banner: "…" }. Do not quote the [row,col] tags.`,
   ];
   rows.forEach((row, r) => {
     const cells = (row.content ?? []).filter(
       (c) => c.type === "tableCell" || c.type === "tableHeader"
     );
+    const span = cells.length === 1 ? cellColspan(cells[0]!) : 1;
+    if (span > 1) {
+      lines.push(`row ${r} = banner (spans ${span} cols)`);
+    }
     cells.forEach((c, col) => {
       const text = blockLine(c);
-      lines.push(`[${r},${col}] ${text || "(empty)"}`);
+      const colspan = cellColspan(c);
+      lines.push(
+        colspan > 1
+          ? `[${r},${col}] (banner, spans ${colspan} cols) ${text || "(empty)"}`
+          : `[${r},${col}] ${text || "(empty)"}`
+      );
     });
   });
   return lines.join("\n");

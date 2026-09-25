@@ -27,9 +27,15 @@ export type TableOperation =
   | {
       kind: "insert_rows";
       tableIndex: number;
-      /** Omit to append after the last existing row. */
+      /** Omit to append after the last existing row. Ignored when afterRowKey matches. */
       afterRow?: number;
-      rows: string[][];
+      /**
+       * First-cell text of the live row to insert after (URS-16, a banner
+       * label, …). Prefer this over afterRow — numeric indexes shift after
+       * earlier inserts in the same batch.
+       */
+      afterRowKey?: string;
+      rows: InsertTableRow[];
       expectedRowAtAfter?: string[];
     }
   | {
@@ -85,6 +91,19 @@ export type TableCellEdit = {
    */
   rowContext?: string;
 };
+
+/** Data cells, or a full-width merged banner (one cell, colspan = header width). */
+export type InsertTableRow = string[] | { banner: string };
+
+export function isBannerInsertRow(
+  row: InsertTableRow
+): row is { banner: string } {
+  return !Array.isArray(row) && typeof row.banner === "string";
+}
+
+export function insertRowPlainTexts(row: InsertTableRow): string[] {
+  return isBannerInsertRow(row) ? [row.banner] : row;
+}
 
 export type TableRowDelete = {
   row: number;
@@ -589,6 +608,86 @@ function tableRows(table: JSONContent): JSONContent[] {
   return (table.content ?? []).filter((n) => n.type === "tableRow");
 }
 
+function cellColspan(cell: JSONContent): number {
+  const raw = cell.attrs?.colspan;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+    ? Math.floor(raw)
+    : 1;
+}
+
+function visualColumnCount(row: JSONContent): number {
+  return rowCells(row).reduce((sum, cell) => sum + cellColspan(cell), 0);
+}
+
+/** One physical cell that spans the full header width. */
+export function isBannerTableRow(row: JSONContent): boolean {
+  const cells = rowCells(row);
+  return cells.length === 1 && cellColspan(cells[0]!) > 1;
+}
+
+function headerColumnCount(table: JSONContent): number {
+  const header = tableRows(table)[0];
+  if (!header) return 0;
+  return Math.max(visualColumnCount(header), rowCells(header).length);
+}
+
+function firstCellText(row: JSONContent): string {
+  const cell = rowCells(row)[0];
+  return cell ? cellPlainText(cell) : "";
+}
+
+function rowsMatchingAfterKey(
+  rows: readonly JSONContent[],
+  key: string
+): number[] {
+  const wanted = normalizeTableCellText(key);
+  if (!wanted) return [];
+  const hits: number[] = [];
+  rows.forEach((row, index) => {
+    if (firstCellText(row) === wanted) hits.push(index);
+  });
+  return hits;
+}
+
+export type ResolveInsertAfterRowResult =
+  | { ok: true; afterRow: number }
+  | { ok: false; status: "bad_scope" | "invalid"; hint: string };
+
+/** Resolve insert_rows afterRowKey (preferred) or afterRow against live rows. */
+export function resolveInsertAfterRow(
+  rows: readonly JSONContent[],
+  operation: Extract<TableOperation, { kind: "insert_rows" }>
+): ResolveInsertAfterRowResult {
+  const key = operation.afterRowKey?.trim() ?? "";
+  if (key) {
+    const hits = rowsMatchingAfterKey(rows, key);
+    if (hits.length === 0) {
+      return {
+        ok: false,
+        status: "bad_scope",
+        hint: `afterRowKey "${key}" was not found. Copy the first-cell text from read_section (URS ID or banner label).`,
+      };
+    }
+    if (hits.length > 1) {
+      return {
+        ok: false,
+        status: "bad_scope",
+        hint: `afterRowKey "${key}" matches rows ${hits.join(", ")}. Quote a unique first-cell value.`,
+      };
+    }
+    return { ok: true, afterRow: hits[0]! };
+  }
+  const afterRow = operation.afterRow ?? Math.max(0, rows.length - 1);
+  if (afterRow < 0 || afterRow >= rows.length) {
+    return {
+      ok: false,
+      status: "bad_scope",
+      hint: `afterRow ${afterRow} does not exist. Re-read with read_section.`,
+    };
+  }
+  return { ok: true, afterRow };
+}
+
 type TableLocation = {
   table: JSONContent;
   parent: JSONContent;
@@ -690,7 +789,14 @@ function expectedRowAtAfterStillValid(
   expected: readonly string[] | undefined
 ): boolean {
   if (!expected) return true;
-  if (actual.length !== expected.length) return false;
+  const exp0 = normalizeTableCellText(expected[0] ?? "");
+  if (exp0.length > 0 && (actual[0] ?? "") !== exp0) return false;
+  if (actual.length !== expected.length) {
+    const restEmpty = expected
+      .slice(1)
+      .every((cell) => normalizeTableCellText(cell).length === 0);
+    return exp0.length > 0 && restEmpty;
+  }
   if (cellsMatch(actual, expected)) return true;
   for (let i = 0; i < expected.length; i++) {
     const exp = normalizeTableCellText(expected[i] ?? "");
@@ -737,6 +843,42 @@ function templateAttrs(cells: JSONContent[], index: number): JSONContent["attrs"
   return template?.attrs ? structuredClone(template.attrs) : { ...DEFAULT_CELL_ATTRS };
 }
 
+/** Copy paint attrs from a data row; never inherit a banner colspan/rowspan. */
+function dataCellAttrs(
+  templateCells: JSONContent[],
+  index: number
+): JSONContent["attrs"] {
+  const attrs = templateAttrs(templateCells, index) ?? { ...DEFAULT_CELL_ATTRS };
+  return { ...attrs, colspan: 1, rowspan: 1 };
+}
+
+function dataTemplateCells(
+  rows: readonly JSONContent[],
+  afterRow: number
+): JSONContent[] {
+  for (let i = afterRow; i >= 1; i -= 1) {
+    const cells = rowCells(rows[i]!);
+    if (cells.length > 1 && !isBannerTableRow(rows[i]!)) return cells;
+  }
+  return rowCells(rows[0] ?? { type: "tableRow", content: [] });
+}
+
+function makeBannerCell(text: string, colspan: number): JSONContent {
+  const paragraph = cellParagraphFromText(text);
+  if (Array.isArray(paragraph.content)) {
+    paragraph.content = paragraph.content.map((node) =>
+      node.type === "text"
+        ? { ...node, marks: [...(node.marks ?? []), { type: "bold" }] }
+        : node
+    );
+  }
+  return {
+    type: "tableCell",
+    attrs: { ...DEFAULT_CELL_ATTRS, colspan },
+    content: [paragraph],
+  };
+}
+
 /**
  * Fill optional concurrency snapshots from the current table before a proposal
  * is persisted. This keeps model input concise while preserving stale-edit
@@ -777,12 +919,22 @@ export function captureTableOperationSnapshots(
       });
       return captured;
     case "insert_rows": {
-      if (captured.afterRow === undefined) {
+      const resolved = resolveInsertAfterRow(rows, captured);
+      if (resolved.ok) {
+        captured.afterRow = resolved.afterRow;
+        if (captured.expectedRowAtAfter === undefined) {
+          const anchor = rows[resolved.afterRow];
+          if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+        }
+      } else if (
+        captured.afterRow === undefined &&
+        !captured.afterRowKey?.trim()
+      ) {
         captured.afterRow = Math.max(0, rows.length - 1);
-      }
-      if (captured.expectedRowAtAfter === undefined) {
-        const anchor = rows[captured.afterRow];
-        if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+        if (captured.expectedRowAtAfter === undefined) {
+          const anchor = rows[captured.afterRow];
+          if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+        }
       }
       return captured;
     }
@@ -1037,39 +1189,50 @@ function applyInsertRows(
     return fail("invalid", "insert_rows requires at least one row.");
   }
   const rows = tableRows(table);
-  const afterRow = operation.afterRow ?? Math.max(0, rows.length - 1);
-  if (afterRow < 0 || afterRow >= rows.length) {
-    return fail(
-      "bad_scope",
-      `afterRow ${afterRow} does not exist. Re-read with read_section.`
-    );
+  const resolved = resolveInsertAfterRow(rows, operation);
+  if (!resolved.ok) {
+    return fail(resolved.status, resolved.hint);
   }
+  const afterRow = resolved.afterRow;
   const anchor = rows[afterRow]!;
   if (!expectedRowAtAfterStillValid(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
     return fail(
       "stale",
-      `Row ${operation.afterRow} no longer matches the expected snapshot. Re-read with read_section.`
+      `Row ${afterRow} no longer matches the expected snapshot. Re-read with read_section.`
     );
   }
-  const headerCols = rows[0] ? rowCells(rows[0]).length : 0;
-  const colCount = Math.max(rowCells(anchor).length, headerCols);
-  if (colCount === 0) {
+  const visualCols = headerColumnCount(table);
+  const templateCells = dataTemplateCells(rows, afterRow);
+  const headerPhysical = rows[0] ? rowCells(rows[0]).length : 0;
+  const dataCols =
+    visualCols === headerPhysical
+      ? visualCols
+      : templateCells.length || headerPhysical;
+  if (visualCols === 0 && dataCols === 0) {
     return fail("invalid", "Cannot insert into a table with no columns.");
   }
   for (const [i, row] of operation.rows.entries()) {
-    if (row.length !== colCount) {
+    if (isBannerInsertRow(row)) continue;
+    if (row.length !== dataCols) {
       return fail(
         "invalid",
-        `Inserted row ${i} has ${row.length} cell(s); the table has ${colCount} column(s). ${liveHeadersHint(headersOf(table))}`
+        `Inserted row ${i} has ${row.length} cell(s); the table has ${dataCols} column(s). ${liveHeadersHint(headersOf(table))}`
       );
     }
   }
-  const newRows = operation.rows.map((cells) => ({
-    type: "tableRow" as const,
-    content: cells.map((text, col) =>
-      makeCell("tableCell", text, templateAttrs(rowCells(anchor), col))
-    ),
-  }));
+  const newRows = operation.rows.map((row) =>
+    isBannerInsertRow(row)
+      ? {
+          type: "tableRow" as const,
+          content: [makeBannerCell(row.banner, visualCols || dataCols)],
+        }
+      : {
+          type: "tableRow" as const,
+          content: row.map((text, col) =>
+            makeCell("tableCell", text, dataCellAttrs(templateCells, col))
+          ),
+        }
+  );
   const content = [...(table.content ?? [])];
   const rowPositions = content
     .map((node, index) => (node.type === "tableRow" ? index : -1))
@@ -1439,6 +1602,21 @@ function asStringMatrix(value: unknown, headers?: string[]): string[][] | null {
   return rows;
 }
 
+function asInsertTableRows(value: unknown): InsertTableRow[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const rows: InsertTableRow[] = [];
+  for (const item of value) {
+    if (isRecord(item) && typeof item.banner === "string" && item.banner.trim()) {
+      rows.push({ banner: item.banner });
+      continue;
+    }
+    const cells = coerceMatrixRow(item);
+    if (!cells || cells.length === 0) return undefined;
+    rows.push(cells);
+  }
+  return rows;
+}
+
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === "string") return value;
@@ -1591,7 +1769,16 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         coerced.afterRow === undefined || coerced.afterRow === null
           ? undefined
           : asInt(coerced.afterRow);
-      const rows = asStringMatrix(coerced.rows);
+      const afterRowKey =
+        typeof coerced.afterRowKey === "string" && coerced.afterRowKey.trim()
+          ? coerced.afterRowKey
+          : undefined;
+      const rowsFromField = asInsertTableRows(coerced.rows);
+      const bannerOnly =
+        typeof coerced.banner === "string" && coerced.banner.trim()
+          ? [{ banner: coerced.banner }]
+          : undefined;
+      const rows = rowsFromField ?? bannerOnly;
       if (afterRow === null || (afterRow !== undefined && afterRow < 0) || !rows) {
         return undefined;
       }
@@ -1603,6 +1790,7 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         kind: "insert_rows",
         tableIndex,
         afterRow,
+        ...(afterRowKey ? { afterRowKey } : {}),
         rows,
         expectedRowAtAfter,
       };
@@ -1752,9 +1940,12 @@ export function summarizeTableOperation(operation: TableOperation): string {
     }
     case "insert_rows": {
       const n = operation.rows.length;
+      const where = operation.afterRowKey
+        ? `"${operation.afterRowKey}"`
+        : `row ${operation.afterRow ?? "last"}`;
       return n === 1
-        ? `Insert 1 row after row ${operation.afterRow ?? "last"}`
-        : `Insert ${n} rows after row ${operation.afterRow ?? "last"}`;
+        ? `Insert 1 row after ${where}`
+        : `Insert ${n} rows after ${where}`;
     }
     case "delete_rows": {
       const n = operation.rows.length;
@@ -1800,8 +1991,10 @@ export function tableOperationDetailLines(operation: TableOperation): string[] {
         return `[${cell.row},${cell.col}] ${from} → ${to}`;
       });
     case "insert_rows":
-      return operation.rows.map(
-        (row, i) => `New row ${i + 1}: ${row.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
+      return operation.rows.map((row, i) =>
+        isBannerInsertRow(row)
+          ? `New banner ${i + 1}: ${row.banner || EMPTY_CELL_LABEL}`
+          : `New row ${i + 1}: ${row.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
       );
     case "delete_rows":
       return operation.rows.map(

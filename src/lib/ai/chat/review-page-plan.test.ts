@@ -550,6 +550,50 @@ describe("coverageKeySatisfiesObjective", () => {
       coverageKeySatisfiesObjective("att:10:run", "elr_calibration")
     ).toBe(false);
   });
+
+  it("prefers URS pages for a QSR RTM review and does not demote them", () => {
+    expect(
+      scoreReviewPage(
+        {
+          attachmentId: "urs",
+          filename: "URS-GLR-1301.pdf",
+          transcript: "Safety Requirements URS-44 Emergency Stop",
+          outlineTitle: "Safety requirements",
+        },
+        "qsr_rtm_safety"
+      )
+    ).toBeGreaterThan(
+      scoreReviewPage(
+        {
+          attachmentId: "dq",
+          filename: "DQ-GLR-1301.pdf",
+          transcript: "Design qualification protocol",
+          outlineTitle: "DQ",
+        },
+        "qsr_rtm_safety"
+      )
+    );
+
+    const selected = planReviewPages(
+      [
+        {
+          attachmentId: "dq",
+          pageNumber: 1,
+          filename: "DQ-GLR-1301.pdf",
+          transcript: "unrelated protocol text",
+        },
+        {
+          attachmentId: "urs",
+          pageNumber: 1,
+          filename: "URS-GLR-1301.pdf",
+          transcript: "unrelated requirement text",
+        },
+      ],
+      "qsr_rtm_safety",
+      REVIEW_OBJECTIVE_PAGE_FLOOR
+    );
+    expect(selected.some((page) => page.attachmentId === "urs")).toBe(true);
+  });
 });
 
 describe("QSR lifecycle cover review", () => {

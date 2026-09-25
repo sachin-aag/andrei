@@ -5,6 +5,7 @@ import {
   cellPlainText,
   ensureCaptionOnFilledTable,
   normalizeTableCellText,
+  resolveInsertAfterRow,
   type TableCellEdit,
   type TableOperation,
   type TableOperationContext,
@@ -341,7 +342,13 @@ export function buildTableOperationPreviewDoc(
       return { ok: true, status: "ok", doc: captioned.doc };
     }
     case "insert_rows": {
-      const afterRow = operation.afterRow ?? 0;
+      const originalTable = collectTables(doc)[operation.tableIndex];
+      const resolved = originalTable
+        ? resolveInsertAfterRow(tableRows(originalTable), operation)
+        : null;
+      const afterRow = resolved?.ok
+        ? resolved.afterRow
+        : (operation.afterRow ?? 0);
       const inserted = operation.rows.map((_, i) => afterRow + 1 + i);
       markRows(rows, inserted, suggestionInsertMarkName, attrs);
       return applied;

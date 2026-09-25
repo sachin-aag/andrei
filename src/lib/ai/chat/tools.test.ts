@@ -806,6 +806,22 @@ describe("buildChatTools edit_table", () => {
       accepts(tools, "edit_table", {
         section: "define",
         targetField: "narrative",
+        reasoning: "Insert the missing URS after URS-16",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-16",
+          rows: [
+            {
+              banner: "ANY SPECIFIC REQUIREMENTS",
+            },
+          ],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
         reasoning: "delete rows",
         operation: {
           kind: "delete_rows",

@@ -8,6 +8,11 @@ import {
   scoreInventoryReviewPage,
 } from "@/lib/ai/chat/inventory-review-schema";
 import { phraseFamiliesForReviewObjective } from "@/lib/ai/chat/search-phrase-families";
+import {
+  isQsrRtmSection,
+  isUrsFilename,
+  rtmHeadingPhrases,
+} from "@/lib/ai/chat/qsr-row-grounding";
 
 const STOPWORDS = new Set([
   "a",
@@ -131,6 +136,13 @@ export function scoreReviewPage(
       continue;
     }
     if (familyTerms.length === 0 && haystack.includes(token)) score += 2;
+  }
+  const qsrSection = inventorySectionForObjective(objective);
+  if (isQsrRtmSection(qsrSection) || qsrSection === "qsr_operating_range") {
+    if (isUrsFilename(page.filename)) score += 16;
+    for (const phrase of rtmHeadingPhrases(qsrSection)) {
+      if (haystack.includes(phrase)) score += 8;
+    }
   }
   return score;
 }
@@ -511,7 +523,7 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
     let pool =
       withoutForeignInventory.length > 0 ? withoutForeignInventory : pages;
     const section = inventorySectionForObjective(objective);
-    if (section) {
+    if (section && !isQsrRtmSection(section) && section !== "qsr_operating_range") {
       const notDemoted = pool.filter(
         (page) => !isDemotedInventoryFilename(page.filename)
       );

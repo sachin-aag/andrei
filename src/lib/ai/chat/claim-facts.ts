@@ -78,7 +78,7 @@ const TEMPERATURE_RE =
   /\b\d+(?:\.\d+)?\s*[–-]\s*\d+(?:\.\d+)?\s*°?\s*C\b|\b\d+(?:\.\d+)?\s*°\s*C\b/gi;
 
 const IDENTIFIER_RE =
-  /\b(?:SOP\/[A-Z]{2,}\/[A-Z]{2,}\/\d{3}(?:\s*R\d+)?|[A-Z]\/[A-Z]{2}\/\d{3}|[A-Z]{2,5}-\d{2}-[A-Z0-9]+(?:-[A-Z0-9]+)+|[A-Z]{2,8}(?:\/[A-Z]{2,8})+\/\d{2,}(?:\/[A-Z0-9]+)*)\b/g;
+  /\b(?:URS-\d+|SOP\/[A-Z]{2,}\/[A-Z]{2,}\/\d{3}(?:\s*R\d+)?|[A-Z]\/[A-Z]{2}\/\d{3}|[A-Z]{2,5}-\d{2}-[A-Z0-9]+(?:-[A-Z0-9]+)+|[A-Z]{2,8}(?:\/[A-Z]{2,8})+\/\d{2,}(?:\/[A-Z0-9]+)*)\b/g;
 
 /**
  * Instrument units matter as much as lab units here: a vacuum reading, a
@@ -88,10 +88,10 @@ const IDENTIFIER_RE =
  * checked it.
  */
 const INSTRUMENT_UNIT =
-  "(?:mL|ml|µL|uL|L|CFU|cfu|units?|%|kg|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
+  "(?:mL|ml|µL|uL|L|CFU|cfu|units?|%|kg(?:\\/cm(?:²|2))?|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
 
 const NUMBER_WITH_UNIT_RE = new RegExp(
-  String.raw`\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*${INSTRUMENT_UNIT}?\b|\b\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}\b`,
+  String.raw`\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*${INSTRUMENT_UNIT}?\b|\b\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}(?!\w)`,
   "gi"
 );
 

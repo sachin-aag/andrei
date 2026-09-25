@@ -8,7 +8,10 @@ import {
   parseSourceCitation,
   splitSourceCitationParts,
 } from "@/lib/placeholders/citation-bracket";
-import type { TableOperation } from "@/lib/suggestions/table-operation";
+import {
+  isBannerInsertRow,
+  type TableOperation,
+} from "@/lib/suggestions/table-operation";
 
 const BRACKET_RE = /\[[^\]]+\]/g;
 
@@ -250,7 +253,11 @@ export function mapTableOperationText(
     case "insert_rows":
       return {
         ...operation,
-        rows: operation.rows.map((row) => row.map((cell) => rewrite(cell))),
+        rows: operation.rows.map((row) =>
+          isBannerInsertRow(row)
+            ? { banner: rewrite(row.banner) }
+            : row.map((cell) => rewrite(cell))
+        ),
       };
     case "insert_column":
       return {

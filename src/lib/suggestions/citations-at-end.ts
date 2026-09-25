@@ -12,7 +12,10 @@ import {
   isSourceCitationBracket,
 } from "@/lib/placeholders/citation-bracket";
 import type { EditScope } from "@/lib/suggestions/locator";
-import type { TableOperation } from "@/lib/suggestions/table-operation";
+import {
+  isBannerInsertRow,
+  type TableOperation,
+} from "@/lib/suggestions/table-operation";
 
 export type SuggestionEditPart = {
   anchorText: string;
@@ -1288,7 +1291,11 @@ export function stripCitationsFromTableOperation(
       return {
         operation: {
           ...operation,
-          rows: operation.rows.map((row) => row.map((cell) => take(cell))),
+          rows: operation.rows.map((row) =>
+            isBannerInsertRow(row)
+              ? { banner: take(row.banner) }
+              : row.map((cell) => take(cell))
+          ),
         },
         citations: uniquePreserveOrder(citations),
       };

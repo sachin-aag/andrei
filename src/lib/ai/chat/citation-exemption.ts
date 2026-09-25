@@ -27,6 +27,10 @@ export type GroundDraftGrounding = {
   latestUserMessageText?: string;
   /** Sibling fields + other sections (not the field being written). */
   alreadyStatedText?: string;
+  /** Live section key so QSR identity tables can fail closed / pair rows. */
+  section?: string;
+  /** Ready attachment filenames (QSR fail-closed when the URS is attached). */
+  attachedFilenames?: readonly string[];
 };
 
 const MONTH_INDEX: Record<string, number> = {

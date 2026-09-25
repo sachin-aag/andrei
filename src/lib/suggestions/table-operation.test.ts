@@ -10,12 +10,14 @@ import {
   captureTableOperationSnapshots,
   existingTableCountFromContents,
   filledTableNumberInDocument,
+  isBannerTableRow,
   parseTableOperation,
   prefixTableCaptionMarkdown,
   renumberFilledTableCaptions,
   summarizeTableOperation,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
+import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import {
   ELR_MEDIA_FILL_HEADERS,
   ELR_MONITORING_HEADERS,
@@ -101,6 +103,54 @@ function colCount(doc: JSONContent, tableIndex = 0): number {
 function rowCount(doc: JSONContent, tableIndex = 0): number {
   const tables = (doc.content ?? []).filter((n) => n.type === "table");
   return (tables[tableIndex]!.content ?? []).filter((n) => n.type === "tableRow").length;
+}
+
+function tableRowAt(doc: JSONContent, row: number, tableIndex = 0): JSONContent {
+  const tables = (doc.content ?? []).filter((n) => n.type === "table");
+  return (tables[tableIndex]!.content ?? []).filter((n) => n.type === "tableRow")[row]!;
+}
+
+function cellColspan(doc: JSONContent, row: number, col: number): number {
+  const cells = (tableRowAt(doc, row).content ?? []).filter(
+    (n) => n.type === "tableCell" || n.type === "tableHeader"
+  );
+  const raw = cells[col]?.attrs?.colspan;
+  return typeof raw === "number" ? raw : 1;
+}
+
+function bannerRow(text: string, colspan: number): JSONContent {
+  return {
+    type: "tableRow",
+    content: [
+      {
+        type: "tableCell",
+        attrs: { colspan, rowspan: 1, colwidth: null },
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text, marks: [{ type: "bold" }] }],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function rtmRow(id: string, requirement = `${id} text`): string[] {
+  return [id, "Parameter", requirement, "", "", ""];
+}
+
+function rtmDoc(ids: string[], bannersAt?: Record<number, string>): JSONContent {
+  const doc = tableDoc([...QSR_RTM_HEADERS], ids.map((id) => rtmRow(id)));
+  const table = doc.content![0]!;
+  if (bannersAt) {
+    const rows = [...(table.content ?? [])];
+    for (const [index, label] of Object.entries(bannersAt)) {
+      rows.splice(Number(index), 0, bannerRow(label, QSR_RTM_HEADERS.length));
+    }
+    table.content = rows;
+  }
+  return doc;
 }
 
 function manufacturerFilledDoc(): JSONContent {
@@ -473,6 +523,169 @@ describe("applyTableOperation", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.status).toBe("stale");
+  });
+
+  it("does not copy a banner colspan onto inserted data rows", () => {
+    const doc = rtmDoc(["URS-1"]);
+    const table = doc.content![0]!;
+    table.content = [
+      ...(table.content ?? []),
+      bannerRow("ANY SPECIFIC REQUIREMENTS", 6),
+    ];
+    const result = applyTableOperation(doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "ANY SPECIFIC REQUIREMENTS",
+      rows: [rtmRow("URS-58")],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 3, 0)).toBe("URS-58");
+    expect(cellColspan(result.doc, 3, 0)).toBe(1);
+    expect(tableRowAt(result.doc, 3).content).toHaveLength(6);
+  });
+
+  it("inserts a full-width banner row from { banner }", () => {
+    const result = applyTableOperation(rtmDoc(["URS-1"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-1",
+      rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(isBannerTableRow(tableRowAt(result.doc, 2))).toBe(true);
+    expect(cellText(result.doc, 2, 0)).toBe("ANY SPECIFIC REQUIREMENTS");
+    expect(cellColspan(result.doc, 2, 0)).toBe(6);
+    expect(tableRowAt(result.doc, 2).content).toHaveLength(1);
+  });
+
+  it("resolves afterRowKey even when afterRow is stale", () => {
+    const first = applyTableOperation(rtmDoc(["URS-1", "URS-2", "URS-3"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-1",
+      rows: [rtmRow("URS-1a")],
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const second = applyTableOperation(first.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      afterRowKey: "URS-3",
+      rows: [rtmRow("URS-4")],
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(cellText(second.doc, 1, 0)).toBe("URS-1");
+    expect(cellText(second.doc, 2, 0)).toBe("URS-1a");
+    expect(cellText(second.doc, 3, 0)).toBe("URS-2");
+    expect(cellText(second.doc, 4, 0)).toBe("URS-3");
+    expect(cellText(second.doc, 5, 0)).toBe("URS-4");
+  });
+
+  it("rejects a missing or ambiguous afterRowKey", () => {
+    const missing = applyTableOperation(rtmDoc(["URS-1"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-99",
+      rows: [rtmRow("URS-2")],
+    });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.status).toBe("bad_scope");
+
+    const dup = applyTableOperation(rtmDoc(["URS-1", "URS-1"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-1",
+      rows: [rtmRow("URS-2")],
+    });
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.status).toBe("bad_scope");
+  });
+
+  it("replays keyed inserts around 5.1 banners in URS order", () => {
+    const start = applyTableOperation(
+      rtmDoc(
+        [
+          "URS-1",
+          "URS-8",
+          "URS-9",
+          "URS-10",
+          "URS-11",
+          "URS-12",
+          "URS-16",
+          "URS-29",
+        ],
+        { 9: "ANY SPECIFIC REQUIREMENTS", 10: "OTHER AUXILIARY REQUIREMENT" }
+      ),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 17,
+        afterRowKey: "URS-16",
+        rows: [rtmRow("URS-17"), rtmRow("URS-18")],
+      }
+    );
+    expect(start.ok).toBe(true);
+    if (!start.ok) return;
+    const withSpecific = applyTableOperation(start.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 14,
+      afterRowKey: "ANY SPECIFIC REQUIREMENTS",
+      rows: [rtmRow("URS-58")],
+    });
+    expect(withSpecific.ok).toBe(true);
+    if (!withSpecific.ok) return;
+    const withAux = applyTableOperation(withSpecific.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 36,
+      afterRowKey: "OTHER AUXILIARY REQUIREMENT",
+      rows: [rtmRow("URS-67"), rtmRow("URS-68")],
+    });
+    expect(withAux.ok).toBe(true);
+    if (!withAux.ok) return;
+    const ids: string[] = [];
+    for (let r = 1; r < rowCount(withAux.doc); r += 1) {
+      ids.push(cellText(withAux.doc, r, 0));
+    }
+    expect(ids).toEqual([
+      "URS-1",
+      "URS-8",
+      "URS-9",
+      "URS-10",
+      "URS-11",
+      "URS-12",
+      "URS-16",
+      "URS-17",
+      "URS-18",
+      "URS-29",
+      "ANY SPECIFIC REQUIREMENTS",
+      "URS-58",
+      "OTHER AUXILIARY REQUIREMENT",
+      "URS-67",
+      "URS-68",
+    ]);
+    expect(isBannerTableRow(tableRowAt(withAux.doc, 11))).toBe(true);
+    expect(isBannerTableRow(tableRowAt(withAux.doc, 13))).toBe(true);
+  });
+
+  it("captures afterRow from afterRowKey before persisting", () => {
+    const captured = captureTableOperationSnapshots(rtmDoc(["URS-1", "URS-2"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-2",
+      rows: [rtmRow("URS-3")],
+    });
+    expect(captured).toMatchObject({
+      kind: "insert_rows",
+      afterRow: 2,
+      afterRowKey: "URS-2",
+      expectedRowAtAfter: rtmRow("URS-2"),
+    });
   });
 
   it("captures omitted expectedText and appends a column when afterCol is omitted", () => {
@@ -1391,6 +1604,20 @@ describe("parseTableOperation", () => {
       })
     ).toBeUndefined();
     expect(parseTableOperation({ kind: "insert_rows", afterRow: 0, rows: [] })).toBeUndefined();
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        afterRowKey: "URS-16",
+        rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      afterRowKey: "URS-16",
+      rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
+      expectedRowAtAfter: undefined,
+    });
     expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
   });
 

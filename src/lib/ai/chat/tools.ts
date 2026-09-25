@@ -561,9 +561,30 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
       .min(0)
       .optional()
       .describe(
-        "Row to insert after (0 = header). Omit to append after the last existing row."
+        "Row to insert after (0 = header). Omit to append after the last existing row. Prefer afterRowKey when the first cell is a URS ID or banner label — afterRow goes stale after earlier inserts."
       ),
-    rows: z.array(z.array(z.string()).min(1)).min(1),
+    afterRowKey: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "First-cell text of the live row to insert after (e.g. URS-16 or ANY SPECIFIC REQUIREMENTS). Preferred over afterRow."
+      ),
+    rows: z
+      .array(
+        z.union([
+          z.array(z.string()).min(1),
+          z.object({
+            banner: z
+              .string()
+              .min(1)
+              .describe(
+                "Full-width merged group row (one cell spanning every column), e.g. ANY SPECIFIC REQUIREMENTS."
+              ),
+          }),
+        ])
+      )
+      .min(1),
     expectedRowAtAfter: z.array(z.string()).optional(),
   }),
   z.object({
@@ -1434,12 +1455,23 @@ export function buildChatTools(opts: {
     const prev = sameTurnStated.get(key);
     sameTurnStated.set(key, prev ? `${prev}\n${trimmed}` : trimmed);
   };
-  const writeGrounding = (
+  let cachedReadyFilenames: string[] | null = null;
+  const loadReadyFilenames = async (): Promise<string[]> => {
+    if (cachedReadyFilenames) return cachedReadyFilenames;
+    if (documentType !== "qualification_summary_report") {
+      cachedReadyFilenames = [];
+      return cachedReadyFilenames;
+    }
+    const docs = await listReadyDocumentsForReport(reportId);
+    cachedReadyFilenames = docs.map((doc) => doc.filename);
+    return cachedReadyFilenames;
+  };
+  const writeGrounding = async (
     section: SectionType,
     targetField: string,
     tool: CitationWriteTool,
     sectionContent?: Record<string, unknown>
-  ): GroundDraftGrounding => {
+  ): Promise<GroundDraftGrounding> => {
     const extra: string[] = [];
     if (sectionContent) {
       extra.push(
@@ -1466,6 +1498,8 @@ export function buildChatTools(opts: {
         exclude: { section, targetField },
         extra,
       }),
+      section,
+      attachedFilenames: await loadReadyFilenames(),
     };
   };
   let evidenceHydrate: Promise<void> | null = null;
@@ -2526,7 +2560,7 @@ export function buildChatTools(opts: {
             )
           : null;
         await ensureEvidence();
-        const insertGrounding = writeGrounding(
+        const insertGrounding = await writeGrounding(
           section,
           resolvedField,
           "propose_edit",
@@ -3585,7 +3619,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For insert_rows prefer afterRowKey (first-cell text) over afterRow. Insert a merged group row with { banner: \"ANY SPECIFIC REQUIREMENTS\" }, not six unmerged cells.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3675,7 +3709,7 @@ export function buildChatTools(opts: {
           fieldDoc,
           parsedOp
         );
-        const tableGrounding = writeGrounding(
+        const tableGrounding = await writeGrounding(
           section,
           resolvedField,
           "edit_table",
@@ -4070,7 +4104,7 @@ export function buildChatTools(opts: {
           markdownForDraft = coercedEnum.value;
         }
         const normalizedMarkdown = normalizeSuggestionInsertText(markdownForDraft);
-        const draftGrounding = writeGrounding(
+        const draftGrounding = await writeGrounding(
           section,
           resolvedField,
           "draft_field",
