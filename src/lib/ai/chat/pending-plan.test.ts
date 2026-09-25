@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_ELR_CONTENT } from "@/lib/document-types/elr/sections";
+import { emptyQsrContent } from "@/lib/document-types/qsr/sections";
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   CHAT_PLAN_SAME_SECTION_TURN_LIMIT,
@@ -112,6 +113,33 @@ describe("seedSectionQueuePlan", () => {
         promptVersion: "chat-v94-section-plan",
       })
     ).toBeNull();
+  });
+
+  it("queues QSR section 6 seed templates with leftover CSV and conclusion", () => {
+    const seeded = seedSectionQueuePlan({
+      userText: "Draft the remaining sections",
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_rtm_csv: emptyQsrContent("qsr_rtm_csv"),
+        qsr_rtm_maintenance: emptyQsrContent("qsr_rtm_maintenance"),
+        qsr_volumetric_details: emptyQsrContent("qsr_volumetric_details"),
+        qsr_operating_range: emptyQsrContent("qsr_operating_range"),
+        qsr_other_details: emptyQsrContent("qsr_other_details"),
+        qsr_conclusion: emptyQsrContent("qsr_conclusion"),
+      },
+      promptVersion: "chat-v94-section-plan",
+    });
+    const keys = seeded?.items.map((item) => item.sectionKey) ?? [];
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "qsr_volumetric_details",
+        "qsr_operating_range",
+        "qsr_other_details",
+        "qsr_rtm_csv",
+        "qsr_rtm_maintenance",
+        "qsr_conclusion",
+      ])
+    );
   });
 
   it("does not queue ELR Attachments even when that table is empty", () => {

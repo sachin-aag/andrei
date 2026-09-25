@@ -198,21 +198,26 @@ function isElrTrendsRecapScaffold(doc: JSONContent): boolean {
   return true;
 }
 
-function nodeHasVisibleContent(node: JSONContent): boolean {
-  if (node.type === "text" && (node.text ?? "").trim()) return true;
-  if (node.type === "image" || node.type === "imageInline") return true;
-  for (const child of node.content ?? []) {
-    if (nodeHasVisibleContent(child)) return true;
-  }
-  return false;
+function docHasNonTableContent(doc: JSONContent): boolean {
+  return normalizedNonTableProse(doc).length > 0;
 }
 
-function docHasNonTableContent(doc: JSONContent): boolean {
-  for (const node of doc.content ?? []) {
-    if (node.type === "table") continue;
-    if (nodeHasVisibleContent(node)) return true;
-  }
-  return false;
+function nodePlainText(node: JSONContent): string {
+  if (node.type === "text") return node.text ?? "";
+  return (node.content ?? []).map((child) => nodePlainText(child)).join(" ");
+}
+
+/** Visible prose outside tables, collapsed for seed comparison. */
+function normalizedNonTableProse(doc: JSONContent): string {
+  return (doc.content ?? [])
+    .filter((node) => node.type !== "table")
+    .map((node) => nodePlainText(node).replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function normalizedAnchorText(doc: JSONContent): string {
+  return flattenForAnchor(doc).text.replace(/\s+/g, " ").trim();
 }
 
 function emptyContentForSection(
@@ -258,10 +263,11 @@ function cellMatchesSeedText(
 }
 
 /**
- * Seeded tables whose cells are blank or unchanged from the template (no
- * surrounding prose/images) are empty shells — not partial drafts.
- * `sectionHasTable` still sees them so `tableSchemaReadStep` copies live
- * headers before `edit_table`.
+ * Seeded tables whose cells are blank or unchanged from the template are
+ * empty shells — not partial drafts. Surrounding prose is allowed when it
+ * matches the seed (QSR 6.1 “Auxiliary Equipment:” between two volume
+ * tables). Extra engineer sentences are not. `sectionHasTable` still sees
+ * them so `tableSchemaReadStep` copies live headers before `edit_table`.
  */
 export function isEmptyTableScaffoldDoc(
   doc: JSONContent,
@@ -270,7 +276,9 @@ export function isEmptyTableScaffoldDoc(
   const tables = summarizeTablesInDoc(doc);
   if (tables.length === 0) return false;
   if (countImagesInDoc(doc) > 0) return false;
-  if (docHasNonTableContent(doc)) return false;
+  const seedProse = seedDoc ? normalizedNonTableProse(seedDoc) : "";
+  const liveProse = normalizedNonTableProse(doc);
+  if (liveProse !== seedProse && liveProse.length > 0) return false;
   const seedTables = seedDoc ? summarizeTablesInDoc(seedDoc) : [];
   for (const table of tables) {
     const seedTable = seedTables[table.tableIndex];
@@ -287,6 +295,24 @@ export function isEmptyTableScaffoldDoc(
   return true;
 }
 
+/**
+ * Short seed-only narratives (“Agitator Type:”) are empty. A canned
+ * paragraph that is the intended default (QSR 1.2 Scope) stays filled.
+ */
+function isUnchangedSeedNarrative(
+  doc: JSONContent,
+  seedDoc?: JSONContent | null
+): boolean {
+  if (!seedDoc) return false;
+  if (countImagesInDoc(doc) > 0) return false;
+  if (summarizeTablesInDoc(doc).length > 0) return false;
+  if (summarizeTablesInDoc(seedDoc).length > 0) return false;
+  const live = normalizedAnchorText(doc);
+  const seed = normalizedAnchorText(seedDoc);
+  if (!seed || live !== seed) return false;
+  return seed.length < SECTION_PARTIAL_CHAR_LIMIT;
+}
+
 export function fieldFillState(
   content: Record<string, unknown> | undefined,
   section: SectionType,
@@ -295,7 +321,8 @@ export function fieldFillState(
   const record = content ?? {};
   if (isRichTargetField(section, targetField)) {
     const doc = getRichFieldValue(record, targetField);
-    if (isEmptyTableScaffoldDoc(doc, seedFieldDoc(section, targetField))) {
+    const seed = seedFieldDoc(section, targetField);
+    if (isEmptyTableScaffoldDoc(doc, seed) || isUnchangedSeedNarrative(doc, seed)) {
       return "empty";
     }
     if (

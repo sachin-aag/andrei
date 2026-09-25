@@ -223,6 +223,59 @@ describe("fieldFillState seeded tables", () => {
     expect(sectionFillState(content, "qsr_rtm_process")).not.toBe("empty");
   });
 
+  it("treats QSR volumetric / operating-range / other-details templates as empty", () => {
+    expect(
+      sectionFillState(
+        emptyQsrContent("qsr_volumetric_details"),
+        "qsr_volumetric_details"
+      )
+    ).toBe("empty");
+    expect(
+      sectionFillState(emptyQsrContent("qsr_operating_range"), "qsr_operating_range")
+    ).toBe("empty");
+    expect(
+      sectionFillState(emptyQsrContent("qsr_other_details"), "qsr_other_details")
+    ).toBe("empty");
+  });
+
+  it("keeps the canned QSR scope paragraph filled", () => {
+    expect(sectionFillState(emptyQsrContent("qsr_scope"), "qsr_scope")).toBe(
+      "filled"
+    );
+  });
+
+  it("treats QSR volumetric details as filled once a Details cell is written", () => {
+    const content = structuredClone(emptyQsrContent("qsr_volumetric_details")) as {
+      narrative: JSONContent;
+    };
+    const table = content.narrative.content?.find((node) => node.type === "table");
+    const detailsCell = table?.content?.[1]?.content?.[2];
+    expect(detailsCell).toBeTruthy();
+    if (!detailsCell) return;
+    detailsCell.content = [
+      { type: "paragraph", content: [{ type: "text", text: "120" }] },
+    ];
+    expect(sectionFillState(content, "qsr_volumetric_details")).not.toBe("empty");
+  });
+
+  it("treats QSR other details as filled once the agitator type is named", () => {
+    const content = {
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "Agitator Type: ", marks: [{ type: "bold" }] },
+              { type: "text", text: "Pitched blade" },
+            ],
+          },
+        ],
+      },
+    };
+    expect(sectionFillState(content, "qsr_other_details")).not.toBe("empty");
+  });
+
   it("does not treat seed text moved to another cell as still empty", () => {
     const content = structuredClone(emptyQsrContent("qsr_rtm_process")) as {
       table: JSONContent;
