@@ -118,6 +118,8 @@ pages; DV catalogs keep the listing cap. QSR Table 3
 (`qsr_qualification_documents`) is not ELR qualification history: do not
 demote URS or walk 48 protocol body pages — queue the first two pages of
 every attached lifecycle file and omit `attachmentIds`.
+QSR RTM / Operating Range omit `attachmentIds` so the server keeps the URS
+(a 12-page URS is a 12-page walk), not DQ/IQ/OQ/PQ bodies.
 `continue_document_review` stops starting batches after ~60s and round-robins
 batches across attachments. `start_document_review`
 reports `truncated` / `skippedDocuments`. Call `list_attachments` first

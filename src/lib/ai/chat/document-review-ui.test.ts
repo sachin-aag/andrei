@@ -175,7 +175,7 @@ describe("summarizeDocumentReviewProgress", () => {
       },
     ]);
     expect(snapshot?.label).toBe(
-      "Planning a complete review of 40 pages in a.pdf and 2 more files…"
+      "Planning a complete review of 40 pages across 3 files…"
     );
   });
 
@@ -200,6 +200,73 @@ describe("summarizeDocumentReviewProgress", () => {
       "Planning a complete review of 3 pages in PRQR-25-PR-005 Report.pdf…"
     );
     expect(snapshot?.label).not.toContain("Calibration Planner");
+    expect(snapshot?.label).not.toContain("across");
     expect(snapshot?.label).not.toContain("more files");
+  });
+
+  it("does not attribute a multi-file walk total to the first filename", () => {
+    const snapshot = summarizeDocumentReviewProgress([
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: {
+          status: "started",
+          totalPages: 246,
+          documents: [
+            {
+              filename: "User Requirement Specification.pdf",
+              attachmentId: "urs",
+            },
+            { filename: "Design Qualification.PDF", attachmentId: "dq" },
+            { filename: "IQ.PDF", attachmentId: "iq" },
+            { filename: "OQ.PDF", attachmentId: "oq" },
+            { filename: "PQ.PDF", attachmentId: "pq" },
+          ],
+        },
+      },
+      {
+        toolName: "finish_document_review",
+        state: "output-available",
+        output: {
+          status: "complete",
+          totalPages: 246,
+          reviewedPages: 246,
+          documents: [
+            {
+              filename: "User Requirement Specification.pdf",
+              attachmentId: "urs",
+            },
+            { filename: "Design Qualification.PDF", attachmentId: "dq" },
+          ],
+        },
+      },
+    ]);
+    expect(snapshot?.label).toBe(
+      "Complete: reviewed 246/246 pages across 5 files"
+    );
+    expect(snapshot?.label).not.toContain("User Requirement Specification");
+  });
+
+  it("names a single URS on the complete line from finish documents", () => {
+    const snapshot = summarizeDocumentReviewProgress([
+      {
+        toolName: "finish_document_review",
+        state: "output-available",
+        output: {
+          status: "complete",
+          totalPages: 12,
+          reviewedPages: 12,
+          documents: [
+            {
+              filename: "User Requirement Specification.pdf",
+              attachmentId: "urs",
+            },
+          ],
+        },
+      },
+    ]);
+    expect(snapshot?.label).toBe(
+      "Complete: reviewed 12/12 pages in User Requirement Specification.pdf"
+    );
   });
 });

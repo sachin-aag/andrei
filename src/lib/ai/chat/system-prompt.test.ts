@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v139-qsr-column-tail");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v140-qsr-rtm-urs-walk");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -531,6 +531,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("omit attachmentIds");
     expect(prompt).toContain("Qualification Summary Report Table 3");
     expect(prompt).toContain("every attached URS / DS / DQ / IQ / OQ / PQ");
+    expect(prompt).toContain("the server keeps the URS");
+    expect(prompt).toContain("A 12-page URS is a 12-page walk");
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("One review per section this turn");
     expect(prompt).toContain(

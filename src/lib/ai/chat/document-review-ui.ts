@@ -188,9 +188,8 @@ export function reviewDocumentsFromParts(
   parts: readonly DocumentReviewToolPart[]
 ): ReviewDocumentUiRef[] {
   const seen = new Map<string, ReviewDocumentUiRef>();
-  for (const part of parts) {
-    const raw = part.output?.documents ?? part.input?.documents;
-    if (!Array.isArray(raw)) continue;
+  const absorb = (raw: unknown) => {
+    if (!Array.isArray(raw)) return;
     for (const item of raw) {
       if (typeof item !== "object" || item === null) continue;
       const rec = item as {
@@ -207,16 +206,20 @@ export function reviewDocumentsFromParts(
       if (seen.has(id)) continue;
       seen.set(id, { filename });
     }
+  };
+  for (const part of parts) {
+    absorb(part.output?.documents ?? part.input?.documents);
+    absorb(part.output?.byAttachment);
   }
   return [...seen.values()];
 }
 
 export function fileScopeSuffix(docs: readonly ReviewDocumentUiRef[]): string {
   if (docs.length === 0) return "";
-  const names = docs.map((doc) => truncateReviewFilename(doc.filename));
-  if (names.length === 1) return ` in ${names[0]}`;
-  if (names.length === 2) return ` in ${names[0]} and ${names[1]}`;
-  return ` in ${names[0]} and ${names.length - 1} more files`;
+  if (docs.length === 1) {
+    return ` in ${truncateReviewFilename(docs[0]!.filename)}`;
+  }
+  return ` across ${docs.length} files`;
 }
 
 function truncateReviewFilename(name: string): string {

@@ -116,7 +116,8 @@ export function ChatActivityLine({
       >
         <span
           className={cn(
-            "min-w-0 flex-1 truncate",
+            "min-w-0 flex-1",
+            node.wrapLabel ? "whitespace-normal break-words" : "truncate",
             active && "chat-activity-glimmer"
           )}
         >
