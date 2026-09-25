@@ -36,5 +36,6 @@ alwaysApply: false
   tests hit it **without** stub flags. Stop it or use `PLAYWRIGHT_BASE_URL`
   against a server that already has those flags and matching `AUTH_URL`.
 - Stub chat cannot assert tool calls. Scope chat E2E to stream + persist
-  (`e2e/report-chat.spec.ts`).
+  (`e2e/report-chat.spec.ts`). Production grounding incidents replay
+  `edit_table` through `buildChatTools` (`qsr-rtm-draft-replay.test.ts`).
 - Run one spec with `--project=chromium`. `pnpm precommit` does not run E2E.
