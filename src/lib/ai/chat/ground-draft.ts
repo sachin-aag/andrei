@@ -6,10 +6,7 @@ import {
   trailingIsCitationBlock,
 } from "@/lib/suggestions/citations-at-end";
 import { citationSiteOffset, splitSentences } from "@/lib/citations/citation-site";
-import {
-  isBannerInsertRow,
-  type TableOperation,
-} from "@/lib/suggestions/table-operation";
+import type { TableOperation } from "@/lib/suggestions/table-operation";
 import {
   citedPagesFromText,
   extractHardFacts,
@@ -674,9 +671,6 @@ export function groundTableOperation(input: {
       operation = {
         ...cited,
         rows: cited.rows.map((row) => {
-          if (isBannerInsertRow(row)) {
-            return { banner: groundValue(row.banner, row.banner) };
-          }
           const context = row.join("\n");
           return row.map((cell) => groundValue(cell, context));
         }),

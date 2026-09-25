@@ -124,8 +124,8 @@ when the file set is unknown. Rehydrate only a finish with `status=complete`
 and `truncated !== true`.
 
 `edit_table` `insert_rows` prefers `afterRowKey` (first-cell text) over
-`afterRow`. `{ banner }` creates a full-width merged group row; data rows
-do not inherit a banner colspan.
+`afterRow`. Do not insert `{ banner }` group rows; existing template banners
+keep their colspan and data rows do not inherit it.
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
 against the citation ledger's served quotes (`groundDraftText`). That
 gate is fact-level (`citation-exemption.ts`): never skip a whole

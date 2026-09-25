@@ -5,10 +5,7 @@ import { stripPlaceholderLabel } from "@/lib/ai/chat/placeholder-fill";
 import { sanitizePromptMetadata } from "@/lib/ai/chat/prompt-metadata";
 import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import { searchReportDocumentsMany } from "@/lib/attachments/retrieval";
-import {
-  isBannerInsertRow,
-  type TableOperation,
-} from "@/lib/suggestions/table-operation";
+import type { TableOperation } from "@/lib/suggestions/table-operation";
 
 export const UNSUPPORTED_FACTS_REPAIR_MAX_QUERIES = 8;
 export const UNSUPPORTED_FACTS_REPAIR_PER_QUERY_LIMIT = 3;
@@ -68,9 +65,7 @@ export function repairTextsFromTableOperation(
     case "edit_cells":
       return operation.cells.map((cell) => cell.insertText);
     case "insert_rows":
-      return operation.rows.map((row) =>
-        isBannerInsertRow(row) ? row.banner : row.join(" ")
-      );
+      return operation.rows.map((row) => row.join(" "));
     case "insert_column":
       return [operation.header, ...(operation.values ?? [])];
     case "create_table":
