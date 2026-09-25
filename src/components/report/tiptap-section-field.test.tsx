@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { FloatingMenu } from "@tiptap/react/menus";
-import type { JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { TableRow } from "@tiptap/extension-table-row";
 import {
@@ -52,7 +52,17 @@ beforeAll(() => {
   Element.prototype.getBoundingClientRect = () => emptyRect;
 });
 
-const TABLE_ONLY_DOC: JSONContent = {
+function tableCell(
+  text: string,
+  type: "tableCell" | "tableHeader" = "tableCell"
+): JSONContent {
+  return {
+    type,
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  };
+}
+
+const TWO_BY_TWO_TABLE_DOC: JSONContent = {
   type: "doc",
   content: [
     {
@@ -61,41 +71,44 @@ const TABLE_ONLY_DOC: JSONContent = {
         {
           type: "tableRow",
           content: [
-            {
-              type: "tableHeader",
-              content: [
-                { type: "paragraph", content: [{ type: "text", text: "Col" }] },
-              ],
-            },
+            tableCell("A1", "tableHeader"),
+            tableCell("A2", "tableHeader"),
           ],
         },
         {
           type: "tableRow",
-          content: [
-            {
-              type: "tableCell",
-              content: [
-                { type: "paragraph", content: [{ type: "text", text: "cell" }] },
-              ],
-            },
-          ],
+          content: [tableCell("B1"), tableCell("B2")],
         },
       ],
     },
   ],
 };
 
+function cellPositions(editor: Editor): number[] {
+  const positions: number[] = [];
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === "tableCell" || node.type.name === "tableHeader") {
+      positions.push(pos);
+    }
+  });
+  return positions;
+}
+
+function tableExtensions() {
+  return [
+    StarterKit.configure({ heading: false, bulletList: false }),
+    TableWithColumnWidths.configure({ resizable: false }),
+    TableRow,
+    TableCellWithVerticalAlign,
+    TableHeaderWithVerticalAlign,
+  ];
+}
+
 function TableMenuHarness() {
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [
-      StarterKit.configure({ heading: false, bulletList: false }),
-      TableWithColumnWidths.configure({ resizable: false }),
-      TableRow,
-      TableCellWithVerticalAlign,
-      TableHeaderWithVerticalAlign,
-    ],
-    content: TABLE_ONLY_DOC,
+    extensions: tableExtensions(),
+    content: TWO_BY_TWO_TABLE_DOC,
   });
 
   if (!editor) return null;
@@ -118,19 +131,26 @@ function TableMenuHarness() {
 function MergeToolbarHarness() {
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [
-      StarterKit.configure({ heading: false, bulletList: false }),
-      TableWithColumnWidths.configure({ resizable: false }),
-      TableRow,
-      TableCellWithVerticalAlign,
-      TableHeaderWithVerticalAlign,
-    ],
-    content: TABLE_ONLY_DOC,
+    extensions: tableExtensions(),
+    content: TWO_BY_TWO_TABLE_DOC,
   });
 
   if (!editor) return null;
+
   return (
-    <TableEditToolbar editor={editor} tableHAlign={null} tableVAlign={null} />
+    <>
+      <button
+        type="button"
+        data-testid="select-two-cells"
+        onClick={() => {
+          const [anchorCell, headCell] = cellPositions(editor);
+          editor.commands.setCellSelection({ anchorCell, headCell });
+        }}
+      >
+        Select two cells
+      </button>
+      <TableEditToolbar editor={editor} />
+    </>
   );
 }
 
@@ -154,5 +174,35 @@ describe("table edit floating menu stacking", () => {
     const split = screen.getByTestId("table-split-cell");
     expect(split).toHaveTextContent("Split");
     expect(split).toHaveAttribute("title", "Split merged cell");
+  });
+
+  it("enables Merge after a two-cell selection without a parent re-render", async () => {
+    render(<MergeToolbarHarness />);
+    const merge = await screen.findByTestId("table-merge-cells");
+    expect(merge).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("select-two-cells"));
+
+    await waitFor(() => {
+      expect(merge).toBeEnabled();
+    });
+  });
+
+  it("enables Split after merging the selected cells", async () => {
+    render(<MergeToolbarHarness />);
+    const merge = await screen.findByTestId("table-merge-cells");
+    const split = screen.getByTestId("table-split-cell");
+    expect(split).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("select-two-cells"));
+    await waitFor(() => {
+      expect(merge).toBeEnabled();
+    });
+
+    fireEvent.click(merge);
+    await waitFor(() => {
+      expect(split).toBeEnabled();
+      expect(merge).toBeDisabled();
+    });
   });
 });
