@@ -5,6 +5,7 @@ import {
   descriptionSupportedNearKey,
   documentFamilyFromContext,
   extraQsrUnsupported,
+  factSupportedForRowKey,
   qsrFailClosedReason,
   quoteWindowAroundKey,
   rowKeyFromContext,
@@ -45,6 +46,46 @@ describe("quoteWindowAroundKey", () => {
       "Vacuum gauge 0 to 760 mmHg. URS-36 Pressure Gauge for the shell.";
     expect(quoteWindowAroundKey(quote, "URS-36")).not.toContain("760");
     expect(quoteWindowAroundKey(quote, "URS-36")).toContain("Pressure Gauge");
+  });
+});
+
+const COLUMN_URS_PAGE =
+  "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm 15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²";
+
+describe("quoteWindowAroundKey column-major URS pages", () => {
+  it("does not give the last ID the requirement column", () => {
+    expect(quoteWindowAroundKey(COLUMN_URS_PAGE, "URS-2")).toContain("MOC");
+    expect(quoteWindowAroundKey(COLUMN_URS_PAGE, "URS-2")).not.toContain("1 mm");
+    expect(quoteWindowAroundKey(COLUMN_URS_PAGE, "URS-12")).not.toContain("1 mm");
+    expect(quoteWindowAroundKey(COLUMN_URS_PAGE, "URS-12")).not.toContain("8000");
+    expect(quoteWindowAroundKey(SHARED_URS_PAGE, "URS-37")).toContain("15–130");
+  });
+
+  it("accepts 1 mm on URS-2 when that sentence follows the ID list", () => {
+    const fact = extractHardFacts(
+      "High-quality Glass Lining and thickness should not be less than 1 mm"
+    ).find((row) => row.text.includes("1"));
+    expect(fact).toBeTruthy();
+    expect(factSupportedForRowKey(COLUMN_URS_PAGE, fact!, "URS-2")).toBe(true);
+    expect(factSupportedForRowKey("URS-1 Reactor Capacity", fact!, "URS-2")).toBe(
+      false
+    );
+    expect(
+      descriptionSupportedNearKey(
+        "High-quality Glass Lining and thickness should not be less than 1 mm",
+        [COLUMN_URS_PAGE],
+        "URS-2"
+      )
+    ).toBe(true);
+  });
+
+  it("still rejects a range that sits inside a neighbour URS sentence", () => {
+    const fact = extractHardFacts("15–130 °C").find((row) =>
+      row.text.includes("130")
+    );
+    expect(fact).toBeTruthy();
+    expect(factSupportedForRowKey(SHARED_URS_PAGE, fact!, "URS-5")).toBe(false);
+    expect(factSupportedForRowKey(SHARED_URS_PAGE, fact!, "URS-37")).toBe(true);
   });
 });
 
