@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v135-qsr-table3-rows");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v136-no-table-banners");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -28,12 +28,14 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("stock Complies / Section 13");
   });
 
-  it("tells Agent insert_rows to use rows arrays or { banner }, not cells", () => {
+  it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
     expect(prompt).toContain(
-      '{ kind: "insert_rows", tableIndex, rows: [["col1","col2"], { banner: "GROUP" }] }'
+      '{ kind: "insert_rows", tableIndex, rows: [["col1","col2"]] }'
     );
-    expect(prompt).toContain("not `cells`, and not nested `{ insert_rows: [...] }`");
+    expect(prompt).toContain(
+      "not `cells`, not `{ banner }`, and not nested `{ insert_rows: [...] }`"
+    );
   });
 
   it("tells Agent to draft only the current queued section", () => {

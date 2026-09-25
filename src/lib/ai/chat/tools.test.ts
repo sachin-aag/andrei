@@ -810,11 +810,7 @@ describe("buildChatTools edit_table", () => {
         operation: {
           kind: "insert_rows",
           afterRowKey: "URS-16",
-          rows: [
-            {
-              banner: "ANY SPECIFIC REQUIREMENTS",
-            },
-          ],
+          rows: [["URS-17", "Requirement text", "", "", "", ""]],
         },
       })
     ).toBe(true);

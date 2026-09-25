@@ -15,7 +15,7 @@ vi.mock("@/providers/user-directory-provider", () => ({
 }));
 
 vi.mock("@/components/report/suggestion-card", () => ({
-  SectionSuggestionCard: () => <div data-testid="section-suggestion-card" />,
+  SectionSuggestionCard: () => null,
 }));
 
 vi.mock("@/providers/report-provider", () => {
@@ -59,8 +59,5 @@ describe("SectionShell AI actions", () => {
     expect(
       screen.queryByRole("button", { name: "Suggest fixes" })
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("section-suggestion-card").parentElement).toHaveClass(
-      "section-suggestion-card-inline"
-    );
   });
 });

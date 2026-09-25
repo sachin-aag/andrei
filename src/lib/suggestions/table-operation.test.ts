@@ -546,19 +546,14 @@ describe("applyTableOperation", () => {
     expect(tableRowAt(result.doc, 3).content).toHaveLength(6);
   });
 
-  it("inserts a full-width banner row from { banner }", () => {
-    const result = applyTableOperation(rtmDoc(["URS-1"]), {
-      kind: "insert_rows",
-      tableIndex: 0,
-      afterRowKey: "URS-1",
-      rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(isBannerTableRow(tableRowAt(result.doc, 2))).toBe(true);
-    expect(cellText(result.doc, 2, 0)).toBe("ANY SPECIFIC REQUIREMENTS");
-    expect(cellColspan(result.doc, 2, 0)).toBe(6);
-    expect(tableRowAt(result.doc, 2).content).toHaveLength(1);
+  it("does not insert a merged banner row from { banner }", () => {
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        afterRowKey: "URS-1",
+        rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
+      })
+    ).toBeUndefined();
   });
 
   it("resolves afterRowKey even when afterRow is stale", () => {
@@ -1611,14 +1606,7 @@ describe("parseTableOperation", () => {
         afterRowKey: "URS-16",
         rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
       })
-    ).toEqual({
-      kind: "insert_rows",
-      tableIndex: 0,
-      afterRow: undefined,
-      afterRowKey: "URS-16",
-      rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
-      expectedRowAtAfter: undefined,
-    });
+    ).toBeUndefined();
     expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
   });
 
@@ -1644,7 +1632,37 @@ describe("parseTableOperation", () => {
       tableIndex: 0,
       afterRow: undefined,
       rows: [
-        { banner: "PROTOCOL DOCUMENTS" },
+        [
+          "URS-GLR-1301",
+          "User Requirement Specification",
+          "01",
+          "Draft",
+          "—",
+          "—",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
+    });
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        rows: [
+          { banner: "GROUP A" },
+          [
+            "URS-GLR-1301",
+            "User Requirement Specification",
+            "01",
+            "Draft",
+            "—",
+            "—",
+          ],
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
         [
           "URS-GLR-1301",
           "User Requirement Specification",
@@ -1697,7 +1715,7 @@ describe("parseTableOperation", () => {
       })
     ).toMatch(/rows: \[\["col1","col2"\]/);
     expect(tableOperationInvalidHint({ kind: "insert_rows" })).toMatch(
-      /not pass cells or nest insert_rows/
+      /not pass cells, \{ banner \}, or nest insert_rows/
     );
   });
 

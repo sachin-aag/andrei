@@ -35,7 +35,7 @@ export type TableOperation =
        * earlier inserts in the same batch.
        */
       afterRowKey?: string;
-      rows: InsertTableRow[];
+      rows: string[][];
       expectedRowAtAfter?: string[];
     }
   | {
@@ -91,19 +91,6 @@ export type TableCellEdit = {
    */
   rowContext?: string;
 };
-
-/** Data cells, or a full-width merged banner (one cell, colspan = header width). */
-export type InsertTableRow = string[] | { banner: string };
-
-export function isBannerInsertRow(
-  row: InsertTableRow
-): row is { banner: string } {
-  return !Array.isArray(row) && typeof row.banner === "string";
-}
-
-export function insertRowPlainTexts(row: InsertTableRow): string[] {
-  return isBannerInsertRow(row) ? [row.banner] : row;
-}
 
 export type TableRowDelete = {
   row: number;
@@ -863,22 +850,6 @@ function dataTemplateCells(
   return rowCells(rows[0] ?? { type: "tableRow", content: [] });
 }
 
-function makeBannerCell(text: string, colspan: number): JSONContent {
-  const paragraph = cellParagraphFromText(text);
-  if (Array.isArray(paragraph.content)) {
-    paragraph.content = paragraph.content.map((node) =>
-      node.type === "text"
-        ? { ...node, marks: [...(node.marks ?? []), { type: "bold" }] }
-        : node
-    );
-  }
-  return {
-    type: "tableCell",
-    attrs: { ...DEFAULT_CELL_ATTRS, colspan },
-    content: [paragraph],
-  };
-}
-
 /**
  * Fill optional concurrency snapshots from the current table before a proposal
  * is persisted. This keeps model input concise while preserving stale-edit
@@ -1212,7 +1183,6 @@ function applyInsertRows(
     return fail("invalid", "Cannot insert into a table with no columns.");
   }
   for (const [i, row] of operation.rows.entries()) {
-    if (isBannerInsertRow(row)) continue;
     if (row.length !== dataCols) {
       return fail(
         "invalid",
@@ -1220,19 +1190,12 @@ function applyInsertRows(
       );
     }
   }
-  const newRows = operation.rows.map((row) =>
-    isBannerInsertRow(row)
-      ? {
-          type: "tableRow" as const,
-          content: [makeBannerCell(row.banner, visualCols || dataCols)],
-        }
-      : {
-          type: "tableRow" as const,
-          content: row.map((text, col) =>
-            makeCell("tableCell", text, dataCellAttrs(templateCells, col))
-          ),
-        }
-  );
+  const newRows = operation.rows.map((row) => ({
+    type: "tableRow" as const,
+    content: row.map((text, col) =>
+      makeCell("tableCell", text, dataCellAttrs(templateCells, col))
+    ),
+  }));
   const content = [...(table.content ?? [])];
   const rowPositions = content
     .map((node, index) => (node.type === "tableRow" ? index : -1))
@@ -1637,13 +1600,6 @@ function asStringMatrix(value: unknown, headers?: string[]): string[][] | null {
   return rows;
 }
 
-function firstNonEmptyString(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value;
-  }
-  return undefined;
-}
-
 function cellsFromInsertRowObject(item: Record<string, unknown>): string[] | undefined {
   if (Array.isArray(item.cells)) {
     return coerceMatrixRow(item.cells);
@@ -1653,21 +1609,16 @@ function cellsFromInsertRowObject(item: Record<string, unknown>): string[] | und
   return undefined;
 }
 
-/** One insert_rows item: string[], `{ banner }`, or model aliases `{ isBanner, cells }` / `{ cells }`. */
-function asInsertTableRow(item: unknown): InsertTableRow | undefined {
-  if (isRecord(item) && typeof item.banner === "string" && item.banner.trim()) {
-    return { banner: item.banner };
-  }
-  if (isRecord(item) && (item.isBanner === true || item.banner === true)) {
-    const fromCells = cellsFromInsertRowObject(item);
-    const banner = firstNonEmptyString(
-      item.label,
-      item.text,
-      item.title,
-      fromCells && fromCells.length > 0 ? fromCells.join(" ") : undefined
-    );
-    if (banner) return { banner };
-  }
+/** Model aliases for a merged group row — skip these; insert_rows is data cells only. */
+function isBannerInsertItem(item: unknown): boolean {
+  if (!isRecord(item)) return false;
+  if (typeof item.banner === "string" && item.banner.trim()) return true;
+  return item.isBanner === true || item.banner === true;
+}
+
+/** One insert_rows item: string[] or `{ cells }` — `{ banner }` / `{ isBanner }` are skipped. */
+function asInsertTableRow(item: unknown): string[] | undefined {
+  if (isBannerInsertItem(item)) return undefined;
   if (isRecord(item)) {
     const fromCells = cellsFromInsertRowObject(item);
     if (fromCells && fromCells.length > 0) return fromCells;
@@ -1677,14 +1628,16 @@ function asInsertTableRow(item: unknown): InsertTableRow | undefined {
   return cells;
 }
 
-function asInsertTableRows(value: unknown): InsertTableRow[] | undefined {
+function asInsertTableRows(value: unknown): string[][] | undefined {
   if (!Array.isArray(value) || value.length === 0) return undefined;
-  const rows: InsertTableRow[] = [];
+  const rows: string[][] = [];
   for (const item of value) {
+    if (isBannerInsertItem(item)) continue;
     const row = asInsertTableRow(item);
     if (!row) return undefined;
     rows.push(row);
   }
+  if (rows.length === 0) return undefined;
   return rows;
 }
 
@@ -1772,15 +1725,20 @@ function looksLikeCellEdits(value: unknown): boolean {
 }
 
 function coerceInsertRowsShape(next: Record<string, unknown>): void {
-  if (Array.isArray(next.rows) && next.rows.length > 0) return;
-  const nestedRows = nestedInsertRowsAlias(next);
-  if (nestedRows) {
-    next.rows = nestedRows;
-    return;
+  if (!(Array.isArray(next.rows) && next.rows.length > 0)) {
+    const nestedRows = nestedInsertRowsAlias(next);
+    if (nestedRows) {
+      next.rows = nestedRows;
+    } else if (
+      Array.isArray(next.cells) &&
+      next.cells.length > 0 &&
+      !looksLikeCellEdits(next.cells)
+    ) {
+      next.rows = next.cells;
+    }
   }
-  if (Array.isArray(next.cells) && next.cells.length > 0 && !looksLikeCellEdits(next.cells)) {
-    next.rows = next.cells;
-  }
+  const dataRows = asInsertTableRows(next.rows);
+  if (dataRows) next.rows = dataRows;
 }
 
 /**
@@ -1870,12 +1828,11 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
           ? coerced.afterRowKey
           : undefined;
       const rowsFromField = asInsertTableRows(coerced.rows);
-      const bannerOnly =
-        typeof coerced.banner === "string" && coerced.banner.trim()
-          ? [{ banner: coerced.banner }]
-          : undefined;
-      const rows = rowsFromField ?? bannerOnly;
-      if (afterRow === null || (afterRow !== undefined && afterRow < 0) || !rows) {
+      if (
+        afterRow === null ||
+        (afterRow !== undefined && afterRow < 0) ||
+        !rowsFromField
+      ) {
         return undefined;
       }
       const expectedRowAtAfter = coerced.expectedRowAtAfter
@@ -1887,7 +1844,7 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         tableIndex,
         afterRow,
         ...(afterRowKey ? { afterRowKey } : {}),
-        rows,
+        rows: rowsFromField,
         expectedRowAtAfter,
       };
     }
@@ -2003,7 +1960,7 @@ export function tableOperationInvalidHint(raw: unknown): string {
     return `insert_column needs kind: "insert_column" with header (and optional afterCol, values). Omit afterCol to append as the last column. ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "insert_rows") {
-    return `insert_rows needs kind: "insert_rows" with rows: [["col1","col2"], ...] or { banner: "GROUP LABEL" }. Do not pass cells or nest insert_rows: [...]. Prefer afterRowKey (first-cell text) over afterRow. ${TABLE_EDIT_RECOVERY}`;
+    return `insert_rows needs kind: "insert_rows" with rows: [["col1","col2"], ...]. Do not pass cells, { banner }, or nest insert_rows: [...]. Prefer afterRowKey (first-cell text) over afterRow. ${TABLE_EDIT_RECOVERY}`;
   }
   return `The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table. Put kind at the top of operation (kind: edit_cells, tableIndex, cells) — not nested as { edit_cells: { cells } }. ${TABLE_EDIT_RECOVERY}`;
 }
@@ -2090,10 +2047,9 @@ export function tableOperationDetailLines(operation: TableOperation): string[] {
         return `[${cell.row},${cell.col}] ${from} → ${to}`;
       });
     case "insert_rows":
-      return operation.rows.map((row, i) =>
-        isBannerInsertRow(row)
-          ? `New banner ${i + 1}: ${row.banner || EMPTY_CELL_LABEL}`
-          : `New row ${i + 1}: ${row.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
+      return operation.rows.map(
+        (row, i) =>
+          `New row ${i + 1}: ${row.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
       );
     case "delete_rows":
       return operation.rows.map(

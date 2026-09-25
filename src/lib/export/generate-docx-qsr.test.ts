@@ -5,7 +5,6 @@ import PizZip from "pizzip";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { reports } from "@/db/schema";
 import { generateReportDocx } from "@/lib/export/generate-docx";
-import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import {
   EMPTY_QSR_CONTENT,
   QSR_OPERATING_RANGE_HEADERS,
@@ -219,24 +218,16 @@ describe("qualification summary report DOCX export", () => {
     expect(protocol).toContain('<w:vMerge w:val="restart"/>');
   });
 
-  it("exports an insert_rows banner as a merged RTM group row", async () => {
+  it("exports a seeded RTM banner as a merged group row", async () => {
     const seeded = (EMPTY_QSR_CONTENT.qsr_rtm_process as { table: JSONContent })
       .table;
-    const inserted = applyTableOperation(seeded, {
-      kind: "insert_rows",
-      tableIndex: 0,
-      afterRowKey: "URS-1",
-      rows: [{ banner: "GROUP A" }],
-    });
-    expect(inserted.ok).toBe(true);
-    if (!inserted.ok) return;
     const { document } = await exportXml(
       sectionsWith({
-        qsr_rtm_process: { table: inserted.doc },
+        qsr_rtm_process: { table: seeded },
       })
     );
     const banner = (document.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) ?? []).find(
-      (r) => visibleText(r) === "GROUP A"
+      (r) => visibleText(r) === "ANY SPECIFIC REQUIREMENTS"
     );
     expect(banner).toContain('<w:gridSpan w:val="6"/>');
   });
