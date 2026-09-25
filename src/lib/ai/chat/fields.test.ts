@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
 import { documentTypeEnum } from "@/db/schema";
 import { getDocumentType } from "@/lib/document-types";
@@ -12,6 +13,11 @@ import {
   ELR_CALIBRATION_HEADERS,
   EMPTY_ELR_CONTENT,
 } from "@/lib/document-types/elr/sections";
+import {
+  emptyQsrContent,
+  QSR_RTM_HEADERS,
+} from "@/lib/document-types/qsr/sections";
+import { EMPTY_VQ_CONTENT } from "@/lib/document-types/vq/sections";
 import {
   chatEditableSections,
   isChatEditableSection,
@@ -180,6 +186,57 @@ describe("fieldFillState seeded tables", () => {
     };
     expect(fieldFillState(content, "traceability", "table")).not.toBe("empty");
     expect(sectionFillState(content, "traceability")).not.toBe("empty");
+  });
+
+  it("treats the QSR process-requirements template as empty", () => {
+    const content = emptyQsrContent("qsr_rtm_process");
+    expect(fieldFillState(content, "qsr_rtm_process", "table")).toBe("empty");
+    expect(sectionFillState(content, "qsr_rtm_process")).toBe("empty");
+    expect(sectionHasTable(content, "qsr_rtm_process")).toBe(true);
+  });
+
+  it("treats a fresh VQ matrix template as empty", () => {
+    const content = EMPTY_VQ_CONTENT.vq_section_g;
+    expect(fieldFillState(content, "vq_section_g", "table")).toBe("empty");
+    expect(sectionFillState(content, "vq_section_g")).toBe("empty");
+  });
+
+  it("treats the QSR template plus one real row as filled", () => {
+    const content = structuredClone(emptyQsrContent("qsr_rtm_process")) as {
+      table: { content?: Array<{ content?: unknown[] }> };
+    };
+    const table = content.table.content?.[0] as { content: unknown[] };
+    table.content.push({
+      type: "tableRow",
+      content: QSR_RTM_HEADERS.map((_, index) => ({
+        type: "tableCell",
+        content: [
+          {
+            type: "paragraph",
+            content:
+              index === 0 ? [{ type: "text", text: "URS-2" }] : [],
+          },
+        ],
+      })),
+    });
+    expect(fieldFillState(content, "qsr_rtm_process", "table")).not.toBe("empty");
+    expect(sectionFillState(content, "qsr_rtm_process")).not.toBe("empty");
+  });
+
+  it("does not treat seed text moved to another cell as still empty", () => {
+    const content = structuredClone(emptyQsrContent("qsr_rtm_process")) as {
+      table: JSONContent;
+    };
+    const table = content.table.content?.[0];
+    const ursRow = table?.content?.[1];
+    const blankRow = table?.content?.[3];
+    const sourceCell = ursRow?.content?.[0];
+    const destCell = blankRow?.content?.[0];
+    expect(sourceCell && destCell).toBeTruthy();
+    if (!sourceCell || !destCell) return;
+    destCell.content = sourceCell.content;
+    sourceCell.content = [{ type: "paragraph" }];
+    expect(fieldFillState(content, "qsr_rtm_process", "table")).not.toBe("empty");
   });
 });
 

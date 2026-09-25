@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { assertPdfIngestConfigured } from "@/lib/attachments/document-ai-ocr";
 import { readPdfTextLayer } from "@/lib/attachments/pdf-text-layer";
 import {
   CORPUS_ANCHORS,
@@ -12,6 +13,10 @@ import {
 } from "./retrieval-corpus";
 
 describe("retrieval eval corpus", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("embeds the anchors a live search must recover", async () => {
     const files = await buildRetrievalCorpus();
     await expect(assertCorpusAnchors(files)).resolves.toBeUndefined();
@@ -60,5 +65,15 @@ describe("retrieval eval corpus", () => {
     expect(softwarePage?.text).toContain(CORPUS_ANCHORS.interlock);
     expect(softwarePage?.text).toContain(CORPUS_ANCHORS.pmcPr014);
     expect(protocolText).not.toContain(CORPUS_ANCHORS.pmcPr014);
+  });
+
+  it("indexes generated PDFs without Document AI so stale-GCS CI can ingest", async () => {
+    vi.stubEnv("GOOGLE_VERTEX_PROJECT", "eval-project");
+    vi.stubEnv("DOCUMENT_AI_PROCESSOR_ID", "");
+    vi.stubEnv("DOCUMENT_AI_LOCATION", "");
+    const files = await buildRetrievalCorpus();
+    await expect(
+      Promise.all(files.map((file) => assertPdfIngestConfigured(file.bytes)))
+    ).resolves.toHaveLength(files.length);
   });
 });

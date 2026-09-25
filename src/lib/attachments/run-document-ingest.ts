@@ -16,8 +16,8 @@ import { chunkDocumentPages } from "@/lib/attachments/chunk-pages";
 import { describeDocxImages } from "@/lib/attachments/describe-docx-images";
 import {
   DOCUMENT_AI_OCR_CONCURRENCY,
+  assertPdfIngestConfigured,
   documentAiIngestSplitOptions,
-  isDocumentAiConfigured,
 } from "@/lib/attachments/document-ai-ocr";
 import {
   assignDocxImagesToPages,
@@ -312,15 +312,13 @@ async function initializeIngestRun(
 
 /** PDF path: split into batches, extract each, then chunk+embed. */
 async function runPdfIngest(init: IngestInit): Promise<void> {
-  if (!isDocumentAiConfigured()) {
-    throw new Error(
-      "DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION are required. PDF indexing does not fall back to the slow page loop."
-    );
-  }
+  const storage = getAttachmentStorage();
+  const sourceBuffer = await storage.readObjectBuffer(init.sourceObjectKey);
+  await assertPdfIngestConfigured(sourceBuffer);
   await assertAttachmentCurrent(init);
   const existingBatches = await listBatches(init.runId);
   if (existingBatches.length === 0) {
-    await splitAndPersistBatches(init);
+    await splitAndPersistBatches(init, sourceBuffer);
   }
   const batches = await listBatches(init.runId);
   const sliceStartedAt = Date.now();
@@ -489,12 +487,14 @@ async function assertAttachmentCurrent(input: IngestInit): Promise<void> {
   }
 }
 
-async function splitAndPersistBatches(input: IngestInit): Promise<{
+async function splitAndPersistBatches(
+  input: IngestInit,
+  sourceBuffer: Buffer
+): Promise<{
   batchCount: number;
   pageCount: number;
 }> {
   const storage = getAttachmentStorage();
-  const sourceBuffer = await storage.readObjectBuffer(input.sourceObjectKey);
   const split = await splitPdfForIngest(sourceBuffer);
 
   for (const batch of split.batches) {
@@ -960,7 +960,11 @@ async function persistOutlineSpansForRun(input: IngestInit): Promise<void> {
  */
 async function persistDetectedTablesForRun(
   input: IngestInit,
-  pages: ReadonlyArray<{ pageNumber: number; transcript: string }>
+  pages: ReadonlyArray<{
+    pageNumber: number;
+    transcript: string;
+    identifiers?: readonly string[] | null;
+  }>
 ): Promise<Set<number>> {
   try {
     const result = await persistDocumentTablesForRun({
@@ -975,7 +979,12 @@ async function persistDetectedTablesForRun(
         `[document-ingest] ${input.filename}: stored ${result.tableCount} table(s), ${result.rowCount} row(s)`
       );
     }
-    return interiorTablePages(result.spans);
+    return interiorTablePages(
+      result.spans,
+      new Map(
+        pages.map((page) => [page.pageNumber, page.identifiers ?? []])
+      )
+    );
   } catch (error) {
     console.warn(`[document-ingest] Table detection failed for ${input.filename}`, {
       error: error instanceof Error ? error.message : String(error),
@@ -993,6 +1002,7 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
       transcript: documentPages.transcript,
       visualInterpretation: documentPages.visualInterpretation,
       pageContext: documentPages.pageContext,
+      identifiers: documentPages.identifiers,
     })
     .from(documentPages)
     .where(eq(documentPages.ingestRunId, input.runId))
@@ -1044,6 +1054,29 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
   });
 
   return { chunkCount: chunks.length };
+}
+
+/** Re-chunk from stored transcripts. Used by the identifier-skip backfill. */
+export async function rechunkStoredPagesForRun(input: {
+  runId: string;
+  attachmentId: string;
+  assetId: string | null;
+  reportId: string;
+  filename: string;
+  embeddingModelId: string;
+}): Promise<{ chunkCount: number }> {
+  return chunkAndEmbedRun({
+    runId: input.runId,
+    attachmentId: input.attachmentId,
+    assetId: input.assetId,
+    reportId: input.reportId,
+    filename: input.filename,
+    kind: "pdf",
+    sourceObjectKey: "",
+    sourceGeneration: "",
+    extractModelId: "",
+    embeddingModelId: input.embeddingModelId,
+  });
 }
 
 async function listRunPages(runId: string): Promise<

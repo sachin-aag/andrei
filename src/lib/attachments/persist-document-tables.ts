@@ -71,8 +71,33 @@ export const MIN_TABLE_SPAN_FOR_CHUNK_SKIP = 8;
  * document findable at all — "the lyophilizer trend for RIG25014" has to hit
  * something — while the 74 identical pages between them cost nothing.
  */
+function identifierOnEveryPageOfSpan(
+  id: string,
+  span: { pageStart: number; pageEnd: number },
+  identifiersByPage: ReadonlyMap<number, readonly string[]>
+): boolean {
+  const needle = id.toLowerCase();
+  for (let page = span.pageStart; page <= span.pageEnd; page += 1) {
+    const ids = identifiersByPage.get(page) ?? [];
+    if (!ids.some((item) => item.toLowerCase() === needle)) return false;
+  }
+  return true;
+}
+
+function pageHasSpanSpecificIdentifier(
+  page: number,
+  span: { pageStart: number; pageEnd: number },
+  identifiersByPage: ReadonlyMap<number, readonly string[]>
+): boolean {
+  const ids = identifiersByPage.get(page) ?? [];
+  return ids.some(
+    (id) => !identifierOnEveryPageOfSpan(id, span, identifiersByPage)
+  );
+}
+
 export function interiorTablePages(
-  spans: ReadonlyArray<{ pageStart: number; pageEnd: number }>
+  spans: ReadonlyArray<{ pageStart: number; pageEnd: number }>,
+  identifiersByPage: ReadonlyMap<number, readonly string[]> = new Map()
 ): Set<number> {
   const interior = new Set<number>();
   const endpoints = new Set<number>();
@@ -83,12 +108,35 @@ export function interiorTablePages(
       continue;
     }
     for (let page = span.pageStart + 1; page < span.pageEnd; page += 1) {
+      if (pageHasSpanSpecificIdentifier(page, span, identifiersByPage)) {
+        continue;
+      }
       interior.add(page);
     }
   }
   // A page that ends one table and opens another stays chunked.
   for (const page of endpoints) interior.delete(page);
   return interior;
+}
+
+/**
+ * Pages the old skip rule hid that the identifier-aware rule now keeps, and
+ * that still have no chunk. Non-empty means the run should be re-chunked.
+ */
+export function pagesToRechunkAfterIdentifierRule(input: {
+  spans: ReadonlyArray<{ pageStart: number; pageEnd: number }>;
+  identifiersByPage: ReadonlyMap<number, readonly string[]>;
+  chunkedPages: ReadonlySet<number>;
+}): number[] {
+  const oldSkip = interiorTablePages(input.spans);
+  const newSkip = interiorTablePages(input.spans, input.identifiersByPage);
+  const pages: number[] = [];
+  for (const page of oldSkip) {
+    if (newSkip.has(page)) continue;
+    if (input.chunkedPages.has(page)) continue;
+    pages.push(page);
+  }
+  return pages.toSorted((a, b) => a - b);
 }
 
 /**

@@ -1,6 +1,10 @@
 import { GoogleAuth } from "google-auth-library";
 import { getWifAccessToken, getWifConfig } from "@/lib/gcp/wif-token";
 import {
+  classifyPdfExtractLayout,
+  readPdfTextLayer,
+} from "@/lib/attachments/pdf-text-layer";
+import {
   splitPdfByPageCount,
   uprightRotatePdfPages,
 } from "@/lib/attachments/pdf-split";
@@ -112,6 +116,23 @@ export function isDocumentAiConfigured(): boolean {
       process.env.DOCUMENT_AI_PROCESSOR_ID?.trim() &&
       process.env.DOCUMENT_AI_LOCATION?.trim()
   );
+}
+
+export const DOCUMENT_AI_REQUIRED_ERROR =
+  "DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION are required. PDF indexing does not fall back to the slow page loop.";
+
+/**
+ * Scans still need Enterprise OCR. Born-digital files (every page has a
+ * usable text layer) ingest through the parser so CI retrieval-eval and
+ * local `--live` can index the synthetic corpus without a processor.
+ */
+export async function assertPdfIngestConfigured(
+  sourceBuffer: Buffer
+): Promise<void> {
+  if (isDocumentAiConfigured()) return;
+  const layer = await readPdfTextLayer(sourceBuffer);
+  if (classifyPdfExtractLayout(layer) === "text-layer") return;
+  throw new Error(DOCUMENT_AI_REQUIRED_ERROR);
 }
 
 export function resolveDocumentAiProcessorName(): string {

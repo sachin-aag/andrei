@@ -101,3 +101,5 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - Whole-field is derived: planned operations cover every merge block
   (`operationsCoverWholeField`), plus `ai_redraft`. Coverage classifies
   edit vs rewrite; `propose_edit` does not refuse large spans.
+- Seeded tables whose cells are blank or unchanged from the template are
+  empty, not partial (`isEmptyTableScaffoldDoc`).
