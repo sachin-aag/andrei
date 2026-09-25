@@ -136,6 +136,50 @@ describe("ChatMarkdown", () => {
     expect(onOpenCitation).toHaveBeenCalledWith("[CSV-RTM-PR-053.pdf, p. 5]");
   });
 
+  it("turns <br> in a GFM table cell into a line break", () => {
+    const markdown = [
+      "| Section | IDs | Detail |",
+      "| --- | --- | --- |",
+      "| Core Process (URS-1 to URS-29)<br>• Capacity, MOC | `URS-1`, `URS-7`<br>`URS-58` | • URS-3 (Shell Op Temp)<br>• URS-4 (Shell Op Press) [User Requirement Specification.PDF, p. 6-7] |",
+    ].join("\n");
+    const { container } = render(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    expect(container.querySelectorAll("td br").length).toBe(3);
+    expect(container.textContent).not.toMatch(/<br/i);
+    expect(container.textContent).toContain("Capacity, MOC");
+    expect(container.textContent).toContain("URS-58");
+    expect(container.textContent).toContain("URS-4 (Shell Op Press)");
+  });
+
+  it("turns paragraph <br/> tags into line breaks", () => {
+    const { container } = render(
+      <ChatMarkdown>{"Line one<br/>Line two<br />Line three"}</ChatMarkdown>
+    );
+    expect(container.querySelectorAll("br")).toHaveLength(2);
+    expect(container.textContent).not.toMatch(/<br/i);
+    expect(container.textContent).toContain("Line one");
+    expect(container.textContent).toContain("Line three");
+  });
+
+  it("leaves <br> inside inline code literal", () => {
+    render(<ChatMarkdown>{"Use `<br>` in table cells"}</ChatMarkdown>);
+    expect(screen.getByText("<br>")).toBeInTheDocument();
+  });
+
+  it("linkifies a citation after a <br> in a table cell", async () => {
+    const onOpenCitation = vi.fn();
+    render(
+      <ChatMarkdown onOpenCitation={onOpenCitation}>
+        {[
+          "| A | B |",
+          "| --- | --- |",
+          "| see<br>[urs.pdf, p. 6] | y |",
+        ].join("\n")}
+      </ChatMarkdown>
+    );
+    await userEvent.click(screen.getByTestId("citation-link"));
+    expect(onOpenCitation).toHaveBeenCalledWith("[urs.pdf, p. 6]");
+  });
+
   it("splits a compact and-cite only when both attached filenames are known", async () => {
     const onOpenCitation = vi.fn();
     const { rerender } = render(

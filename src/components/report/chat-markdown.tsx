@@ -5,6 +5,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { ChatMath } from "@/components/report/chat-math";
+import { remarkHtmlBreaks } from "@/components/report/chat-markdown-breaks";
 import {
   CHAT_MATH_HAST_HANDLERS,
   chatMathDisplayFromClassName,
@@ -90,6 +91,7 @@ const COMPONENTS: Components = {
     ) : (
       <div className={className}>{children}</div>
     ),
+  br: () => <br />,
 };
 
 function wrapCitationChildren(
@@ -186,7 +188,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   return (
     <div className="chat-markdown min-w-0 wrap-anywhere space-y-2 text-sm leading-relaxed text-[var(--foreground)]">
       <ReactMarkdown
-        remarkPlugins={[remarkMath, remarkGfm]}
+        remarkPlugins={[remarkMath, remarkGfm, remarkHtmlBreaks]}
         remarkRehypeOptions={{ handlers: CHAT_MATH_HAST_HANDLERS }}
         components={components}
       >
