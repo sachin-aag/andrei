@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Content, JSONContent, Editor } from "@tiptap/core";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, useEditorState, EditorContent } from "@tiptap/react";
 import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Subscript from "@tiptap/extension-subscript";
@@ -132,15 +132,34 @@ import { TiptapEditorContextMenu } from "@/components/report/tiptap-editor-conte
 const GENERIC_RICH_FIELD_OPTIONS = { preserveHeadings: true } as const;
 const GENERIC_MARKDOWN_OPTIONS = { headingNodes: true } as const;
 
-export function TableEditToolbar({
-  editor,
-  tableHAlign,
-  tableVAlign,
-}: {
-  editor: Editor;
-  tableHAlign: string | null;
-  tableVAlign: string | null;
-}) {
+function tableToolbarUi(editor: Editor) {
+  const inTable = editor.isActive("table");
+  const attrs = inTable
+    ? editor.isActive("tableHeader")
+      ? editor.getAttributes("tableHeader")
+      : editor.getAttributes("tableCell")
+    : null;
+  return {
+    canMerge: editor.can().mergeCells(),
+    canSplit: editor.can().splitCell(),
+    tableHAlign: (attrs?.align as string | undefined) ?? null,
+    tableVAlign: (attrs?.verticalAlign as string | undefined) ?? null,
+  };
+}
+
+export function TableEditToolbar({ editor }: { editor: Editor }) {
+  // TipTap v3 does not re-render the parent on selection. Subscribe here so
+  // Merge / Split enable as soon as a CellSelection covers more than one cell.
+  const {
+    canMerge,
+    canSplit,
+    tableHAlign,
+    tableVAlign,
+  } = useEditorState({
+    editor,
+    selector: ({ editor: ed }) => tableToolbarUi(ed),
+  });
+
   return (
     <div
       data-testid="table-edit-toolbar"
@@ -224,7 +243,7 @@ export function TableEditToolbar({
         size="sm"
         className="h-6 px-1.5 text-xs gap-1"
         data-testid="table-merge-cells"
-        disabled={!editor.can().mergeCells()}
+        disabled={!canMerge}
         onClick={() => editor.chain().focus().mergeCells().run()}
         title="Merge selected cells"
       >
@@ -237,7 +256,7 @@ export function TableEditToolbar({
         size="sm"
         className="h-6 px-1.5 text-xs gap-1"
         data-testid="table-split-cell"
-        disabled={!editor.can().splitCell()}
+        disabled={!canSplit}
         onClick={() => editor.chain().focus().splitCell().run()}
         title="Split merged cell"
       >
@@ -1371,15 +1390,6 @@ export function TiptapSectionField({
     }
   };
 
-  const activeTableCellAttrs =
-    editor && editable && editor.isActive("table")
-      ? editor.isActive("tableHeader")
-        ? editor.getAttributes("tableHeader")
-        : editor.getAttributes("tableCell")
-      : null;
-  const tableHAlign = (activeTableCellAttrs?.align as string | undefined) ?? null;
-  const tableVAlign = (activeTableCellAttrs?.verticalAlign as string | undefined) ?? null;
-
   const inactiveSuggestionCss = isRichField
     ? buildInactiveSuggestionCss(activeSuggestionId)
     : "";
@@ -1424,11 +1434,7 @@ export function TiptapSectionField({
             !commentComposing
           }
         >
-          <TableEditToolbar
-            editor={editor}
-            tableHAlign={tableHAlign}
-            tableVAlign={tableVAlign}
-          />
+          <TableEditToolbar editor={editor} />
         </FloatingMenu>
       )}
 
