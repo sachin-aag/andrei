@@ -669,9 +669,26 @@ describe("buildChatSystemPrompt", () => {
       ...opts,
       mode: "agent",
     });
-    expect(prompt).toContain("nothing lands until they accept it");
+    expect(prompt).toContain(
+      "nothing in a TipTap section lands until they accept it"
+    );
+    expect(prompt).toContain(
+      "Analyze method (select_analyze_method) lands immediately in the header"
+    );
     expect(prompt).toContain("Delivery in this chrome is ALWAYS a suggestion card");
     expect(prompt).not.toContain("written to the document immediately");
+  });
+
+  it("tells Agent that cover identity lands immediately on types that have it", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "qualification_summary_report",
+    });
+    expect(prompt).toContain(
+      "Cover/header identity (draft_identity) lands immediately in the header"
+    );
+    expect(prompt).not.toContain("select_analyze_method");
   });
 
   it("tells the model that a plan/outline is chat-only, not a write", () => {

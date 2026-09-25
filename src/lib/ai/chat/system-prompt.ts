@@ -265,9 +265,14 @@ function agentRules(opts: {
   const hiddenWriteTools = opts.hasIdentity
     ? "draft_field / edit_table / propose_edit / insert_image / remove_image / draft_identity"
     : "draft_field / edit_table / propose_edit / insert_image / remove_image";
-  const landingLine = opts.hasIdentity
-    ? "You are in Agent mode. Use the tools to read sections and propose changes. Body edits go to the engineer for review — nothing in a TipTap section lands until they accept it. Cover/header identity (draft_identity) and Analyze method (select_analyze_method) land immediately in the header. That review step is normal for section drafts: still call edit_table / draft_field / propose_edit to deliver those changes."
-    : "You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.";
+  const immediateWrites = [
+    opts.hasIdentity ? "Cover/header identity (draft_identity)" : null,
+    opts.analyzeInScope ? "Analyze method (select_analyze_method)" : null,
+  ].filter((line): line is string => line !== null);
+  const landingLine =
+    immediateWrites.length > 0
+      ? `You are in Agent mode. Use the tools to read sections and propose changes. Body edits go to the engineer for review — nothing in a TipTap section lands until they accept it. ${immediateWrites.join(" and ")} ${immediateWrites.length === 1 ? "lands" : "land"} immediately in the header. That review step is normal for section drafts: still call edit_table / draft_field / propose_edit to deliver those changes.`
+      : "You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.";
   let reviewTools = "";
   let searchFirst: string;
   switch (opts.retrievalPolicy) {

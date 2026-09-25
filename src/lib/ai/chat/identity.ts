@@ -7,7 +7,7 @@ import { isCreatePreloadDocumentNo } from "@/lib/reports/create-preload";
 export const CHAT_IDENTITY_SECTION = "identity";
 
 export const IDENTITY_UNSET_NOTE =
-  "(unset) — search attachments and call draft_identity; ask_user only if it is still missing after search, or a fork with mutually exclusive values";
+  "(unset) — search attachments and call draft_identity";
 
 const DEFAULT_IDENTITY_LABEL = "Cover identity";
 

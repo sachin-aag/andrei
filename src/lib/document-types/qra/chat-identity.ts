@@ -11,7 +11,7 @@ function metaString(
 }
 
 const UNSET_NOTE =
-  "(unset) — search attachments and call draft_identity; ask_user only if it is still missing after search, or a fork with mutually exclusive values";
+  "(unset) — search attachments and call draft_identity";
 
 export const QRA_IDENTITY_LABEL = "Header identity";
 

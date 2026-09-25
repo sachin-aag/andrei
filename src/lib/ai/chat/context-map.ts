@@ -135,7 +135,7 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     }
     if (def.chat.identityFields && def.chat.identityFields.length > 0) {
       lines.push(
-        "- Fill unset identity with draft_identity from attachments (lands immediately; not a suggestion card). ask_user only after search, or a fork."
+        "- Fill unset identity with draft_identity from attachments (lands immediately; not a suggestion card)."
       );
     }
   }

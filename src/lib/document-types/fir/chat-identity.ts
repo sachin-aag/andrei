@@ -19,7 +19,7 @@ function identityValue(value: string, max = 120): string {
  * PRQR's batch. Search attachments and write with draft_identity instead.
  */
 const UNSET_NOTE =
-  "(unset) — search attachments and call draft_identity; ask_user only if it is still missing after search, or a fork with mutually exclusive values";
+  "(unset) — search attachments and call draft_identity";
 
 export const FIR_IDENTITY_LABEL = "Header identity";
 

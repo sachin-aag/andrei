@@ -19,7 +19,7 @@ function identityValue(value: string, max = 120): string {
 }
 
 const UNSET_NOTE =
-  "(unset) — search attachments and call draft_identity; ask_user only if it is still missing after search";
+  "(unset) — search attachments and call draft_identity";
 
 const UNSET_FORMAT_NOTE =
   "(unset) — one ELR per format. If attachments name both Vial and Cartridge, call ask_user which format this ELR covers before draft_identity or draft_field on Scope or any format-scoped table. Do not pick the first PRQR.";
