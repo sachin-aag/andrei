@@ -1,0 +1,136 @@
+[
+  {
+    "id": "qsr-rtm-cover-8000l",
+    "task": "ground_draft",
+    "passCriteria": "URS-1 capacity from the cover page stays 8000 L instead of bouncing to a placeholder.",
+    "notes": "GLR-1301 section 5 overblock. Same gold as ground-draft.test.ts and qsr-rtm-draft-replay.test.ts.",
+    "input": {
+      "text": "8000 L [User Requirement Specification.PDF, p. 1]",
+      "context": "URS-1\nReactor Capacity",
+      "section": "qsr_rtm_process",
+      "pages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "pageNumber": 1,
+          "attachmentId": "urs",
+          "quote": "Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301 Page 1 of 12"
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["8000 L"],
+      "mustNotContain": ["<capacity>", "<number>"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
+    "id": "qsr-rtm-vacuum-760mmhg",
+    "task": "ground_draft",
+    "passCriteria": "URS-35 vacuum range 0 to 760 mmHg persists when it sits before the next URS ID.",
+    "input": {
+      "text": "0 to 760 mmHg",
+      "context": "URS-35\nVacuum gauge",
+      "section": "qsr_rtm_control",
+      "pages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "pageNumber": 8,
+          "attachmentId": "urs",
+          "quote": "Vacuum gauge to measure the vacuum produced. Range 0 to 760 mmHg. URS-36 Pressure Gauge."
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["760 mmHg"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
+    "id": "qsr-rtm-moc-ss316l",
+    "task": "ground_draft",
+    "passCriteria": "URS-39 contact-parts MOC SS 316L is not treated as an unsourced litre quantity.",
+    "input": {
+      "text": "Glass lined / SS 316L",
+      "context": "URS-39\nContact parts",
+      "section": "qsr_rtm_gmp",
+      "pages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "pageNumber": 9,
+          "attachmentId": "urs",
+          "quote": "URS-39 Contact parts of the equipment shall be Glass lined / SS 316L."
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["SS 316L"],
+      "mustNotContain": ["<number>"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
+    "id": "qsr-rtm-neighbour-urs37-blocked",
+    "task": "ground_draft",
+    "passCriteria": "URS-37 process temperature must not land on the URS-5 jacket row.",
+    "input": {
+      "text": "15–130 °C",
+      "context": "URS-5 Jacket temperature",
+      "section": "qsr_rtm_process",
+      "pages": [
+        {
+          "filename": "URS-GLR-1301.pdf",
+          "pageNumber": 4,
+          "attachmentId": "urs",
+          "quote": "URS-5 Jacket temperature 20-25 °C for the jacket loop. URS-37 Process temperature 15–130 °C for the vessel. URS-44 Emergency Stop push button at each station."
+        }
+      ]
+    },
+    "expected": {
+      "blocked": true,
+      "unsupportedMustContain": ["15–130 °C"]
+    }
+  },
+  {
+    "id": "qsr-rtm-fail-closed-unread-urs",
+    "task": "ground_draft",
+    "passCriteria": "An attached unread URS fails closed instead of inventing row facts.",
+    "input": {
+      "text": "URS-5 Jacket temperature 20-25 °C",
+      "section": "qsr_rtm_safety",
+      "attachedFilenames": ["URS-GLR-1301.pdf"],
+      "pages": []
+    },
+    "expected": {
+      "blocked": true
+    }
+  },
+  {
+    "id": "harness-greeting-no-tools",
+    "task": "harness",
+    "passCriteria": "A greeting must not search, review, or write.",
+    "notes": "docs/harness-plan.md §13 layer 1.",
+    "input": {
+      "scenarioId": "greeting"
+    },
+    "expected": {
+      "intent": "social",
+      "activeTools": []
+    }
+  },
+  {
+    "id": "harness-empty-inventory-starts-review",
+    "task": "harness",
+    "passCriteria": "An empty ELR inventory still starts a document review before edit_table.",
+    "input": {
+      "scenarioId": "empty_inventory"
+    },
+    "expected": {
+      "requireInventoryReview": true,
+      "activeTools": ["start_document_review"],
+      "activeToolsMustNotContain": ["edit_table", "draft_field"]
+    }
+  }
+]

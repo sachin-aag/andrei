@@ -1229,6 +1229,7 @@ export function ReportWorkspace({
                       continuousDocument,
                       reviewGutterVisible: showReviewGutter,
                     }),
+                    showReviewGutter && "review-gutter-open",
                     showReviewGutter && REVIEW_GUTTER_GRID_COLS
                   )}
                   style={

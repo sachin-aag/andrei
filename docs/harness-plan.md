@@ -29,7 +29,7 @@ Live report creation on the PR is still the layer-3 merge gate.
 | E1–E3 honest finish / list_attachments / continue budget | Landed. |
 | B4 retire heuristics D2 covers | **Evaluated, not deleted.** IDF + diversity cover the cover-magnet ranking case. Divider regexes (`attachment-divider.ts`) mark locators for `keepSearchOpen` — that is not ranking. Analytics `requirementIndex` TOC demotion and ELR inventory column needles score a different question than token rarity. No new heuristic. |
 | B5 one page-objective scorer | Landed as one haystack (`pageObjectiveHaystack`) shared by inventory scoring and `scoreReviewPage`. `routeSearchTargets` stays file/span routing for identifier queries. |
-| F2 MJ overlay replay / F1 live LLM cost | Live Gemini quality is not in this repo (user report + Langfuse on the PR). Write-path grounding without an LLM **is**: replay `edit_table` through `buildChatTools` (`src/lib/ai/chat/qsr-rtm-draft-replay.test.ts`). Playwright stub chat cannot assert tools. |
+| F2 MJ overlay replay / F1 live LLM cost | Live Gemini Agent turns are still not a CI job. The **deterministic quality floor** is: `scripts/eval/chat-draft-cases.json` + `pnpm chat-eval -- --replay` (also Vitest). Optional Langfuse dataset `chat-draft-quality-floor` (`--sync` / `--experiment`) compares runs in the UI. Write-path `edit_table` incidents still use `qsr-rtm-draft-replay.test.ts`. Playwright stub chat cannot assert tools. |
 | Live QMS vs calibration-planner walk | Landed. ELR inventory start no longer page-lists files typed as a different inventory (a calibration planner is not QMS). Page scoring ignores running-header `document no`. The planning chip names queued files, not the whole vault. |
 | Remaining-sections UI (plan slot, false error, done popup, idle Working… / N of N chip) | Landed. Plan progress sits below the transcript. Auto-continue rows stay hidden and do not resurrect the original user bubble. Successful section turns do not toast “hit an error”. Agent-done notice is `Assistant is done with {section}`. Working… hides when the stream is idle (stale optimistic send overlay after hydrate). The N of N chip spins only while the turn is running, shows Paused on Cancel, and hides when every remaining section is drafted. |
 | Remaining-sections seed miss (`dev 7` “go on to monitoring and sections after that”) | Landed. That phrasing is a write (`go on`) but was not a multi-section seed, so the first leftover-inventory turn had no queue and milled reviews until the 270s abort. Queue still does not cap start/finish loops inside one inventory turn — that abort cluster remains after an explicit `draft remaining sections`. |
@@ -398,6 +398,15 @@ it. A ranking PR that cannot show overlay pass on a laptop does not
 claim "ELR retrieval is fixed."
 
 ### Layer 3 — Turn quality floor (live LLM, small N)
+
+**Partial.** The **deterministic** half of this floor is in-repo:
+`pnpm chat-eval -- --replay` on `scripts/eval/chat-draft-cases.json`
+(QSR section 5 grounding + greeting / empty-inventory harness). Pushing
+that same set to Langfuse (`--experiment` upserts dataset
+`chat-draft-quality-floor` then `runExperiment`) makes runs comparable
+across `CHAT_PROMPT_VERSION` without waiting for a live Agent turn.
+Headless Gemini (`--live`) is not wired — do not treat a quiet Langfuse
+project as a merge gate for prompt diet.
 
 This is F1's second half. Same scenarios every time, budgets that fail
 closed. Dual metric: cost may fall; quality may not.

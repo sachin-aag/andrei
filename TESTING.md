@@ -460,6 +460,8 @@ Grouped by subsystem. Run a folder with `pnpm test -- src/lib/import`.
 
 Playwright stub chat (`ALLOW_TEST_STUB_CHAT`, `e2e/report-chat.spec.ts`) streams a canned reply. It **cannot** assert tool selection or citation grounding. Live Gemini in the browser is not a CI job (`docs/harness-plan.md` F2).
 
+**Quality floor beyond Vitest / Playwright:** git owns `scripts/eval/chat-draft-cases.json`. `pnpm chat-eval -- --replay` scores those cases against `groundDraftText` and layer-1 harness tool availability (no LLM). `pnpm chat-eval -- --sync` upserts Langfuse dataset `chat-draft-quality-floor`. `--experiment` upserts that dataset, then `dataset.runExperiment` so prompt/gate changes compare in the Datasets UI (`quality_floor` per item, `pass_rate` on the run). Missing `LANGFUSE_*` keys skip sync/experiment. `--live` is reserved until a headless Agent turn exists. Add a case when an incident ships, then replay. Copy `chat-draft-cases.local.example.json` to the gitignored overlay for private traces.
+
 The layer that catches a production overblock (QSR section 5 dropping cover-page capacity, vacuum range, MOC) is a Vitest **replay** through `buildChatTools`:
 
 1. Mock `@/db` and `@/lib/attachments/retrieval` (same pattern as `tools.test.ts`).
@@ -474,6 +476,7 @@ The layer that catches a production overblock (QSR section 5 dropping cover-page
 | `tools.test.ts` | Tool schemas, ELR inventory lock, placeholder bounce, document-review start shape |
 | `ground-draft.test.ts` / `qsr-row-grounding.test.ts` | Pure grounding helpers (no `edit_table`) |
 | `harness-scenarios.ts` | Layer-1 tool *availability* (greeting / rewrite / empty inventory) — not write-path grounding |
+| `src/lib/eval/chat-draft-cases.test.ts` | Public quality-floor JSON: QSR cover `8000 L` / `760 mmHg` / `SS 316L`, neighbour block, unread URS fail-closed, greeting / empty-inventory harness |
 
 `restoreFromFinishedReview` zeros skip counts, so it cannot reproduce a floor-8 skipped-file deadlock. Use a real start → continue → finish for that class of bug. Copy `qsr-rtm-draft-replay.test.ts` for the next incident; do not dump it into `tools.test.ts`.
 
@@ -574,6 +577,7 @@ Spot-check **live Gemini** evaluation periodically — E2E stubs AI via `ALLOW_T
 | Unit | `pnpm test` | All Vitest. Retrieval eval unit tests are also gated in CI to run only when the harness / search files change. |
 | E2E | `pnpm test:e2e` | Postgres service container, `drizzle-kit push`, Chromium + Firefox + WebKit |
 | Retrieval eval | `pnpm retrieval-eval -- --from-gcs` | Path-gated. Downloads synthetic PDFs from `RETRIEVAL_EVAL_GCS_BUCKET`, Vertex-ingests, searches, LLM-judges. Does not upload. If downloaded PDFs fail gold anchors, generates locally. Skips if Vertex/GCS secrets are missing. |
+| Chat-draft quality floor | `pnpm test -- src/lib/eval/chat-draft-cases.test.ts` (CI) / `pnpm chat-eval -- --replay` | Deterministic. No Vertex. `pnpm chat-eval -- --sync` / `--experiment` is laptop-only (Langfuse keys). |
 
 Workflow: `.github/workflows/ci.yml`
 
@@ -588,7 +592,7 @@ Workflow: `.github/workflows/ci.yml`
 | Pure logic, parsers, prompts | `src/lib/.../*.test.ts` next to source |
 | API route auth and status codes | `src/app/api/.../route.test.ts` — mock `@/db` + `getCurrentUser` |
 | React UI interactions | `src/components/.../*.test.tsx` — jsdom + RTL + `user-event` |
-| Chat write-path grounding (production `edit_table` / `draft_field` incident) | New `src/lib/ai/chat/*-replay.test.ts` — mock DB + retrieval, call `buildChatTools` in tool order. Not Playwright. Pattern: `qsr-rtm-draft-replay.test.ts` |
+| Chat write-path grounding (production `edit_table` / `draft_field` incident) | New `src/lib/ai/chat/*-replay.test.ts` — mock DB + retrieval, call `buildChatTools` in tool order. Not Playwright. Pattern: `qsr-rtm-draft-replay.test.ts`. Also add a row to `scripts/eval/chat-draft-cases.json` so `pnpm chat-eval -- --replay` / Langfuse `--experiment` catch the same floor. |
 | Full user journey | `e2e/*.spec.ts` — use `e2e/helpers/` |
 
 E2E patterns: unique deviation numbers (`uniqueDeviationNo`), `loginAsEngineer` / `loginAsManager`, `createReport` / `deleteReport` in `afterEach`.
