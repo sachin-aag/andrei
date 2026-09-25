@@ -147,7 +147,7 @@ import {
   remainingChatAbortMs,
   scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
-import { prepareReportChatStep, lastStartNeedsAttachmentScope } from "@/lib/ai/chat/step-policy";
+import { prepareReportChatStep, shouldForceListAttachments } from "@/lib/ai/chat/step-policy";
 import { assembleChatTurnPlan } from "@/lib/ai/chat/turn-plan";
 import {
   renderPlaceholderFillEvidence,
@@ -727,7 +727,7 @@ async function handleChatPost(
               ? false
               : inScopeEmptyInventoryNeedsReview(inventoryReviewInput),
           searchGate,
-          forceListAttachments: lastStartNeedsAttachmentScope(steps),
+          forceListAttachments: shouldForceListAttachments(steps),
           forceFinishReview:
             reviewContinueBudgetMs(remainingChatAbortMs(turnStartedAtMs)) === 0,
           registeredWriteTools,
