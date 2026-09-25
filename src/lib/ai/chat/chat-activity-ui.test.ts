@@ -259,6 +259,26 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0].node.children).toHaveLength(2);
   });
 
+  it("names an applied cover-identity write from the output label", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart(
+        "draft_identity",
+        "output-available",
+        { fields: [{ key: "equipmentName", value: "Glass Lined Reactor" }] },
+        {
+          status: "applied",
+          section: "identity",
+          label: "Cover identity",
+          complete: false,
+        }
+      ),
+    ] as never);
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.label).toBe("Applied to Cover identity");
+  });
+
   it("names drafted sections without targetField keys", () => {
     const blocks = buildChatActivityBlocks([
       toolPart(

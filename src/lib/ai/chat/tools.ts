@@ -95,6 +95,19 @@ import {
   sectionFieldForChat,
   sectionFieldPlainText,
 } from "@/lib/ai/chat/fields";
+import {
+  CHAT_IDENTITY_SECTION,
+  buildIdentityUpdate,
+  chatIdentityFields,
+  chatIdentityLabel,
+  hasChatIdentity,
+  identityGroundingText,
+  identityRemainingRequired,
+  identitySnapshotFields,
+  isChatIdentitySection,
+  sanitizeIdentityScalar,
+} from "@/lib/ai/chat/identity";
+import { stripCreatePreloadMetadata } from "@/lib/reports/create-preload";
 import { annotateDividerSearchHits } from "@/lib/ai/chat/attachment-divider";
 import {
   annotateContinuationSearchHits,
@@ -227,6 +240,11 @@ import {
   type AuditActorSnapshot,
   recordAuditEvent,
 } from "@/lib/audit";
+import {
+  DUPLICATE_DOCUMENT_NO_ERROR,
+  isDocumentNoTaken,
+  isPostgresUniqueViolation,
+} from "@/lib/reports/document-no";
 import {
   DOCUMENT_SEARCH_MODES,
   listDocumentPagesForReview,
@@ -1570,11 +1588,15 @@ export function buildChatTools(opts: {
   // When Analyze is in scope, allow reading Define/Measure for method selection
   // even if @ focus is narrowed to Analyze (draft/propose stay restricted).
   // Sections tagged with @ are readable on the same terms.
+  const identityReadable = hasChatIdentity(documentType)
+    ? ([CHAT_IDENTITY_SECTION] as SectionType[])
+    : [];
   const readableSections: SectionType[] = Array.from(
     new Set<SectionType>([
       ...allowedSections,
       ...(analyzeInScope ? (["define", "measure"] as SectionType[]) : []),
       ...mentionedSections,
+      ...identityReadable,
     ])
   );
   const readableSectionEnum = readableSections as [SectionType, ...SectionType[]];
@@ -1596,6 +1618,9 @@ export function buildChatTools(opts: {
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
+        (hasChatIdentity(documentType)
+          ? ` You may also read section "${CHAT_IDENTITY_SECTION}" for cover/header identity scalars (equipment name, document number, …). Fill those with draft_identity, not draft_field.`
+          : "") +
         taggedReadHint,
       inputSchema: z.object({
         section: z.enum(readableSectionEnum).describe("Section to read."),
@@ -1607,6 +1632,40 @@ export function buildChatTools(opts: {
       execute: async ({ section, fields }): Promise<
         ReadSectionSuccess | { error: "invalid_section" | "section_not_found" }
       > => {
+        if (isChatIdentitySection(section)) {
+          if (
+            !hasChatIdentity(documentType) ||
+            !readableSections.includes(section)
+          ) {
+            return { error: "invalid_section" as const };
+          }
+          const [existing] = await db
+            .select({
+              documentNo: reports.documentNo,
+              date: reports.date,
+              metadata: reports.metadata,
+            })
+            .from(reports)
+            .where(eq(reports.id, reportId));
+          if (!existing) return { error: "section_not_found" as const };
+          const snapshot = identitySnapshotFields(documentType, {
+            documentNo: existing.documentNo,
+            date: existing.date,
+            metadata:
+              existing.metadata && typeof existing.metadata === "object"
+                ? (existing.metadata as Record<string, unknown>)
+                : null,
+          });
+          const requested =
+            fields && fields.length > 0
+              ? snapshot.filter((field) => fields.includes(field.targetField))
+              : snapshot;
+          return {
+            section,
+            fields: requested,
+            images: [],
+          };
+        }
         if (!isChatEditableSection(section, documentType)) {
           return { error: "invalid_section" as const };
         }
@@ -3877,7 +3936,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image. Cover/header identity scalars use draft_identity, not this tool.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -4221,6 +4280,267 @@ export function buildChatTools(opts: {
       }),
     }),
   };
+
+  if (hasChatIdentity(documentType) && canEdit) {
+    const identityKeys = chatIdentityFields(documentType)
+      .map((field) => `'${field.key}' (${field.label}${field.required ? ", required" : ""})`)
+      .join(", ");
+    tools.draft_identity = tool({
+      description:
+        `Fill cover/header identity scalars (${identityKeys}). Search attachments first. This write lands immediately — not a suggestion card. Pass the bare scalar with no [filename, p. N], numbered [n], or Citations: list — these fields print on the cover. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Do not use draft_field for these keys.`,
+      inputSchema: z.object({
+        fields: z
+          .array(
+            z.object({
+              key: z
+                .string()
+                .min(1)
+                .max(80)
+                .describe("Identity field key from the list in this tool's description."),
+              value: z
+                .string()
+                .min(1)
+                .max(500)
+                .describe(
+                  "Plain scalar copied from attachments or the engineer. No [filename, p. N], numbered [n], or Citations: list."
+                ),
+            })
+          )
+          .min(1)
+          .max(20),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe(
+            "One short sentence explaining the fill (shown to the engineer). Use the field names they see."
+          ),
+      }),
+      execute: async ({ fields, reasoning }) => {
+        if (!canEdit) {
+          return {
+            status: "not_editable" as const,
+            message:
+              "This report is not editable in its current state, so identity cannot be filled.",
+          };
+        }
+        const [existing] = await db
+          .select({
+            id: reports.id,
+            documentNo: reports.documentNo,
+            date: reports.date,
+            metadata: reports.metadata,
+            authorId: reports.authorId,
+            documentType: reports.documentType,
+          })
+          .from(reports)
+          .where(eq(reports.id, reportId));
+        if (!existing) {
+          return {
+            status: "report_not_found" as const,
+            message: "Report not found.",
+          };
+        }
+
+        const current = {
+          documentNo: existing.documentNo,
+          date: existing.date,
+          metadata:
+            existing.metadata && typeof existing.metadata === "object"
+              ? (existing.metadata as Record<string, unknown>)
+              : null,
+        };
+        const parsed = buildIdentityUpdate({
+          documentType,
+          current,
+          fields,
+        });
+        if (!parsed.ok) {
+          return {
+            status: parsed.status,
+            message: parsed.message,
+            ...(parsed.allowedKeys ? { allowedKeys: parsed.allowedKeys } : {}),
+          };
+        }
+
+        const identityGrounding = writeGrounding(
+          CHAT_IDENTITY_SECTION,
+          parsed.applied[0] ?? "identity",
+          "draft_identity"
+        );
+        await ensureEvidence();
+        const groundIdentityFields = (patches: typeof fields) => {
+          const groundedPatches: Array<{ key: string; value: string }> = [];
+          const unsupported = [];
+          let blocked = false;
+          for (const patch of patches) {
+            const grounded = groundDraftText({
+              text: patch.value,
+              ledger: citationLedger,
+              policy: unsupportedFactPolicy,
+              grounding: identityGrounding,
+            });
+            if (grounded.blocked) blocked = true;
+            unsupported.push(...grounded.unsupported);
+            groundedPatches.push({
+              key: patch.key,
+              value: patch.value,
+            });
+          }
+          return { groundedPatches, unsupported, blocked };
+        };
+
+        let groundedIdentity = groundIdentityFields(fields);
+        const repair =
+          citationGroundingRunsRepair(identityGrounding.mode ?? "frame") &&
+          (groundedIdentity.blocked ||
+            groundedIdentity.groundedPatches.some((patch) =>
+              containsGatedFactPlaceholders(patch.value)
+            ))
+            ? await runUnsupportedFactsRepair({
+                unsupported: groundedIdentity.unsupported,
+                texts: [identityGroundingText(documentType, fields)],
+              })
+            : emptyRepair;
+        if (repair.hits.length > 0) {
+          groundedIdentity = groundIdentityFields(fields);
+        }
+        if (groundedIdentity.blocked) {
+          return unsupportedFactsToolResult({
+            unsupported: groundedIdentity.unsupported,
+            draftWithPlaceholders: identityGroundingText(
+              documentType,
+              groundedIdentity.groundedPatches
+            ),
+            ...repairResultFields(repair.hits),
+          });
+        }
+
+        const cleanedFields = groundedIdentity.groundedPatches.map((patch) => ({
+          key: patch.key,
+          value: sanitizeIdentityScalar(patch.value),
+        }));
+        const update = buildIdentityUpdate({
+          documentType,
+          current,
+          fields: cleanedFields,
+        });
+        if (!update.ok) {
+          return {
+            status: update.status,
+            message: update.message,
+            ...(update.allowedKeys ? { allowedKeys: update.allowedKeys } : {}),
+          };
+        }
+
+        if (
+          update.documentNo &&
+          update.documentNo !== existing.documentNo &&
+          (await isDocumentNoTaken(
+            update.documentNo,
+            existing.authorId,
+            existing.documentType,
+            reportId
+          ))
+        ) {
+          return {
+            status: "duplicate_document_no" as const,
+            message: DUPLICATE_DOCUMENT_NO_ERROR,
+          };
+        }
+
+        const nextMetadata = update.metadata
+          ? stripCreatePreloadMetadata(update.metadata as ReportMetadata)
+          : update.documentNo
+            ? stripCreatePreloadMetadata(existing.metadata)
+            : undefined;
+
+        try {
+          await db
+            .update(reports)
+            .set({
+              ...(update.documentNo !== undefined
+                ? { documentNo: update.documentNo }
+                : {}),
+              ...(update.date !== undefined ? { date: update.date } : {}),
+              ...(nextMetadata !== undefined ? { metadata: nextMetadata } : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(reports.id, reportId));
+        } catch (error) {
+          if (isPostgresUniqueViolation(error)) {
+            return {
+              status: "duplicate_document_no" as const,
+              message: DUPLICATE_DOCUMENT_NO_ERROR,
+            };
+          }
+          throw error;
+        }
+
+        const nextReport = {
+          documentNo: update.documentNo ?? existing.documentNo,
+          date: update.date ?? existing.date,
+          metadata: (nextMetadata ?? existing.metadata) as Record<
+            string,
+            unknown
+          > | null,
+        };
+        const remainingRequired = identityRemainingRequired(
+          documentType,
+          nextReport
+        );
+        for (const key of update.applied) {
+          const field = chatIdentityFields(documentType).find(
+            (item) => item.key === key
+          );
+          const value = cleanedFields.find((item) => item.key === key)?.value;
+          if (value) {
+            rememberSameTurnStated(CHAT_IDENTITY_SECTION, key, value);
+            if (field) {
+              rememberSameTurnStated(
+                CHAT_IDENTITY_SECTION,
+                field.label,
+                `${field.label}: ${value}`
+              );
+            }
+          }
+        }
+
+        if (actor) {
+          await recordAuditEvent({
+            actor,
+            action: "report_updated",
+            entityType: "report",
+            entityId: reportId,
+            reportId,
+            summary: `Filled cover/header identity: ${update.applied.join(", ")}`,
+            oldValue: {
+              documentNo: existing.documentNo,
+              metadata: existing.metadata,
+            },
+            newValue: {
+              documentNo: nextReport.documentNo,
+              metadata: nextReport.metadata,
+            },
+            metadata: {
+              source: "chat_draft_identity",
+              reasoning,
+              applied: update.applied,
+            },
+          });
+        }
+
+        return {
+          status: "applied" as const,
+          section: CHAT_IDENTITY_SECTION,
+          label: chatIdentityLabel(documentType),
+          applied: update.applied,
+          skipped: update.skipped,
+          remainingRequired,
+          complete: remainingRequired.length === 0,
+        };
+      },
+    });
+  }
 
   if (analyzeInScope && canEdit) {
     const methodEnum = ANALYZE_METHODS as unknown as [

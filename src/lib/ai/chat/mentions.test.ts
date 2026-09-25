@@ -195,6 +195,15 @@ describe("sectionScopeFromMentions", () => {
       )
     ).toBe("all");
   });
+
+  it("treats a cover-identity tag as whole-document scope", () => {
+    expect(
+      sectionScopeFromMentions(
+        [{ type: "section", id: "identity" }],
+        "qualification_summary_report"
+      )
+    ).toBe("all");
+  });
 });
 
 describe("resolveChatMentions", () => {

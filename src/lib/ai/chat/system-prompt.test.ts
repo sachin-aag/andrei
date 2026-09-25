@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v132-qsr-table3-covers");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v133-identity-no-cite");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -152,6 +152,24 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).not.toContain("select_analyze_method");
     expect(prompt).not.toContain("## Analyze drafting rules");
+    expect(prompt).toContain("draft_identity");
+    expect(prompt).toContain("[identity]");
+  });
+
+  it("lists draft_identity on qualification summary reports", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "qualification_summary_report",
+    });
+    expect(prompt).toContain("draft_identity");
+    expect(prompt).toContain("[identity]");
+    expect(prompt).toContain("Cover identity");
+    expect(prompt).toContain("equipmentName");
+    expect(prompt).toContain("draft_identity values never include citations");
+    expect(prompt).toContain(
+      "never put source brackets, numbered markers, or a Citations: list in those values"
+    );
   });
 
   it("requires fixed column headers for DV matrix sections", () => {
@@ -194,6 +212,7 @@ describe("buildChatSystemPrompt", () => {
       "Prefer drafting the highest-signal sections first (Define, then Analyze)"
     );
     expect(prompt).toContain("select_analyze_method");
+    expect(prompt).not.toContain("draft_identity");
   });
 
   it("tells Agent wrap-ups to stay in document language and not mention a recipe", () => {
@@ -656,9 +675,26 @@ describe("buildChatSystemPrompt", () => {
       ...opts,
       mode: "agent",
     });
-    expect(prompt).toContain("nothing lands until they accept it");
+    expect(prompt).toContain(
+      "nothing in a TipTap section lands until they accept it"
+    );
+    expect(prompt).toContain(
+      "Analyze method (select_analyze_method) lands immediately in the header"
+    );
     expect(prompt).toContain("Delivery in this chrome is ALWAYS a suggestion card");
     expect(prompt).not.toContain("written to the document immediately");
+  });
+
+  it("tells Agent that cover identity lands immediately on types that have it", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "qualification_summary_report",
+    });
+    expect(prompt).toContain(
+      "Cover/header identity (draft_identity) lands immediately in the header"
+    );
+    expect(prompt).not.toContain("select_analyze_method");
   });
 
   it("tells the model that a plan/outline is chat-only, not a write", () => {

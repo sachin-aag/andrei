@@ -2,7 +2,11 @@ import path from "node:path";
 import { QSR_PROMPT_VERSION } from "@/lib/customers/packs";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
-import { qsrChatContextIdentity } from "./qsr/chat-identity";
+import {
+  QSR_IDENTITY_FIELDS,
+  QSR_IDENTITY_LABEL,
+  qsrChatContextIdentity,
+} from "./qsr/chat-identity";
 import { checkNarrativePresent, tableValuesCheck } from "./qsr/deterministic-checks";
 import { QSR_DRAFTING_GUIDANCE } from "./qsr/drafting-guidance";
 import {
@@ -170,6 +174,8 @@ You never write to the document directly — every change is a PROPOSAL the engi
       ],
     },
     contextIdentity: qsrChatContextIdentity,
+    identityFields: QSR_IDENTITY_FIELDS,
+    identityLabel: QSR_IDENTITY_LABEL,
     inventorySections: [
       "qsr_qualification_documents",
       "qsr_rtm_process",

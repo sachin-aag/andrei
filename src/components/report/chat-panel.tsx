@@ -82,11 +82,8 @@ import {
   aiSuggestionLockReason,
   canSaveReportSection,
 } from "@/lib/reports/access";
-import type { DocumentType, SectionType } from "@/db/schema";
-import {
-  chatEditableSections,
-  sectionLabel as chatSectionLabel,
-} from "@/lib/ai/chat/fields";
+import type { DocumentType } from "@/db/schema";
+import { chatMentionableSectionCandidates } from "@/lib/ai/chat/fields";
 import { engineerFacingChangeLines } from "@/lib/ai/chat/change-summary";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
@@ -237,11 +234,6 @@ function announceCompletedAssistantTurn(
       sectionLabel: ctx.sectionLabel,
     })
   );
-}
-
-function sectionLabel(section: unknown): string {
-  if (typeof section === "string") return chatSectionLabel(section as SectionType);
-  return "section";
 }
 
 function filterPartsForActivityDisplay(
@@ -956,11 +948,13 @@ export function ChatPanel({
         folders,
         sections: targetingAnalytics
           ? []
-          : chatEditableSections(report.documentType).map((section) => ({
-              type: "section" as const,
-              id: section,
-              label: sectionLabel(section),
-            })),
+          : chatMentionableSectionCandidates(report.documentType).map(
+              (section) => ({
+                type: "section" as const,
+                id: section.id,
+                label: section.label,
+              })
+            ),
         sheets: targetingAnalytics
           ? mentionSheets.length > 0
             ? analyticsSheetMentionCandidates(mentionSheets)

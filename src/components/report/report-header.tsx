@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarDays, Wrench } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -170,6 +170,11 @@ function ElrIdentityForm({
 }) {
   const [documentNo, setDocumentNo] = useState(report.documentNo);
   const [meta, setMeta] = useState<ElrMetadata>(() => elrMetadata(report));
+
+  useEffect(() => {
+    setDocumentNo(report.documentNo);
+    setMeta(elrMetadata(report));
+  }, [report.documentNo, report.metadata]);
 
   const { status, lastSavedAt } = useAutoSave({
     enabled: !readOnly,
@@ -386,6 +391,12 @@ function QraIdentityForm({
   const [documentNo, setDocumentNo] = useState(report.documentNo);
   const [meta, setMeta] = useState<QraMetadata>(() => qraMetadata(report));
 
+  useEffect(() => {
+    setDate(report.date.slice(0, 10));
+    setDocumentNo(report.documentNo);
+    setMeta(qraMetadata(report));
+  }, [report.date, report.documentNo, report.metadata]);
+
   const { status, lastSavedAt } = useAutoSave({
     enabled: !readOnly,
     value: { date, documentNo, meta },
@@ -534,6 +545,12 @@ function FirIdentityForm({
   const [documentNo, setDocumentNo] = useState(report.documentNo);
   const [meta, setMeta] = useState<FirMetadata>(() => firMetadata(report));
 
+  useEffect(() => {
+    setDate(report.date.slice(0, 10));
+    setDocumentNo(report.documentNo);
+    setMeta(firMetadata(report));
+  }, [report.date, report.documentNo, report.metadata]);
+
   const { status, lastSavedAt } = useAutoSave({
     enabled: !readOnly,
     value: { date, documentNo, meta },
@@ -562,8 +579,8 @@ function FirIdentityForm({
       <CardContent className="space-y-4 p-5">
         <div className="flex items-start justify-between gap-4">
           <p className="text-sm text-[var(--muted-foreground)]">
-            Identity fields print in the R01 header. The assistant is told which
-            of these are unset so it does not take them from an attachment.
+            Identity fields print in the R01 header. The assistant searches
+            attachments and can fill unset fields.
           </p>
           {!readOnly && <SaveStatus status={status} lastSavedAt={lastSavedAt} />}
         </div>
@@ -651,6 +668,11 @@ function QsrIdentityForm({
   const [meta, setMeta] = useState<QsrMetadata>(() =>
     qsrMetadataFrom(report.metadata)
   );
+
+  useEffect(() => {
+    setDocumentNo(report.documentNo);
+    setMeta(qsrMetadataFrom(report.metadata));
+  }, [report.documentNo, report.metadata]);
 
   const { status, lastSavedAt } = useAutoSave({
     enabled: !readOnly,

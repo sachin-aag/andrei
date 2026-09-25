@@ -528,6 +528,7 @@ describe("pickPlanModeChatTools", () => {
     expect(planTools).not.toHaveProperty("plot_measurements");
     expect(planTools).not.toHaveProperty("remove_image");
     expect(planTools).not.toHaveProperty("edit_table");
+    expect(planTools).not.toHaveProperty("draft_identity");
   });
 });
 

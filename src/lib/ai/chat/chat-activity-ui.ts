@@ -64,6 +64,8 @@ const EDIT_TOOLS = new Set([
   "draft_field",
   "insert_image",
   "remove_image",
+  "draft_identity",
+  "select_analyze_method",
 ]);
 
 export function readChatToolPart(
@@ -564,9 +566,18 @@ function buildSectionReadsNode(tools: ChatToolPartInfo[]): ActivitySurfaceNode {
   };
 }
 
+function identityEditLabel(info: ChatToolPartInfo): string {
+  const fromOutput =
+    typeof info.output?.label === "string" ? info.output.label.trim() : "";
+  return fromOutput || "Cover identity";
+}
+
 function buildEditNode(info: ChatToolPartInfo): ActivitySurfaceNode {
   const pending = isToolPending(info);
-  const section = sectionLabel(info.input?.section);
+  const section =
+    info.toolName === "draft_identity"
+      ? identityEditLabel(info)
+      : sectionLabel(info.input?.section);
   const status = info.output?.status;
 
   if (pending) {

@@ -100,7 +100,7 @@ MJ convention is `@mjbiopharm.com`; the script does not enforce the domain. The 
 These four are large enough that they load on demand instead of every session. Invoke the
 skill before working in the matching code:
 
-- `chat-subsystem` — AI chat: tools, prompt versions, user intent, citation grounding, overclaim
+- `chat-subsystem` — AI chat: tools (`draft_identity` for citation-free cover/header scalars), prompt versions, user intent, citation grounding, overclaim
   gate, pending-plan queue, document review, mentions, voice dictation.
 - `analytics-subsystem` — Report Analytics worksheet, sixpack / ANOVA / boxplot / histogram /
   scatter, analytics chat tools.

@@ -26,6 +26,11 @@ import {
   type DesignVerificationSectionKey,
   type DesignVerificationSectionMap,
 } from "./design-verification/sections";
+import {
+  DV_IDENTITY_FIELDS,
+  DV_IDENTITY_LABEL,
+  dvChatContextIdentity,
+} from "./design-verification/chat-identity";
 
 /** DV-only entries from the shared field maps (IR keys are ignored here). */
 const DV_FIELD_KEYS = [
@@ -426,6 +431,9 @@ The report is graded against fixed quality criteria (a traffic-light check). You
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change (red delete / green insert) the engineer accepts or rejects.`,
     draftingGuidance: dvFixedTableFormatGuidance({ surface: "chat" }),
+    contextIdentity: dvChatContextIdentity,
+    identityFields: DV_IDENTITY_FIELDS,
+    identityLabel: DV_IDENTITY_LABEL,
     draftOrder: [
       "purpose_scope",
       "traceability",

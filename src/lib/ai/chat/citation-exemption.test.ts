@@ -198,4 +198,14 @@ describe("isExemptFrameFact", () => {
       })
     ).toBe(false);
   });
+
+  it("exempts QSR cover identity already written on the report", () => {
+    const fact = extractHardFacts("Report number QSR/GLR/1301.")[0]!;
+    expect(fact.kind).toBe("identifier");
+    expect(
+      isExemptFrameFact(fact, {
+        reportMetadata: { equipmentCode: "QSR/GLR/1301" },
+      })
+    ).toBe(true);
+  });
 });
