@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { contextForPrompt } from "@/lib/ai/section-context";
-import { contextForSuggestionPrompt } from "@/lib/ai/suggestion-section-context";
+import {
+  contextForSuggestionPrompt,
+  renderStructuredFieldView,
+} from "@/lib/ai/suggestion-section-context";
 
 describe("suggestion vs eval section context isolation", () => {
   const tableDoc: JSONContent = {
@@ -145,6 +148,60 @@ describe("suggestion vs eval section context isolation", () => {
     expect(suggestPrompt).toContain("[1,0] DI-1");
     expect(suggestPrompt).toContain("This field has 1 table (tableIndex 0)");
     expect(suggestPrompt).not.toContain('"type": "table"');
+  });
+
+  it("labels merged banner rows in the coordinate grid", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "URS ID" }] },
+                  ],
+                },
+                {
+                  type: "tableHeader",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Requirement" }],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  attrs: { colspan: 2, rowspan: 1 },
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "ANY SPECIFIC REQUIREMENTS" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const grid = renderStructuredFieldView(doc);
+    expect(grid).toContain("row 1 = banner (spans 2 cols)");
+    expect(grid).toContain(
+      "[1,0] (banner, spans 2 cols) ANY SPECIFIC REQUIREMENTS"
+    );
+    expect(grid).toContain("Prefer insert_rows afterRowKey");
   });
 
   it("tagged cell coordinates resolve to the same cell the locator scopes", async () => {

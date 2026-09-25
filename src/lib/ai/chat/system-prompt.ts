@@ -19,7 +19,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v131-claim-strength-block-all-packs";
+export const CHAT_PROMPT_VERSION = "chat-v132-qsr-rtm-row-keys";
 
 export type ChatMode = "plan" | "agent";
 

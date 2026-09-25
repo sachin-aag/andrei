@@ -120,6 +120,26 @@ describe("buildTableOperationPreviewDoc", () => {
     expect(rowHasInsertMark(preview.doc, 2)).toBe(false);
   });
 
+  it("marks rows inserted by afterRowKey, not a stale afterRow", () => {
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(["H1", "H2"], [["first", "row"], ["second", "row"]]),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 0,
+        afterRowKey: "second",
+        rows: [["third", "row"]],
+      },
+      PREVIEW_ATTRS
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(cellText(preview.doc, 3, 0)).toBe("third");
+    expect(rowHasInsertMark(preview.doc, 2)).toBe(false);
+    expect(rowHasInsertMark(preview.doc, 3)).toBe(true);
+  });
+
   it("marks only the added suffix on edit_cells, not the original cell text", () => {
     const preview = buildTableOperationPreviewDoc(
       tableDoc(
