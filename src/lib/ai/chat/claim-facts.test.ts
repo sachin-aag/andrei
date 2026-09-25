@@ -55,6 +55,14 @@ describe("extractHardFacts", () => {
     const facts = extractHardFacts("See [PQR-24-PR-102.pdf, p. 2].");
     expect(facts).toEqual([]);
   });
+
+  it("extracts URS-N identifiers that the old SOP/ID pattern missed", () => {
+    const facts = extractHardFacts("Copy URS-44 Emergency Stop and URS-5 jacket range.");
+    expect(facts.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["URS-44", "URS-5"])
+    );
+    expect(facts.filter((fact) => fact.kind === "identifier")).toHaveLength(2);
+  });
 });
 
 describe("replaceFactsWithPlaceholders", () => {
@@ -100,6 +108,14 @@ describe("instrument quantities", () => {
   it("still sees the lab units it always did", () => {
     expect(kinds("10 mL withdrawn")).toContainEqual(["number", "10 mL"]);
     expect(kinds("2 hours later")).toContainEqual(["duration", "2 hours"]);
+  });
+
+  it("sees a kg/cm² operating-range pressure", () => {
+    expect(kinds("Full Vacuum to 3.5 kg/cm²")).toContainEqual([
+      "number",
+      "3.5 kg/cm²",
+    ]);
+    expect(kinds("held at 3.5 kg/cm2")).toContainEqual(["number", "3.5 kg/cm2"]);
   });
 
   it("does not turn a section number into a quantity", () => {

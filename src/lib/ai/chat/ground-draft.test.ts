@@ -93,6 +93,111 @@ describe("groundDraftText", () => {
   );
 });
 
+describe("groundDraftText QSR row windows", () => {
+  const ursPage = {
+    filename: "URS-GLR-1301.pdf",
+    pageNumber: 4,
+    attachmentId: "urs",
+    quote:
+      "URS-5 Jacket temperature 20-25 °C for the jacket loop. URS-37 Process temperature 15–130 °C for the vessel. URS-44 Emergency Stop push button at each station.",
+  };
+
+  it("does not copy URS-37's temperature onto the URS-5 row", () => {
+    const result = groundDraftText({
+      text: "15–130 °C",
+      ledger: ledgerFromPages([ursPage]),
+      policy: "block",
+      context: "URS-5 Jacket temperature",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["15–130 °C"])
+    );
+  });
+
+  it("accepts the temperature that sits in that URS-ID window", () => {
+    const result = groundDraftText({
+      text: "20-25 °C",
+      ledger: ledgerFromPages([ursPage]),
+      policy: "block",
+      context: "URS-5 Jacket temperature",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("20-25 °C");
+  });
+
+  it("rejects Emergency Stop text on URS-5 when that phrasing is URS-44", () => {
+    const result = groundDraftText({
+      text: "Emergency Stop push button",
+      ledger: ledgerFromPages([ursPage]),
+      policy: "block",
+      context: "URS-5",
+      grounding: { section: "qsr_rtm_safety" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.some((fact) => /emergency stop/i.test(fact.text))).toBe(
+      true
+    );
+  });
+
+  it("fails closed when the URS is attached but no page was retrieved", () => {
+    const result = groundDraftText({
+      text: "URS-5 Jacket temperature 20-25 °C",
+      ledger: new CitationPageLedger(),
+      policy: "block",
+      grounding: {
+        section: "qsr_rtm_safety",
+        attachedFilenames: ["URS-GLR-1301.pdf"],
+      },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported[0]?.text).toMatch(/URS is attached/);
+  });
+
+  it("still fails open on an investigation write with an empty ledger", () => {
+    const result = groundDraftText({
+      text: "Invented batch MF-25-VIAL-01",
+      ledger: new CitationPageLedger(),
+      policy: "block",
+      grounding: {
+        section: "define",
+        attachedFilenames: ["URS-GLR-1301.pdf"],
+      },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("MF-25-VIAL-01");
+  });
+
+  it("does not keep a DQ approval date on the URS Qual Docs row", () => {
+    const result = groundDraftText({
+      text: "12 Jan 2024",
+      ledger: ledgerFromPages([
+        {
+          filename: "DQ-GLR-1301.pdf",
+          pageNumber: 2,
+          attachmentId: "dq",
+          quote: "Design Qualification approved 12 Jan 2024 Revision 01",
+        },
+        {
+          filename: "URS-GLR-1301.pdf",
+          pageNumber: 1,
+          attachmentId: "urs",
+          quote: "User Requirement Specification Revision 00 approved 03 Mar 2023",
+        },
+      ]),
+      policy: "block",
+      context: "URS User Requirement Specification",
+      grounding: { section: "qsr_qualification_documents" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["12 Jan 2024"])
+    );
+  });
+});
+
 describe("groundDraftText citation parking", () => {
   const PROTOCOL = "PRQP-25-PR-001 Protocol.pdf";
   const REPORT = "PRQR-25-PR-005 Report.pdf";

@@ -41,6 +41,16 @@ import {
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
 import {
+  documentFamilyFromContext,
+  evidenceContainsFactNearKey,
+  extraQsrUnsupported,
+  factIsRowKey,
+  filenameMatchesFamily,
+  qsrFailClosedReason,
+  rowKeyFromContext,
+  syntheticUnsupportedFact,
+} from "@/lib/ai/chat/qsr-row-grounding";
+import {
   citationNumbersFromMarker,
   formatNumericCitationMarker,
 } from "@/lib/placeholders/citation-bracket";
@@ -175,6 +185,17 @@ function rankMoveTarget(input: {
   return matches[0]!;
 }
 
+function pageSupportsFact(
+  quote: string,
+  fact: HardFact,
+  rowKey: string | null
+): boolean {
+  if (rowKey && !factIsRowKey(fact, rowKey)) {
+    return evidenceContainsFactNearKey(quote, fact, rowKey);
+  }
+  return evidenceContainsFact(quote, fact);
+}
+
 function resolveFact(
   fact: HardFact,
   ledger: CitationPageLedger,
@@ -182,9 +203,16 @@ function resolveFact(
     sentence: string;
     context?: string;
     analyses?: readonly AnalysisEvidence[];
+    section?: string;
   }
 ): ClaimProvenanceRecord {
   const pages = ledger.recordedPages();
+  const rowKey = rowKeyFromContext(extras.context ?? extras.sentence);
+  const docFamily =
+    extras.section === "qsr_qualification_documents" ||
+    extras.section === "qsr_references"
+      ? documentFamilyFromContext(extras.context ?? extras.sentence)
+      : null;
   const cited = uniqueCited([
     ...fact.cited,
     ...citedPagesFromText(extras.context ?? ""),
@@ -192,8 +220,10 @@ function resolveFact(
   const citedPages = cited
     .map((cite) => findCitedLedgerPage(cite, pages))
     .filter((row): row is RecordedCitationPage => row != null);
-  const citedHit = citedPages.find((row) =>
-    evidenceContainsFact(row.quote, fact)
+  const citedHit = citedPages.find(
+    (row) =>
+      (!docFamily || filenameMatchesFamily(row.filename, docFamily)) &&
+      pageSupportsFact(row.quote, fact, rowKey)
   );
   const primaryCited = citedPages[0] ?? null;
   const identifiers = extractHardFacts(
@@ -214,7 +244,12 @@ function resolveFact(
     };
   }
 
-  const matches = pages.filter((row) => evidenceContainsFact(row.quote, fact));
+  const matches = pages.filter((row) => {
+    if (docFamily && !filenameMatchesFamily(row.filename, docFamily)) {
+      return false;
+    }
+    return pageSupportsFact(row.quote, fact, rowKey);
+  });
   const quotedPageCount = pages.filter((row) => row.quote.trim()).length;
   const ranked = rankMoveTarget({
     matches,
@@ -224,7 +259,13 @@ function resolveFact(
     quotedPageCount,
   });
 
-  if (primaryCited && !primaryCited.quote.trim() && fact.kind === "date") {
+  const lenientDate =
+    !rowKey &&
+    !docFamily &&
+    primaryCited &&
+    fact.kind === "date";
+
+  if (lenientDate && !primaryCited.quote.trim()) {
     return {
       text: fact.text,
       kind: fact.kind,
@@ -260,7 +301,7 @@ function resolveFact(
     };
   }
 
-  if (primaryCited && fact.kind === "date") {
+  if (lenientDate) {
     return {
       text: fact.text,
       kind: fact.kind,
@@ -466,6 +507,19 @@ export function groundDraftText(input: {
 }): GroundDraftResult {
   const cited = rewriteCitationPagesInText(input.text, input.ledger);
   const mode = input.grounding?.mode ?? "strict";
+  const failClosed = qsrFailClosedReason({
+    section: input.grounding?.section,
+    attachedFilenames: input.grounding?.attachedFilenames,
+    ledger: input.ledger,
+  });
+  if (failClosed) {
+    return {
+      text: cited,
+      provenance: { claims: [], policy: input.policy },
+      unsupported: [syntheticUnsupportedFact(failClosed)],
+      blocked: input.policy === "block",
+    };
+  }
   if (!input.ledger.hasQuotedPages() || mode === "skip") {
     return {
       text: cited,
@@ -497,18 +551,26 @@ export function groundDraftText(input: {
       sentence: sentenceAround(cited, fact.start, fact.end),
       context: input.context,
       analyses: input.analyses,
+      section: input.grounding?.section,
     });
   });
   const withMoved = applyMovedCitations(cited, facts, records);
-  const unsupportedFacts = facts.filter(
+  const unsourcedFacts = facts.filter(
     (_, index) => records[index]?.status === "unsourced"
   );
+  const extraUnsupported = extraQsrUnsupported({
+    cell: cited,
+    context: input.context ?? cited,
+    section: input.grounding?.section,
+    ledger: input.ledger,
+  });
+  const unsupportedFacts = [...unsourcedFacts, ...extraUnsupported];
   const blocked =
     input.policy === "block" && unsupportedFacts.length > 0;
   const text = blocked
     ? replaceFactsWithPlaceholders(
         withMoved,
-        unsupportedFacts.map((fact) => {
+        unsourcedFacts.map((fact) => {
           const shifted = extractHardFacts(withMoved).find(
             (candidate) =>
               candidate.kind === fact.kind && candidate.text === fact.text
@@ -549,6 +611,19 @@ export function groundTableOperation(input: {
   blocked: boolean;
 } {
   const cited = rewriteTableOperationCitations(input.operation, input.ledger);
+  const failClosed = qsrFailClosedReason({
+    section: input.grounding?.section,
+    attachedFilenames: input.grounding?.attachedFilenames,
+    ledger: input.ledger,
+  });
+  if (failClosed) {
+    return {
+      operation: cited,
+      provenance: { claims: [], policy: input.policy },
+      unsupported: [syntheticUnsupportedFact(failClosed)],
+      blocked: input.policy === "block",
+    };
+  }
   if (!input.ledger.hasQuotedPages()) {
     return {
       operation: cited,

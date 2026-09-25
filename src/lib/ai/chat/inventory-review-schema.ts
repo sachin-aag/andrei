@@ -1,5 +1,6 @@
 import type { SectionType } from "@/db/schema";
 import type { MatrixColumnSchema } from "@/lib/document-types/design-verification/matrix-columns";
+import { isQsrRtmSection } from "@/lib/ai/chat/qsr-row-grounding";
 import {
   ACCESS_CONTROL_COLUMN_SCHEMA,
   ALARM_COLUMN_SCHEMA,
@@ -170,6 +171,14 @@ function preferredFilenameFamilies(
       return [["prqr", "prqp", "pqr"]];
     case "elr_alarms":
       return [["alarm", "aap"]];
+    case "qsr_rtm_process":
+    case "qsr_rtm_control":
+    case "qsr_rtm_gmp":
+    case "qsr_rtm_safety":
+    case "qsr_rtm_csv":
+    case "qsr_rtm_maintenance":
+    case "qsr_operating_range":
+      return [["urs", "user requirement"]];
     default:
       return [];
   }
@@ -336,6 +345,9 @@ export function inventorySectionForObjective(
   if (!objective) return null;
   const digest = objective.trim().toLowerCase().replace(/\s+/g, " ");
   if (!digest) return null;
+  if (isQsrRtmSection(digest) || digest === "qsr_operating_range") {
+    return digest as SectionType;
+  }
   if (digest in ELR_INVENTORY_SCHEMAS) {
     return digest as SectionType;
   }

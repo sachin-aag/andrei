@@ -98,7 +98,9 @@ zero hits are still queued as a stratified sample (PRQR/PMC on breakdowns,
 CCF/CAPA/PRQR on QMS, cap `REVIEW_PREFERRED_MISSING_PAGE_CAP`) so a few CSV-IQ
 / FAT headers cannot floor-8-pad them out — not every page of a 200-page CCF.
 CSV-OQ / CSV-IQ / RTM / URS pages
-score 0 unless they look like a dated result table. Header-only UNCONTROLLED
+score 0 unless they look like a dated result table (QSR RTM and
+Operating Range skip URS demotion and prefer `urs` / `user requirement`
+filenames plus the URS heading family). Header-only UNCONTROLLED
 COPY / Sign/Date chrome is 0. Haystack uses outline + pageContext + the first
 4000 transcript characters. `start_document_review`
 for an ELR inventory still omits a single-file pin so PRQR / PRQP / PQR
@@ -130,7 +132,10 @@ section. Exempt title-page / user-confirmed identity, the ELR
 a page in Purpose, Responsibilities, assessments, and recaps. Tables
 stay strict. Finish seeds `reviewedEvidence` (every walked page, not the
 60-finding sample) so those transcripts can hydrate. Empty ledger or
-pages with no quotes fail open. Every pack uses `unsupportedFactPolicy: block`
+pages with no quotes fail open, except QSR RTM / Operating Range / Qual
+Docs / References, which fail closed when the URS or source protocol is
+attached but unread. Those rows also require the fact in the same URS-N
+quote window (`qsr-row-grounding.ts`). Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover

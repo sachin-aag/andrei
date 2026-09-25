@@ -17,5 +17,14 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain('{ banner: "…" }');
     expect(QSR_DRAFTING_GUIDANCE).toContain("Prefer afterRowKey");
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "Do not write VFD compatible in place of an RPM number"
+    );
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "do not copy the DQ date or revision onto the URS row"
+    );
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "Use the revision printed on that document (URS 00, not a neighbouring protocol's 01)"
+    );
   });
 });

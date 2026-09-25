@@ -5,6 +5,7 @@ import {
   inventoryColumnNeedles,
   inventoryReadyIdsForObjective,
   inventorySectionForObjective,
+  isPreferredInventoryFilename,
   preferredInventoryEvidenceSkipped,
   scoreInventoryReviewPage,
 } from "./inventory-review-schema";
@@ -21,6 +22,16 @@ describe("inventorySectionForObjective", () => {
       "elr_calibration"
     );
     expect(inventorySectionForObjective("every requirement")).toBeNull();
+    expect(inventorySectionForObjective("qsr_rtm_safety")).toBe("qsr_rtm_safety");
+    expect(inventorySectionForObjective("qsr_operating_range")).toBe(
+      "qsr_operating_range"
+    );
+    expect(
+      isPreferredInventoryFilename("URS-GLR-1301.pdf", "qsr_rtm_safety")
+    ).toBe(true);
+    expect(
+      isPreferredInventoryFilename("DQ-GLR-1301.pdf", "qsr_rtm_safety")
+    ).toBe(false);
   });
 });
 

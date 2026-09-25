@@ -1454,12 +1454,23 @@ export function buildChatTools(opts: {
     const prev = sameTurnStated.get(key);
     sameTurnStated.set(key, prev ? `${prev}\n${trimmed}` : trimmed);
   };
-  const writeGrounding = (
+  let cachedReadyFilenames: string[] | null = null;
+  const loadReadyFilenames = async (): Promise<string[]> => {
+    if (cachedReadyFilenames) return cachedReadyFilenames;
+    if (documentType !== "qualification_summary_report") {
+      cachedReadyFilenames = [];
+      return cachedReadyFilenames;
+    }
+    const docs = await listReadyDocumentsForReport(reportId);
+    cachedReadyFilenames = docs.map((doc) => doc.filename);
+    return cachedReadyFilenames;
+  };
+  const writeGrounding = async (
     section: SectionType,
     targetField: string,
     tool: CitationWriteTool,
     sectionContent?: Record<string, unknown>
-  ): GroundDraftGrounding => {
+  ): Promise<GroundDraftGrounding> => {
     const extra: string[] = [];
     if (sectionContent) {
       extra.push(
@@ -1486,6 +1497,8 @@ export function buildChatTools(opts: {
         exclude: { section, targetField },
         extra,
       }),
+      section,
+      attachedFilenames: await loadReadyFilenames(),
     };
   };
   let evidenceHydrate: Promise<void> | null = null;
@@ -2540,7 +2553,7 @@ export function buildChatTools(opts: {
             )
           : null;
         await ensureEvidence();
-        const insertGrounding = writeGrounding(
+        const insertGrounding = await writeGrounding(
           section,
           resolvedField,
           "propose_edit",
@@ -3689,7 +3702,7 @@ export function buildChatTools(opts: {
           fieldDoc,
           parsedOp
         );
-        const tableGrounding = writeGrounding(
+        const tableGrounding = await writeGrounding(
           section,
           resolvedField,
           "edit_table",
@@ -4084,7 +4097,7 @@ export function buildChatTools(opts: {
           markdownForDraft = coercedEnum.value;
         }
         const normalizedMarkdown = normalizeSuggestionInsertText(markdownForDraft);
-        const draftGrounding = writeGrounding(
+        const draftGrounding = await writeGrounding(
           section,
           resolvedField,
           "draft_field",
