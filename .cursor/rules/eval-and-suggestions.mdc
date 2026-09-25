@@ -105,4 +105,6 @@ DV mixes LLM criteria with deterministic `check()` functions.
   (`operationsCoverWholeField`), plus `ai_redraft`. Coverage classifies
   edit vs rewrite; `propose_edit` does not refuse large spans.
 - Seeded tables whose cells are blank or unchanged from the template are
-  empty, not partial (`isEmptyTableScaffoldDoc`).
+  empty, not partial (`isEmptyTableScaffoldDoc`). Seed-matching prose
+  around those tables (QSR 6.1) and short seed-only labels (QSR 6.3
+  “Agitator Type:”) are empty too; canned default paragraphs are not.

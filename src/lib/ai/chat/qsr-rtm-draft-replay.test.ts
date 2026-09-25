@@ -649,7 +649,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(result).toMatchObject({ status: "review_incomplete" });
   });
 
-  it("unlocks 5.2 after a 5.1 URS walk that skipped DQ, then proposes the vacuum range", async () => {
+  it("unlocks 5.2 after a 5.1 URS-only walk even when DQ is also attached", async () => {
     mockSection("qsr_rtm_control");
     listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), dqDoc()]);
     const ursReviewPages = Array.from({ length: 12 }, (_, index) => {
@@ -721,11 +721,15 @@ describe("QSR RTM section 5 draft replay", () => {
       { objective: "qsr_rtm_process" },
       TEST_TOOL_OPTIONS
     );
-    expect(started).toMatchObject({ status: "started" });
+    expect(started).toMatchObject({ status: "started", totalPages: 12 });
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: REPORT_ID,
+      attachmentIds: [URS_ID],
+    });
     expect(
       (started as { skippedDocuments?: { attachmentId: string }[] })
         .skippedDocuments?.map((doc) => doc.attachmentId)
-    ).toEqual([DQ_ID]);
+    ).toEqual([]);
 
     let guard = 0;
     while (session.phase() === "in_progress") {
@@ -743,10 +747,8 @@ describe("QSR RTM section 5 draft replay", () => {
       coverageKey?: string | null;
     };
     expect(finished).toMatchObject({ status: "complete" });
-    expect(finished.truncated).toBe(true);
-    expect(finished.skippedAttachmentIds).toEqual(
-      expect.arrayContaining([DQ_ID])
-    );
+    expect(finished.truncated).toBe(false);
+    expect(finished.skippedAttachmentIds ?? []).toEqual([]);
     expect(session.inventoryFinishSatisfiesDraft()).toBe(true);
 
     const nextTurn = new DocumentReviewSession();

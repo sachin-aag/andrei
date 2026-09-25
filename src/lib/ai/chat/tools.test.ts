@@ -1302,6 +1302,79 @@ describe("buildChatTools document review", () => {
     ).toEqual(["att_urs", "att_iq"]);
   });
 
+  it("walks only the URS for QSR process requirements, not 246 protocol pages", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_urs",
+        filename: "User Requirement Specification.pdf",
+        description: null,
+        pageCount: 12,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_dq",
+        filename: "Design Qualification.PDF",
+        description: null,
+        pageCount: 40,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_iq",
+        filename: "IQ-GLR-1301.pdf",
+        description: null,
+        pageCount: 194,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      ...Array.from({ length: 12 }, (_, i) => ({
+        attachmentId: "att_urs",
+        filename: "User Requirement Specification.pdf",
+        pageNumber: i + 1,
+        transcript: `URS-${i + 1} process requirements`,
+        pageContext: null,
+        printedPageLabel: String(i + 1),
+      })),
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+      reviewCoverageObjective: "qsr_rtm_process",
+      sectionScope: "qsr_rtm_process",
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "5.1 Process Requirements" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_urs"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_urs"],
+      queuedPages: 12,
+      totalPages: 12,
+    });
+    expect(
+      (result as { documents?: { filename: string }[] }).documents
+    ).toEqual([
+      {
+        attachmentId: "att_urs",
+        filename: "User Requirement Specification.pdf",
+        pageCount: 12,
+      },
+    ]);
+    expect(
+      (result as { skippedDocuments?: { attachmentId: string }[] })
+        .skippedDocuments
+    ).toEqual([]);
+  });
+
   it("blocks drafting until finish_document_review", async () => {
     const session = new DocumentReviewSession({
       extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),

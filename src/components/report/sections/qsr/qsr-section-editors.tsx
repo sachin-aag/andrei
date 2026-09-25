@@ -20,16 +20,12 @@ const TABLE_DESCRIPTION =
   "Keep the header columns unchanged. Select cells and Merge for a group heading, or put only bold text in the first cell.";
 
 function sectionDescription(section: QsrSectionKey): string | undefined {
-  if (section === "qsr_volumetric_details") {
-    return "One bold heading line, then each Parameter / Details table. The Word export keeps the form layout.";
-  }
   if (section === "qsr_qualification_documents") {
     return "Select the protocol and report cells and Merge, or leave Document Name blank on the report row so Word still merges them.";
   }
-  if (section === "qsr_operating_range") {
-    return "Details spans the row. Temperature uses Minimum and Maximum on two rows under one S.No and Parameter.";
-  }
-  return isQsrTableSectionKey(section) ? TABLE_DESCRIPTION : undefined;
+  return isQsrTableSectionKey(section) && section !== "qsr_operating_range"
+    ? TABLE_DESCRIPTION
+    : undefined;
 }
 
 function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
