@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { ImgHTMLAttributes, ReactNode } from "react";
+import type { ImgHTMLAttributes } from "react";
 
 vi.mock("next/image", () => ({
   default: function MockImage({
@@ -15,23 +15,6 @@ vi.mock("next/image", () => ({
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img src={src} alt={alt} width={width} height={height} className={className} />
-    );
-  },
-}));
-
-vi.mock("next/link", () => ({
-  default: function MockLink({
-    children,
-    href,
-    ...rest
-  }: {
-    children: ReactNode;
-    href: string;
-  }) {
-    return (
-      <a href={href} {...rest}>
-        {children}
-      </a>
     );
   },
 }));

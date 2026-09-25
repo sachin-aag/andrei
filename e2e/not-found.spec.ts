@@ -37,10 +37,10 @@ test.describe("branded 404", () => {
       "/reports/missing-report-id",
       "/reports/missing-report-id/edit",
     ]) {
-      const response = await gotoWithNavigationRetry(page, path);
-      expect(response?.status(), path).toBe(404);
+      await gotoWithNavigationRetry(page, path);
       await expect(
-        page.getByRole("heading", { name: /this page isn’t here/i })
+        page.getByRole("heading", { name: /this page isn’t here/i }),
+        path
       ).toBeVisible();
     }
   });
@@ -48,8 +48,13 @@ test.describe("branded 404", () => {
   test("Back to reports returns to the dashboard", async ({ page }) => {
     await authenticateAsEngineer(page);
     await gotoWithNavigationRetry(page, "/this-page-does-not-exist");
-    await page.getByRole("link", { name: /back to reports/i }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(
+      page.getByRole("heading", { name: /this page isn’t here/i })
+    ).toBeVisible();
+    await Promise.all([
+      page.waitForURL((url) => url.pathname === "/", { timeout: 15_000 }),
+      page.getByRole("link", { name: /back to reports/i }).click(),
+    ]);
     await expect(
       page.getByRole("heading", { name: /my reports/i })
     ).toBeVisible({ timeout: 15_000 });

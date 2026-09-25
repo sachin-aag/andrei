@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { Button } from "@/components/ui/button";
 import { getCustomerPack } from "@/lib/customers/packs";
@@ -26,12 +25,14 @@ export function NotFoundView({ signedIn }: { signedIn: boolean }) {
         <BrandLockup variant="hero" size="md" showTagline name="full" />
         <div className="relative">
           <p
-            className="text-[7rem] font-bold leading-none tracking-tight tabular-nums"
+            className="text-[clamp(4.5rem,10vw,7rem)] font-bold leading-none tracking-tight tabular-nums"
             aria-hidden="true"
           >
             404
           </p>
-          <p className="mt-4 max-w-md text-white/90">{branding.tagline}</p>
+          <p className="mt-4 max-w-md text-white/90">
+            This workspace doesn’t have that page.
+          </p>
         </div>
         <p className="relative text-xs text-white/70">{branding.loginFooter}</p>
       </div>
@@ -59,11 +60,11 @@ export function NotFoundView({ signedIn }: { signedIn: boolean }) {
           </div>
           <div className="flex flex-wrap gap-3">
             <Button asChild>
-              <Link href={homeHref}>{homeLabel}</Link>
+              <a href={homeHref}>{homeLabel}</a>
             </Button>
             {signedIn ? (
               <Button asChild variant="outline">
-                <Link href="/vault">Document vault</Link>
+                <a href="/vault">Document vault</a>
               </Button>
             ) : null}
           </div>
