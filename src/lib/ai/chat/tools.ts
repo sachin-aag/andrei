@@ -4280,7 +4280,7 @@ export function buildChatTools(opts: {
       .join(", ");
     tools.draft_identity = tool({
       description:
-        `Fill cover/header identity scalars (${identityKeys}). Search attachments first. This write lands immediately — not a suggestion card. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Do not use draft_field for these keys.`,
+        `Fill cover/header identity scalars (${identityKeys}). Search attachments first. This write lands immediately — not a suggestion card. Pass the bare scalar with no [filename, p. N], numbered [n], or Citations: list — these fields print on the cover. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Do not use draft_field for these keys.`,
       inputSchema: z.object({
         fields: z
           .array(
@@ -4294,7 +4294,9 @@ export function buildChatTools(opts: {
                 .string()
                 .min(1)
                 .max(500)
-                .describe("Scalar value copied from attachments or the engineer."),
+                .describe(
+                  "Plain scalar copied from attachments or the engineer. No [filename, p. N], numbered [n], or Citations: list."
+                ),
             })
           )
           .min(1)
@@ -4374,7 +4376,7 @@ export function buildChatTools(opts: {
             unsupported.push(...grounded.unsupported);
             groundedPatches.push({
               key: patch.key,
-              value: sanitizeIdentityScalar(grounded.text) || patch.value,
+              value: patch.value,
             });
           }
           return { groundedPatches, unsupported, blocked };

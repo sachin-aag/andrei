@@ -89,6 +89,6 @@ export function qraChatContextIdentity(
     line("source document name", "sourceDocumentName"),
     line("source document no.", "sourceDocumentNo"),
     `revision: ${sanitizePromptMetadata(metaString(metadata, "revision"), 20) || "R00"}`,
-    "Fill header identity with draft_identity from attachments. Do not draft signature placeholders (pre/post approval).",
+    "Fill header identity with draft_identity from attachments. Header scalars never include citations. Do not draft signature placeholders (pre/post approval).",
   ];
 }

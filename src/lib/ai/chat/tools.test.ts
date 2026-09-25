@@ -5287,6 +5287,42 @@ describe("buildChatTools draft_identity", () => {
     expect(dbUpdateMock).not.toHaveBeenCalled();
   });
 
+  it("persists identity scalars without citations", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+    });
+    const result = (await tools.draft_identity!.execute!(
+      {
+        fields: [
+          {
+            key: "equipmentName",
+            value:
+              "Glass Lined Reactor [protocol.pdf, p. 1]\n\nCitations:\n1. [protocol.pdf, p. 1]",
+          },
+          { key: "equipmentCode", value: "GLR-1301 [1]" },
+        ],
+        reasoning: "Copied from the protocol cover.",
+      },
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+    expect(result.status).toBe("applied");
+    expect(updates[0]?.metadata).toMatchObject({
+      equipmentName: "Glass Lined Reactor",
+      equipmentCode: "GLR-1301",
+    });
+    expect(JSON.stringify(updates[0]?.metadata)).not.toContain("protocol.pdf");
+    expect(JSON.stringify(updates[0]?.metadata)).not.toContain("Citations:");
+  });
+
   it("rejects keys that are not identity fields", async () => {
     const tools = buildChatTools({
       reportId: "report-1",

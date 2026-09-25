@@ -135,7 +135,7 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     }
     if (def.chat.identityFields && def.chat.identityFields.length > 0) {
       lines.push(
-        "- Fill unset identity with draft_identity from attachments (lands immediately; not a suggestion card)."
+        "- Fill unset identity with draft_identity from attachments (lands immediately; not a suggestion card). Plain scalars only — never citations."
       );
     }
   }

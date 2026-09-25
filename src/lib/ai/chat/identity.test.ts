@@ -167,6 +167,12 @@ describe("buildIdentityUpdate", () => {
 
   it("strips citation brackets from scalars", () => {
     expect(sanitizeIdentityScalar("GLR-1301 [1]")).toBe("GLR-1301");
+    expect(
+      sanitizeIdentityScalar(
+        "Glass Lined Reactor [protocol.pdf, p. 1]\n\nCitations:\n1. [protocol.pdf, p. 1]"
+      )
+    ).toBe("Glass Lined Reactor");
+    expect(sanitizeIdentityScalar("[protocol.pdf, p. 1]")).toBe("");
   });
 });
 

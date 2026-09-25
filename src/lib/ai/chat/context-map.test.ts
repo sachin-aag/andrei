@@ -405,6 +405,7 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("both Vial and Cartridge");
     expect(map).toContain("ask_user");
     expect(map).toContain("draft_identity");
+    expect(map).toContain("never citations");
     expect(map).toContain("Purpose [elr_objective]");
   });
 

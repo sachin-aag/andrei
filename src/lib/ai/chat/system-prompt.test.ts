@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v132-identity-draft");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v133-identity-no-cite");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -166,6 +166,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("[identity]");
     expect(prompt).toContain("Cover identity");
     expect(prompt).toContain("equipmentName");
+    expect(prompt).toContain("draft_identity values never include citations");
+    expect(prompt).toContain(
+      "never put source brackets, numbered markers, or a Citations: list in those values"
+    );
   });
 
   it("requires fixed column headers for DV matrix sections", () => {

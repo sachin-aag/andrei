@@ -92,6 +92,6 @@ export function firChatContextIdentity(
     line("batch under investigation", "batchNo"),
     line("equipment ID", "equipmentId"),
     `reference SOP: ${identityValue(metaString(metadata, "referenceSopNo")) || "SOP/QA/017"} form F01 R01`,
-    "This is the Drug Substance investigation form. Do not draft Define / Measure / Analyze / Improve / Control sections. Fill header identity with draft_identity from attachments.",
+    "This is the Drug Substance investigation form. Do not draft Define / Measure / Analyze / Improve / Control sections. Fill header identity with draft_identity from attachments. Header scalars never include citations.",
   ];
 }

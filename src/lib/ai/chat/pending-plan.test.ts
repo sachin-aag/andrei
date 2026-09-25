@@ -148,7 +148,7 @@ describe("seedSectionQueuePlan", () => {
       userText: "Draft the remaining sections",
       documentType: "qualification_summary_report",
       sections,
-      promptVersion: "chat-v132-identity-draft",
+      promptVersion: "chat-v133-identity-no-cite",
       report: { documentNo: "", date: "2026-01-01", metadata: {} },
     });
     expect(seeded?.items[0]).toMatchObject({
@@ -176,7 +176,7 @@ describe("seedSectionQueuePlan", () => {
       userText: "Draft the remaining sections",
       documentType: "qualification_summary_report",
       sections,
-      promptVersion: "chat-v132-identity-draft",
+      promptVersion: "chat-v133-identity-no-cite",
       report: { documentNo: "", date: "2026-01-01", metadata: {} },
     });
     expect(seeded?.items).toEqual([

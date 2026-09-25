@@ -48,6 +48,6 @@ export function dvChatContextIdentity(
   return [
     `product name: ${product || UNSET_NOTE}`,
     `revision: ${revision || UNSET_NOTE}`,
-    "Fill cover-page identity with draft_identity from attachments. Do not draft the cover as a prose section.",
+    "Fill cover-page identity with draft_identity from attachments. Do not draft the cover as a prose section. Cover scalars never include citations.",
   ];
 }

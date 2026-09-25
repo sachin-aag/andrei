@@ -176,6 +176,6 @@ export function elrChatContextIdentity(
     formatLine,
     periodLine(metadata),
     "format number: SOP/DP/QA/014/F22-R00 (proposed)",
-    "Fill title-page identity with draft_identity from attachments.",
+    "Fill title-page identity with draft_identity from attachments. Header scalars never include citations.",
   ];
 }

@@ -116,6 +116,7 @@ export function allIdentityMetadataKeys(): string[] {
 
 export function sanitizeIdentityScalar(value: string): string {
   return value
+    .replace(/(?:^|\n)\s*Citations:\s*[\s\S]*$/i, " ")
     .replace(/\[[^\]]+]/g, " ")
     .replace(/<[^>\n]{1,80}>/g, " ")
     .replace(/\s+/g, " ")

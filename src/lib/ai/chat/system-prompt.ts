@@ -24,7 +24,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v132-identity-draft";
+export const CHAT_PROMPT_VERSION = "chat-v133-identity-no-cite";
 
 export type ChatMode = "plan" | "agent";
 
@@ -51,7 +51,7 @@ function fieldTaxonomy(
         `${field.key} (plain${field.required ? ", required" : ""})`
     )
     .join(", ");
-  const identityLine = `- ${chatIdentityLabel(documentType)} [identity]: ${keys} — fill with draft_identity, not draft_field`;
+  const identityLine = `- ${chatIdentityLabel(documentType)} [identity]: ${keys} — fill with draft_identity, not draft_field. Plain scalars only — never [filename, p. N], numbered [n], or a Citations: list`;
   return body ? `${identityLine}\n${body}` : identityLine;
 }
 
@@ -260,7 +260,7 @@ function agentRules(opts: {
     ? `\n- select_analyze_method — when drafting Analyze, call this ONCE before any Analyze draft_field / edit_table / propose_edit to lock in the single root-cause method (see the Analyze method-selection block when that section is in scope).`
     : "";
   const identityToolLine = opts.hasIdentity
-    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. This write lands immediately in the header — not a suggestion card. Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Do not use draft_field for these keys.`
+    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. This write lands immediately in the header — not a suggestion card. Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Pass the bare scalar — draft_identity values never include citations ([filename, p. N], numbered [n], or a Citations: list). Do not use draft_field for these keys.`
     : "";
   const hiddenWriteTools = opts.hasIdentity
     ? "draft_field / edit_table / propose_edit / insert_image / remove_image / draft_identity"
@@ -347,7 +347,11 @@ Editing rules:
 6. draft_field refuses a replacement that keeps most of the field ("not_a_rewrite") — that is the signal to go back to propose_edit. Nearby wording in the same field belongs in one propose_edit (span the unchanged words between). Distant paragraphs can be separate calls. Removing details ("drop the version numbers", "take out that clause") keeps most of the field, so it is propose_edit even when it touches several places. Adding a table under existing bullets is create_table, not a rewrite.
 7. Never invent regulated facts (batch numbers, dates, results, equipment IDs, requirement IDs, ECO/DCR). Search the attachments first; use an angle-bracket placeholder only after a search or page read this turn still does not contain the fact. Do not copy document topics/summaries into the draft. Hard facts copied from attachments (SOP numbers, equipment IDs from records, inventory rows, measured numbers, protocol IDs) must appear on a page this turn retrieved — in Purpose and Responsibilities as well as evidence tables. Title-page / user-confirmed identity, 1 April–31 March bounds, and facts already written in this report (another section or the sibling table) are not gated that way. The server rejects unsupported hard facts on every pack.
 8. After proposing, briefly summarize what you drafted in document language (the section names the engineer sees). List placeholders to complete, and name any sections you deliberately skipped and why. Do not walk field-by-field through targetField names, SAMPLE, omit-if switches, or tool names. Never call the drafting rules a recipe. Never say you filled, proposed, drafted, or applied a change unless a tool this turn returned status proposed, drafted, or applied. An open suggestion card is proposed, not landed. Do not claim a prior-turn suggestion is still waiting unless list_suggestions (or read_section.pendingSuggestions) shows it open. Never treat a dismissed or approved card as still pending.
-9. Put source citations as [filename, p. N] immediately after the supported word or claim (or cell), never mid-word or inside **bold**. The server may number several sources on one claim as [1,2]. Page numbers are the absolute PDF page position (what Adobe/pdf.js uses), never a printed page number from a header or footer — copy the citation field from a tool result instead of composing one. When finish_document_review / citationDigest / read_document_page / search_documents gave a page number, include p. N — use [filename] only if the page is missing or ambiguous. The server numbers them and parks the sources under a trailing "Citations:" heading. A split propose_edit (primary + second) still works. Do not invent citation numbers. draft_field and edit_table follow the same rule in both Document and Agent chrome. If a tool returns unsupported_facts, search or read the page that states the fact, then fill the real value. Do not persist angle-bracket placeholders in a table until that subsequent search. Leftover <date>/<identifier>/<number> are OK in prose, or in a table only after that lookup still misses — do not invent the missing identifiers or results.`;
+9. Put source citations as [filename, p. N] immediately after the supported word or claim (or cell), never mid-word or inside **bold**. The server may number several sources on one claim as [1,2]. Page numbers are the absolute PDF page position (what Adobe/pdf.js uses), never a printed page number from a header or footer — copy the citation field from a tool result instead of composing one. When finish_document_review / citationDigest / read_document_page / search_documents gave a page number, include p. N — use [filename] only if the page is missing or ambiguous. The server numbers them and parks the sources under a trailing "Citations:" heading. A split propose_edit (primary + second) still works. Do not invent citation numbers. draft_field and edit_table follow the same rule in both Document and Agent chrome.${
+    opts.hasIdentity
+      ? " draft_identity is the exception: cover/header scalars print on the cover — never put source brackets, numbered markers, or a Citations: list in those values."
+      : ""
+  } If a tool returns unsupported_facts, search or read the page that states the fact, then fill the real value. Do not persist angle-bracket placeholders in a table until that subsequent search. Leftover <date>/<identifier>/<number> are OK in prose, or in a table only after that lookup still misses — do not invent the missing identifiers or results.`;
 }
 
 const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6M / 5-Why / Brainstorming):

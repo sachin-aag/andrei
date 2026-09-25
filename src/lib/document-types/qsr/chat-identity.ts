@@ -69,6 +69,6 @@ export function qsrChatContextIdentity(
     line("capacity/size", meta.capacity),
     line("plant section", meta.plantSection),
     `form: QAD/016/F06-00 revision ${sanitizePromptMetadata(meta.revision, 20) || "00"}`,
-    "This is the Qualification Summary Report. Headings, sign-off, revision history and Index are fixed by the form — do not draft those. Fill cover identity (equipment, report no., revision) with draft_identity from attachments.",
+    "This is the Qualification Summary Report. Headings, sign-off, revision history and Index are fixed by the form — do not draft those. Fill cover identity (equipment, report no., revision) with draft_identity from attachments. Cover scalars never include citations.",
   ];
 }
