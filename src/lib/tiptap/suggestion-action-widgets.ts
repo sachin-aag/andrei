@@ -107,17 +107,54 @@ export type SuggestionActionWidgetAnchor = {
   pos: number;
 };
 
+function posInsideTable(doc: PMNode, pos: number): boolean {
+  try {
+    const $pos = doc.resolve(pos);
+    for (let depth = $pos.depth; depth > 0; depth -= 1) {
+      if ($pos.node(depth).type.name === "table") return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function recordMarkEnd(
+  ends: Map<string, { first: number; last: number; tableOnly: boolean }>,
+  id: string,
+  end: number,
+  inTable: boolean
+): void {
+  const prev = ends.get(id);
+  if (!prev) {
+    ends.set(id, { first: end, last: end, tableOnly: inTable });
+    return;
+  }
+  prev.first = Math.min(prev.first, end);
+  prev.last = Math.max(prev.last, end);
+  if (!inTable) prev.tableOnly = false;
+}
+
 /**
  * One widget per suggestion. Prefer the last insert mark; delete-only
  * suggestions use the last delete mark. A split body edit plus citation still
  * gets a single pair, after the last marked span.
+ *
+ * Table-only suggestions use the first marked cell so Accept / Ignore stays
+ * in the left columns instead of the last cell of a wide matrix.
  */
 export function collectSuggestionActionWidgetPositions(
   doc: PMNode,
   actionableEvaluationIds: Set<string>
 ): SuggestionActionWidgetAnchor[] {
-  const insertEnds = new Map<string, number>();
-  const deleteEnds = new Map<string, number>();
+  const insertEnds = new Map<
+    string,
+    { first: number; last: number; tableOnly: boolean }
+  >();
+  const deleteEnds = new Map<
+    string,
+    { first: number; last: number; tableOnly: boolean }
+  >();
   const insertType = doc.type.schema.marks[suggestionInsertMarkName];
   const deleteType = doc.type.schema.marks[suggestionDeleteMarkName];
 
@@ -125,9 +162,11 @@ export function collectSuggestionActionWidgetPositions(
     if (node.type.name === "imageInline") {
       const suggestionId = node.attrs.suggestionId as string | null | undefined;
       if (suggestionId && actionableEvaluationIds.has(suggestionId)) {
-        insertEnds.set(
+        recordMarkEnd(
+          insertEnds,
           suggestionId,
-          Math.max(insertEnds.get(suggestionId) ?? 0, pos + node.nodeSize)
+          pos + node.nodeSize,
+          posInsideTable(doc, pos)
         );
       }
       return true;
@@ -139,10 +178,11 @@ export function collectSuggestionActionWidgetPositions(
         const attrs = mark.attrs as { id?: string | null; authorId?: string };
         if (!attrs.id || attrs.authorId !== "ai") continue;
         if (!actionableEvaluationIds.has(attrs.id)) continue;
+        const inTable = posInsideTable(doc, pos);
         if (mark.type === insertType) {
-          insertEnds.set(attrs.id, Math.max(insertEnds.get(attrs.id) ?? 0, end));
+          recordMarkEnd(insertEnds, attrs.id, end, inTable);
         } else {
-          deleteEnds.set(attrs.id, Math.max(deleteEnds.get(attrs.id) ?? 0, end));
+          recordMarkEnd(deleteEnds, attrs.id, end, inTable);
         }
       }
       return true;
@@ -155,10 +195,11 @@ export function collectSuggestionActionWidgetPositions(
       if (!attrs.id || attrs.authorId !== "ai") continue;
       if (!actionableEvaluationIds.has(attrs.id)) continue;
       const end = pos + len;
+      const inTable = posInsideTable(doc, pos);
       if (mark.type === insertType) {
-        insertEnds.set(attrs.id, Math.max(insertEnds.get(attrs.id) ?? 0, end));
+        recordMarkEnd(insertEnds, attrs.id, end, inTable);
       } else {
-        deleteEnds.set(attrs.id, Math.max(deleteEnds.get(attrs.id) ?? 0, end));
+        recordMarkEnd(deleteEnds, attrs.id, end, inTable);
       }
     }
     return true;
@@ -166,8 +207,11 @@ export function collectSuggestionActionWidgetPositions(
 
   const anchors: SuggestionActionWidgetAnchor[] = [];
   for (const id of actionableEvaluationIds) {
-    const raw = insertEnds.get(id) ?? deleteEnds.get(id);
-    if (raw == null) continue;
+    const insert = insertEnds.get(id);
+    const del = deleteEnds.get(id);
+    const chosen = insert ?? del;
+    if (!chosen) continue;
+    const raw = chosen.tableOnly ? chosen.first : chosen.last;
     anchors.push({
       evaluationId: id,
       pos: extendPosPastOpenBracketClose(doc, raw),

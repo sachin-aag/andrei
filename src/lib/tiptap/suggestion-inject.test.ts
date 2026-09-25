@@ -267,6 +267,18 @@ describe("shouldSkipSuggestionDocSync", () => {
       })
     ).toBe(false);
   });
+
+  it("injects a table preview even when the focused table JSON looks dirty", () => {
+    expect(
+      shouldSkipSuggestionDocSync({
+        hasFocus: true,
+        previewHeld: false,
+        needsInject: true,
+        hasLocalEdits: true,
+        forceInject: true,
+      })
+    ).toBe(false);
+  });
 });
 
 describe("shouldApplyExternalValueToEditor", () => {
@@ -324,6 +336,30 @@ describe("shouldApplyExternalValueToEditor", () => {
         persistedChanged: true,
         hasFocus: false,
         docsMatchIgnoringPreview: false,
+      })
+    ).toBe(true);
+  });
+
+  it("does not wipe an unfocused structural table preview until persist changes", () => {
+    expect(
+      shouldApplyExternalValueToEditor({
+        previewHeld: false,
+        persistedChanged: false,
+        hasFocus: false,
+        docsMatchIgnoringPreview: false,
+        keepStructuralPreview: true,
+      })
+    ).toBe(false);
+  });
+
+  it("replaces a structural table preview once apply has written the table", () => {
+    expect(
+      shouldApplyExternalValueToEditor({
+        previewHeld: false,
+        persistedChanged: true,
+        hasFocus: false,
+        docsMatchIgnoringPreview: false,
+        keepStructuralPreview: true,
       })
     ).toBe(true);
   });
@@ -418,5 +454,77 @@ describe("resolveSuggestionPreviewSyncDoc", () => {
 
     expect(collectPendingSuggestionMarkIds(synced)).toEqual(["suggestion-a"]);
     expect(JSON.stringify(synced)).toContain("extra");
+  });
+
+  it("keeps an insert-rows table preview instead of restoring the saved table", () => {
+    const originalTable: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "URS" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const previewTable: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            originalTable.content![0]!.content![0]!,
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [
+                        {
+                          type: "text",
+                          text: "IQ protocol",
+                          marks: [
+                            {
+                              type: "suggestionInsert",
+                              attrs: previewAttrs,
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const synced = resolveSuggestionPreviewSyncDoc({
+      editorDoc: previewTable,
+      canonicalDoc: originalTable,
+      keepMarkId: "suggestion-a",
+    });
+
+    expect(JSON.stringify(synced)).toContain("IQ protocol");
+    expect(collectPendingSuggestionMarkIds(synced)).toEqual(["suggestion-a"]);
   });
 });

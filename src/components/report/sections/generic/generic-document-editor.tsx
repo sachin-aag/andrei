@@ -53,7 +53,7 @@ export function GenericDocumentEditor() {
           </div>
         </div>
       ) : null}
-      <div className="lg:hidden">
+      <div className="section-suggestion-card-inline">
         <SectionSuggestionCard section={GENERIC_DOCUMENT_SECTION} />
       </div>
       <div className="flex items-start justify-center overflow-x-auto pl-16">
