@@ -4,8 +4,8 @@ This project uses three layers of quality checks:
 
 | Layer | Tool | Location | Count (approx.) |
 |-------|------|----------|-----------------|
-| **Unit / integration** | Vitest | `src/**/*.test.ts(x)` | ~76 files, ~345 tests |
-| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 11 spec files, ~43 cases × 3 browsers |
+| **Unit / integration** | Vitest | `src/**/*.test.ts(x)` | ~77 files, ~348 tests |
+| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 15 spec files, ~47 cases × 3 browsers |
 | **Manual** | Checklist | [docs/manual-test-cases.md](docs/manual-test-cases.md) | 6 release-candidate cases |
 
 `pnpm precommit` runs **lint + typecheck + Vitest only** (no E2E). CI runs Vitest and Playwright in separate jobs.
@@ -145,6 +145,18 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | redirects must-change-password users | JWT flag → `/change-password` |
 | forgot password page renders | `/forgot-password` form |
 | logs out to login page | App shell log out |
+
+</details>
+
+<details>
+<summary><strong>not-found.spec.ts</strong> — branded 404</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| unknown path while signed out still goes to login | Workspace stays private; `/this-page-does-not-exist` → `/login` |
+| shows a branded 404 for unknown paths when signed in | HTTP 404, “This page isn’t here”, Back to reports + Document vault |
+| missing report routes show the branded 404 | `/reports/missing-report-id` and `/edit` use the same page |
+| Back to reports returns to the dashboard | Link lands on engineer home (`My reports`) |
 
 </details>
 

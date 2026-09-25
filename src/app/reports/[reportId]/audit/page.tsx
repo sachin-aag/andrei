@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
@@ -19,7 +19,7 @@ export default async function ReportAuditPage({
     .from(reports)
     .where(eq(reports.id, reportId));
 
-  if (!report) redirect("/");
+  if (!report) notFound();
 
   if (user.role !== "admin") redirect("/");
 

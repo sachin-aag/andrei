@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -24,11 +24,11 @@ export default async function ReportPrintPage({
 
   const { reportId } = await params;
   const [report] = await db.select().from(reports).where(eq(reports.id, reportId));
-  if (!report) redirect("/");
+  if (!report) notFound();
 
   const managerIds = await listReportManagerIds(reportId);
   const reportWithManagers = withAssignedManagerIds(report, managerIds);
-  if (!canViewReport(user, reportWithManagers)) redirect("/");
+  if (!canViewReport(user, reportWithManagers)) notFound();
 
   return (
     <main className="print-page mx-auto max-w-3xl px-8 py-10 text-sm">
