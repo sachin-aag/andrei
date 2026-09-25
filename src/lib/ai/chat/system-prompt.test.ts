@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v138-qsr-column-rows");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v139-qsr-column-tail");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -29,6 +29,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("stock Complies / Section 13");
     expect(prompt).toContain("one insert_rows");
     expect(prompt).toContain("Open cards stack");
+    expect(prompt).toContain("Apply does not unlock the next insert");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
