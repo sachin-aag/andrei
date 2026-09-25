@@ -339,6 +339,20 @@ function inventorySections(): SectionType[] {
   return Object.keys(ELR_INVENTORY_SCHEMAS) as SectionType[];
 }
 
+/**
+ * "qualification" is a substring of QSR Table 3 ("qualification documents")
+ * and of DQ / IQ / OQ / PQ protocol titles. Map to the ELR history table
+ * only when the objective is that table's key or names history / PRQ.
+ */
+function isElrQualificationHistoryObjective(digest: string): boolean {
+  return (
+    digest.includes("qualification history") ||
+    digest.includes("periodic re-qualification") ||
+    digest.includes("periodic requalification") ||
+    digest.includes("elr qualification")
+  );
+}
+
 export function inventorySectionForObjective(
   objective: string | null | undefined
 ): SectionType | null {
@@ -351,6 +365,13 @@ export function inventorySectionForObjective(
   if (digest in ELR_INVENTORY_SCHEMAS) {
     return digest as SectionType;
   }
+  if (
+    digest.startsWith("qsr_") ||
+    digest.startsWith("vq_") ||
+    digest.startsWith("fir_")
+  ) {
+    return null;
+  }
   const sections = inventorySections().filter(
     (section) => ELR_INVENTORY_SCHEMAS[section]
   );
@@ -361,7 +382,11 @@ export function inventorySectionForObjective(
     })
     .sort((a, b) => b.noun.length - a.noun.length);
   for (const { section, noun } of ranked) {
-    if (noun.length >= 3 && digest.includes(noun)) return section;
+    if (noun.length < 3 || !digest.includes(noun)) continue;
+    if (section === "elr_qualification") {
+      if (!isElrQualificationHistoryObjective(digest)) continue;
+    }
+    return section;
   }
   return null;
 }

@@ -92,6 +92,11 @@ DV mixes LLM criteria with deterministic `check()` functions.
   applied earlier in the batch (`superseded_by:<id>`), not as a skip. The
   Apply all count only includes locatable suggestions; Dismiss all still
   counts every open suggestion so stale leftovers can be cleared.
+- Table operation previews (`insert_rows`, `edit_cells`) add nodes, not
+  reversible marks. Do not let the unfocused external-value sync restore
+  the persisted table while that preview is active. When the Comments
+  gutter is off (Agent chrome), the in-section card stays visible — do
+  not hide it with `lg:hidden`.
 - `draft_field` refuses a filled field unless `replaceFilledField: true`.
   After a redraft, filled `[Label: value]` placeholders must be preserved
   unless the caller opted into replacing them.

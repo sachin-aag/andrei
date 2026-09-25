@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v133-qsr-row-window");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v134-qsr-row-window");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -515,6 +515,8 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain("For ELR inventory tables");
     expect(prompt).toContain("omit attachmentIds");
+    expect(prompt).toContain("Qualification Summary Report Table 3");
+    expect(prompt).toContain("every attached URS / DS / DQ / IQ / OQ / PQ");
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("One review per section this turn");
     expect(prompt).toContain(

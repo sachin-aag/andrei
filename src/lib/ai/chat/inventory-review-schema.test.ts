@@ -32,6 +32,20 @@ describe("inventorySectionForObjective", () => {
     expect(
       isPreferredInventoryFilename("DQ-GLR-1301.pdf", "qsr_rtm_safety")
     ).toBe(false);
+    expect(inventorySectionForObjective("elr_qualification")).toBe(
+      "elr_qualification"
+    );
+    expect(
+      inventorySectionForObjective(
+        "Qualification and periodic re-qualification history"
+      )
+    ).toBe("elr_qualification");
+    expect(inventorySectionForObjective("qsr_qualification_documents")).toBeNull();
+    expect(inventorySectionForObjective("qualification documents")).toBeNull();
+    expect(
+      inventorySectionForObjective("Table 3 Qualification Documents")
+    ).toBeNull();
+    expect(inventorySectionForObjective("lifecycle documents")).toBeNull();
   });
 });
 
@@ -145,6 +159,19 @@ describe("filenameConflictsWithInventoryObjective", () => {
 });
 
 describe("scoreInventoryReviewPage", () => {
+  it("does not score QSR Table 3 as ELR qualification history", () => {
+    expect(
+      scoreInventoryReviewPage(
+        {
+          filename: "URS-GLR-1301.pdf",
+          transcript: "User Requirement Specification URS-1301 Rev 01",
+          outlineTitle: "Cover",
+        },
+        "qualification documents"
+      )
+    ).toBeNull();
+  });
+
   it("does not queue a calibration-planner header as QMS evidence", () => {
     expect(
       scoreInventoryReviewPage(

@@ -1234,6 +1234,78 @@ describe("buildChatTools document review", () => {
     });
   });
 
+  it("walks every QSR lifecycle file for Table 3 without asking which attachment", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_urs",
+        filename: "URS-GLR-1301.pdf",
+        description: null,
+        pageCount: 12,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_iq",
+        filename: "IQ-GLR-1301.pdf",
+        description: null,
+        pageCount: 40,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      ...Array.from({ length: 12 }, (_, i) => ({
+        attachmentId: "att_urs",
+        filename: "URS-GLR-1301.pdf",
+        pageNumber: i + 1,
+        transcript:
+          i < 2
+            ? "User Requirement Specification Document No. URS-1301 Rev 01"
+            : `URS requirement URS-${i}`,
+        pageContext: null,
+        printedPageLabel: String(i + 1),
+      })),
+      ...Array.from({ length: 40 }, (_, i) => ({
+        attachmentId: "att_iq",
+        filename: "IQ-GLR-1301.pdf",
+        pageNumber: i + 1,
+        transcript:
+          i < 2
+            ? "Installation Qualification Protocol No. IQ-P Report No. IQ-R Rev 00"
+            : `qualification check ${i}`,
+        pageContext: null,
+        printedPageLabel: String(i + 1),
+      })),
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+      reviewCoverageObjective: "qsr_qualification_documents",
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "qualification documents" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_urs", "att_iq"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_urs", "att_iq"],
+      queuedPages: 4,
+    });
+    expect(
+      (result as { skippedDocuments?: { attachmentId: string }[] }).skippedDocuments
+    ).toEqual([]);
+    expect(
+      (result as { documents?: { attachmentId: string }[] }).documents?.map(
+        (doc) => doc.attachmentId
+      )
+    ).toEqual(["att_urs", "att_iq"]);
+  });
+
   it("blocks drafting until finish_document_review", async () => {
     const session = new DocumentReviewSession({
       extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
