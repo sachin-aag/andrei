@@ -228,6 +228,8 @@ Engineer steps include Document \| Agent chrome, Analytics, and the Document vau
 | starting a new chat while a turn is in flight leaves the composer usable | Hold the first `/chat` POST (do not forward it), click +, type and send in the empty thread; open-chat tabs show the parked turn as still working. Abort the held POST on teardown so `next start` is not left waiting on a half-open body. |
 | fills the composer with stub dictation after stop | Fake mic + `ALLOW_TEST_STUB_SPEECH`; transcribe `GET` 204; while recording the composer stays at the typed prefix, the wave + “Transcript appears when you stop” hint show, and Send stays disabled; after stop a unary PCM `POST` returns the canned phrase (no SSE session) and fills `chat-input`; Agent chrome still shows the mic; Analytics counterpart uses `analytics-chat-voice-input`. Chromium only (AudioWorklet). |
 
+Stub chat cannot assert tool calls or grounding. Section 5 write-path regressions live in `src/lib/ai/chat/qsr-rtm-draft-replay.test.ts`.
+
 </details>
 
 <details>
@@ -454,6 +456,30 @@ Grouped by subsystem. Run a folder with `pnpm test -- src/lib/import`.
 </details>
 
 <details>
+<summary><strong>AI chat write path</strong> (`src/lib/ai/chat/`)</summary>
+
+Playwright stub chat (`ALLOW_TEST_STUB_CHAT`, `e2e/report-chat.spec.ts`) streams a canned reply. It **cannot** assert tool selection or citation grounding. Live Gemini in the browser is not a CI job (`docs/harness-plan.md` F2).
+
+The layer that catches a production overblock (QSR section 5 dropping cover-page capacity, vacuum range, MOC) is a Vitest **replay** through `buildChatTools`:
+
+1. Mock `@/db` and `@/lib/attachments/retrieval` (same pattern as `tools.test.ts`).
+2. Seed empty section JSON (`emptyQsrContent` for QSR).
+3. Attach the evidence file via `listReadyDocumentsForReport`.
+4. Call the same tools the model called, in order: `read_document_page` and/or `start_document_review` → `continue_document_review` → `finish_document_review`, then `edit_table`.
+5. Assert the tool result (`proposed` / `unsupported_facts` / `review_incomplete`) and the persisted `ai_fix` table operation.
+
+| File | Focus |
+|------|--------|
+| `qsr-rtm-draft-replay.test.ts` | GLR-1301 section 5: cover `8000 L`, `760 mmHg` outside a neighbour window, `SS 316L`, neighbour URS-37 still blocked, stock Complies still blocked, 5.2 stays locked until a matching RTM finish, a 5.1 URS walk that skipped DQ unlocks 5.2 |
+| `tools.test.ts` | Tool schemas, ELR inventory lock, placeholder bounce, document-review start shape |
+| `ground-draft.test.ts` / `qsr-row-grounding.test.ts` | Pure grounding helpers (no `edit_table`) |
+| `harness-scenarios.ts` | Layer-1 tool *availability* (greeting / rewrite / empty inventory) — not write-path grounding |
+
+`restoreFromFinishedReview` zeros skip counts, so it cannot reproduce a floor-8 skipped-file deadlock. Use a real start → continue → finish for that class of bug. Copy `qsr-rtm-draft-replay.test.ts` for the next incident; do not dump it into `tools.test.ts`.
+
+</details>
+
+<details>
 <summary><strong>DOCX import</strong> (`src/lib/import/`)</summary>
 
 | File | Focus |
@@ -562,10 +588,11 @@ Workflow: `.github/workflows/ci.yml`
 | Pure logic, parsers, prompts | `src/lib/.../*.test.ts` next to source |
 | API route auth and status codes | `src/app/api/.../route.test.ts` — mock `@/db` + `getCurrentUser` |
 | React UI interactions | `src/components/.../*.test.tsx` — jsdom + RTL + `user-event` |
+| Chat write-path grounding (production `edit_table` / `draft_field` incident) | New `src/lib/ai/chat/*-replay.test.ts` — mock DB + retrieval, call `buildChatTools` in tool order. Not Playwright. Pattern: `qsr-rtm-draft-replay.test.ts` |
 | Full user journey | `e2e/*.spec.ts` — use `e2e/helpers/` |
 
 E2E patterns: unique deviation numbers (`uniqueDeviationNo`), `loginAsEngineer` / `loginAsManager`, `createReport` / `deleteReport` in `afterEach`.
 
 Colocate and name the test file after the source module. When you rename, split, or delete `foo.ts`, do the same to `foo.test.ts` — do not leave `section-scope.test.ts` after `section-scope.ts` is gone. Assert the current contract (e.g. `@` tags set scope). Do not keep tombstone tests (`not.toContain("old dropdown")`).
 
-Removals: grep the old symbol in `src/**/*.test.*` and `e2e/` before calling the change done. Chat/workspace counterparts: Document **and** Agent chrome, Report chat **and** Analytics chat. Update existing Playwright specs rather than inventing a new suite unless a gap remains. Stub chat cannot assert tool selection (`e2e/report-chat.spec.ts` is stream + persist only).
+Removals: grep the old symbol in `src/**/*.test.*` and `e2e/` before calling the change done. Chat/workspace counterparts: Document **and** Agent chrome, Report chat **and** Analytics chat. Update existing Playwright specs rather than inventing a new suite unless a gap remains. Stub chat cannot assert tool selection (`e2e/report-chat.spec.ts` is stream + persist only). Live Gemini is not how we regression-test grounding — replay the tool calls (see **AI chat write path** above).
