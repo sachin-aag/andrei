@@ -8,6 +8,7 @@ import { sectionLabel as chatSectionLabelForType } from "@/lib/ai/chat/fields";
 import type { SectionType } from "@/db/schema";
 import {
   isDocumentReviewToolName,
+  reviewDocumentsFromParts,
   summarizeDocumentReviewProgress,
   type DocumentReviewToolPart,
 } from "@/lib/ai/chat/document-review-ui";
@@ -42,6 +43,8 @@ export type ActivitySurfaceNode = {
   expandable: boolean;
   children: ActivityChildNode[];
   thoughtText?: string;
+  /** Review chips name files; do not CSS-truncate "across N files". */
+  wrapLabel?: boolean;
 };
 
 export type ChatActivityBlock =
@@ -958,6 +961,7 @@ export function documentReviewActivityNode(
 ): ActivitySurfaceNode | null {
   const snapshot = summarizeDocumentReviewProgress(parts);
   if (!snapshot) return null;
+  const files = reviewDocumentsFromParts(parts);
   const tone: ActivitySurfaceNode["tone"] =
     snapshot.phase === "complete"
       ? "success"
@@ -969,8 +973,12 @@ export function documentReviewActivityNode(
     label: snapshot.label,
     pending: snapshot.pending,
     tone,
-    expandable: false,
-    children: [],
+    wrapLabel: true,
+    expandable: files.length > 0,
+    children: files.map((file) => ({
+      kind: "detail" as const,
+      label: file.filename,
+    })),
   };
 }
 
@@ -1056,7 +1064,12 @@ export function buildChatActivityBlocks(
     }
 
     if (startsDocumentActivityRun(parts, index)) {
-      flushReview();
+      const runTool = readChatToolPart(parts[index]!);
+      // list_attachments between start and continue must not split one walk
+      // into a planning chip and a complete chip that names the wrong file.
+      if (runTool?.toolName !== "list_attachments") {
+        flushReview();
+      }
       flushSectionReads();
       const children: ActivityChildNode[] = [];
       const filenames: string[] = [];
