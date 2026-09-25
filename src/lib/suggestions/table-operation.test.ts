@@ -15,6 +15,7 @@ import {
   prefixTableCaptionMarkdown,
   renumberFilledTableCaptions,
   summarizeTableOperation,
+  tableOperationInvalidHint,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
 import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
@@ -1619,6 +1620,85 @@ describe("parseTableOperation", () => {
       expectedRowAtAfter: undefined,
     });
     expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
+  });
+
+  it("coerces Langfuse insert_rows aliases (nested array, isBanner/cells, cells matrix)", () => {
+    expect(
+      parseTableOperation({
+        insert_rows: [
+          { isBanner: true, cells: ["PROTOCOL DOCUMENTS"] },
+          {
+            cells: [
+              "URS-GLR-1301",
+              "User Requirement Specification",
+              "01",
+              "Draft",
+              "—",
+              "—",
+            ],
+          },
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        { banner: "PROTOCOL DOCUMENTS" },
+        [
+          "URS-GLR-1301",
+          "User Requirement Specification",
+          "01",
+          "Draft",
+          "—",
+          "—",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
+    });
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        tableIndex: 0,
+        cells: [
+          [
+            "DQ-GLR-1301",
+            "Design Qualification",
+            "01",
+            "Approved",
+            "01-04-2025",
+            "Complies",
+          ],
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        [
+          "DQ-GLR-1301",
+          "Design Qualification",
+          "01",
+          "Approved",
+          "01-04-2025",
+          "Complies",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
+    });
+  });
+
+  it("hints insert_rows to pass rows, not cells or a nested insert_rows array", () => {
+    expect(
+      tableOperationInvalidHint({
+        kind: "insert_rows",
+        cells: [{ row: 1, col: 0, insertText: "x" }],
+      })
+    ).toMatch(/rows: \[\["col1","col2"\]/);
+    expect(tableOperationInvalidHint({ kind: "insert_rows" })).toMatch(
+      /not pass cells or nest insert_rows/
+    );
   });
 
   it("coerces nested edit_cells with extra reasoning and omitted expectedText", () => {

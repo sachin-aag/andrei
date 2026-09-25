@@ -74,8 +74,44 @@ export function selectReviewPages<T extends { attachmentId: string }>(
   return selected;
 }
 
+/**
+ * Collapse verbose Table 3 / References walk copy onto the section keys so a
+ * later turn that scopes `qsr_qualification_documents` can reuse the finish.
+ */
+function stableQsrCoverageObjective(normalized: string): string | null {
+  if (!normalized) return null;
+  if (
+    normalized === "qsr_qualification_documents" ||
+    normalized.includes("qsr_qualification_documents")
+  ) {
+    return "qsr_qualification_documents";
+  }
+  if (
+    normalized.includes("qualification document") ||
+    normalized.includes("qsr_qualification") ||
+    normalized.includes("lifecycle document") ||
+    (normalized.includes("table 3") &&
+      (normalized.includes("qualification") ||
+        normalized.includes("qsr") ||
+        normalized.includes("qual doc")))
+  ) {
+    return "qsr_qualification_documents";
+  }
+  if (normalized === "qsr_references" || normalized.includes("qsr_references")) {
+    return "qsr_references";
+  }
+  if (
+    /\breferences\b/.test(normalized) &&
+    (normalized.includes("qsr") || normalized.includes("qualification summary"))
+  ) {
+    return "qsr_references";
+  }
+  return null;
+}
+
 export function coverageObjectiveDigest(objective: string): string {
-  return objective.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 80);
+  const normalized = objective.trim().toLowerCase().replace(/\s+/g, " ");
+  return (stableQsrCoverageObjective(normalized) ?? normalized).slice(0, 80);
 }
 
 const COVERAGE_OBJECTIVE_MARKER = "|obj:";

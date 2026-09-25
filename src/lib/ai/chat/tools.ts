@@ -3619,7 +3619,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For insert_rows prefer afterRowKey (first-cell text) over afterRow. Insert a merged group row with { banner: \"ANY SPECIFIC REQUIREMENTS\" }, not six unmerged cells.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For insert_rows pass rows: [["col1","col2"], ...] or { banner: \"ANY SPECIFIC REQUIREMENTS\" } — not cells, and not nested insert_rows: [...]. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge a banner into six cells.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z

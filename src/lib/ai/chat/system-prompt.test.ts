@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v134-qsr-row-window");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v135-qsr-table3-rows");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -26,6 +26,14 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("same URS-ID window");
     expect(prompt).toContain("do not copy URS-37's range onto URS-5");
     expect(prompt).toContain("stock Complies / Section 13");
+  });
+
+  it("tells Agent insert_rows to use rows arrays or { banner }, not cells", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain(
+      '{ kind: "insert_rows", tableIndex, rows: [["col1","col2"], { banner: "GROUP" }] }'
+    );
+    expect(prompt).toContain("not `cells`, and not nested `{ insert_rows: [...] }`");
   });
 
   it("tells Agent to draft only the current queued section", () => {
