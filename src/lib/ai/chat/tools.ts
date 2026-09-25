@@ -258,7 +258,10 @@ import {
   inventoryReadyIdsForObjective,
   isElrInventoryReviewObjective,
 } from "@/lib/ai/chat/inventory-review-schema";
-import { isQsrInventoryReviewObjective } from "@/lib/ai/chat/review-page-plan";
+import {
+  isQsrInventoryReviewObjective,
+  qsrInventoryReadyIdsForObjective,
+} from "@/lib/ai/chat/review-page-plan";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -2229,7 +2232,7 @@ export function buildChatTools(opts: {
           .max(12)
           .optional()
           .describe(
-            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so the server keeps files that match this table's columns) and Qualification Summary Report Table 3 / RTM inventories (omit so every attached URS / DQ / IQ / OQ / PQ is walked)."
+            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so the server keeps files that match this table's columns), Qualification Summary Report Table 3 (omit so every attached URS / DQ / IQ / OQ / PQ cover is walked), and QSR RTM / Operating Range (omit so the server keeps the URS, not protocol bodies)."
           ),
       }),
       execute: async ({ objective, attachmentIds }) => {
@@ -2265,7 +2268,11 @@ export function buildChatTools(opts: {
                   coverageObjective || objective
                 )
               : qsrInventoryScoped
-                ? ready.map((doc) => doc.attachmentId)
+                ? qsrInventoryReadyIdsForObjective(
+                    ready,
+                    coverageObjective,
+                    objective
+                  )
                 : requestedInScope.length > 0
                   ? requestedInScope.filter((id) => allowed.has(id))
                   : ready.map((doc) => doc.attachmentId);

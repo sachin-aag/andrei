@@ -267,6 +267,9 @@ function qsrInventorySectionForObjective(
   if (!digest) return null;
   const keys = qsrInventorySectionKeys();
   if (digest === "qsr_rtm") return "qsr_rtm_process";
+  if (digest === "qsr_operating_range" || digest.includes("operating range")) {
+    return "qsr_operating_range";
+  }
   if (keys.includes(digest)) return digest;
   if (
     digest.includes("qualification document") ||
@@ -279,6 +282,11 @@ function qsrInventorySectionForObjective(
     if (key === "qsr_qualification_documents") continue;
     const noun = key.replace(/^qsr_/, "").replace(/_/g, " ");
     if (noun.length >= 4 && digest.includes(noun)) return key;
+    if (isQsrRtmSection(key)) {
+      if (rtmHeadingPhrases(key).some((phrase) => digest.includes(phrase))) {
+        return key;
+      }
+    }
   }
   return null;
 }
@@ -289,6 +297,53 @@ export function isQsrInventoryReviewObjective(
   return objectives.some((objective) =>
     Boolean(qsrInventorySectionForObjective(objective))
   );
+}
+
+/**
+ * QSR RTM / Operating Range evidence lives in the URS, not DQ/IQ/OQ/PQ
+ * protocol bodies. Table 3 / References stay a cover-page walk of every
+ * lifecycle file.
+ */
+export function isQsrUrsWalkObjective(
+  ...objectives: Array<string | null | undefined>
+): boolean {
+  return objectives.some((objective) => {
+    if (!objective || isQsrLifecycleCoverObjective(objective)) return false;
+    const mapped =
+      qsrInventorySectionForObjective(objective) ??
+      inventorySectionForObjective(objective);
+    return isQsrRtmSection(mapped) || mapped === "qsr_operating_range";
+  });
+}
+
+/** Ready files to page-list for a QSR inventory walk. */
+export function qsrInventoryReadyIdsForObjective<
+  T extends { attachmentId: string; filename?: string | null },
+>(
+  ready: readonly T[],
+  coverageObjective: string | null | undefined,
+  toolObjective: string | null | undefined
+): string[] {
+  if (
+    isQsrLifecycleCoverObjective(coverageObjective) ||
+    isQsrLifecycleCoverObjective(toolObjective)
+  ) {
+    return ready.map((doc) => doc.attachmentId);
+  }
+  if (isQsrUrsWalkObjective(coverageObjective, toolObjective)) {
+    const urs = ready.filter((doc) => isUrsFilename(doc.filename));
+    return (urs.length > 0 ? urs : ready).map((doc) => doc.attachmentId);
+  }
+  return ready.map((doc) => doc.attachmentId);
+}
+
+function pagesForQsrUrsWalk<T extends ReviewPagePlanInput>(
+  pages: readonly T[],
+  objective: string
+): readonly T[] {
+  if (!isQsrUrsWalkObjective(objective)) return pages;
+  const urs = pages.filter((page) => isUrsFilename(page.filename));
+  return urs.length > 0 ? urs : pages;
 }
 
 function coverPagesPerAttachment<T extends ReviewPagePlanInput>(
@@ -517,7 +572,8 @@ function withNeighborFill<T extends ReviewPagePlanInput>(
  * of a 200-page CCF / PRQR, up to `REVIEW_PREFERRED_MISSING_PAGE_CAP`).
  * Scored inventory pages are then capped at `REVIEW_INVENTORY_WALK_CAP`
  * (DV catalogs are not). QSR Table 3 / References take the first
- * `REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE` pages of each file.
+ * `REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE` pages of each file. QSR RTM /
+ * Operating Range keep the URS when one is attached — not protocol bodies.
  */
 export function planReviewPages<T extends ReviewPagePlanInput>(
   pages: readonly T[],
@@ -531,15 +587,16 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
       cap
     );
   }
+  const scopedPages = pagesForQsrUrsWalk(pages, objective);
   if (
     objectiveTokens(objective).length === 0 &&
     phraseFamiliesForReviewObjective(objective).length === 0 &&
     inventorySectionForObjective(objective) === null
   ) {
-    return selectReviewPages(pages, cap);
+    return selectReviewPages(scopedPages, cap);
   }
   const relevant: T[] = [];
-  for (const page of pages) {
+  for (const page of scopedPages) {
     if (
       scoreReviewPage(page, objective) > 0 &&
       !filenameConflictsWithInventoryObjective(page.filename, objective)
@@ -548,7 +605,7 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
     }
   }
   const preferredMissing = preferredPagesMissingFromHits(
-    pages,
+    scopedPages,
     relevant,
     objective
   );
@@ -563,12 +620,14 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
         cap
       );
     }
-    const withoutForeignInventory = pages.filter(
+    const withoutForeignInventory = scopedPages.filter(
       (page) =>
         !filenameConflictsWithInventoryObjective(page.filename, objective)
     );
     let pool =
-      withoutForeignInventory.length > 0 ? withoutForeignInventory : pages;
+      withoutForeignInventory.length > 0
+        ? withoutForeignInventory
+        : scopedPages;
     const section = inventorySectionForObjective(objective);
     if (section && !isQsrRtmSection(section) && section !== "qsr_operating_range") {
       const notDemoted = pool.filter(
@@ -589,7 +648,7 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
   const candidate =
     preferredSample.length > 0 ? [...relevant, ...preferredSample] : relevant;
   return capInventoryReviewPages(
-    withNeighborFill(selectReviewPages(candidate, cap), pages, cap),
+    withNeighborFill(selectReviewPages(candidate, cap), scopedPages, cap),
     objective,
     cap
   );
