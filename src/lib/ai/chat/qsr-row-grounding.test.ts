@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { extractHardFacts } from "@/lib/ai/chat/claim-facts";
+import { groundTableOperation } from "@/lib/ai/chat/ground-draft";
 import {
   descriptionSupportedNearKey,
   documentFamilyFromContext,
@@ -79,6 +80,15 @@ describe("quoteWindowAroundKey column-major URS pages", () => {
     ).toBe(true);
   });
 
+  it("does not treat URS-1 as a prefix of URS-13", () => {
+    const page =
+      "URS-13 Jacket Type URS-14 Baffle URS-20 Vapour Column MOC Limpet/Plain 01 No (Thermowell)";
+    expect(quoteWindowAroundKey(page, "URS-1")).toBeNull();
+    expect(quoteWindowAroundKey(page, "URS-13")).toContain("Jacket Type");
+    expect(quoteWindowAroundKey(page, "URS-13")).not.toContain("Limpet");
+    expect(quoteWindowAroundKey(page, "URS-20")).not.toContain("Limpet");
+  });
+
   it("still rejects a range that sits inside a neighbour URS sentence", () => {
     const fact = extractHardFacts("15–130 °C").find((row) =>
       row.text.includes("130")
@@ -86,6 +96,112 @@ describe("quoteWindowAroundKey column-major URS pages", () => {
     expect(fact).toBeTruthy();
     expect(factSupportedForRowKey(SHARED_URS_PAGE, fact!, "URS-5")).toBe(false);
     expect(factSupportedForRowKey(SHARED_URS_PAGE, fact!, "URS-37")).toBe(true);
+  });
+});
+
+const LIVE_COLUMN_PAGES = [
+  "URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-7 Agitator URS-12 Jacket MOC 8000 L High-quality Glass Lining and thickness should not be less than 1 mm 15 °C to 130 °C Anchor-type agitator with suitable clearances for efficient mixing",
+  "URS-13 Jacket Type URS-14 Baffle URS-20 Vapour Column MOC Limpet/Plain 01 No (Thermowell) Required PTFE-lined carbon steel URS-21 Sampling Point arrangement URS-25 Jacket Thickness URS-29 Jacket Dimension Required; to be provided in a safe, accessible, and representative location",
+  "URS-58 View Glass Required URS-59 Light Glass URS-60 Nozzle URS-61 View Glass 14. OTHER Required Minimum 6 process/service nozzles required Required at product transfer line",
+];
+
+describe("column-major descriptions across pages", () => {
+  it("keeps a requirement sentence when another row's parameter shares a word", () => {
+    expect(
+      descriptionSupportedNearKey(
+        "High-quality Glass Lining and thickness should not be less than 1 mm",
+        LIVE_COLUMN_PAGES,
+        "URS-2"
+      )
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "Anchor-type agitator with suitable clearances for efficient mixing",
+        LIVE_COLUMN_PAGES,
+        "URS-7"
+      )
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey("Limpet/Plain", LIVE_COLUMN_PAGES, "URS-13")
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey("Required", LIVE_COLUMN_PAGES, "URS-59")
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "Minimum 6 process/service nozzles required",
+        LIVE_COLUMN_PAGES,
+        "URS-60"
+      )
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "Required; to be provided in a safe, accessible, and representative location",
+        LIVE_COLUMN_PAGES,
+        "URS-21"
+      )
+    ).toBe(true);
+  });
+
+  it("proposes the column-major rows in one insert", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: LIVE_COLUMN_PAGES[0]!,
+      },
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 7,
+        attachmentId: "urs",
+        quote: LIVE_COLUMN_PAGES[1]!,
+      },
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 11,
+        attachmentId: "urs",
+        quote: LIVE_COLUMN_PAGES[2]!,
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-2",
+            "MOC",
+            "High-quality Glass Lining and thickness should not be less than 1 mm [User Requirement Specification.PDF, p. 6]",
+            "",
+            "",
+            "",
+          ],
+          ["URS-13", "Jacket Type", "Limpet/Plain [User Requirement Specification.PDF, p. 7]", "", "", ""],
+          [
+            "URS-59",
+            "Light Glass",
+            "Required [User Requirement Specification.PDF, p. 11]",
+            "",
+            "",
+            "",
+          ],
+          [
+            "URS-60",
+            "Nozzle",
+            "Minimum 6 process/service nozzles required [User Requirement Specification.PDF, p. 11]",
+            "",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.unsupported).toEqual([]);
   });
 });
 

@@ -140,16 +140,23 @@ function isColumnLabelGap(gap: string): boolean {
   return !/\d/.test(body);
 }
 
+type ColumnRun = {
+  ids: string[];
+  firstAt: number;
+  lastAt: number;
+  /** Index just after the last ID. The parameter name and the requirement
+   * sentences that follow are shared by every ID in the run. */
+  valueStart: number;
+};
+
 /**
  * OCR of a two-column URS table is the ID list, then the requirement
- * sentences. That tail is not the last ID's own sentence.
- * Returns the index where the value column starts, or null when the page
- * is prose (each URS ID followed by its own text).
+ * sentences. A page can have more than one block (URS-13–20, then URS-21–29).
+ * A digit in the gap ends the block, so the values are not the last ID's sentence.
  */
-export function columnRunValueStart(quote: string): number | null {
+function columnRuns(quote: string): ColumnRun[] {
   const spans = ursSpans(quote);
-  if (spans.length < 3) return null;
-  let best: { start: number; end: number } | null = null;
+  const runs: ColumnRun[] = [];
   let runStart = 0;
   for (let i = 1; i <= spans.length; i++) {
     const continues =
@@ -160,17 +167,42 @@ export function columnRunValueStart(quote: string): number | null {
     if (continues) continue;
     const runEnd = i - 1;
     if (runEnd - runStart >= 2) {
-      if (!best || runEnd - runStart > best.end - best.start) {
-        best = { start: runStart, end: runEnd };
-      }
+      const last = spans[runEnd]!;
+      runs.push({
+        ids: spans.slice(runStart, runEnd + 1).map((span) => span.id),
+        firstAt: spans[runStart]!.at,
+        lastAt: last.at,
+        valueStart: last.at + last.id.length,
+      });
     }
     runStart = i;
   }
-  if (!best) return null;
-  const last = spans[best.end]!;
-  const after = quote.slice(last.at + last.id.length);
-  const label = /^([^0-9]{0,80})/.exec(after);
-  return last.at + last.id.length + (label?.[1]?.length ?? 0);
+  return runs;
+}
+
+function columnValueStartForSpan(quote: string, at: number): number | null {
+  for (const run of columnRuns(quote)) {
+    if (at >= run.firstAt && at <= run.lastAt) return run.valueStart;
+  }
+  return null;
+}
+
+/**
+ * Value-column start of the longest ID run, or null when the page is prose
+ * (each URS ID followed by its own text).
+ */
+export function columnRunValueStart(quote: string): number | null {
+  let best: ColumnRun | null = null;
+  for (const run of columnRuns(quote)) {
+    if (!best || run.ids.length > best.ids.length) best = run;
+  }
+  return best?.valueStart ?? null;
+}
+
+function indexOfUrsId(quote: string, key: string): number {
+  const needle = key.toUpperCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`\\b${needle}\\b`, "i").exec(quote);
+  return match?.index ?? -1;
 }
 
 /**
@@ -183,17 +215,16 @@ export function columnRunValueStart(quote: string): number | null {
  */
 export function quoteWindowAroundKey(quote: string, key: string): string | null {
   if (!quote.trim() || !key) return null;
-  const needle = key.toUpperCase();
-  const upper = quote.toUpperCase();
-  const at = upper.indexOf(needle);
+  const at = indexOfUrsId(quote, key);
   if (at < 0) return null;
+  const needle = key.toUpperCase();
   const after = quote.slice(at + needle.length);
   const next = after.match(/\bURS-\d+\b/i);
   let end =
     next && next.index != null
       ? at + needle.length + next.index
       : Math.min(quote.length, at + needle.length + 240);
-  const columnStart = columnRunValueStart(quote);
+  const columnStart = columnValueStartForSpan(quote, at);
   if (columnStart != null && at < columnStart && end > columnStart) {
     end = columnStart;
   }
@@ -282,6 +313,43 @@ function otherUrsWindows(
   return windows;
 }
 
+function textOutsideOtherUrsWindows(quote: string, key: string): string {
+  const needle = key.toUpperCase();
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (const id of ursIdsInQuote(quote)) {
+    if (id === needle) continue;
+    const start = indexOfUrsId(quote, id);
+    if (start < 0) continue;
+    const window = quoteWindowAroundKey(quote, id);
+    if (!window) continue;
+    ranges.push({ start, end: start + window.length });
+  }
+  ranges.sort((a, b) => b.start - a.start);
+  let text = quote;
+  for (const range of ranges) {
+    text = `${text.slice(0, range.start)}${" ".repeat(range.end - range.start)}${text.slice(range.end)}`;
+  }
+  return text;
+}
+
+/** Requirement sentences that sit outside every other URS window on a page
+ * that names this ID (or on a cover with no URS ID). */
+function unownedTokenHits(
+  tokens: readonly string[],
+  quotes: readonly string[],
+  key: string
+): number {
+  const haystacks: string[] = [];
+  for (const quote of quotes) {
+    if (indexOfUrsId(quote, key) >= 0) {
+      haystacks.push(textOutsideOtherUrsWindows(quote, key));
+    } else if (ursIdsInQuote(quote).length === 0) {
+      haystacks.push(quote);
+    }
+  }
+  return tokenHitsWindows(tokens, haystacks);
+}
+
 function tokensSupportedNearKey(
   tokens: readonly string[],
   quotes: readonly string[],
@@ -295,6 +363,13 @@ function tokensSupportedNearKey(
   if (tokens.length === 1) {
     if (tokens[0]!.length >= 6 && targetHits === 1) return true;
   } else if (targetHits >= 2) {
+    return true;
+  }
+
+  const unownedHits = unownedTokenHits(tokens, quotes, key);
+  if (tokens.length === 1) {
+    if (tokens[0]!.length >= 4 && unownedHits >= 1) return true;
+  } else if (unownedHits >= 2) {
     return true;
   }
 
