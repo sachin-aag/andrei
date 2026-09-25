@@ -977,27 +977,20 @@ export function TiptapSectionField({
     // caret in a later AI suggestion span). Suggestion accept still applies
     // once the persisted value changes — not when the preview-held lock
     // first flips, which would wipe the live preview with the old snapshot.
-    const persistedChanged =
-      prevPersisted !== null && prevPersisted !== incomingJson;
-    const keepStructuralPreview = Boolean(
-      tablePreviewSuggestionIdRef.current &&
-        tablePreviewSuggestionIdRef.current === activeSuggestionId
-    );
     if (
       !shouldApplyExternalValueToEditor({
         previewHeld: isSuggestionPreviewHeld(section),
-        persistedChanged,
+        persistedChanged:
+          prevPersisted !== null && prevPersisted !== incomingJson,
         hasFocus: currentEditor.view.hasFocus(),
         docsMatchIgnoringPreview: richDocsMatchIgnoringAiPreview(
           current,
           incoming
         ),
-        keepStructuralPreview,
       })
     ) {
       return;
     }
-    tablePreviewSuggestionIdRef.current = null;
     const transition = suggestionApplyTransition[section];
     const pinSuggestionId = isSuggestionPreviewHeld(section)
       ? (transition?.gutterAnchorCommentId ?? null)
@@ -1013,7 +1006,6 @@ export function TiptapSectionField({
     section,
     richFieldOptions,
     suggestionApplyTransition,
-    activeSuggestionId,
   ]);
 
   useLayoutEffect(() => {
@@ -1051,27 +1043,17 @@ export function TiptapSectionField({
         tablePreviewSuggestionIdRef.current &&
           tablePreviewSuggestionIdRef.current !== activeSuggestionId
       );
-    const missingActiveMarks = Boolean(
-      activeSuggestionId &&
-        !narrativeHasSuggestionMarks(json, activeSuggestionId)
-    );
-    const forceTablePreviewInject = Boolean(
-      missingActiveMarks &&
-        comments.some((c) => {
-          if (c.id !== activeSuggestionId) return false;
-          if (!isAiSuggestionKind(c.kind) || c.status !== "open") return false;
-          return Boolean(parseAiFixCommentContent(c.content).tableOperation);
-        })
-    );
 
     if (
       shouldSkipSuggestionDocSync({
         hasFocus: editor.view.hasFocus(),
         previewHeld,
-        needsInject: missingActiveMarks,
+        needsInject: Boolean(
+          activeSuggestionId &&
+            !narrativeHasSuggestionMarks(json, activeSuggestionId)
+        ),
         hasLocalEdits: !richDocsMatchIgnoringAiPreview(json, canonicalJson),
         needsStrip,
-        forceInject: forceTablePreviewInject,
       })
     ) {
       return;

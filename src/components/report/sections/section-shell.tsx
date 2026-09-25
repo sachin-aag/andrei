@@ -64,7 +64,7 @@ export function SectionShell({
         </div>
       )}
       {section && (
-        <div className="section-suggestion-card-inline">
+        <div className="lg:hidden">
           <SectionSuggestionCard section={section} />
         </div>
       )}

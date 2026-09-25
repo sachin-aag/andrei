@@ -158,11 +158,6 @@ export function richDocsMatchIgnoringAiPreview(
  * preview marks are no longer the active suggestion — dismiss/accept from the
  * inline widget keeps the editor focused, and skipping that rewrite leaves
  * red/green markup after the buttons are gone.
- *
- * Table operation previews (`insert_rows`, `edit_cells`, …) force inject:
- * TipTap table JSON often disagrees with the persisted value (colwidth,
- * empty cells), which looks like local typing and would otherwise skip the
- * first paint.
  */
 export function shouldSkipSuggestionDocSync(opts: {
   hasFocus: boolean;
@@ -170,11 +165,9 @@ export function shouldSkipSuggestionDocSync(opts: {
   needsInject: boolean;
   hasLocalEdits: boolean;
   needsStrip?: boolean;
-  forceInject?: boolean;
 }): boolean {
   if (opts.previewHeld) return false;
   if (opts.needsStrip) return false;
-  if (opts.forceInject) return false;
   if (!opts.hasFocus) return false;
   if (opts.needsInject && !opts.hasLocalEdits) return false;
   return true;
@@ -194,14 +187,7 @@ export function shouldApplyExternalValueToEditor(opts: {
   persistedChanged: boolean;
   hasFocus: boolean;
   docsMatchIgnoringPreview: boolean;
-  /**
-   * `insert_rows` / `create_table` previews add nodes, not reversible marks.
-   * Stripping marks still leaves extra rows, so the unfocused layout sync
-   * must not restore the persisted table until that value actually changes.
-   */
-  keepStructuralPreview?: boolean;
 }): boolean {
-  if (opts.keepStructuralPreview && !opts.persistedChanged) return false;
   if (opts.docsMatchIgnoringPreview) return false;
   if (opts.previewHeld) return opts.persistedChanged;
   if (opts.hasFocus) return false;
@@ -242,7 +228,6 @@ export function resolveSuggestionPreviewSyncDoc(opts: {
   if (
     canonicalPending.length === 0 &&
     editorPending.length > 0 &&
-    !(opts.keepMarkId && editorPending.includes(opts.keepMarkId)) &&
     plainTextFromTiptapJson(opts.canonicalDoc) !==
       plainTextFromTiptapJson(
         stripPendingSuggestionsExcept(opts.editorDoc, null)

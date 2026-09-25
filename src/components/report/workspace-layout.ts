@@ -127,10 +127,8 @@ export const WORKSPACE_PANEL_WIDTH_TRANSITION_MS = 200;
 
 /**
  * Inline suggestions and comments live in the review margin. The gutter is
- * opt-in via the Comments switch on the Report tab (Document chrome). Hidden
- * in Agent chrome and while a PDF/Word preview fills the canvas. When the
- * gutter is off, the in-section suggestion card stays visible so Apply all
- * is never the only handle on an open suggestion.
+ * opt-in via the Comments switch on the Report tab. Hidden while a PDF/Word
+ * preview fills the canvas.
  */
 export function isReviewGutterVisible(
   commentsGutterEnabled: boolean,
