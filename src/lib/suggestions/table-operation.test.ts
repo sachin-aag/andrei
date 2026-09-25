@@ -1674,6 +1674,11 @@ describe("parseTableOperation", () => {
       ],
       expectedRowAtAfter: undefined,
     });
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        tableIndex: 0,
+        cells: [
           [
             "DQ-GLR-1301",
             "Design Qualification",
