@@ -96,7 +96,8 @@ const NUMBER_WITH_UNIT_RE = new RegExp(
 );
 
 const BARE_THOUSANDS_RE = /\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b/g;
-const BARE_ZERO_RE = /\b0\b/g;
+/** Standalone 0, not the trailing digit of 25.0 or the leading digit of 0.5. */
+const BARE_ZERO_RE = /(?<![\d.])0\b(?!\.\d)/g;
 
 const HEADING_ONLY_RE = /^\d+(?:\.\d+)+$/;
 

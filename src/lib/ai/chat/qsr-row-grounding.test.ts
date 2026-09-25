@@ -5,8 +5,10 @@ import { groundTableOperation } from "@/lib/ai/chat/ground-draft";
 import {
   descriptionSupportedNearKey,
   documentFamilyFromContext,
+  documentFamilyFromFilename,
   extraQsrUnsupported,
   factSupportedForRowKey,
+  isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
   quoteWindowAroundKey,
   rowKeyFromContext,
@@ -367,6 +369,34 @@ describe("row helpers", () => {
     expect(documentFamilyFromContext("Design Qualification protocol")).toBe("dq");
   });
 
+  it("maps the live GLR-1301 protocol filenames to a family", () => {
+    expect(documentFamilyFromFilename("Design Qualification.PDF")).toBe("dq");
+    expect(documentFamilyFromFilename("Installation Qualification.PDF")).toBe(
+      "iq"
+    );
+    expect(documentFamilyFromFilename("Operational Qualification.PDF")).toBe(
+      "oq"
+    );
+    expect(documentFamilyFromFilename("Performance Qualification.PDF")).toBe(
+      "pq"
+    );
+    expect(
+      documentFamilyFromFilename("User Requirement Specification.PDF")
+    ).toBe("urs");
+  });
+
+  it("treats RTM Stage / Section / Remarks as optional reference columns", () => {
+    expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 3)).toBe(true);
+    expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 4)).toBe(true);
+    expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 5)).toBe(true);
+    expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 2)).toBe(false);
+    expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_control", 4)).toBe(true);
+    expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_control", 3)).toBe(false);
+    expect(isQsrRtmOptionalReferenceColumn("qsr_operating_range", 3)).toBe(
+      false
+    );
+  });
+
   it("still extracts a temperature that lives only in a neighbour window", () => {
     const facts = extractHardFacts(SHARED_URS_PAGE);
     expect(facts.map((fact) => `${fact.kind}:${fact.text}`)).toEqual(
@@ -378,5 +408,119 @@ describe("row helpers", () => {
         "identifier:URS-44",
       ])
     );
+  });
+});
+
+describe("groundTableOperation optional RTM columns", () => {
+  it("clears stock Complies instead of blocking the URS copy", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+    ]);
+    const blocked = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          ["URS-5", "Jacket temperature", "20-25 °C", "IQ", "Section 13", "Complies"],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(blocked.blocked).toBe(true);
+
+    const cleared = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          ["URS-5", "Jacket temperature", "20-25 °C", "IQ", "Section 13", "Complies"],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(cleared.blocked).toBe(false);
+    const clearedRow =
+      cleared.operation.kind === "insert_rows"
+        ? cleared.operation.rows[0]!
+        : [];
+    expect(clearedRow[0]).toContain("URS-5");
+    expect(clearedRow[1]).toBe("Jacket temperature");
+    expect(clearedRow[2]).toContain("20-25 °C");
+    expect(clearedRow.slice(3)).toEqual(["", "", ""]);
+  });
+
+  it("keeps IQ / Complies when Installation Qualification names that URS ID", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 12,
+        attachmentId: "iq",
+        quote:
+          "URS-5 Installation check meets acceptance. Section 8.1. Result: complies.",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          ["URS-5", "Jacket temperature", "20-25 °C", "IQ", "8.1", "Complies"],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-5");
+    expect(keptRow[1]).toBe("Jacket temperature");
+    expect(keptRow[2]).toContain("20-25 °C");
+    expect(keptRow[3]).toContain("IQ");
+    expect(keptRow[4]).toContain("8.1");
+    expect(keptRow[4]).not.toMatch(/Section 13/i);
+    expect(keptRow[5]).toMatch(/Complies/i);
+  });
+
+  it("drops an edit_cells that only wrote unsupported Remarks", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 2, col: 5, insertText: "Complies", rowContext: "URS-5" }],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.operation).toMatchObject({ kind: "edit_cells", cells: [] });
   });
 });

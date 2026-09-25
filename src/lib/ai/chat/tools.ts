@@ -3729,6 +3729,19 @@ export function buildChatTools(opts: {
           });
         }
         if (groundedTable.blocked) {
+          const clearedOptional = groundTableOperation({
+            operation: originalTableOp,
+            ledger: citationLedger,
+            policy: unsupportedFactPolicy,
+            grounding: tableGrounding,
+            analyses: tableAnalysisFacts,
+            clearOptionalOnBlock: true,
+          });
+          if (!clearedOptional.blocked) {
+            groundedTable = clearedOptional;
+          }
+        }
+        if (groundedTable.blocked) {
           recordClaimAudit({
             blocked: true,
             provenanceClaims: groundedTable.provenance.claims.length,

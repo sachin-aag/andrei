@@ -145,7 +145,10 @@ bounces. A column-major URS page (one or more blocks of IDs, then the requiremen
 sentences) keeps each block's sentences out of the last ID's window and
 still lets every ID in that block use them, even when another row's
 parameter shares a word such as glass or thickness. URS-1 does not match
-URS-13. Digits in URS-N are not a measured number. Every pack uses `unsupportedFactPolicy: block`
+URS-13. Digits in URS-N are not a measured number. A decimal such as 25.0 is
+not a measured zero. Stock Complies / Section 13 still need a protocol page
+that names that URS ID; unsupported Stage / Section / Remarks cells clear
+instead of blocking the URS copy. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover
