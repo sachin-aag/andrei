@@ -1497,6 +1497,33 @@ function nestedKindPayload(
   return null;
 }
 
+/** `{ insert_rows: [row, row] }` — an array, not `{ insert_rows: { rows } }`. */
+function nestedInsertRowsAlias(
+  raw: Record<string, unknown>
+): unknown[] | null {
+  if (Array.isArray(raw.insert_rows) && raw.insert_rows.length > 0) {
+    return raw.insert_rows;
+  }
+  for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
+    if (mapped !== "insert_rows") continue;
+    const nested = raw[alias];
+    if (Array.isArray(nested) && nested.length > 0) return nested;
+  }
+  return null;
+}
+
+function stripNestedKindKeys(
+  raw: Record<string, unknown>,
+  kind: TableOperationKind
+): Record<string, unknown> {
+  const rest = { ...raw };
+  delete rest[kind];
+  for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
+    if (mapped === kind) delete rest[alias];
+  }
+  return rest;
+}
+
 /**
  * Models often nest the op: `{ create_table: { headers, rows } }` instead of
  * `{ kind: "create_table", headers, rows }`. Hoist that object onto the root.
@@ -1518,12 +1545,17 @@ function hoistNestedTableKind(
   if (existingKind) {
     const nested = nestedKindPayload(current, existingKind);
     if (nested) {
-      const rest = { ...current };
-      delete rest[existingKind];
-      for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
-        if (mapped === existingKind) delete rest[alias];
+      return { ...nested, ...stripNestedKindKeys(current, existingKind), kind: existingKind };
+    }
+    if (existingKind === "insert_rows") {
+      const nestedRows = nestedInsertRowsAlias(current);
+      if (nestedRows && (!Array.isArray(current.rows) || current.rows.length === 0)) {
+        return {
+          ...stripNestedKindKeys(current, existingKind),
+          kind: existingKind,
+          rows: nestedRows,
+        };
       }
-      return { ...nested, ...rest, kind: existingKind };
     }
     return { ...current, kind: existingKind };
   }
@@ -1531,12 +1563,15 @@ function hoistNestedTableKind(
   for (const kind of TABLE_OPERATION_KINDS) {
     const nested = nestedKindPayload(current, kind);
     if (!nested) continue;
-    const rest = { ...current };
-    delete rest[kind];
-    for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
-      if (mapped === kind) delete rest[alias];
-    }
-    return { ...rest, ...nested, kind };
+    return { ...stripNestedKindKeys(current, kind), ...nested, kind };
+  }
+  const nestedRows = nestedInsertRowsAlias(current);
+  if (nestedRows) {
+    return {
+      ...stripNestedKindKeys(current, "insert_rows"),
+      kind: "insert_rows",
+      rows: nestedRows,
+    };
   }
   return current;
 }
@@ -1602,17 +1637,53 @@ function asStringMatrix(value: unknown, headers?: string[]): string[][] | null {
   return rows;
 }
 
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
+}
+
+function cellsFromInsertRowObject(item: Record<string, unknown>): string[] | undefined {
+  if (Array.isArray(item.cells)) {
+    return coerceMatrixRow(item.cells);
+  }
+  const single = asCellString(item.cells);
+  if (single !== null && single.trim()) return [single];
+  return undefined;
+}
+
+/** One insert_rows item: string[], `{ banner }`, or model aliases `{ isBanner, cells }` / `{ cells }`. */
+function asInsertTableRow(item: unknown): InsertTableRow | undefined {
+  if (isRecord(item) && typeof item.banner === "string" && item.banner.trim()) {
+    return { banner: item.banner };
+  }
+  if (isRecord(item) && (item.isBanner === true || item.banner === true)) {
+    const fromCells = cellsFromInsertRowObject(item);
+    const banner = firstNonEmptyString(
+      item.label,
+      item.text,
+      item.title,
+      fromCells && fromCells.length > 0 ? fromCells.join(" ") : undefined
+    );
+    if (banner) return { banner };
+  }
+  if (isRecord(item)) {
+    const fromCells = cellsFromInsertRowObject(item);
+    if (fromCells && fromCells.length > 0) return fromCells;
+  }
+  const cells = coerceMatrixRow(item);
+  if (!cells || cells.length === 0) return undefined;
+  return cells;
+}
+
 function asInsertTableRows(value: unknown): InsertTableRow[] | undefined {
   if (!Array.isArray(value) || value.length === 0) return undefined;
   const rows: InsertTableRow[] = [];
   for (const item of value) {
-    if (isRecord(item) && typeof item.banner === "string" && item.banner.trim()) {
-      rows.push({ banner: item.banner });
-      continue;
-    }
-    const cells = coerceMatrixRow(item);
-    if (!cells || cells.length === 0) return undefined;
-    rows.push(cells);
+    const row = asInsertTableRow(item);
+    if (!row) return undefined;
+    rows.push(row);
   }
   return rows;
 }
@@ -1688,6 +1759,30 @@ function coerceInsertColumnShape(next: Record<string, unknown>): void {
   }
 }
 
+function looksLikeCellEdits(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.every(
+    (item) =>
+      isRecord(item) &&
+      asInt(item.row) !== null &&
+      asInt(item.col) !== null &&
+      firstString(item.insertText, item.value, item.text, item.content) !==
+        undefined
+  );
+}
+
+function coerceInsertRowsShape(next: Record<string, unknown>): void {
+  if (Array.isArray(next.rows) && next.rows.length > 0) return;
+  const nestedRows = nestedInsertRowsAlias(next);
+  if (nestedRows) {
+    next.rows = nestedRows;
+    return;
+  }
+  if (Array.isArray(next.cells) && next.cells.length > 0 && !looksLikeCellEdits(next.cells)) {
+    next.rows = next.cells;
+  }
+}
+
 /**
  * Repair common model mistakes so `edit_table` can return a hint (or succeed)
  * instead of throwing at the tool schema. Does not invent cell text.
@@ -1701,6 +1796,7 @@ export function coerceTableOperationInput(raw: unknown): unknown {
 
   if (next.kind === "edit_cells") coerceEditCellsShape(next);
   if (next.kind === "insert_column") coerceInsertColumnShape(next);
+  if (next.kind === "insert_rows") coerceInsertRowsShape(next);
 
   if (next.kind !== "delete_rows") return next;
 
@@ -1905,6 +2001,9 @@ export function tableOperationInvalidHint(raw: unknown): string {
   }
   if (kind === "insert_column") {
     return `insert_column needs kind: "insert_column" with header (and optional afterCol, values). Omit afterCol to append as the last column. ${TABLE_EDIT_RECOVERY}`;
+  }
+  if (kind === "insert_rows") {
+    return `insert_rows needs kind: "insert_rows" with rows: [["col1","col2"], ...] or { banner: "GROUP LABEL" }. Do not pass cells or nest insert_rows: [...]. Prefer afterRowKey (first-cell text) over afterRow. ${TABLE_EDIT_RECOVERY}`;
   }
   return `The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table. Put kind at the top of operation (kind: edit_cells, tableIndex, cells) — not nested as { edit_cells: { cells } }. ${TABLE_EDIT_RECOVERY}`;
 }

@@ -205,6 +205,20 @@ describe("planReviewPages", () => {
     expect(coverageObjectiveDigest("  Calibration  Walk ")).toBe(
       "calibration walk"
     );
+    expect(
+      coverageObjectiveDigest(
+        "Extract document details for section 3 qualification documents (covers)"
+      )
+    ).toBe("qsr_qualification_documents");
+    expect(coverageObjectiveDigest("qsr_qualification_documents")).toBe(
+      "qsr_qualification_documents"
+    );
+    expect(
+      coverageObjectiveDigest("QSR Table 3 qualification document numbers")
+    ).toBe("qsr_qualification_documents");
+    expect(
+      coverageObjectiveDigest("qsr references for the qualification summary")
+    ).toBe("qsr_references");
   });
 
   it("queues schema-matching monitoring pages across files, not a protocol that only says monitoring", () => {
@@ -535,6 +549,12 @@ describe("coverageKeySatisfiesObjective", () => {
       coverageKeySatisfiesObjective(
         "att:10:run|obj:calibration of associated instruments",
         "elr_calibration"
+      )
+    ).toBe(true);
+    expect(
+      coverageKeySatisfiesObjective(
+        "att:10:run|obj:extract document details for section 3 qualification documents (covers)",
+        "qsr_qualification_documents"
       )
     ).toBe(true);
   });
