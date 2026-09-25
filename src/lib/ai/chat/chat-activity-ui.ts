@@ -8,6 +8,8 @@ import { sectionLabel as chatSectionLabelForType } from "@/lib/ai/chat/fields";
 import type { SectionType } from "@/db/schema";
 import {
   isDocumentReviewToolName,
+  reviewDocumentDetailLabel,
+  reviewDocumentsFromParts,
   summarizeDocumentReviewProgress,
   type DocumentReviewToolPart,
 } from "@/lib/ai/chat/document-review-ui";
@@ -42,6 +44,8 @@ export type ActivitySurfaceNode = {
   expandable: boolean;
   children: ActivityChildNode[];
   thoughtText?: string;
+  /** Wrap the surface label instead of truncating (long review filenames). */
+  wrapLabel?: boolean;
 };
 
 export type ChatActivityBlock =
@@ -953,11 +957,31 @@ function startsDocumentActivityRun(
   return false;
 }
 
+function documentReviewChildren(
+  parts: readonly DocumentReviewToolPart[],
+  findingCount: number
+): ActivityChildNode[] {
+  const children: ActivityChildNode[] = reviewDocumentsFromParts(parts).map(
+    (doc) => ({
+      kind: "detail",
+      label: reviewDocumentDetailLabel(doc),
+    })
+  );
+  if (findingCount > 0) {
+    children.push({
+      kind: "detail",
+      label: `${findingCount} relevant finding${findingCount === 1 ? "" : "s"}`,
+    });
+  }
+  return children;
+}
+
 export function documentReviewActivityNode(
   parts: readonly DocumentReviewToolPart[]
 ): ActivitySurfaceNode | null {
   const snapshot = summarizeDocumentReviewProgress(parts);
   if (!snapshot) return null;
+  const children = documentReviewChildren(parts, snapshot.findingCount);
   const tone: ActivitySurfaceNode["tone"] =
     snapshot.phase === "complete"
       ? "success"
@@ -969,8 +993,9 @@ export function documentReviewActivityNode(
     label: snapshot.label,
     pending: snapshot.pending,
     tone,
-    expandable: false,
-    children: [],
+    expandable: children.length > 0,
+    children,
+    wrapLabel: true,
   };
 }
 

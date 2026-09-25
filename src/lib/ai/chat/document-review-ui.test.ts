@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  reviewDocumentDetailLabel,
+  reviewDocumentsFromParts,
   summarizeDocumentReviewProgress,
 } from "@/lib/ai/chat/document-review-ui";
 
@@ -201,5 +203,83 @@ describe("summarizeDocumentReviewProgress", () => {
     );
     expect(snapshot?.label).not.toContain("Calibration Planner");
     expect(snapshot?.label).not.toContain("more files");
+  });
+
+  it("keeps a finding count after finish omits findingCount", () => {
+    const snapshot = summarizeDocumentReviewProgress([
+      {
+        toolName: "continue_document_review",
+        state: "output-available",
+        output: {
+          status: "ready_to_finish",
+          totalPages: 12,
+          reviewedPages: 12,
+          findingCount: 9,
+        },
+      },
+      {
+        toolName: "finish_document_review",
+        state: "output-available",
+        output: {
+          status: "complete",
+          totalPages: 12,
+          reviewedPages: 12,
+        },
+      },
+    ]);
+    expect(snapshot?.findingCount).toBe(9);
+  });
+});
+
+describe("reviewDocumentsFromParts", () => {
+  it("merges page counts, continue progress, and skipped files", () => {
+    const docs = reviewDocumentsFromParts([
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: {
+          documents: [
+            {
+              attachmentId: "urs",
+              filename: "User Requirement Specification.PDF",
+              pageCount: 12,
+            },
+          ],
+          skippedDocuments: [
+            { attachmentId: "oq", filename: "CSV-OQ.pdf", pageCount: 40 },
+          ],
+        },
+      },
+      {
+        toolName: "continue_document_review",
+        state: "output-available",
+        output: {
+          byAttachment: [
+            {
+              attachmentId: "urs",
+              filename: "User Requirement Specification.PDF",
+              reviewed: 12,
+              queued: 12,
+            },
+          ],
+        },
+      },
+    ]);
+    expect(docs).toEqual([
+      expect.objectContaining({
+        filename: "User Requirement Specification.PDF",
+        pageCount: 12,
+        reviewed: 12,
+        queued: 12,
+      }),
+      expect.objectContaining({
+        filename: "CSV-OQ.pdf",
+        skipped: true,
+      }),
+    ]);
+    expect(reviewDocumentDetailLabel(docs[0]!)).toBe(
+      "User Requirement Specification.PDF · 12/12 pages"
+    );
+    expect(reviewDocumentDetailLabel(docs[1]!)).toBe("Skipped CSV-OQ.pdf");
   });
 });
