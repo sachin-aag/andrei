@@ -273,10 +273,10 @@ export function reviewDocumentDetailLabel(doc: ReviewDocumentUiRef): string {
 
 export function fileScopeSuffix(docs: readonly ReviewDocumentUiRef[]): string {
   if (docs.length === 0) return "";
-  const names = docs.map((doc) => truncateReviewFilename(doc.filename));
-  if (names.length === 1) return ` in ${names[0]}`;
-  if (names.length === 2) return ` in ${names[0]} and ${names[1]}`;
-  return ` in ${names[0]} and ${names.length - 1} more files`;
+  if (docs.length === 1) {
+    return ` in ${truncateReviewFilename(docs[0]!.filename)}`;
+  }
+  return ` across ${docs.length} files`;
 }
 
 function truncateReviewFilename(name: string): string {

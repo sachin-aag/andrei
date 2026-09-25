@@ -366,6 +366,45 @@ describe("buildChatActivityBlocks", () => {
     ]);
   });
 
+  it("does not split a review chip when list_attachments runs mid-walk", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart("start_document_review", "output-available", undefined, {
+        status: "started",
+        totalPages: 12,
+        documents: [
+          {
+            filename: "User Requirement Specification.pdf",
+            attachmentId: "urs",
+          },
+        ],
+      }),
+      toolPart("list_attachments", "output-available", undefined, {
+        count: 5,
+      }),
+      toolPart("continue_document_review", "output-available", undefined, {
+        status: "ready_to_finish",
+        totalPages: 12,
+        reviewedPages: 12,
+      }),
+      toolPart("finish_document_review", "output-available", undefined, {
+        status: "complete",
+        totalPages: 12,
+        reviewedPages: 12,
+        documents: [
+          {
+            filename: "User Requirement Specification.pdf",
+            attachmentId: "urs",
+          },
+        ],
+      }),
+    ] as never);
+
+    const reviewBlocks = blocks.filter((block) => block.kind === "document-review");
+    expect(reviewBlocks).toHaveLength(1);
+    const listed = blocks.filter((block) => block.kind === "activity");
+    expect(listed.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("does not show a fatal error chip for a remapped unavailable tool", () => {
     const blocks = buildChatActivityBlocks([
       toolPart(

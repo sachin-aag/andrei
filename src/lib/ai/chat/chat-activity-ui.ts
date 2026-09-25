@@ -44,7 +44,7 @@ export type ActivitySurfaceNode = {
   expandable: boolean;
   children: ActivityChildNode[];
   thoughtText?: string;
-  /** Wrap the surface label instead of truncating (long review filenames). */
+  /** Wrap long review filenames and "across N files" instead of truncating. */
   wrapLabel?: boolean;
 };
 
@@ -993,9 +993,9 @@ export function documentReviewActivityNode(
     label: snapshot.label,
     pending: snapshot.pending,
     tone,
+    wrapLabel: true,
     expandable: children.length > 0,
     children,
-    wrapLabel: true,
   };
 }
 
@@ -1081,7 +1081,12 @@ export function buildChatActivityBlocks(
     }
 
     if (startsDocumentActivityRun(parts, index)) {
-      flushReview();
+      const runTool = readChatToolPart(parts[index]!);
+      // list_attachments between start and continue must not split one walk
+      // into a planning chip and a complete chip that names the wrong file.
+      if (runTool?.toolName !== "list_attachments") {
+        flushReview();
+      }
       flushSectionReads();
       const children: ActivityChildNode[] = [];
       const filenames: string[] = [];
