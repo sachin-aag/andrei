@@ -6,9 +6,12 @@ import {
   REVIEW_PREFERRED_MISSING_PAGE_CAP,
   coverageKeySatisfiesObjective,
   coverageObjectiveDigest,
+  isQsrInventoryReviewObjective,
+  isQsrLifecycleCoverObjective,
   neighborFillPages,
   objectiveTokens,
   planReviewPages,
+  REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE,
   samplePagesAcrossAttachment,
   scoreReviewPage,
 } from "./review-page-plan";
@@ -546,5 +549,60 @@ describe("coverageKeySatisfiesObjective", () => {
     expect(
       coverageKeySatisfiesObjective("att:10:run", "elr_calibration")
     ).toBe(false);
+  });
+});
+
+describe("QSR lifecycle cover review", () => {
+  it("treats Table 3 and References as cover-page walks, not RTM", () => {
+    expect(isQsrLifecycleCoverObjective("qsr_qualification_documents")).toBe(
+      true
+    );
+    expect(isQsrLifecycleCoverObjective("qualification documents")).toBe(true);
+    expect(
+      isQsrLifecycleCoverObjective("document number revision and status")
+    ).toBe(true);
+    expect(isQsrLifecycleCoverObjective("qsr_references")).toBe(true);
+    expect(isQsrLifecycleCoverObjective("qsr_rtm_process")).toBe(false);
+    expect(isQsrLifecycleCoverObjective("elr_qualification")).toBe(false);
+    expect(
+      isQsrInventoryReviewObjective("qualification documents", "qsr_rtm_gmp")
+    ).toBe(true);
+    expect(isQsrInventoryReviewObjective("elr_calibration")).toBe(false);
+  });
+
+  it("queues the first two pages of every lifecycle file including URS", () => {
+    const files = [
+      { id: "urs", filename: "URS-GLR-1301.pdf" },
+      { id: "dq", filename: "DQ-GLR-1301.pdf" },
+      { id: "iq", filename: "IQ-GLR-1301.pdf" },
+      { id: "oq", filename: "OQ-GLR-1301.pdf" },
+      { id: "pq", filename: "PQ-GLR-1301.pdf" },
+    ];
+    const pages = files.flatMap((file) =>
+      Array.from({ length: 40 }, (_, i) => ({
+        attachmentId: file.id,
+        pageNumber: i + 1,
+        filename: file.filename,
+        transcript:
+          i < 2
+            ? `Protocol No. ${file.id.toUpperCase()}-P Report No. ${file.id.toUpperCase()}-R Rev 01`
+            : `qualification body page ${i + 1} acceptance criteria`,
+        outlineTitle: i < 2 ? "Cover" : "Protocol body",
+        identifiers: i < 2 ? [`${file.id.toUpperCase()}-P`] : ([] as string[]),
+      }))
+    );
+    const selected = planReviewPages(
+      pages,
+      "qsr_qualification_documents",
+      2500
+    );
+    expect(selected).toHaveLength(
+      files.length * REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE
+    );
+    expect(selected.every((page) => (page.pageNumber ?? 99) <= 2)).toBe(true);
+    expect(selected.some((page) => page.attachmentId === "urs")).toBe(true);
+    expect(
+      selected.filter((page) => page.attachmentId === "iq")
+    ).toHaveLength(REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE);
   });
 });

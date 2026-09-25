@@ -276,6 +276,7 @@ import {
   inventoryReadyIdsForObjective,
   isElrInventoryReviewObjective,
 } from "@/lib/ai/chat/inventory-review-schema";
+import { isQsrInventoryReviewObjective } from "@/lib/ai/chat/review-page-plan";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -2267,7 +2268,7 @@ export function buildChatTools(opts: {
           .max(12)
           .optional()
           .describe(
-            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so the server keeps files that match this table's columns)."
+            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so the server keeps files that match this table's columns) and Qualification Summary Report Table 3 / RTM inventories (omit so every attached URS / DQ / IQ / OQ / PQ is walked)."
           ),
       }),
       execute: async ({ objective, attachmentIds }) => {
@@ -2285,22 +2286,28 @@ export function buildChatTools(opts: {
           documentType,
           sectionScope: opts.sectionScope,
         });
-        const inventoryScoped =
+        const elrInventoryScoped =
           documentType === "equipment_lifecycle_report" &&
           isElrInventoryReviewObjective(coverageObjective, objective);
+        const qsrInventoryScoped =
+          documentType === "qualification_summary_report" &&
+          isQsrInventoryReviewObjective(coverageObjective, objective);
+        const inventoryScoped = elrInventoryScoped || qsrInventoryScoped;
         const selected =
           pinnedReady.length > 0
             ? requestedInScope.length > 0
               ? requestedInScope.filter((id) => allowed.has(id))
               : pinnedReady
-            : inventoryScoped
+            : elrInventoryScoped
               ? inventoryReadyIdsForObjective(
                   ready,
                   coverageObjective || objective
                 )
-              : requestedInScope.length > 0
-                ? requestedInScope.filter((id) => allowed.has(id))
-                : ready.map((doc) => doc.attachmentId);
+              : qsrInventoryScoped
+                ? ready.map((doc) => doc.attachmentId)
+                : requestedInScope.length > 0
+                  ? requestedInScope.filter((id) => allowed.has(id))
+                  : ready.map((doc) => doc.attachmentId);
         if (selected.length === 0) {
           return {
             status: "no_documents" as const,

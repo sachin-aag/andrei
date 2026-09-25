@@ -1231,6 +1231,7 @@ export function ReportWorkspace({
                     }),
                     showReviewGutter && REVIEW_GUTTER_GRID_COLS
                   )}
+                  data-review-gutter={showReviewGutter ? "" : undefined}
                   style={
                     continuousDocument
                       ? undefined

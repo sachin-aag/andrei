@@ -1,3 +1,4 @@
+import { getDocumentType } from "@/lib/document-types";
 import {
   filenameConflictsWithInventoryObjective,
   inventorySectionForObjective,
@@ -155,6 +156,118 @@ export const REVIEW_PREFERRED_MISSING_PAGE_CAP = 24;
  * cap. DV catalogs are not inventories — they keep the listing cap.
  */
 export const REVIEW_INVENTORY_WALK_CAP = 48;
+/**
+ * QSR Table 3 / References identity lives on protocol and report covers
+ * (document number, revision, status, Protocol No. / Report No.). Walking
+ * every IQ/OQ/PQ body page demotes URS and truncates at the ELR 48-page cap.
+ */
+export const REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE = 2;
+
+function qsrInventorySectionKeys(): readonly string[] {
+  return (
+    getDocumentType("qualification_summary_report").chat.inventorySections ?? []
+  );
+}
+
+/**
+ * Table 3 (Qualification Documents) and References: covers, not protocol
+ * bodies. RTM inventories are not covers — they need URS IDs throughout.
+ */
+export function isQsrLifecycleCoverObjective(
+  objective: string | null | undefined
+): boolean {
+  if (!objective) return false;
+  const digest = coverageObjectiveDigest(objective);
+  if (!digest) return false;
+  if (
+    digest === "qsr_qualification_documents" ||
+    digest.includes("qsr_qualification_documents")
+  ) {
+    return true;
+  }
+  if (digest === "qsr_references" || digest.includes("qsr_references")) {
+    return true;
+  }
+  if (digest.includes("qualification document")) return true;
+  if (digest.includes("lifecycle document")) return true;
+  const hasDocIdentity =
+    digest.includes("document number") ||
+    digest.includes("document no") ||
+    digest.includes("document name");
+  const hasRevisionOrStatus =
+    digest.includes("revision") ||
+    digest.includes("status") ||
+    digest.includes("effective");
+  return hasDocIdentity && hasRevisionOrStatus;
+}
+
+function qsrInventorySectionForObjective(
+  objective: string | null | undefined
+): string | null {
+  if (!objective) return null;
+  const digest = coverageObjectiveDigest(objective);
+  if (!digest) return null;
+  const keys = qsrInventorySectionKeys();
+  if (keys.includes(digest)) return digest;
+  if (
+    digest.includes("qualification document") ||
+    digest.includes("qsr_qualification") ||
+    digest.includes("lifecycle document")
+  ) {
+    return "qsr_qualification_documents";
+  }
+  for (const key of keys) {
+    if (key === "qsr_qualification_documents") continue;
+    const noun = key.replace(/^qsr_/, "").replace(/_/g, " ");
+    if (noun.length >= 4 && digest.includes(noun)) return key;
+  }
+  return null;
+}
+
+export function isQsrInventoryReviewObjective(
+  ...objectives: Array<string | null | undefined>
+): boolean {
+  return objectives.some((objective) =>
+    Boolean(qsrInventorySectionForObjective(objective))
+  );
+}
+
+function coverPagesPerAttachment<T extends ReviewPagePlanInput>(
+  pages: readonly T[],
+  perFile: number,
+  cap: number
+): T[] {
+  if (pages.length === 0 || perFile <= 0 || cap <= 0) return [];
+  const byAttachment = new Map<string, T[]>();
+  const order: string[] = [];
+  for (const page of pages) {
+    const existing = byAttachment.get(page.attachmentId);
+    if (existing) {
+      existing.push(page);
+      continue;
+    }
+    order.push(page.attachmentId);
+    byAttachment.set(page.attachmentId, [page]);
+  }
+  const selected: T[] = [];
+  for (const id of order) {
+    if (selected.length >= cap) break;
+    const siblings = [...(byAttachment.get(id) ?? [])].sort((a, b) => {
+      const aNo =
+        typeof a.pageNumber === "number" && Number.isFinite(a.pageNumber)
+          ? a.pageNumber
+          : Number.MAX_SAFE_INTEGER;
+      const bNo =
+        typeof b.pageNumber === "number" && Number.isFinite(b.pageNumber)
+          ? b.pageNumber
+          : Number.MAX_SAFE_INTEGER;
+      return aNo - bNo;
+    });
+    const take = Math.min(perFile, siblings.length, cap - selected.length);
+    selected.push(...siblings.slice(0, take));
+  }
+  return selected;
+}
 
 function pageOrdinal<T extends ReviewPagePlanInput>(
   page: T,
@@ -344,13 +457,21 @@ function withNeighborFill<T extends ReviewPagePlanInput>(
  * with zero hits are still queued as a stratified sample (not every page
  * of a 200-page CCF / PRQR, up to `REVIEW_PREFERRED_MISSING_PAGE_CAP`).
  * Scored inventory pages are then capped at `REVIEW_INVENTORY_WALK_CAP`
- * (DV catalogs are not).
+ * (DV catalogs are not). QSR Table 3 / References take the first
+ * `REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE` pages of each file.
  */
 export function planReviewPages<T extends ReviewPagePlanInput>(
   pages: readonly T[],
   objective: string,
   cap: number
 ): T[] {
+  if (isQsrLifecycleCoverObjective(objective)) {
+    return coverPagesPerAttachment(
+      pages,
+      REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE,
+      cap
+    );
+  }
   if (
     objectiveTokens(objective).length === 0 &&
     phraseFamiliesForReviewObjective(objective).length === 0 &&
