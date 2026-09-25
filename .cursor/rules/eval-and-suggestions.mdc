@@ -48,8 +48,11 @@ DV mixes LLM criteria with deterministic `check()` functions.
   `dismissed` with `resolutionReason: "superseded_by:<id>"`, never `resolved`.
   Table ops on the same table supersede only when the later op covers or
   invalidates the earlier coordinates (`insert_rows` after the header shifts
-  row 1; an append does not dismiss a disjoint `edit_cells` of row 1).
-  Sequential / Apply-all apply of that pair must not treat a filled empty
+  row 1; an append does not dismiss a disjoint `edit_cells` of row 1). A
+  newer `delete_rows` supersedes an older delete whose rows it deletes or
+  would shift up (below the smallest deleted row). A newer `edit_cells`
+  supersedes an older delete of a row it edits. Sequential / Apply-all apply
+  of that pair must not treat a filled empty
   `expectedRowAtAfter` as stale — only changed snapshot cells that already
   had text. Pending table-preview insert marks on a seeded empty row are
   the live apply of `edit_cells` — commit them (narrative `alreadyMarked`)
@@ -82,6 +85,10 @@ DV mixes LLM criteria with deterministic `check()` functions.
   so insert text does not vanish during save. Range-contained siblings are
   dismissed, not applied into an overwrite. Locate failures stay open; the
   toast reports them. Do not dismiss a skip — that is a silent failure.
+  Apply all dismisses a same-table leftover invalidated by an operation
+  applied earlier in the batch (`superseded_by:<id>`), not as a skip. The
+  Apply all count only includes locatable suggestions; Dismiss all still
+  counts every open suggestion so stale leftovers can be cleared.
 - `draft_field` refuses a filled field unless `replaceFilledField: true`.
   After a redraft, filled `[Label: value]` placeholders must be preserved
   unless the caller opted into replacing them.

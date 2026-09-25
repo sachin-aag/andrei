@@ -33,6 +33,8 @@ import {
   ArrowUpToLine,
   AlignVerticalJustifyCenter,
   ArrowDownToLine,
+  Combine,
+  Split,
 } from "lucide-react";
 import { isBulkSuggestionApply } from "@/lib/suggestions/apply-transition";
 import {
@@ -130,7 +132,7 @@ import { TiptapEditorContextMenu } from "@/components/report/tiptap-editor-conte
 const GENERIC_RICH_FIELD_OPTIONS = { preserveHeadings: true } as const;
 const GENERIC_MARKDOWN_OPTIONS = { headingNodes: true } as const;
 
-function TableEditToolbar({
+export function TableEditToolbar({
   editor,
   tableHAlign,
   tableVAlign,
@@ -214,6 +216,33 @@ function TableEditToolbar({
       >
         <Rows3 className="size-3" />
         <Minus className="size-2.5" />
+      </Button>
+      <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        data-testid="table-merge-cells"
+        disabled={!editor.can().mergeCells()}
+        onClick={() => editor.chain().focus().mergeCells().run()}
+        title="Merge selected cells"
+      >
+        <Combine className="size-3" />
+        Merge
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        data-testid="table-split-cell"
+        disabled={!editor.can().splitCell()}
+        onClick={() => editor.chain().focus().splitCell().run()}
+        title="Split merged cell"
+      >
+        <Split className="size-3" />
+        Split
       </Button>
       <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
       <Button

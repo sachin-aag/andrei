@@ -72,6 +72,37 @@ const sectionContent = {
   },
 };
 
+function tableDoc(headers: string[], rows: string[][]) {
+  const cell = (type: "tableHeader" | "tableCell", text: string) => ({
+    type,
+    attrs: { colspan: 1, rowspan: 1, colwidth: null },
+    content: [
+      {
+        type: "paragraph",
+        content: text ? [{ type: "text", text }] : undefined,
+      },
+    ],
+  });
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: headers.map((h) => cell("tableHeader", h)),
+          },
+          ...rows.map((row) => ({
+            type: "tableRow",
+            content: row.map((c) => cell("tableCell", c)),
+          })),
+        ],
+      },
+    ],
+  };
+}
+
 describe("shouldShowSuggestionBulkActions", () => {
   it("hides the bulk row when nothing is open", () => {
     expect(shouldShowSuggestionBulkActions(0)).toBe(false);
@@ -97,6 +128,15 @@ describe("formatBulkApplyToast", () => {
     );
     expect(formatBulkApplyToast(0, 2)).toBe(
       "None of these suggestions could be applied. Dismiss them or run Suggest fixes again."
+    );
+  });
+
+  it("reports same-table leftovers dismissed as replaced", () => {
+    expect(formatBulkApplyToast(1, 0, 1)).toBe(
+      "Applied 1 suggestion. 1 replaced by it was dismissed."
+    );
+    expect(formatBulkApplyToast(2, 1, 2)).toBe(
+      "Applied 2 suggestions. 2 replaced by them were dismissed. 1 no longer fits and was left open."
     );
   });
 });
@@ -457,6 +497,141 @@ describe("acceptAllSuggestions", () => {
     expect(text).toContain("Engineering");
     expect(text).toContain("Production");
     expect(text).not.toContain(suggestionInsertMarkName);
+  });
+
+  it("dismisses a same-table leftover invalidated by an earlier apply", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const firstDelete = comment(
+      "t1",
+      "",
+      "delete report rows",
+      "elr_responsibilities"
+    );
+    firstDelete.contentPath = "table";
+    firstDelete.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "delete-low",
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [
+          { row: 2, expectedCells: ["2", "QA", "Review"] },
+          { row: 4, expectedCells: ["4", "QC", "Test"] },
+        ],
+      },
+    });
+    const leftoverDelete = comment(
+      "t2",
+      "",
+      "delete later rows",
+      "elr_responsibilities"
+    );
+    leftoverDelete.contentPath = "table";
+    leftoverDelete.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "delete-high",
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [{ row: 5, expectedCells: ["5", "Stores", "Issue"] }],
+      },
+    });
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [firstDelete, leftoverDelete],
+      sectionContent: {
+        table: tableDoc(
+          [...ELR_RESPONSIBILITIES_HEADERS],
+          [
+            ["1", "Engineering", "Maintain"],
+            ["2", "QA", "Review"],
+            ["3", "Production", "Operate"],
+            ["4", "QC", "Test"],
+            ["5", "Stores", "Issue"],
+          ]
+        ),
+      },
+    });
+
+    expect(result.appliedIds).toEqual(["t1"]);
+    expect(result.dismissedIds).toEqual(["t2"]);
+    expect(result.skippedIds).toEqual([]);
+    expect(JSON.parse(result.dismissedContent.t2).resolutionReason).toBe(
+      "superseded_by:t1"
+    );
+    expect(urls.some((url) => url.includes("/comments/t2"))).toBe(true);
+  });
+
+  it("still skips an unrelated locate failure next to a table apply", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const firstDelete = comment(
+      "t1",
+      "",
+      "delete report rows",
+      "elr_responsibilities"
+    );
+    firstDelete.contentPath = "table";
+    firstDelete.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "delete-low",
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [{ row: 2, expectedCells: ["2", "QA", "Review"] }],
+      },
+    });
+    const leftover = comment(
+      "c3",
+      " missing",
+      "this text is not in the document",
+      "elr_responsibilities"
+    );
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [firstDelete, leftover],
+      sectionContent: {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "QA owns the report." }],
+            },
+          ],
+        },
+        table: tableDoc(
+          [...ELR_RESPONSIBILITIES_HEADERS],
+          [
+            ["1", "Engineering", "Maintain"],
+            ["2", "QA", "Review"],
+            ["3", "Production", "Operate"],
+          ]
+        ),
+      },
+    });
+
+    expect(result.appliedIds).toEqual(["t1"]);
+    expect(result.skippedIds).toEqual(["c3"]);
+    expect(result.dismissedIds).toEqual([]);
   });
 });
 

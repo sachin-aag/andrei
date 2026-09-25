@@ -215,6 +215,9 @@ export function tocHeadingSpecsForDocumentType(
       // Section titles are banner rows inside the form tables; export-xml
       // marks them with outline levels instead of Heading styles.
       return null;
+    case "qualification_summary_report":
+      // Headings and the Index are fixed paragraphs in the form template.
+      return null;
     case "failure_investigation_report":
       return FIR_TOC_HEADINGS;
     case "generic_document":

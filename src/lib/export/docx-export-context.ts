@@ -129,6 +129,23 @@ export const MJ_FIR_DOCX_RUN_STYLE: DocxRunStyle = {
   tableBorderColor: "000000",
 };
 
+/**
+ * 3xper QAD/016/F06-00: Times New Roman 12pt, black text, gold table headers.
+ * Used only for content the QSR slot renderer hands back to the generic
+ * converter (lists, images, tables that do not fit the form grid).
+ */
+export const QSR_DOCX_RUN_STYLE: DocxRunStyle = {
+  font: "Times New Roman",
+  sizeHalfPoints: "24",
+  forceBlackText: true,
+  tableHeaderFill: "FFD966",
+  paragraphAlign: "both",
+  listParagraphStyle: true,
+  tableKeepTogetherWrapper: false,
+  tableWidthPct: "5000",
+  tableBorderColor: "000000",
+};
+
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
   decimal: 0,
   disc: 0,

@@ -37,6 +37,7 @@ import { applyInlineMediaToDocxZip } from "@/lib/export/docx-inline-media";
 import {
   CONVERGENT_DOCX_RUN_STYLE,
   MJ_FIR_DOCX_RUN_STYLE,
+  QSR_DOCX_RUN_STYLE,
   createDocxExportContext,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
@@ -83,11 +84,16 @@ import {
 } from "@/lib/export/docx-toc-headings";
 import { applyElrLiveAttachmentsTable } from "@/lib/export/elr-attachments-table";
 import {
+  citationsAppendixXml as reportCitationsAppendixXml,
   elrCitationsAppendixXml,
   insertXmlBeforeLastSectPr,
   unifyElrCitationsForExport,
+  unifyReportCitationsForExport,
 } from "@/lib/export/elr-unified-citations";
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
+import { applyQsrSlotsToDocxZip } from "@/lib/export/qsr/render";
+import { QSR_SECTION_KEYS, qsrMetadataFrom } from "@/lib/document-types/qsr/sections";
+import { VQ_SECTION_KEYS } from "@/lib/document-types/vq/sections";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
@@ -548,6 +554,19 @@ export async function generateReportDocx({
       citationsAppendixXml = elrCitationsAppendixXml(unified.bibliography);
     }
   }
+  if (
+    !omitCitations &&
+    (report.documentType === "vendor_qualification" ||
+      report.documentType === "qualification_summary_report")
+  ) {
+    const sectionKeys =
+      report.documentType === "vendor_qualification"
+        ? VQ_SECTION_KEYS
+        : QSR_SECTION_KEYS;
+    const unified = unifyReportCitationsForExport(exportSections, sectionKeys);
+    exportSections = unified.sections;
+    citationsAppendixXml = reportCitationsAppendixXml(unified.bibliography, "CITATIONS");
+  }
   if (report.documentType === "generic_document") {
     return generateGenericDocumentDocx({
       report,
@@ -562,7 +581,8 @@ export async function generateReportDocx({
     report.documentType === "quality_risk_assessment" ||
     report.documentType === "equipment_lifecycle_report" ||
     report.documentType === "vendor_qualification" ||
-    report.documentType === "failure_investigation_report"
+    report.documentType === "failure_investigation_report" ||
+    report.documentType === "qualification_summary_report"
   ) {
     return generateDesignVerificationDocx({
       documentType: report.documentType,
@@ -717,7 +737,9 @@ async function generateDesignVerificationDocx({
     numberingBases,
     documentType === "failure_investigation_report"
       ? MJ_FIR_DOCX_RUN_STYLE
-      : pack.id === "convergent"
+      : documentType === "qualification_summary_report"
+        ? QSR_DOCX_RUN_STYLE
+        : pack.id === "convergent"
         ? CONVERGENT_DOCX_RUN_STYLE
         : undefined,
     { pageSetup }
@@ -768,6 +790,13 @@ async function generateDesignVerificationDocx({
   }
 
   doc.render(data);
+  if (documentType === "qualification_summary_report") {
+    applyQsrSlotsToDocxZip(doc.getZip(), {
+      sections: mergedSections,
+      metadata: qsrMetadataFrom(report.metadata),
+      ctx,
+    });
+  }
   if (citationsAppendixXml) {
     const zip = doc.getZip();
     const document = zip.file("word/document.xml");

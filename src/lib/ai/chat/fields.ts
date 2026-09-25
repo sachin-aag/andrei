@@ -411,6 +411,7 @@ const ALL_DOCUMENT_TYPES: Record<DocumentType, true> = {
   equipment_lifecycle_report: true,
   failure_investigation_report: true,
   vendor_qualification: true,
+  qualification_summary_report: true,
 };
 
 /** Human label for a section (registry, then shared map, then title-cased key). */

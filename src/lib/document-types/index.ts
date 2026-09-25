@@ -8,6 +8,7 @@ import { qualityRiskAssessmentDefinition } from "./quality-risk-assessment";
 import { equipmentLifecycleReportDefinition } from "./equipment-lifecycle-report";
 import { vendorQualificationDefinition } from "./vendor-qualification";
 import { failureInvestigationReportDefinition } from "./failure-investigation-report";
+import { qualificationSummaryReportDefinition } from "./qualification-summary-report";
 import type {
   CriterionDefinition,
   DocumentTypeDefinition,
@@ -40,6 +41,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return vendorQualificationDefinition;
     case "failure_investigation_report":
       return failureInvestigationReportDefinition;
+    case "qualification_summary_report":
+      return qualificationSummaryReportDefinition;
     default: {
       const exhaustive: never = type;
       throw new Error(`Unknown document type: ${exhaustive}`);
@@ -58,7 +61,8 @@ export function resolveDocumentType(
     type === "quality_risk_assessment" ||
     type === "equipment_lifecycle_report" ||
     type === "vendor_qualification" ||
-    type === "failure_investigation_report"
+    type === "failure_investigation_report" ||
+    type === "qualification_summary_report"
   ) {
     return type;
   }

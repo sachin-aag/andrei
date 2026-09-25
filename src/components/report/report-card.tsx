@@ -22,6 +22,8 @@ function untitledFallback(documentType: DocumentType | undefined): string {
       return "Untitled equipment lifecycle report";
     case "vendor_qualification":
       return "Untitled vendor qualification";
+    case "qualification_summary_report":
+      return "Untitled qualification summary report";
     case "failure_investigation_report":
       return "Untitled DS investigation";
     case "investigation_report":

@@ -396,6 +396,35 @@ export function countStaleOpenSuggestions(
   return { total: open.length, stale };
 }
 
+/**
+ * Document-wide open AI suggestions. `locatable` is the Apply-all count;
+ * `total` includes stale leftovers so Dismiss all can still clear them.
+ */
+export function countOpenSuggestionsForReport(
+  sectionOrder: readonly SectionType[],
+  comments: readonly CommentRecord[],
+  evaluations: readonly EvaluationRecord[],
+  sectionContentFor: (section: SectionType) => unknown
+): { total: number; locatable: number } {
+  let total = 0;
+  let locatable = 0;
+  for (const section of sectionOrder) {
+    const open = sortedOpenSuggestionsForSection(
+      section,
+      [...comments],
+      [...evaluations]
+    );
+    total += open.length;
+    const content = sectionContentFor(section);
+    for (const c of open) {
+      if (validateSuggestionLocate(c, section, content).canApply) {
+        locatable += 1;
+      }
+    }
+  }
+  return { total, locatable };
+}
+
 /** User-facing explanation when a suggestion cannot be applied. */
 export function suggestionStaleMessage(validation: SuggestionValidation): string {
   if (validation.mergeStatus === "noop") {

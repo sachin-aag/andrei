@@ -22,17 +22,19 @@ function escapeXml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function sectionOrderIndex(section: string): number {
-  const index = (ELR_SECTION_KEYS as readonly string[]).indexOf(section);
+function sectionOrderIndex(section: string, sectionKeys: readonly string[]): number {
+  const index = sectionKeys.indexOf(section);
   return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
 function sectionsInDocumentOrder(
-  sections: readonly ReportSectionRecord[]
+  sections: readonly ReportSectionRecord[],
+  sectionKeys: readonly string[]
 ): ReportSectionRecord[] {
   return sections.toSorted(
     (left, right) =>
-      sectionOrderIndex(left.section) - sectionOrderIndex(right.section)
+      sectionOrderIndex(left.section, sectionKeys) -
+      sectionOrderIndex(right.section, sectionKeys)
   );
 }
 
@@ -40,13 +42,14 @@ function sourceKey(source: string): string {
   return canonicalizeSourceCitationBracket(source);
 }
 
-/** First-appearance sources across ELR sections, then one global number each. */
-export function collectElrBibliography(
-  sections: readonly ReportSectionRecord[]
+/** First-appearance sources across sections, then one global number each. */
+export function collectReportBibliography(
+  sections: readonly ReportSectionRecord[],
+  sectionKeys: readonly string[]
 ): ElrBibliographyEntry[] {
   const bibliography: ElrBibliographyEntry[] = [];
   const seen = new Set<string>();
-  for (const row of sectionsInDocumentOrder(sections)) {
+  for (const row of sectionsInDocumentOrder(sections, sectionKeys)) {
     for (const source of orderedCitationSourcesFromContent(row.content)) {
       const key = sourceKey(source);
       if (!key || seen.has(key)) continue;
@@ -55,6 +58,13 @@ export function collectElrBibliography(
     }
   }
   return bibliography;
+}
+
+/** First-appearance sources across ELR sections, then one global number each. */
+export function collectElrBibliography(
+  sections: readonly ReportSectionRecord[]
+): ElrBibliographyEntry[] {
+  return collectReportBibliography(sections, ELR_SECTION_KEYS);
 }
 
 export function elrSourceToGlobalMap(
@@ -72,10 +82,11 @@ export function elrSourceToGlobalMap(
  * Drop per-field Citations lists and rewrite body `[n]` to report-wide numbers.
  * Editor content is unchanged — this is export-only.
  */
-export function unifyElrCitationsForExport(
-  sections: ReportSectionRecord[]
+export function unifyReportCitationsForExport(
+  sections: ReportSectionRecord[],
+  sectionKeys: readonly string[]
 ): { sections: ReportSectionRecord[]; bibliography: ElrBibliographyEntry[] } {
-  const bibliography = collectElrBibliography(sections);
+  const bibliography = collectReportBibliography(sections, sectionKeys);
   if (bibliography.length === 0) {
     return { sections, bibliography };
   }
@@ -90,6 +101,12 @@ export function unifyElrCitationsForExport(
       ) as JSONContent | Record<string, unknown>,
     })),
   };
+}
+
+export function unifyElrCitationsForExport(
+  sections: ReportSectionRecord[]
+): { sections: ReportSectionRecord[]; bibliography: ElrBibliographyEntry[] } {
+  return unifyReportCitationsForExport(sections, ELR_SECTION_KEYS);
 }
 
 function headingParagraphXml(text: string): string {
@@ -110,16 +127,23 @@ function bodyParagraphXml(text: string): string {
 }
 
 /** OOXML for the end-of-report bibliography, or empty when there are no cites. */
-export function elrCitationsAppendixXml(
-  bibliography: readonly ElrBibliographyEntry[]
+export function citationsAppendixXml(
+  bibliography: readonly ElrBibliographyEntry[],
+  heading: string
 ): string {
   if (bibliography.length === 0) return "";
   return [
-    headingParagraphXml(ELR_CITATIONS_HEADING),
+    headingParagraphXml(heading),
     ...bibliography.map(({ number, source }) =>
       bodyParagraphXml(`${number}. ${source}`)
     ),
   ].join("");
+}
+
+export function elrCitationsAppendixXml(
+  bibliography: readonly ElrBibliographyEntry[]
+): string {
+  return citationsAppendixXml(bibliography, ELR_CITATIONS_HEADING);
 }
 
 /** Insert appendix XML immediately before the document-level `sectPr`. */

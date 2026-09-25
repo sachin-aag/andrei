@@ -57,6 +57,7 @@ export const documentTypeEnum = pgEnum("document_type", [
   "equipment_lifecycle_report",
   "failure_investigation_report",
   "vendor_qualification",
+  "qualification_summary_report",
 ]);
 
 /**
@@ -545,6 +546,11 @@ export const attachmentAssets = pgTable(
       () => attachmentLibraryFolders.id,
       { onDelete: "set null" }
     ),
+    /**
+     * Report uploads stay off the vault until indexing succeeds. Vault uploads
+     * are listed immediately. Existing rows stay listed.
+     */
+    listedInLibrary: boolean("listed_in_library").notNull().default(true),
     filename: text("filename").notNull(),
     description: text("description"),
     mimeType: text("mime_type").notNull().default("application/pdf"),

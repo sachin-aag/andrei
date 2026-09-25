@@ -163,6 +163,51 @@ describe("3xper VQ DOCX export", () => {
     expect(footer).not.toContain("Anantha Kumar D");
   });
 
+  it("unifies citations at the end of the form", async () => {
+    function cited(body: string, source: string) {
+      return {
+        type: "doc" as const,
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: body }] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "Citations:" }] },
+          { type: "paragraph", content: [{ type: "text", text: `1. ${source}` }] },
+        ],
+      };
+    }
+    const sections = vqSections().map((row) => {
+      if (row.section === "vq_section_a") {
+        return {
+          ...row,
+          content: {
+            ...(row.content as object),
+            narrative: cited("Site comment recorded [1].", "[audit.pdf, p. 3]"),
+          },
+        };
+      }
+      if (row.section === "vq_section_g") {
+        return {
+          ...row,
+          content: {
+            ...(row.content as object),
+            narrative: cited("Impurities are controlled [1].", "[ra.pdf, p. 1]"),
+          },
+        };
+      }
+      return row;
+    });
+    const zip = new PizZip(await generateReportDocx({ report: vqReport(), sections }));
+    const xml = zip.file("word/document.xml")?.asText() ?? "";
+    const body = partText(zip, "word/document.xml");
+    const citationsAt = xml.indexOf("CITATIONS");
+    expect(citationsAt).toBeGreaterThan(xml.indexOf("Site comment recorded"));
+    expect(citationsAt).toBeGreaterThan(xml.indexOf("Impurities are controlled"));
+    expect(xml).toContain('<w:vertAlign w:val="superscript"/>');
+    expect(body).not.toContain("Citations:");
+    expect(body).toContain("1. [audit.pdf, p. 3]");
+    expect(body).toContain("2. [ra.pdf, p. 1]");
+  });
+
   it("names the exported file for the VQ type", () => {
     expect(reportExportDocxFileName("vendor_qualification", "VQ-2026-001")).toBe(
       "Vendor_Qualification_VQ-2026-001.docx"

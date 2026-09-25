@@ -21,6 +21,10 @@ import {
 import type { QraMetadata } from "@/lib/document-types/qra/sections";
 import type { ElrMetadata } from "@/lib/document-types/elr/sections";
 import type { FirMetadata } from "@/lib/document-types/fir/sections";
+import {
+  qsrMetadataFrom,
+  type QsrMetadata,
+} from "@/lib/document-types/qsr/sections";
 
 function ReportHeaderForm({
   report,
@@ -634,6 +638,115 @@ function FirIdentityForm({
   );
 }
 
+function QsrIdentityForm({
+  report,
+  setReport,
+  readOnly,
+}: {
+  report: ReportRecord;
+  setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
+  readOnly: boolean;
+}) {
+  const [documentNo, setDocumentNo] = useState(report.documentNo);
+  const [meta, setMeta] = useState<QsrMetadata>(() =>
+    qsrMetadataFrom(report.metadata)
+  );
+
+  const { status, lastSavedAt } = useAutoSave({
+    enabled: !readOnly,
+    value: { documentNo, meta },
+    onSave: async (v, context) => {
+      const res = await fetch(`/api/reports/${report.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentNo: v.documentNo.trim(),
+          metadata: v.meta,
+        }),
+        signal: context?.signal,
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const data = await res.json();
+      setReport(data.report);
+    },
+  });
+
+  const set = (key: keyof QsrMetadata) => (next: string) =>
+    setMeta((prev) => ({ ...prev, [key]: next }));
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm text-[var(--muted-foreground)]">
+            These fields print on the cover page and in every page header of
+            QAD/016/F06-00.
+          </p>
+          {!readOnly && <SaveStatus status={status} lastSavedAt={lastSavedAt} />}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <IdentityField
+            id="qsr-equipment-name"
+            label="Equipment / System"
+            value={meta.equipmentName}
+            placeholder="Glass Lined Reactor"
+            disabled={readOnly}
+            onChange={set("equipmentName")}
+          />
+          <IdentityField
+            id="qsr-equipment-code"
+            label="Equipment Number"
+            value={meta.equipmentCode}
+            placeholder="GLR-1301"
+            disabled={readOnly}
+            onChange={set("equipmentCode")}
+          />
+          <IdentityField
+            id="qsr-capacity"
+            label="Capacity / Size"
+            value={meta.capacity}
+            placeholder="3.0 KL"
+            disabled={readOnly}
+            onChange={set("capacity")}
+          />
+          <IdentityField
+            id="qsr-plant-section"
+            label="Section"
+            value={meta.plantSection}
+            placeholder="Production Block-A"
+            disabled={readOnly}
+            onChange={set("plantSection")}
+          />
+          <IdentityField
+            id="qsr-report-no"
+            label="Report No."
+            value={documentNo}
+            placeholder="QSR/GLR-1301"
+            disabled={readOnly}
+            onChange={setDocumentNo}
+          />
+          <IdentityField
+            id="qsr-revision"
+            label="Revision"
+            value={meta.revision}
+            placeholder="00"
+            disabled={readOnly}
+            onChange={set("revision")}
+          />
+          <IdentityField
+            id="qsr-revision-description"
+            label="Revision description"
+            value={meta.revisionDescription}
+            placeholder="New Document"
+            disabled={readOnly}
+            onChange={set("revisionDescription")}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ReportHeader() {
   const { report, setReport, readOnly } = useReportData();
   if (report.documentType === "equipment_lifecycle_report") {
@@ -649,6 +762,16 @@ export function ReportHeader() {
   if (report.documentType === "failure_investigation_report") {
     return (
       <FirIdentityForm
+        key={report.id}
+        report={report}
+        setReport={setReport}
+        readOnly={readOnly}
+      />
+    );
+  }
+  if (report.documentType === "qualification_summary_report") {
+    return (
+      <QsrIdentityForm
         key={report.id}
         report={report}
         setReport={setReport}

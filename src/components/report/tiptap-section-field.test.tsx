@@ -12,6 +12,7 @@ import {
   TableHeaderWithVerticalAlign,
 } from "@/lib/tiptap/table-cell-vertical-align";
 import { TableWithColumnWidths } from "@/lib/tiptap/table-column-widths";
+import { TableEditToolbar } from "@/components/report/tiptap-section-field";
 
 beforeAll(() => {
   if (typeof ResizeObserver === "undefined") {
@@ -114,6 +115,25 @@ function TableMenuHarness() {
   );
 }
 
+function MergeToolbarHarness() {
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit.configure({ heading: false, bulletList: false }),
+      TableWithColumnWidths.configure({ resizable: false }),
+      TableRow,
+      TableCellWithVerticalAlign,
+      TableHeaderWithVerticalAlign,
+    ],
+    content: TABLE_ONLY_DOC,
+  });
+
+  if (!editor) return null;
+  return (
+    <TableEditToolbar editor={editor} tableHAlign={null} tableVAlign={null} />
+  );
+}
+
 describe("table edit floating menu stacking", () => {
   it("portals the menu onto document.body with z-50, outside the z-10 canvas", async () => {
     render(<TableMenuHarness />);
@@ -124,5 +144,15 @@ describe("table edit floating menu stacking", () => {
     });
     expect(document.body.contains(toolbar)).toBe(true);
     expect(toolbar.closest("[data-canvas-pane]")).toBeNull();
+  });
+
+  it("offers Merge and Split on the shared table toolbar", async () => {
+    render(<MergeToolbarHarness />);
+    const merge = await screen.findByTestId("table-merge-cells");
+    expect(merge).toHaveTextContent("Merge");
+    expect(merge).toHaveAttribute("title", "Merge selected cells");
+    const split = screen.getByTestId("table-split-cell");
+    expect(split).toHaveTextContent("Split");
+    expect(split).toHaveAttribute("title", "Split merged cell");
   });
 });

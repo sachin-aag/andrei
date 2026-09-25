@@ -20,7 +20,7 @@ Reports are `investigation_report`, `failure_investigation_report` (MJ
 Investigation Report DS, `fir_*`), `design_verification`,
 `mechanical_design_verification`, `quality_risk_assessment`,
 `equipment_lifecycle_report`, `generic_document` (demo pack only), or
-`vendor_qualification` (3xper pack only). The registry is
+`vendor_qualification` / `qualification_summary_report` (3xper pack only). The registry is
 `src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
 prompts, chat persona, and merge.
 

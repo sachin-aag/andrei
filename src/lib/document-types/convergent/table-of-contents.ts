@@ -365,6 +365,56 @@ const VQ_TOC: TableOfContentsEntry[] = [
   { label: VQ_SECTION_LABELS.vq_scoring, sectionKey: "vq_scoring" },
 ];
 
+/** The QAD/016/F06-00 Index page. */
+const QSR_TOC: TableOfContentsEntry[] = [
+  {
+    label: "Introduction",
+    children: [
+      { label: "Objective", sectionKey: "qsr_objective" },
+      { label: "Scope", sectionKey: "qsr_scope" },
+      { label: "References", sectionKey: "qsr_references" },
+      { label: "Acronyms and Abbreviations", sectionKey: "qsr_acronyms" },
+    ],
+  },
+  {
+    label: "Overview and Background",
+    children: [
+      { label: "Overview", sectionKey: "qsr_overview" },
+      { label: "Background", sectionKey: "qsr_background" },
+    ],
+  },
+  {
+    label: "Qualification Lifecycle",
+    children: [
+      { label: "Qualification Documents", sectionKey: "qsr_qualification_documents" },
+    ],
+  },
+  { label: "Standard Operation Procedures", sectionKey: "qsr_sops" },
+  {
+    label: "Requirement Traceability Matrix",
+    children: [
+      { label: "Process Requirements", sectionKey: "qsr_rtm_process" },
+      { label: "Control Philosophy", sectionKey: "qsr_rtm_control" },
+      { label: "GMP Requirements", sectionKey: "qsr_rtm_gmp" },
+      { label: "Safety Requirements", sectionKey: "qsr_rtm_safety" },
+      { label: "Computer System Validation Requirements", sectionKey: "qsr_rtm_csv" },
+      {
+        label: "Equipment / System Maintenance and Cleaning Requirements",
+        sectionKey: "qsr_rtm_maintenance",
+      },
+    ],
+  },
+  {
+    label: "Qualified Operating Parameter Details",
+    children: [
+      { label: "Volumetric Details", sectionKey: "qsr_volumetric_details" },
+      { label: "Operating Range", sectionKey: "qsr_operating_range" },
+      { label: "Other Details", sectionKey: "qsr_other_details" },
+    ],
+  },
+  { label: "Conclusion", sectionKey: "qsr_conclusion" },
+];
+
 export function getConvergentTableOfContents(
   documentType: DocumentType
 ): TableOfContentsEntry[] | null {
@@ -470,6 +520,8 @@ function reportTableOfContentsRecipe(
       return GENERIC_DOCUMENT_TOC;
     case "vendor_qualification":
       return VQ_TOC;
+    case "qualification_summary_report":
+      return QSR_TOC;
     default: {
       const _exhaustive: never = documentType;
       return _exhaustive;

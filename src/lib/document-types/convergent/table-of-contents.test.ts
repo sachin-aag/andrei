@@ -282,6 +282,31 @@ describe("getReportTableOfContents", () => {
     expect(toc.at(-1)?.sectionKey).toBe("vq_scoring");
     expect(toc).toHaveLength(16);
   });
+
+  it("numbers the 3xper qualification summary report like the form Index", () => {
+    const toc = getReportTableOfContents("qualification_summary_report", "3xper");
+    expect(toc.map((entry) => entry.label)).toEqual([
+      "1. Introduction",
+      "2. Overview and Background",
+      "3. Qualification Lifecycle",
+      "4. Standard Operation Procedures",
+      "5. Requirement Traceability Matrix",
+      "6. Qualified Operating Parameter Details",
+      "7. Conclusion",
+    ]);
+    expect(toc[0].children?.[0]).toEqual({
+      label: "1.1 Objective",
+      sectionKey: "qsr_objective",
+    });
+    expect(toc[4].children?.map((entry) => entry.sectionKey)).toEqual([
+      "qsr_rtm_process",
+      "qsr_rtm_control",
+      "qsr_rtm_gmp",
+      "qsr_rtm_safety",
+      "qsr_rtm_csv",
+      "qsr_rtm_maintenance",
+    ]);
+  });
 });
 
 describe("numberTableOfContents", () => {

@@ -1,0 +1,20 @@
+export const QSR_DRAFTING_GUIDANCE = `QUALIFICATION SUMMARY REPORT (3xper QAD/016/F06-00) — DRAFTING RULES
+
+One report summarises the full qualification lifecycle (URS, DS, FMEA, DQ, FAT, SAT, IQ, OQ, PQ) of one main equipment/system and its auxiliaries. Write in past tense, formal GMP register, 3xper Innoventure Limited, Naidupeta as the site.
+
+Standard wording (replace <equipment> with the equipment number from the header identity, e.g. GLR-1301):
+- Objective: "The objective of this Qualification Summary Report is to provide a consolidated summary of all qualification activities performed for the <equipment> and connected auxiliary equipment, including the review of qualification documents, deviations (if any), and overall compliance with URS, applicable GMP requirements, and company procedures."
+- Overview: "The <equipment> along with its ancillary requirements including utility connections is installed and utilized for its intended usage within the 3xper Innoventure Limited, Naidupeta facility. The <equipment> has been designed, installed, and qualified in accordance with approved User Requirement Specifications, engineering standards, GMP requirements, and internal quality procedures. Qualification activities were performed to verify that the equipment/system consistently operates as intended and is capable of supporting the required process and product quality attributes."
+- Background: "Qualification of the <equipment> was performed to demonstrate its fitness for intended use. Qualification activities were executed to verify compliance with approved user requirements and to provide assurance that the equipment/system operates safely, reliably, and consistently within its intended operating range."
+- Conclusion: "The qualification activities performed demonstrate that the <equipment> along with auxiliary equipment are installed correctly, operates as intended, and performs consistently in accordance with predefined acceptance criteria and User requirement specification. The equipment/system is hereby recommended for release into routine GMP use." Only write the release recommendation when the attached reports show no open deviation; otherwise state what is open.
+
+Tables (keep the header row and column order exactly as seeded):
+- References: fill Reference Number from the attached URS / DS / DQ / IQ / PO documents. Leave blank when not found.
+- Qualification Documents: start empty. One row per document (Document Name, Document Number, Revision, Status, Effective/Approved date, Remarks). Start each equipment group with a merged full-width row (or only the equipment ID in bold in the first cell). For a protocol/report pair (DQ, IQ, OQ, PQ) put the protocol on the first row and the report number on the next row with Document Name, Revision and Remarks left empty — Merge those cells, or leave them blank and export still merges them.
+- Standard Operation Procedures: SOP numbers and effective dates for operation & cleaning, calibration, preventive maintenance, and training.
+- Requirement Traceability Matrix (5.1–5.6): one row per URS ID from the approved URS; Reference – Qualification Stage is DQ/IQ/OQ/PQ, Reference – Section is the protocol section that verified it. 5.1 is seeded with URS-1 plus merged group rows ANY SPECIFIC REQUIREMENTS and OTHER AUXILIARY REQUIREMENT; add further group rows the same way (Merge across the row, or bold text only in the first cell).
+- Volumetric Details: a paragraph naming each equipment (main equipment first, then "Auxiliary Equipment: <ID>"), each followed by its S.No / Parameter / Details table.
+- Operating Range: the form header is S.No, Parameter, Details (Details spans two columns). Pressure, Vacuum, and Agitator RPM keep that span. Temperature uses two rows — Minimum, then Maximum — under one S.No and Parameter, with the value in Details. Do not add a Range column.
+- Other Details: bold label then value, e.g. "Agitator Type: Cryo-Fix Anchor".
+
+Never invent document numbers, revisions, dates, volumes or ranges — copy them from a cited attachment page or leave the cell empty.`;

@@ -48,6 +48,28 @@ describe("sanitizeIngestError", () => {
     );
   });
 
+  it("keeps a failed resume instead of a generic ingest failed", () => {
+    expect(
+      sanitizeIngestError(
+        new Error("Could not continue document ingest (401): Authentication Required")
+      )
+    ).toBe(
+      "Document ingestion stopped between batches and could not resume. Reprocess the attachment to continue."
+    );
+  });
+
+  it("fails closed when Document AI OCR is not configured", () => {
+    expect(
+      sanitizeIngestError(
+        new Error(
+          "DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION are required. PDF indexing does not fall back to the slow page loop."
+        )
+      )
+    ).toBe(
+      "Document ingestion requires Document AI OCR. Set DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION."
+    );
+  });
+
   it("does not claim ingest 'could not be started'", () => {
     expect(sanitizeIngestError(new Error("boom"))).toBe(
       "Document ingestion failed"

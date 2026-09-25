@@ -28,7 +28,10 @@ import {
   interiorTablePages,
   persistDocumentTablesForRun,
 } from "@/lib/attachments/persist-document-tables";
-import { syncAssetProcessing } from "@/lib/attachments/sync-asset-processing";
+import {
+  patchLinkedProcessing,
+  syncAssetProcessing,
+} from "@/lib/attachments/sync-asset-processing";
 import { storageSourceForAttachment } from "@/lib/attachments/resolve-attachment";
 import {
   DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID,
@@ -309,6 +312,11 @@ async function initializeIngestRun(
 
 /** PDF path: split into batches, extract each, then chunk+embed. */
 async function runPdfIngest(init: IngestInit): Promise<void> {
+  if (!isDocumentAiConfigured()) {
+    throw new Error(
+      "DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION are required. PDF indexing does not fall back to the slow page loop."
+    );
+  }
   await assertAttachmentCurrent(init);
   const existingBatches = await listBatches(init.runId);
   if (existingBatches.length === 0) {
@@ -326,9 +334,9 @@ async function runPdfIngest(init: IngestInit): Promise<void> {
         throw new IngestNeedsContinuationError();
       }
       await assertAttachmentCurrent(init);
-      await heartbeatIngestRun(init.runId, init.attachmentId, batch.pageEnd);
+      await heartbeatIngestRun(init, batch.pageEnd);
       await processBatch(batch.id);
-      await updateBatchProgress(init.runId, init.attachmentId);
+      await updateBatchProgress(init);
     }
   }
 
@@ -367,10 +375,9 @@ async function runDocxIngest(init: IngestInit): Promise<void> {
 
   const visualByPage = new Map<number, string>();
   if (images.length > 0) {
-    await db
-      .update(reportAttachments)
-      .set({ processingProgress: 40 })
-      .where(eq(reportAttachments.id, init.attachmentId));
+    await patchLinkedProcessing(init.attachmentId, init.assetId, {
+      processingProgress: 40,
+    });
 
     const descriptions = await describeDocxImages({
       images,
@@ -426,10 +433,10 @@ async function runDocxIngest(init: IngestInit): Promise<void> {
       documentSummary: rawText.trim().slice(0, SUMMARY_MAX_CHARS),
     })
     .where(eq(attachmentIngestRuns.id, init.runId));
-  await db
-    .update(reportAttachments)
-    .set({ pageCount: Math.max(1, pages.length), processingProgress: 80 })
-    .where(eq(reportAttachments.id, init.attachmentId));
+  await patchLinkedProcessing(init.attachmentId, init.assetId, {
+    pageCount: Math.max(1, pages.length),
+    processingProgress: 80,
+  });
 
   await assertAttachmentCurrent(init);
   await chunkAndEmbedRun(init);
@@ -529,13 +536,10 @@ async function splitAndPersistBatches(input: IngestInit): Promise<{
       batchCount: split.batches.length,
     })
     .where(eq(attachmentIngestRuns.id, input.runId));
-  await db
-    .update(reportAttachments)
-    .set({
-      pageCount: split.pageCount,
-      processingProgress: 10,
-    })
-    .where(eq(reportAttachments.id, input.attachmentId));
+  await patchLinkedProcessing(input.attachmentId, input.assetId, {
+    pageCount: split.pageCount,
+    processingProgress: 10,
+  });
 
   return { batchCount: split.batches.length, pageCount: split.pageCount };
 }
@@ -556,13 +560,7 @@ async function listBatches(runId: string): Promise<
 }
 
 async function splitPdfForIngest(sourceBuffer: Buffer) {
-  // Searchable scans and born-digital files have a text layer. They used to
-  // skip this path and fall into Gemini's 3-page sequential insight loop.
-  // Enterprise OCR batching is 15 pages × 3 in flight (45 pages).
-  if (isDocumentAiConfigured()) {
-    return splitPdfIntoBatches(sourceBuffer, documentAiIngestSplitOptions());
-  }
-  return splitPdfIntoBatches(sourceBuffer);
+  return splitPdfIntoBatches(sourceBuffer, documentAiIngestSplitOptions());
 }
 
 function usesParallelOcrBatches(
@@ -588,12 +586,11 @@ async function processPdfBatchesInWaves(
     if (wave.length === 0) return;
     await assertAttachmentCurrent(init);
     await heartbeatIngestRun(
-      init.runId,
-      init.attachmentId,
+      init,
       Math.max(...wave.map((batch) => batch.pageEnd))
     );
     await Promise.all(wave.map((batch) => processBatch(batch.id)));
-    await updateBatchProgress(init.runId, init.attachmentId);
+    await updateBatchProgress(init);
   }
 }
 
@@ -611,18 +608,14 @@ function shouldYieldIngestSlice(sliceStartedAt: number): boolean {
 }
 
 async function heartbeatIngestRun(
-  runId: string,
-  attachmentId: string,
+  init: Pick<IngestInit, "runId" | "attachmentId" | "assetId">,
   processingPage: number
 ): Promise<void> {
   await db
     .update(attachmentIngestRuns)
     .set({ startedAt: new Date() })
-    .where(eq(attachmentIngestRuns.id, runId));
-  await db
-    .update(reportAttachments)
-    .set({ processingPage })
-    .where(eq(reportAttachments.id, attachmentId));
+    .where(eq(attachmentIngestRuns.id, init.runId));
+  await patchLinkedProcessing(init.attachmentId, init.assetId, { processingPage });
 }
 
 async function prepareRunForContinuation(runId: string): Promise<void> {
@@ -867,8 +860,7 @@ async function persistGapPagesForBatch(
 }
 
 async function updateBatchProgress(
-  runId: string,
-  attachmentId: string
+  init: Pick<IngestInit, "runId" | "attachmentId" | "assetId">
 ): Promise<{ completedBatchCount: number; progress: number }> {
   const [counts] = await db
     .select({
@@ -883,7 +875,7 @@ async function updateBatchProgress(
         eq(documentIngestBatches.status, "ready")
       )
     )
-    .where(eq(attachmentIngestRuns.id, runId))
+    .where(eq(attachmentIngestRuns.id, init.runId))
     .groupBy(attachmentIngestRuns.id);
 
   const batchCount = counts?.batchCount ?? 0;
@@ -897,11 +889,10 @@ async function updateBatchProgress(
     await tx
       .update(attachmentIngestRuns)
       .set({ completedBatchCount })
-      .where(eq(attachmentIngestRuns.id, runId));
-    await tx
-      .update(reportAttachments)
-      .set({ processingProgress: progress })
-      .where(eq(reportAttachments.id, attachmentId));
+      .where(eq(attachmentIngestRuns.id, init.runId));
+  });
+  await patchLinkedProcessing(init.attachmentId, init.assetId, {
+    processingProgress: progress,
   });
 
   return { completedBatchCount, progress };
@@ -1022,10 +1013,9 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
   });
   await db.delete(documentChunks).where(eq(documentChunks.ingestRunId, input.runId));
   if (chunks.length === 0) {
-    await db
-      .update(reportAttachments)
-      .set({ processingProgress: 90 })
-      .where(eq(reportAttachments.id, input.attachmentId));
+    await patchLinkedProcessing(input.attachmentId, input.assetId, {
+      processingProgress: 90,
+    });
     return { chunkCount: 0 };
   }
 
@@ -1049,10 +1039,9 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
       embedding: embeddings[index],
     }))
   );
-  await db
-    .update(reportAttachments)
-    .set({ processingProgress: 90 })
-    .where(eq(reportAttachments.id, input.attachmentId));
+  await patchLinkedProcessing(input.attachmentId, input.assetId, {
+    processingProgress: 90,
+  });
 
   return { chunkCount: chunks.length };
 }
@@ -1174,6 +1163,7 @@ async function markRunTerminal(input: {
 
     const [attachment] = await tx
       .select({
+        assetId: reportAttachments.assetId,
         deletedAt: reportAttachments.deletedAt,
         gcsGeneration: reportAttachments.gcsGeneration,
       })
@@ -1195,6 +1185,17 @@ async function markRunTerminal(input: {
           processingError: input.message,
         })
         .where(eq(reportAttachments.id, input.attachmentId));
+      if (attachment.assetId) {
+        await tx
+          .update(attachmentAssets)
+          .set({
+            processingStatus: "failed",
+            processingProgress: FAILED_ATTACHMENT_PROGRESS,
+            processingPage: null,
+            processingError: input.message,
+          })
+          .where(eq(attachmentAssets.id, attachment.assetId));
+      }
     }
   });
 }
@@ -1230,9 +1231,9 @@ export async function failIngestIfStillRunning(
 ): Promise<void> {
   const [row] = await db
     .select({
+      assetId: reportAttachments.assetId,
       processingStatus: reportAttachments.processingStatus,
       processingError: reportAttachments.processingError,
-      gcsGeneration: reportAttachments.gcsGeneration,
     })
     .from(reportAttachments)
     .where(eq(reportAttachments.id, attachmentId))
@@ -1240,13 +1241,10 @@ export async function failIngestIfStillRunning(
   if (!row || row.processingStatus === "ready") return;
   if (row.processingStatus === "failed" && row.processingError) return;
 
-  await db
-    .update(reportAttachments)
-    .set({
-      processingStatus: "failed",
-      processingProgress: FAILED_ATTACHMENT_PROGRESS,
-      processingPage: null,
-      processingError: sanitizeIngestError(error),
-    })
-    .where(eq(reportAttachments.id, attachmentId));
+  await patchLinkedProcessing(attachmentId, row.assetId, {
+    processingStatus: "failed",
+    processingProgress: FAILED_ATTACHMENT_PROGRESS,
+    processingPage: null,
+    processingError: sanitizeIngestError(error),
+  });
 }

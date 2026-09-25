@@ -12,9 +12,15 @@ import {
 import { engineerReportsSubtitle, getDocumentType } from "@/lib/document-types";
 
 describe("3xper customer pack", () => {
-  it("enables only vendor qualification", () => {
-    expect(XPER_PACK.enabledDocumentTypes).toEqual(["vendor_qualification"]);
+  it("enables vendor qualification and the qualification summary report", () => {
+    expect(XPER_PACK.enabledDocumentTypes).toEqual([
+      "vendor_qualification",
+      "qualification_summary_report",
+    ]);
     expect(isDocumentTypeEnabled("vendor_qualification", XPER_PACK)).toBe(true);
+    expect(
+      isDocumentTypeEnabled("qualification_summary_report", XPER_PACK)
+    ).toBe(true);
     expect(isDocumentTypeEnabled("investigation_report", XPER_PACK)).toBe(false);
     expect(isDocumentTypeEnabled("design_verification", XPER_PACK)).toBe(false);
     expect(XPER_PACK.wordImportEnabled).toBe(false);
@@ -33,6 +39,9 @@ describe("3xper customer pack", () => {
     );
     expect(getDocumentType("vendor_qualification").label).toBe(
       "Vendor Qualification"
+    );
+    expect(getDocumentType("qualification_summary_report").label).toBe(
+      "Qualification Summary Report"
     );
   });
 

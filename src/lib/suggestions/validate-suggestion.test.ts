@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommentRecord } from "@/types/report";
 import {
   countStaleOpenSuggestions,
+  countOpenSuggestionsForReport,
   fieldContentHash,
   firstPreviewableOpenSuggestion,
   frozenPayloadStillPending,
@@ -411,6 +412,49 @@ describe("countStaleOpenSuggestions", () => {
     );
     expect(counts.total).toBe(2);
     expect(counts.stale).toBe(1);
+  });
+});
+
+describe("countOpenSuggestionsForReport", () => {
+  it("counts locatable suggestions separately from stale leftovers", () => {
+    const sectionContent = {
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Only one line." }],
+          },
+        ],
+      },
+    };
+    const comments = [
+      aiFixComment({
+        id: "a",
+        content: serializeAiFixCommentContent({
+          deleteText: "gone",
+          insertText: "x",
+          reasoning: "",
+        }),
+      }),
+      aiFixComment({
+        id: "b",
+        anchorText: "Only",
+        content: serializeAiFixCommentContent({
+          deleteText: "",
+          insertText: " one",
+          reasoning: "",
+        }),
+      }),
+    ];
+    const counts = countOpenSuggestionsForReport(
+      ["define"],
+      comments,
+      [],
+      (section) => (section === "define" ? sectionContent : undefined)
+    );
+    expect(counts.total).toBe(2);
+    expect(counts.locatable).toBe(1);
   });
 });
 
