@@ -123,11 +123,63 @@ export function factIsRowKey(fact: HardFact, key: string): boolean {
   return fact.kind === "identifier" && fact.normalized === key.toUpperCase();
 }
 
+const COLUMN_LABEL_GAP_MAX = 80;
+
+type UrsSpan = { id: string; at: number };
+
+function ursSpans(quote: string): UrsSpan[] {
+  return [...quote.matchAll(/\bURS-\d+\b/gi)].map((match) => ({
+    id: match[0]!.toUpperCase(),
+    at: match.index ?? 0,
+  }));
+}
+
+function isColumnLabelGap(gap: string): boolean {
+  const body = gap.replace(/\s+/g, " ").trim();
+  if (!body || body.length > COLUMN_LABEL_GAP_MAX) return false;
+  return !/\d/.test(body);
+}
+
+/**
+ * OCR of a two-column URS table is the ID list, then the requirement
+ * sentences. That tail is not the last ID's own sentence.
+ * Returns the index where the value column starts, or null when the page
+ * is prose (each URS ID followed by its own text).
+ */
+export function columnRunValueStart(quote: string): number | null {
+  const spans = ursSpans(quote);
+  if (spans.length < 3) return null;
+  let best: { start: number; end: number } | null = null;
+  let runStart = 0;
+  for (let i = 1; i <= spans.length; i++) {
+    const continues =
+      i < spans.length &&
+      isColumnLabelGap(
+        quote.slice(spans[i - 1]!.at + spans[i - 1]!.id.length, spans[i]!.at)
+      );
+    if (continues) continue;
+    const runEnd = i - 1;
+    if (runEnd - runStart >= 2) {
+      if (!best || runEnd - runStart > best.end - best.start) {
+        best = { start: runStart, end: runEnd };
+      }
+    }
+    runStart = i;
+  }
+  if (!best) return null;
+  const last = spans[best.end]!;
+  const after = quote.slice(last.at + last.id.length);
+  const label = /^([^0-9]{0,80})/.exec(after);
+  return last.at + last.id.length + (label?.[1]?.length ?? 0);
+}
+
 /**
  * Slice of `quote` from this URS ID to the next URS ID (or 240 chars forward).
  * Same-page bag-of-quotes is not enough — URS-4 and URS-37 share a page.
  * Do not look behind the ID: the last URS on a page would otherwise steal
  * the previous row's range (`0 to 760 mmHg` sitting just before URS-36).
+ * A two-column URS table (IDs, then the requirement text) stops before that
+ * value column so the last ID does not own every sentence.
  */
 export function quoteWindowAroundKey(quote: string, key: string): string | null {
   if (!quote.trim() || !key) return null;
@@ -137,10 +189,15 @@ export function quoteWindowAroundKey(quote: string, key: string): string | null 
   if (at < 0) return null;
   const after = quote.slice(at + needle.length);
   const next = after.match(/\bURS-\d+\b/i);
-  if (next && next.index != null) {
-    return quote.slice(at, at + needle.length + next.index);
+  let end =
+    next && next.index != null
+      ? at + needle.length + next.index
+      : Math.min(quote.length, at + needle.length + 240);
+  const columnStart = columnRunValueStart(quote);
+  if (columnStart != null && at < columnStart && end > columnStart) {
+    end = columnStart;
   }
-  const end = Math.min(quote.length, at + needle.length + 240);
+  if (end <= at) return null;
   return quote.slice(at, end);
 }
 
