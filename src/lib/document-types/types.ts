@@ -85,6 +85,29 @@ export type DocumentTypeChatConfig = {
   contextIdentity?: (
     metadata: Record<string, unknown> | null | undefined
   ) => readonly string[];
+  /**
+   * Cover/header identity the assistant may fill with `draft_identity`.
+   * Lives on `reports.documentNo` / `reports.date` / `reports.metadata`,
+   * not in a `report_sections` row. Omit when the type has no identity form.
+   */
+  identityFields?: readonly ChatIdentityField[];
+  /** Composer / remaining-section label for the identity block. */
+  identityLabel?: string;
+};
+
+export type ChatIdentityStorage = "metadata" | "documentNo" | "date";
+
+/** One scalar on the cover/header form the assistant can write. */
+export type ChatIdentityField = {
+  key: string;
+  label: string;
+  storage: ChatIdentityStorage;
+  /** Required when `storage` is `metadata`. Defaults to `key`. */
+  metadataKey?: string;
+  /** Extra metadata key kept in step (FIR source document / date). */
+  alsoMetadataKey?: string;
+  /** Remaining-section treats the identity block as empty while any required field is blank. */
+  required?: boolean;
 };
 
 export type DocxTemplateData = Record<string, unknown>;

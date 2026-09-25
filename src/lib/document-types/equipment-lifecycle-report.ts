@@ -7,7 +7,11 @@ import { ELR_PROMPT_VERSION } from "@/lib/customers/packs";
 import { QUANTITY_MATH_CRITERION_KEY } from "@/lib/math/quantity-math";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
-import { elrChatContextIdentity } from "./elr/chat-identity";
+import {
+  ELR_IDENTITY_FIELDS,
+  ELR_IDENTITY_LABEL,
+  elrChatContextIdentity,
+} from "./elr/chat-identity";
 import { ELR_DRAFTING_GUIDANCE } from "./elr/drafting-guidance";
 import {
   checkAccessControlPeriodCompleteness,
@@ -799,6 +803,8 @@ Most of your work is retrieval and tabulation: find the records for this equipme
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change the engineer accepts or rejects.`,
     draftingGuidance: ELR_DRAFTING_GUIDANCE,
     contextIdentity: elrChatContextIdentity,
+    identityFields: ELR_IDENTITY_FIELDS,
+    identityLabel: ELR_IDENTITY_LABEL,
     draftOrder: [
       "elr_objective",
       "elr_scope",

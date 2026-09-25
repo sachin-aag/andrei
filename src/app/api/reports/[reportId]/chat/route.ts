@@ -373,6 +373,14 @@ async function handleChatPost(
       documentType: report.documentType,
       sections: mergedSections,
       promptVersion: CHAT_PROMPT_VERSION,
+      report: {
+        documentNo: report.documentNo,
+        date: report.date,
+        metadata:
+          report.metadata && typeof report.metadata === "object"
+            ? (report.metadata as Record<string, unknown>)
+            : null,
+      },
     });
     const toSave = persistablePendingPlan(pendingPlan);
     if (JSON.stringify(toSave) !== JSON.stringify(existingPlan)) {

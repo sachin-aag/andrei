@@ -404,6 +404,7 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("container format: (unset)");
     expect(map).toContain("both Vial and Cartridge");
     expect(map).toContain("ask_user");
+    expect(map).toContain("draft_identity");
     expect(map).toContain("Purpose [elr_objective]");
   });
 

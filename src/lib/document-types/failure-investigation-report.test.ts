@@ -674,7 +674,8 @@ describe("FIR chat context identity", () => {
       expect(joined).toContain(label);
     }
     // MJ blocks unsupported facts — an unset field must warn, not go quiet.
-    expect(joined).toContain("do not take this from an attachment");
+    expect(joined).toContain("draft_identity");
+    expect(joined).not.toContain("do not take this from an attachment");
     expect(joined).not.toContain("Define / Measure / Analyze / Improve / Control sections.\n\n");
   });
 

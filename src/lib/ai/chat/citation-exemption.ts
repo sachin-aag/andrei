@@ -9,6 +9,7 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import type { HardFact } from "@/lib/ai/chat/claim-facts";
 import { contextForPrompt } from "@/lib/ai/section-context";
+import { allIdentityMetadataKeys } from "@/lib/ai/chat/identity";
 import { elrChatContextIdentity } from "@/lib/document-types/elr/chat-identity";
 import {
   canonicalElrPeriod,
@@ -19,7 +20,11 @@ import {
 
 export type CitationGroundingMode = "strict" | "skip" | "frame";
 
-export type CitationWriteTool = "draft_field" | "propose_edit" | "edit_table";
+export type CitationWriteTool =
+  | "draft_field"
+  | "propose_edit"
+  | "edit_table"
+  | "draft_identity";
 
 export type GroundDraftGrounding = {
   mode?: CitationGroundingMode;
@@ -59,7 +64,7 @@ const MONTH_INDEX: Record<string, number> = {
 const MONTH_YEAR_RE =
   /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})\b/gi;
 
-const IDENTITY_META_KEYS = [
+const LEGACY_ELR_IDENTITY_META_KEYS = [
   "equipmentId",
   "equipmentName",
   "formatScope",
@@ -254,7 +259,10 @@ function identityHaystacks(input: {
   const metadata = input.reportMetadata;
   if (metadata && typeof metadata === "object") {
     haystacks.push(...elrChatContextIdentity(metadata));
-    for (const key of IDENTITY_META_KEYS) {
+    for (const key of [
+      ...LEGACY_ELR_IDENTITY_META_KEYS,
+      ...allIdentityMetadataKeys(),
+    ]) {
       const value = metaString(metadata, key).trim();
       if (value) haystacks.push(value);
     }

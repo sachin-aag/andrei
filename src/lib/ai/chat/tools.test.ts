@@ -37,6 +37,7 @@ const {
   dbInsertMock,
   dbUpdateMock,
   getReportAnalyticsMock,
+  isDocumentNoTakenMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
   readDocumentPageMock: vi.fn(),
@@ -52,6 +53,7 @@ const {
   dbInsertMock: vi.fn(),
   dbUpdateMock: vi.fn(),
   getReportAnalyticsMock: vi.fn(),
+  isDocumentNoTakenMock: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -99,6 +101,15 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
 vi.mock("@/lib/statistical-analysis/store", () => ({
   getReportAnalytics: (...args: unknown[]) => getReportAnalyticsMock(...args),
 }));
+
+vi.mock("@/lib/reports/document-no", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/reports/document-no")>();
+  return {
+    ...actual,
+    isDocumentNoTaken: (...args: unknown[]) =>
+      isDocumentNoTakenMock(...(args as [])),
+  };
+});
 
 type ZodToolSchema = z.ZodType<Record<string, unknown>>;
 
@@ -5128,5 +5139,168 @@ describe("overclaim gate", () => {
     );
     expect(result.status).toBe("drafted");
     expect(result.warning).toBeUndefined();
+  });
+});
+
+describe("buildChatTools draft_identity", () => {
+  const qsrRow = {
+    id: "report-1",
+    documentNo: "",
+    date: new Date("2026-01-01T00:00:00.000Z"),
+    metadata: {},
+    authorId: "engineer-1",
+    documentType: "qualification_summary_report" as const,
+  };
+
+  beforeEach(() => {
+    isDocumentNoTakenMock.mockReset();
+    isDocumentNoTakenMock.mockResolvedValue(false);
+    loadDocumentPageEvidenceMock.mockReset();
+    loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    dbSelectMock.mockReset();
+    dbUpdateMock.mockReset();
+    dbSelectMock.mockImplementation(() => ({
+      from: () => ({
+        where: vi.fn().mockResolvedValue([qsrRow]),
+      }),
+    }));
+    dbUpdateMock.mockReturnValue({
+      set: () => ({ where: vi.fn().mockResolvedValue([]) }),
+    });
+  });
+
+  it("is registered on QSR and not on investigation", () => {
+    const qsr = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+    });
+    expect(qsr.draft_identity).toBeDefined();
+    expect(accepts(qsr, "read_section", { section: "identity" })).toBe(true);
+
+    const investigation = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    expect(investigation.draft_identity).toBeUndefined();
+    expect(
+      accepts(investigation, "read_section", { section: "identity" })
+    ).toBe(false);
+  });
+
+  it("reads cover-identity scalars from the report row", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: () => ({
+        where: vi.fn().mockResolvedValue([
+          {
+            ...qsrRow,
+            documentNo: "QSR/GLR-1301",
+            metadata: {
+              equipmentName: "Glass Lined Reactor",
+              equipmentCode: "GLR-1301",
+            },
+          },
+        ]),
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+    });
+    const result = (await tools.read_section!.execute!(
+      { section: "identity" },
+      TEST_TOOL_OPTIONS
+    )) as { section: string; fields: Array<{ targetField: string; text: string; isEmpty: boolean }> };
+    expect(result.section).toBe("identity");
+    expect(result.fields.find((field) => field.targetField === "equipmentName")).toMatchObject({
+      text: "Glass Lined Reactor",
+      isEmpty: false,
+    });
+    expect(result.fields.find((field) => field.targetField === "equipmentCode")).toMatchObject({
+      text: "GLR-1301",
+    });
+  });
+
+  it("applies QSR equipment scalars onto the report", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+    });
+    const result = (await tools.draft_identity!.execute!(
+      {
+        fields: [
+          { key: "documentNo", value: "QSR/GLR-1301" },
+          { key: "equipmentName", value: "Glass Lined Reactor" },
+          { key: "equipmentCode", value: "GLR-1301" },
+          { key: "capacity", value: "8 KL" },
+          { key: "plantSection", value: "Production Block-2" },
+          { key: "revision", value: "00" },
+        ],
+        reasoning: "Copied from the qualification protocol cover.",
+      },
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      status: "applied",
+      section: "identity",
+      label: "Cover identity",
+      complete: true,
+    });
+    expect(result.remainingRequired).toEqual([]);
+    expect(updates[0]).toMatchObject({
+      documentNo: "QSR/GLR-1301",
+      metadata: expect.objectContaining({
+        equipmentName: "Glass Lined Reactor",
+        equipmentCode: "GLR-1301",
+        capacity: "8 KL",
+        plantSection: "Production Block-2",
+        revision: "00",
+      }),
+    });
+  });
+
+  it("returns duplicate_document_no when the number is already taken", async () => {
+    isDocumentNoTakenMock.mockResolvedValue(true);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+    });
+    const result = (await tools.draft_identity!.execute!(
+      {
+        fields: [{ key: "documentNo", value: "QSR/GLR-1301" }],
+        reasoning: "Use the protocol number.",
+      },
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+    expect(result.status).toBe("duplicate_document_no");
+    expect(dbUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects keys that are not identity fields", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+    });
+    const result = (await tools.draft_identity!.execute!(
+      {
+        fields: [{ key: "narrative", value: "nope" }],
+        reasoning: "Wrong field.",
+      },
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ status: "unknown_key" });
+    expect(dbUpdateMock).not.toHaveBeenCalled();
   });
 });

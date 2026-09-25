@@ -84,7 +84,7 @@ import {
 } from "@/lib/reports/access";
 import type { DocumentType, SectionType } from "@/db/schema";
 import {
-  chatEditableSections,
+  chatMentionableSectionCandidates,
   sectionLabel as chatSectionLabel,
 } from "@/lib/ai/chat/fields";
 import { engineerFacingChangeLines } from "@/lib/ai/chat/change-summary";
@@ -956,11 +956,13 @@ export function ChatPanel({
         folders,
         sections: targetingAnalytics
           ? []
-          : chatEditableSections(report.documentType).map((section) => ({
-              type: "section" as const,
-              id: section,
-              label: sectionLabel(section),
-            })),
+          : chatMentionableSectionCandidates(report.documentType).map(
+              (section) => ({
+                type: "section" as const,
+                id: section.id,
+                label: section.label,
+              })
+            ),
         sheets: targetingAnalytics
           ? mentionSheets.length > 0
             ? analyticsSheetMentionCandidates(mentionSheets)

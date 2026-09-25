@@ -203,7 +203,10 @@ same-named tab). Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
 abort still apply). Do not add a tool-call count limit. Report Agent may
 persist a remaining-section queue on `chat_sessions.pending_plan` when the
-engineer asks to fill several empty `draftOrder` sections. Each turn drafts
+engineer asks to fill several empty `draftOrder` sections. Cover/header
+identity (equipment name, document number, …) is prepended when any required
+identity scalar is blank — it is not a TipTap section; Agent fills it with
+`draft_identity` from attachments (lands immediately). Each turn drafts
 the current item (or two adjacent non-inventory sections). MJ ELR evidence
 sections stay in progress until that turn also drafts the assessment with a
 count (and `trend` / `overallGrade` / `recommendation` siblings); Access Control

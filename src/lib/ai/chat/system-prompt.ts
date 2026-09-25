@@ -5,6 +5,11 @@ import {
   chatTargetFields,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
+import {
+  chatIdentityFields,
+  chatIdentityLabel,
+  hasChatIdentity,
+} from "@/lib/ai/chat/identity";
 import { getDocumentType } from "@/lib/document-types";
 import {
   type AlreadyDraftedGapHints,
@@ -19,7 +24,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v131-claim-strength-block-all-packs";
+export const CHAT_PROMPT_VERSION = "chat-v132-identity-draft";
 
 export type ChatMode = "plan" | "agent";
 
@@ -31,7 +36,7 @@ function fieldTaxonomy(
   scope: ChatSectionScope,
   documentType: DocumentType = "investigation_report"
 ): string {
-  return chatSectionsInScope(scope, documentType)
+  const body = chatSectionsInScope(scope, documentType)
     .map((section) => {
       const fields = chatTargetFields(section)
         .map((f) => `${f.targetField} (${f.kind})`)
@@ -39,6 +44,15 @@ function fieldTaxonomy(
       return `- ${sectionLabel(section)} [${section}]: ${fields}`;
     })
     .join("\n");
+  if (scope !== "all" || !hasChatIdentity(documentType)) return body;
+  const keys = chatIdentityFields(documentType)
+    .map(
+      (field) =>
+        `${field.key} (plain${field.required ? ", required" : ""})`
+    )
+    .join(", ");
+  const identityLine = `- ${chatIdentityLabel(documentType)} [identity]: ${keys} — fill with draft_identity, not draft_field`;
+  return body ? `${identityLine}\n${body}` : identityLine;
 }
 
 function draftPriorityPhrase(draftOrder: readonly SectionType[]): string {
@@ -98,7 +112,7 @@ Follow the latest user message. Agent mode means you MAY edit when they asked �
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not draft or edit any section.
 - A question, a plan, or an outline ("plan the first 3 sections", "what should go in Purpose", "how would you structure this"): answer in chat. Do not call draft_field, propose_edit, or edit_table unless they also asked to write or insert.
 - How many attachments, which files in which folder, PDF vs Word, file status, or filename/topic matches: call list_attachments and read folders[] / fileTypes[]. Do not guess from the Documents index. Do not call search_documents for an inventory — that greps page text. Which files mention a fact inside a PDF is still search_documents.
-- A write request (draft, fill, write, edit, add, insert, remove, rewrite, paste, put, place, start the report, a yes to your offer to draft, or a complaint that work did not land — "nothing was filled", "I don't see the table", "you said you filled it"): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with the highest-signal sections — still only because they asked.
+- A write request (draft, fill, write, edit, add, insert, remove, rewrite, paste, put, place, start the report, a yes to your offer to draft, or a complaint that work did not land — "nothing was filled", "I don't see the table", "you said you filled it"): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with cover/header identity when it is unset, then the highest-signal sections — still only because they asked.
 - Before claiming a prior proposal is still waiting, was approved, or was dismissed, call list_suggestions (or read pendingSuggestions / suggestionCounts from read_section). Open cards are proposed, not landed. Never treat a dismissed or approved card as still pending.
 - A bare statement, pasted content, or correction: if this prompt has a "Tools available this turn" block saying write tools start hidden, answer in chat unless they asked to change the document — then call the write tool. Otherwise in Agent mode treat it as a write and deliver the change. In Ask mode, answer.
 Empty fields and ready documents are not a request to write.`;
@@ -239,11 +253,21 @@ function agentRules(opts: {
   retrievalPolicy: RetrievalPolicy;
   includePlotMeasurements: boolean;
   writesLoaded: boolean;
+  hasIdentity: boolean;
 }): string {
   const priority = draftPriorityPhrase(opts.draftOrder);
   const analyzeToolLine = opts.analyzeInScope
     ? `\n- select_analyze_method — when drafting Analyze, call this ONCE before any Analyze draft_field / edit_table / propose_edit to lock in the single root-cause method (see the Analyze method-selection block when that section is in scope).`
     : "";
+  const identityToolLine = opts.hasIdentity
+    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. This write lands immediately in the header — not a suggestion card. Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Do not use draft_field for these keys.`
+    : "";
+  const hiddenWriteTools = opts.hasIdentity
+    ? "draft_field / edit_table / propose_edit / insert_image / remove_image / draft_identity"
+    : "draft_field / edit_table / propose_edit / insert_image / remove_image";
+  const landingLine = opts.hasIdentity
+    ? "You are in Agent mode. Use the tools to read sections and propose changes. Body edits go to the engineer for review — nothing in a TipTap section lands until they accept it. Cover/header identity (draft_identity) and Analyze method (select_analyze_method) land immediately in the header. That review step is normal for section drafts: still call edit_table / draft_field / propose_edit to deliver those changes."
+    : "You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.";
   let reviewTools = "";
   let searchFirst: string;
   switch (opts.retrievalPolicy) {
@@ -269,7 +293,7 @@ function agentRules(opts: {
 
   if (!opts.writesLoaded) {
     return `## Mode: AGENT (read this turn — write tools start hidden)
-You are in Agent mode, but this message is a question or review, so draft_field / edit_table / propose_edit / insert_image / remove_image start hidden.
+You are in Agent mode, but this message is a question or review, so ${hiddenWriteTools} start hidden.
 ${reviewTools}
 ${searchFirst}
 
@@ -284,7 +308,7 @@ Delivery in this chrome is ALWAYS a suggestion card:
 - The only turns that end with no edit tool call are questions and small talk. If "Tools available this turn" is absent, deliver the write.
 - finish_document_review is a READ step, never the end of a write turn. Its findings are input to the draft, not the reply. When it returns deliverNow, call that write tool in the same turn. Composing the section and printing it in chat leaves the field empty — the engineer sees prose they cannot accept and a section still marked not started.`;
   return `## Mode: AGENT (draft and propose edits)
-You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.${proposeDeliveryRule}
+${landingLine}${proposeDeliveryRule}
 
 Choosing the right tool:
 - edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns, or delete_table to remove the whole table (keeps surrounding prose, figures, and citations). Also create_table (headers plus rows) to add a NEW table in a rich field. Omit afterAnchor to append before a trailing Citations heading. Call read_section FIRST and copy the live headers from fields[].tables[] (also listed on the context map). Demo and Convergent matrices differ — never invent columns. Copy tableIndex and [row,col] from structuredText. Adding an example to a table is edit_cells or insert_column, never a bulleted list. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells. Do not use draft_field to create or delete a table.
@@ -294,7 +318,7 @@ Choosing the right tool:
 ${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec.` : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). Do not use this to move a figure. The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
 - ask_user — structured questions when facts are still missing after a document search (see "Asking questions").
-- list_suggestions — open / approved / dismissed AI cards. Call this before claiming a prior proposal is still waiting or that nothing was proposed. Open = proposed, not landed.${analyzeToolLine}${reviewTools}
+- list_suggestions — open / approved / dismissed AI cards. Call this before claiming a prior proposal is still waiting or that nothing was proposed. Open = proposed, not landed.${analyzeToolLine}${identityToolLine}${reviewTools}
 
 Drafting decisions (important):
 - Only draft or edit when this turn is a write request (see User intent). Do not volunteer drafts of empty sections.
@@ -398,6 +422,7 @@ export function buildChatSystemPrompt(opts: {
           retrievalPolicy,
           includePlotMeasurements,
           writesLoaded,
+          hasIdentity: hasChatIdentity(documentType),
         });
   const draftedBlock = opts.alreadyDrafted
     ? `\n\n${alreadyDraftedBlock(

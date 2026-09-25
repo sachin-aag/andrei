@@ -39,7 +39,10 @@ const sections = getWorkspaceSections(report.documentType);
   (`PROMPT_VERSION` for investigation, `dv-checklist-v1` for demo DV,
   `convergent-dv-v7` for Convergent DV).
 - Chat editable sections: `chatEditableSections(documentType)` in
-  `src/lib/ai/chat/fields.ts`. Do not reuse investigation field maps on DV.
+  `src/lib/ai/chat/fields.ts`. Cover/header identity is synthetic (`identity`)
+  — mentionable, not a TipTap section, filled with `draft_identity` from
+  type-owned `chat.identityFields`. Do not add `identity` to
+  `SUGGEST_TARGET_FIELD_PATTERNS`. Do not reuse investigation field maps on DV.
   Title-page identity that chat needs (ELR `formatScope`) is
   `chat.contextIdentity` on the type — do not hardcode metadata keys in
   `context-map.ts`. MJ ELR remaining-section stays incomplete until the

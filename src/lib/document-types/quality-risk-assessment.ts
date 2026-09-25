@@ -8,6 +8,11 @@ import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import { QRA_DRAFTING_GUIDANCE } from "./qra/drafting-guidance";
 import {
+  QRA_IDENTITY_FIELDS,
+  QRA_IDENTITY_LABEL,
+  qraChatContextIdentity,
+} from "./qra/chat-identity";
+import {
   checkA02Mode,
   checkFmeaScoresOnScale,
   checkFmeaScoresRecalculated,
@@ -365,6 +370,9 @@ Follow the SOP: A02 decides qualitative vs quantitative; the FMEA grid uses fixe
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change the engineer accepts or rejects.`,
     draftingGuidance: QRA_DRAFTING_GUIDANCE,
+    contextIdentity: qraChatContextIdentity,
+    identityFields: QRA_IDENTITY_FIELDS,
+    identityLabel: QRA_IDENTITY_LABEL,
     draftOrder: [
       "qra_approach",
       "qra_objective",

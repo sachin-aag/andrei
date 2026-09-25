@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v131-claim-strength-block-all-packs");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v132-identity-draft");
   });
 
   it("tells Agent to draft only the current queued section", () => {
@@ -152,6 +152,20 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).not.toContain("select_analyze_method");
     expect(prompt).not.toContain("## Analyze drafting rules");
+    expect(prompt).toContain("draft_identity");
+    expect(prompt).toContain("[identity]");
+  });
+
+  it("lists draft_identity on qualification summary reports", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "qualification_summary_report",
+    });
+    expect(prompt).toContain("draft_identity");
+    expect(prompt).toContain("[identity]");
+    expect(prompt).toContain("Cover identity");
+    expect(prompt).toContain("equipmentName");
   });
 
   it("requires fixed column headers for DV matrix sections", () => {
@@ -194,6 +208,7 @@ describe("buildChatSystemPrompt", () => {
       "Prefer drafting the highest-signal sections first (Define, then Analyze)"
     );
     expect(prompt).toContain("select_analyze_method");
+    expect(prompt).not.toContain("draft_identity");
   });
 
   it("tells Agent wrap-ups to stay in document language and not mention a recipe", () => {

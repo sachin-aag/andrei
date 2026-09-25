@@ -24,6 +24,7 @@ export const DOCUMENT_WRITE_TOOLS = [
   "remove_image",
   "plot_measurements",
   "select_analyze_method",
+  "draft_identity",
 ] as const;
 
 export const ANALYTICS_WRITE_TOOLS = [

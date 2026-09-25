@@ -516,6 +516,7 @@ describe("intentToolAvailabilityRule", () => {
     const rule = intentToolAvailabilityRule("read", "document");
     expect(rule).toContain("propose_edit");
     expect(rule).toContain("draft_field");
+    expect(rule).toContain("draft_identity");
     expect(rule).toContain("start hidden");
     expect(rule).toContain("becomes available on the next step");
     expect(rule).not.toContain("write_column");

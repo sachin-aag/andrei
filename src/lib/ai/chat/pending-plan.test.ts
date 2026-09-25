@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_ELR_CONTENT } from "@/lib/document-types/elr/sections";
+import { getDocumentType } from "@/lib/document-types";
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   CHAT_PLAN_SAME_SECTION_TURN_LIMIT,
@@ -128,6 +129,63 @@ describe("seedSectionQueuePlan", () => {
     expect(seeded?.items.some((item) => item.sectionKey === "elr_attachments")).toBe(
       false
     );
+  });
+
+  it("prepends cover identity when required QSR header scalars are blank", () => {
+    const filled = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Filled content. ".repeat(20) }],
+        },
+      ],
+    };
+    const sections: Record<string, Record<string, unknown>> = {
+      qsr_scope: { narrative: filled },
+    };
+    const seeded = seedSectionQueuePlan({
+      userText: "Draft the remaining sections",
+      documentType: "qualification_summary_report",
+      sections,
+      promptVersion: "chat-v132-identity-draft",
+      report: { documentNo: "", date: "2026-01-01", metadata: {} },
+    });
+    expect(seeded?.items[0]).toMatchObject({
+      sectionKey: "identity",
+      label: "Cover identity",
+      state: "in_progress",
+    });
+  });
+
+  it("seeds an identity-only queue when every body section is already filled", () => {
+    const filled = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Filled content. ".repeat(20) }],
+        },
+      ],
+    };
+    const sections: Record<string, Record<string, unknown>> = {};
+    for (const section of getDocumentType("qualification_summary_report").chat.draftOrder) {
+      sections[section] = { narrative: filled, table: filled };
+    }
+    const seeded = seedSectionQueuePlan({
+      userText: "Draft the remaining sections",
+      documentType: "qualification_summary_report",
+      sections,
+      promptVersion: "chat-v132-identity-draft",
+      report: { documentNo: "", date: "2026-01-01", metadata: {} },
+    });
+    expect(seeded?.items).toEqual([
+      {
+        sectionKey: "identity",
+        label: "Cover identity",
+        state: "in_progress",
+      },
+    ]);
   });
 });
 
@@ -731,6 +789,32 @@ describe("plan prompt and metadata", () => {
     expect(view.pending.map((item) => item.sectionKey)).toEqual([
       "elr_calibration",
     ]);
+  });
+
+  it("marks identity done only when draft_identity reports complete", () => {
+    const started = plan([
+      { sectionKey: "identity", label: "Cover identity", state: "in_progress" },
+      { sectionKey: "qsr_objective", label: "Objective", state: "queued" },
+    ]);
+    const partial = livePlanProgressFromParts([
+      {
+        type: "tool-draft_identity",
+        state: "output-available",
+        input: { fields: [{ key: "equipmentName", value: "Reactor" }] },
+        output: { status: "applied", complete: false, remainingRequired: ["documentNo"] },
+      },
+    ]);
+    expect(partial.draftedSectionKeys).toEqual([]);
+    const complete = livePlanProgressFromParts([
+      {
+        type: "tool-draft_identity",
+        state: "output-available",
+        input: { fields: [{ key: "equipmentName", value: "Reactor" }] },
+        output: { status: "applied", complete: true, remainingRequired: [] },
+      },
+    ]);
+    expect(complete.draftedSectionKeys).toEqual(["identity"]);
+    expect(completedPlanSectionLabel(started, complete)).toBe("Cover identity");
   });
 
   it("advances past an evidence section once the assessment has a count", () => {

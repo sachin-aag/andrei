@@ -61,7 +61,9 @@ them for facts already in the section or that you would put in `hint`.
 An unset title-page identity field with two mutually exclusive answers in
 the attachments (ELR: both Vial and Cartridge, `formatScope` unset) is a
 fork: `ask_user` once before drafting. That is not a fact already in
-retrieved evidence. Type-owned `chat.contextIdentity` surfaces those fields.
+retrieved evidence. Type-owned `chat.contextIdentity` surfaces those fields
+and `chat.identityFields` lists the scalars Agent fills with `draft_identity`
+(lands immediately on `reports.documentNo` / `date` / `metadata`).
 `prepareStep` hides `draft_field` while that gate is active. The document
 index (filename/topics) is not evidence. Evidence preview is already in the
 system prompt when kickoff retrieval hits.

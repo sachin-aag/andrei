@@ -20,7 +20,9 @@ import {
 import { EMPTY_VQ_CONTENT } from "@/lib/document-types/vq/sections";
 import {
   chatEditableSections,
+  chatMentionableSectionCandidates,
   isChatEditableSection,
+  isChatMentionableSection,
   listFieldTables,
   fieldFillState,
   sectionFillState,
@@ -35,6 +37,25 @@ describe("chatEditableSections", () => {
     expect(editable).not.toContain("elr_attachments");
     expect(editable).toContain("elr_objective");
     expect(isChatEditableSection("elr_attachments", "equipment_lifecycle_report")).toBe(
+      false
+    );
+  });
+});
+
+describe("chatMentionableSectionCandidates", () => {
+  it("puts cover identity first on QSR and not on investigation", () => {
+    const qsr = chatMentionableSectionCandidates("qualification_summary_report");
+    expect(qsr[0]).toEqual({ id: "identity", label: "Cover identity" });
+    expect(isChatMentionableSection("identity", "qualification_summary_report")).toBe(
+      true
+    );
+    expect(isChatEditableSection("identity", "qualification_summary_report")).toBe(
+      false
+    );
+    expect(
+      chatMentionableSectionCandidates("investigation_report")[0]?.id
+    ).not.toBe("identity");
+    expect(isChatMentionableSection("identity", "investigation_report")).toBe(
       false
     );
   });

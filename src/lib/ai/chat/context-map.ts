@@ -133,6 +133,11 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     for (const line of identity) {
       lines.push(`- ${line}`);
     }
+    if (def.chat.identityFields && def.chat.identityFields.length > 0) {
+      lines.push(
+        "- Fill unset identity with draft_identity from attachments (lands immediately; not a suggestion card). ask_user only after search, or a fork."
+      );
+    }
   }
   lines.push(
     "Sections (empty = draft after searching attachments; filled/partial = already drafted — read_section first):",
