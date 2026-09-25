@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   lastStartNeedsAttachmentScope,
   prepareReportChatStep,
+  shouldForceListAttachments,
   type PrepareReportChatStepInput,
 } from "./step-policy";
 import { createSearchGate, type SearchLoopStep } from "./search-loop";
@@ -321,5 +322,55 @@ describe("lastStartNeedsAttachmentScope", () => {
         },
       ])
     ).toBe(false);
+  });
+});
+
+describe("shouldForceListAttachments", () => {
+  const needsScope: SearchLoopStep = {
+    toolResults: [
+      {
+        toolName: "start_document_review",
+        output: { status: "needs_attachment_scope" },
+      },
+    ],
+  };
+  const listed: SearchLoopStep = {
+    toolResults: [
+      {
+        toolName: "list_attachments",
+        output: { matched: 5, returned: 5, nextOffset: null },
+      },
+    ],
+  };
+
+  it("forces a listing only on the step after needs_attachment_scope", () => {
+    expect(shouldForceListAttachments([])).toBe(false);
+    expect(shouldForceListAttachments([needsScope])).toBe(true);
+    expect(shouldForceListAttachments([needsScope, listed])).toBe(false);
+  });
+
+  it("forces a listing again if a later start still needs attachment scope", () => {
+    expect(shouldForceListAttachments([needsScope, listed, needsScope])).toBe(
+      true
+    );
+  });
+
+  it("stops locking list_attachments after the listing so start can run", () => {
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          retrievalPolicy: "comprehensive",
+          reviewPhase: "idle",
+          steps: [needsScope, listed],
+          forceListAttachments: shouldForceListAttachments([
+            needsScope,
+            listed,
+          ]),
+        })
+      )
+    ).toEqual({
+      activeTools: ["start_document_review"],
+      toolChoice: { type: "tool", toolName: "start_document_review" },
+    });
   });
 });
