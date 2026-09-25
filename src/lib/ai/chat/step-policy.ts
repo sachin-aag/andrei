@@ -57,9 +57,9 @@ export type PrepareReportChatStepInput = {
   restartInventoryReview?: boolean;
   searchGate?: SearchGate;
   /**
-   * E2: when the last start_document_review returned needs_attachment_scope,
-   * force list_attachments instead of emitting advice the model ignored.
-   * Off unless the caller sets it — characterization of today's chain stays equal.
+   * E2: when the last start_document_review returned needs_attachment_scope
+   * and list_attachments has not run since, force that listing instead of
+   * emitting advice the model ignored. Off unless the caller sets it.
    */
   forceListAttachments?: boolean;
   /**
@@ -131,6 +131,17 @@ function payloadStatus(output: unknown): string | undefined {
   return typeof status === "string" ? status : undefined;
 }
 
+function resultToolName(result: {
+  toolName?: unknown;
+  tool?: unknown;
+}): string {
+  return typeof result.toolName === "string"
+    ? result.toolName
+    : typeof result.tool === "string"
+      ? result.tool
+      : "";
+}
+
 /** True when the latest start_document_review this turn asked for a file set. */
 export function lastStartNeedsAttachmentScope(
   steps: readonly SearchLoopStep[]
@@ -139,15 +150,37 @@ export function lastStartNeedsAttachmentScope(
     const step = steps[i];
     if (!step) continue;
     for (const result of step.toolResults ?? []) {
-      const name =
-        typeof result.toolName === "string"
-          ? result.toolName
-          : typeof result.tool === "string"
-            ? result.tool
-            : "";
-      if (name !== "start_document_review") continue;
+      if (resultToolName(result) !== "start_document_review") continue;
       return payloadStatus(result.output ?? result.result) ===
         "needs_attachment_scope";
+    }
+  }
+  return false;
+}
+
+/**
+ * E2: force `list_attachments` only on the step *after* needs_attachment_scope.
+ * A later listing must unlock start_document_review (with attachmentIds).
+ * Leaving the force on after that listing locks the turn on list_attachments.
+ */
+export function shouldForceListAttachments(
+  steps: readonly SearchLoopStep[]
+): boolean {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const step = steps[i];
+    if (!step) continue;
+    const results = step.toolResults ?? [];
+    for (let j = results.length - 1; j >= 0; j--) {
+      const result = results[j];
+      if (!result) continue;
+      const name = resultToolName(result);
+      if (name === "list_attachments") return false;
+      if (name === "start_document_review") {
+        return (
+          payloadStatus(result.output ?? result.result) ===
+          "needs_attachment_scope"
+        );
+      }
     }
   }
   return false;
