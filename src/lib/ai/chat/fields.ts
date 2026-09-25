@@ -1,11 +1,11 @@
 import type { JSONContent } from "@tiptap/core";
-import type { DocumentType, SectionType } from "@/db/schema";
+import { documentTypeEnum, type DocumentType, type SectionType } from "@/db/schema";
 import { displaySectionLabel } from "@/types/sections";
 import {
   SUGGEST_TARGET_FIELD_PATTERNS,
   isRichTargetField,
 } from "@/lib/ai/suggest-target-fields";
-import { getDocumentType } from "@/lib/document-types";
+import { getDocumentType, resolveSection } from "@/lib/document-types";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
@@ -215,20 +215,73 @@ function docHasNonTableContent(doc: JSONContent): boolean {
   return false;
 }
 
+function emptyContentForSection(
+  section: SectionType
+): Record<string, unknown> | undefined {
+  for (const type of documentTypeEnum.enumValues) {
+    const found = resolveSection(type, section);
+    if (!found) continue;
+    const empty = found.emptyContent;
+    if (empty && typeof empty === "object" && !Array.isArray(empty)) {
+      return empty as Record<string, unknown>;
+    }
+  }
+  return undefined;
+}
+
+function seedFieldDoc(
+  section: SectionType,
+  targetField: string
+): JSONContent | undefined {
+  if (!isRichTargetField(section, targetField)) return undefined;
+  const empty = emptyContentForSection(section);
+  if (!empty) return undefined;
+  return getRichFieldValue(empty, targetField);
+}
+
+function normalizeScaffoldCellText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function cellMatchesSeedText(
+  cell: { row: number; col: number; text: string },
+  seedCells: ReadonlyArray<{ row: number; col: number; text: string }>
+): boolean {
+  const seedCell = seedCells.find(
+    (candidate) => candidate.row === cell.row && candidate.col === cell.col
+  );
+  if (!seedCell) return false;
+  return (
+    normalizeScaffoldCellText(cell.text) ===
+    normalizeScaffoldCellText(seedCell.text)
+  );
+}
+
 /**
- * Header-only seeded tables (blank data cells, no surrounding prose/images)
- * are empty shells — not partial drafts. `sectionHasTable` still sees them
- * so `tableSchemaReadStep` copies live headers before `edit_table`.
+ * Seeded tables whose cells are blank or unchanged from the template (no
+ * surrounding prose/images) are empty shells — not partial drafts.
+ * `sectionHasTable` still sees them so `tableSchemaReadStep` copies live
+ * headers before `edit_table`.
  */
-export function isEmptyTableScaffoldDoc(doc: JSONContent): boolean {
+export function isEmptyTableScaffoldDoc(
+  doc: JSONContent,
+  seedDoc?: JSONContent | null
+): boolean {
   const tables = summarizeTablesInDoc(doc);
   if (tables.length === 0) return false;
   if (countImagesInDoc(doc) > 0) return false;
   if (docHasNonTableContent(doc)) return false;
+  const seedTables = seedDoc ? summarizeTablesInDoc(seedDoc) : [];
   for (const table of tables) {
+    const seedTable = seedTables[table.tableIndex];
+    if (seedTable && table.dataRowCount > seedTable.dataRowCount) {
+      return false;
+    }
     for (const cell of table.cells) {
       if (cell.row === 0) continue;
-      if (!isBlankTableCellText(cell.text)) return false;
+      if (isBlankTableCellText(cell.text)) continue;
+      if (seedTable && cellMatchesSeedText(cell, seedTable.cells)) continue;
+      return false;
     }
   }
   return true;
@@ -242,7 +295,9 @@ export function fieldFillState(
   const record = content ?? {};
   if (isRichTargetField(section, targetField)) {
     const doc = getRichFieldValue(record, targetField);
-    if (isEmptyTableScaffoldDoc(doc)) return "empty";
+    if (isEmptyTableScaffoldDoc(doc, seedFieldDoc(section, targetField))) {
+      return "empty";
+    }
     if (
       section === "elr_system_trends" &&
       targetField === "table" &&

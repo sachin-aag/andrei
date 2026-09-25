@@ -311,8 +311,8 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   section intent are scored on the latest user turn only (an earlier
   equipment/UUT draft must not keep “draft the remaining sections” on
   the adaptive path). Inventory-section scope needs latest-turn inventory
-  language or open-set produce before comprehensive. Header-only seeded
-  tables (blank data cells, no surrounding prose) are empty, not partial
+  language or open-set produce before comprehensive.   Seeded tables whose cells are blank or unchanged from the
+  template (no surrounding prose) are empty, not partial
   — `sectionHasTable` still sees them. Empty ELR inventory fills
   (`chat.inventorySections` table fields) require a finished review
   whose coverage key matches that section (`coverageKeySatisfiesObjective`

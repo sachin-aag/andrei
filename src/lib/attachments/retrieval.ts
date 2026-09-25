@@ -192,7 +192,12 @@ type CandidateRow = {
   contextualText: string;
   ingestRunId: string;
   sourceSha256: string;
+  identifiers?: readonly string[] | null;
 };
+
+type PageNumberColumn =
+  | typeof documentChunks.pageNumber
+  | typeof documentPages.pageNumber;
 
 function hasVertexWifConfig(): boolean {
   return Boolean(getWifConfig());
@@ -259,6 +264,19 @@ export function parseCitationId(
   const pageNumber = Number(match[2]);
   if (!Number.isInteger(pageNumber) || pageNumber < 1) return null;
   return { attachmentId: match[1], pageNumber, chunkId: match[3] };
+}
+
+/** Synthetic chunk id for an identifier hit on a page that was never chunked. */
+export const PAGE_BACKED_CHUNK_PREFIX = "page_" as const;
+
+export function pageBackedChunkId(pageId: string): string {
+  return `${PAGE_BACKED_CHUNK_PREFIX}${pageId}`;
+}
+
+export function parsePageBackedChunkId(chunkId: string): string | null {
+  if (!chunkId.startsWith(PAGE_BACKED_CHUNK_PREFIX)) return null;
+  const pageId = chunkId.slice(PAGE_BACKED_CHUNK_PREFIX.length);
+  return pageId.length > 0 ? pageId : null;
 }
 
 export function truncateSnippet(text: string, maxChars = DEFAULT_SNIPPET_CHARS): string {
@@ -410,6 +428,54 @@ function candidateSelect() {
   };
 }
 
+function identifierOverlapSelect() {
+  return {
+    ...candidateSelect(),
+    identifiers: documentPages.identifiers,
+  };
+}
+
+function pageCandidateSelect() {
+  return {
+    attachmentId: reportAttachments.id,
+    filename: reportAttachments.filename,
+    description: reportAttachments.description,
+    pageNumber: documentPages.pageNumber,
+    pageId: documentPages.id,
+    identifiers: documentPages.identifiers,
+    transcript: documentPages.transcript,
+    ingestRunId: documentPages.ingestRunId,
+    sourceSha256: reportAttachments.sha256,
+  };
+}
+
+function pageRowToCandidate(row: {
+  attachmentId: string;
+  filename: string;
+  description: string | null;
+  pageNumber: number;
+  pageId: string;
+  identifiers?: readonly string[] | null;
+  transcript: string;
+  ingestRunId: string;
+  sourceSha256: string;
+}): CandidateRow {
+  const text = row.transcript;
+  return {
+    attachmentId: row.attachmentId,
+    filename: row.filename,
+    description: row.description,
+    pageNumber: row.pageNumber,
+    chunkId: pageBackedChunkId(row.pageId),
+    sourceKind: "quote",
+    rawText: text,
+    contextualText: text,
+    ingestRunId: row.ingestRunId,
+    sourceSha256: row.sourceSha256,
+    identifiers: row.identifiers,
+  };
+}
+
 /**
  * Library links share pages/chunks by `assetId`. Eval ingest and legacy
  * report rows have null `assetId` — those still join on `attachmentId`.
@@ -461,13 +527,44 @@ function identifiersOverlapSql(identifiers: readonly string[]) {
   )}]::text[]`;
 }
 
-function identifiersIlikeSql(identifiers: readonly string[]) {
+function identifiersIlikeOnColumn(
+  column: typeof documentChunks.rawText | typeof documentPages.transcript,
+  identifiers: readonly string[]
+) {
   return or(
     ...identifiers.map((id) => {
       const pattern = `%${escapeIlike(id)}%`;
-      return sql`${documentChunks.rawText} ILIKE ${pattern} ESCAPE '\\'`;
+      return sql`${column} ILIKE ${pattern} ESCAPE '\\'`;
     })
   );
+}
+
+function identifiersIlikeSql(identifiers: readonly string[]) {
+  return identifiersIlikeOnColumn(documentChunks.rawText, identifiers);
+}
+
+function identifiersTranscriptIlikeSql(identifiers: readonly string[]) {
+  return identifiersIlikeOnColumn(documentPages.transcript, identifiers);
+}
+
+/**
+ * Identifiers still unseen after a chunk query. Overlap rows that omit
+ * `identifiers` (mocked tests / ILIKE-only hits) count as a complete chunk
+ * hit so the page fallback does not run.
+ */
+function identifiersMissingFromHits(
+  requested: readonly string[],
+  rows: ReadonlyArray<{ identifiers?: readonly string[] | null }>
+): string[] {
+  if (rows.length === 0) return [...requested];
+  const known = rows.some((row) => Array.isArray(row.identifiers));
+  if (!known) return [];
+  const found = new Set(
+    rows.flatMap((row) =>
+      (row.identifiers ?? []).map((id) => id.toLowerCase())
+    )
+  );
+  return requested.filter((id) => !found.has(id.toLowerCase()));
 }
 
 type ChunkSearchScope = {
@@ -476,7 +573,10 @@ type ChunkSearchScope = {
   routeTargets?: RoutedSearchTarget[];
 };
 
-function routeTargetsSql(targets: readonly RoutedSearchTarget[] | undefined) {
+function routeTargetsSql(
+  targets: readonly RoutedSearchTarget[] | undefined,
+  pageNumberColumn: PageNumberColumn = documentChunks.pageNumber
+) {
   if (!targets || targets.length === 0) return undefined;
   const wholeIds = [
     ...new Set(
@@ -496,8 +596,8 @@ function routeTargetsSql(targets: readonly RoutedSearchTarget[] | undefined) {
     parts.push(
       and(
         eq(reportAttachments.id, target.attachmentId),
-        gte(documentChunks.pageNumber, target.pageStart!),
-        lte(documentChunks.pageNumber, target.pageEnd!)
+        gte(pageNumberColumn, target.pageStart!),
+        lte(pageNumberColumn, target.pageEnd!)
       )
     );
   }
@@ -506,8 +606,11 @@ function routeTargetsSql(targets: readonly RoutedSearchTarget[] | undefined) {
   return or(...parts);
 }
 
-function chunkScopeSql(scope: ChunkSearchScope) {
-  const routeSql = routeTargetsSql(scope.routeTargets);
+function evidenceScopeSql(
+  scope: ChunkSearchScope,
+  pageNumberColumn: PageNumberColumn = documentChunks.pageNumber
+) {
+  const routeSql = routeTargetsSql(scope.routeTargets, pageNumberColumn);
   return [
     ...((scope.includeAttachmentIds?.length ?? 0) > 0
       ? [inArray(reportAttachments.id, scope.includeAttachmentIds!)]
@@ -517,6 +620,14 @@ function chunkScopeSql(scope: ChunkSearchScope) {
       : []),
     ...(routeSql ? [routeSql] : []),
   ];
+}
+
+function chunkScopeSql(scope: ChunkSearchScope) {
+  return evidenceScopeSql(scope, documentChunks.pageNumber);
+}
+
+function pageScopeSql(scope: ChunkSearchScope) {
+  return evidenceScopeSql(scope, documentPages.pageNumber);
 }
 
 async function loadRouteableIndex(reportId: string): Promise<{
@@ -673,7 +784,7 @@ async function fusedChunkSearch({
   );
 }
 
-async function exactIdentifierChunkSearch({
+async function exactIdentifierPageSearch({
   reportId,
   identifiers,
   limit,
@@ -694,8 +805,8 @@ async function exactIdentifierChunkSearch({
     eq(reportAttachments.reportId, reportId),
     isNull(reportAttachments.deletedAt),
     isNotNull(reportAttachments.activeIngestRunId),
-    eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
-    ...chunkScopeSql({
+    eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId),
+    ...pageScopeSql({
       includeAttachmentIds,
       excludeAttachmentIds,
       routeTargets,
@@ -703,7 +814,64 @@ async function exactIdentifierChunkSearch({
   );
 
   const overlapRows = await db
-    .select(candidateSelect())
+    .select(pageCandidateSelect())
+    .from(reportAttachments)
+    .innerJoin(documentPages, reportAttachmentPageJoin())
+    .where(and(activeScope, identifiersOverlapSql(identifiers)))
+    .orderBy(documentPages.pageNumber)
+    .limit(candidateLimit);
+
+  if (overlapRows.length > 0) {
+    return overlapRows.map(pageRowToCandidate);
+  }
+
+  const likeCondition = identifiersTranscriptIlikeSql(identifiers);
+  if (!likeCondition) return [];
+
+  const likeRows = await db
+    .select(pageCandidateSelect())
+    .from(reportAttachments)
+    .innerJoin(documentPages, reportAttachmentPageJoin())
+    .where(and(activeScope, likeCondition))
+    .orderBy(documentPages.pageNumber)
+    .limit(candidateLimit);
+
+  return likeRows.map(pageRowToCandidate);
+}
+
+async function exactIdentifierChunkSearch({
+  reportId,
+  identifiers,
+  limit,
+  includeAttachmentIds = [],
+  excludeAttachmentIds = [],
+  routeTargets,
+}: {
+  reportId: string;
+  identifiers: readonly string[];
+  limit: number;
+  includeAttachmentIds?: string[];
+  excludeAttachmentIds?: string[];
+  routeTargets?: RoutedSearchTarget[];
+}): Promise<CandidateRow[]> {
+  if (identifiers.length === 0) return [];
+  const candidateLimit = Math.max(limit * 5, DEFAULT_CANDIDATE_LIMIT);
+  const query = identifiers.join(" ");
+  const scope = {
+    includeAttachmentIds,
+    excludeAttachmentIds,
+    routeTargets,
+  };
+  const activeScope = and(
+    eq(reportAttachments.reportId, reportId),
+    isNull(reportAttachments.deletedAt),
+    isNotNull(reportAttachments.activeIngestRunId),
+    eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
+    ...chunkScopeSql(scope)
+  );
+
+  const overlapRows = await db
+    .select(identifierOverlapSelect())
     .from(reportAttachments)
     .innerJoin(documentChunks, reportAttachmentChunkJoin())
     .innerJoin(documentPages, eq(documentChunks.pageId, documentPages.id))
@@ -711,28 +879,40 @@ async function exactIdentifierChunkSearch({
     .orderBy(documentChunks.pageNumber, documentChunks.ordinal)
     .limit(candidateLimit);
 
-  if (overlapRows.length > 0) {
-    return collapseToBestChunkPerPage(overlapRows, {
-      query: identifiers.join(" "),
-      textFrom: chunkText,
-    });
-  }
-
-  const likeCondition = identifiersIlikeSql(identifiers);
-  if (!likeCondition) return [];
-
-  const likeRows = await db
-    .select(candidateSelect())
-    .from(reportAttachments)
-    .innerJoin(documentChunks, reportAttachmentChunkJoin())
-    .where(and(activeScope, likeCondition))
-    .orderBy(documentChunks.pageNumber, documentChunks.ordinal)
-    .limit(candidateLimit);
-
-  return collapseToBestChunkPerPage(likeRows, {
-    query: identifiers.join(" "),
+  let missing = identifiersMissingFromHits(identifiers, overlapRows);
+  let merged: CandidateRow[] = collapseToBestChunkPerPage(overlapRows, {
+    query,
     textFrom: chunkText,
   });
+  if (missing.length === 0) return merged;
+
+  const likeCondition = identifiersIlikeSql(missing);
+  const likeRows = likeCondition
+    ? await db
+        .select(candidateSelect())
+        .from(reportAttachments)
+        .innerJoin(documentChunks, reportAttachmentChunkJoin())
+        .where(and(activeScope, likeCondition))
+        .orderBy(documentChunks.pageNumber, documentChunks.ordinal)
+        .limit(candidateLimit)
+    : [];
+
+  merged = mergeUniqueChunks([...merged, ...likeRows], query);
+  missing = identifiersMissingFromHits(identifiers, [
+    ...overlapRows,
+    ...likeRows.map(() => ({ identifiers: undefined })),
+  ]);
+  if (missing.length === 0) return merged;
+
+  const pageRows = await exactIdentifierPageSearch({
+    reportId,
+    identifiers: missing,
+    limit,
+    includeAttachmentIds,
+    excludeAttachmentIds,
+    routeTargets,
+  });
+  return mergeUniqueChunks([...merged, ...pageRows], query);
 }
 
 function lexicalIlikeOnChunkColumn(
@@ -1328,6 +1508,29 @@ export async function verifyCitation(
 ): Promise<CitationVerification> {
   const parsed = parseCitationId(citationId);
   if (!parsed) return { ok: false, reason: "invalid_format" };
+
+  const pageId = parsePageBackedChunkId(parsed.chunkId);
+  if (pageId) {
+    const [pageRow] = await db
+      .select(pageCandidateSelect())
+      .from(reportAttachments)
+      .innerJoin(documentPages, reportAttachmentPageJoin())
+      .where(
+        and(
+          eq(reportAttachments.id, parsed.attachmentId),
+          eq(documentPages.id, pageId),
+          eq(documentPages.pageNumber, parsed.pageNumber),
+          eq(reportAttachments.reportId, reportId),
+          isNull(reportAttachments.deletedAt),
+          isNotNull(reportAttachments.activeIngestRunId),
+          eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
+        )
+      )
+      .limit(1);
+
+    if (!pageRow) return { ok: false, reason: "not_found" };
+    return { ok: true, result: toSearchResult(pageRowToCandidate(pageRow)) };
+  }
 
   const [row] = await db
     .select(candidateSelect())

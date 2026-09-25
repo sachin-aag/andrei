@@ -3,6 +3,7 @@ import {
   buildMatchCenteredSnippet,
   buildOutlineFromStoredPages,
   normalizeAttachmentIdFilter,
+  pageBackedChunkId,
   parseCitationId,
   readDocumentPage,
   reciprocalRankFusion,
@@ -530,6 +531,102 @@ describe("searchReportDocuments with tagged attachments", () => {
     expect(results.map((row) => row.chunkId)).toEqual(["hit", "noise"]);
   });
 
+  it("returns an unchunked page when the identifier is only on document_pages", async () => {
+    const pageId = "pg-urs-6";
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          attachmentId: "att_urs",
+          filename: "User Requirement Specification.PDF",
+          description: null,
+          pageNumber: 6,
+          pageId,
+          identifiers: ["URS-8"],
+          transcript:
+            "URS ID # Requirement\nURS-8 The agitator shall run at 75 rpm during charging.",
+          ingestRunId: "run-1",
+          sourceSha256: "sha",
+        },
+      ]);
+
+    const { results, timing } = await searchReportDocumentsDetailed({
+      reportId: "report-1",
+      query: "URS-8",
+      limit: 1,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.attachmentId).toBe("att_urs");
+    expect(results[0]!.pageNumber).toBe(6);
+    expect(results[0]!.chunkId).toBe(pageBackedChunkId(pageId));
+    expect(results[0]!.text).toContain("URS-8");
+    expect(results[0]!.text).toContain("75 rpm");
+    expect(timing.skippedEmbedding).toBe(true);
+    expect(embedMock).not.toHaveBeenCalled();
+    expect(limitMock).toHaveBeenCalledTimes(5);
+  });
+
+  it("does not query pages when a chunk already matched the identifier", async () => {
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          ...chunkRow("c6", "att_urs", 6),
+          identifiers: ["URS-8"],
+          rawText: "URS-8 The agitator shall run at 75 rpm",
+          contextualText: "URS-8 The agitator shall run at 75 rpm",
+        },
+      ]);
+
+    const { results } = await searchReportDocumentsDetailed({
+      reportId: "report-1",
+      query: "URS-8",
+      limit: 1,
+    });
+
+    expect(results.map((row) => row.chunkId)).toEqual(["c6"]);
+    expect(limitMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the unchunked identifier fallback inside tagged attachments", async () => {
+    const pageId = "pg-urs-11";
+    limitMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          attachmentId: "att_keep",
+          filename: "User Requirement Specification.PDF",
+          description: null,
+          pageNumber: 11,
+          pageId,
+          identifiers: ["URS-64"],
+          transcript: "URS-64 Jacket temperature shall remain between 20 and 25 C.",
+          ingestRunId: "run-1",
+          sourceSha256: "sha",
+        },
+      ]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "URS-64",
+      limit: 1,
+      attachmentIds: ["att_keep"],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.attachmentId).toBe("att_keep");
+    expect(results[0]!.pageNumber).toBe(11);
+    expect(results[0]!.chunkId).toBe(pageBackedChunkId(pageId));
+    expect(results[0]!.pinned).toBe(true);
+    expect(limitMock).toHaveBeenCalledTimes(3);
+  });
+
   it("embeds unique semantic queries once via embedMany", async () => {
     const arms = await searchReportDocumentsMany({
       reportId: "report-1",
@@ -644,5 +741,42 @@ describe("verifyCitation", () => {
       ok: false,
       reason: "invalid_format",
     });
+  });
+
+  it("accepts a page-backed citation from the active ingest run", async () => {
+    limitMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_1",
+        filename: "urs.pdf",
+        description: null,
+        pageNumber: 6,
+        pageId: "pg6",
+        identifiers: ["URS-8"],
+        transcript: "URS-8 Agitator speed 75 rpm",
+        ingestRunId: "run-1",
+        sourceSha256: "sha",
+      },
+    ]);
+
+    const verified = await verifyCitation(
+      "report-1",
+      `att:att_1:p:6:c:${pageBackedChunkId("pg6")}`
+    );
+    expect(verified).toMatchObject({
+      ok: true,
+      result: {
+        attachmentId: "att_1",
+        pageNumber: 6,
+        chunkId: pageBackedChunkId("pg6"),
+      },
+    });
+  });
+
+  it("rejects a page-backed citation from a stale ingest run", async () => {
+    limitMock.mockResolvedValueOnce([]);
+
+    await expect(
+      verifyCitation("report-1", `att:att_1:p:6:c:${pageBackedChunkId("stale")}`)
+    ).resolves.toEqual({ ok: false, reason: "not_found" });
   });
 });
