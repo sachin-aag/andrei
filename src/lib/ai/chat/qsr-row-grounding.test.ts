@@ -39,6 +39,13 @@ describe("quoteWindowAroundKey", () => {
     expect(urs37).toContain("15–130");
     expect(urs37).not.toContain("Emergency Stop");
   });
+
+  it("does not look behind the last URS ID on a page", () => {
+    const quote =
+      "Vacuum gauge 0 to 760 mmHg. URS-36 Pressure Gauge for the shell.";
+    expect(quoteWindowAroundKey(quote, "URS-36")).not.toContain("760");
+    expect(quoteWindowAroundKey(quote, "URS-36")).toContain("Pressure Gauge");
+  });
 });
 
 describe("descriptionSupportedNearKey", () => {
@@ -48,6 +55,26 @@ describe("descriptionSupportedNearKey", () => {
     ).toBe(false);
     expect(
       descriptionSupportedNearKey("Emergency Stop push button", [SHARED_URS_PAGE], "URS-44")
+    ).toBe(true);
+  });
+
+  it("treats a numeric URS-1 cell as supported without a same-page URS-N window", () => {
+    expect(
+      descriptionSupportedNearKey(
+        "8000 L [User Requirement Specification.PDF, p. 1]",
+        ["Equipment Name Glass Lined Reactor Capacity 8000 L"],
+        "URS-1"
+      )
+    ).toBe(true);
+  });
+
+  it("accepts Reactor Capacity from the URS cover for URS-1", () => {
+    expect(
+      descriptionSupportedNearKey(
+        "Reactor Capacity",
+        ["Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301"],
+        "URS-1"
+      )
     ).toBe(true);
   });
 });
@@ -125,6 +152,26 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
         ledger,
       }).map((fact) => fact.text)
     ).toContain("VFD compatible");
+  });
+
+  it("does not extra-block a URS-1 capacity cell cited to the cover", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote:
+          "Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "8000 L [User Requirement Specification.PDF, p. 1]",
+        context: "URS-1\nReactor Capacity",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
   });
 });
 

@@ -88,7 +88,7 @@ const IDENTIFIER_RE =
  * checked it.
  */
 const INSTRUMENT_UNIT =
-  "(?:mL|ml|µL|uL|L|CFU|cfu|units?|%|kg(?:\\/cm(?:²|2))?|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
+  "(?:mL|ml|µL|uL|(?<=\\s)L|CFU|cfu|units?|%|kg(?:\\/cm(?:²|2))?|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
 
 const NUMBER_WITH_UNIT_RE = new RegExp(
   String.raw`\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*${INSTRUMENT_UNIT}?\b|\b\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}(?!\w)`,

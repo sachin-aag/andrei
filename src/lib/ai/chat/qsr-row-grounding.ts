@@ -124,8 +124,10 @@ export function factIsRowKey(fact: HardFact, key: string): boolean {
 }
 
 /**
- * Slice of `quote` from this URS ID to the next URS ID (or ±240 chars).
+ * Slice of `quote` from this URS ID to the next URS ID (or 240 chars forward).
  * Same-page bag-of-quotes is not enough — URS-4 and URS-37 share a page.
+ * Do not look behind the ID: the last URS on a page would otherwise steal
+ * the previous row's range (`0 to 760 mmHg` sitting just before URS-36).
  */
 export function quoteWindowAroundKey(quote: string, key: string): string | null {
   if (!quote.trim() || !key) return null;
@@ -138,9 +140,8 @@ export function quoteWindowAroundKey(quote: string, key: string): string | null 
   if (next && next.index != null) {
     return quote.slice(at, at + needle.length + next.index);
   }
-  const start = Math.max(0, at - 80);
   const end = Math.min(quote.length, at + needle.length + 240);
-  return quote.slice(start, end);
+  return quote.slice(at, end);
 }
 
 export function evidenceContainsFactNearKey(
@@ -150,6 +151,32 @@ export function evidenceContainsFactNearKey(
 ): boolean {
   const window = quoteWindowAroundKey(haystack, key);
   return window != null && evidenceContainsFact(window, fact);
+}
+
+export function ursIdsInQuote(quote: string): string[] {
+  return [
+    ...new Set(
+      [...quote.matchAll(/\bURS-\d+\b/gi)].map((match) => match[0]!.toUpperCase())
+    ),
+  ];
+}
+
+/**
+ * Neighbour-URS leak only. A fact on the URS cover (Capacity 8000 L with no
+ * URS-N nearby) may be copied onto the matching row; a value that sits inside
+ * URS-37's window must not land on URS-5.
+ */
+export function factSupportedForRowKey(
+  haystack: string,
+  fact: HardFact,
+  key: string
+): boolean {
+  if (evidenceContainsFactNearKey(haystack, fact, key)) return true;
+  if (!evidenceContainsFact(haystack, fact)) return false;
+  const needle = key.toUpperCase();
+  return !ursIdsInQuote(haystack).some(
+    (id) => id !== needle && evidenceContainsFactNearKey(haystack, fact, id)
+  );
 }
 
 export function significantDescriptionTokens(text: string): string[] {
@@ -173,6 +200,66 @@ function normalizeHay(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ");
 }
 
+function tokenHitsWindows(
+  tokens: readonly string[],
+  windows: readonly string[]
+): number {
+  return tokens.filter((token) =>
+    windows.some((window) => windowHasToken(window, token))
+  ).length;
+}
+
+function otherUrsWindows(
+  quotes: readonly string[],
+  key: string
+): string[] {
+  const needle = key.toUpperCase();
+  const windows: string[] = [];
+  for (const quote of quotes) {
+    for (const id of ursIdsInQuote(quote)) {
+      if (id === needle) continue;
+      const window = quoteWindowAroundKey(quote, id);
+      if (window) windows.push(window);
+    }
+  }
+  return windows;
+}
+
+function tokensSupportedNearKey(
+  tokens: readonly string[],
+  quotes: readonly string[],
+  key: string
+): boolean {
+  if (tokens.length === 0) return true;
+  const targetWindows = quotes
+    .map((quote) => quoteWindowAroundKey(quote, key))
+    .filter((window): window is string => window != null);
+  const targetHits = tokenHitsWindows(tokens, targetWindows);
+  if (tokens.length === 1) {
+    if (tokens[0]!.length >= 6 && targetHits === 1) return true;
+  } else if (targetHits >= 2) {
+    return true;
+  }
+
+  const otherHits = tokenHitsWindows(tokens, otherUrsWindows(quotes, key));
+  const needed = tokens.length === 1 ? 1 : 2;
+  if (targetHits === 0 && otherHits >= needed) return false;
+
+  const pageWindows = quotes.filter((quote) => {
+    const others = ursIdsInQuote(quote).filter(
+      (id) => id !== key.toUpperCase()
+    );
+    if (others.length === 0) return true;
+    return !others.some((id) => {
+      const window = quoteWindowAroundKey(quote, id);
+      return window != null && tokens.some((token) => windowHasToken(window, token));
+    });
+  });
+  const pageHits = tokenHitsWindows(tokens, pageWindows);
+  if (tokens.length === 1) return tokens[0]!.length >= 4 && pageHits === 1;
+  return pageHits >= needed;
+}
+
 export function descriptionSupportedNearKey(
   cell: string,
   quotes: readonly string[],
@@ -183,16 +270,9 @@ export function descriptionSupportedNearKey(
   if (STAGE_ONLY_RE.test(trimmed)) return true;
   if (new RegExp(`^${key}$`, "i").test(trimmed)) return true;
   const tokens = significantDescriptionTokens(trimmed);
-  if (tokens.length === 0) return true;
-  const windows = quotes
-    .map((quote) => quoteWindowAroundKey(quote, key))
-    .filter((window): window is string => window != null);
-  if (windows.length === 0) return false;
-  const hits = tokens.filter((token) =>
-    windows.some((window) => windowHasToken(window, token))
-  );
-  if (tokens.length === 1) return tokens[0]!.length >= 6 && hits.length === 1;
-  return hits.length >= 2;
+  const alphaTokens = tokens.filter((token) => /[a-z]/.test(token));
+  if (alphaTokens.length === 0) return true;
+  return tokensSupportedNearKey(alphaTokens, quotes, key);
 }
 
 export function documentFamilyFromFilename(
@@ -365,12 +445,13 @@ export function qsrDescriptionUnsupported(
 ): HardFact | null {
   const key = rowKeyFromContext(context);
   if (!key) return null;
-  if (new RegExp(`^${key}$`, "i").test(cell.replace(/\[[^\]]+\]/g, "").trim())) {
-    return null;
-  }
+  const stripped = cell.replace(/\[[^\]]+\]/g, "").replace(/\s+/g, " ").trim();
+  if (!stripped) return null;
+  if (new RegExp(`^${key}$`, "i").test(stripped)) return null;
+  if (/^<[^>]+>$/.test(stripped)) return null;
   const quotes = ledger.recordedPages().map((page) => page.quote);
   if (descriptionSupportedNearKey(cell, quotes, key)) return null;
-  const preview = cell.replace(/\s+/g, " ").trim().slice(0, 80);
+  const preview = stripped.slice(0, 80);
   return preview ? syntheticUnsupportedFact(preview) : null;
 }
 

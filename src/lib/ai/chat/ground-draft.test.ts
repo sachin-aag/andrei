@@ -128,6 +128,67 @@ describe("groundDraftText QSR row windows", () => {
     expect(result.text).toContain("20-25 °C");
   });
 
+  it("accepts 8000 L from the URS cover on the URS-1 row", () => {
+    const result = groundDraftText({
+      text: "8000 L [User Requirement Specification.PDF, p. 1]",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 1,
+          attachmentId: "urs",
+          quote:
+            "Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301 Page 1 of 12",
+        },
+      ]),
+      policy: "block",
+      context: "URS-1\nReactor Capacity",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("8000 L");
+    expect(result.unsupported).toEqual([]);
+  });
+
+  it("accepts 0 to 760 mmHg for URS-35 when the URS page states it outside a neighbour window", () => {
+    const result = groundDraftText({
+      text: "0 to 760 mmHg",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 8,
+          attachmentId: "urs",
+          quote:
+            "Vacuum gauge to measure the vacuum produced. Range 0 to 760 mmHg. URS-36 Pressure Gauge.",
+        },
+      ]),
+      policy: "block",
+      context: "URS-35\nVacuum gauge",
+      grounding: { section: "qsr_rtm_control" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("760 mmHg");
+  });
+
+  it("does not treat SS 316L as an unsourced litre quantity on a URS-39 row", () => {
+    const result = groundDraftText({
+      text: "Glass lined / SS 316L",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 9,
+          attachmentId: "urs",
+          quote:
+            "URS-39 Contact parts of the equipment shall be Glass lined / SS 316L.",
+        },
+      ]),
+      policy: "block",
+      context: "URS-39\nContact parts",
+      grounding: { section: "qsr_rtm_gmp" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("SS 316L");
+  });
+
   it("rejects Emergency Stop text on URS-5 when that phrasing is URS-44", () => {
     const result = groundDraftText({
       text: "Emergency Stop push button",

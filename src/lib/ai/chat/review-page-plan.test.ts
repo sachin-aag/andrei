@@ -559,6 +559,18 @@ describe("coverageKeySatisfiesObjective", () => {
     ).toBe(true);
   });
 
+  it("treats every QSR RTM subsection as one coverage family", () => {
+    expect(
+      coverageKeySatisfiesObjective(
+        "att:10:run|obj:qsr_rtm_process",
+        "qsr_rtm_control"
+      )
+    ).toBe(true);
+    expect(
+      coverageKeySatisfiesObjective("att:10:run|obj:qsr_rtm", "qsr_rtm_gmp")
+    ).toBe(true);
+  });
+
   it("does not treat a qualification finish as covering calibration", () => {
     expect(
       coverageKeySatisfiesObjective(

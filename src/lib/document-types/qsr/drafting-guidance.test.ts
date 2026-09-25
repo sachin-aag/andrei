@@ -4,7 +4,7 @@ import { QSR_DRAFTING_GUIDANCE } from "./drafting-guidance";
 describe("QSR_DRAFTING_GUIDANCE", () => {
   it("requires verbatim URS rows and keyed banner inserts on the RTM", () => {
     expect(QSR_DRAFTING_GUIDANCE).toContain(
-      "Copy the URS ID and requirement text word for word"
+      "Cover-page URS identity (capacity, MOC, equipment ID) may be copied onto the matching row"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain("Never merge two requirements");
     expect(QSR_DRAFTING_GUIDANCE).toContain("process → 5.1 Process Requirements");

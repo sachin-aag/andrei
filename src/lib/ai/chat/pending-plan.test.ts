@@ -1186,6 +1186,18 @@ describe("plan prompt and metadata", () => {
     ).toBe(true);
   });
 
+  it("lets a QSR RTM URS walk unlock sibling tables when protocol files were skipped", () => {
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 8,
+        skippedAttachmentIds: ["dq"],
+        objective: "qsr_rtm_process",
+        queuedFilenames: ["User Requirement Specification.PDF"],
+        skippedFilenames: ["Design Qualification.PDF"],
+      })
+    ).toBe(true);
+  });
+
   it("keeps comprehensive retrieval for a queued inventory section", () => {
     expect(
       planKeepsComprehensive(
