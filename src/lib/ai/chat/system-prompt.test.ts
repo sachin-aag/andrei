@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v140-qsr-rtm-refs");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v141-qsr-decimals");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -36,6 +36,9 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain(
       "leave the three cells empty — still persist the URS ID"
+    );
+    expect(prompt).toContain(
+      "Do not tell them to accept a card and type 3.5"
     );
   });
 

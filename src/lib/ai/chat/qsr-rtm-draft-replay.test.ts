@@ -439,6 +439,54 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(text).toContain("3.5 Kg/cm²");
   });
 
+  it("proposes 3.5 Kg/cm² when OCR split the decimal on the URS page", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript:
+        "URS-1 Reactor Capacity URS-4 Shell Operating pressure URS-6 Jacket Operating Pressure 8000 L Full Vacuum to 3 . 5 Kg/cm² 3 to 5 Kg/cm²",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-4 pressure from the URS.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            [
+              "URS-4",
+              "Shell Operating pressure",
+              "Full Vacuum to 3.5 Kg/cm²",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toContain("3.5");
+    expect(rows.flat().join(" ")).not.toContain("<number>");
+  });
+
   it("still blocks URS-37's temperature on the URS-5 row after a same-page repair search", async () => {
     mockSection("qsr_rtm_process");
     searchReportDocumentsManyMock.mockResolvedValue([

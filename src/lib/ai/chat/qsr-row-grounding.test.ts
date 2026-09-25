@@ -500,6 +500,38 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 
+  it("keeps Full Vacuum to 3.5 Kg/cm² when OCR split the decimal", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote:
+          "URS-1 Reactor Capacity URS-4 Shell Operating pressure URS-6 Jacket Operating Pressure 8000 L Full Vacuum to 3 . 5 Kg/cm² 3 to 5 Kg/cm²",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          ["URS-4", "Shell Operating pressure", "Full Vacuum to 3.5 Kg/cm²", "", "", ""],
+          ["URS-6", "Jacket Operating Pressure", "3 to 5 Kg/cm²", "", "", ""],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const rows =
+      result.operation.kind === "insert_rows" ? result.operation.rows : [];
+    expect(rows.flat().join(" ")).toContain("3.5");
+    expect(rows.flat().join(" ")).toContain("3 to 5");
+    expect(rows.flat().join(" ")).not.toContain("<number>");
+  });
+
   it("drops an edit_cells that only wrote unsupported Remarks", () => {
     const ledger = ledgerFromPages([
       {

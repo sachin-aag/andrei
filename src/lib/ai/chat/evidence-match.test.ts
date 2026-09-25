@@ -72,6 +72,42 @@ describe("evidenceContainsFact", () => {
     expect(evidenceContainsFact("Fill volume 3 mL cartridge.", threeMl)).toBe(true);
   });
 
+  it("matches OCR-split 3.5 Kg/cm² from the URS pressure row", () => {
+    const pressure = fact("Full Vacuum to 3.5 Kg/cm²", "number");
+    expect(pressure.text).toContain("3.5");
+    expect(
+      evidenceContainsFact(
+        "URS-4 Shell Operating pressure Full Vacuum to 3 . 5 Kg/cm²",
+        pressure
+      )
+    ).toBe(true);
+    expect(
+      evidenceContainsFact(
+        "URS-4 Shell Operating pressure Full Vacuum to 3. 5 Kg/cm²",
+        pressure
+      )
+    ).toBe(true);
+    expect(
+      evidenceContainsFact(
+        "URS-4 Shell Operating pressure Full Vacuum to 3 · 5 Kg/cm2",
+        pressure
+      )
+    ).toBe(true);
+  });
+
+  it("does not treat integer 3 as present because OCR-split 3.5 contains a 3", () => {
+    const three = fact("Jacket 3 Kg/cm²", "number");
+    expect(
+      evidenceContainsFact(
+        "URS-4 Shell Operating pressure Full Vacuum to 3 . 5 Kg/cm²",
+        three
+      )
+    ).toBe(false);
+    expect(
+      evidenceContainsFact("URS-6 Jacket Operating Pressure 3 to 5 Kg/cm²", three)
+    ).toBe(true);
+  });
+
   it("matches 14 days against a spaced incubation line", () => {
     const duration = fact("Incubation 14 days");
     expect(

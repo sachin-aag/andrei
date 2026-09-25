@@ -146,7 +146,9 @@ sentences) keeps each block's sentences out of the last ID's window and
 still lets every ID in that block use them, even when another row's
 parameter shares a word such as glass or thickness. URS-1 does not match
 URS-13. Digits in URS-N are not a measured number. A decimal such as 25.0 is
-not a measured zero. Stock Complies / Section 13 still need a protocol page
+not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
+to persist `<number>` or ask the engineer to type it. Integer `3` is not
+`3.5`. Stock Complies / Section 13 still need a protocol page
 that names that URS ID; unsupported Stage / Section / Remarks cells clear
 instead of blocking the URS copy. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
