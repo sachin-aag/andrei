@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DOCUMENT_AI_REQUIRED_ERROR } from "./document-ai-ocr";
 import {
   canReprocessAttachment,
   IngestNeedsContinuationError,
@@ -61,9 +62,7 @@ describe("sanitizeIngestError", () => {
   it("fails closed when Document AI OCR is not configured", () => {
     expect(
       sanitizeIngestError(
-        new Error(
-          "DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION are required. PDF indexing does not fall back to the slow page loop."
-        )
+        new Error(DOCUMENT_AI_REQUIRED_ERROR)
       )
     ).toBe(
       "Document ingestion requires Document AI OCR. Set DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION."

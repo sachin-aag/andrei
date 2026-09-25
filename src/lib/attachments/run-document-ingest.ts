@@ -16,8 +16,8 @@ import { chunkDocumentPages } from "@/lib/attachments/chunk-pages";
 import { describeDocxImages } from "@/lib/attachments/describe-docx-images";
 import {
   DOCUMENT_AI_OCR_CONCURRENCY,
+  assertPdfIngestConfigured,
   documentAiIngestSplitOptions,
-  isDocumentAiConfigured,
 } from "@/lib/attachments/document-ai-ocr";
 import {
   assignDocxImagesToPages,
@@ -312,15 +312,13 @@ async function initializeIngestRun(
 
 /** PDF path: split into batches, extract each, then chunk+embed. */
 async function runPdfIngest(init: IngestInit): Promise<void> {
-  if (!isDocumentAiConfigured()) {
-    throw new Error(
-      "DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION are required. PDF indexing does not fall back to the slow page loop."
-    );
-  }
+  const storage = getAttachmentStorage();
+  const sourceBuffer = await storage.readObjectBuffer(init.sourceObjectKey);
+  await assertPdfIngestConfigured(sourceBuffer);
   await assertAttachmentCurrent(init);
   const existingBatches = await listBatches(init.runId);
   if (existingBatches.length === 0) {
-    await splitAndPersistBatches(init);
+    await splitAndPersistBatches(init, sourceBuffer);
   }
   const batches = await listBatches(init.runId);
   const sliceStartedAt = Date.now();
@@ -489,12 +487,14 @@ async function assertAttachmentCurrent(input: IngestInit): Promise<void> {
   }
 }
 
-async function splitAndPersistBatches(input: IngestInit): Promise<{
+async function splitAndPersistBatches(
+  input: IngestInit,
+  sourceBuffer: Buffer
+): Promise<{
   batchCount: number;
   pageCount: number;
 }> {
   const storage = getAttachmentStorage();
-  const sourceBuffer = await storage.readObjectBuffer(input.sourceObjectKey);
   const split = await splitPdfForIngest(sourceBuffer);
 
   for (const batch of split.batches) {
