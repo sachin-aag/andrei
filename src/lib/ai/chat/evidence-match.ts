@@ -121,9 +121,12 @@ export function evidenceContainsFact(haystack: string, fact: HardFact): boolean 
   if (!haystack.trim()) return false;
   const hay = normalizeHaystack(haystack);
   const originalHay = collapseWs(haystack).toUpperCase();
+  // URS-1 / URS-15 are identifiers. Their digits are not a measured
+  // "1 mm" or "15 °C" sitting in that row's requirement text.
   const numericHay = hay
     .replace(/°/g, "")
     .replace(/,/g, "")
+    .replace(/\burs-\d+\b/gi, " ")
     .replace(/\s+/g, " ");
   for (const needle of kindNeedles(fact)) {
     if (!needle) continue;

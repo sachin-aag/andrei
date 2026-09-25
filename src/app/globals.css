@@ -704,6 +704,15 @@ body:has([data-suggestion-preview-held]) {
   transition: opacity 200ms ease;
 }
 
+/* Agent chrome and a closed Comments switch have no review margin.
+   The in-section card is the Apply / Dismiss handle. Hide it only while
+   the margin column is actually on screen. */
+@container (min-width: 480px) {
+  .review-gutter-open .section-suggestion-slot {
+    display: none;
+  }
+}
+
 .suggestion-card-stack {
   position: relative;
   isolation: isolate;
