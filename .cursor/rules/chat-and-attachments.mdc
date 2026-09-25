@@ -141,7 +141,9 @@ Docs / References, which fail closed when the URS or source protocol is
 attached but unread. Those rows also require the fact in the same URS-N
 quote window (`qsr-row-grounding.ts`) or on the URS cover / outside any
 URS-N window (capacity, MOC) — a neighbour URS on the same page still
-bounces. Every pack uses `unsupportedFactPolicy: block`
+bounces. A column-major URS page (IDs, then the requirement sentences)
+keeps that value column out of the last ID's window, and the digits in
+URS-N are not a measured number. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover

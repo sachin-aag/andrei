@@ -16,6 +16,7 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
       "never write Complies, Section 13, or a stock IQ page"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain("do not add new group rows");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("one insert_rows");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Prefer afterRowKey");
     expect(QSR_DRAFTING_GUIDANCE).toContain(
       "Do not write VFD compatible in place of an RPM number"

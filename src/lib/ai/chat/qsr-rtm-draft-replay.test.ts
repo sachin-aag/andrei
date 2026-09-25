@@ -88,6 +88,8 @@ const MOC_QUOTE =
   "URS-39 Contact parts of the equipment shall be Glass lined / SS 316L.";
 const NEIGHBOUR_QUOTE =
   "URS-5 Jacket temperature 20-25 °C for the jacket loop. URS-37 Process temperature 15–130 °C for the vessel. URS-44 Emergency Stop push button at each station.";
+const COLUMN_QUOTE =
+  "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm 15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²";
 
 const URS_PAGES: Record<
   number,
@@ -95,6 +97,7 @@ const URS_PAGES: Record<
 > = {
   1: { transcript: COVER_QUOTE, visualInterpretation: "" },
   4: { transcript: NEIGHBOUR_QUOTE, visualInterpretation: "" },
+  6: { transcript: COLUMN_QUOTE, visualInterpretation: "" },
   8: { transcript: `URS-35 ${VACUUM_QUOTE}`, visualInterpretation: "" },
   9: { transcript: MOC_QUOTE, visualInterpretation: "" },
 };
@@ -342,6 +345,60 @@ describe("QSR RTM section 5 draft replay", () => {
     const rows = op.kind === "insert_rows" ? op.rows : [];
     expect(rows.flat().join(" ")).toContain("SS 316L");
     expect(rows.flat().join(" ")).not.toContain("<number>");
+  });
+
+  it("proposes URS-2 through URS-4, including User requirements, from a column-major page", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 6);
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert the process rows from the column-major URS page.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            [
+              "URS-2",
+              "MOC",
+              "High-quality Glass Lining and thickness should not be less than 1 mm",
+              "",
+              "",
+              "",
+            ],
+            [
+              "URS-3",
+              "Shell Operating temperature",
+              "15 °C to 130 °C",
+              "",
+              "",
+              "",
+            ],
+            [
+              "URS-4",
+              "Shell Operating pressure",
+              "Full Vacuum to 3.5 Kg/cm²",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    const text = rows.flat().join(" ");
+    expect(rows).toHaveLength(3);
+    expect(text).toContain("1 mm");
+    expect(text).toContain("15 °C");
+    expect(text).toContain("130 °C");
+    expect(text).toContain("3.5 Kg/cm²");
   });
 
   it("still blocks URS-37's temperature on the URS-5 row after a same-page repair search", async () => {
