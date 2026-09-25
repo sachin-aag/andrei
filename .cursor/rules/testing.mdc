@@ -37,5 +37,7 @@ alwaysApply: false
   against a server that already has those flags and matching `AUTH_URL`.
 - Stub chat cannot assert tool calls. Scope chat E2E to stream + persist
   (`e2e/report-chat.spec.ts`). Production grounding incidents replay
-  `edit_table` through `buildChatTools` (`qsr-rtm-draft-replay.test.ts`).
+  `edit_table` through `buildChatTools` (`qsr-rtm-draft-replay.test.ts`)
+  and the git-owned quality floor (`pnpm chat-eval -- --replay`). Optional
+  Langfuse dataset `chat-draft-quality-floor` via `--sync` / `--experiment`.
 - Run one spec with `--project=chromium`. `pnpm precommit` does not run E2E.

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "qsr-rtm-cover-8000l",
+    "task": "ground_draft",
+    "passCriteria": "Example overlay: same public id replaces the public case. Copy to chat-draft-cases.local.json (gitignored).",
+    "notes": "Keep customer PDFs and Langfuse trace ids out of the public set.",
+    "input": {
+      "text": "8000 L [User Requirement Specification.PDF, p. 1]",
+      "context": "URS-1\nReactor Capacity",
+      "section": "qsr_rtm_process",
+      "pages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "pageNumber": 1,
+          "attachmentId": "urs",
+          "quote": "Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301 Page 1 of 12"
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["8000 L"],
+      "unsupportedMustBeEmpty": true
+    }
+  }
+]
