@@ -461,6 +461,18 @@ html[data-customer="3xper"] {
   border-radius: 2px;
 }
 
+/*
+ * In-section suggestion card. Hidden only when the Comments gutter is on
+ * *and* wide enough that the margin column is actually showing (@[480px]).
+ * Agent chrome and Comments-off keep the card so table edits are not
+ * Apply-all-only.
+ */
+@container (min-width: 480px) {
+  [data-review-gutter] .section-suggestion-card-inline {
+    display: none;
+  }
+}
+
 .suggestion-preview-placeholder {
   display: inline-block;
   padding: 0 0.25rem;
@@ -977,6 +989,24 @@ body:has([data-suggestion-preview-held]) {
 
 .ProseMirror td {
   background-color: var(--input);
+}
+
+/* Cell fills hide the 15% green/red span tint. Paint the cell itself. */
+.ProseMirror td:has(.suggestion-insert-ai),
+.ProseMirror th:has(.suggestion-insert-ai) {
+  background-color: rgb(22 101 52 / 0.14);
+  box-shadow: inset 0 0 0 2px rgb(22 101 52 / 0.5);
+}
+
+.ProseMirror td:has(.suggestion-delete-ai),
+.ProseMirror th:has(.suggestion-delete-ai) {
+  background-color: rgb(220 38 38 / 0.12);
+  box-shadow: inset 0 0 0 2px rgb(220 38 38 / 0.45);
+}
+
+.ProseMirror td .suggestion-action-widget,
+.ProseMirror th .suggestion-action-widget {
+  white-space: nowrap;
 }
 
 .ProseMirror tr:first-child th,
