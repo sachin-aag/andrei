@@ -78,6 +78,8 @@ const URS_FILENAME = "User Requirement Specification.PDF";
 const URS_ID = "att_urs";
 const DQ_FILENAME = "Design Qualification.PDF";
 const DQ_ID = "att_dq";
+const IQ_FILENAME = "Installation Qualification.PDF";
+const IQ_ID = "att_iq";
 const REPORT_ID = "report-qsr-rtm";
 
 const COVER_QUOTE =
@@ -100,6 +102,10 @@ const URS_PAGES: Record<
   6: { transcript: COLUMN_QUOTE, visualInterpretation: "" },
   8: { transcript: `URS-35 ${VACUUM_QUOTE}`, visualInterpretation: "" },
   9: { transcript: MOC_QUOTE, visualInterpretation: "" },
+  12: {
+    transcript: "URS-62 Heat Transfer Area NLT 25.0 m² for the jacket.",
+    visualInterpretation: "",
+  },
 };
 
 const TEST_TOOL_OPTIONS = {
@@ -129,6 +135,17 @@ function dqDoc(pageCount = 40) {
   return {
     attachmentId: DQ_ID,
     filename: DQ_FILENAME,
+    description: null,
+    pageCount,
+    ingestRunId: "run",
+    documentSummary: null,
+  };
+}
+
+function iqDoc(pageCount = 60) {
+  return {
+    attachmentId: IQ_ID,
+    filename: IQ_FILENAME,
     description: null,
     pageCount,
     ingestRunId: "run",
@@ -199,6 +216,27 @@ async function readUrsPage(
   });
   const read = await tools.read_document_page!.execute!(
     { attachmentId: URS_ID, pageNumber },
+    TEST_TOOL_OPTIONS
+  );
+  expect(read).toMatchObject({ status: "found" });
+}
+
+async function readIqPage(
+  tools: ReturnType<typeof buildChatTools>,
+  pageNumber: number,
+  transcript: string
+) {
+  readDocumentPageMock.mockResolvedValueOnce({
+    attachmentId: IQ_ID,
+    filename: IQ_FILENAME,
+    pageNumber,
+    transcript,
+    visualInterpretation: "",
+    pageContext: null,
+    printedPageLabel: String(pageNumber),
+  });
+  const read = await tools.read_document_page!.execute!(
+    { attachmentId: IQ_ID, pageNumber },
     TEST_TOOL_OPTIONS
   );
   expect(read).toMatchObject({ status: "found" });
@@ -401,6 +439,54 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(text).toContain("3.5 Kg/cm²");
   });
 
+  it("proposes 3.5 Kg/cm² when OCR split the decimal on the URS page", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript:
+        "URS-1 Reactor Capacity URS-4 Shell Operating pressure URS-6 Jacket Operating Pressure 8000 L Full Vacuum to 3 . 5 Kg/cm² 3 to 5 Kg/cm²",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-4 pressure from the URS.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            [
+              "URS-4",
+              "Shell Operating pressure",
+              "Full Vacuum to 3.5 Kg/cm²",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toContain("3.5");
+    expect(rows.flat().join(" ")).not.toContain("<number>");
+  });
+
   it("still blocks URS-37's temperature on the URS-5 row after a same-page repair search", async () => {
     mockSection("qsr_rtm_process");
     searchReportDocumentsManyMock.mockResolvedValue([
@@ -448,7 +534,7 @@ describe("QSR RTM section 5 draft replay", () => {
     ).toBe(false);
   });
 
-  it("still blocks stock Complies unless that protocol page names the URS ID", async () => {
+  it("proposes the URS copy and empties stock Complies when no protocol names the ID", async () => {
     mockSection("qsr_rtm_process");
     const tools = buildTools({ section: "qsr_rtm_process" });
     await readUrsPage(tools, 4);
@@ -465,12 +551,76 @@ describe("QSR RTM section 5 draft replay", () => {
       },
       TEST_TOOL_OPTIONS
     );
-    expect(result).toMatchObject({ status: "unsupported_facts" });
-    expect(
-      (result as { unsupported?: Array<{ text: string }> }).unsupported?.map(
-        (fact) => fact.text
-      )
-    ).toEqual(expect.arrayContaining(["Complies"]));
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows[0]?.[0]).toContain("URS-5");
+    expect(rows[0]?.[1]).toBe("Jacket temperature");
+    expect(rows[0]?.[2]).toContain("20-25 °C");
+    expect(rows[0]?.slice(3)).toEqual(["", "", ""]);
+    expect(rows.flat().join(" ")).not.toMatch(/Complies/i);
+  });
+
+  it("keeps IQ / Complies when Installation Qualification names that URS ID", async () => {
+    mockSection("qsr_rtm_process");
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 4);
+    await readIqPage(
+      tools,
+      12,
+      "URS-5 Installation check meets acceptance. Section 8.1. Result: complies."
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-5 from the URS and IQ.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [["URS-5", "Jacket temperature", "20-25 °C", "IQ", "8.1", "Complies"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows[0]?.[0]).toContain("URS-5");
+    expect(rows[0]?.[1]).toBe("Jacket temperature");
+    expect(rows[0]?.[2]).toContain("20-25 °C");
+    expect(rows[0]?.[3]).toContain("IQ");
+    expect(rows[0]?.[4]).toContain("8.1");
+    expect(rows[0]?.[4]).not.toMatch(/Section 13/i);
+    expect(rows[0]?.[5]).toMatch(/Complies/i);
+  });
+
+  it("proposes NLT 25.0 m² without treating the decimal as a measured zero", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 12);
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-62 heat transfer area.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [["URS-62", "Heat Transfer Area", "NLT 25.0 m²", "", "", ""]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toContain("25.0");
+    expect(rows.flat().join(" ")).not.toContain("<number>");
   });
 
   it("keeps an empty 5.2 table locked until a matching RTM review has finished", async () => {

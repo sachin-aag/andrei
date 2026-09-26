@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v140-qsr-rtm-urs-walk");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v141-qsr-decimals");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -30,6 +30,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("one insert_rows");
     expect(prompt).toContain("Open cards stack");
     expect(prompt).toContain("Apply does not unlock the next insert");
+    expect(prompt).toContain("Installation Qualification");
+    expect(prompt).toContain(
+      "do not ask the engineer to invent a protocol-to-URS mapping"
+    );
+    expect(prompt).toContain(
+      "leave the three cells empty — still persist the URS ID"
+    );
+    expect(prompt).toContain(
+      "Do not tell them to accept a card and type 3.5"
+    );
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {

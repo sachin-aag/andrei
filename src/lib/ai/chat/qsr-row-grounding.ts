@@ -1,6 +1,7 @@
 import type { HardFact } from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
+import { QSR_TABLE_HEADERS } from "@/lib/document-types/qsr/sections";
 
 const URS_ID_RE = /\bURS-\d+\b/gi;
 
@@ -85,6 +86,22 @@ export function isQsrRtmSection(
   return (
     typeof section === "string" &&
     (QSR_RTM_SECTIONS as readonly string[]).includes(section)
+  );
+}
+
+/** Stage / Section / Remarks may empty instead of failing the URS copy. */
+export function isQsrRtmOptionalReferenceColumn(
+  section: string | null | undefined,
+  col: number
+): boolean {
+  if (!isQsrRtmSection(section)) return false;
+  const header = QSR_TABLE_HEADERS[section][col];
+  if (!header) return false;
+  const name = header.toLowerCase();
+  return (
+    name.includes("qualification stage") ||
+    (name.includes("reference") && name.includes("section")) ||
+    name === "remarks"
   );
 }
 
