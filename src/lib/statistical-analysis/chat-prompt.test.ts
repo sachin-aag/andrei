@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v61-ragged-columns"
+      "analytics-chat-v62-hide-internal-ids"
     );
   });
 
@@ -195,6 +195,7 @@ describe("analytics chat prompt", () => {
     });
     expect(two).toContain("Ready documents (index only");
     expect(two).toContain("list_attachments");
+    expect(two).toContain("never show it");
     expect(two).not.toContain("do not recount the list");
   });
 });

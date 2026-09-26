@@ -624,8 +624,9 @@ describe("id-shaped cites are checked against this report's attachments", () => 
   });
 
   it("keeps shape-only behaviour when the caller has no id list", () => {
-    // Chat and suggestion surfaces do not all know the attachment ids; they
-    // must not lose citation links because of this guard.
+    // Surfaces without an attachment-id list still treat a 24-char token as a
+    // cite so a copied index id is clickable. Chat rewrites known ids to
+    // filenames before linkifying.
     expect(sourceCitationLinkSpans(`[${analysisId}]`)).toHaveLength(1);
   });
 

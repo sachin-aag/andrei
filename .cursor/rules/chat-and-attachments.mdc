@@ -43,7 +43,7 @@ table filled", "I don't see the change") are write on Agent
 registered on the ToolSet; `advertisedTools` hides them. A remapped
 `unsupported_tool` for a write tool unlocks them on the next step
 (Document `prepareReportChatStep` and Analytics `prepareAnalyticsChatStep`).
-`list_suggestions` lists open / approved / dismissed AI cards. Wrap-up
+`list_suggestions` lists open / approved / dismissed AI cards (section + preview, no comment ids). Wrap-up
 must not claim a fill unless a tool this turn returned proposed, drafted,
 or applied.
 
@@ -356,7 +356,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (`[filename, p. N]` when the page is known; `[filename]` only if
   missing or ambiguous). The saved field converts those to numbered `[n]`
   markers plus a trailing Citations: list on every pack — there is no
-  inline `[filename, p. N]` document style. Do not reject or rewrite a
+  inline `[filename, p. N]` document style. User-visible chat never quotes
+  24-character attachment / analysis / suggestion ids — `ChatMarkdown`
+  rewrites them to filenames and plot titles. Do not reject or rewrite a
   draft that omitted a known page. Clicking those brackets (or numbered `[n]` that maps to
   a parked source) in the document, chat, or suggestion Sources opens or
   reuses that attachment canvas tab and scrolls the PDF to the cited
