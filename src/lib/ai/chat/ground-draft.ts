@@ -725,7 +725,9 @@ export function groundTableOperation(input: {
     case "create_table":
       operation = {
         ...cited,
-        headers: cited.headers.map((header) => groundValue(header)),
+        headers: cited.headers.map((header) =>
+          groundValue(header, cited.headers.join("\n"))
+        ),
         rows: cited.rows?.map((row) => {
           const context = [...cited.headers, ...row].join("\n");
           return row.map((cell, col) => groundValue(cell, context, col));
