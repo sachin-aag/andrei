@@ -74,6 +74,17 @@ export function selectReviewPages<T extends { attachmentId: string }>(
   return selected;
 }
 
+/** QSR-specific RTM headings. Do not use bare "user requirement" — that is every URS. */
+const QSR_RTM_OBJECTIVE_PHRASES = [
+  "control philosophy",
+  "process requirements",
+  "gmp requirements",
+  "safety requirements",
+  "computer system validation",
+  "maintenance and cleaning",
+  "requirement traceability",
+] as const;
+
 /**
  * Collapse verbose Table 3 / References walk copy onto the section keys so a
  * later turn that scopes `qsr_qualification_documents` can reuse the finish.
@@ -116,6 +127,11 @@ function stableQsrCoverageObjective(normalized: string): string | null {
   ) {
     return "qsr_rtm";
   }
+  // Gemini names 5.2–5.4 in prose ("control philosophy", "gmp requirements")
+  // instead of `qsr_rtm_control`. Stamp the same family so edit_table unlocks.
+  if (QSR_RTM_OBJECTIVE_PHRASES.some((phrase) => normalized.includes(phrase))) {
+    return "qsr_rtm";
+  }
   return null;
 }
 
@@ -143,7 +159,10 @@ export function coverageKeySatisfiesObjective(
   const digest = coverageKey.slice(idx + COVERAGE_OBJECTIVE_MARKER.length);
   if (!digest) return false;
   if (digest === want) return true;
-  const wantTokens = objectiveTokens(want);
+  // NL RTM copy ("control philosophy") collapses to qsr_rtm; do not
+  // tokenize the collapsed family or `qsr` leaks onto Table 3.
+  if (coverageObjectiveDigest(digest) === want) return true;
+  const wantTokens = objectiveTokens(objective);
   const haveTokens = objectiveTokens(digest);
   if (wantTokens.length === 0 || haveTokens.length === 0) return false;
   const have = new Set(haveTokens);
@@ -151,7 +170,10 @@ export function coverageKeySatisfiesObjective(
 }
 
 export function objectiveTokens(objective: string): string[] {
-  const tokens = coverageObjectiveDigest(objective)
+  const tokens = objective
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
     .replace(/^elr_/, "")
     .split(/[^a-z0-9]+/)
     .filter((token) => token.length >= 3 && token !== "elr" && !STOPWORDS.has(token));

@@ -101,7 +101,8 @@ CSV-OQ / CSV-IQ / RTM / URS pages
 score 0 unless they look like a dated result table (QSR RTM and
 Operating Range skip URS demotion and prefer `urs` / `user requirement`
 filenames plus the URS heading family; 5.1–5.6 share one `|obj:qsr_rtm`
-finish so a URS walk unlocks the sibling tables). Header-only UNCONTROLLED
+finish so a URS walk unlocks the sibling tables — including Gemini NL
+objectives such as control philosophy / GMP requirements). Header-only UNCONTROLLED
 COPY / Sign/Date chrome is 0. Haystack uses outline + pageContext + the first
 4000 transcript characters. `start_document_review`
 for an ELR inventory still omits a single-file pin so PRQR / PRQP / PQR

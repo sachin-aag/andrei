@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { chatEditableSections } from "./fields";
-import { detectSectionIntentFromText } from "./section-intent";
+import {
+  detectSectionIntentFromText,
+  detectSectionIntentsFromText,
+} from "./section-intent";
 
 describe("detectSectionIntentFromText", () => {
   it("detects analyze intent from root cause phrasing", () => {
@@ -88,5 +91,23 @@ describe("detectSectionIntentFromText", () => {
         "equipment_lifecycle_report"
       )
     ).toBe("elr_risk_actions");
+  });
+
+  it("maps QSR Contents numbers 5.2–5.4 to Control / GMP / Safety", () => {
+    expect(
+      detectSectionIntentFromText(
+        "perfect now draft 5.2,5.3, 5.4",
+        "qualification_summary_report"
+      )
+    ).toBe("qsr_rtm_control");
+    expect(
+      detectSectionIntentsFromText(
+        "perfect now draft 5.2,5.3, 5.4",
+        "qualification_summary_report"
+      )
+    ).toEqual(["qsr_rtm_control", "qsr_rtm_gmp", "qsr_rtm_safety"]);
+    expect(
+      detectSectionIntentFromText("5.2", "equipment_lifecycle_report")
+    ).toBeNull();
   });
 });
