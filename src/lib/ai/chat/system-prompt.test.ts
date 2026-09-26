@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v141-qsr-decimals");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v142-qsr-protocol-topic");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -26,16 +26,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("neighbour URS-ID window");
     expect(prompt).toContain("do not copy URS-37's range onto URS-5");
     expect(prompt).toContain("URS cover");
-    expect(prompt).toContain("stock Complies / Section 13");
+    expect(prompt).toContain("stock Complies / bare Section 13");
     expect(prompt).toContain("one insert_rows");
     expect(prompt).toContain("Open cards stack");
     expect(prompt).toContain("Apply does not unlock the next insert");
     expect(prompt).toContain("Installation Qualification");
     expect(prompt).toContain(
-      "do not ask the engineer to invent a protocol-to-URS mapping"
+      "do not paste a protocol-to-URS mapping in chat"
     );
     expect(prompt).toContain(
-      "leave the three cells empty — still persist the URS ID"
+      "leave those three cells empty for that row"
     );
     expect(prompt).toContain(
       "Do not tell them to accept a card and type 3.5"

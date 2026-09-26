@@ -43,9 +43,12 @@ const DESCRIPTION_STOPWORDS = new Set([
 ]);
 
 const STAGE_ONLY_RE = /^(DQ|IQ|OQ|PQ)$/i;
-const STOCK_REMARKS_RE = /\bcomplies\b|\bsection\s*13\b/i;
+const STOCK_COMPLIES_RE = /\bcomplies\b/i;
+const STOCK_BARE_SECTION_13_RE = /^section\s*13$/i;
+const PASS_WORD_CELL_RE = /^(?:complies|verified)$/i;
+const SECTION_NUMBER_CELL_RE = /^(?:section\s+)?\d+(?:\.\d+)+$/i;
 const PASS_TOKEN_RE =
-  /\b(?:complies|complied|meet(?:s|ing)?|met|pass(?:ed|es)?|satisfactory|accepted|acceptable)\b/i;
+  /\b(?:complies|complied|meet(?:s|ing)?|met|pass(?:ed|es)?|satisfactory|accepted|acceptable|verified)\b/i;
 const NOT_APPLICABLE_RE = /\b(?:n\/?a|not\s+applicable)\b/i;
 const REVISION_CELL_RE = /^0?\d{1,2}$/;
 const RPM_PARAMETER_RE = /\bagitator\b|\brpm\b/i;
@@ -73,12 +76,27 @@ export type QualDocFamily = "urs" | "dq" | "iq" | "oq" | "pq" | "ds";
 
 const FAMILY_FILENAME_NEEDLES: Record<QualDocFamily, readonly string[]> = {
   urs: ["urs", "user requirement"],
-  dq: ["design qualification", "-dq", "dq-", " dq."],
-  iq: ["installation qualification", "-iq", "iq-", " iq."],
-  oq: ["operational qualification", "operation qualification", "-oq", "oq-"],
-  pq: ["performance qualification", "-pq", "pq-"],
+  dq: ["design qualification", "-dq", "dq-", " dq.", "dqp"],
+  iq: ["installation qualification", "-iq", "iq-", " iq.", "iqp"],
+  oq: ["operational qualification", "operation qualification", "-oq", "oq-", "oqp"],
+  pq: ["performance qualification", "-pq", "pq-", "pqp"],
   ds: ["design specification", "design spec", "-ds", " ds."],
 };
+
+/** Running-header chrome that repeats on every DQ/IQ/OQ/PQ page. */
+const PROTOCOL_RUNNING_HEADER_RES: readonly RegExp[] = [
+  // Unlabeled equipment name immediately before Capacity/Size (IQ p.1 starts
+  // "Glass Lined Reactor Capacity/Size …" then repeats it after the label).
+  /(?:^|\n)\s*[a-z][a-z0-9 ]{2,60}(?=\s+(?:capacity\s*\/\s*size|dqp\s*\/|iqp\s*\/|oqp\s*\/|pqp\s*\/))/gi,
+  /uncontrolled copy/gi,
+  /page\s+\d+\s+of\s+\d+/gi,
+  /capacity\s*\/\s*size[:\s]*[0-9.,]+\s*l?/gi,
+  /\b(?:dqp|iqp|oqp|pqp)\s*\/\s*[a-z0-9-]+/gi,
+  /equipment name[:\s]+[a-z0-9 ]{0,48}/gi,
+  /equipment id[:\s]+[a-z0-9-]+/gi,
+  /document no\.?[:\s]*[a-z0-9/-]+/gi,
+  /format\.?\s*no[:\s.-]*[a-z0-9/-]+/gi,
+];
 
 export function isQsrRtmSection(
   section: string | null | undefined
@@ -417,11 +435,61 @@ export function descriptionSupportedNearKey(
   const trimmed = cell.replace(/\[[^\]]+\]/g, "").trim();
   if (!trimmed) return true;
   if (STAGE_ONLY_RE.test(trimmed)) return true;
+  if (PASS_WORD_CELL_RE.test(trimmed)) return true;
+  if (SECTION_NUMBER_CELL_RE.test(trimmed)) return true;
   if (new RegExp(`^${key}$`, "i").test(trimmed)) return true;
   const tokens = significantDescriptionTokens(trimmed);
   const alphaTokens = tokens.filter((token) => /[a-z]/.test(token));
   if (alphaTokens.length === 0) return true;
   return tokensSupportedNearKey(alphaTokens, quotes, key);
+}
+
+/** Protocol body after stripping running-header chrome (Capacity/Size, IQP/…). */
+export function protocolBodyQuote(quote: string): string {
+  let text = quote;
+  for (const re of PROTOCOL_RUNNING_HEADER_RES) {
+    re.lastIndex = 0;
+    text = text.replace(re, " ");
+  }
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function protocolTopicTokens(context: string): string[] {
+  const withoutMeta = context
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\b[\w.-]+\.(?:pdf|docx?|xlsx?)\b/gi, " ")
+    .replace(/\bURS-\d+\b/gi, " ")
+    .replace(/\b(?:DQ|IQ|OQ|PQ)\b/g, " ")
+    .replace(STOCK_COMPLIES_RE, " ")
+    .replace(/\bsection\s+\d+(?:\.\d+)*\b/gi, " ");
+  return withoutMeta
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter(
+      (token) =>
+        token.length >= 3 &&
+        !DESCRIPTION_STOPWORDS.has(token) &&
+        !/^\d+$/.test(token) &&
+        !/^urs\d+$/.test(token) &&
+        !/^(?:pdf|docx?|xlsx?)$/.test(token)
+    );
+}
+
+function protocolTopicBody(quote: string, context: string): string | null {
+  const body = protocolBodyQuote(quote);
+  const tokens = protocolTopicTokens(context);
+  if (tokens.length === 0 || !body) return null;
+  const hits = tokens.filter((token) => windowHasToken(body, token));
+  if (hits.length >= 2) return body;
+  if (hits.length === 1 && hits[0]!.length >= 8) return body;
+  return null;
+}
+
+function hasProtocolPassToken(text: string): boolean {
+  const hay = text.replace(/\bverified\s+by\b/gi, " ");
+  if (NOT_APPLICABLE_RE.test(hay)) return false;
+  return PASS_TOKEN_RE.test(hay);
 }
 
 export function documentFamilyFromFilename(
@@ -444,10 +512,10 @@ export function documentFamilyFromContext(
   if (!context) return null;
   const hay = context.toLowerCase();
   if (/\burs\b|user requirement/.test(hay)) return "urs";
-  if (/\bdesign qualification\b|\bdq\b/.test(hay)) return "dq";
-  if (/\binstallation qualification\b|\biq\b/.test(hay)) return "iq";
-  if (/\boperational qualification\b|\boq\b/.test(hay)) return "oq";
-  if (/\bperformance qualification\b|\bpq\b/.test(hay)) return "pq";
+  if (/\bdesign qualification\b|\bdqp\b|\bdq\b/.test(hay)) return "dq";
+  if (/\binstallation qualification\b|\biqp\b|\biq\b/.test(hay)) return "iq";
+  if (/\boperational qualification\b|\boqp\b|\boq\b/.test(hay)) return "oq";
+  if (/\bperformance qualification\b|\bpqp\b|\bpq\b/.test(hay)) return "pq";
   if (/\bdesign spec/.test(hay)) return "ds";
   return documentFamilyFromFilename(context);
 }
@@ -480,14 +548,18 @@ export function stageFamilyFromCell(
 function protocolPassWindow(
   ledger: CitationPageLedger,
   key: string,
-  family: QualDocFamily
+  family: QualDocFamily,
+  context: string
 ): string | null {
   for (const page of ledger.recordedPages()) {
     if (!filenameMatchesFamily(page.filename, family)) continue;
     const window = quoteWindowAroundKey(page.quote, key);
-    if (!window) continue;
-    if (NOT_APPLICABLE_RE.test(window)) continue;
-    if (PASS_TOKEN_RE.test(window)) return window;
+    if (window) {
+      if (hasProtocolPassToken(window)) return window;
+      continue;
+    }
+    const topic = protocolTopicBody(page.quote, context);
+    if (topic && hasProtocolPassToken(topic)) return topic;
   }
   return null;
 }
@@ -495,11 +567,13 @@ function protocolPassWindow(
 function protocolMentionsKey(
   ledger: CitationPageLedger,
   key: string,
-  family: QualDocFamily
+  family: QualDocFamily,
+  context: string
 ): boolean {
   return ledger.recordedPages().some((page) => {
     if (!filenameMatchesFamily(page.filename, family)) return false;
-    return quoteWindowAroundKey(page.quote, key) != null;
+    if (quoteWindowAroundKey(page.quote, key) != null) return true;
+    return protocolTopicBody(page.quote, context) != null;
   });
 }
 
@@ -524,16 +598,20 @@ export function qsrRtmCellUnsupported(
   const trimmed = cell.trim();
   if (!key || !trimmed) return null;
 
-  if (STOCK_REMARKS_RE.test(trimmed)) {
+  if (STOCK_BARE_SECTION_13_RE.test(trimmed)) {
+    return syntheticUnsupportedFact(trimmed);
+  }
+
+  if (STOCK_COMPLIES_RE.test(trimmed)) {
     const stage = stageFamilyFromCell(rowStageFromContext(context));
-    if (!stage || !protocolPassWindow(ledger, key, stage)) {
+    if (!stage || !protocolPassWindow(ledger, key, stage, context)) {
       return syntheticUnsupportedFact(trimmed);
     }
     return null;
   }
 
   const stage = stageFamilyFromCell(trimmed);
-  if (stage && !protocolMentionsKey(ledger, key, stage)) {
+  if (stage && !protocolMentionsKey(ledger, key, stage, context)) {
     return syntheticUnsupportedFact(trimmed);
   }
   return null;

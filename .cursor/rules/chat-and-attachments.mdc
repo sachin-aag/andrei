@@ -151,8 +151,11 @@ parameter shares a word such as glass or thickness. URS-1 does not match
 URS-13. Digits in URS-N are not a measured number. A decimal such as 25.0 is
 not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
 to persist `<number>` or ask the engineer to type it. Integer `3` is not
-`3.5`. Stock Complies / Section 13 still need a protocol page
-that names that URS ID; unsupported Stage / Section / Remarks cells clear
+`3.5`.   Stock Complies / bare Section 13 still need a named-stage protocol page that
+  either names that URS ID or topic-matches that row's Parameters in the
+  protocol body (not the running header). Verified on the result line counts
+  as a pass; Verified By in a signature block does not. Unsupported Stage /
+  Section / Remarks cells clear
 instead of blocking the URS copy. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and

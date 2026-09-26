@@ -13,17 +13,19 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
       "do not invent equipment or materials the URS does not list"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
-      "Never write Complies, Section 13, or a stock IQ page"
+      "Never write Complies, bare Section 13, or a stock IQ page"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
-      "do not ask the engineer to invent a protocol-to-URS mapping"
+      "do not paste a protocol-to-URS mapping in chat"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
-      "leave the three cells empty — still persist the URS ID"
+      "leave those three cells empty for that row"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
-      "Search the attached Design / Installation / Operational / Performance Qualification PDFs"
+      "Search the attached Design / Installation / Operational / Performance Qualification PDFs for each URS row"
     );
+    expect(QSR_DRAFTING_GUIDANCE).toContain("running header");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Verified By signature block");
     expect(QSR_DRAFTING_GUIDANCE).toContain("do not add new group rows");
     expect(QSR_DRAFTING_GUIDANCE).toContain("one insert_rows");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Prefer afterRowKey");

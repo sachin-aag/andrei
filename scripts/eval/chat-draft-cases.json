@@ -108,6 +108,63 @@
     }
   },
   {
+    "id": "qsr-rtm-iq-jacket-topic-stage",
+    "task": "ground_draft",
+    "passCriteria": "IQ Stage for URS-5 persists when Installation Qualification describes the jacket without printing URS-5.",
+    "input": {
+      "text": "IQ",
+      "context": "URS-5\nJacket temperature",
+      "section": "qsr_rtm_process",
+      "pages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "pageNumber": 4,
+          "attachmentId": "urs",
+          "quote": "URS-5 Jacket temperature 20-25 °C for the jacket loop. URS-37 Process temperature 15–130 °C for the vessel."
+        },
+        {
+          "filename": "Installation Qualification.PDF",
+          "pageNumber": 22,
+          "attachmentId": "iq",
+          "quote": "13.3.5.1. Jacket Specifications Temperature −28.8/220 Jacket Outer diameter Thickness 12 mm Verification Verified By Date"
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["IQ"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
+    "id": "qsr-rtm-iq-header-only-stage-blocked",
+    "task": "ground_draft",
+    "passCriteria": "IQ Stage for URS-1 does not persist from a protocol running header that only repeats Capacity/Size.",
+    "input": {
+      "text": "IQ",
+      "context": "URS-1\nReactor Capacity",
+      "section": "qsr_rtm_process",
+      "pages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "pageNumber": 1,
+          "attachmentId": "urs",
+          "quote": "Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301"
+        },
+        {
+          "filename": "Installation Qualification.PDF",
+          "pageNumber": 1,
+          "attachmentId": "iq",
+          "quote": "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 1 of 60 UNCONTROLLED COPY Equipment Name Glass Lined Reactor"
+        }
+      ]
+    },
+    "expected": {
+      "blocked": true,
+      "unsupportedMustContain": ["IQ"]
+    }
+  },
+  {
     "id": "harness-greeting-no-tools",
     "task": "harness",
     "passCriteria": "A greeting must not search, review, or write.",
