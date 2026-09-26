@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildChatActivityBlocks,
+  documentReviewActivityNode,
   readChatToolPart,
 } from "@/lib/ai/chat/chat-activity-ui";
 
@@ -318,6 +319,51 @@ describe("buildChatActivityBlocks", () => {
     const reviewBlocks = blocks.filter((block) => block.kind === "document-review");
     expect(reviewBlocks).toHaveLength(1);
     expect(blocks.some((block) => block.kind === "activity")).toBe(false);
+  });
+
+  it("expands a complete review to the full filename and page count", () => {
+    const node = documentReviewActivityNode([
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: {
+          status: "started",
+          totalPages: 12,
+          documents: [
+            {
+              attachmentId: "urs",
+              filename: "User Requirement Specification.PDF",
+              pageCount: 12,
+            },
+          ],
+        },
+      },
+      {
+        toolName: "finish_document_review",
+        state: "output-available",
+        output: {
+          status: "complete",
+          totalPages: 12,
+          reviewedPages: 12,
+          findingCount: 4,
+        },
+      },
+    ]);
+    expect(node?.label).toBe(
+      "Complete: reviewed 12/12 pages in User Requirement Specification.PDF"
+    );
+    expect(node?.expandable).toBe(true);
+    expect(node?.wrapLabel).toBe(true);
+    expect(node?.children).toEqual([
+      expect.objectContaining({
+        kind: "detail",
+        label: "User Requirement Specification.PDF · 12 pages",
+      }),
+      expect.objectContaining({
+        kind: "detail",
+        label: "4 relevant findings",
+      }),
+    ]);
   });
 
   it("does not split a review chip when list_attachments runs mid-walk", () => {

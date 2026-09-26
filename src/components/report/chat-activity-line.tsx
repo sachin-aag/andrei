@@ -98,7 +98,7 @@ export function ChatActivityLine({
       : node.label;
 
   return (
-    <div className="space-y-1">
+    <div className="min-w-0 space-y-1">
       <button
         type="button"
         onClick={() => {
@@ -107,7 +107,8 @@ export function ChatActivityLine({
         }}
         disabled={!showChevron && !node.thoughtText}
         className={cn(
-          "chat-activity-line group flex w-full items-center gap-1 text-left text-[11px] leading-snug",
+          "chat-activity-line group flex w-full min-w-0 gap-1 text-left text-[11px] leading-snug",
+          node.wrapLabel ? "items-start" : "items-center",
           toneClass(node.tone),
           (showChevron || node.thoughtText) && "cursor-pointer hover:text-[var(--foreground)]",
           !showChevron && !node.thoughtText && "cursor-default"
@@ -125,9 +126,21 @@ export function ChatActivityLine({
         </span>
         {showChevron ? (
           expanded ? (
-            <ChevronDown className="size-3 shrink-0 opacity-60" aria-hidden="true" />
+            <ChevronDown
+              className={cn(
+                "size-3 shrink-0 opacity-60",
+                node.wrapLabel && "mt-0.5"
+              )}
+              aria-hidden="true"
+            />
           ) : (
-            <ChevronRight className="size-3 shrink-0 opacity-60" aria-hidden="true" />
+            <ChevronRight
+              className={cn(
+                "size-3 shrink-0 opacity-60",
+                node.wrapLabel && "mt-0.5"
+              )}
+              aria-hidden="true"
+            />
           )
         ) : null}
       </button>
@@ -154,7 +167,7 @@ export function ChatActivityLines({
   nodes: readonly ActivitySurfaceNode[];
 }) {
   return (
-    <div className="space-y-1">
+    <div className="min-w-0 space-y-1">
       {nodes.map((node, index) => (
         <ChatActivityLine key={`${node.kind}-${index}`} node={node} />
       ))}

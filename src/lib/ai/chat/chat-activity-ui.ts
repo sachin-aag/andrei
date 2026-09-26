@@ -8,6 +8,7 @@ import { sectionLabel as chatSectionLabelForType } from "@/lib/ai/chat/fields";
 import type { SectionType } from "@/db/schema";
 import {
   isDocumentReviewToolName,
+  reviewDocumentDetailLabel,
   reviewDocumentsFromParts,
   summarizeDocumentReviewProgress,
   type DocumentReviewToolPart,
@@ -43,7 +44,7 @@ export type ActivitySurfaceNode = {
   expandable: boolean;
   children: ActivityChildNode[];
   thoughtText?: string;
-  /** Review chips name files; do not CSS-truncate "across N files". */
+  /** Wrap long review filenames and "across N files" instead of truncating. */
   wrapLabel?: boolean;
 };
 
@@ -956,12 +957,31 @@ function startsDocumentActivityRun(
   return false;
 }
 
+function documentReviewChildren(
+  parts: readonly DocumentReviewToolPart[],
+  findingCount: number
+): ActivityChildNode[] {
+  const children: ActivityChildNode[] = reviewDocumentsFromParts(parts).map(
+    (doc) => ({
+      kind: "detail",
+      label: reviewDocumentDetailLabel(doc),
+    })
+  );
+  if (findingCount > 0) {
+    children.push({
+      kind: "detail",
+      label: `${findingCount} relevant finding${findingCount === 1 ? "" : "s"}`,
+    });
+  }
+  return children;
+}
+
 export function documentReviewActivityNode(
   parts: readonly DocumentReviewToolPart[]
 ): ActivitySurfaceNode | null {
   const snapshot = summarizeDocumentReviewProgress(parts);
   if (!snapshot) return null;
-  const files = reviewDocumentsFromParts(parts);
+  const children = documentReviewChildren(parts, snapshot.findingCount);
   const tone: ActivitySurfaceNode["tone"] =
     snapshot.phase === "complete"
       ? "success"
@@ -974,11 +994,8 @@ export function documentReviewActivityNode(
     pending: snapshot.pending,
     tone,
     wrapLabel: true,
-    expandable: files.length > 0,
-    children: files.map((file) => ({
-      kind: "detail" as const,
-      label: file.filename,
-    })),
+    expandable: children.length > 0,
+    children,
   };
 }
 
