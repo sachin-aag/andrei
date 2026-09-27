@@ -395,6 +395,33 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toContain("IQ");
   });
 
+  it("keeps Complies when IQ Verified sits outside the URS-ID window and rowContext still names DQ", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote:
+          "URS-40 URS-41 URS-42 13.7.5 Material of Construction Verification Nozzles & Manhole Gasket PTFE or equivalent Result: Verified",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote: "URS-41 12.3 MOC Details Nozzles & Manhole Gasket Result: Verified",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "Complies",
+        context:
+          "URS-41\nGaskets\nPTFE or Equivalent\nIQ [Installation Qualification.PDF, p. 42]\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
+        section: "qsr_rtm_gmp",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
   it("keeps IQ when the IQ body describes jacket without a URS ID", () => {
     const ledger = ledgerFromPages([
       {
@@ -1587,6 +1614,137 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(remarksCell).toContain(suggestionInsertMarkName);
   });
 
+  it("paints Complies when URS-41 is on the IQ page but Verified sits outside the ID window", () => {
+    const iqQuote =
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified";
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-41 Gaskets PTFE or Equivalent for non-product contact.",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: iqQuote,
+      },
+    ]);
+    expect(quoteWindowAroundKey(iqQuote, "URS-41")).not.toMatch(/Verified/i);
+    const pick = pickRtmReference(
+      ledger,
+      "URS-41",
+      "URS-41\nGaskets\nPTFE or Equivalent [1]\n13.6"
+    );
+    expect(pick?.stageLabel).toBe("IQ");
+    expect(pick?.remarks).toBe("Complies");
+
+    const table7: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...QSR_RTM_HEADERS].map((header) => ({
+                type: "tableHeader" as const,
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: header }] },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: [
+                "URS-41",
+                "Gaskets",
+                "PTFE or Equivalent [1]",
+                "",
+                "13.6",
+                "",
+              ].map((text) => ({
+                type: "tableCell" as const,
+                content: text
+                  ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                  : [{ type: "paragraph" }],
+              })),
+            },
+          ],
+        },
+      ],
+    };
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "IQ [Installation Qualification.PDF, p. 42]",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-41",
+            expectedText: "13.6",
+            insertText: "13.7.5",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "Complies",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: table7,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
+    expect(urs41.map((cell) => cell.insertText).join(" ")).toMatch(/Complies/i);
+    expect(urs41.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
+    expect(urs41.find((cell) => cell.col === 4)).toBeUndefined();
+
+    const preview = buildTableOperationPreviewDoc(table7, result.operation, {
+      id: "sug-table7-urs41-complies-outside-id-window",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const cellsInRow = (rows[1]?.content ?? []).filter(
+      (node) => node.type === "tableCell" || node.type === "tableHeader"
+    );
+    const remarksCell = JSON.stringify(cellsInRow[5]);
+    expect(remarksCell).toMatch(/Complies/i);
+    expect(remarksCell).toContain(suggestionInsertMarkName);
+    const sectionCell = JSON.stringify(cellsInRow[4]);
+    expect(sectionCell).toContain("13.6");
+    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+  });
+
   it("still prefers IQ 13.6 over DQ 12.3 when both protocol pages are cited", () => {
     const ledger = ledgerFromPages([
       {
@@ -1612,35 +1770,6 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(pick?.sectionHeading).toContain("13.6");
     expect(pick?.filename).toContain("Installation Qualification");
   });
-
-describe("shouldKeepRtmProtocolSearchOpen", () => {
-  it("keeps search open after an identifier-only hit on Design Qualification", () => {
-    expect(
-      shouldKeepRtmProtocolSearchOpen(
-        ["URS-41"],
-        ["Design Qualification.PDF"]
-      )
-    ).toBe(true);
-  });
-
-  it("closes once IQ / OQ / PQ protocol terms were queried", () => {
-    expect(
-      shouldKeepRtmProtocolSearchOpen(
-        ["URS-41", "installation qualification gaskets"],
-        ["Design Qualification.PDF", "Installation Qualification.PDF"]
-      )
-    ).toBe(false);
-  });
-
-  it("does not keep search open for a non-protocol identifier hit", () => {
-    expect(
-      shouldKeepRtmProtocolSearchOpen(
-        ["URS-41"],
-        ["User Requirement Specification.PDF"]
-      )
-    ).toBe(false);
-  });
-});
 
   it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {
     const dropped = dropQsrRtmPlaceholderCells(
@@ -1679,5 +1808,34 @@ describe("shouldKeepRtmProtocolSearchOpen", () => {
         },
       ],
     });
+  });
+});
+
+describe("shouldKeepRtmProtocolSearchOpen", () => {
+  it("keeps search open after an identifier-only hit on Design Qualification", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["URS-41"],
+        ["Design Qualification.PDF"]
+      )
+    ).toBe(true);
+  });
+
+  it("closes once IQ / OQ / PQ protocol terms were queried", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["URS-41", "installation qualification gaskets"],
+        ["Design Qualification.PDF", "Installation Qualification.PDF"]
+      )
+    ).toBe(false);
+  });
+
+  it("does not keep search open for a non-protocol identifier hit", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["URS-41"],
+        ["User Requirement Specification.PDF"]
+      )
+    ).toBe(false);
   });
 });

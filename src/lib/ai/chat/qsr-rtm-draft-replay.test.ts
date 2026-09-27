@@ -1606,4 +1606,85 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(JSON.stringify(cellsInRow[3])).toMatch(/\bIQ\b/);
     expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
   });
+
+  it("paints Complies inline when IQ p.42 names URS-41 in a header list and Verified in the gasket body", async () => {
+    const table7Rows = [
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+    ];
+    mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
+    listReadyDocumentsForReportMock.mockResolvedValue([
+      ursDoc(),
+      dqDoc(),
+      iqDoc(),
+    ]);
+    const tools = buildTools({ section: "qsr_rtm_gmp" });
+    await readIqPage(
+      tools,
+      42,
+      "URS-40 URS-41 URS-42 13.7.5 Material of Construction Verification Nozzles & Manhole Gasket PTFE or equivalent Result: Verified"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_gmp",
+        targetField: "table",
+        reasoning: "Fill empty cells for URS-41 in table 7.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 3,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: `IQ [${IQ_FILENAME}, p. 42]`,
+              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n13.7.5\nComplies`,
+            },
+            {
+              row: 1,
+              col: 4,
+              rowKey: "URS-41",
+              expectedText: "13.6",
+              insertText: "13.7.5",
+              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n13.7.5\nComplies`,
+            },
+            {
+              row: 1,
+              col: 5,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: "Complies",
+              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n13.7.5\nComplies`,
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    expect(cells.map((cell) => cell.insertText).join(" ")).toMatch(/Complies/i);
+    expect(cells.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
+    const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
+      id: "sug-table7-urs41-complies-header-list",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const cellsInRow = (rows[2]?.content ?? []).filter(
+      (node) => node.type === "tableCell" || node.type === "tableHeader"
+    );
+    expect(JSON.stringify(cellsInRow[4])).toContain("13.6");
+    expect(JSON.stringify(cellsInRow[4])).not.toContain(suggestionInsertMarkName);
+    expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
+    expect(JSON.stringify(cellsInRow[5])).toContain(suggestionInsertMarkName);
+  });
 });

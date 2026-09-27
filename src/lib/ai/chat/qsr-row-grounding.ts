@@ -809,10 +809,7 @@ function protocolPassWindow(
   for (const page of ledger.recordedPages()) {
     if (!filenameMatchesFamily(page.filename, family)) continue;
     const window = quoteWindowAroundKey(page.quote, key);
-    if (window) {
-      if (hasProtocolPassToken(window)) return window;
-      continue;
-    }
+    if (window && hasProtocolPassToken(window)) return window;
     const topic = protocolTopicBody(page.quote, context);
     if (topic && hasProtocolPassToken(topic)) return topic;
   }
@@ -917,7 +914,9 @@ function pickWouldReplaceFilledReference(
     pick.sectionHeading &&
     floor.sectionText !== pick.sectionHeading
   ) {
-    return true;
+    // Filled Section is skipped on fill-empty. A DQ pick must not still
+    // stamp Stage / Remarks; IQ / OQ / PQ may fill those empty cells.
+    return pick.family === "dq";
   }
   return false;
 }
@@ -959,9 +958,11 @@ export function pickRtmReference(
       filename: passPage.filename,
       pageNumber: passPage.pageNumber,
       sectionHeading: body ? protocolSectionHeading(body) : null,
-      remarks: protocolPassWindow(ledger, key, family, context)
-        ? "Complies"
-        : "",
+      remarks:
+        (body && hasProtocolPassToken(body)) ||
+        protocolPassWindow(ledger, key, family, context)
+          ? "Complies"
+          : "",
     };
   }
   return null;
@@ -1191,8 +1192,12 @@ export function qsrRtmCellUnsupported(
 }
 
 function rowStageFromContext(context: string): string {
-  const match = context.match(/\b(DQ|IQ|OQ|PQ)\b/);
-  return match?.[1] ?? "";
+  for (const family of QSR_STAGE_RANK) {
+    if (new RegExp(`\\b${STAGE_LABEL[family]}\\b`).test(context)) {
+      return STAGE_LABEL[family];
+    }
+  }
+  return "";
 }
 
 export function qsrOperatingRangeUnsupported(
