@@ -166,7 +166,9 @@ re-ground the original text — not a Flash-Lite subagent. Prose leftover
 `<date>` / `<identifier>` / `<number>` persist after that lookup when
 the facts are still missing. Table leftovers bounce once
 (`unsupported_facts` + `keepSearchOpen`) so a subsequent grep can still
-fill the cell; a retry in the same turn may persist leftovers. Uncited
+fill the cell; a retry in the same turn may persist leftovers,
+except QSR RTM Stage / Section / Remarks placeholders, which are
+dropped instead of persisting `<remarks>`. Uncited
 numbers do not `citation_move` onto a coincidental ledger page. Analytics
 `write_column` stays ungated.
 

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { extractHardFacts } from "@/lib/ai/chat/claim-facts";
-import { groundTableOperation } from "@/lib/ai/chat/ground-draft";
+import {
+  groundTableOperation,
+  tablePlaceholderLabels,
+} from "@/lib/ai/chat/ground-draft";
 import {
   descriptionSupportedNearKey,
   protocolBodyQuote,
@@ -15,6 +18,7 @@ import {
   quoteWindowAroundKey,
   rowKeyFromContext,
   rtmReferenceColumnIndexes,
+  dropQsrRtmPlaceholderCells,
 } from "@/lib/ai/chat/qsr-row-grounding";
 
 const SHARED_URS_PAGE =
@@ -1047,5 +1051,178 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[0]).toContain("URS-2");
     expect(keptRow[2]).toContain("Glass Lining");
     expect(keptRow.slice(3)).toEqual(["", "", ""]);
+  });
+
+  it("keeps leftover <remarks> when no protocol page matches so lookup can search", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote:
+          "URS-4 Shell Operating pressure Full Vacuum to 3.5 Kg/cm² URS-13 Jacket Type Limpet/Plain",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-4",
+            expectedText: "",
+            insertText: "<remarks>",
+            rowContext: "URS-4\nShell Operating pressure\nFull Vacuum to 3.5 Kg/cm²",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    expect(tablePlaceholderLabels(result.operation)).toContain("<remarks>");
+    expect(
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells.map((cell) => cell.insertText)
+        : []
+    ).toContain("<remarks>");
+  });
+
+  it("fills dummy-row Table 5 Stage/Section per rowKey from protocol pages, not <remarks>", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote:
+          "URS-4 Shell Operating pressure Full Vacuum to 3.5 Kg/cm² URS-13 Jacket Type Limpet/Plain",
+      },
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 10,
+        attachmentId: "oq",
+        quote:
+          "8.1 Shell Operating pressure Full Vacuum to 3.5 Kg/cm² Result: Verified",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote: "13.3.5.1 Jacket Type Limpet Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "<qualification stage>",
+            rowContext: "URS-13\nJacket Type\nLimpet/Plain",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "<section>",
+            rowContext: "URS-13\nJacket Type\nLimpet/Plain",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "<remarks>",
+            rowContext: "URS-13\nJacket Type\nLimpet/Plain",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-4",
+            expectedText: "",
+            insertText: "<remarks>",
+            rowContext:
+              "URS-4\nShell Operating pressure\nFull Vacuum to 3.5 Kg/cm²",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    expect(tablePlaceholderLabels(result.operation)).toEqual([]);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const byKey = (key: string) =>
+      cells.filter(
+        (cell) =>
+          cell.rowKey === key || (cell.rowContext ?? "").includes(`${key}\n`)
+      );
+    const urs13 = byKey("URS-13")
+      .map((cell) => cell.insertText)
+      .join(" ");
+    const urs4 = byKey("URS-4")
+      .map((cell) => cell.insertText)
+      .join(" ");
+    expect(urs13).toMatch(/\bIQ\b/);
+    expect(urs13).toContain("13.3.5.1");
+    expect(urs13).toContain("Installation Qualification.PDF");
+    expect(urs13).not.toContain("<remarks>");
+    expect(urs13).not.toContain("8.1");
+    expect(urs4).toMatch(/\bOQ\b/);
+    expect(urs4).toContain("8.1");
+    expect(urs4).toContain("Operational Qualification.PDF");
+    expect(urs4).not.toContain("13.3.5.1");
+    expect(urs4).not.toContain("<remarks>");
+  });
+
+  it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {
+    const dropped = dropQsrRtmPlaceholderCells(
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            rowKey: "URS-4",
+            insertText: "Full Vacuum to 3.5 Kg/cm²",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-4",
+            insertText: "<section>",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-4",
+            insertText: "<remarks>",
+          },
+        ],
+      },
+      "qsr_rtm_process"
+    );
+    expect(dropped).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          col: 2,
+          insertText: "Full Vacuum to 3.5 Kg/cm²",
+        },
+      ],
+    });
   });
 });

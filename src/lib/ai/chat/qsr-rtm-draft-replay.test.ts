@@ -6,8 +6,9 @@ import {
   extractReviewFindingsFromPages,
 } from "@/lib/ai/chat/document-review";
 import { buildChatTools } from "@/lib/ai/chat/tools";
-import { emptyQsrContent } from "@/lib/document-types/qsr/sections";
+import { emptyQsrContent, QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import type { QsrSectionKey } from "@/lib/document-types/qsr/sections";
+import type { JSONContent } from "@tiptap/core";
 import type { TableOperation } from "@/lib/suggestions/table-operation";
 
 /**
@@ -80,6 +81,8 @@ const DQ_FILENAME = "Design Qualification.PDF";
 const DQ_ID = "att_dq";
 const IQ_FILENAME = "Installation Qualification.PDF";
 const IQ_ID = "att_iq";
+const OQ_FILENAME = "Operational Qualification.PDF";
+const OQ_ID = "att_oq";
 const REPORT_ID = "report-qsr-rtm";
 
 const COVER_QUOTE =
@@ -153,7 +156,21 @@ function iqDoc(pageCount = 60) {
   };
 }
 
-function mockSection(section: QsrSectionKey) {
+function oqDoc(pageCount = 40) {
+  return {
+    attachmentId: OQ_ID,
+    filename: OQ_FILENAME,
+    description: null,
+    pageCount,
+    ingestRunId: "run",
+    documentSummary: null,
+  };
+}
+
+function mockSection(
+  section: QsrSectionKey,
+  content: ReturnType<typeof emptyQsrContent> = emptyQsrContent(section)
+) {
   dbSelectMock.mockImplementation(() => ({
     from: (table: unknown) => ({
       where: vi.fn().mockResolvedValue(
@@ -165,7 +182,7 @@ function mockSection(section: QsrSectionKey) {
                   id: `sec-${section}`,
                   reportId: REPORT_ID,
                   section,
-                  content: emptyQsrContent(section),
+                  content,
                 },
               ]
             : []
@@ -173,6 +190,83 @@ function mockSection(section: QsrSectionKey) {
     }),
   }));
 }
+
+function rtmTableDoc(rows: string[][]): JSONContent {
+  const textCell = (
+    type: "tableHeader" | "tableCell",
+    text: string
+  ): JSONContent => ({
+    type,
+    content: text
+      ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+      : [{ type: "paragraph" }],
+  });
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [...QSR_RTM_HEADERS].map((header) =>
+              textCell("tableHeader", header)
+            ),
+          },
+          ...rows.map((row) => ({
+            type: "tableRow" as const,
+            content: [...QSR_RTM_HEADERS].map((_, col) =>
+              textCell("tableCell", row[col] ?? "")
+            ),
+          })),
+        ],
+      },
+    ],
+  };
+}
+
+const TABLE5_URS_ROWS = [
+  [
+    "URS-4",
+    "Shell Operating pressure",
+    "Full Vacuum to 3.5 Kg/cm²",
+    "",
+    "",
+    "",
+  ],
+  ["URS-13", "Jacket Type", "Limpet/Plain", "", "", ""],
+];
+
+const TABLE5_PLACEHOLDER_CELLS = [
+  {
+    row: 1,
+    col: 3,
+    rowKey: "URS-13",
+    insertText: "<qualification stage>",
+    rowContext: "URS-13\nJacket Type\nLimpet/Plain",
+  },
+  {
+    row: 1,
+    col: 4,
+    rowKey: "URS-13",
+    insertText: "<section>",
+    rowContext: "URS-13\nJacket Type\nLimpet/Plain",
+  },
+  {
+    row: 1,
+    col: 5,
+    rowKey: "URS-13",
+    insertText: "<remarks>",
+    rowContext: "URS-13\nJacket Type\nLimpet/Plain",
+  },
+  {
+    row: 1,
+    col: 5,
+    rowKey: "URS-4",
+    insertText: "<remarks>",
+    rowContext: "URS-4\nShell Operating pressure\nFull Vacuum to 3.5 Kg/cm²",
+  },
+];
 
 function matchingRtmReview() {
   const session = new DocumentReviewSession();
@@ -237,6 +331,27 @@ async function readIqPage(
   });
   const read = await tools.read_document_page!.execute!(
     { attachmentId: IQ_ID, pageNumber },
+    TEST_TOOL_OPTIONS
+  );
+  expect(read).toMatchObject({ status: "found" });
+}
+
+async function readOqPage(
+  tools: ReturnType<typeof buildChatTools>,
+  pageNumber: number,
+  transcript: string
+) {
+  readDocumentPageMock.mockResolvedValueOnce({
+    attachmentId: OQ_ID,
+    filename: OQ_FILENAME,
+    pageNumber,
+    transcript,
+    visualInterpretation: "",
+    pageContext: null,
+    printedPageLabel: String(pageNumber),
+  });
+  const read = await tools.read_document_page!.execute!(
+    { attachmentId: OQ_ID, pageNumber },
     TEST_TOOL_OPTIONS
   );
   expect(read).toMatchObject({ status: "found" });
@@ -1066,5 +1181,146 @@ describe("QSR RTM section 5 draft replay", () => {
     );
     expect(drafted).not.toMatchObject({ status: "review_incomplete" });
     expect(drafted).toMatchObject({ status: "proposed" });
+  });
+
+  it("bounces leftover Table 5 <remarks> when only the URS was read", async () => {
+    mockSection("qsr_rtm_process", { table: rtmTableDoc(TABLE5_URS_ROWS) });
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 6);
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Draft missing Stage / Section / Remarks in table 5.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: TABLE5_PLACEHOLDER_CELLS,
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "unsupported_facts",
+      keepSearchOpen: true,
+    });
+    expect(String((result as { message?: string }).message)).toMatch(
+      /Do not persist angle-bracket placeholders in the table/
+    );
+    expect(String((result as { draftWithPlaceholders?: string }).draftWithPlaceholders)).toMatch(
+      /<remarks>/
+    );
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("fills dummy-row Table 5 placeholders from IQ / OQ after those pages are read", async () => {
+    mockSection("qsr_rtm_process", { table: rtmTableDoc(TABLE5_URS_ROWS) });
+    listReadyDocumentsForReportMock.mockResolvedValue([
+      ursDoc(),
+      oqDoc(),
+      iqDoc(),
+    ]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 6);
+    await readOqPage(
+      tools,
+      10,
+      "8.1 Shell Operating pressure Full Vacuum to 3.5 Kg/cm² Result: Verified"
+    );
+    await readIqPage(
+      tools,
+      22,
+      "13.3.5.1 Jacket Type Limpet Result: Verified"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Draft missing Stage / Section / Remarks in table 5.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: TABLE5_PLACEHOLDER_CELLS,
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const comment = inserted.find((row) => {
+      const parsed = parseAiFixCommentContent(String(row.content ?? ""));
+      return parsed.tableOperation != null;
+    });
+    expect(comment).toBeTruthy();
+    const payload = parseAiFixCommentContent(String(comment!.content));
+    const op = payload.tableOperation!;
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    const byKey = (key: string) =>
+      cells
+        .filter(
+          (cell) =>
+            cell.rowKey === key || (cell.rowContext ?? "").includes(`${key}\n`)
+        )
+        .map((cell) => cell.insertText)
+        .join(" ");
+    const urs13 = byKey("URS-13");
+    const urs4 = byKey("URS-4");
+    expect(urs13).toMatch(/\bIQ\b/);
+    expect(urs13).toContain("13.3.5.1");
+    expect(urs13).toMatch(/\[\d+\]/);
+    expect(urs13).not.toContain("<remarks>");
+    expect(urs13).not.toContain("8.1");
+    expect(urs4).toMatch(/\bOQ\b/);
+    expect(urs4).toContain("8.1");
+    expect(urs4).toMatch(/\[\d+\]/);
+    expect(urs4).not.toContain("<remarks>");
+    const parked = payload.second?.insertText ?? "";
+    expect(parked).toContain(IQ_FILENAME);
+    expect(parked).toContain(OQ_FILENAME);
+  });
+
+  it("does not persist leftover Table 5 <remarks> on a same-turn retry without protocol pages", async () => {
+    mockSection("qsr_rtm_process", { table: rtmTableDoc(TABLE5_URS_ROWS) });
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 6);
+    const operation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: TABLE5_PLACEHOLDER_CELLS,
+    };
+    const first = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Draft missing Remarks in table 5.",
+        operation,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({
+      status: "unsupported_facts",
+      keepSearchOpen: true,
+    });
+    const retry = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Draft missing Remarks in table 5.",
+        operation,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(retry).not.toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    if (
+      retry &&
+      typeof retry === "object" &&
+      "status" in retry &&
+      retry.status === "unsupported_facts"
+    ) {
+      expect(
+        String((retry as { draftWithPlaceholders?: string }).draftWithPlaceholders)
+      ).toMatch(/<remarks>/);
+    }
   });
 });

@@ -2,7 +2,11 @@ import type { HardFact } from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import { QSR_TABLE_HEADERS } from "@/lib/document-types/qsr/sections";
-import type { TableOperation } from "@/lib/suggestions/table-operation";
+import { collectPlaceholderSpans } from "@/lib/placeholders/find";
+import type {
+  TableCellEdit,
+  TableOperation,
+} from "@/lib/suggestions/table-operation";
 
 const URS_ID_RE = /\bURS-\d+\b/gi;
 
@@ -192,6 +196,85 @@ export function rowKeyFromContext(
   URS_ID_RE.lastIndex = 0;
   const match = URS_ID_RE.exec(context);
   return match ? match[0].toUpperCase() : null;
+}
+
+/** Group `edit_cells` by URS rowKey, not a reused dummy numeric `row`. */
+export function editCellsGroupKey(cell: TableCellEdit): string {
+  const explicit = cell.rowKey?.replace(/\s+/g, " ").trim();
+  if (explicit) return explicit.toUpperCase();
+  return (
+    rowKeyFromContext(
+      [cell.rowContext, cell.insertText, cell.expectedText]
+        .filter((part): part is string => Boolean(part?.trim()))
+        .join("\n")
+    ) ?? `__row:${cell.row}`
+  );
+}
+
+function editCellsSiblingContext(
+  siblings: readonly TableCellEdit[],
+  key: string
+): string {
+  return [
+    key.startsWith("__row:") ? "" : key,
+    ...siblings.flatMap((sib) => [
+      sib.rowKey,
+      sib.insertText,
+      sib.expectedText,
+      sib.rowContext,
+    ]),
+  ]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join("\n");
+}
+
+/** Angle-bracket RTM tokens, including `<section>` (HTML-tag skip in live scan). */
+export function isQsrRtmPlaceholderText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/^<[^<>]+>$/.test(trimmed)) return true;
+  return collectPlaceholderSpans(trimmed).length > 0;
+}
+
+/** Drop leftover Stage / Section / Remarks placeholders so they never persist. */
+export function dropQsrRtmPlaceholderCells(
+  operation: TableOperation,
+  section?: string | null
+): TableOperation {
+  const cols = rtmReferenceColumnIndexes(section);
+  if (!cols) return operation;
+  switch (operation.kind) {
+    case "edit_cells":
+      return {
+        ...operation,
+        cells: operation.cells.filter((cell) => {
+          if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return true;
+          return !isQsrRtmPlaceholderText(cell.insertText);
+        }),
+      };
+    case "insert_rows":
+      return {
+        ...operation,
+        rows: operation.rows.map((row) => {
+          const next = [...row];
+          for (const col of [cols.stage, cols.section, cols.remarks]) {
+            const value = next[col] ?? "";
+            if (isQsrRtmPlaceholderText(value)) next[col] = "";
+          }
+          return next;
+        }),
+      };
+    case "create_table":
+    case "insert_column":
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      return operation;
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
 }
 
 export function factIsRowKey(fact: HardFact, key: string): boolean {
@@ -519,6 +602,7 @@ function protocolTopicTokens(context: string): string[] {
 function isRtmReferenceMetaLine(line: string): boolean {
   const stripped = line.replace(/\[[^\]]*\]/g, "").trim();
   if (!stripped) return true;
+  if (/^<[^<>]+>$/.test(stripped)) return true;
   if (/^URS-\d+$/i.test(stripped)) return true;
   if (STAGE_ONLY_RE.test(stripped)) return true;
   if (PASS_WORD_CELL_RE.test(stripped)) return true;
@@ -530,6 +614,8 @@ function isRtmReferenceMetaLine(line: string): boolean {
 /**
  * Prefer User requirements / Purpose over a short Parameters label so
  * `MOC` cannot topic-match a neighbour protocol row by itself.
+ * Two short tokens ("Limpet/Plain") are not enough — join sibling lines
+ * so Jacket Type + Limpet can match an IQ result together.
  */
 function protocolTopicSource(context: string): string {
   const lines = context
@@ -541,7 +627,7 @@ function protocolTopicSource(context: string): string {
     line.length >= best.length ? line : best
   );
   const tokens = protocolTopicTokens(longest);
-  if (tokens.length >= 2 || tokens.some((token) => token.length >= 8)) {
+  if (tokens.some((token) => token.length >= 8)) {
     return longest;
   }
   return lines.join(" ");
@@ -738,6 +824,82 @@ function applyPickToRow(
   return next;
 }
 
+function rankEditCells(
+  operation: Extract<TableOperation, { kind: "edit_cells" }>,
+  ledger: CitationPageLedger,
+  section: string | undefined,
+  cols: { stage: number; section: number; remarks: number }
+): TableOperation {
+  const byKey = new Map<string, TableCellEdit[]>();
+  for (const cell of operation.cells) {
+    const key = editCellsGroupKey(cell);
+    const list = byKey.get(key) ?? [];
+    list.push(cell);
+    byKey.set(key, list);
+  }
+  const rewritten = operation.cells.map((cell) => {
+    const key = editCellsGroupKey(cell);
+    const siblings = byKey.get(key) ?? [];
+    const touchesRef = siblings.some((sib) =>
+      isQsrRtmOptionalReferenceColumn(section, sib.col)
+    );
+    if (!touchesRef) return cell;
+    if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return cell;
+    const context = editCellsSiblingContext(siblings, key);
+    const rowKey = key.startsWith("__row:")
+      ? rowKeyFromContext(context)
+      : key;
+    if (!rowKey) return cell;
+    const pick = pickRtmReference(ledger, rowKey, context);
+    if (!pick) return cell;
+    if (cell.col === cols.stage) {
+      return { ...cell, insertText: formatRtmStageCell(pick) };
+    }
+    if (cell.col === cols.section) {
+      return { ...cell, insertText: pick.sectionHeading ?? "" };
+    }
+    if (cell.col === cols.remarks) {
+      return { ...cell, insertText: pick.remarks };
+    }
+    return cell;
+  });
+  const present = new Set(
+    rewritten.map((cell) => `${editCellsGroupKey(cell)}:${cell.col}`)
+  );
+  const extra: TableCellEdit[] = [];
+  for (const [key, siblings] of byKey) {
+    if (key.startsWith("__row:")) continue;
+    const touchesRef = siblings.some((sib) =>
+      isQsrRtmOptionalReferenceColumn(section, sib.col)
+    );
+    if (!touchesRef) continue;
+    const context = editCellsSiblingContext(siblings, key);
+    const pick = pickRtmReference(ledger, key, context);
+    if (!pick) continue;
+    const template = siblings[0]!;
+    const add = (col: number, insertText: string) => {
+      if (!insertText.trim()) return;
+      if (present.has(`${key}:${col}`)) return;
+      present.add(`${key}:${col}`);
+      extra.push({
+        row: template.row,
+        col,
+        rowKey: template.rowKey ?? key,
+        expectedText: "",
+        insertText,
+        ...(template.rowContext ? { rowContext: template.rowContext } : {}),
+      });
+    };
+    add(cols.stage, formatRtmStageCell(pick));
+    add(cols.section, pick.sectionHeading ?? "");
+    add(cols.remarks, pick.remarks);
+  }
+  return {
+    ...operation,
+    cells: extra.length > 0 ? [...rewritten, ...extra] : rewritten,
+  };
+}
+
 /** Rewrite Stage / Section / Remarks to the highest matching family. */
 export function rankRtmReferenceOperation(
   operation: TableOperation,
@@ -775,49 +937,8 @@ export function rankRtmReferenceOperation(
           );
         }),
       };
-    case "edit_cells": {
-      const byRow = new Map<number, typeof operation.cells>();
-      for (const cell of operation.cells) {
-        const list = byRow.get(cell.row) ?? [];
-        list.push(cell);
-        byRow.set(cell.row, list);
-      }
-      return {
-        ...operation,
-        cells: operation.cells.map((cell) => {
-          const siblings = byRow.get(cell.row) ?? [];
-          const touchesRef = siblings.some((sib) =>
-            isQsrRtmOptionalReferenceColumn(section, sib.col)
-          );
-          if (!touchesRef) return cell;
-          if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return cell;
-          const context = siblings
-            .flatMap((sib) => [
-              sib.insertText,
-              sib.expectedText,
-              sib.rowContext,
-            ])
-            .filter((part): part is string => Boolean(part?.trim()))
-            .join("\n");
-          const key = rowKeyFromContext(context);
-          if (!key) return cell;
-          const pick = pickRtmReference(ledger, key, context);
-          if (!pick) {
-            return { ...cell, insertText: "" };
-          }
-          if (cell.col === cols.stage) {
-            return { ...cell, insertText: formatRtmStageCell(pick) };
-          }
-          if (cell.col === cols.section) {
-            return { ...cell, insertText: pick.sectionHeading ?? "" };
-          }
-          if (cell.col === cols.remarks) {
-            return { ...cell, insertText: pick.remarks };
-          }
-          return cell;
-        }),
-      };
-    }
+    case "edit_cells":
+      return rankEditCells(operation, ledger, section, cols);
     case "insert_column":
     case "delete_rows":
     case "delete_column":

@@ -261,6 +261,7 @@ import {
   isQsrInventoryReviewObjective,
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
+import { dropQsrRtmPlaceholderCells } from "@/lib/ai/chat/qsr-row-grounding";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -279,7 +280,7 @@ import {
   groundDraftText,
   groundTableOperation,
   tableOperationContainsPlaceholders,
-  tablePlaceholderLabels,
+  tableLookupPlaceholderLabels,
   tableOperationPlainText,
   tablePlaceholderLookupMessage,
   unsupportedFactsToolResult,
@@ -3770,7 +3771,10 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
           });
         }
-        const leftoverLabels = tablePlaceholderLabels(groundedTable.operation);
+        const leftoverLabels = tableLookupPlaceholderLabels(
+          groundedTable.operation,
+          section
+        );
         if (leftoverLabels.length > 0 && !tablePlaceholderLookupBounced) {
           tablePlaceholderLookupBounced = true;
           return unsupportedFactsToolResult({
@@ -3779,6 +3783,27 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
             message: tablePlaceholderLookupMessage(leftoverLabels),
           });
+        }
+        if (leftoverLabels.length > 0) {
+          const strippedPlaceholders = dropQsrRtmPlaceholderCells(
+            groundedTable.operation,
+            section
+          );
+          groundedTable = {
+            ...groundedTable,
+            operation: strippedPlaceholders,
+          };
+          if (
+            strippedPlaceholders.kind === "edit_cells" &&
+            strippedPlaceholders.cells.length === 0
+          ) {
+            return unsupportedFactsToolResult({
+              unsupported: groundedTable.unsupported,
+              draftWithPlaceholders: leftoverLabels.join("; "),
+              ...repairResultFields(repair.hits),
+              message: tablePlaceholderLookupMessage(leftoverLabels),
+            });
+          }
         }
         // Cell text overclaims the same way prose does — a Remark column
         // reading "all batches compliant" is the case that prompted this.
