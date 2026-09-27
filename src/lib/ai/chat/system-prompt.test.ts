@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v142-qsr-protocol-topic");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v143-qsr-protocol-topic");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -39,6 +39,9 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain(
       "Do not tell them to accept a card and type 3.5"
+    );
+    expect(prompt).toContain(
+      "Never quote attachment ids, analysis ids, or suggestion-card ids"
     );
   });
 
@@ -160,6 +163,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("[1,2]");
     expect(prompt).toContain("cite it as [filename, p. N]");
     expect(prompt).toContain("Do not invent [1]/[2] numbers");
+    expect(prompt).toContain(
+      "Never write attachment id= tokens, analysisId, suggestion-card ids"
+    );
   });
 
   it("tells the model never to pass the section key as targetField", () => {

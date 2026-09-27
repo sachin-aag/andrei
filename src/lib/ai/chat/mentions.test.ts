@@ -302,6 +302,8 @@ describe("buildMentionBlock", () => {
     expect(block).toContain("UNTRUSTED");
     expect(block).toContain("complete attachment scope");
     expect(block).toContain("restricted to these files");
+    expect(block).toContain("id= is internal");
+    expect(block).toContain("never show the id");
   });
 
   it("neutralizes instruction-like newlines in attachment metadata", () => {
@@ -345,6 +347,7 @@ describe("buildMentionBlock", () => {
     );
 
     expect(block).toContain("insert_image source=analytics");
+    expect(block).toContain("never show the id");
     expect(block).toContain("create additional ones in Analytics");
     expect(block).toContain("[anl_1]");
     expect(block).toContain("kind=measurement_scatter");

@@ -278,7 +278,7 @@ export function buildMentionBlock(resolved: ResolvedChatMentions): string {
 
   if (documents.length > 0) {
     lines.push(
-      "Documents — attachment tools are restricted to these files:"
+      "Documents — attachment tools are restricted to these files (id= is internal — cite the filename, never show the id):"
     );
     for (const doc of documents) {
       const pages =
@@ -312,7 +312,7 @@ export function buildMentionBlock(resolved: ResolvedChatMentions): string {
 
   if (analyses.length > 0) {
     lines.push(
-      "Analytics plots — insert with insert_image source=analytics and this analysisId. If a line says no preview, tell the engineer to open the plot in Analytics first. If they named a plot that is not listed, name the available titles and say they can create additional ones in Analytics:"
+      "Analytics plots — insert with insert_image source=analytics and this analysisId (internal — name the plot by title, never show the id). If a line says no preview, tell the engineer to open the plot in Analytics first. If they named a plot that is not listed, name the available titles and say they can create additional ones in Analytics:"
     );
     for (const item of analyses) {
       const title = sanitizePromptMetadata(item.title, 180) || "untitled plot";

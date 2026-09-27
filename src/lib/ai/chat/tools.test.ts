@@ -4708,15 +4708,23 @@ describe("buildChatTools list_suggestions", () => {
       truncated: false,
       suggestions: [
         expect.objectContaining({
-          id: "c-open",
+          section: "define",
           status: "open",
           preview: "Lot 24A failed dissolution.",
         }),
-        expect.objectContaining({ id: "c-approved", status: "resolved" }),
-        expect.objectContaining({ id: "c-dismissed", status: "dismissed" }),
+        expect.objectContaining({
+          section: "define",
+          status: "resolved",
+        }),
+        expect.objectContaining({
+          section: "measure",
+          status: "dismissed",
+        }),
       ],
-      note: expect.stringMatching(/open = waiting/i),
+      note: expect.stringMatching(/Never quote internal ids/i),
     });
+    expect(JSON.stringify(result)).not.toContain("c-open");
+    expect(JSON.stringify(result)).not.toContain('"id":');
   });
 
   it("filters by section and by approved status", async () => {
@@ -4728,17 +4736,21 @@ describe("buildChatTools list_suggestions", () => {
     expect(bySection).toMatchObject({
       counts: { open: 1, resolved: 1, dismissed: 0 },
       suggestions: [
-        expect.objectContaining({ id: "c-open" }),
-        expect.objectContaining({ id: "c-approved" }),
+        expect.objectContaining({ section: "define", status: "open" }),
+        expect.objectContaining({ section: "define", status: "resolved" }),
       ],
     });
+    expect(JSON.stringify(bySection)).not.toContain("c-open");
+    expect(JSON.stringify(bySection)).not.toContain('"id":');
 
     const approved = await tools.list_suggestions!.execute!(
       { status: "resolved" },
       TEST_TOOL_OPTIONS
     );
     expect(approved).toMatchObject({
-      suggestions: [expect.objectContaining({ id: "c-approved", status: "resolved" })],
+      suggestions: [
+        expect.objectContaining({ section: "define", status: "resolved" }),
+      ],
     });
   });
 
@@ -4773,12 +4785,14 @@ describe("buildChatTools list_suggestions", () => {
       expect.objectContaining({
         pendingSuggestions: [
           expect.objectContaining({
-            id: "c-open",
+            targetField: "narrative",
             preview: "Lot 24A failed dissolution.",
           }),
         ],
       })
     );
+    expect(JSON.stringify(result)).not.toContain("c-open");
+    expect(JSON.stringify(result)).not.toContain('"id":');
   });
 });
 
