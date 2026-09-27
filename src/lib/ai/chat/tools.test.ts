@@ -754,7 +754,7 @@ describe("buildChatTools edit_table", () => {
       '{ kind: "insert_rows", tableIndex, rows: [["col1","col2"]] }'
     );
     expect(tools.edit_table?.description).toContain(
-      "not `{ create_table: { headers, rows } }`"
+      "not { create_table: { headers, rows } }"
     );
     expect(tools.edit_table?.description).toContain("retry kind delete_table");
     expect(tools.draft_field?.description).toContain("not_a_rewrite");

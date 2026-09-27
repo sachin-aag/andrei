@@ -1,79 +1,82 @@
 import { describe, expect, it } from "vitest";
+import { flattenDraftingGuidance } from "@/lib/document-types/chat-drafting-guidance";
 import {
   QSR_DRAFTING_GUIDANCE,
   QSR_RETRIEVAL_GUIDANCE,
 } from "./drafting-guidance";
 
+const guidance = flattenDraftingGuidance(QSR_DRAFTING_GUIDANCE);
+
 describe("QSR_DRAFTING_GUIDANCE", () => {
   it("requires verbatim URS rows and keyed banner inserts on the RTM", () => {
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "Cover-page URS identity (capacity, MOC, equipment ID) may be copied onto the matching row"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain("Never merge two requirements");
-    expect(QSR_DRAFTING_GUIDANCE).toContain("process → 5.1 Process Requirements");
-    expect(QSR_DRAFTING_GUIDANCE).toContain("safety → 5.4 Safety Requirements");
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain("Never merge two requirements");
+    expect(guidance).toContain("process → 5.1 Process Requirements");
+    expect(guidance).toContain("safety → 5.4 Safety Requirements");
+    expect(guidance).toContain(
       "do not invent equipment or materials the URS does not list"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "Never write Complies, bare Section 13, or a stock IQ page"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "do not paste a protocol-to-URS mapping in chat"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "leave those three cells empty for that row"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "Search the attached Design / Installation / Operational / Performance Qualification PDFs for each URS row"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain("PQ, then OQ, then IQ, then DQ");
-    expect(QSR_DRAFTING_GUIDANCE).toContain("running header");
-    expect(QSR_DRAFTING_GUIDANCE).toContain("Verified By signature block");
-    expect(QSR_DRAFTING_GUIDANCE).toContain("do not add new group rows");
-    expect(QSR_DRAFTING_GUIDANCE).toContain("one insert_rows");
-    expect(QSR_DRAFTING_GUIDANCE).toContain("Prefer afterRowKey");
-    expect(QSR_DRAFTING_GUIDANCE).toContain("Prefer edit_cells rowKey");
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain("PQ, then OQ, then IQ, then DQ");
+    expect(guidance).toContain("running header");
+    expect(guidance).toContain("Verified By signature block");
+    expect(guidance).toContain("do not add new group rows");
+    expect(guidance).toContain("one insert_rows");
+    expect(guidance).toContain("Prefer afterRowKey");
+    expect(guidance).toContain("Prefer edit_cells rowKey");
+    expect(guidance).toContain(
       "Give every cell its own rowKey"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "Do not write VFD compatible in place of an RPM number"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "Keep a leading minus on a negative temperature or RPM"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "do not copy the DQ date or revision onto the URS row"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "Use the revision printed on that document (URS 00, not a neighbouring protocol's 01)"
     );
   });
 
   it("pairs protocol and report rows and forbids invented lifecycle types", () => {
-    expect(QSR_DRAFTING_GUIDANCE).toContain("Qualification Documents (Table 3)");
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain("Qualification Documents (Table 3)");
+    expect(guidance).toContain(
       "URS, DS, FMEA, DQ, FAT, SAT, IQ, OQ, PQ"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain("do not invent FMEA, FAT, or SAT");
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain("do not invent FMEA, FAT, or SAT");
+    expect(guidance).toContain(
       "leaves Document Name, Revision, and Remarks empty"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "Do not insert a second fully filled report row"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain("Approved / Complies / Closed");
+    expect(guidance).toContain("Approved / Complies / Closed");
   });
 
   it("owns the RTM chat-editing rules and review strategy", () => {
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "do not copy URS-37's range onto URS-5"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "including a filled Reference – Section"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain(
+    expect(guidance).toContain(
       "Never write `<remarks>`, `<qualification stage>`, or `<section>`"
     );
     expect(QSR_RETRIEVAL_GUIDANCE.adaptive).toContain(
