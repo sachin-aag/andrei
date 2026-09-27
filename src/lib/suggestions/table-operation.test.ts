@@ -787,6 +787,114 @@ describe("applyTableOperation", () => {
     ]);
   });
 
+  it("rematches each cell by its own rowKey when the dummy numeric row is reused", () => {
+    const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "13.3.5.1",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "13.2",
+        },
+        {
+          row: 1,
+          col: 5,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 1, 5)).toBe("");
+    expect(cellText(result.doc, 2, 3)).toBe("IQ");
+    expect(cellText(result.doc, 2, 4)).toBe("13.3.5.1");
+    expect(cellText(result.doc, 2, 5)).toBe("");
+    expect(cellText(result.doc, 3, 3)).toBe("IQ");
+    expect(cellText(result.doc, 3, 4)).toBe("13.2");
+    expect(cellText(result.doc, 3, 5)).toBe("Complies");
+  });
+
+  it("inherits a rowKey onto unkeyed siblings only when every keyed sibling agrees", () => {
+    const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const rows = (doc.content![0]!.content ?? []).filter(
+      (n) => n.type === "tableRow"
+    );
+    const agreed = resolveEditCells(rows, [
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-13",
+        insertText: "IQ",
+      },
+      {
+        row: 1,
+        col: 4,
+        insertText: "13.3.5.1",
+      },
+    ]);
+    expect(agreed.ok).toBe(true);
+    if (!agreed.ok) return;
+    expect(agreed.cells).toEqual([
+      { row: 2, col: 3, rowKey: "URS-13", insertText: "IQ" },
+      { row: 2, col: 4, rowKey: "URS-13", insertText: "13.3.5.1" },
+    ]);
+
+    const disagreed = resolveEditCells(rows, [
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-13",
+        insertText: "IQ",
+      },
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-64",
+        insertText: "PQ",
+      },
+      {
+        row: 1,
+        col: 4,
+        insertText: "13.2",
+      },
+    ]);
+    expect(disagreed.ok).toBe(true);
+    if (!disagreed.ok) return;
+    expect(disagreed.cells).toEqual([
+      { row: 2, col: 3, rowKey: "URS-13", insertText: "IQ" },
+      { row: 3, col: 3, rowKey: "URS-64", insertText: "PQ" },
+      { row: 1, col: 4, insertText: "13.2" },
+    ]);
+  });
+
   it("captures rematched row and rowKey before persisting edit_cells", () => {
     const doc = rtmDoc(["URS-1", "URS-8", "URS-13"], {
       2: "ANY SPECIFIC REQUIREMENTS",
@@ -810,6 +918,47 @@ describe("applyTableOperation", () => {
           row: 4,
           col: 3,
           rowKey: "URS-13",
+          expectedText: "",
+          insertText: "PQ",
+        },
+      ],
+    });
+  });
+
+  it("captures each dummy-row cell onto its own rowKey", () => {
+    const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-64",
+          insertText: "PQ",
+        },
+      ],
+    });
+    expect(captured).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          row: 2,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 3,
+          col: 3,
+          rowKey: "URS-64",
           expectedText: "",
           insertText: "PQ",
         },

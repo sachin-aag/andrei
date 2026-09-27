@@ -66,7 +66,7 @@ function cellColspan(cell: JSONContent): number {
 function renderTableGrid(table: JSONContent, tableIndex: number): string {
   const rows = (table.content ?? []).filter((r) => r.type === "tableRow");
   const lines: string[] = [
-    `Table tableIndex=${tableIndex} — each cell is tagged [row,col] (0-based). Row 0 is the header and cannot be deleted; row 1 is the first data row. Use edit_table with this tableIndex. Prefer edit_cells rowKey and insert_rows afterRowKey (first-cell text) over numeric row / afterRow. Existing merged group rows are labeled banner — insert data rows after them; do not add new banner rows. Do not quote the [row,col] tags.`,
+    `Table tableIndex=${tableIndex} — each cell is tagged [row,col] (0-based). Row 0 is the header and cannot be deleted; row 1 is the first data row. Use edit_table with this tableIndex. Prefer edit_cells rowKey and insert_rows afterRowKey (first-cell text) over numeric row / afterRow. Each edit_cells cell needs its own rowKey — do not reuse one dummy row for every URS. Existing merged group rows are labeled banner — insert data rows after them; do not add new banner rows. Do not quote the [row,col] tags.`,
   ];
   rows.forEach((row, r) => {
     const cells = (row.content ?? []).filter(
