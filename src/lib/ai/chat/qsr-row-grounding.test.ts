@@ -10,6 +10,7 @@ import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
+  dateSupportedAsLabeledField,
   descriptionSupportedNearKey,
   protocolBodyQuote,
   documentFamilyFromContext,
@@ -19,6 +20,7 @@ import {
   isQsrRtmOptionalReferenceColumn,
   pickRtmReference,
   qsrFailClosedReason,
+  qsrTableColumnLabel,
   quoteWindowAroundKey,
   pageLevelTokenAroundKey,
   rowKeyFromContext,
@@ -2076,5 +2078,208 @@ describe("shouldKeepRtmProtocolSearchOpen", () => {
         ["User Requirement Specification.PDF"]
       )
     ).toBe(false);
+  });
+});
+
+const OQ_SOP_HEADER_PAGE = [
+  "Operational Qualification Glass Lined Reactor",
+  "Document No. OQP/GLR-1301 Effective Date 16-05-2026 Format No. QAD-SOP-FS-003-F02 Page 51 of 85",
+  "Observation: visual inspection completed. Date 19 May 2026",
+  "Done By Sign & Date 19-05-2026 Checked By Sign & Date 19-05-2026",
+].join("\n");
+
+describe("dateSupportedAsLabeledField", () => {
+  it("keeps the date next to Effective Date when a signature date is also on the page", () => {
+    const labeled = extractHardFacts("16-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        OQ_SOP_HEADER_PAGE,
+        labeled,
+        "Effective Date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        OQ_SOP_HEADER_PAGE,
+        signature,
+        "Effective Date"
+      )
+    ).toBe(false);
+  });
+
+  it("uses the first date after the label when a signature date sits in the same window", () => {
+    const quote = "Effective Date 16-05-2026 Sign & Date 19-05-2026";
+    const labeled = extractHardFacts("16-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(dateSupportedAsLabeledField(quote, labeled, "Effective Date")).toBe(
+      true
+    );
+    expect(
+      dateSupportedAsLabeledField(quote, signature, "Effective Date")
+    ).toBe(false);
+  });
+
+  it("fails open when the page has no matching date label", () => {
+    const fact = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        "Done By Sign & Date 19-05-2026",
+        fact,
+        "Effective Date"
+      )
+    ).toBeNull();
+  });
+
+  it("accepts either half of an Effective Date / Approved date header", () => {
+    const quote =
+      "Cover. Effective Date 01-04-2026. Protocol approved date 02-04-2026.";
+    const effective = extractHardFacts("01-04-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const approved = extractHardFacts("02-04-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const other = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        effective,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        approved,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        `${quote} Sign & Date 19-05-2026`,
+        other,
+        "Effective Date / Approved date"
+      )
+    ).toBe(false);
+  });
+});
+
+describe("groundTableOperation QSR SOP Effective Date", () => {
+  const ledger = () =>
+    ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 51,
+        attachmentId: "att-oq",
+        quote: OQ_SOP_HEADER_PAGE,
+      },
+    ]);
+
+  it("rejects a signature date in the Effective Date column", () => {
+    expect(qsrTableColumnLabel("qsr_sops", 2)).toBe("Effective Date");
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            insertText:
+              "19-05-2026 [Operational Qualification.PDF, p. 51]",
+          },
+        ],
+      },
+      ledger: ledger(),
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.operation).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          insertText: expect.stringContaining("<date>"),
+        },
+      ],
+    });
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).not.toContain("19-05-2026");
+  });
+
+  it("accepts the labeled Effective Date from the same cited page", () => {
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            insertText:
+              "16-05-2026 [Operational Qualification.PDF, p. 51]",
+          },
+        ],
+      },
+      ledger: ledger(),
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("16-05-2026");
+    expect(cell).not.toContain("<date>");
+  });
+
+  it("still presence-grounds a SOP Number on that page", () => {
+    const numbered = ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "att-oq-sop",
+        quote: "SOP Number SOP/PR/OQ/014 Effective Date 16-05-2026",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            insertText: "SOP/PR/OQ/014 [Operational Qualification.PDF, p. 11]",
+          },
+        ],
+      },
+      ledger: numbered,
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("SOP/PR/OQ/014");
   });
 });

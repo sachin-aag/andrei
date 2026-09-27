@@ -41,15 +41,19 @@ import {
   isExemptFrameFact,
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
+import { elrTableHeadersForSection } from "@/lib/document-types/elr/sections";
 import {
   attachLiveTableRowContext,
+  dateSupportedAsLabeledField,
   documentFamilyFromContext,
   extraQsrUnsupported,
   factIsRowKey,
   factSupportedForRowKey,
   filenameMatchesFamily,
+  isLabeledDateColumnLabel,
   isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
+  qsrTableColumnLabel,
   rankRtmReferenceOperation,
   rowKeyFromContext,
   editCellsGroupKey,
@@ -190,11 +194,29 @@ function rankMoveTarget(input: {
   return matches[0]!;
 }
 
+function resolveTableColumnLabel(input: {
+  section?: string;
+  col?: number;
+  override?: string;
+}): string | undefined {
+  const override = input.override?.trim();
+  if (override) return override;
+  const qsr = qsrTableColumnLabel(input.section, input.col);
+  if (qsr) return qsr;
+  if (!input.section || input.col == null || input.col < 0) return undefined;
+  return elrTableHeadersForSection(input.section)[input.col];
+}
+
 function pageSupportsFact(
   quote: string,
   fact: HardFact,
-  rowKey: string | null
+  rowKey: string | null,
+  columnLabel?: string
 ): boolean {
+  if (columnLabel && isLabeledDateColumnLabel(columnLabel)) {
+    const labeled = dateSupportedAsLabeledField(quote, fact, columnLabel);
+    if (labeled != null) return labeled;
+  }
   if (rowKey && !factIsRowKey(fact, rowKey)) {
     return factSupportedForRowKey(quote, fact, rowKey);
   }
@@ -209,10 +231,12 @@ function resolveFact(
     context?: string;
     analyses?: readonly AnalysisEvidence[];
     section?: string;
+    columnLabel?: string;
   }
 ): ClaimProvenanceRecord {
   const pages = ledger.recordedPages();
   const rowKey = rowKeyFromContext(extras.context ?? extras.sentence);
+  const columnLabel = extras.columnLabel?.trim() || undefined;
   const docFamily =
     extras.section === "qsr_qualification_documents" ||
     extras.section === "qsr_references"
@@ -228,7 +252,7 @@ function resolveFact(
   const citedHit = citedPages.find(
     (row) =>
       (!docFamily || filenameMatchesFamily(row.filename, docFamily)) &&
-      pageSupportsFact(row.quote, fact, rowKey)
+      pageSupportsFact(row.quote, fact, rowKey, columnLabel)
   );
   const primaryCited = citedPages[0] ?? null;
   const identifiers = extractHardFacts(
@@ -253,7 +277,7 @@ function resolveFact(
     if (docFamily && !filenameMatchesFamily(row.filename, docFamily)) {
       return false;
     }
-    return pageSupportsFact(row.quote, fact, rowKey);
+    return pageSupportsFact(row.quote, fact, rowKey, columnLabel);
   });
   const quotedPageCount = pages.filter((row) => row.quote.trim()).length;
   const ranked = rankMoveTarget({
@@ -264,11 +288,20 @@ function resolveFact(
     quotedPageCount,
   });
 
+  const labeledDateRejected =
+    Boolean(columnLabel) &&
+    dateSupportedAsLabeledField(
+      primaryCited?.quote ?? "",
+      fact,
+      columnLabel ?? ""
+    ) === false;
+
   const lenientDate =
     !rowKey &&
     !docFamily &&
     primaryCited &&
-    fact.kind === "date";
+    fact.kind === "date" &&
+    !labeledDateRejected;
 
   if (lenientDate && !primaryCited.quote.trim()) {
     return {
@@ -557,6 +590,11 @@ export function groundDraftText(input: {
       context: input.context,
       analyses: input.analyses,
       section: input.grounding?.section,
+      columnLabel: resolveTableColumnLabel({
+        section: input.grounding?.section,
+        col: input.grounding?.tableCol,
+        override: input.grounding?.tableColumnLabel,
+      }),
     });
   });
   const withMoved = applyMovedCitations(cited, facts, records);
@@ -567,6 +605,12 @@ export function groundDraftText(input: {
     cell: cited,
     context: input.context ?? cited,
     section: input.grounding?.section,
+    tableCol: input.grounding?.tableCol,
+    tableColumnLabel: resolveTableColumnLabel({
+      section: input.grounding?.section,
+      col: input.grounding?.tableCol,
+      override: input.grounding?.tableColumnLabel,
+    }),
     ledger: input.ledger,
   });
   const unsupportedFacts = [...unsourcedFacts, ...extraUnsupported];
@@ -661,13 +705,22 @@ export function groundTableOperation(input: {
   const groundValue = (
     value: string,
     context: string | undefined,
-    col?: number
+    col?: number,
+    columnLabel?: string
   ): string => {
     const grounded = groundDraftText({
       text: value,
       ledger: input.ledger,
       policy: input.policy,
-      grounding: input.grounding,
+      grounding: {
+        ...input.grounding,
+        tableCol: col,
+        tableColumnLabel: resolveTableColumnLabel({
+          section: input.grounding?.section,
+          col,
+          override: columnLabel ?? input.grounding?.tableColumnLabel,
+        }),
+      },
       context,
       analyses: input.analyses,
     });
@@ -705,7 +758,15 @@ export function groundTableOperation(input: {
             .join("\n");
           return {
             ...cell,
-            insertText: groundValue(cell.insertText, context, cell.col),
+            insertText: groundValue(
+              cell.insertText,
+              context,
+              cell.col,
+              resolveTableColumnLabel({
+                section: input.grounding?.section,
+                col: cell.col,
+              })
+            ),
           };
         }),
       };
@@ -731,7 +792,17 @@ export function groundTableOperation(input: {
         ...cited,
         rows: cited.rows.map((row) => {
           const context = row.join("\n");
-          return row.map((cell, col) => groundValue(cell, context, col));
+          return row.map((cell, col) =>
+            groundValue(
+              cell,
+              context,
+              col,
+              resolveTableColumnLabel({
+                section: input.grounding?.section,
+                col,
+              })
+            )
+          );
         }),
       };
       break;
@@ -740,7 +811,7 @@ export function groundTableOperation(input: {
         ...cited,
         header: groundValue(cited.header, cited.header),
         values: cited.values?.map((value) =>
-          groundValue(value, `${cited.header}\n${value}`)
+          groundValue(value, `${cited.header}\n${value}`, undefined, cited.header)
         ),
       };
       break;
@@ -752,7 +823,9 @@ export function groundTableOperation(input: {
         ),
         rows: cited.rows?.map((row) => {
           const context = [...cited.headers, ...row].join("\n");
-          return row.map((cell, col) => groundValue(cell, context, col));
+          return row.map((cell, col) =>
+            groundValue(cell, context, col, cited.headers[col])
+          );
         }),
       };
       break;
