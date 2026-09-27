@@ -6,6 +6,7 @@ import {
   groundTableOperation,
   NUMBER_MOVE_SMALL_LEDGER,
   tablePlaceholderLabels,
+  tableLookupPlaceholderLabels,
   tablePlaceholderLookupMessage,
   TABLE_PLACEHOLDER_LOOKUP_MESSAGE,
   unsupportedFactsToolResult,
@@ -126,6 +127,130 @@ describe("groundDraftText QSR row windows", () => {
     });
     expect(result.blocked).toBe(false);
     expect(result.text).toContain("20-25 °C");
+  });
+
+  it("blocks unsigned 15 °C on operating-range Minimum when the URS shows −15 °C", () => {
+    const result = groundDraftText({
+      text: "15 °C",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 6,
+          attachmentId: "urs",
+          quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+        },
+      ]),
+      policy: "block",
+      context: "Temperature\nMinimum",
+      grounding: { section: "qsr_operating_range" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["15 °C"])
+    );
+  });
+
+  it("accepts −15 °C on operating-range Minimum from the URS", () => {
+    const result = groundDraftText({
+      text: "−15 °C",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 6,
+          attachmentId: "urs",
+          quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+        },
+      ]),
+      policy: "block",
+      context: "Temperature\nMinimum",
+      grounding: { section: "qsr_operating_range" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("−15 °C");
+  });
+
+  it("blocks unsigned 20 °C on URS-37 when the URS shows −20 °C to 150 °C", () => {
+    const result = groundDraftText({
+      text: "20 °C",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 8,
+          attachmentId: "urs",
+          quote:
+            "URS-37 Temperature To measure the temperature - 20 °C to 150 °C",
+        },
+      ]),
+      policy: "block",
+      context: "URS-37\nTemperature",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["20 °C"])
+    );
+  });
+
+  it("accepts −20 °C to 150 °C on URS-37 from the URS", () => {
+    const result = groundDraftText({
+      text: "-20 °C to 150 °C",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 8,
+          attachmentId: "urs",
+          quote:
+            "URS-37 Temperature To measure the temperature - 20 °C to 150 °C",
+        },
+      ]),
+      policy: "block",
+      context: "URS-37\nTemperature",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toMatch(/-20/);
+    expect(result.text).toContain("150");
+  });
+
+  it("blocks unsigned 50±10 RPM on URS-10 when the URS shows −50 ± 10 RPM", () => {
+    const result = groundDraftText({
+      text: "50+-10 RPM",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 7,
+          attachmentId: "urs",
+          quote: "URS-10 RPM requirement –50 ± 10 RPM",
+        },
+      ]),
+      policy: "block",
+      context: "URS-10\nRPM requirement",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text).join(" ")).toMatch(
+      /50/
+    );
+  });
+
+  it("accepts −50 ± 10 RPM on URS-10 from the URS", () => {
+    const result = groundDraftText({
+      text: "–50 ± 10 RPM",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 7,
+          attachmentId: "urs",
+          quote: "URS-10 RPM requirement –50 ± 10 RPM",
+        },
+      ]),
+      policy: "block",
+      context: "URS-10\nRPM requirement",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("50");
+    expect(result.text).toMatch(/[-−–]50/);
   });
 
   it("accepts 8000 L from the URS cover on the URS-1 row", () => {
@@ -710,6 +835,20 @@ describe("gated placeholder persist policy", () => {
     expect(tablePlaceholderLookupMessage(["<Units Filled>"])).toContain(
       "Missing: <Units Filled>."
     );
+  });
+
+  it("treats leftover angle-bracket cells as lookup tokens on any table kind", () => {
+    expect(
+      tableLookupPlaceholderLabels({
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 1, insertText: "Pass" },
+          { row: 1, col: 3, insertText: "<result>" },
+          { row: 1, col: 4, insertText: "<section>" },
+        ],
+      })
+    ).toEqual(["<result>", "<section>"]);
   });
 
   it("tells the model to fill real values, not invent them", () => {

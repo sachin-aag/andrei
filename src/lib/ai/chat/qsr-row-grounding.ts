@@ -1,14 +1,22 @@
+import type { JSONContent } from "@tiptap/core";
 import {
   extractHardFacts,
   type HardFact,
 } from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
+import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
 import {
   isQsrTableSectionKey,
   QSR_TABLE_HEADERS,
 } from "@/lib/document-types/qsr/sections";
-import type { TableOperation } from "@/lib/suggestions/table-operation";
+import {
+  isLeftoverPlaceholderCellText,
+  dropLeftoverPlaceholderCells,
+  summarizeTablesInDoc,
+  type TableCellEdit,
+  type TableOperation,
+} from "@/lib/suggestions/table-operation";
 
 const URS_ID_RE = /\bURS-\d+\b/gi;
 
@@ -61,6 +69,7 @@ const REVISION_CELL_RE = /^0?\d{1,2}$/;
 const RPM_PARAMETER_RE = /\bagitator\b|\brpm\b/i;
 const RANGE_PARAMETER_RE =
   /\bpressure\b|\bvacuum\b|\btemperature\b|\bagitator\b|\brpm\b/i;
+const LEADING_QUANTITY_RE = /^(?:[~≈±]|[-−–])?\s*\d+(?:\.\d+)?/;
 
 export const QSR_RTM_SECTIONS = [
   "qsr_rtm_process",
@@ -198,6 +207,116 @@ export function rowKeyFromContext(
   URS_ID_RE.lastIndex = 0;
   const match = URS_ID_RE.exec(context);
   return match ? match[0].toUpperCase() : null;
+}
+
+/** Group `edit_cells` by URS rowKey, not a reused dummy numeric `row`. */
+export function editCellsGroupKey(cell: TableCellEdit): string {
+  const explicit = cell.rowKey?.replace(/\s+/g, " ").trim();
+  if (explicit) return explicit.toUpperCase();
+  return (
+    rowKeyFromContext(
+      [cell.rowContext, cell.insertText, cell.expectedText]
+        .filter((part): part is string => Boolean(part?.trim()))
+        .join("\n")
+    ) ?? `__row:${cell.row}`
+  );
+}
+
+function editCellsSiblingContext(
+  siblings: readonly TableCellEdit[],
+  key: string
+): string {
+  return [
+    key.startsWith("__row:") ? "" : key,
+    ...siblings.flatMap((sib) => [
+      sib.rowKey,
+      sib.insertText,
+      sib.expectedText,
+      sib.rowContext,
+    ]),
+  ]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join("\n");
+}
+
+function mergeRowContextLines(
+  live: string,
+  existing: string | undefined
+): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const part of [live, existing ?? ""]) {
+    for (const line of part.split("\n")) {
+      const trimmed = line.replace(/\s+/g, " ").trim();
+      if (!trimmed) continue;
+      const id = trimmed.toLowerCase();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      lines.push(trimmed);
+    }
+  }
+  return lines.join("\n");
+}
+
+/** First-cell → live Parameters / User requirements for that URS row. */
+export function liveTableRowContextByKey(
+  fieldDoc: JSONContent | null | undefined
+): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!fieldDoc) return map;
+  for (const table of summarizeTablesInDoc(fieldDoc)) {
+    const byRow = new Map<number, string[]>();
+    for (const cell of table.cells) {
+      if (cell.row === 0) continue;
+      const text = cell.text === "(empty)" ? "" : cell.text.trim();
+      const list = byRow.get(cell.row) ?? [];
+      list[cell.col] = text;
+      byRow.set(cell.row, list);
+    }
+    for (const cells of byRow.values()) {
+      const first = (cells[0] ?? "").replace(/\s+/g, " ").trim();
+      if (!first) continue;
+      const lines = cells.filter((part) => Boolean(part?.trim()));
+      if (lines.length === 0) continue;
+      map.set(first.toUpperCase(), lines.join("\n"));
+    }
+  }
+  return map;
+}
+
+/**
+ * Topic-match protocol pages from the live table even when the model
+ * stuffed `rowContext` with only URS-N / IQ / Complies.
+ */
+export function attachLiveTableRowContext(
+  operation: TableOperation,
+  fieldDoc: JSONContent | null | undefined
+): TableOperation {
+  if (operation.kind !== "edit_cells") return operation;
+  const live = liveTableRowContextByKey(fieldDoc);
+  if (live.size === 0) return operation;
+  return {
+    ...operation,
+    cells: operation.cells.map((cell) => {
+      const snapshot = live.get(editCellsGroupKey(cell));
+      if (!snapshot) return cell;
+      const merged = mergeRowContextLines(snapshot, cell.rowContext);
+      if (merged === (cell.rowContext ?? "").trim()) return cell;
+      return { ...cell, rowContext: merged };
+    }),
+  };
+}
+
+/** Angle-bracket leftover tokens, including `<section>` (HTML-tag skip in live scan). */
+export function isQsrRtmPlaceholderText(text: string): boolean {
+  return isLeftoverPlaceholderCellText(text);
+}
+
+/** Drop leftover placeholders so they never persist. */
+export function dropQsrRtmPlaceholderCells(
+  operation: TableOperation
+): TableOperation {
+  return dropLeftoverPlaceholderCells(operation);
 }
 
 export function factIsRowKey(fact: HardFact, key: string): boolean {
@@ -393,6 +512,21 @@ export function quoteWindowAroundKey(quote: string, key: string): string | null 
   }
   if (end <= at) return null;
   return quote.slice(at, end);
+}
+
+/**
+ * Identifier slice plus the rest of the page after that ID.
+ * Pass / Verified tokens are page-level — they must not stop at the
+ * next URS ID the way neighbour-number isolation does.
+ */
+export function pageLevelTokenAroundKey(
+  quote: string,
+  key: string
+): string | null {
+  if (!quote.trim() || !key) return null;
+  const at = indexOfUrsId(quote, key);
+  if (at < 0) return null;
+  return quote.slice(at);
 }
 
 export function evidenceContainsFactNearKey(
@@ -607,6 +741,7 @@ function protocolTopicTokens(context: string): string[] {
 function isRtmReferenceMetaLine(line: string): boolean {
   const stripped = line.replace(/\[[^\]]*\]/g, "").trim();
   if (!stripped) return true;
+  if (/^<[^<>]+>$/.test(stripped)) return true;
   if (/^URS-\d+$/i.test(stripped)) return true;
   if (STAGE_ONLY_RE.test(stripped)) return true;
   if (PASS_WORD_CELL_RE.test(stripped)) return true;
@@ -618,6 +753,8 @@ function isRtmReferenceMetaLine(line: string): boolean {
 /**
  * Prefer User requirements / Purpose over a short Parameters label so
  * `MOC` cannot topic-match a neighbour protocol row by itself.
+ * Two short tokens ("Limpet/Plain") are not enough — join sibling lines
+ * so Jacket Type + Limpet can match an IQ result together.
  */
 function protocolTopicSource(context: string): string {
   const lines = context
@@ -625,13 +762,6 @@ function protocolTopicSource(context: string): string {
     .map((line) => line.replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim())
     .filter((line) => line && !isRtmReferenceMetaLine(line));
   if (lines.length === 0) return context;
-  const longest = lines.reduce((best, line) =>
-    line.length >= best.length ? line : best
-  );
-  const tokens = protocolTopicTokens(longest);
-  if (tokens.length >= 2 || tokens.some((token) => token.length >= 8)) {
-    return longest;
-  }
   return lines.join(" ");
 }
 
@@ -686,6 +816,46 @@ export function filenameMatchesFamily(
   return documentFamilyFromFilename(filename) === family;
 }
 
+const RTM_PROTOCOL_QUERY_RE: Record<RtmStageFamily, RegExp> = {
+  pq: /\bperformance\s+qualification\b|\bpq\b/i,
+  oq: /\boperational\s+qualification\b|\boperation\s+qualification\b|\boq\b/i,
+  iq: /\binstallation\s+qualification\b|\biq\b/i,
+  dq: /\bdesign\s+qualification\b|\bdq\b/i,
+};
+
+/**
+ * Identifier-only greps often land on a DQ page that prints the URS ID, or
+ * on IQ before PQ / OQ have been searched. Keep search open while a higher
+ * protocol family than the best hit has not been queried.
+ */
+export function shouldKeepRtmProtocolSearchOpen(
+  queries: readonly string[],
+  filenames: readonly string[]
+): boolean {
+  const hitFamilies = filenames
+    .map((name) => documentFamilyFromFilename(name))
+    .filter(
+      (family): family is RtmStageFamily =>
+        family != null &&
+        (QSR_STAGE_RANK as readonly string[]).includes(family)
+    );
+  if (hitFamilies.length === 0) return false;
+  const bestHitRank = Math.min(
+    ...hitFamilies.map((family) => QSR_STAGE_RANK.indexOf(family))
+  );
+  if (bestHitRank <= 0) return false;
+  const joined = queries.join("\n");
+  return QSR_STAGE_RANK.some(
+    (family, index) =>
+      index < bestHitRank && !RTM_PROTOCOL_QUERY_RE[family].test(joined)
+  );
+}
+
+function optionalRefExpectedFilled(cell: TableCellEdit): boolean {
+  const live = (cell.expectedText ?? "").trim();
+  return live.length > 0 && !isQsrRtmPlaceholderText(live);
+}
+
 export function stageFamilyFromCell(
   text: string | null | undefined
 ): QualDocFamily | null {
@@ -712,11 +882,8 @@ function protocolPassWindow(
 ): string | null {
   for (const page of ledger.recordedPages()) {
     if (!filenameMatchesFamily(page.filename, family)) continue;
-    const window = quoteWindowAroundKey(page.quote, key);
-    if (window) {
-      if (hasProtocolPassToken(window)) return window;
-      continue;
-    }
+    const window = pageLevelTokenAroundKey(page.quote, key);
+    if (window && hasProtocolPassToken(window)) return window;
     const topic = protocolTopicBody(page.quote, context);
     if (topic && hasProtocolPassToken(topic)) return topic;
   }
@@ -763,6 +930,84 @@ function formatRtmStageCell(pick: RtmReferencePick): string {
   return `${pick.stageLabel} [${pick.filename}, p. ${pick.pageNumber}]`;
 }
 
+function isRtmStageFamily(family: QualDocFamily | null): family is RtmStageFamily {
+  return (
+    family != null &&
+    (QSR_STAGE_RANK as readonly string[]).includes(family)
+  );
+}
+
+function stageRankIndex(family: RtmStageFamily): number {
+  return QSR_STAGE_RANK.indexOf(family);
+}
+
+function firstSectionNumberLine(text: string): string {
+  for (const line of text.split("\n")) {
+    const trimmed = line.replace(/\[[^\]]*\]/g, "").trim();
+    if (SECTION_NUMBER_CELL_RE.test(trimmed)) {
+      return trimmed.replace(/^section\s+/i, "");
+    }
+  }
+  return "";
+}
+
+function liveReferenceFloor(
+  siblings: readonly TableCellEdit[],
+  cols: { stage: number; section: number; remarks: number }
+): { stageFamily: RtmStageFamily | null; sectionText: string } {
+  let stageFamily: RtmStageFamily | null = null;
+  let sectionText = "";
+  for (const sib of siblings) {
+    const live = (sib.expectedText ?? "").trim();
+    if (!live) continue;
+    if (sib.col === cols.stage) {
+      const family = stageFamilyFromCell(live);
+      if (isRtmStageFamily(family)) stageFamily = family;
+    }
+    if (sib.col === cols.section) sectionText = live;
+  }
+  if (!sectionText) {
+    for (const sib of siblings) {
+      if (!sib.rowContext) continue;
+      sectionText = firstSectionNumberLine(sib.rowContext);
+      if (sectionText) break;
+    }
+  }
+  return { stageFamily, sectionText };
+}
+
+function pickWouldReplaceFilledReference(
+  pick: RtmReferencePick,
+  floor: { stageFamily: RtmStageFamily | null; sectionText: string }
+): boolean {
+  if (floor.stageFamily) {
+    return stageRankIndex(pick.family) > stageRankIndex(floor.stageFamily);
+  }
+  if (
+    floor.sectionText &&
+    pick.sectionHeading &&
+    floor.sectionText !== pick.sectionHeading
+  ) {
+    // DQ pages print every URS ID. A heading clash with a filled Section
+    // means this pick must not stamp empty Stage / Remarks beside it.
+    // IQ / OQ / PQ protocol-body hits may still fill those empty cells.
+    return pick.family === "dq";
+  }
+  return false;
+}
+
+function stickyRtmPick(
+  pick: RtmReferencePick | null,
+  siblings: readonly TableCellEdit[],
+  cols: { stage: number; section: number; remarks: number }
+): RtmReferencePick | null {
+  if (!pick) return null;
+  if (pickWouldReplaceFilledReference(pick, liveReferenceFloor(siblings, cols))) {
+    return null;
+  }
+  return pick;
+}
+
 export function pickRtmReference(
   ledger: CitationPageLedger,
   key: string,
@@ -773,7 +1018,7 @@ export function pickRtmReference(
     if (pages.length === 0) continue;
     const passPage =
       pages.find((page) => {
-        const window = quoteWindowAroundKey(page.quote, key);
+        const window = pageLevelTokenAroundKey(page.quote, key);
         if (window && hasProtocolPassToken(window)) return true;
         const topic = protocolTopicBody(page.quote, context);
         return topic != null && hasProtocolPassToken(topic);
@@ -788,9 +1033,11 @@ export function pickRtmReference(
       filename: passPage.filename,
       pageNumber: passPage.pageNumber,
       sectionHeading: body ? protocolSectionHeading(body) : null,
-      remarks: protocolPassWindow(ledger, key, family, context)
-        ? "Complies"
-        : "",
+      remarks:
+        (body && hasProtocolPassToken(body)) ||
+        protocolPassWindow(ledger, key, family, context)
+          ? "Complies"
+          : "",
     };
   }
   return null;
@@ -814,6 +1061,14 @@ function applyPickToRow(
   const next = [...row];
   const last = Math.max(cols.stage, cols.section, cols.remarks);
   while (next.length <= last) next.push("");
+  const liveStage = stageFamilyFromCell(next[cols.stage]);
+  const floor = {
+    stageFamily: isRtmStageFamily(liveStage) ? liveStage : null,
+    sectionText: (next[cols.section] ?? "").trim(),
+  };
+  if (pick && pickWouldReplaceFilledReference(pick, floor)) {
+    return next;
+  }
   if (!pick) {
     next[cols.stage] = "";
     next[cols.section] = "";
@@ -824,6 +1079,100 @@ function applyPickToRow(
   next[cols.section] = pick.sectionHeading ?? "";
   next[cols.remarks] = pick.remarks;
   return next;
+}
+
+function rankEditCells(
+  operation: Extract<TableOperation, { kind: "edit_cells" }>,
+  ledger: CitationPageLedger,
+  section: string | undefined,
+  cols: { stage: number; section: number; remarks: number }
+): TableOperation {
+  const byKey = new Map<string, TableCellEdit[]>();
+  for (const cell of operation.cells) {
+    const key = editCellsGroupKey(cell);
+    const list = byKey.get(key) ?? [];
+    list.push(cell);
+    byKey.set(key, list);
+  }
+  const rewritten = operation.cells.flatMap((cell) => {
+    const key = editCellsGroupKey(cell);
+    const siblings = byKey.get(key) ?? [];
+    const touchesRef = siblings.some((sib) =>
+      isQsrRtmOptionalReferenceColumn(section, sib.col)
+    );
+    if (!touchesRef) return [cell];
+    if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return [cell];
+    if (optionalRefExpectedFilled(cell)) return [];
+    const context = editCellsSiblingContext(siblings, key);
+    const rowKey = key.startsWith("__row:")
+      ? rowKeyFromContext(context)
+      : key;
+    if (!rowKey) return [cell];
+    const rawPick = pickRtmReference(ledger, rowKey, context);
+    const pick = stickyRtmPick(rawPick, siblings, cols);
+    if (!pick) {
+      // ID-only DQ (or a lower family) must not rewrite a filled IQ Section.
+      if (rawPick) return [];
+      return [cell];
+    }
+    if (cell.col === cols.stage) {
+      return [{ ...cell, insertText: formatRtmStageCell(pick) }];
+    }
+    if (cell.col === cols.section) {
+      return [{ ...cell, insertText: pick.sectionHeading ?? "" }];
+    }
+    if (cell.col === cols.remarks) {
+      return [{ ...cell, insertText: pick.remarks }];
+    }
+    return [cell];
+  });
+  const present = new Set(
+    rewritten.map((cell) => `${editCellsGroupKey(cell)}:${cell.col}`)
+  );
+  const extra: TableCellEdit[] = [];
+  for (const [key, siblings] of byKey) {
+    if (key.startsWith("__row:")) continue;
+    const touchesRef = siblings.some((sib) =>
+      isQsrRtmOptionalReferenceColumn(section, sib.col)
+    );
+    if (!touchesRef) continue;
+    const context = editCellsSiblingContext(siblings, key);
+    const floor = liveReferenceFloor(siblings, cols);
+    const pick = stickyRtmPick(
+      pickRtmReference(ledger, key, context),
+      siblings,
+      cols
+    );
+    if (!pick) continue;
+    const template = siblings[0]!;
+    const liveFilled = (col: number) => {
+      if (col === cols.section && floor.sectionText) return true;
+      if (col === cols.stage && floor.stageFamily) return true;
+      const sib = siblings.find((cell) => cell.col === col);
+      return sib != null && optionalRefExpectedFilled(sib);
+    };
+    const add = (col: number, insertText: string) => {
+      if (!insertText.trim()) return;
+      if (liveFilled(col)) return;
+      if (present.has(`${key}:${col}`)) return;
+      present.add(`${key}:${col}`);
+      extra.push({
+        row: template.row,
+        col,
+        rowKey: template.rowKey ?? key,
+        expectedText: "",
+        insertText,
+        ...(template.rowContext ? { rowContext: template.rowContext } : {}),
+      });
+    };
+    add(cols.stage, formatRtmStageCell(pick));
+    add(cols.section, pick.sectionHeading ?? "");
+    add(cols.remarks, pick.remarks);
+  }
+  return {
+    ...operation,
+    cells: extra.length > 0 ? [...rewritten, ...extra] : rewritten,
+  };
 }
 
 /** Rewrite Stage / Section / Remarks to the highest matching family. */
@@ -863,49 +1212,8 @@ export function rankRtmReferenceOperation(
           );
         }),
       };
-    case "edit_cells": {
-      const byRow = new Map<number, typeof operation.cells>();
-      for (const cell of operation.cells) {
-        const list = byRow.get(cell.row) ?? [];
-        list.push(cell);
-        byRow.set(cell.row, list);
-      }
-      return {
-        ...operation,
-        cells: operation.cells.map((cell) => {
-          const siblings = byRow.get(cell.row) ?? [];
-          const touchesRef = siblings.some((sib) =>
-            isQsrRtmOptionalReferenceColumn(section, sib.col)
-          );
-          if (!touchesRef) return cell;
-          if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return cell;
-          const context = siblings
-            .flatMap((sib) => [
-              sib.insertText,
-              sib.expectedText,
-              sib.rowContext,
-            ])
-            .filter((part): part is string => Boolean(part?.trim()))
-            .join("\n");
-          const key = rowKeyFromContext(context);
-          if (!key) return cell;
-          const pick = pickRtmReference(ledger, key, context);
-          if (!pick) {
-            return { ...cell, insertText: "" };
-          }
-          if (cell.col === cols.stage) {
-            return { ...cell, insertText: formatRtmStageCell(pick) };
-          }
-          if (cell.col === cols.section) {
-            return { ...cell, insertText: pick.sectionHeading ?? "" };
-          }
-          if (cell.col === cols.remarks) {
-            return { ...cell, insertText: pick.remarks };
-          }
-          return cell;
-        }),
-      };
-    }
+    case "edit_cells":
+      return rankEditCells(operation, ledger, section, cols);
     case "insert_column":
     case "delete_rows":
     case "delete_column":
@@ -959,8 +1267,12 @@ export function qsrRtmCellUnsupported(
 }
 
 function rowStageFromContext(context: string): string {
-  const match = context.match(/\b(DQ|IQ|OQ|PQ)\b/);
-  return match?.[1] ?? "";
+  for (const family of QSR_STAGE_RANK) {
+    if (new RegExp(`\\b${STAGE_LABEL[family]}\\b`).test(context)) {
+      return STAGE_LABEL[family];
+    }
+  }
+  return "";
 }
 
 export function qsrOperatingRangeUnsupported(
@@ -973,11 +1285,57 @@ export function qsrOperatingRangeUnsupported(
   const quotes = ledger.recordedPages().map((page) => page.quote);
   if (RPM_PARAMETER_RE.test(context)) {
     const hasRpm = quotes.some((quote) =>
-      /\b\d+(?:\.\d+)?\s*(?:±|\+\/-|plus\/minus)?\s*\d*\s*rpm\b/i.test(quote)
+      /(?<![A-Za-z0-9.])[-−–]?\s*\d+(?:\.\d+)?\s*(?:±|\+\/-|\+\-|plus\/minus)?\s*\d*\s*rpm\b/i.test(
+        quote
+      )
     );
     if (hasRpm && !/\brpm\b/i.test(trimmed) && !/\d/.test(trimmed)) {
       return syntheticUnsupportedFact(trimmed);
     }
+  }
+  return null;
+}
+
+/**
+ * Operating Range / RTM "15 °C" or "50 ± 10 RPM" when the URS prints −15 °C
+ * or −50 ± 10 RPM. A leading en-dash read as ~ / ± is the same miss.
+ */
+function unsignedQuantityWhenEvidenceIsNegative(
+  cell: string,
+  context: string,
+  quotes: readonly string[]
+): HardFact | null {
+  const isTemp = /\btemperature\b/i.test(context);
+  const isRpm = RPM_PARAMETER_RE.test(context);
+  if (!isTemp && !isRpm) return null;
+  const match = LEADING_QUANTITY_RE.exec(cell);
+  if (!match) return null;
+  const token = glueOcrMinusSigns(match[0].replace(/^[~≈±]+/, "").replace(/\s+/g, ""));
+  if (!token || token.startsWith("-")) return null;
+  const unit = isTemp ? " °C" : " RPM";
+  const kind = isTemp ? ("temperature" as const) : ("number" as const);
+  const normalizedUnit = isTemp ? "c" : "rpm";
+  const unsigned: HardFact = {
+    text: `${token}${unit}`,
+    kind,
+    start: 0,
+    end: token.length + unit.length,
+    normalized: `${token}${normalizedUnit}`,
+    cited: [],
+  };
+  const signed: HardFact = {
+    ...unsigned,
+    text: `-${token}${unit}`,
+    normalized: `-${token}${normalizedUnit}`,
+  };
+  const hasUnsigned = quotes.some((quote) =>
+    evidenceContainsFact(quote, unsigned)
+  );
+  const hasNegative = quotes.some((quote) =>
+    evidenceContainsFact(quote, signed)
+  );
+  if (hasNegative && !hasUnsigned) {
+    return syntheticUnsupportedFact(cell);
   }
   return null;
 }
@@ -1066,6 +1424,13 @@ export function extraQsrUnsupported(input: {
   if (input.section === "qsr_operating_range") {
     add(qsrOperatingRangeUnsupported(input.cell, input.context, input.ledger));
   }
+  add(
+    unsignedQuantityWhenEvidenceIsNegative(
+      input.cell.trim(),
+      input.context,
+      input.ledger.recordedPages().map((page) => page.quote)
+    )
+  );
   add(
     qsrRevisionUnsupported(
       input.cell,

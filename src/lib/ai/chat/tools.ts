@@ -135,6 +135,7 @@ import {
   coerceTableOperationInput,
   countFilledTablesInDocument,
   defaultTableCaptionTitle,
+  dropLeftoverPlaceholderCells,
   filledTableNumberInDocument,
   parseTableOperation,
   prefixTableCaptionMarkdown,
@@ -261,6 +262,7 @@ import {
   isQsrInventoryReviewObjective,
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
+import { shouldKeepRtmProtocolSearchOpen } from "@/lib/ai/chat/qsr-row-grounding";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -279,7 +281,7 @@ import {
   groundDraftText,
   groundTableOperation,
   tableOperationContainsPlaceholders,
-  tablePlaceholderLabels,
+  tableLookupPlaceholderLabels,
   tableOperationPlainText,
   tablePlaceholderLookupMessage,
   unsupportedFactsToolResult,
@@ -991,6 +993,10 @@ function buildSearchDocumentsTool(opts: {
       .map(withSourceCitation);
     const annotated = annotateDividerSearchHits(cited);
     const continuation = annotateContinuationSearchHits(annotated.results);
+    const rtmProtocolOpen = shouldKeepRtmProtocolSearchOpen(
+      queryList,
+      merged.map((hit) => hit.filename)
+    );
     return {
       results: continuation.results,
       queriesRun: queryList,
@@ -1013,7 +1019,9 @@ function buildSearchDocumentsTool(opts: {
       ...(continuation.continuationHits > 0
         ? { continuationHint: PAGE_CONTINUATION_SEARCH_HINT }
         : {}),
-      ...(annotated.keepSearchOpen || continuation.keepSearchOpen
+      ...(annotated.keepSearchOpen ||
+      continuation.keepSearchOpen ||
+      rtmProtocolOpen
         ? { keepSearchOpen: true as const }
         : {}),
     };
@@ -3723,6 +3731,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
           analyses: tableAnalysisFacts,
+          fieldDoc,
         });
         const tableNeedsRepair =
           citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
@@ -3741,6 +3750,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
+            fieldDoc,
           });
         }
         if (groundedTable.blocked) {
@@ -3751,6 +3761,7 @@ export function buildChatTools(opts: {
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
             clearOptionalOnBlock: true,
+            fieldDoc,
           });
           if (!clearedOptional.blocked) {
             groundedTable = clearedOptional;
@@ -3770,7 +3781,9 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
           });
         }
-        const leftoverLabels = tablePlaceholderLabels(groundedTable.operation);
+        const leftoverLabels = tableLookupPlaceholderLabels(
+          groundedTable.operation
+        );
         if (leftoverLabels.length > 0 && !tablePlaceholderLookupBounced) {
           tablePlaceholderLookupBounced = true;
           return unsupportedFactsToolResult({
@@ -3779,6 +3792,26 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
             message: tablePlaceholderLookupMessage(leftoverLabels),
           });
+        }
+        if (leftoverLabels.length > 0) {
+          const strippedPlaceholders = dropLeftoverPlaceholderCells(
+            groundedTable.operation
+          );
+          groundedTable = {
+            ...groundedTable,
+            operation: strippedPlaceholders,
+          };
+          if (
+            strippedPlaceholders.kind === "edit_cells" &&
+            strippedPlaceholders.cells.length === 0
+          ) {
+            return unsupportedFactsToolResult({
+              unsupported: groundedTable.unsupported,
+              draftWithPlaceholders: leftoverLabels.join("; "),
+              ...repairResultFields(repair.hits),
+              message: tablePlaceholderLookupMessage(leftoverLabels),
+            });
+          }
         }
         // Cell text overclaims the same way prose does — a Remark column
         // reading "all batches compliant" is the case that prompted this.

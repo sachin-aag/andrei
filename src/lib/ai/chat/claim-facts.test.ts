@@ -128,6 +128,43 @@ describe("instrument quantities", () => {
     ).toContain("number:0");
   });
 
+  it("keeps the leading minus on a URS operating-range temperature", () => {
+    expect(
+      extractHardFacts("Shell operating temperature −15 °C to 130 °C").map(
+        (fact) => `${fact.kind}:${fact.text}`
+      )
+    ).toEqual(
+      expect.arrayContaining([
+        "temperature:−15 °C to 130 °C",
+      ])
+    );
+    expect(
+      extractHardFacts("Minimum −15 °C").map((fact) => fact.text)
+    ).toContain("−15 °C");
+    expect(
+      extractHardFacts("Minimum -15 °C").map((fact) => fact.normalized)
+    ).toContain("-15c");
+    expect(
+      extractHardFacts(
+        "URS-37 Temperature To measure the temperature - 20 °C to 150 °C"
+      ).map((fact) => fact.text)
+    ).toContain("- 20 °C to 150 °C");
+  });
+
+  it("keeps the leading minus on a URS RPM ± window", () => {
+    expect(
+      extractHardFacts("URS-10 RPM requirement –50 ± 10 RPM").map(
+        (fact) => `${fact.kind}:${fact.text}`
+      )
+    ).toEqual(expect.arrayContaining(["number:–50 ± 10 RPM"]));
+    expect(
+      extractHardFacts("Agitator speed 50 ± 10 RPM").map((fact) => fact.text)
+    ).toContain("50 ± 10 RPM");
+    expect(
+      extractHardFacts("50+-10 RPM").map((fact) => fact.normalized)
+    ).toContain("50+-10rpm");
+  });
+
   it("does not turn a section number into a quantity", () => {
     expect(extractHardFacts("5.1 System Trends")).toEqual([]);
   });

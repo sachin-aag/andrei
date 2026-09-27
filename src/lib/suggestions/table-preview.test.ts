@@ -241,6 +241,59 @@ describe("buildTableOperationPreviewDoc", () => {
     ]);
   });
 
+  it("paints empty remainder cells when a dummy-row sibling is already filled", () => {
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(
+        ["URS ID", "Stage", "Section"],
+        [
+          ["URS-1", "PQ [28]", ""],
+          ["URS-13", "", ""],
+          ["URS-64", "", ""],
+        ]
+      ),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-1",
+            expectedText: "",
+            insertText: "IQ",
+          },
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "IQ",
+          },
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-64",
+            expectedText: "",
+            insertText: "IQ",
+          },
+        ],
+      },
+      PREVIEW_ATTRS
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(cellRuns(preview.doc, 1, 1)).toEqual([
+      { text: "PQ [28]", insert: false, deleted: false },
+    ]);
+    expect(cellRuns(preview.doc, 2, 1)).toEqual([
+      { text: "IQ", insert: true, deleted: false },
+    ]);
+    expect(cellRuns(preview.doc, 3, 1)).toEqual([
+      { text: "IQ", insert: true, deleted: false },
+    ]);
+  });
+
   it("marks only the added suffix on edit_cells, not the original cell text", () => {
     const preview = buildTableOperationPreviewDoc(
       tableDoc(

@@ -117,6 +117,30 @@ describe("mapDocumentAiPages", () => {
     ]);
   });
 
+  it("keeps a unicode minus on a temperature as a hyphen", () => {
+    const full = "Shell operating temperature −15 °C to 130 °C";
+    const pages = mapDocumentAiPages(
+      {
+        text: full,
+        pages: [
+          {
+            pageNumber: 1,
+            layout: {
+              textAnchor: {
+                textSegments: [{ startIndex: 0, endIndex: full.length }],
+              },
+              confidence: 0.9,
+            },
+          },
+        ],
+      },
+      1
+    );
+    expect(pages[0]?.transcript).toBe(
+      "Shell operating temperature -15 °C to 130 °C"
+    );
+  });
+
   it("joins multiple text segments", () => {
     expect(
       textFromAnchor("abcdefghij", {

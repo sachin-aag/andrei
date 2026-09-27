@@ -1,4 +1,4 @@
-/** Empty greps before search is hidden for the rest of the turn. */
+import { shouldKeepRtmProtocolSearchOpen } from "@/lib/ai/chat/qsr-row-grounding";
 export const SEARCH_LOOP_EMPTY_LIMIT = 2;
 
 export const DEFAULT_SEARCH_TOOL = "search_documents";
@@ -175,6 +175,69 @@ function stepLocatedAttachment(
  * `emptyLimit` empty greps have already run. Shared by Document and Analytics
  * chat. `read_section` / `read_worksheet` are not progress.
  */
+function searchQueriesFromInput(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const record = value as Record<string, unknown>;
+  const queries: string[] = [];
+  if (typeof record.query === "string" && record.query.trim()) {
+    queries.push(record.query);
+  }
+  if (Array.isArray(record.queries)) {
+    for (const query of record.queries) {
+      if (typeof query === "string" && query.trim()) queries.push(query);
+    }
+  }
+  return queries;
+}
+
+function filenamesFromPayload(output: unknown): string[] {
+  const payload = unwrapToolPayload(output);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return [];
+  }
+  const record = payload as Record<string, unknown>;
+  const names: string[] = [];
+  if (typeof record.filename === "string" && record.filename.trim()) {
+    names.push(record.filename);
+  }
+  for (const key of ["seenPages", "results"] as const) {
+    const rows = record[key];
+    if (!Array.isArray(rows)) continue;
+    for (const row of rows) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+      const filename = (row as { filename?: unknown }).filename;
+      if (typeof filename === "string" && filename.trim()) names.push(filename);
+    }
+  }
+  return names;
+}
+
+function collectRtmProtocolSearchEvidence(
+  steps: readonly SearchLoopStep[],
+  searchTool: string
+): { queries: string[]; filenames: string[] } {
+  const queries: string[] = [];
+  const filenames: string[] = [];
+  for (const step of steps) {
+    for (const call of collectToolCalls(step)) {
+      if (callToolName(call) !== searchTool) continue;
+      queries.push(...searchQueriesFromInput(call.input ?? call.args));
+    }
+    for (const result of step.toolResults ?? []) {
+      filenames.push(...filenamesFromPayload(toolPayload(result)));
+    }
+    for (const part of step.content ?? []) {
+      if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+      const record = part as Record<string, unknown>;
+      queries.push(...searchQueriesFromInput(record.input ?? record.args));
+      filenames.push(
+        ...filenamesFromPayload(unwrapToolPayload(record.output ?? record.result))
+      );
+    }
+  }
+  return { queries, filenames };
+}
+
 function payloadKeepSearchOpen(output: unknown): boolean {
   const payload = unwrapToolPayload(output);
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -208,6 +271,13 @@ export function searchLoopDirective(
   const emptyLimit = options.emptyLimit ?? SEARCH_LOOP_EMPTY_LIMIT;
 
   if (steps.some((step) => stepKeepSearchOpen(step))) {
+    return "continue";
+  }
+
+  const rtmEvidence = collectRtmProtocolSearchEvidence(steps, searchTool);
+  if (
+    shouldKeepRtmProtocolSearchOpen(rtmEvidence.queries, rtmEvidence.filenames)
+  ) {
     return "continue";
   }
 

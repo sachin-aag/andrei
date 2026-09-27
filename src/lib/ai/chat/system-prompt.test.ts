@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v147-labeled-column-dates");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v151-labeled-column-dates");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -32,15 +32,28 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Apply does not unlock the next insert");
     expect(prompt).toContain("Installation Qualification");
     expect(prompt).toContain(
-      "do not paste a protocol-to-URS mapping in chat"
+      "Do not paste a protocol-to-URS mapping in chat"
     );
     expect(prompt).toContain(
       "leave those three cells empty for that row"
     );
+    expect(prompt).toContain("Never write `<remarks>`");
+    expect(prompt).toContain("<qualification stage>");
     expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
+    expect(prompt).toContain("fill empty cells");
+    expect(prompt).toContain("including a filled Reference – Section");
+    expect(prompt).toContain(
+      "one requirement ID is not one grep when filling RTM Stage"
+    );
+    expect(prompt).toContain(
+      "An IQ protocol hit is not enough while PQ or OQ have not been queried"
+    );
+    expect(prompt).toContain("do not rewrite a filled cell in the same batch");
     expect(prompt).toContain(
       "Do not tell them to accept a card and type 3.5"
     );
+    expect(prompt).toContain("−15 °C is not 15 °C");
+    expect(prompt).toContain("−50 ± 10 RPM");
     expect(prompt).toContain(
       "When filling a named column, copy the value printed next to that same label"
     );

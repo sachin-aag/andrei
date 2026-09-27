@@ -4,6 +4,7 @@ import {
   classifyPdfExtractLayout,
   readPdfTextLayer,
 } from "@/lib/attachments/pdf-text-layer";
+import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
 import {
   splitPdfByPageCount,
   uprightRotatePdfPages,
@@ -173,7 +174,7 @@ export function mapDocumentAiPages(
     return [
       {
         pageNumber: pageStart,
-        transcript: fullText.trim(),
+        transcript: glueOcrMinusSigns(fullText.trim()),
         confidence: null,
       },
     ];
@@ -186,7 +187,9 @@ export function mapDocumentAiPages(
         : index + 1;
     return {
       pageNumber: pageStart + relative - 1,
-      transcript: textFromAnchor(fullText, page.layout?.textAnchor) || "",
+      transcript:
+        glueOcrMinusSigns(textFromAnchor(fullText, page.layout?.textAnchor)) ||
+        "",
       confidence:
         typeof page.layout?.confidence === "number"
           ? page.layout.confidence

@@ -69,7 +69,10 @@ system prompt when kickoff retrieval hits.
 After a cited search hit, a locate/read (`read_document_page` /
 `document_outline` / Analytics scan-extract), or two empty greps, hide
 `search_documents` for the rest of the turn (`searchLoopDirective` shared
-with Analytics). Document-chat attachment cover sheets (ATTACHMENT NO. /
+with Analytics). An identifier-only grep that hits a protocol family
+keeps search open until every higher family (PQ, then OQ, then IQ, then
+DQ) has been queried (`shouldKeepRtmProtocolSearchOpen`) — an IQ hit is
+not enough while PQ or OQ are still unsearched. Document-chat attachment cover sheets (ATTACHMENT NO. /
 certificate-of locators, `divider=true`) and split tables (`continues=true`,
 Page N of M with N < M) are not a complete cited data page: they
 set `keepSearchOpen` and `searchHitCount` treats `dividerHits >=
@@ -130,7 +133,8 @@ and `truncated !== true`.
 `edit_table` `insert_rows` prefers `afterRowKey` (first-cell text) over
 `afterRow`. `edit_cells` prefers `rowKey` (first-cell text, e.g. URS-13)
 over `row`. Each `edit_cells` cell rematches by its own `rowKey` — do not
-group a batch by a reused dummy numeric row. Do not insert `{ banner }` group rows; existing template banners
+group a batch by a reused dummy numeric row. An already-filled or missing
+`rowKey` sibling is dropped so remaining cells still preview. Do not insert `{ banner }` group rows; existing template banners
 keep their colspan and data rows do not inherit it.
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
 against the citation ledger's served quotes (`groundDraftText`). That
@@ -155,7 +159,11 @@ not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
 to persist `<number>` or ask the engineer to type it. Integer `3` is not
 `3.5`. A named date column (Effective Date) must match the source value
 next to that same label — presence of a signature or observation date on
-the cited page is not that field.   Stock Complies / bare Section 13 still need a named-stage protocol page that
+the cited page is not that field. A leading minus is part of the number
+(`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A ±
+window is not independent evidence for the setpoint (`50±10 RPM` is not
+`−50 ± 10 RPM`). The high end of a range is not evidence for the low end
+(`20 °C` is not `−20 °C to 150 °C`). Stock Complies / bare Section 13 still need a named-stage protocol page that
   either names that URS ID or topic-matches that row's Parameters in the
   protocol body (not the running header). Verified on the result line counts
   as a pass; Verified By in a signature block does not. Unsupported Stage /
@@ -167,7 +175,9 @@ re-ground the original text — not a Flash-Lite subagent. Prose leftover
 `<date>` / `<identifier>` / `<number>` persist after that lookup when
 the facts are still missing. Table leftovers bounce once
 (`unsupported_facts` + `keepSearchOpen`) so a subsequent grep can still
-fill the cell; a retry in the same turn may persist leftovers. Uncited
+fill the cell; a retry in the same turn may persist leftover `<date>` /
+`<identifier>` / `<number>`, but other leftover `<…>` cells are dropped
+instead of persisting `<remarks>` / `<result>`. Uncited
 numbers do not `citation_move` onto a coincidental ledger page. Analytics
 `write_column` stays ungated.
 
