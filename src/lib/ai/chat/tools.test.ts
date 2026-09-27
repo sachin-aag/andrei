@@ -610,6 +610,14 @@ describe("buildChatTools tagged sections", () => {
 });
 
 describe("buildChatTools insert_image", () => {
+  it("documents copy example and available_plots on the tool", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(tools.insert_image?.description).toContain(
+      'image: { source: "section", section: "purpose", id: "narrative#1" }'
+    );
+    expect(tools.insert_image?.description).toContain("available_plots");
+  });
+
   it("accepts chat and section sources on an in-scope rich field", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
     expect(
@@ -740,6 +748,21 @@ describe("buildChatTools propose_edit citations", () => {
 });
 
 describe("buildChatTools edit_table", () => {
+  it("documents insert_rows and create_table call shapes on the tool", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(tools.edit_table?.description).toContain(
+      '{ kind: "insert_rows", tableIndex, rows: [["col1","col2"]] }'
+    );
+    expect(tools.edit_table?.description).toContain(
+      "not `{ create_table: { headers, rows } }`"
+    );
+    expect(tools.edit_table?.description).toContain("retry kind delete_table");
+    expect(tools.draft_field?.description).toContain("not_a_rewrite");
+    expect(tools.draft_field?.description).toContain(
+      "use edit_table create_table / delete_table"
+    );
+  });
+
   it("accepts each table operation kind and defaults tableIndex to 0", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
     expect(tools.edit_table).toBeDefined();

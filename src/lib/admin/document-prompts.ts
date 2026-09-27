@@ -8,6 +8,7 @@ import {
 import {
   buildEvaluationSystemPromptForType,
   evaluationCapabilityFor,
+  flattenDraftingGuidance,
   getDocumentType,
   getEvaluatableSections,
   listDocumentTypes,
@@ -78,7 +79,7 @@ export function buildAdminDocumentPromptCatalog(
     id: "chat-drafting",
     title: "Chat — drafting guidance",
     subtitle: "Recipe and section rules appended to the chat system prompt",
-    body: def.chat.draftingGuidance,
+    body: flattenDraftingGuidance(def.chat.draftingGuidance),
   });
 
   const exampleLines = [

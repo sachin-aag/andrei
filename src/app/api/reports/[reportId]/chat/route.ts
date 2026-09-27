@@ -45,9 +45,11 @@ import {
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
 import {
   chatSectionsInScope,
+  countSectionInlineImages,
   primaryFieldForSection,
   sectionHasTable,
 } from "@/lib/ai/chat/fields";
+import { isGraphAnalysisKind } from "@/lib/statistical-analysis/insertable-graphs";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
@@ -560,6 +562,14 @@ async function handleChatPost(
     intent: userIntent.kind,
     switchToAnalytics,
     pendingPlan,
+    hasChatImages: messageHasChatImage(userMsg?.parts),
+    hasSectionImages: Object.entries(mergedSections).some(
+      ([section, content]) =>
+        countSectionInlineImages(content ?? {}, section as SectionType) > 0
+    ),
+    hasAnalyticsPlots: (analytics?.analyses ?? []).some((analysis) =>
+      isGraphAnalysisKind(analysis.kind)
+    ),
   });
 
   const searchGate = createSearchGate();

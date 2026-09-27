@@ -1,4 +1,5 @@
 import { CONVERGENT_EQUIPMENT_HEADERS } from "@/lib/document-types/design-verification/sections";
+import { assembleDraftingGuidance } from "@/lib/document-types/chat-drafting-guidance";
 import {
   MECHANICAL_RESULTS_HEADERS,
   MECHANICAL_REVISION_HISTORY_HEADERS,
@@ -523,7 +524,27 @@ on the Solea Model 3. | W. Harrington / D. Burke`;
  * SAMPLE text is the source report's own wording — copy sentence shape, tense,
  * labels and density; substitute facts from retrieved evidence.
  */
-export const MECHANICAL_RECIPE_DRAFTING_GUIDANCE = `${TABLE_FORMATS}
+export const MECHANICAL_RECIPE_DRAFTING_GUIDANCE = assembleDraftingGuidance({
+  markdown: SECTIONS,
+  headingTarget: {
+    "PURPOSE — 1 paragraph": "purpose",
+    "SCOPE — 1 paragraph": "scope",
+    "1. TESTERS/DATES — 1 paragraph": "testers_dates",
+    "2.1 EXECUTED PROTOCOL — 1 sentence": "executed_protocol",
+    "2.2 PROTOCOL DEVIATIONS — 1 paragraph": "protocol_deviations",
+    "2.3 UNITS UNDER TEST (UUT's) — 3 paragraphs + Table 1": "units_under_test",
+    "2.4 TEST EQUIPMENT — 1 sentence + Table 2": "equipment_and_calibration",
+    "3. FAILURE/OUT OF SPECIFICATION FORMS — lead-in + N entries":
+      "failure_forms",
+    "4.1 DATA COLLECTION FORMS — 1 paragraph": "data_collection_forms",
+    "4.2 REQUIREMENTS VERIFIED — lead-in + Table 3 + Table 4":
+      "requirements_verified",
+    "4.3 OBSERVATIONS — 1 paragraph per observation": "observations",
+    "5. PROBLEM OR FAILURE RESOLUTION — 1 paragraph": "problems_resolution",
+    "6. CONCLUSION — 1 paragraph": "conclusion",
+    "REVISION HISTORY — Table 5 only": "revision_history",
+  },
+  extraAlways: `${TABLE_FORMATS}
 
 ${HOW_TO_USE}
 
@@ -533,6 +554,5 @@ ${VERBOSITY}
 
 ${OMIT_IF}
 
-${CHAT_REPLY}
-
-${SECTIONS}`;
+${CHAT_REPLY}`,
+});

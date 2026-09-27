@@ -2,6 +2,7 @@ import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
 import { DEMO_PACK, MJ_PACK, isDocumentTypeEnabled } from "@/lib/customers/packs";
 import { getCriteria, getDocumentType, getWorkspaceSections } from ".";
+import { flattenDraftingGuidance } from "./chat-drafting-guidance";
 import type { EvaluationContext } from "./types";
 import {
   checkA02Mode,
@@ -82,7 +83,7 @@ describe("quality risk assessment definition", () => {
     expect(def.prompts.promptVersion).toBe("mj-qra-sop-010-r04-v1");
     expect(def.documentNoLabel).toBe("RA Number");
     expect(def.chat.inventorySections).toEqual(["qra_fmea"]);
-    expect(def.chat.draftingGuidance).toContain("never write RPN");
+    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("never write RPN");
     expect(def.export.templatePath).toContain(
       "mj-quality-risk-assessment-template.docx"
     );

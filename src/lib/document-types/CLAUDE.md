@@ -17,7 +17,11 @@ Moved out of the root `CLAUDE.md` so it loads only when working under `src/lib/d
 
 ## Chat prompt rules
 
-`buildChatSystemPrompt` (`src/lib/ai/chat/system-prompt.ts`) holds only rules that apply to every type. A rule that names one type's sections, tables, IDs, or evidence files lives on that type's `chat` config:
-- `draftingGuidance` — write turns only (table schemas, RTM row rules, standard wording).
+`buildChatSystemPrompt` (`src/lib/ai/chat/system-prompt.ts`) holds only rules that apply to every type. Assembly is a **stable prefix** (persona, intent, language, claims, Mode, Document evidence, Asking questions) then a **volatile suffix** (section focus, remaining-section plan, tools this turn, mentions, already-drafted, editable fields, Analyze, type recipes, figure details, evidence preview, criteria, context map) so Gemini implicit caching can reuse the prefix.
+
+A rule that names one type's sections, tables, IDs, or evidence files lives on that type's `chat` config:
+- `draftingGuidance` — write turns only. Prefer `{ always, bySection }` (`assembleDraftingGuidance` / `pickDraftingGuidance`) so a tagged or remaining-section turn loads `always` plus the in-progress / next-queued recipes, not every section. Nested under `## {label} rules` with `###` subsections. A string is report-wide. Admin catalog flattens via `flattenDraftingGuidance`.
 - `retrievalGuidance` — `always` / `adaptive` / `comprehensive` bullets appended to Document evidence on read and write turns (which files to walk, `attachmentIds` policy, review-period facts). The three DV types share `design-verification/chat-retrieval-guidance.ts`.
-Bump `CHAT_PROMPT_VERSION` when either changes. `system-prompt.test.ts` asserts each type's rules are absent from the other types.
+Figure placement / chat-photo / Analytics-plot details load only when the turn has chat images, section figures, or saved plots; a two-line stub stays in Document evidence. Call-shape JSON for `edit_table` / `draft_field` / `insert_image` lives on those tool descriptions, not the Agent block.
+
+Bump `CHAT_PROMPT_VERSION` when either changes. `system-prompt.test.ts` asserts each type's rules are absent from the other types, prefix stability, and remaining-section recipe gating.

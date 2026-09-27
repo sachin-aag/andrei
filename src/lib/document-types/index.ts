@@ -198,6 +198,7 @@ export type {
   CriterionDefinition,
   DocumentTypeDefinition,
   DocumentTypeChatConfig,
+  DocumentChatDraftingGuidance,
   DocumentChatExamplePrompts,
   SectionDefinition,
   EvaluationContext,
@@ -216,3 +217,7 @@ export {
   suggestionApplyModeFor,
   editorProfileFor,
 } from "./types";
+export {
+  flattenDraftingGuidance,
+  pickDraftingGuidance,
+} from "./chat-drafting-guidance";

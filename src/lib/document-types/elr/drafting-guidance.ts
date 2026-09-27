@@ -1,3 +1,5 @@
+import type { SectionType } from "@/db/schema";
+import { assembleDraftingGuidance } from "@/lib/document-types/chat-drafting-guidance";
 import {
   ELR_ACCESS_CONTROL_HEADERS,
   ELR_ALARM_HEADERS,
@@ -32,7 +34,7 @@ const TABLE_SCHEMAS: readonly (readonly [string, readonly string[]])[] = [
   ["elr_risk_actions", ELR_RISK_ACTION_HEADERS],
 ];
 
-export const ELR_DRAFTING_GUIDANCE = `## Report shape
+const ELR_DRAFTING_MARKDOWN = `## Report shape
 
 This is an M.J. Biopharm Equipment Lifecycle Report (ELR): the periodic
 consolidated review of one piece of equipment since its last Periodic
@@ -191,9 +193,8 @@ belongs only to the counterpart format into this report.
 
 ## Table schemas (required GFM headers)
 
-When drafting or editing a table, use exactly these headers:
-
-${TABLE_SCHEMAS.map(([key, headers]) => `**${key}**\n${headers.join(" | ")}`).join("\n\n")}
+When drafting or editing a table, copy the live headers from read_section /
+the context map. Per-section header lists load with that section's rules.
 
 ## Cross-references are the point of the report
 
@@ -306,8 +307,10 @@ Breakdowns and alarms still have a separate \`trend\` field (3.6.1 / 3.10.1)
 for grouping failure modes / whether the trended alarm set is still
 appropriate. That is not a substitute for the assessment above the table.
 
-Access control: copy the current privilege matrix from the governing SOP /
-CSV annexure (Task × Operator / Supervisor / Maintenance / Administrator).
+## Access control
+
+Copy the current privilege matrix from the governing SOP / CSV annexure
+(Task × Operator / Supervisor / Maintenance / Administrator).
 Stamp System Name / ID from the annexure header (equipment / system ID). Copy
 every Sr. row (equipment, washing, filling, tray — do not skip "non-core"
 tasks). If the annexure prints Page N of M, read M and copy that page too;
@@ -443,6 +446,45 @@ ${Object.entries(ELR_SECTION_LABELS)
   .map(([key, label]) => `- ${key}: ${label}`)
   .join("\n")}
 `;
+
+const ELR_HEADING_TARGET = {
+  "Report shape": "always",
+  "Equipment description — product-contact MOC": "elr_system_description",
+  "Equipment and System Description — stations as a list":
+    "elr_system_description",
+  "Re-qualification: two different documents": "always",
+  "Document numbering (§7.3)": "always",
+  "Sibling procedures to cite by number": "always",
+  "Period rules — 1 April to 31 March": "always",
+  "Scope — both period dates": "elr_scope",
+  "Container format — this report covers one format": "always",
+  "Table schemas (required GFM headers)": "always",
+  "Cross-references are the point of the report": "always",
+  "Assessment above every evidence table": "always",
+  "Same-turn siblings": "always",
+  "Table numbers": "always",
+  "Access control": "elr_access_control",
+  "System trends": "elr_system_trends",
+  "Risk assessment and actions": "elr_risk_actions",
+  Conclusion: "elr_conclusion",
+  "Limits and counts": "always",
+  Verbosity: "always",
+  Evidence: "always",
+  "Section keys": "always",
+} as const;
+
+const ELR_TABLE_SCHEMA_BY_SECTION = Object.fromEntries(
+  TABLE_SCHEMAS.map(([key, headers]) => [
+    key,
+    `### ${key} headers\nUse exactly these headers, in this order:\n${headers.join(" | ")}`,
+  ])
+) as Partial<Record<SectionType, string>>;
+
+export const ELR_DRAFTING_GUIDANCE = assembleDraftingGuidance({
+  markdown: ELR_DRAFTING_MARKDOWN,
+  headingTarget: ELR_HEADING_TARGET,
+  extraBySection: ELR_TABLE_SCHEMA_BY_SECTION,
+});
 
 export const ELR_RETRIEVAL_GUIDANCE = {
   always: `- The ELR review period is always 1 April to 31 March of the following year. It is title-page identity: do not search-for-cite it.`,

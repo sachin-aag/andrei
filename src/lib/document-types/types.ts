@@ -62,6 +62,15 @@ export type DocumentChatRetrievalGuidance = {
   readonly comprehensive?: string;
 };
 
+/**
+ * Type-owned drafting rules. A string is report-wide (every write turn). The
+ * object form loads `always` plus only the in-scope `bySection` recipes.
+ */
+export type DocumentChatDraftingGuidance = {
+  readonly always?: string;
+  readonly bySection?: Partial<Record<SectionType, string>>;
+};
+
 /** Chat drafting guidance owned by each document type. */
 export type DocumentTypeChatConfig = {
   /** Opening persona paragraphs for the chat system prompt. */
@@ -86,9 +95,11 @@ export type DocumentTypeChatConfig = {
   inventorySections?: readonly SectionType[];
   /**
    * Optional document-type drafting rules appended to the chat system prompt
-   * (e.g. fixed table column schemas for matrix sections).
+   * on write turns (e.g. fixed table column schemas for matrix sections).
+   * Prefer `{ always, bySection }` so a tagged or remaining-section turn does
+   * not load every section recipe.
    */
-  draftingGuidance?: string;
+  draftingGuidance?: string | DocumentChatDraftingGuidance;
   /** Type-specific retrieval / document-review rules. See the type doc. */
   retrievalGuidance?: DocumentChatRetrievalGuidance;
   /**

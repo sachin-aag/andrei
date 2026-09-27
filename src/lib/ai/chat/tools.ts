@@ -2887,7 +2887,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field. ${reviewableCopy} source=chat (index on the latest user message), source=section (image.id from read_section), or source=analytics (analysisId). Empty anchorText appends before Citations.${scopeHint}`,
+        `Insert one existing image into a rich narrative field. ${reviewableCopy} source=chat (index on the latest user message), source=section (image.id from read_section), or source=analytics (analysisId). Empty anchorText appends before Citations. Same-field source=section with a non-empty anchorText moves that figure — do not also call remove_image. Example copy: insert_image({ section: "scope", targetField: "narrative", image: { source: "section", section: "purpose", id: "narrative#1" } }). If the tool returns available_plots, nothing was proposed — name the titles once and stop. Never claim a figure was proposed unless status is proposed or applied.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3628,7 +3628,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For edit_cells prefer rowKey (first-cell text, e.g. URS-13) over row — each cell needs its own rowKey; do not reuse one dummy row for every URS. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header; the first data row is 1. For edit_cells prefer rowKey (first-cell text, e.g. URS-13) over row — each cell needs its own rowKey; do not reuse one dummy row. For insert_rows pass { kind: "insert_rows", tableIndex, rows: [["col1","col2"]] } at the top of operation — not cells, not { banner }, and not nested { insert_rows: [...] }. Prefer afterRowKey (first-cell text) over afterRow. create_table is { kind: "create_table", headers, rows, title } at the top of operation — not { create_table: { headers, rows } }. Omit afterAnchor to append before Citations. If a call is malformed, re-read and retry once with kind at the top; if they asked to delete a table, retry kind delete_table — not delete_rows of every data row. Do not recover with propose_edit or draft_field. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3961,7 +3961,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. The tool refuses a filled field unless replaceFilledField is true, and refuses again (not_a_rewrite) when the replacement keeps most of the current text — that is propose_edit. Adding or removing a table while keeping surrounding prose is not_a_rewrite: use edit_table create_table / delete_table. Never put a GFM pipe table in markdown. A full rewrite of a field that already has images will drop those images. Tables use edit_table; figures use insert_image / remove_image.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z

@@ -1,3 +1,4 @@
+import { assembleDraftingGuidance } from "@/lib/document-types/chat-drafting-guidance";
 import {
   CONVERGENT_DV_TABLE_SECTIONS,
   CONVERGENT_EQUIPMENT_HEADERS,
@@ -15,13 +16,7 @@ const RESULTS_HEADER_LINE = CONVERGENT_RESULTS_HEADERS.join(" | ");
  * (usually a subset of a real report). Copy sentence shape, tense, labels,
  * and density; substitute facts from retrieved evidence.
  */
-export const CONVERGENT_RECIPE_DRAFTING_GUIDANCE = `${dvFixedTableFormatGuidance({
-  surface: "chat",
-  sections: CONVERGENT_DV_TABLE_SECTIONS,
-  labels: CONVERGENT_DV_SECTION_LABELS,
-})}
-
-## How to draft this report
+const SECTIONS = `## How to draft this report
 
 - Structure is required: heading labels, paragraph order, omit-if, and
   full-vs-partial switches. Do not skip a labelled slot that evidence supports.
@@ -494,3 +489,32 @@ Per block: bold sub-heading, then one paragraph.
   rationale of the results detailed in this report, Solea Model 3 Software
   Application version 4.7.1.1011 has been deemed acceptable for release.
 `;
+
+export const CONVERGENT_RECIPE_DRAFTING_GUIDANCE = assembleDraftingGuidance({
+  markdown: SECTIONS,
+  headingTarget: {
+    "How to draft this report": "always",
+    "Verbosity (relative)": "always",
+    "Omit-if / full vs partial (required switch)": "always",
+    "Chat reply (required)": "always",
+    "Report shape (required)": "always",
+    "Purpose — 4 paragraphs (omit paragraph 2 if a single full execution)":
+      "purpose",
+    "Scope — 2 packed paragraphs + 1 table": "scope",
+    "Testers/Dates — one block per execution": "testers_dates",
+    "Methods of Measurement — one block per execution; do **not** put the equipment table here":
+      "methods_of_measurement",
+    "Test Equipment — lead-in + table per execution": "test_equipment",
+    "Deviations — one block per execution; numbered 4-paragraph entries":
+      "deviations",
+    "Results and Discussion — TWO draft_field calls": "results_and_discussions",
+    "Problem or Failure Resolution — one block per execution, summarise the arc":
+      "problems_resolution",
+    "Conclusion — one paragraph per execution, no bullets": "conclusion",
+  },
+  extraAlways: dvFixedTableFormatGuidance({
+    surface: "chat",
+    sections: CONVERGENT_DV_TABLE_SECTIONS,
+    labels: CONVERGENT_DV_SECTION_LABELS,
+  }),
+});

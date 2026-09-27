@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getCriteria, getDocumentType, getWorkspaceSections } from ".";
+import { flattenDraftingGuidance } from "./chat-drafting-guidance";
 import type { EvaluationContext } from "./types";
 import {
   checkResultsFootnotePlacement,
@@ -188,7 +189,9 @@ describe("mechanical design verification definition", () => {
   });
 
   it("tells chat when to mint #01 versus copy a form number", () => {
-    const guidance = getDocumentType(TYPE).chat.draftingGuidance ?? "";
+    const guidance = flattenDraftingGuidance(
+      getDocumentType(TYPE).chat.draftingGuidance
+    );
     expect(guidance).toContain("## Identifiers (required)");
     expect(guidance).toContain("Failure #01");
     expect(guidance).toContain("Do not invent `Deviation #01` in 2.2");
@@ -204,13 +207,17 @@ describe("mechanical design verification definition", () => {
   });
 
   it("tells Agent wrap-ups not to mention drafting rules as a recipe", () => {
-    const guidance = getDocumentType(TYPE).chat.draftingGuidance ?? "";
+    const guidance = flattenDraftingGuidance(
+      getDocumentType(TYPE).chat.draftingGuidance
+    );
     expect(guidance).toContain("How to draft this report");
     expect(guidance).toContain("Never call this a recipe");
   });
 
   it("tells Agent to put table footnotes after the table, not in the lead-in", () => {
-    const guidance = getDocumentType(TYPE).chat.draftingGuidance ?? "";
+    const guidance = flattenDraftingGuidance(
+      getDocumentType(TYPE).chat.draftingGuidance
+    );
     expect(guidance).toContain("Do not put this note in the 4.2 lead-in");
     expect(guidance).toContain("immediately beneath Table 1");
     expect(guidance).toContain("three paragraphs only");
