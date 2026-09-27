@@ -721,7 +721,7 @@ export function groundTableOperation(input: {
           return true;
         });
         operation = { ...operation, cells: kept };
-        if (kept.length === 0) blocked = true;
+        if (kept.length === 0 && cited.cells.length > 0) blocked = true;
       }
       break;
     case "insert_rows":

@@ -1419,4 +1419,99 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(urs41Row).toContain("13.6");
     expect(urs41Row).toMatch(/Complies/i);
   });
+
+  it("does not replace Table 7 URS-41 Section 13.6 with DQ 12.3", async () => {
+    const table7Rows = [
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+    ];
+    mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), dqDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_gmp" });
+    await readDqPage(
+      tools,
+      13,
+      "URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts & SS corrugated ring Result: Verified"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_gmp",
+        targetField: "table",
+        reasoning: "Fill missing Stage / Remarks for URS-41 in table 7.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 3,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: `DQ [${DQ_FILENAME}, p. 13]`,
+              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+            },
+            {
+              row: 1,
+              col: 4,
+              rowKey: "URS-41",
+              expectedText: "13.6",
+              insertText: "12.3",
+              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+            },
+            {
+              row: 1,
+              col: 5,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: "Complies",
+              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    if (result && typeof result === "object" && "status" in result) {
+      expect(result.status).not.toBe("error");
+    }
+    const comment = inserted.find((row) => {
+      const parsed = parseAiFixCommentContent(String(row.content ?? ""));
+      return parsed.tableOperation != null;
+    });
+    if (!comment) {
+      expect(String((result as { status?: string }).status)).not.toBe("proposed");
+      return;
+    }
+    const payload = parseAiFixCommentContent(String(comment.content));
+    const op = payload.tableOperation!;
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    const blob = cells.map((cell) => cell.insertText).join(" ");
+    expect(blob).not.toMatch(/\bDQ\b/);
+    expect(blob).not.toContain("12.3");
+    const section = cells.find((cell) => cell.col === 4);
+    if (section) expect(section.insertText).toBe("13.6");
+    if (cells.length === 0) return;
+    const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
+      id: "sug-table7-urs41-dq",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    if (!preview.ok) {
+      expect(preview.status).toBe("already_present");
+      return;
+    }
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const sectionCell = JSON.stringify(
+      (rows[2]?.content ?? []).filter(
+        (node) => node.type === "tableCell" || node.type === "tableHeader"
+      )[4]
+    );
+    expect(sectionCell).toContain("13.6");
+    expect(sectionCell).not.toContain("12.3");
+    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+  });
 });

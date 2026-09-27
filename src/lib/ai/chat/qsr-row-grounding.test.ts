@@ -1324,6 +1324,161 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(urs41Row).toMatch(/Complies/i);
   });
 
+  it("does not replace Table 7 URS-41 IQ 13.6 with DQ 12.3 from a URS-ID hit on Design Qualification", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-41 Gaskets PTFE or Equivalent for non-product contact.",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote:
+          "URS-40 Contact parts SS 304. URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts & SS corrugated ring Result: Verified. URS-42",
+      },
+    ]);
+    const table7: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...QSR_RTM_HEADERS].map((header) => ({
+                type: "tableHeader" as const,
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: header }] },
+                ],
+              })),
+            },
+            ...[
+              ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+            ].map((row) => ({
+              type: "tableRow" as const,
+              content: row.map((text) => ({
+                type: "tableCell" as const,
+                content: text
+                  ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                  : [{ type: "paragraph" }],
+              })),
+            })),
+          ],
+        },
+      ],
+    };
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-41",
+        "URS-41\nGaskets\nPTFE or Equivalent [1]\n13.6\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies"
+      )?.stageLabel
+    ).toBe("DQ");
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "DQ [Design Qualification.PDF, p. 13]",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-41",
+            expectedText: "13.6",
+            insertText: "12.3",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "Complies",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: table7,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
+    const blob = urs41.map((cell) => cell.insertText).join(" ");
+    expect(blob).not.toMatch(/\bDQ\b/);
+    expect(blob).not.toContain("12.3");
+    expect(blob).not.toMatch(/Complies/i);
+    const section = urs41.find((cell) => cell.col === 4);
+    if (section) expect(section.insertText).toBe("13.6");
+    if (urs41.length === 0) return;
+
+    const preview = buildTableOperationPreviewDoc(table7, result.operation, {
+      id: "sug-table7-urs41-dq",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    if (!preview.ok) {
+      expect(preview.status).toBe("already_present");
+      return;
+    }
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const sectionCell = JSON.stringify(
+      (rows[2]?.content ?? []).filter(
+        (node) => node.type === "tableCell" || node.type === "tableHeader"
+      )[4]
+    );
+    expect(sectionCell).toContain("13.6");
+    expect(sectionCell).not.toContain("12.3");
+    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+  });
+
+  it("still prefers IQ 13.6 over DQ 12.3 when both protocol pages are cited", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: "13.6 Gaskets PTFE or equivalent Result: Verified",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote:
+          "URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts & SS corrugated ring Result: Verified",
+      },
+    ]);
+    const pick = pickRtmReference(
+      ledger,
+      "URS-41",
+      "URS-41\nGaskets\nPTFE or Equivalent [1]\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies"
+    );
+    expect(pick?.stageLabel).toBe("IQ");
+    expect(pick?.sectionHeading).toContain("13.6");
+    expect(pick?.filename).toContain("Installation Qualification");
+  });
+
   it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {
     const dropped = dropQsrRtmPlaceholderCells(
       {

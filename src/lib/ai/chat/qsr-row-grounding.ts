@@ -693,13 +693,6 @@ function protocolTopicSource(context: string): string {
     .map((line) => line.replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim())
     .filter((line) => line && !isRtmReferenceMetaLine(line));
   if (lines.length === 0) return context;
-  const longest = lines.reduce((best, line) =>
-    line.length >= best.length ? line : best
-  );
-  const tokens = protocolTopicTokens(longest);
-  if (tokens.some((token) => token.length >= 8)) {
-    return longest;
-  }
   return lines.join(" ");
 }
 
@@ -831,6 +824,81 @@ function formatRtmStageCell(pick: RtmReferencePick): string {
   return `${pick.stageLabel} [${pick.filename}, p. ${pick.pageNumber}]`;
 }
 
+function isRtmStageFamily(family: QualDocFamily | null): family is RtmStageFamily {
+  return (
+    family != null &&
+    (QSR_STAGE_RANK as readonly string[]).includes(family)
+  );
+}
+
+function stageRankIndex(family: RtmStageFamily): number {
+  return QSR_STAGE_RANK.indexOf(family);
+}
+
+function firstSectionNumberLine(text: string): string {
+  for (const line of text.split("\n")) {
+    const trimmed = line.replace(/\[[^\]]*\]/g, "").trim();
+    if (SECTION_NUMBER_CELL_RE.test(trimmed)) {
+      return trimmed.replace(/^section\s+/i, "");
+    }
+  }
+  return "";
+}
+
+function liveReferenceFloor(
+  siblings: readonly TableCellEdit[],
+  cols: { stage: number; section: number; remarks: number }
+): { stageFamily: RtmStageFamily | null; sectionText: string } {
+  let stageFamily: RtmStageFamily | null = null;
+  let sectionText = "";
+  for (const sib of siblings) {
+    const live = (sib.expectedText ?? "").trim();
+    if (!live) continue;
+    if (sib.col === cols.stage) {
+      const family = stageFamilyFromCell(live);
+      if (isRtmStageFamily(family)) stageFamily = family;
+    }
+    if (sib.col === cols.section) sectionText = live;
+  }
+  if (!sectionText) {
+    for (const sib of siblings) {
+      if (!sib.rowContext) continue;
+      sectionText = firstSectionNumberLine(sib.rowContext);
+      if (sectionText) break;
+    }
+  }
+  return { stageFamily, sectionText };
+}
+
+function pickWouldReplaceFilledReference(
+  pick: RtmReferencePick,
+  floor: { stageFamily: RtmStageFamily | null; sectionText: string }
+): boolean {
+  if (floor.stageFamily) {
+    return stageRankIndex(pick.family) > stageRankIndex(floor.stageFamily);
+  }
+  if (
+    floor.sectionText &&
+    pick.sectionHeading &&
+    floor.sectionText !== pick.sectionHeading
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function stickyRtmPick(
+  pick: RtmReferencePick | null,
+  siblings: readonly TableCellEdit[],
+  cols: { stage: number; section: number; remarks: number }
+): RtmReferencePick | null {
+  if (!pick) return null;
+  if (pickWouldReplaceFilledReference(pick, liveReferenceFloor(siblings, cols))) {
+    return null;
+  }
+  return pick;
+}
+
 export function pickRtmReference(
   ledger: CitationPageLedger,
   key: string,
@@ -882,6 +950,14 @@ function applyPickToRow(
   const next = [...row];
   const last = Math.max(cols.stage, cols.section, cols.remarks);
   while (next.length <= last) next.push("");
+  const liveStage = stageFamilyFromCell(next[cols.stage]);
+  const floor = {
+    stageFamily: isRtmStageFamily(liveStage) ? liveStage : null,
+    sectionText: (next[cols.section] ?? "").trim(),
+  };
+  if (pick && pickWouldReplaceFilledReference(pick, floor)) {
+    return next;
+  }
   if (!pick) {
     next[cols.stage] = "";
     next[cols.section] = "";
@@ -907,31 +983,36 @@ function rankEditCells(
     list.push(cell);
     byKey.set(key, list);
   }
-  const rewritten = operation.cells.map((cell) => {
+  const rewritten = operation.cells.flatMap((cell) => {
     const key = editCellsGroupKey(cell);
     const siblings = byKey.get(key) ?? [];
     const touchesRef = siblings.some((sib) =>
       isQsrRtmOptionalReferenceColumn(section, sib.col)
     );
-    if (!touchesRef) return cell;
-    if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return cell;
+    if (!touchesRef) return [cell];
+    if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return [cell];
     const context = editCellsSiblingContext(siblings, key);
     const rowKey = key.startsWith("__row:")
       ? rowKeyFromContext(context)
       : key;
-    if (!rowKey) return cell;
-    const pick = pickRtmReference(ledger, rowKey, context);
-    if (!pick) return cell;
+    if (!rowKey) return [cell];
+    const rawPick = pickRtmReference(ledger, rowKey, context);
+    const pick = stickyRtmPick(rawPick, siblings, cols);
+    if (!pick) {
+      // ID-only DQ (or a lower family) must not rewrite a filled IQ Section.
+      if (rawPick) return [];
+      return [cell];
+    }
     if (cell.col === cols.stage) {
-      return { ...cell, insertText: formatRtmStageCell(pick) };
+      return [{ ...cell, insertText: formatRtmStageCell(pick) }];
     }
     if (cell.col === cols.section) {
-      return { ...cell, insertText: pick.sectionHeading ?? "" };
+      return [{ ...cell, insertText: pick.sectionHeading ?? "" }];
     }
     if (cell.col === cols.remarks) {
-      return { ...cell, insertText: pick.remarks };
+      return [{ ...cell, insertText: pick.remarks }];
     }
-    return cell;
+    return [cell];
   });
   const present = new Set(
     rewritten.map((cell) => `${editCellsGroupKey(cell)}:${cell.col}`)
@@ -944,7 +1025,11 @@ function rankEditCells(
     );
     if (!touchesRef) continue;
     const context = editCellsSiblingContext(siblings, key);
-    const pick = pickRtmReference(ledger, key, context);
+    const pick = stickyRtmPick(
+      pickRtmReference(ledger, key, context),
+      siblings,
+      cols
+    );
     if (!pick) continue;
     const template = siblings[0]!;
     const add = (col: number, insertText: string) => {
