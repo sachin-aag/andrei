@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v150-fill-empty-signed-temps");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v151-labeled-column-dates");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -54,6 +54,9 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain("−15 °C is not 15 °C");
     expect(prompt).toContain("−50 ± 10 RPM");
+    expect(prompt).toContain(
+      "When filling a named column, copy the value printed next to that same label"
+    );
     expect(prompt).toContain(
       "Never quote attachment ids, analysis ids, or suggestion-card ids"
     );
