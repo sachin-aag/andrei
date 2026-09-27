@@ -606,6 +606,11 @@ describe("resolvePlanAtTurnStart", () => {
         plan([{ sectionKey: "define", label: "Define", state: "done" }])
       )
     ).toBeNull();
+    expect(
+      persistablePendingPlan(
+        plan([{ sectionKey: "measure", label: "Measure", state: "skipped" }])
+      )
+    ).toBeNull();
   });
 });
 
@@ -773,6 +778,29 @@ describe("plan prompt and metadata", () => {
     expect(view.pending.map((item) => item.sectionKey)).toEqual([
       "elr_qualification",
     ]);
+    expect(view.skipped).toEqual([]);
+  });
+
+  it("keeps skipped sections out of pending and remaining work", () => {
+    const started = plan([
+      { sectionKey: "elr_objective", label: "Objective", state: "done" },
+      {
+        sectionKey: "elr_media_fill",
+        label: "Media Fill / Aseptic Process Simulation",
+        state: "in_progress",
+      },
+      {
+        sectionKey: "elr_qualification",
+        label: "Qualification",
+        state: "skipped",
+      },
+    ]);
+    const view = chatPlanProgressView(started, "equipment_lifecycle_report");
+    expect(view.skipped.map((item) => item.sectionKey)).toEqual([
+      "elr_qualification",
+    ]);
+    expect(view.pending).toEqual([]);
+    expect(view.complete).toBe(false);
   });
 
   it("moves the chip when the current turn drafts the next section", () => {

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v144-mixed-intent-lookup");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v145-living-remaining-work");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -80,6 +80,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("This turn: **Calibration**");
     expect(prompt).toContain("Do not start Monitoring");
     expect(prompt).toContain("not done after edit_table alone");
+    expect(prompt).toContain("## Remaining work this turn");
+    expect(prompt).toContain("update_plan at most once");
+    expect(prompt).toContain("If you are unsure, ask_user once");
   });
 
   it("does not add ELR sibling copy to investigation remaining-section", () => {
@@ -143,6 +146,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "draft Purpose, and what is the batch number?"
     );
+    expect(prompt).toContain("Follow-up question from this turn");
+    expect(prompt).toContain("Do not call update_plan");
   });
 
   it("understands native-script dictation and replies in English", () => {

@@ -121,7 +121,7 @@ flowchart TD
   rules --> plan["TurnPlan once<br/>kind: social / read / write<br/>alsoLookup: follow-up still due"]
   plan --> gate["Load tools from the plan<br/>social: none · read: no writes<br/>write: drafts on · alsoLookup keeps search"]
   gate --> orch["Orchestrator · same 3.7 Flash"]
-  orch --> remain["Remaining work this turn<br/>named section not drafted?<br/>follow-up fact unanswered?"]
+  orch --> remain["Remaining work this turn<br/>draft landed → section done<br/>update_plan once or ask_user"]
   remain --> step["prepareStep advances that set"]
   step --> workers["Workers stay pipelines"]
   workers --> remain
@@ -131,7 +131,12 @@ A mixed turn is still **one** coarse `kind` (write tools stay loaded if
 any write was asked) plus `alsoLookup` when they also asked a follow-up
 ("draft Purpose, and what is the batch number?"). Dropping the follow-up
 because a draft landed is the failure mode. Re-classifying "hi" on every
-`prepareStep` is not.
+`prepareStep` is not. Remaining work is a ledger `prepareStep` mutates
+from tool results, not a todo the orchestrator rewrites every step:
+completions are mechanical, `update_plan` is one-shot (skip queued N/A or
+add empty `draftOrder`), and unsure skip/add goes to `ask_user`. Lookups
+do not grow from retrieval. Cited-hit search stays open only while the
+write is still due; two empty greps always hide.
 
 ## 3. Design rules for this plan
 

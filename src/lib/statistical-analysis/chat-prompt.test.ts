@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v63-mixed-intent-lookup"
+      "analytics-chat-v64-living-lookup-search"
     );
   });
 
@@ -44,6 +44,8 @@ describe("analytics chat prompt", () => {
       alsoLookup: true,
     });
     expect(mixed).toContain("This message is mixed");
+    expect(mixed).toContain("Do not rewrite a remaining-work list");
+    expect(mixed).toContain("two empty greps still stop search");
     // Default (no intent passed) must not warn — it would fight the tool set.
     expect(buildAnalyticsChatSystemPrompt(base)).not.toContain(
       "Tools available this turn"

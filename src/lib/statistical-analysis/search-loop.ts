@@ -2,6 +2,13 @@ import {
   ANALYTICS_WRITE_TOOL_SET,
   type ChatUserIntentKind,
 } from "@/lib/ai/chat/user-intent";
+import { stepsRequestedHiddenWriteTool } from "@/lib/ai/chat/unsupported-tool";
+import {
+  applyStepsToLivingTurnWork,
+  livingWorkKeepsSearchOpen,
+  type LivingTurnWork,
+  type RemainingWorkContext,
+} from "@/lib/ai/chat/remaining-work";
 import {
   DEFAULT_ATTACHMENT_LOCATE_TOOLS,
   DEFAULT_SEARCH_TOOL,
@@ -11,6 +18,7 @@ import {
   contentToolName,
   createSearchGate,
   searchLoopDirective,
+  searchLoopHideKind,
   stepSearchHitCount,
   toolPayload,
   unwrapToolPayload,
@@ -19,7 +27,6 @@ import {
   type SearchLoopDirective,
   type SearchLoopStep,
 } from "@/lib/ai/chat/search-loop";
-import { stepsRequestedHiddenWriteTool } from "@/lib/ai/chat/unsupported-tool";
 
 export const ANALYTICS_SEARCH_LOOP_LIMIT = SEARCH_LOOP_EMPTY_LIMIT;
 
@@ -492,6 +499,12 @@ export function prepareAnalyticsChatStep(input: {
    * gathering data, and a sheet filled on an earlier turn is still filled.
    */
   worksheetHasData?: boolean;
+  /**
+   * Kickoff remaining-work seed. Mixed write+lookup keeps search after a
+   * cited hit only while the write is still due. Two empty greps still hide.
+   */
+  livingWorkSeed?: LivingTurnWork | null;
+  remainingWorkContext?: RemainingWorkContext;
 }): AnalyticsPrepareStep | undefined {
   if (input.intent === "social") {
     return { activeTools: [] };
@@ -510,7 +523,18 @@ export function prepareAnalyticsChatStep(input: {
     hideAfter: input.sheetJob === "edit" ? "row_mutation" : "any",
   });
   const gather = analyticsGatherDirective(input.steps);
-  if (input.searchGate && searchDirective === "read") {
+  const hideKind = searchLoopHideKind(input.steps);
+  const livingWork =
+    input.livingWorkSeed && input.remainingWorkContext
+      ? applyStepsToLivingTurnWork(
+          input.livingWorkSeed,
+          input.steps,
+          input.remainingWorkContext
+        )
+      : null;
+  const keepSearchForLookup =
+    livingWork != null && livingWorkKeepsSearchOpen(livingWork, hideKind);
+  if (input.searchGate && searchDirective === "read" && !keepSearchForLookup) {
     input.searchGate.closed = true;
   }
   const stillGathering = dumpReady === "read_first" || gather === "gather";
@@ -579,7 +603,10 @@ export function prepareAnalyticsChatStep(input: {
     }
     return undefined;
   }
-  const activeTools: string[] = [...READ_AFTER_SEARCH_TOOLS];
+  const activeTools: string[] = [
+    ...(keepSearchForLookup ? [SEARCH_TOOL] : []),
+    ...READ_AFTER_SEARCH_TOOLS,
+  ];
   if (input.canEdit && intent !== "read") {
     activeTools.push(...WRITE_AFTER_SEARCH_TOOLS);
   }

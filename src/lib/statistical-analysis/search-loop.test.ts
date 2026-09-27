@@ -198,6 +198,72 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.toolChoice).toBe("required");
   });
 
+  it("keeps search after a cited hit on mixed write-plus-lookup until a dump lands", () => {
+    const searchGate = createAnalyticsSearchGate();
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 2)],
+      canEdit: true,
+      intent: "write",
+      searchGate,
+      livingWorkSeed: {
+        intent: "write",
+        alsoLookup: true,
+        writeOutstanding: true,
+        items: [
+          {
+            id: "lookup:also",
+            kind: "lookup",
+            key: "also_lookup",
+            label: "Follow-up question from this turn",
+            state: "queued",
+            source: "also_lookup",
+          },
+        ],
+      },
+      remainingWorkContext: {
+        surface: "analytics",
+        emptySectionKeys: [],
+        queueLive: false,
+        writeToolNames: new Set(["write_column", "extract_sheet"]),
+      },
+    });
+    expect(prepared?.activeTools).toContain("search_documents");
+    expect(searchGate.closed).toBe(false);
+  });
+
+  it("still hides analytics search after two empty greps on mixed lookup", () => {
+    const searchGate = createAnalyticsSearchGate();
+    const prepared = prepareAnalyticsChatStep({
+      steps: [step(["search_documents"], 0), step(["search_documents"], 0)],
+      canEdit: true,
+      intent: "write",
+      searchGate,
+      livingWorkSeed: {
+        intent: "write",
+        alsoLookup: true,
+        writeOutstanding: true,
+        items: [
+          {
+            id: "lookup:also",
+            kind: "lookup",
+            key: "also_lookup",
+            label: "Follow-up question from this turn",
+            state: "queued",
+            source: "also_lookup",
+          },
+        ],
+      },
+      remainingWorkContext: {
+        surface: "analytics",
+        emptySectionKeys: [],
+        queueLive: false,
+        writeToolNames: new Set(["write_column"]),
+      },
+    });
+    expect(prepared?.activeTools).not.toContain("search_documents");
+    expect(searchGate.closed).toBe(true);
+  });
+
   it("keeps write tools after many post-search steps — there is no step budget", () => {
     const steps = [
       step(["search_documents"], 2),

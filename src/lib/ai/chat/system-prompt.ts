@@ -17,9 +17,13 @@ import {
   type ChatUserIntentKind,
 } from "@/lib/ai/chat/user-intent";
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
+import {
+  remainingWorkPromptBlock,
+  seedLivingTurnWork,
+} from "@/lib/ai/chat/remaining-work";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v144-mixed-intent-lookup";
+export const CHAT_PROMPT_VERSION = "chat-v145-living-remaining-work";
 
 export type ChatMode = "plan" | "agent";
 
@@ -436,10 +440,21 @@ export function buildChatSystemPrompt(opts: {
   const planBlock = opts.pendingPlan
     ? `\n\n${planPromptBlock(opts.pendingPlan, documentType)}`
     : "";
+  const queueLive =
+    mode === "agent" && Boolean(opts.pendingPlan && !opts.pendingPlan.paused);
+  const remainingBlock = remainingWorkPromptBlock(
+    seedLivingTurnWork({
+      intent: opts.intent ?? "write",
+      alsoLookup: opts.alsoLookup === true,
+      pendingPlan: opts.pendingPlan,
+    }),
+    { queueLive }
+  );
+  const remainingWorkBlock = remainingBlock ? `\n\n${remainingBlock}` : "";
 
   return `${chat.persona}
 
-${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}${planBlock}
+${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}${planBlock}${remainingWorkBlock}
 
 ${LANGUAGE_RULES}
 

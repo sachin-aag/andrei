@@ -86,6 +86,11 @@ import {
 } from "@/lib/ai/chat/user-intent";
 import { resolveChatUserIntent } from "@/lib/ai/chat/resolve-user-intent";
 import {
+  analyticsWriteProgressTools,
+  seedLivingTurnWork,
+  type RemainingWorkContext,
+} from "@/lib/ai/chat/remaining-work";
+import {
   captureChatAssistantFailure,
   captureChatTurnDeadlineAbort,
 } from "@/lib/ai/chat/chat-failure-telemetry";
@@ -252,6 +257,16 @@ async function handleAnalyticsChatPost(
   const focusedSheetId = primaryTaggedSheetId(mentions);
   const canWrite = mode === "agent" && canEdit;
   const searchGate = createAnalyticsSearchGate();
+  const livingWorkSeed = seedLivingTurnWork({
+    intent: userIntent.kind,
+    alsoLookup: userIntent.alsoLookup === true,
+  });
+  const remainingWorkContext: RemainingWorkContext = {
+    surface: "analytics",
+    emptySectionKeys: [],
+    queueLive: false,
+    writeToolNames: analyticsWriteProgressTools(),
+  };
   const system = buildAnalyticsChatSystemPrompt({
     documentNo: report.documentNo,
     status: report.status,
@@ -354,6 +369,8 @@ async function handleAnalyticsChatPost(
           intent: userIntent.kind,
           intentReason: userIntent.reason,
           worksheetHasData,
+          livingWorkSeed,
+          remainingWorkContext,
         });
         const compacted = compactInTurnModelMessages(messages);
         if (!prepared) return { messages: compacted };

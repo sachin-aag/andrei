@@ -30,6 +30,7 @@ export const CHAT_PLAN_ITEM_STATES = [
   "in_progress",
   "done",
   "blocked",
+  "skipped",
 ] as const;
 export type ChatPlanItemState = (typeof CHAT_PLAN_ITEM_STATES)[number];
 
@@ -441,7 +442,9 @@ export function pauseChatPendingPlan(
 export function resumeChatPendingPlan(
   plan: ChatPendingPlan
 ): ChatPendingPlan | null {
-  const remaining = plan.items.filter((item) => item.state !== "done");
+  const remaining = plan.items.filter(
+    (item) => item.state !== "done" && item.state !== "skipped"
+  );
   if (remaining.length === 0) return null;
   const next = remaining.find((item) => item.state !== "blocked") ?? remaining[0];
   return {
@@ -549,7 +552,9 @@ export function shouldAutoContinuePlan(
 
 export function planHasRemainingWork(plan: ChatPendingPlan | null): boolean {
   if (!plan) return false;
-  return plan.items.some((item) => item.state !== "done");
+  return plan.items.some(
+    (item) => item.state !== "done" && item.state !== "skipped"
+  );
 }
 
 export function persistablePendingPlan(
@@ -756,6 +761,7 @@ export type ChatPlanProgressView = {
   done: ChatPlanItem[];
   current: ChatPlanItem[];
   pending: ChatPlanItem[];
+  skipped: ChatPlanItem[];
 };
 
 /**
@@ -776,7 +782,12 @@ export function chatPlanProgressView(
   const done: ChatPlanItem[] = [];
   const current: ChatPlanItem[] = [];
   const pending: ChatPlanItem[] = [];
+  const skipped: ChatPlanItem[] = [];
   for (const item of plan.items) {
+    if (item.state === "skipped") {
+      skipped.push(item);
+      continue;
+    }
     const liveDone =
       drafted.has(item.sectionKey) && !incomplete.has(item.sectionKey);
     if (item.state === "done" || liveDone) {
@@ -799,7 +810,8 @@ export function chatPlanProgressView(
     pending.push(item);
   }
   const total = plan.items.length;
-  const complete = total > 0 && done.length === total;
+  const complete =
+    total > 0 && done.length + skipped.length === total;
   const incompleteFocus = current.find((item) => incomplete.has(item.sectionKey));
   const focus =
     incompleteFocus ??
@@ -823,6 +835,7 @@ export function chatPlanProgressView(
     done,
     current,
     pending,
+    skipped,
   };
 }
 
@@ -869,7 +882,9 @@ export function advancePlanAfterTurn(input: {
     return item;
   });
 
-  const stillOpen = nextItems.filter((item) => item.state !== "done");
+  const stillOpen = nextItems.filter(
+    (item) => item.state !== "done" && item.state !== "skipped"
+  );
   if (stillOpen.length === 0) {
     return {
       plan: { ...input.plan, items: nextItems, paused: false, pauseReason: undefined },

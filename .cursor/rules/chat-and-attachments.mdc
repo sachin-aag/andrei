@@ -216,7 +216,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
   Include `list_suggestions` (open / approved / dismissed AI cards).
   Missing from the allowlist = silent Plan-mode gap. Analytics tools stay
-  off that list. File-set questions (how many attachments, which files in which
+  off that list. Agent-only remaining-section `update_plan` stays off that
+  list too (same as `draft_field`): skip a queued N/A section or add an
+  empty `draftOrder` key, at most once per turn; unsure → `ask_user`. Do
+  not grow lookups from retrieval. File-set questions (how many attachments, which files in which
   folder, PDF vs Word, status, filename/topic) use `list_attachments`
   (`src/lib/attachments/list-catalog.ts`). Copy it into
   `ANALYTICS_DOCUMENT_TOOL_NAMES`. Do not hide it in `searchLoopDirective`.
@@ -269,12 +272,17 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   the client POSTs `Continue the remaining sections.` with `autoContinue`
   (auto-continue user rows stay hidden; one live remaining-section widget
   sits **below** the transcript, above Working… / Resume — collapsed
-  `N of M — current`, expand for done / running / pending). Do not persist
+  `N of M — current`, expand for done / running / pending / skipped). Do not persist
   or show “The assistant stopped before finishing” when that next POST
   will run. Three remaining-section turns on the same in-progress item
   without completing it (`CHAT_PLAN_SAME_SECTION_TURN_LIMIT`, including
   review-only 270s aborts) pause the queue (`same_section_limit`); Resume
-  clears attempts. The N of N chip
+  clears attempts. `prepareStep` mutates a living remaining-work ledger
+  from tool results (drafts complete sections). `update_plan` is a one-shot
+  escape hatch (skip queued N/A or add empty `draftOrder`); hide after one
+  success, two attempts, or `ask_user`. Mixed `alsoLookup` keeps search
+  after a cited hit only while the write is still due; two empty greps
+  still hide. Analytics has no `update_plan`. The N of N chip
   spins only while the turn is running; it shows Paused on Cancel and hides
   when every remaining section is drafted. MJ ELR evidence sections stay
   in progress after `edit_table` until the same turn drafts the assessment

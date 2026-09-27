@@ -41,6 +41,16 @@ export type SearchLoopStep = {
 
 export type SearchLoopDirective = "continue" | "read";
 
+/**
+ * Why search would hide. `cited_or_locate` may stay open on a mixed write
+ * while the draft has not landed; `empty_limit` always hides (grep bound).
+ */
+export type SearchLoopHideKind =
+  | "open"
+  | "keep_open"
+  | "cited_or_locate"
+  | "empty_limit";
+
 export type SearchGate = {
   closed: boolean;
 };
@@ -199,16 +209,16 @@ function stepKeepSearchOpen(step: SearchLoopStep): boolean {
   return false;
 }
 
-export function searchLoopDirective(
+export function searchLoopHideKind(
   steps: readonly SearchLoopStep[],
   options: SearchLoopOptions = {}
-): SearchLoopDirective {
+): SearchLoopHideKind {
   const searchTool = options.searchTool ?? DEFAULT_SEARCH_TOOL;
   const locateTools = options.locateTools ?? DEFAULT_ATTACHMENT_LOCATE_TOOLS;
   const emptyLimit = options.emptyLimit ?? SEARCH_LOOP_EMPTY_LIMIT;
 
   if (steps.some((step) => stepKeepSearchOpen(step))) {
-    return "continue";
+    return "keep_open";
   }
 
   let emptySearches = 0;
@@ -217,13 +227,21 @@ export function searchLoopDirective(
       stepLocatedAttachment(step, locateTools) ||
       stepSearchHitCount(step, searchTool) > 0
     ) {
-      return "read";
+      return "cited_or_locate";
     }
     if (stepCalledSearch(step, searchTool)) {
       emptySearches += 1;
     }
   }
-  return emptySearches >= emptyLimit ? "read" : "continue";
+  return emptySearches >= emptyLimit ? "empty_limit" : "open";
+}
+
+export function searchLoopDirective(
+  steps: readonly SearchLoopStep[],
+  options: SearchLoopOptions = {}
+): SearchLoopDirective {
+  const kind = searchLoopHideKind(steps, options);
+  return kind === "open" || kind === "keep_open" ? "continue" : "read";
 }
 
 function stepReadDocumentPage(step: SearchLoopStep): boolean {

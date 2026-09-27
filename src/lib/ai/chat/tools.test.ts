@@ -5301,3 +5301,76 @@ describe("overclaim gate", () => {
     expect(result.warning).toBeUndefined();
   });
 });
+
+describe("buildChatTools update_plan", () => {
+  it("loads only on a live remaining-section queue and skips greetings", () => {
+    const queued = {
+      work: {
+        intent: "write" as const,
+        alsoLookup: false,
+        writeOutstanding: true,
+        items: [
+          {
+            id: "section:measure",
+            kind: "section" as const,
+            key: "measure",
+            label: "Measure",
+            state: "queued" as const,
+            source: "pending_plan" as const,
+          },
+        ],
+      },
+      context: {
+        surface: "document" as const,
+        documentType: "investigation_report" as const,
+        emptySectionKeys: ["measure"],
+        queueLive: true,
+        writeToolNames: new Set(["draft_field"]),
+      },
+    };
+    const withQueue = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      remainingWork: queued,
+    });
+    expect(withQueue.update_plan).toBeDefined();
+    expect(
+      accepts(withQueue, "update_plan", {
+        action: "skip",
+        sectionKey: "measure",
+        reason: "No measure data in the files",
+      })
+    ).toBe(true);
+    expect(
+      accepts(withQueue, "update_plan", {
+        action: "complete_lookup",
+        sectionKey: "measure",
+        reason: "done",
+      })
+    ).toBe(false);
+
+    expect(
+      buildChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        remainingWork: {
+          ...queued,
+          context: { ...queued.context, queueLive: false },
+        },
+      }).update_plan
+    ).toBeUndefined();
+    expect(
+      buildChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        remainingWork: {
+          work: { ...queued.work, intent: "social" },
+          context: queued.context,
+        },
+      }).update_plan
+    ).toBeUndefined();
+    expect(
+      buildChatTools({ reportId: "report-1", canEdit: true }).update_plan
+    ).toBeUndefined();
+  });
+});

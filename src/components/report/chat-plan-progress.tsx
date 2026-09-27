@@ -75,6 +75,11 @@ export function ChatPlanProgress({
               items={view.pending}
               icon="pending"
             />
+            <PlanProgressGroup
+              label="Skipped"
+              items={view.skipped}
+              icon="pending"
+            />
           </div>
         ) : null}
       </div>

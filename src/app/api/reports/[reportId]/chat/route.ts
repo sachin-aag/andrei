@@ -82,6 +82,16 @@ import {
   type ChatPendingPlan,
 } from "@/lib/ai/chat/pending-plan";
 import {
+  applyRemainingWorkEvents,
+  cloneLivingTurnWork,
+  documentWriteProgressTools,
+  emptyDraftOrderKeys,
+  mergeLivingWorkIntoPendingPlan,
+  remainingWorkEventsFromParts,
+  seedLivingTurnWork,
+  type RemainingWorkContext,
+} from "@/lib/ai/chat/remaining-work";
+import {
   clearAssistantTurn,
   drainSseStream,
   isAssistantTurnCancelRequested,
@@ -563,6 +573,32 @@ async function handleChatPost(
     pendingPlan,
   });
 
+  const queueLive =
+    mode === "agent" &&
+    userIntent.kind === "write" &&
+    Boolean(pendingPlan && !pendingPlan.paused);
+  const remainingWorkContext: RemainingWorkContext = {
+    surface: "document",
+    documentType: report.documentType,
+    emptySectionKeys: emptyDraftOrderKeys(
+      report.documentType,
+      mergedSections
+    ),
+    queueLive,
+    writeToolNames: documentWriteProgressTools(),
+  };
+  const livingWorkSeed = seedLivingTurnWork({
+    intent: userIntent.kind,
+    alsoLookup: userIntent.alsoLookup === true,
+    pendingPlan,
+  });
+  const remainingWork = queueLive
+    ? {
+        work: cloneLivingTurnWork(livingWorkSeed),
+        context: remainingWorkContext,
+      }
+    : undefined;
+
   const searchGate = createSearchGate();
   const allTools = buildChatTools({
     reportId,
@@ -596,6 +632,7 @@ async function handleChatPost(
         : null,
     reportSections: mergedSections,
     userIntentKind: userIntent.kind,
+    remainingWork,
   });
   const scopedTools: ToolSet =
     mode === "plan"
@@ -732,6 +769,8 @@ async function handleChatPost(
           forceFinishReview:
             reviewContinueBudgetMs(remainingChatAbortMs(turnStartedAtMs)) === 0,
           registeredWriteTools,
+          livingWorkSeed,
+          remainingWorkContext,
         });
         return {
           ...decision,
@@ -901,10 +940,19 @@ async function handleChatPost(
         planContinuing: true,
       });
       const live = livePlanProgressFromParts(closed.parts);
+      const liveWork = applyRemainingWorkEvents(
+        livingWorkSeed,
+        remainingWorkEventsFromParts(closed.parts),
+        remainingWorkContext
+      );
+      const planForAdvance = mergeLivingWorkIntoPendingPlan(
+        pendingPlan,
+        liveWork
+      );
       const advanced =
-        mode === "agent" && pendingPlan && !pendingPlan.paused
+        mode === "agent" && planForAdvance && !planForAdvance.paused
           ? advancePlanAfterTurn({
-              plan: pendingPlan,
+              plan: planForAdvance,
               documentType: report.documentType,
               draftedSectionKeys: live.draftedSectionKeys,
               parts: closed.parts,

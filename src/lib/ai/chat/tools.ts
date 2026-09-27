@@ -254,6 +254,14 @@ import {
 } from "@/lib/ai/chat/document-review";
 import type { SearchGate } from "@/lib/ai/chat/search-loop";
 import {
+  applyUpdatePlanAction,
+  isUpdatePlanActionName,
+  UPDATE_PLAN_ACTIONS,
+  UPDATE_PLAN_TOOL,
+  type LivingTurnWork,
+  type RemainingWorkContext,
+} from "@/lib/ai/chat/remaining-work";
+import {
   inventoryReadyIdsForObjective,
   isElrInventoryReviewObjective,
 } from "@/lib/ai/chat/inventory-review-schema";
@@ -1260,6 +1268,14 @@ export function buildChatTools(opts: {
    * hand a write turn back to the write tool instead of ending on findings.
    */
   userIntentKind?: ChatUserIntentKind;
+  /**
+   * Live remaining-section queue. When queueLive, loads update_plan (at most
+   * once). Omit on Analytics embeddings and when there is no queue.
+   */
+  remainingWork?: {
+    work: LivingTurnWork;
+    context: RemainingWorkContext;
+  };
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -4256,6 +4272,67 @@ export function buildChatTools(opts: {
       }),
     }),
   };
+
+  const remainingWork = opts.remainingWork;
+  if (
+    remainingWork &&
+    remainingWork.context.queueLive &&
+    remainingWork.work.intent !== "social"
+  ) {
+    const actionEnum = UPDATE_PLAN_ACTIONS as unknown as [
+      (typeof UPDATE_PLAN_ACTIONS)[number],
+      ...(typeof UPDATE_PLAN_ACTIONS)[number][],
+    ];
+    tools[UPDATE_PLAN_TOOL] = tool({
+      description:
+        "Revise the remaining-section queue once this turn. skip a queued section the files show is N/A, or add_section an empty draftOrder key. Do not mark drafts done (automatic). Do not add lookups. If unsure, ask_user once instead.",
+      inputSchema: z.object({
+        action: z
+          .enum(actionEnum)
+          .describe("skip a queued section, or add_section an empty one."),
+        sectionKey: z
+          .string()
+          .trim()
+          .min(1)
+          .max(80)
+          .describe("Section key, e.g. measure or elr_media_fill."),
+        reason: z
+          .string()
+          .trim()
+          .min(1)
+          .max(200)
+          .describe("Why this change is required. Unsure → ask_user instead."),
+      }),
+      execute: async ({ action, sectionKey, reason }) => {
+        if (!isUpdatePlanActionName(action)) {
+          return {
+            status: "rejected" as const,
+            reason: "unknown_action" as const,
+            message: "Unsupported update_plan action.",
+          };
+        }
+        const result = applyUpdatePlanAction(
+          remainingWork.work,
+          { action, sectionKey, reason },
+          remainingWork.context
+        );
+        if (result.status === "updated") {
+          remainingWork.work = result.work;
+          return {
+            status: "updated" as const,
+            action: result.action,
+            sectionKey: result.item.key,
+            label: result.item.label,
+          };
+        }
+        return {
+          status: "rejected" as const,
+          reason: result.reason,
+          message: result.message,
+        };
+      },
+    });
+  }
 
   if (analyzeInScope && canEdit) {
     const methodEnum = ANALYZE_METHODS as unknown as [

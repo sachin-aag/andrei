@@ -137,6 +137,144 @@ describe("prepareReportChatStep (characterization)", () => {
     expect(searchGate.closed).toBe(true);
   });
 
+  it("keeps search after a cited hit on mixed write-plus-lookup until a draft lands", () => {
+    const searchGate = createSearchGate();
+    const decision = prepareReportChatStep(
+      baseInput({
+        steps: [searchStep(3)],
+        searchGate,
+        livingWorkSeed: {
+          intent: "write",
+          alsoLookup: true,
+          writeOutstanding: true,
+          items: [
+            {
+              id: "lookup:also",
+              kind: "lookup",
+              key: "also_lookup",
+              label: "Follow-up question from this turn",
+              state: "queued",
+              source: "also_lookup",
+            },
+          ],
+        },
+        remainingWorkContext: {
+          surface: "document",
+          documentType: "investigation_report",
+          emptySectionKeys: ["define"],
+          queueLive: false,
+          writeToolNames: new Set(["draft_field"]),
+        },
+      })
+    );
+    expect(decision.activeTools).toContain("search_documents");
+    expect(searchGate.closed).toBe(false);
+  });
+
+  it("hides search after two empty greps even when a follow-up is due", () => {
+    const searchGate = createSearchGate();
+    const decision = prepareReportChatStep(
+      baseInput({
+        steps: [searchStep(0), searchStep(0)],
+        searchGate,
+        livingWorkSeed: {
+          intent: "write",
+          alsoLookup: true,
+          writeOutstanding: true,
+          items: [
+            {
+              id: "lookup:also",
+              kind: "lookup",
+              key: "also_lookup",
+              label: "Follow-up question from this turn",
+              state: "queued",
+              source: "also_lookup",
+            },
+          ],
+        },
+        remainingWorkContext: {
+          surface: "document",
+          documentType: "investigation_report",
+          emptySectionKeys: ["define"],
+          queueLive: false,
+          writeToolNames: new Set(["draft_field"]),
+        },
+      })
+    );
+    expect(decision.activeTools).not.toContain("search_documents");
+    expect(searchGate.closed).toBe(true);
+  });
+
+  it("hides update_plan after one successful skip so the queue cannot loop", () => {
+    const decision = prepareReportChatStep(
+      baseInput({
+        advertisedTools: [...ADVERTISED, "update_plan"],
+        remainingWorkContext: {
+          surface: "document",
+          documentType: "investigation_report",
+          emptySectionKeys: ["define", "measure"],
+          queueLive: true,
+          writeToolNames: new Set(["draft_field"]),
+        },
+        livingWorkSeed: {
+          intent: "write",
+          alsoLookup: false,
+          writeOutstanding: true,
+          items: [
+            {
+              id: "section:measure",
+              kind: "section",
+              key: "measure",
+              label: "Measure",
+              state: "queued",
+              source: "pending_plan",
+            },
+          ],
+        },
+        steps: [
+          {
+            toolCalls: [
+              {
+                toolName: "update_plan",
+                toolCallId: "u1",
+                input: {
+                  action: "skip",
+                  sectionKey: "measure",
+                  reason: "N/A",
+                },
+              },
+            ],
+            toolResults: [
+              {
+                toolName: "update_plan",
+                toolCallId: "u1",
+                output: { status: "updated", action: "skip" },
+              },
+            ],
+          },
+        ],
+      })
+    );
+    expect(decision.activeTools).not.toContain("update_plan");
+  });
+
+  it("hides update_plan while a document review is running", () => {
+    const decision = prepareReportChatStep(
+      baseInput({
+        advertisedTools: [...ADVERTISED, "update_plan"],
+        reviewPhase: "in_progress",
+        remainingWorkContext: {
+          surface: "document",
+          documentType: "investigation_report",
+          emptySectionKeys: ["define"],
+          queueLive: true,
+          writeToolNames: new Set(["draft_field"]),
+        },
+      })
+    );
+    expect(decision.activeTools).not.toContain("update_plan");
+  });
+
   it("hides ask_user after a grep until a page is read", () => {
     const decision = prepareReportChatStep(
       baseInput({ steps: [searchStep(0)] })

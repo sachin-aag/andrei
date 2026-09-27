@@ -10,11 +10,20 @@ import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import {
   documentAskUserDirective,
   searchLoopDirective,
+  searchLoopHideKind,
   type SearchGate,
   type SearchLoopStep,
   withoutAskUserTool,
   withoutSearchTool,
 } from "@/lib/ai/chat/search-loop";
+import {
+  applyStepsToLivingTurnWork,
+  livingWorkKeepsSearchOpen,
+  updatePlanLoopDirective,
+  UPDATE_PLAN_TOOL,
+  type LivingTurnWork,
+  type RemainingWorkContext,
+} from "@/lib/ai/chat/remaining-work";
 import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import {
   tableEditLoopDirective,
@@ -73,6 +82,12 @@ export type PrepareReportChatStepInput = {
    * were stripped from the ToolSet (Ask / social).
    */
   registeredWriteTools?: readonly string[];
+  /**
+   * Kickoff remaining-work seed. prepareStep replays tool results onto it.
+   * Social turns ignore this. Omit to keep characterization tests unchanged.
+   */
+  livingWorkSeed?: LivingTurnWork | null;
+  remainingWorkContext?: RemainingWorkContext;
 };
 
 function asTableEditSteps(
@@ -262,19 +277,37 @@ export function prepareReportChatStep(
   const reviewActive =
     input.reviewPhase === "in_progress" ||
     input.reviewPhase === "ready_to_finish";
+  const hideKind = searchLoopHideKind(input.steps);
   const searchDirective = searchLoopDirective(input.steps);
-  if (searchDirective === "read" && input.searchGate) {
+  const livingWork =
+    input.livingWorkSeed && input.remainingWorkContext
+      ? applyStepsToLivingTurnWork(
+          input.livingWorkSeed,
+          input.steps,
+          input.remainingWorkContext
+        )
+      : null;
+  const keepSearchForLookup =
+    livingWork != null && livingWorkKeepsSearchOpen(livingWork, hideKind);
+  if (searchDirective === "read" && input.searchGate && !keepSearchForLookup) {
     input.searchGate.closed = true;
   }
   const hideAskUser =
     !reviewActive && documentAskUserDirective(input.steps) === "hide";
+  const hideUpdatePlan =
+    reviewActive ||
+    input.remainingWorkContext?.queueLive !== true ||
+    updatePlanLoopDirective(input.steps) === "hide";
   const applyLoopHides = (tools: readonly string[]): string[] => {
     let next = [...tools];
-    if (!reviewActive && searchDirective === "read") {
+    if (!reviewActive && searchDirective === "read" && !keepSearchForLookup) {
       next = withoutSearchTool(next);
     }
     if (hideAskUser) {
       next = withoutAskUserTool(next);
+    }
+    if (hideUpdatePlan) {
+      next = next.filter((name) => name !== UPDATE_PLAN_TOOL);
     }
     return next;
   };

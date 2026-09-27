@@ -214,11 +214,18 @@ also stays in progress until every annexure Sr. row is copied, including the
 continuation page of a Page N of M split; ELR Attachments (`elr_attachments`)
 is rebuilt at Word export from the live file list and is not a remaining-section
 or Agent draft target; investigation
-and DV queues are unchanged. After persist the
+and DV queues are unchanged. `prepareStep` holds a living remaining-work
+ledger (`remaining-work.ts`): landed drafts complete sections automatically.
+`update_plan` may skip a queued N/A section or add an empty `draftOrder` key
+**once** per turn (two attempts max); if unsure, `ask_user` instead of
+rewriting the queue. Lookups are kickoff `alsoLookup` only — do not grow
+them from retrieval. Mixed cited-hit search stays open only while the write
+is still due; two empty greps still hide. Not on the Plan allowlist.
+Analytics has no `update_plan`. After persist the
 client POSTs `Continue the remaining sections.` with `autoContinue` (one
 live remaining-section widget **below the transcript**, not a user bubble and
 not in the auto-continue slot; collapsed is `N of M —
-current`, expand lists done / running / pending). Do not persist or show
+current`, expand lists done / running / pending / skipped). Do not persist or show
 “The assistant stopped before finishing” when that next POST will run.
 Three remaining-section turns on the same in-progress item without
 completing it (`CHAT_PLAN_SAME_SECTION_TURN_LIMIT`, including review-only

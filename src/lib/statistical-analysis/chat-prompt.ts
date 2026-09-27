@@ -7,6 +7,10 @@ import {
   intentToolAvailabilityRule,
   type ChatUserIntentKind,
 } from "@/lib/ai/chat/user-intent";
+import {
+  remainingWorkPromptBlock,
+  seedLivingTurnWork,
+} from "@/lib/ai/chat/remaining-work";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import {
   isAnovaAnalysis,
@@ -28,7 +32,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v63-mixed-intent-lookup";
+  "analytics-chat-v64-living-lookup-search";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -246,6 +250,13 @@ export function buildAnalyticsChatSystemPrompt(input: {
       : "This report is read-only for you: search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, plot_boxplot, plot_histogram, or plot_measurements.";
 
   const mentionBlock = input.mentionBlock?.trim();
+  const remainingBlock = remainingWorkPromptBlock(
+    seedLivingTurnWork({
+      intent: input.intent ?? "write",
+      alsoLookup: input.alsoLookup === true,
+    }),
+    { queueLive: false, surface: "analytics" }
+  );
   return [
     "You are Andrei's Statistical Analysis assistant for this report.",
     LANGUAGE_RULES,
@@ -256,6 +267,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
           alsoLookup: input.alsoLookup,
         })
       : null,
+    remainingBlock || null,
     modeRules(input.mode, input.canEdit),
     `Report ${quotePromptMetadata(sanitizePromptMetadata(input.documentNo, 80) || "untitled")} · status ${input.status}.`,
     mentionBlock || null,
