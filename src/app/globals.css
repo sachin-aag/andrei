@@ -249,7 +249,10 @@ html[data-customer="3xper"] {
   background-size: 200% auto;
   background-clip: text;
   -webkit-background-clip: text;
-  color: transparent;
+  /* Keep `color` so currentColor in the gradient stays the muted/warn
+     tone. `color: transparent` made the whole label (Thinking…) vanish
+     and left a lone chevron. */
+  -webkit-text-fill-color: transparent;
   animation: chat-activity-glimmer 2.2s linear infinite;
 }
 
@@ -258,6 +261,7 @@ html[data-customer="3xper"] {
     animation: none;
     background-image: none;
     color: inherit;
+    -webkit-text-fill-color: inherit;
     -webkit-background-clip: unset;
     background-clip: unset;
   }

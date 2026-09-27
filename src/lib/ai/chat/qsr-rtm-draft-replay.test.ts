@@ -625,6 +625,263 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(rows.flat().join(" ")).not.toContain("<number>");
   });
 
+  it("blocks unsigned 15 °C on operating-range Minimum when the URS shows −15 °C", async () => {
+    mockSection("qsr_operating_range");
+    const tools = buildTools({ section: "qsr_operating_range" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript:
+        "URS-3 Shell Operating temperature −15 °C to 130 °C",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_operating_range",
+        targetField: "table",
+        reasoning: "Fill temperature minimum from the URS.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 4, col: 3, rowKey: "4.", insertText: "15 °C" }],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "unsupported_facts" });
+    expect(
+      (result as { unsupported?: Array<{ text: string }> }).unsupported?.map(
+        (fact) => fact.text
+      )
+    ).toEqual(expect.arrayContaining(["15 °C"]));
+    expect(
+      inserted.some((row) => {
+        const parsed = parseAiFixCommentContent(String(row.content ?? ""));
+        return parsed.tableOperation != null;
+      })
+    ).toBe(false);
+  });
+
+  it("proposes −15 °C on operating-range Minimum from the URS", async () => {
+    mockSection("qsr_operating_range");
+    const tools = buildTools({ section: "qsr_operating_range" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript:
+        "URS-3 Shell Operating temperature −15 °C to 130 °C",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_operating_range",
+        targetField: "table",
+        reasoning: "Fill temperature minimum from the URS.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 4, col: 3, rowKey: "4.", insertText: "−15 °C" }],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    expect(cells.map((cell) => cell.insertText).join(" ")).toContain("−15 °C");
+  });
+
+  it("blocks unsigned 50+-10 RPM on URS-10 when the URS shows −50 ± 10 RPM", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 7,
+      transcript: "URS-10 RPM requirement –50 ± 10 RPM",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "7",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 7 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-10 RPM from the URS.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-10", "RPM requirement", "50+-10 RPM", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "unsupported_facts" });
+    expect(
+      (result as { unsupported?: Array<{ text: string }> }).unsupported?.map(
+        (fact) => fact.text
+      ).join(" ")
+    ).toMatch(/50/);
+    expect(
+      inserted.some((row) => {
+        const parsed = parseAiFixCommentContent(String(row.content ?? ""));
+        return parsed.tableOperation != null;
+      })
+    ).toBe(false);
+  });
+
+  it("proposes −50 ± 10 RPM on URS-10 from the URS", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 7,
+      transcript: "URS-10 RPM requirement –50 ± 10 RPM",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "7",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 7 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-10 RPM from the URS.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-10", "RPM requirement", "–50 ± 10 RPM", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toMatch(/[-−–]50/);
+    expect(rows.flat().join(" ")).toMatch(/10\s*RPM/i);
+  });
+
+  it("blocks unsigned 20 °C on URS-37 when the URS shows −20 °C to 150 °C", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 8,
+      transcript:
+        "URS-37 Temperature To measure the temperature - 20 °C to 150 °C",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "8",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 8 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-37 temperature from the URS.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-37", "Temperature", "20 °C", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "unsupported_facts" });
+    expect(
+      (result as { unsupported?: Array<{ text: string }> }).unsupported?.map(
+        (fact) => fact.text
+      )
+    ).toEqual(expect.arrayContaining(["20 °C"]));
+    expect(
+      inserted.some((row) => {
+        const parsed = parseAiFixCommentContent(String(row.content ?? ""));
+        return parsed.tableOperation != null;
+      })
+    ).toBe(false);
+  });
+
+  it("proposes −20 °C to 150 °C on URS-37 from the URS", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 8,
+      transcript:
+        "URS-37 Temperature To measure the temperature - 20 °C to 150 °C",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "8",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 8 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-37 temperature from the URS.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-37", "Temperature", "-20 °C to 150 °C", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toMatch(/-20/);
+    expect(rows.flat().join(" ")).toContain("150");
+  });
+
   it("still blocks URS-37's temperature on the URS-5 row after a same-page repair search", async () => {
     mockSection("qsr_rtm_process");
     searchReportDocumentsManyMock.mockResolvedValue([

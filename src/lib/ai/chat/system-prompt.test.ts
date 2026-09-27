@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v149-fill-empty-protocol-families");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v150-fill-empty-signed-temps");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -52,6 +52,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "Do not tell them to accept a card and type 3.5"
     );
+    expect(prompt).toContain("−15 °C is not 15 °C");
+    expect(prompt).toContain("−50 ± 10 RPM");
     expect(prompt).toContain(
       "Never quote attachment ids, analysis ids, or suggestion-card ids"
     );

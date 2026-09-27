@@ -93,8 +93,10 @@ export function ChatActivityLine({
   const active = node.pending;
 
   const label =
-    node.kind === "thought" && node.pending && elapsed > 0
-      ? `Thought ${elapsed}s`
+    node.kind === "thought" && node.pending
+      ? elapsed > 0
+        ? `Thinking… ${elapsed}s`
+        : "Thinking…"
       : node.label;
 
   return (
@@ -118,7 +120,9 @@ export function ChatActivityLine({
         <span
           className={cn(
             "min-w-0 flex-1",
-            node.wrapLabel ? "whitespace-normal break-words" : "truncate",
+            node.wrapLabel || active
+              ? "whitespace-normal break-words"
+              : "truncate",
             active && "chat-activity-glimmer"
           )}
         >
