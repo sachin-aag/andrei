@@ -802,6 +802,44 @@ function protocolPassWindow(
   return null;
 }
 
+function protocolNaWindow(
+  ledger: CitationPageLedger,
+  key: string,
+  family: QualDocFamily,
+  context: string
+): string | null {
+  for (const page of ledger.recordedPages()) {
+    if (!filenameMatchesFamily(page.filename, family)) continue;
+    const window = pageLevelTokenAroundKey(page.quote, key);
+    if (window && NOT_APPLICABLE_RE.test(window)) return window;
+    const topic = protocolTopicBody(page.quote, context);
+    if (topic && NOT_APPLICABLE_RE.test(topic)) return topic;
+  }
+  return null;
+}
+
+function rtmRemarksForPick(
+  body: string | null,
+  ledger: CitationPageLedger,
+  key: string,
+  family: QualDocFamily,
+  context: string
+): string {
+  if (
+    (body && NOT_APPLICABLE_RE.test(body)) ||
+    protocolNaWindow(ledger, key, family, context)
+  ) {
+    return "NA";
+  }
+  if (
+    (body && hasProtocolPassToken(body)) ||
+    protocolPassWindow(ledger, key, family, context)
+  ) {
+    return "Complies";
+  }
+  return "";
+}
+
 function protocolMentionsKey(
   ledger: CitationPageLedger,
   key: string,
@@ -822,7 +860,9 @@ function protocolSectionHeading(body: string): string | null {
   const titled = stripped.match(/(?:^|[\s])(\d+\.\d+)\.?\s+[A-Z]/);
   if (titled?.[1]) return titled[1];
   const labeled = stripped.match(/\bsection\s+(\d+(?:\.\d+)*)/i);
-  return labeled?.[1] ?? null;
+  if (labeled?.[1]) return labeled[1];
+  const titledInt = stripped.match(/(?:^|[\s])(\d+)\.\s+[A-Z]/);
+  return titledInt?.[1] ?? null;
 }
 
 function matchingProtocolPages(
@@ -945,11 +985,7 @@ export function pickRtmReference(
       filename: passPage.filename,
       pageNumber: passPage.pageNumber,
       sectionHeading: body ? protocolSectionHeading(body) : null,
-      remarks:
-        (body && hasProtocolPassToken(body)) ||
-        protocolPassWindow(ledger, key, family, context)
-          ? "Complies"
-          : "",
+      remarks: rtmRemarksForPick(body, ledger, key, family, context),
     };
   }
   return null;
@@ -1014,7 +1050,12 @@ function rankEditCells(
     );
     if (!touchesRef) return [cell];
     if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return [cell];
-    if (optionalRefExpectedFilled(cell)) return [];
+    if (optionalRefExpectedFilled(cell)) {
+      // Explicit clear of a live Stage / Section / Remarks cell. Fill-empty
+      // mixed batches still skip a non-empty rewrite of a filled sibling.
+      if (!cell.insertText.trim()) return [cell];
+      return [];
+    }
     const context = editCellsSiblingContext(siblings, key);
     const rowKey = key.startsWith("__row:")
       ? rowKeyFromContext(context)
@@ -1327,6 +1368,21 @@ export function extraQsrUnsupported(input: {
   );
   add(qsrDescriptionUnsupported(input.cell, input.context, input.ledger));
   return out;
+}
+
+/** Empty Stage / Section / Remarks `edit_cells` — a clear, not a URS copy. */
+export function isClearOnlyOptionalRtmEdit(
+  operation: TableOperation,
+  section?: string | null
+): boolean {
+  if (operation.kind !== "edit_cells") return false;
+  if (!isQsrRtmSection(section)) return false;
+  if (operation.cells.length === 0) return false;
+  return operation.cells.every(
+    (cell) =>
+      isQsrRtmOptionalReferenceColumn(section, cell.col) &&
+      !cell.insertText.trim()
+  );
 }
 
 export function qsrFailClosedReason(input: {

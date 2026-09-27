@@ -180,6 +180,44 @@ describe("prepareReportChatStep (characterization)", () => {
     ).toEqual({ activeTools: [] });
   });
 
+  it("does not unlock edit_table after the table-edit finish remap", () => {
+    const failed = (id: string): SearchLoopStep => ({
+      toolCalls: [{ toolName: "edit_table", toolCallId: id }],
+      toolResults: [
+        {
+          toolName: "edit_table",
+          toolCallId: id,
+          output: { status: "unsupported_facts" },
+        },
+      ],
+    });
+    const remapped: SearchLoopStep = {
+      toolCalls: [
+        {
+          toolName: "unsupported_tool",
+          toolCallId: "u1",
+          input: { requestedTool: "edit_table" },
+        },
+      ],
+      toolResults: [
+        {
+          toolName: "unsupported_tool",
+          toolCallId: "u1",
+          output: { status: "unavailable", requestedTool: "edit_table" },
+        },
+      ],
+    };
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          userIntentKind: "write",
+          registeredWriteTools: ["edit_table", "draft_field", "propose_edit"],
+          steps: [failed("a"), failed("b"), remapped],
+        })
+      )
+    ).toEqual({ activeTools: [] });
+  });
+
   it("does not force list_attachments unless the E2 flag is on", () => {
     const steps: SearchLoopStep[] = [
       {
