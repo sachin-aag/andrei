@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v143-qsr-protocol-topic");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v144-qsr-stage-rank");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -37,6 +37,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "leave those three cells empty for that row"
     );
+    expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
     expect(prompt).toContain(
       "Do not tell them to accept a card and type 3.5"
     );
