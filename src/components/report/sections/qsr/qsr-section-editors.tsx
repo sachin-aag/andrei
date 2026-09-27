@@ -16,18 +16,6 @@ import {
   type QsrSectionKey,
 } from "@/lib/document-types/qsr/sections";
 
-const TABLE_DESCRIPTION =
-  "Keep the header columns unchanged. Select cells and Merge for a group heading, or put only bold text in the first cell.";
-
-function sectionDescription(section: QsrSectionKey): string | undefined {
-  if (section === "qsr_qualification_documents") {
-    return "Select the protocol and report cells and Merge, or leave Document Name blank on the report row so Word still merges them.";
-  }
-  return isQsrTableSectionKey(section) && section !== "qsr_operating_range"
-    ? TABLE_DESCRIPTION
-    : undefined;
-}
-
 function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
   const { update } = useGenericReportSection<QsrSectionContent>(section);
   const { status, lastSavedAt, value, flushSave } =
@@ -47,7 +35,6 @@ function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
   return (
     <SectionShell
       title={QSR_SECTION_LABELS[section]}
-      description={sectionDescription(section)}
       status={status}
       lastSavedAt={lastSavedAt}
       section={section}
