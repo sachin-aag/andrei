@@ -332,8 +332,8 @@ export function buildTableOperationPreviewDoc(
       if (!originalTable) return applied;
       const originalRows = tableRows(originalTable);
       const resolved = resolveEditCells(originalRows, operation.cells);
-      const cells = resolved.ok ? resolved.cells : operation.cells;
-      for (const cell of cells) {
+      if (!resolved.ok) return applied;
+      for (const cell of resolved.cells) {
         const node = rowCells(originalRows[cell.row] ?? {})[cell.col];
         if (node) paintCellEditPreview(node, cell, attrs);
       }
