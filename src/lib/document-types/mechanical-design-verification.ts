@@ -11,6 +11,7 @@ import {
 } from "@/lib/document-types/convergent/deterministic-checks";
 import { placeRequirementsVerifiedFootnotes, placeUutTableFootnotes } from "@/lib/export/mechanical-table-footnotes";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { DV_RETRIEVAL_GUIDANCE } from "./design-verification/chat-retrieval-guidance";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   checkResultsFootnotePlacement,
@@ -740,6 +741,7 @@ The report is graded against fixed quality criteria (a traffic-light check). You
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change (red delete / green insert) the engineer accepts or rejects.`,
     draftingGuidance: MECHANICAL_RECIPE_DRAFTING_GUIDANCE,
+    retrievalGuidance: DV_RETRIEVAL_GUIDANCE,
     draftOrder: [
       "purpose",
       "scope",

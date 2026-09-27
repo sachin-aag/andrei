@@ -17,4 +17,16 @@ Tables (keep the header row and column order exactly as seeded):
 - Operating Range: the form header is S.No, Parameter, Details (Details spans two columns). Pressure, Vacuum, and Agitator RPM keep that span. Temperature uses two rows — Minimum, then Maximum — under one S.No and Parameter, with the value in Details. Do not add a Range column. Copy numeric ranges from the URS (Full Vacuum to 3.5 kg/cm², −50 ± 10 RPM, −15 °C minimum). Keep the sign on a negative setpoint; do not write 15 when the URS shows −15, and do not write 50±10 or ~50 when the URS shows −50 ± 10 RPM. Do not write VFD compatible in place of an RPM number; leave Details empty when the URS page is not cited.
 - Other Details: bold label then value, e.g. "Agitator Type: Cryo-Fix Anchor".
 
+Editing RTM rows in chat:
+- Never copy a neighbour URS-ID window onto another row (do not copy URS-37's range onto URS-5). Facts on the URS cover or outside any URS-ID window (capacity, MOC) may be copied onto the matching row.
+- Call list_attachments and search the attached DQ / IQ / OQ / PQ PDFs in the same turn as the URS rows, grepping each row's Parameters.
+- When they asked to fill empty cells, read_section first, identify the empty cells, and edit only those — do not rewrite a filled cell in the same batch, including a filled Reference – Section. If you do change a filled Section, still write the highest family only.
+- Never write \`<remarks>\`, \`<qualification stage>\`, or \`<section>\` as RTM cell text. If a tool returns those leftovers, search the IQ / OQ / PQ / DQ protocol bodies for that row's Parameters before calling edit_table again. Do not list Proposed Updates that still show them.
+
 Never invent document numbers, revisions, dates, volumes or ranges — copy them from a cited attachment page or leave the cell empty.`;
+
+export const QSR_RETRIEVAL_GUIDANCE = {
+  adaptive: `- Filling RTM Stage / Section / Remarks: one URS ID is not one grep. The first search_documents queries[] must include Installation Qualification, Operational Qualification, Performance Qualification, and Design Qualification plus that row's Parameters from read_section, not only the URS ID. An IQ protocol hit is not enough while PQ or OQ have not been queried.`,
+  comprehensive: `- For Qualification Summary Report Table 3 (Qualification Documents) omit attachmentIds — every attached URS / DS / DQ / IQ / OQ / PQ file is evidence. Table 3 reads cover pages for document number, revision, status, and Protocol No. / Report No.; do not walk every protocol body page.
+- For RTM tables and Operating Range, omit attachmentIds — the server keeps the URS (not DQ/IQ/OQ/PQ bodies). A 12-page URS is a 12-page walk.`,
+} as const;

@@ -8,7 +8,10 @@ import { QUANTITY_MATH_CRITERION_KEY } from "@/lib/math/quantity-math";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import { elrChatContextIdentity } from "./elr/chat-identity";
-import { ELR_DRAFTING_GUIDANCE } from "./elr/drafting-guidance";
+import {
+  ELR_DRAFTING_GUIDANCE,
+  ELR_RETRIEVAL_GUIDANCE,
+} from "./elr/drafting-guidance";
 import {
   checkAccessControlPeriodCompleteness,
   checkAccessControlRoleMarks,
@@ -798,6 +801,7 @@ Most of your work is retrieval and tabulation: find the records for this equipme
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change the engineer accepts or rejects.`,
     draftingGuidance: ELR_DRAFTING_GUIDANCE,
+    retrievalGuidance: ELR_RETRIEVAL_GUIDANCE,
     contextIdentity: elrChatContextIdentity,
     draftOrder: [
       "elr_objective",

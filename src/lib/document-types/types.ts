@@ -50,6 +50,18 @@ export type DocumentChatExamplePrompts = {
   readonly agent: readonly string[];
 };
 
+/**
+ * Type-owned bullets appended to the shared "Document evidence" block. Unlike
+ * `draftingGuidance`, these load on read turns too: review and grep strategy
+ * apply to questions as well as drafts. Each string is markdown bullets.
+ */
+export type DocumentChatRetrievalGuidance = {
+  /** Every retrieval mode. */
+  readonly always?: string;
+  readonly adaptive?: string;
+  readonly comprehensive?: string;
+};
+
 /** Chat drafting guidance owned by each document type. */
 export type DocumentTypeChatConfig = {
   /** Opening persona paragraphs for the chat system prompt. */
@@ -77,6 +89,8 @@ export type DocumentTypeChatConfig = {
    * (e.g. fixed table column schemas for matrix sections).
    */
   draftingGuidance?: string;
+  /** Type-specific retrieval / document-review rules. See the type doc. */
+  retrievalGuidance?: DocumentChatRetrievalGuidance;
   /**
    * Title-page identity from `reports.metadata` for the chat context map.
    * Unset fields must still be listed so the model does not invent them from

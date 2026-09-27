@@ -6,6 +6,7 @@ import {
 import { getCustomerPack, type CustomerPack } from "@/lib/customers/packs";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import { convergentDesignVerificationDefinition } from "./convergent-design-verification";
+import { DV_RETRIEVAL_GUIDANCE } from "./design-verification/chat-retrieval-guidance";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   checkConsistentRequirementIds,
@@ -426,6 +427,7 @@ The report is graded against fixed quality criteria (a traffic-light check). You
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change (red delete / green insert) the engineer accepts or rejects.`,
     draftingGuidance: dvFixedTableFormatGuidance({ surface: "chat" }),
+    retrievalGuidance: DV_RETRIEVAL_GUIDANCE,
     draftOrder: [
       "purpose_scope",
       "traceability",

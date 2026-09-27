@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { QSR_DRAFTING_GUIDANCE } from "./drafting-guidance";
+import {
+  QSR_DRAFTING_GUIDANCE,
+  QSR_RETRIEVAL_GUIDANCE,
+} from "./drafting-guidance";
 
 describe("QSR_DRAFTING_GUIDANCE", () => {
   it("requires verbatim URS rows and keyed banner inserts on the RTM", () => {
@@ -61,5 +64,23 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
       "Do not insert a second fully filled report row"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain("Approved / Complies / Closed");
+  });
+
+  it("owns the RTM chat-editing rules and review strategy", () => {
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "do not copy URS-37's range onto URS-5"
+    );
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "including a filled Reference – Section"
+    );
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "Never write `<remarks>`, `<qualification stage>`, or `<section>`"
+    );
+    expect(QSR_RETRIEVAL_GUIDANCE.adaptive).toContain(
+      "one URS ID is not one grep"
+    );
+    expect(QSR_RETRIEVAL_GUIDANCE.comprehensive).toContain(
+      "A 12-page URS is a 12-page walk"
+    );
   });
 });

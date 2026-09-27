@@ -443,3 +443,12 @@ ${Object.entries(ELR_SECTION_LABELS)
   .map(([key, label]) => `- ${key}: ${label}`)
   .join("\n")}
 `;
+
+export const ELR_RETRIEVAL_GUIDANCE = {
+  always: `- The ELR review period is always 1 April to 31 March of the following year. It is title-page identity: do not search-for-cite it.`,
+  comprehensive: `- For ELR inventory tables (qualification, monitoring, calibration, and the other evidence matrices), omit attachmentIds — those rows are split across PRQR / PRQP / PQR / linked PRs. The review keeps pages that match that table's live column headers, typed result names such as "particulate monitoring", and Grade A method names (non-viable, settle plate, glove, differential pressure, LAF) — not a URS / CSV-OQ / RTM mention of the section noun. Prefer PRQR/PRQP files. Skip header-only UNCONTROLLED COPY pages. recommendedInventory is not an ELR calibration or qualification matrix.
+- If truncated and skippedDocuments include the PRQR while queued pages were CSV-OQ / RTM / URS headers, start again so those pages are queued; that finish does not unlock edit_table.
+- On ELR monitoring, one row per Grade A method (non-viable, active viable air, settle plate, surface and glove, differential pressure, LAF). Do not merge methods. Do not copy process-alarm codes into the monitoring table. Period Covered is 1 April to 31 March of the following year (both dates), never an alarm-trend quarter.
+- On ELR breakdowns, walk PMC / PRQR / breakdown logs.
+- On monitoring and breakdowns, do not queue the alarm-trend PDF — Alarm Trends sits above these sections. Read that section and cite [[table:Alarm Trends]]. Do not restart monitoring or breakdowns because the alarm-trend PDF was skipped — Alarm Trends already owns that file.`,
+} as const;

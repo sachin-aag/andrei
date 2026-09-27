@@ -18,44 +18,63 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v150-fill-empty-signed-temps");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v151-type-owned-prompt-rules");
   });
 
-  it("pins QSR RTM same-ID window and stock-remarks rules", () => {
+  it("keeps shared source-list and wrap-up rules on every type", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
-    expect(prompt).toContain("neighbour URS-ID window");
-    expect(prompt).toContain("do not copy URS-37's range onto URS-5");
-    expect(prompt).toContain("URS cover");
-    expect(prompt).toContain("stock Complies / bare Section 13");
-    expect(prompt).toContain("one insert_rows");
+    expect(prompt).toContain("one edit_table call");
     expect(prompt).toContain("Open cards stack");
     expect(prompt).toContain("Apply does not unlock the next insert");
-    expect(prompt).toContain("Installation Qualification");
+    expect(prompt).toContain("A leading minus is part of the number");
     expect(prompt).toContain(
-      "Do not paste a protocol-to-URS mapping in chat"
+      "Do not tell them to accept a card and type a leftover <number>"
     );
-    expect(prompt).toContain(
-      "leave those three cells empty for that row"
-    );
-    expect(prompt).toContain("Never write `<remarks>`");
-    expect(prompt).toContain("<qualification stage>");
-    expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
-    expect(prompt).toContain("fill empty cells");
-    expect(prompt).toContain("including a filled Reference – Section");
-    expect(prompt).toContain(
-      "one requirement ID is not one grep when filling RTM Stage"
-    );
-    expect(prompt).toContain(
-      "An IQ protocol hit is not enough while PQ or OQ have not been queried"
-    );
-    expect(prompt).toContain("do not rewrite a filled cell in the same batch");
-    expect(prompt).toContain(
-      "Do not tell them to accept a card and type 3.5"
-    );
-    expect(prompt).toContain("−15 °C is not 15 °C");
-    expect(prompt).toContain("−50 ± 10 RPM");
     expect(prompt).toContain(
       "Never quote attachment ids, analysis ids, or suggestion-card ids"
+    );
+  });
+
+  it("puts QSR RTM row rules only on the Qualification Summary Report", () => {
+    const qsr = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "qualification_summary_report",
+    });
+    expect(qsr).toContain("neighbour URS-ID window");
+    expect(qsr).toContain("do not copy URS-37's range onto URS-5");
+    expect(qsr).toContain("URS cover");
+    expect(qsr).toContain("Never write Complies, bare Section 13");
+    expect(qsr).toContain("one insert_rows");
+    expect(qsr).toContain("do not paste a protocol-to-URS mapping in chat");
+    expect(qsr).toContain("leave those three cells empty for that row");
+    expect(qsr).toContain("PQ, then OQ, then IQ, then DQ");
+    expect(qsr).toContain("including a filled Reference – Section");
+    expect(qsr).toContain("Do not list Proposed Updates that still show them");
+
+    for (const documentType of [
+      "investigation_report",
+      "equipment_lifecycle_report",
+      "design_verification",
+    ] as const) {
+      const prompt = buildChatSystemPrompt({ ...opts, mode: "agent", documentType });
+      expect(prompt).not.toContain("URS-37");
+      expect(prompt).not.toContain("Reference – Section");
+      expect(prompt).not.toContain("protocol-to-URS mapping");
+      expect(prompt).not.toContain("Installation Qualification");
+    }
+  });
+
+  it("asks QSR RTM fills to grep every protocol family on adaptive turns", () => {
+    const qsr = buildChatSystemPrompt({
+      ...opts,
+      mode: "plan",
+      documentType: "qualification_summary_report",
+    });
+    expect(qsr).toContain("one URS ID is not one grep");
+    expect(qsr).toContain("An IQ protocol hit is not enough");
+    expect(buildChatSystemPrompt({ ...opts, mode: "plan" })).not.toContain(
+      "one URS ID is not one grep"
     );
   });
 
@@ -218,7 +237,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Raw Data Ref");
     expect(prompt).toContain("never rename, reorder, add, or drop columns");
     expect(prompt).toContain("copy fields[].tables[].headers");
-    expect(prompt).toContain("demo Traceability is five columns");
+    expect(prompt).toContain("never assume another pack's or report type's layout");
+    expect(prompt).not.toContain("Convergent Results");
   });
 
   it("omits DV fixed table guidance for investigation reports", () => {
@@ -543,7 +563,7 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain(
       "unset title-page identity field that retrieved evidence answers with more than one mutually exclusive value"
     );
-    expect(agent).toContain("both Vial and Cartridge on an ELR");
+    expect(agent).toContain("two different product formats or equipment IDs");
     expect(agent).toContain("Never put the actual answer in hint");
   });
 
@@ -559,27 +579,51 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "list_attachments if you have not already, then start_document_review"
     );
-    expect(prompt).toContain("For ELR inventory tables");
-    expect(prompt).toContain("omit attachmentIds");
-    expect(prompt).toContain("Qualification Summary Report Table 3");
-    expect(prompt).toContain("every attached URS / DS / DQ / IQ / OQ / PQ");
-    expect(prompt).toContain("the server keeps the URS");
-    expect(prompt).toContain("A 12-page URS is a 12-page walk");
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("One review per section this turn");
-    expect(prompt).toContain(
-      "do not call start_document_review again"
-    );
-    expect(prompt).toContain(
-      "do not start another review this turn"
-    );
+    expect(prompt).toContain("do not call start_document_review again");
+    expect(prompt).toContain("do not start another review this turn");
     expect(prompt).toContain("recommendedInventory");
-    expect(prompt).toContain("not an ELR calibration or qualification matrix");
     expect(prompt).toContain("findingsOmitted");
     expect(prompt).toContain("allIdentifiers");
     expect(prompt).toContain("short findings sample");
-    expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");
-    expect(prompt).toContain("M3-SYS-FN-037 is not SYS-FN-037");
+    expect(prompt).toContain("Seeded matrices are filled with edit_table");
+    expect(prompt).not.toContain(
+      "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
+    );
+  });
+
+  it("keeps type-specific review rules out of other report types", () => {
+    const investigation = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      retrievalPolicy: "comprehensive",
+    });
+    for (const leaked of [
+      "ELR",
+      "Alarm Trends",
+      "Grade A",
+      "PRQR",
+      "1 April",
+      "Qualification Summary Report Table 3",
+      "12-page URS",
+      "SW-SST-5",
+      "Convergent Results",
+    ]) {
+      expect(investigation).not.toContain(leaked);
+    }
+  });
+
+  it("adds ELR review rules only on the Equipment Lifecycle Report", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      retrievalPolicy: "comprehensive",
+      documentType: "equipment_lifecycle_report",
+    });
+    expect(prompt).toContain("For ELR inventory tables");
+    expect(prompt).toContain("omit attachmentIds");
+    expect(prompt).toContain("not an ELR calibration or qualification matrix");
     expect(prompt).toContain("Grade A method names");
     expect(prompt).toContain("CSV-OQ / RTM");
     expect(prompt).toContain("1 April to 31 March of the following year");
@@ -594,9 +638,46 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "Do not restart monitoring or breakdowns because the alarm-trend PDF was skipped"
     );
-    expect(prompt).not.toContain(
-      "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
-    );
+    expect(prompt).not.toContain("Qualification Summary Report Table 3");
+
+    const read = buildChatSystemPrompt({
+      ...opts,
+      mode: "plan",
+      documentType: "equipment_lifecycle_report",
+    });
+    expect(read).toContain("The ELR review period is always 1 April to 31 March");
+  });
+
+  it("adds QSR Table 3 and RTM review rules only on the Qualification Summary Report", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      retrievalPolicy: "comprehensive",
+      documentType: "qualification_summary_report",
+    });
+    expect(prompt).toContain("Qualification Summary Report Table 3");
+    expect(prompt).toContain("every attached URS / DS / DQ / IQ / OQ / PQ");
+    expect(prompt).toContain("the server keeps the URS");
+    expect(prompt).toContain("A 12-page URS is a 12-page walk");
+    expect(prompt).not.toContain("For ELR inventory tables");
+  });
+
+  it("adds DV requirement-ID review rules on every design-verification type", () => {
+    for (const documentType of [
+      "design_verification",
+      "mechanical_design_verification",
+    ] as const) {
+      const prompt = buildChatSystemPrompt({
+        ...opts,
+        mode: "agent",
+        retrievalPolicy: "comprehensive",
+        documentType,
+      });
+      expect(prompt).toContain("from finish_document_review recommendedInventory only");
+      expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");
+      expect(prompt).toContain("M3-SYS-FN-037 is not SYS-FN-037");
+      expect(prompt).not.toContain("For ELR inventory tables");
+    }
   });
 
   it("keeps explicit skims on the focused path", () => {

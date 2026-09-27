@@ -10,6 +10,7 @@ import {
   normalizeRichField,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
+import { DV_RETRIEVAL_GUIDANCE } from "./design-verification/chat-retrieval-guidance";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   checkEquipmentCalibrationDates,
@@ -421,6 +422,7 @@ The report is graded against fixed quality criteria (a traffic-light check). You
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change (red delete / green insert) the engineer accepts or rejects.`,
     draftingGuidance: CONVERGENT_RECIPE_DRAFTING_GUIDANCE,
+    retrievalGuidance: DV_RETRIEVAL_GUIDANCE,
     draftOrder: [
       "purpose",
       "scope",
