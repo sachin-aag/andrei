@@ -157,7 +157,7 @@ function dummyRowFillCells(): TableCellEdit[] {
   return cells;
 }
 
-function table5Operation(): TableOperation {
+function table5Operation(): Extract<TableOperation, { kind: "edit_cells" }> {
   return {
     kind: "edit_cells",
     tableIndex: 0,
