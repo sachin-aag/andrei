@@ -23,6 +23,7 @@ import {
   rowKeyFromContext,
   rtmReferenceColumnIndexes,
   dropQsrRtmPlaceholderCells,
+  shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
 
 const SHARED_URS_PAGE =
@@ -1453,6 +1454,139 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(sectionCell).not.toContain(suggestionInsertMarkName);
   });
 
+  it("fill-empty URS-41 only edits empty Stage/Remarks from IQ, not filled 13.6", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-41 Gaskets PTFE or Equivalent for non-product contact.",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: "13.6 Gaskets PTFE or equivalent Result: Verified",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote:
+          "URS-40 Contact parts SS 304. URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts & SS corrugated ring Result: Verified. URS-42",
+      },
+    ]);
+    const table7: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...QSR_RTM_HEADERS].map((header) => ({
+                type: "tableHeader" as const,
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: header }] },
+                ],
+              })),
+            },
+            ...[
+              ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+            ].map((row) => ({
+              type: "tableRow" as const,
+              content: row.map((text) => ({
+                type: "tableCell" as const,
+                content: text
+                  ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                  : [{ type: "paragraph" }],
+              })),
+            })),
+          ],
+        },
+      ],
+    };
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "DQ [Design Qualification.PDF, p. 13]",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-41",
+            expectedText: "13.6",
+            insertText: "12.3",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "Complies",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: table7,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
+    const blob = urs41.map((cell) => cell.insertText).join(" ");
+    expect(blob).toMatch(/\bIQ\b/);
+    expect(blob).toMatch(/Complies/i);
+    expect(blob).not.toMatch(/\bDQ\b/);
+    expect(blob).not.toContain("12.3");
+    const section = urs41.find((cell) => cell.col === 4);
+    expect(section).toBeUndefined();
+    expect(urs41.some((cell) => cell.col === 3)).toBe(true);
+    expect(urs41.some((cell) => cell.col === 5)).toBe(true);
+
+    const preview = buildTableOperationPreviewDoc(table7, result.operation, {
+      id: "sug-table7-urs41-fill-empty",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const cellsInRow = (rows[2]?.content ?? []).filter(
+      (node) => node.type === "tableCell" || node.type === "tableHeader"
+    );
+    const sectionCell = JSON.stringify(cellsInRow[4]);
+    expect(sectionCell).toContain("13.6");
+    expect(sectionCell).not.toContain("12.3");
+    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    const stageCell = JSON.stringify(cellsInRow[3]);
+    expect(stageCell).toMatch(/\bIQ\b/);
+    expect(stageCell).toContain(suggestionInsertMarkName);
+    const remarksCell = JSON.stringify(cellsInRow[5]);
+    expect(remarksCell).toMatch(/Complies/i);
+    expect(remarksCell).toContain(suggestionInsertMarkName);
+  });
+
   it("still prefers IQ 13.6 over DQ 12.3 when both protocol pages are cited", () => {
     const ledger = ledgerFromPages([
       {
@@ -1478,6 +1612,35 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(pick?.sectionHeading).toContain("13.6");
     expect(pick?.filename).toContain("Installation Qualification");
   });
+
+describe("shouldKeepRtmProtocolSearchOpen", () => {
+  it("keeps search open after an identifier-only hit on Design Qualification", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["URS-41"],
+        ["Design Qualification.PDF"]
+      )
+    ).toBe(true);
+  });
+
+  it("closes once IQ / OQ / PQ protocol terms were queried", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["URS-41", "installation qualification gaskets"],
+        ["Design Qualification.PDF", "Installation Qualification.PDF"]
+      )
+    ).toBe(false);
+  });
+
+  it("does not keep search open for a non-protocol identifier hit", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["URS-41"],
+        ["User Requirement Specification.PDF"]
+      )
+    ).toBe(false);
+  });
+});
 
   it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {
     const dropped = dropQsrRtmPlaceholderCells(

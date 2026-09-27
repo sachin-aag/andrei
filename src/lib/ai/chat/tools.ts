@@ -261,7 +261,10 @@ import {
   isQsrInventoryReviewObjective,
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
-import { dropQsrRtmPlaceholderCells } from "@/lib/ai/chat/qsr-row-grounding";
+import {
+  dropQsrRtmPlaceholderCells,
+  shouldKeepRtmProtocolSearchOpen,
+} from "@/lib/ai/chat/qsr-row-grounding";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -992,6 +995,10 @@ function buildSearchDocumentsTool(opts: {
       .map(withSourceCitation);
     const annotated = annotateDividerSearchHits(cited);
     const continuation = annotateContinuationSearchHits(annotated.results);
+    const rtmProtocolOpen = shouldKeepRtmProtocolSearchOpen(
+      queryList,
+      merged.map((hit) => hit.filename)
+    );
     return {
       results: continuation.results,
       queriesRun: queryList,
@@ -1014,7 +1021,9 @@ function buildSearchDocumentsTool(opts: {
       ...(continuation.continuationHits > 0
         ? { continuationHint: PAGE_CONTINUATION_SEARCH_HINT }
         : {}),
-      ...(annotated.keepSearchOpen || continuation.keepSearchOpen
+      ...(annotated.keepSearchOpen ||
+      continuation.keepSearchOpen ||
+      rtmProtocolOpen
         ? { keepSearchOpen: true as const }
         : {}),
     };

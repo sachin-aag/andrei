@@ -69,7 +69,10 @@ system prompt when kickoff retrieval hits.
 After a cited search hit, a locate/read (`read_document_page` /
 `document_outline` / Analytics scan-extract), or two empty greps, hide
 `search_documents` for the rest of the turn (`searchLoopDirective` shared
-with Analytics). Document-chat attachment cover sheets (ATTACHMENT NO. /
+with Analytics). An identifier-only grep that hits only a Design
+Qualification protocol page keeps search open until IQ / OQ / PQ terms are
+queried (`shouldKeepRtmProtocolSearchOpen`) so a named URS row can still
+find Installation Qualification. Document-chat attachment cover sheets (ATTACHMENT NO. /
 certificate-of locators, `divider=true`) and split tables (`continues=true`,
 Page N of M with N < M) are not a complete cited data page: they
 set `keepSearchOpen` and `searchHitCount` treats `dividerHits >=

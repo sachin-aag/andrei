@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v147-rtm-placeholder-lookup");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v148-rtm-fill-empty-protocol-search");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -40,6 +40,11 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Never write `<remarks>`");
     expect(prompt).toContain("<qualification stage>");
     expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
+    expect(prompt).toContain("fill empty cells");
+    expect(prompt).toContain("do not edit a filled Reference – Section");
+    expect(prompt).toContain(
+      "one requirement ID is not one grep when filling RTM Stage"
+    );
     expect(prompt).toContain(
       "Do not tell them to accept a card and type 3.5"
     );

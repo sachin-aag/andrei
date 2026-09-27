@@ -4857,6 +4857,31 @@ describe("buildChatTools annexure continuation", () => {
     expect(result.continuationHint).toContain("continues=true");
   });
 
+  it("keeps search open after an identifier-only Design Qualification hit", async () => {
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-dq",
+          filename: "Design Qualification.PDF",
+          description: null,
+          pageNumber: 13,
+          chunkId: "c13",
+          sourceKind: "hybrid",
+          text: "URS-41 12.3 MOC Details",
+          quote: "URS-41 12.3 MOC Details",
+          citationId: "att:att-dq:p:13",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = (await tools.search_documents!.execute!(
+      { query: "URS-41" },
+      TEST_TOOL_OPTIONS
+    )) as { keepSearchOpen?: boolean };
+    expect(result.keepSearchOpen).toBe(true);
+  });
+
   it("attaches the next page when a read is Page N of M", async () => {
     readDocumentPageMock
       .mockResolvedValueOnce({

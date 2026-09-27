@@ -747,6 +747,41 @@ export function filenameMatchesFamily(
   return documentFamilyFromFilename(filename) === family;
 }
 
+const RTM_PROTOCOL_QUERY_RE: Record<RtmStageFamily, RegExp> = {
+  pq: /\bperformance\s+qualification\b|\bpq\b/i,
+  oq: /\boperational\s+qualification\b|\boperation\s+qualification\b|\boq\b/i,
+  iq: /\binstallation\s+qualification\b|\biq\b/i,
+  dq: /\bdesign\s+qualification\b|\bdq\b/i,
+};
+
+/**
+ * Identifier-only greps often land on a DQ page that prints the URS ID.
+ * Keep search open so IQ / OQ / PQ protocol bodies can still be grepped.
+ */
+export function shouldKeepRtmProtocolSearchOpen(
+  queries: readonly string[],
+  filenames: readonly string[]
+): boolean {
+  const hitFamilies = filenames
+    .map((name) => documentFamilyFromFilename(name))
+    .filter(
+      (family): family is RtmStageFamily =>
+        family != null &&
+        (QSR_STAGE_RANK as readonly string[]).includes(family)
+    );
+  if (hitFamilies.length === 0) return false;
+  if (hitFamilies.some((family) => family !== "dq")) return false;
+  const joined = queries.join("\n");
+  return !QSR_STAGE_RANK.some((family) =>
+    RTM_PROTOCOL_QUERY_RE[family].test(joined)
+  );
+}
+
+function optionalRefExpectedFilled(cell: TableCellEdit): boolean {
+  const live = (cell.expectedText ?? "").trim();
+  return live.length > 0 && !isQsrRtmPlaceholderText(live);
+}
+
 export function stageFamilyFromCell(
   text: string | null | undefined
 ): QualDocFamily | null {
@@ -991,6 +1026,7 @@ function rankEditCells(
     );
     if (!touchesRef) return [cell];
     if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return [cell];
+    if (optionalRefExpectedFilled(cell)) return [];
     const context = editCellsSiblingContext(siblings, key);
     const rowKey = key.startsWith("__row:")
       ? rowKeyFromContext(context)
@@ -1025,6 +1061,7 @@ function rankEditCells(
     );
     if (!touchesRef) continue;
     const context = editCellsSiblingContext(siblings, key);
+    const floor = liveReferenceFloor(siblings, cols);
     const pick = stickyRtmPick(
       pickRtmReference(ledger, key, context),
       siblings,
@@ -1032,8 +1069,15 @@ function rankEditCells(
     );
     if (!pick) continue;
     const template = siblings[0]!;
+    const liveFilled = (col: number) => {
+      if (col === cols.section && floor.sectionText) return true;
+      if (col === cols.stage && floor.stageFamily) return true;
+      const sib = siblings.find((cell) => cell.col === col);
+      return sib != null && optionalRefExpectedFilled(sib);
+    };
     const add = (col: number, insertText: string) => {
       if (!insertText.trim()) return;
+      if (liveFilled(col)) return;
       if (present.has(`${key}:${col}`)) return;
       present.add(`${key}:${col}`);
       extra.push({

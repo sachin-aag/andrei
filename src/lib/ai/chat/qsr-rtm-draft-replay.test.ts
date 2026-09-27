@@ -1514,4 +1514,96 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(sectionCell).not.toContain("12.3");
     expect(sectionCell).not.toContain(suggestionInsertMarkName);
   });
+
+  it("fill-empty URS-41 paints IQ / Complies and leaves filled 13.6 unstruck when IQ and DQ were both read", async () => {
+    const table7Rows = [
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+    ];
+    mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
+    listReadyDocumentsForReportMock.mockResolvedValue([
+      ursDoc(),
+      dqDoc(),
+      iqDoc(),
+    ]);
+    const tools = buildTools({ section: "qsr_rtm_gmp" });
+    await readIqPage(
+      tools,
+      42,
+      "13.6 Gaskets PTFE or equivalent Result: Verified"
+    );
+    await readDqPage(
+      tools,
+      13,
+      "URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts & SS corrugated ring Result: Verified"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_gmp",
+        targetField: "table",
+        reasoning: "Fill empty cells for URS-41 in table 7.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 3,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: `DQ [${DQ_FILENAME}, p. 13]`,
+              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+            },
+            {
+              row: 1,
+              col: 4,
+              rowKey: "URS-41",
+              expectedText: "13.6",
+              insertText: "12.3",
+              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+            },
+            {
+              row: 1,
+              col: 5,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: "Complies",
+              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    const blob = cells.map((cell) => cell.insertText).join(" ");
+    expect(blob).toMatch(/\bIQ\b/);
+    expect(blob).toMatch(/Complies/i);
+    expect(blob).not.toMatch(/\bDQ\b/);
+    expect(blob).not.toContain("12.3");
+    expect(cells.find((cell) => cell.col === 4)).toBeUndefined();
+    const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
+      id: "sug-table7-urs41-fill-empty",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const cellsInRow = (rows[2]?.content ?? []).filter(
+      (node) => node.type === "tableCell" || node.type === "tableHeader"
+    );
+    const sectionCell = JSON.stringify(cellsInRow[4]);
+    expect(sectionCell).toContain("13.6");
+    expect(sectionCell).not.toContain("12.3");
+    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(JSON.stringify(cellsInRow[3])).toMatch(/\bIQ\b/);
+    expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
+  });
 });
