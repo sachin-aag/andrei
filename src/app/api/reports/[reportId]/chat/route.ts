@@ -558,6 +558,7 @@ async function handleChatPost(
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
     intent: userIntent.kind,
+    alsoLookup: userIntent.alsoLookup === true,
     switchToAnalytics,
     pendingPlan,
   });

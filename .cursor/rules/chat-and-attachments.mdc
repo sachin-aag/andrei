@@ -25,7 +25,11 @@ Greetings ("hi", "hello", "thanks") must not search or call write tools
 `resolveChatUserIntent` in `src/lib/ai/chat/resolve-user-intent.ts`
 (Flash-Lite when rules would emit `ambiguous_agent_mode` or
 `ambiguous_polite_request` such as "can you do the same for X", and on
-Document chat when the text looks like a worksheet dump). The same call may set
+Document chat when the text looks like a worksheet dump). Mixed
+"draft this section, and what is the batch number?" stays `kind=write`
+with `alsoLookup` — write tools stay loaded and search still answers the
+follow-up. The orchestrator consumes that `TurnPlan`; it does not replace
+the kickoff classifier. The same call may set
 `switchToAnalytics` when Lite is ≥0.75 sure the destination is the Analytics
 grid — Report chat then shows a Switch to Analytics button; clicking it
 sets Analytics and resends the original request. A yes / go for it after

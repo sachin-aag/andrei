@@ -20,6 +20,7 @@ import { classifyChatUserIntent } from "@/lib/ai/chat/user-intent";
 export type ChatTurnPlan = {
   intent: ChatUserIntentKind;
   intentReason: string;
+  alsoLookup: boolean;
   retrievalPolicy: RetrievalPolicy;
   retrievalReason: string;
   reviewObjective: string;
@@ -80,6 +81,7 @@ export function assembleChatTurnPlan(
   return {
     intent: input.userIntent.kind,
     intentReason: input.userIntent.reason,
+    alsoLookup: input.userIntent.alsoLookup === true,
     retrievalPolicy: retrieval.policy,
     retrievalReason: retrieval.reason,
     reviewObjective,

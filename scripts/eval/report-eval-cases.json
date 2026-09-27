@@ -66,5 +66,42 @@
       "blocked": true,
       "unsupportedMustContain": ["15–130 °C"]
     }
+  },
+  {
+    "id": "mixed-write-and-batch-lookup",
+    "passCriteria": "Draft Purpose and a follow-up batch-number question stays write with alsoLookup; the cited batch stays grounded.",
+    "notes": "Mixed-intent floor. Replay scores the classifier plus grounding. LLM-as-judge for reply completeness is reserved.",
+    "input": {
+      "documentType": "investigation_report",
+      "section": "define",
+      "objective": "draft Purpose and what is the batch number in the protocol",
+      "userText": "draft Purpose and what is the batch number in the protocol",
+      "query": "batch number protocol",
+      "kind": "semantic",
+      "text": "This investigation covers batch B-2024-117 [protocol.pdf, p. 2].",
+      "pages": [
+        {
+          "filename": "protocol.pdf",
+          "pageNumber": 2,
+          "attachmentId": "protocol",
+          "quote": "Batch Number B-2024-117 was filled on Line 3. Purpose of this protocol is media fill."
+        }
+      ]
+    },
+    "expected": {
+      "goldPages": [
+        {
+          "filename": "protocol.pdf",
+          "page": 2,
+          "mustContain": ["B-2024-117"]
+        }
+      ],
+      "blocked": false,
+      "mustContain": ["B-2024-117"],
+      "unsupportedMustBeEmpty": true,
+      "intentKind": "write",
+      "alsoLookup": true,
+      "judgeRubric": "The assistant drafted Purpose and answered the batch-number follow-up from the protocol."
+    }
   }
 ]

@@ -41,5 +41,7 @@ alwaysApply: false
   and the git-owned quality floor (`pnpm chat-eval -- --replay`). Optional
   Langfuse dataset `chat-draft-quality-floor` via `--sync` / `--experiment`.
   Report-shaped cases: `pnpm report-eval -- --replay` /
-  `--capture <reportId>` / Langfuse `report-quality-scenarios`.
+  `--capture <reportId>` / Langfuse `report-quality-scenarios`. Mixed
+  write+lookup scores the intent classifier on replay; LLM-as-judge
+  (`judgeRubric`) stays skipped until wired.
 - Run one spec with `--project=chromium`. `pnpm precommit` does not run E2E.

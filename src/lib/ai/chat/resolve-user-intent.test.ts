@@ -85,8 +85,8 @@ describe("resolveChatUserIntent", () => {
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 
-  it("pins the missing-work classifier prompt version", () => {
-    expect(INTENT_CLASSIFIER_PROMPT_VERSION).toBe("intent-v6-missing-work");
+  it("pins the mixed-lookup classifier prompt version", () => {
+    expect(INTENT_CLASSIFIER_PROMPT_VERSION).toBe("intent-v7-mixed-lookup");
   });
 
   it("skips Lite when a missing-work complaint is already write", async () => {

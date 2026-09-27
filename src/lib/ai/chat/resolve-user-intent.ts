@@ -40,7 +40,7 @@ import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-genera
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 
-export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v6-missing-work";
+export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v7-mixed-lookup";
 export const INTENT_CLASSIFIER_TIMEOUT_MS = 2_500;
 const INTENT_MIN_CONFIDENCE = 0.4;
 /** Stricter than kind-classification — the switch widget must be rare. */
@@ -50,6 +50,7 @@ const intentLlmSchema = z.object({
   kind: z.enum(["social", "read", "write"]),
   confidence: z.number().min(0).max(1),
   preferredSurface: z.enum(["report", "analytics"]).optional(),
+  alsoLookup: z.boolean().optional(),
 });
 
 export type ResolveChatUserIntentInput = ClassifyChatUserIntentInput & {
@@ -92,7 +93,14 @@ export async function resolveChatUserIntent(
     }
     if (!needsLlmIntentClassification(rules)) return rules;
     if (llm.confidence < INTENT_MIN_CONFIDENCE) return rules;
-    return { kind: llm.kind, reason: `llm_${llm.kind}` };
+    return {
+      kind: llm.kind,
+      reason: `llm_${llm.kind}`,
+      ...(llm.kind === "write" &&
+      (llm.alsoLookup === true || rules.alsoLookup === true)
+        ? { alsoLookup: true as const }
+        : {}),
+    };
   } catch {
     return rules;
   }
@@ -123,6 +131,7 @@ async function classifyIntentWithLlm(
   kind: ChatUserIntentKind;
   confidence: number;
   preferredSurface?: "report" | "analytics";
+  alsoLookup?: boolean;
 } | null> {
   const timeout = AbortSignal.timeout(INTENT_CLASSIFIER_TIMEOUT_MS);
   const abortSignal = input.abortSignal
@@ -174,10 +183,12 @@ function buildIntentClassifierPrompt(input: ResolveChatUserIntentInput): string 
     .find(Boolean);
   const section = sanitizePromptMetadata(input.sectionLabel ?? "", 80);
   const lines = [
-    "Classify this chat turn. Output { kind, confidence, preferredSurface } only.",
+    "Classify this chat turn. Output { kind, confidence, preferredSurface, alsoLookup } only.",
     "kind=social: greeting, thanks, or a bare yes/ok with no task.",
     "kind=read: a question, plan, outline, writing advice, or lookup. Reply in chat. Do not edit the document or worksheet.",
     "kind=write: they asked to change the document or worksheet now (draft, insert, fill, edit, plot, extract into the grid, or yes to an offer to write).",
+    "alsoLookup=true only with kind=write: they also asked a follow-up about something else (what a file says, a batch number, tell me / ask about X). Still write — do not drop the question after drafting.",
+    "alsoLookup=false when the whole message is only a write, or kind is not write.",
     "A yes / go for it / do it after you told them to switch to Analytics is write — continue the earlier extract/fill request. Do not classify that as social.",
     '"Can you do the same for X" and "do that for Preventive Maintenance" are kind=write — they continue the previous edit. They are not questions.',
     '"Nothing was filled", "the table is still empty", "I don\'t see the change", "you said you filled it but it isn\'t there", and "why isn\'t the table filled" are kind=write in Agent — they want the missing work delivered. They are not lookups.',

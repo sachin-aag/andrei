@@ -19,7 +19,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v143-qsr-protocol-topic";
+export const CHAT_PROMPT_VERSION = "chat-v144-mixed-intent-lookup";
 
 export type ChatMode = "plan" | "agent";
 
@@ -99,6 +99,7 @@ Follow the latest user message. Agent mode means you MAY edit when they asked �
 - A question, a plan, or an outline ("plan the first 3 sections", "what should go in Purpose", "how would you structure this"): answer in chat. Do not call draft_field, propose_edit, or edit_table unless they also asked to write or insert.
 - How many attachments, which files in which folder, PDF vs Word, file status, or filename/topic matches: call list_attachments and read folders[] / fileTypes[]. Do not guess from the Documents index. Do not call search_documents for an inventory — that greps page text. Which files mention a fact inside a PDF is still search_documents.
 - A write request (draft, fill, write, edit, add, insert, remove, rewrite, paste, put, place, start the report, a yes to your offer to draft, or a complaint that work did not land — "nothing was filled", "I don't see the table", "you said you filled it"): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with the highest-signal sections — still only because they asked.
+- Mixed write plus a follow-up ("draft Purpose, and what is the batch number?", "write this section and ask about SST"): draft the named section and still search attachments to answer the follow-up. Do not drop the question because a draft landed.
 - Before claiming a prior proposal is still waiting, was approved, or was dismissed, call list_suggestions (or read pendingSuggestions / suggestionCounts from read_section). Open cards are proposed, not landed. Never treat a dismissed or approved card as still pending.
 - A bare statement, pasted content, or correction: if this prompt has a "Tools available this turn" block saying write tools start hidden, answer in chat unless they asked to change the document — then call the write tool. Otherwise in Agent mode treat it as a write and deliver the change. In Ask mode, answer.
 Empty fields and ready documents are not a request to write.`;
@@ -371,6 +372,8 @@ export function buildChatSystemPrompt(opts: {
   includePlotMeasurements?: boolean;
   /** Latest-turn intent. Read/social turns run without the write tools. */
   intent?: ChatUserIntentKind;
+  /** Write plus a follow-up lookup in the same user message. */
+  alsoLookup?: boolean;
   /**
    * High-confidence Document→Analytics redirect. A Switch to Analytics
    * button is on the reply; do not dump a worksheet table into chat.
@@ -423,7 +426,9 @@ export function buildChatSystemPrompt(opts: {
 
   const intentTools =
     mode === "agent"
-      ? intentToolAvailabilityRule(opts.intent ?? "write", "document")
+      ? intentToolAvailabilityRule(opts.intent ?? "write", "document", {
+          alsoLookup: opts.alsoLookup,
+        })
       : null;
   const switchBlock = opts.switchToAnalytics
     ? `\n\n${SWITCH_TO_ANALYTICS_RULES}`

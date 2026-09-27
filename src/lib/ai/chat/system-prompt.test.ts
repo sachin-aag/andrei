@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v143-qsr-protocol-topic");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v144-mixed-intent-lookup");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -128,6 +128,20 @@ describe("buildChatSystemPrompt", () => {
     ).not.toContain("## Tools available this turn");
     expect(buildChatSystemPrompt({ ...opts, mode: "agent" })).not.toContain(
       "## Tools available this turn"
+    );
+  });
+
+  it("keeps write tools loaded and requires the follow-up on mixed intent", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "write",
+      alsoLookup: true,
+    });
+    expect(prompt).toContain("This message is mixed");
+    expect(prompt).toContain("follow-up");
+    expect(prompt).toContain(
+      "draft Purpose, and what is the batch number?"
     );
   });
 

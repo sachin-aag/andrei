@@ -14,6 +14,12 @@ export type ChatUserIntentDecision = {
   reason: string;
   /** High-confidence Document→Analytics redirect. Widget only when true. */
   switchToAnalytics?: boolean;
+  /**
+   * Write plus a follow-up lookup in the same message ("draft Purpose, and
+   * what is the batch number?"). Coarse `kind` stays write so draft tools
+   * stay loaded; search must still answer the question.
+   */
+  alsoLookup?: boolean;
 };
 
 export const DOCUMENT_WRITE_TOOLS = [
@@ -138,6 +144,14 @@ const ADVICE_QUESTION_RE =
 const QUESTION_START_RE =
   /^(?:what|who|when|where|which|why|how|is|are|do you|does|did|should|tell me|summar(?:y|ize)|explain|show|list|find|search|look)\b/i;
 
+/**
+ * A write that also asks a follow-up ("draft Purpose and what is the batch
+ * number?", "write this section, and ask follow ups about SST"). Does not
+ * match a second write ("draft Purpose and fill Measure").
+ */
+const FOLLOW_UP_LOOKUP_RE =
+  /(?:\b(?:and|also)\b|[,;]|\.(?:\s+|$))\s*(?:(?:please|then|can you|could you|would you)\s+)?(?:ask(?:\s+(?:follow[- ]?ups?|about))|tell me|explain|look(?:\s+up)?|(?:what|who|when|where|which|why|how|is there|are there))\b/i;
+
 const ASSISTANT_WRITE_OFFER_RE =
   /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot|update|apply)|ready to (?:draft|update|write|fill|apply)|start drafting|i(?:'ll| will) (?:draft|update|apply)|please confirm to proceed)\b/i;
 
@@ -222,7 +236,23 @@ export function classifyChatUserIntent(
     }
   }
 
-  return classifyTaskText(task || latest, input.surface, input.mode ?? "agent");
+  return stampFollowUpLookup(
+    classifyTaskText(task || latest, input.surface, input.mode ?? "agent"),
+    latest
+  );
+}
+
+export function messageHasFollowUpLookup(userText: string): boolean {
+  return FOLLOW_UP_LOOKUP_RE.test(userText.replace(/\s+/g, " ").trim());
+}
+
+function stampFollowUpLookup(
+  decision: ChatUserIntentDecision,
+  userText: string
+): ChatUserIntentDecision {
+  if (decision.kind !== "write" || decision.alsoLookup) return decision;
+  if (!messageHasFollowUpLookup(userText)) return decision;
+  return { ...decision, alsoLookup: true };
 }
 
 function classifyTaskText(
@@ -360,8 +390,15 @@ export function messageHasChatImage(
  */
 export function intentToolAvailabilityRule(
   intent: ChatUserIntentKind,
-  surface: "document" | "analytics"
+  surface: "document" | "analytics",
+  options?: { alsoLookup?: boolean }
 ): string | null {
+  if (intent === "write" && options?.alsoLookup) {
+    const target =
+      surface === "analytics" ? "worksheet or plot" : "named section";
+    return `## Tools available this turn
+This message is mixed: they asked to change the ${target} AND asked a follow-up. Write tools are loaded. After or while drafting, search attachments and answer the follow-up in chat. Do not drop the question because a draft landed. Do not call ask_user for a fact still in the files.`;
+  }
   if (intent === "write") return null;
   const target = surface === "analytics" ? "worksheet or plot" : "document";
   if (intent === "social") {

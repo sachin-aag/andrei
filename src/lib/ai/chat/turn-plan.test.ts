@@ -37,7 +37,18 @@ describe("assembleChatTurnPlan (characterization)", () => {
       expect(plan.intentReason).toBe(intent.reason);
       expect(plan.retrievalPolicy).toBe(retrieval.policy);
       expect(plan.retrievalReason).toBe(retrieval.reason);
+      expect(plan.alsoLookup).toBe(intent.alsoLookup === true);
     }
+  });
+
+  it("marks a write-plus-follow-up as alsoLookup without flipping kind", () => {
+    const plan = assembleRulesChatTurnPlan({
+      userText: "draft Purpose and what is the batch number",
+      documentType: "design_verification",
+      hasDocuments: true,
+    });
+    expect(plan.intent).toBe("write");
+    expect(plan.alsoLookup).toBe(true);
   });
 
   it("carries section intent and review objective from the same latest turn", () => {

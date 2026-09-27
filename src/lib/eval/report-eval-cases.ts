@@ -8,6 +8,10 @@
  * Critic / open-question fields are reserved. Replay skips them until a
  * critic exists — do not fail the floor for an unimplemented layer.
  */
+import {
+  classifyChatUserIntent,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
 import { extractHardFacts } from "@/lib/ai/chat/claim-facts";
 import {
   parseSourceCitation,
@@ -61,6 +65,8 @@ export type ReportEvalCase = {
     objective: string;
     query?: string;
     kind?: RetrievalQueryKind;
+    /** Latest user turn for mixed-intent scoring. Defaults to objective. */
+    userText?: string;
     text: string;
     context?: string;
     attachedFilenames?: string[];
@@ -75,14 +81,22 @@ export type ReportEvalCase = {
     mustNotContain?: string[];
     unsupportedMustContain?: string[];
     unsupportedMustBeEmpty?: boolean;
+    intentKind?: ChatUserIntentKind;
+    alsoLookup?: boolean;
     /** Reserved: critic/open-question graph. Skipped until wired. */
     openQuestionsMustContain?: string[];
     criticHolesMustContain?: string[];
+    /**
+     * Reserved: LLM-as-judge rubric for mixed-turn completeness / taste.
+     * Replay skips until `--live` or a Langfuse judge evaluator is wired.
+     */
+    judgeRubric?: string;
+    assistantMustContain?: string[];
   };
 };
 
 export type ReportEvalLayerScore = {
-  name: "grounding" | "snapshot_gold" | "retrieval" | "critic";
+  name: "grounding" | "snapshot_gold" | "retrieval" | "intent" | "critic" | "judge";
   passed: boolean;
   skipped?: string;
   failures: string[];
@@ -178,6 +192,14 @@ function parseKind(value: unknown, id: string): RetrievalQueryKind | undefined {
   return value;
 }
 
+function parseIntentKind(value: unknown, id: string): ChatUserIntentKind | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "social" && value !== "read" && value !== "write") {
+    throw new Error(`${id}: expected.intentKind must be social, read, or write`);
+  }
+  return value;
+}
+
 function parseSource(value: unknown, id: string): ReportEvalSource | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
@@ -234,6 +256,8 @@ export function parseReportEvalCase(value: unknown, index: number): ReportEvalCa
       objective: value.input.objective,
       query: typeof value.input.query === "string" ? value.input.query : undefined,
       kind: parseKind(value.input.kind, id),
+      userText:
+        typeof value.input.userText === "string" ? value.input.userText : undefined,
       text: value.input.text,
       context:
         typeof value.input.context === "string" ? value.input.context : undefined,
@@ -264,6 +288,11 @@ export function parseReportEvalCase(value: unknown, index: number): ReportEvalCa
         typeof value.expected.unsupportedMustBeEmpty === "boolean"
           ? value.expected.unsupportedMustBeEmpty
           : undefined,
+      intentKind: parseIntentKind(value.expected.intentKind, id),
+      alsoLookup:
+        typeof value.expected.alsoLookup === "boolean"
+          ? value.expected.alsoLookup
+          : undefined,
       openQuestionsMustContain: asStringArray(
         value.expected.openQuestionsMustContain,
         `${id}.openQuestionsMustContain`
@@ -271,6 +300,14 @@ export function parseReportEvalCase(value: unknown, index: number): ReportEvalCa
       criticHolesMustContain: asStringArray(
         value.expected.criticHolesMustContain,
         `${id}.criticHolesMustContain`
+      ),
+      judgeRubric:
+        typeof value.expected.judgeRubric === "string"
+          ? value.expected.judgeRubric
+          : undefined,
+      assistantMustContain: asStringArray(
+        value.expected.assistantMustContain,
+        `${id}.assistantMustContain`
       ),
     },
   };
@@ -356,6 +393,59 @@ export function scoreSnapshotGold(entry: ReportEvalCase): ReportEvalLayerScore {
   return { name: "snapshot_gold", passed: failures.length === 0, failures };
 }
 
+export function scoreIntentLayer(entry: ReportEvalCase): ReportEvalLayerScore {
+  const wantsKind = entry.expected.intentKind !== undefined;
+  const wantsLookup = entry.expected.alsoLookup !== undefined;
+  if (!wantsKind && !wantsLookup) {
+    return {
+      name: "intent",
+      passed: true,
+      skipped: "no intent expectations",
+      failures: [],
+    };
+  }
+  const userText = (entry.input.userText ?? entry.input.objective).trim();
+  const decision = classifyChatUserIntent({ userText, mode: "agent" });
+  const failures: string[] = [];
+  if (wantsKind && decision.kind !== entry.expected.intentKind) {
+    failures.push(
+      `intentKind=${decision.kind} expected ${entry.expected.intentKind}`
+    );
+  }
+  if (wantsLookup && (decision.alsoLookup === true) !== entry.expected.alsoLookup) {
+    failures.push(
+      `alsoLookup=${decision.alsoLookup === true} expected ${entry.expected.alsoLookup}`
+    );
+  }
+  return {
+    name: "intent",
+    passed: failures.length === 0,
+    failures,
+    detail: `${decision.kind}${decision.alsoLookup ? "+lookup" : ""}`,
+  };
+}
+
+export function scoreJudgeLayer(entry: ReportEvalCase): ReportEvalLayerScore {
+  const wantsRubric = (entry.expected.judgeRubric?.trim().length ?? 0) > 0;
+  const wantsReply = (entry.expected.assistantMustContain?.length ?? 0) > 0;
+  if (!wantsRubric && !wantsReply) {
+    return {
+      name: "judge",
+      passed: true,
+      skipped: "no judge expectations",
+      failures: [],
+    };
+  }
+  return {
+    name: "judge",
+    passed: true,
+    skipped: "judge_not_wired",
+    failures: [],
+    detail:
+      "LLM-as-judge is reserved for Langfuse --experiment / live turns. Replay does not fail this layer.",
+  };
+}
+
 export function scoreCriticLayer(entry: ReportEvalCase): ReportEvalLayerScore {
   const wantsQuestions = (entry.expected.openQuestionsMustContain?.length ?? 0) > 0;
   const wantsHoles = (entry.expected.criticHolesMustContain?.length ?? 0) > 0;
@@ -428,6 +518,7 @@ export function replayReportEvalCase(entry: ReportEvalCase): ReportEvalCaseScore
       failures: grounding.failures,
     },
     scoreSnapshotGold(entry),
+    scoreIntentLayer(entry),
     {
       name: "retrieval",
       passed: true,
@@ -435,6 +526,7 @@ export function replayReportEvalCase(entry: ReportEvalCase): ReportEvalCaseScore
       failures: [],
     },
     scoreCriticLayer(entry),
+    scoreJudgeLayer(entry),
   ];
   const scored = layers.filter((layer) => !layer.skipped);
   const failures = scored.flatMap((layer) =>

@@ -137,6 +137,31 @@ describe("classifyChatUserIntent", () => {
     ).toEqual({ kind: "social", reason: "ack_without_task" });
   });
 
+  it("keeps a mixed write-plus-follow-up as write with alsoLookup", () => {
+    expect(
+      classifyChatUserIntent({
+        userText: "draft Purpose and what is the batch number in the protocol",
+        mode: "agent",
+      })
+    ).toEqual({
+      kind: "write",
+      reason: "produce_request",
+      alsoLookup: true,
+    });
+    expect(
+      classifyChatUserIntent({
+        userText: "write this section, and ask follow ups about SST",
+        mode: "agent",
+      }).alsoLookup
+    ).toBe(true);
+    expect(
+      classifyChatUserIntent({
+        userText: "draft Purpose and fill Measure",
+        mode: "agent",
+      }).alsoLookup
+    ).toBeUndefined();
+  });
+
   it("matches explicit produce and start-the-report phrasing", () => {
     expect(classifyChatUserIntent({ userText: "draft Purpose" }).kind).toBe(
       "write"
@@ -500,6 +525,15 @@ describe("intentToolAvailabilityRule", () => {
   it("says nothing on a write turn — every tool is loaded", () => {
     expect(intentToolAvailabilityRule("write", "analytics")).toBeNull();
     expect(intentToolAvailabilityRule("write", "document")).toBeNull();
+  });
+
+  it("keeps write tools loaded and requires the follow-up on mixed turns", () => {
+    const rule = intentToolAvailabilityRule("write", "document", {
+      alsoLookup: true,
+    });
+    expect(rule).toContain("mixed");
+    expect(rule).toContain("follow-up");
+    expect(rule).not.toContain("start hidden");
   });
 
   it("names the stripped analytics tools on a read turn", () => {

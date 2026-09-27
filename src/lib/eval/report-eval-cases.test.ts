@@ -10,6 +10,8 @@ import {
   replayReportEvalCases,
   reportEvalNeedsSearch,
   scoreCriticLayer,
+  scoreIntentLayer,
+  scoreJudgeLayer,
   scoreReportEvalRetrieval,
   scoreSnapshotGold,
   slugReportEvalId,
@@ -82,10 +84,11 @@ describe("report-eval-cases.json", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("covers QSR cover capacity and neighbour-window block", () => {
+  it("covers QSR cover capacity, neighbour-window block, and mixed write+lookup", () => {
     const ids = new Set(cases.map((entry) => entry.id));
     expect(ids.has("qsr-rtm-cover-capacity")).toBe(true);
     expect(ids.has("qsr-rtm-neighbour-urs37")).toBe(true);
+    expect(ids.has("mixed-write-and-batch-lookup")).toBe(true);
   });
 
   it("replays every public case against the current gate", () => {
@@ -231,6 +234,33 @@ describe("scoreCriticLayer", () => {
     });
     expect(layer.passed).toBe(true);
     expect(layer.skipped).toBe("critic_not_wired");
+  });
+});
+
+describe("scoreIntentLayer", () => {
+  it("scores mixed write-plus-follow-up on replay without an LLM", () => {
+    const mixed = publicCases().find(
+      (entry) => entry.id === "mixed-write-and-batch-lookup"
+    );
+    expect(mixed).toBeDefined();
+    if (!mixed) return;
+    const layer = scoreIntentLayer(mixed);
+    expect(layer.skipped).toBeUndefined();
+    expect(layer.passed).toBe(true);
+    expect(layer.detail).toContain("+lookup");
+  });
+});
+
+describe("scoreJudgeLayer", () => {
+  it("skips reserved judge rubrics without failing replay", () => {
+    const mixed = publicCases().find(
+      (entry) => entry.id === "mixed-write-and-batch-lookup"
+    );
+    expect(mixed).toBeDefined();
+    if (!mixed) return;
+    const layer = scoreJudgeLayer(mixed);
+    expect(layer.passed).toBe(true);
+    expect(layer.skipped).toBe("judge_not_wired");
   });
 });
 

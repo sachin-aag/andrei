@@ -89,6 +89,50 @@ There are effectively **two control planes** saying the same thing: server
 heuristics that hide tools, and prompt copy that asks the model not to use
 them. Every incident has added one of each, plus a test.
 
+## 2b. Control plane — keep the intent classifier
+
+The kickoff **intent classifier stays in front of the orchestrator**. Do
+not fold "hi" vs "draft Purpose" into Gemini 3.7 Flash: that model is
+~$21 of a ~$21.40 session, and write tools must already be hidden before
+it runs. The orchestrator **consumes** a `TurnPlan` and **advances
+remaining work** mid-turn (write this section, then answer the follow-up).
+It is not a second greeting classifier.
+
+### Today
+
+```mermaid
+flowchart TD
+  user["User message"] --> rules["Intent classifier<br/>classifyChatUserIntent · rules"]
+  rules -->|"ambiguous_agent_mode / polite leftover / worksheet dump"| lite["Flash-Lite<br/>resolveChatUserIntent"]
+  rules -->|social / explicit write / high-precision lookup| plan["TurnPlan<br/>intent + retrievalPolicy + scope"]
+  lite --> plan
+  plan --> gate["restrictToolsForIntent"]
+  gate --> orch["Orchestrator · Gemini 3.7 Flash"]
+  orch --> step["prepareStep<br/>search / review / draft / ask_user"]
+  step --> workers["Workers · pipelines not agents<br/>hybrid search · page extract · groundDraftText"]
+  workers --> orch
+```
+
+### Target (mixed intent, same orchestrator)
+
+```mermaid
+flowchart TD
+  user["User message"] --> rules["Intent classifier<br/>rules + gated Lite"]
+  rules --> plan["TurnPlan once<br/>kind: social / read / write<br/>alsoLookup: follow-up still due"]
+  plan --> gate["Load tools from the plan<br/>social: none · read: no writes<br/>write: drafts on · alsoLookup keeps search"]
+  gate --> orch["Orchestrator · same 3.7 Flash"]
+  orch --> remain["Remaining work this turn<br/>named section not drafted?<br/>follow-up fact unanswered?"]
+  remain --> step["prepareStep advances that set"]
+  step --> workers["Workers stay pipelines"]
+  workers --> remain
+```
+
+A mixed turn is still **one** coarse `kind` (write tools stay loaded if
+any write was asked) plus `alsoLookup` when they also asked a follow-up
+("draft Purpose, and what is the batch number?"). Dropping the follow-up
+because a draft landed is the failure mode. Re-classifying "hi" on every
+`prepareStep` is not.
+
 ## 3. Design rules for this plan
 
 1. **Net-negative lines.** Target `src/lib/ai/chat` non-test under
@@ -168,8 +212,11 @@ losing any grounded fact.
   `detectSectionIntentFromText`, and the pushback/keep-going regexes all
   read the same user turn with overlapping patterns (85 regexes between
   the first two). Compute a single `TurnPlan` once per request —
-  `{ intent, retrievalPolicy, scope, reviewObjective }` — and let
-  everything downstream consume it. Delete the per-consumer re-derivation.
+  `{ intent, alsoLookup, retrievalPolicy, scope, reviewObjective }` — and
+  let everything downstream consume it. Delete the per-consumer
+  re-derivation. The orchestrator may **refine remaining work** as tools
+  return (draft landed → still search for the follow-up); it must not
+  replace the kickoff classifier.
 - **B4. Retire heuristics the eval cannot defend.** Candidates:
   APS/calibration-specific divider regexes in `attachment-divider.ts`,
   `requirementIndex` TOC demotion, the needle tables in
@@ -347,6 +394,14 @@ is. Three layers. A change uses the cheapest layer that can catch its
 failure mode; it does not skip to a live LLM to hide a deterministic
 break.
 
+**LLM-as-judge is not the merge gate.** Grounding, snapshot gold, mixed
+`alsoLookup` classification, and hybrid Recall@5 are exact. Use a judge
+only for taste / mixed-turn completeness that a string cannot score
+("did the reply actually answer the follow-up?"). That evaluator belongs
+on `pnpm report-eval -- --experiment` (Langfuse), skipped on `--replay`,
+same as the reserved critic layer. A cheap no-tool critic is preferred
+when the hole is nameable (`openQuestionsMustContain`).
+
 ### Layer 1 — Characterization (no LLM; merge-blocking for subtraction)
 
 Before deleting or folding anything, snapshot the current behavior
@@ -361,7 +416,7 @@ turns). The replacement must produce the **same** answer.
 - **B3 (five classifiers → one).** For every existing
   `user-intent` / `retrieval-policy` / `already-drafted` / `section-intent`
   fixture, the combined `TurnPlan` must emit the same
-  `{ intent, retrievalPolicy, reviewObjective }`. New fixtures only for
+  `{ intent, alsoLookup, retrievalPolicy, reviewObjective }`. New fixtures only for
   disagreements we *intend* to change, listed in the PR.
 - **B1 (`commit` deletion).** Grep + typecheck is enough: nothing in
   production returns `"commit"`. If a test still names the union, the

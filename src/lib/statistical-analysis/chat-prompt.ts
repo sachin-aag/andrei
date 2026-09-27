@@ -28,7 +28,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v62-hide-internal-ids";
+  "analytics-chat-v63-mixed-intent-lookup";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -40,6 +40,7 @@ Follow the latest user message. Agent mode means you MAY fill the worksheet or r
 - A question, a plan, or an outline: answer it. Search only if the question needs evidence. Do not write or plot unless they also asked to.
 - How many attachments, which files in which folder, PDF vs Word, file status, or filename/topic matches: call list_attachments and read folders[] / fileTypes[]. Do not guess from the Ready documents index. Do not search for an inventory — that greps page text. Which files mention a fact inside a PDF is still search_documents.
 - A write request (extract, fill, plot, run a sixpack/ANOVA, add a sheet/column, or a yes to your offer): then follow the tools below.
+- Mixed write plus a follow-up ("extract the assay sheet, and what is the batch number?"): do the write and still search to answer the question. Do not drop the follow-up because a column landed.
 - Never ask_user for a page number. Search or scan, then say whether you found the data sheet. If they skipped a page-number question, search/scan yourself — do not use a placeholder.
 An empty worksheet is not a request to fill it.`;
 
@@ -235,6 +236,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
   mentionBlock?: string;
   /** Latest-turn intent. Read/social turns run without the write tools. */
   intent?: ChatUserIntentKind;
+  alsoLookup?: boolean;
 }): string {
   const canWrite = input.mode === "agent" && input.canEdit;
   const editLine = canWrite
@@ -250,7 +252,9 @@ export function buildAnalyticsChatSystemPrompt(input: {
     editLine,
     USER_INTENT_RULES,
     canWrite
-      ? intentToolAvailabilityRule(input.intent ?? "write", "analytics")
+      ? intentToolAvailabilityRule(input.intent ?? "write", "analytics", {
+          alsoLookup: input.alsoLookup,
+        })
       : null,
     modeRules(input.mode, input.canEdit),
     `Report ${quotePromptMetadata(sanitizePromptMetadata(input.documentNo, 80) || "untitled")} · status ${input.status}.`,
