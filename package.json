@@ -43,7 +43,8 @@
     "compare-evals": "tsx scripts/eval/compare-eval-runs.ts",
     "retrieval-eval": "tsx scripts/eval/retrieval-eval.ts",
     "retrieval-eval:upload": "tsx scripts/eval/upload-retrieval-corpus.ts",
-    "chat-eval": "tsx scripts/eval/chat-draft-eval.ts"
+    "chat-eval": "tsx scripts/eval/chat-draft-eval.ts",
+    "report-eval": "tsx scripts/eval/report-eval.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",

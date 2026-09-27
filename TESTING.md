@@ -462,6 +462,8 @@ Playwright stub chat (`ALLOW_TEST_STUB_CHAT`, `e2e/report-chat.spec.ts`) streams
 
 **Quality floor beyond Vitest / Playwright:** git owns `scripts/eval/chat-draft-cases.json`. `pnpm chat-eval -- --replay` scores those cases against `groundDraftText` and layer-1 harness tool availability (no LLM). `pnpm chat-eval -- --sync` upserts Langfuse dataset `chat-draft-quality-floor`. `--experiment` upserts that dataset, then `dataset.runExperiment` so prompt/gate changes compare in the Datasets UI (`quality_floor` per item, `pass_rate` on the run). Missing `LANGFUSE_*` keys skip sync/experiment. `--live` is reserved until a headless Agent turn exists. Add a case when an incident ships, then replay. Copy `chat-draft-cases.local.example.json` to the gitignored overlay for private traces.
 
+**Report-shaped floor** (finished sections, not isolated facts): git owns `scripts/eval/report-eval-cases.json`. `pnpm report-eval -- --replay` scores grounding plus snapshot gold pages (no LLM, no DB). `pnpm report-eval -- --capture <reportId>` reads a live report, walks drafted sections that have `Citations: [filename, p. N]`, and merges cases into gitignored `report-eval-cases.local.json` (optional `--section`). Edit `passCriteria` / `mustContain` after capture. `pnpm report-eval -- --search --report-id <id>` runs hybrid retrieval against that ingested report (Recall@5 + excerpt `mustContain`; no LLM judge). `--sync` / `--experiment` upsert Langfuse dataset `report-quality-scenarios` so runs compare in the Datasets UI. Critic / open-question fields are reserved (`critic_not_wired`) until that layer exists — replay does not fail them. Copy `report-eval-cases.local.example.json` for a private overlay without capture. Do not commit customer report ids or page transcripts.
+
 The layer that catches a production overblock (QSR section 5 dropping cover-page capacity, vacuum range, MOC) is a Vitest **replay** through `buildChatTools`:
 
 1. Mock `@/db` and `@/lib/attachments/retrieval` (same pattern as `tools.test.ts`).
@@ -578,6 +580,7 @@ Spot-check **live Gemini** evaluation periodically — E2E stubs AI via `ALLOW_T
 | E2E | `pnpm test:e2e` | Postgres service container, `drizzle-kit push`, Chromium + Firefox + WebKit |
 | Retrieval eval | `pnpm retrieval-eval -- --from-gcs` | Path-gated. Downloads synthetic PDFs from `RETRIEVAL_EVAL_GCS_BUCKET`, Vertex-ingests, searches, LLM-judges. Does not upload. If downloaded PDFs fail gold anchors, generates locally. Skips if Vertex/GCS secrets are missing. |
 | Chat-draft quality floor | `pnpm test -- src/lib/eval/chat-draft-cases.test.ts` (CI) / `pnpm chat-eval -- --replay` | Deterministic. No Vertex. `pnpm chat-eval -- --sync` / `--experiment` is laptop-only (Langfuse keys). |
+| Report-shaped quality floor | `pnpm test -- src/lib/eval/report-eval-cases.test.ts` (CI) / `pnpm report-eval -- --replay` | Deterministic. No Vertex. `--capture` / `--search --report-id` need `DATABASE_URL`. `--sync` / `--experiment` is laptop-only (Langfuse keys, dataset `report-quality-scenarios`). |
 
 Workflow: `.github/workflows/ci.yml`
 
@@ -592,7 +595,7 @@ Workflow: `.github/workflows/ci.yml`
 | Pure logic, parsers, prompts | `src/lib/.../*.test.ts` next to source |
 | API route auth and status codes | `src/app/api/.../route.test.ts` — mock `@/db` + `getCurrentUser` |
 | React UI interactions | `src/components/.../*.test.tsx` — jsdom + RTL + `user-event` |
-| Chat write-path grounding (production `edit_table` / `draft_field` incident) | New `src/lib/ai/chat/*-replay.test.ts` — mock DB + retrieval, call `buildChatTools` in tool order. Not Playwright. Pattern: `qsr-rtm-draft-replay.test.ts`. Also add a row to `scripts/eval/chat-draft-cases.json` so `pnpm chat-eval -- --replay` / Langfuse `--experiment` catch the same floor. |
+| Chat write-path grounding (production `edit_table` / `draft_field` incident) | New `src/lib/ai/chat/*-replay.test.ts` — mock DB + retrieval, call `buildChatTools` in tool order. Not Playwright. Pattern: `qsr-rtm-draft-replay.test.ts`. Also add a row to `scripts/eval/chat-draft-cases.json` so `pnpm chat-eval -- --replay` / Langfuse `--experiment` catch the same floor. A finished section with citations can be captured via `pnpm report-eval -- --capture <reportId>` into the gitignored overlay (and a minimized public case if the gold has no customer PDF). |
 | Full user journey | `e2e/*.spec.ts` — use `e2e/helpers/` |
 
 E2E patterns: unique deviation numbers (`uniqueDeviationNo`), `loginAsEngineer` / `loginAsManager`, `createReport` / `deleteReport` in `afterEach`.

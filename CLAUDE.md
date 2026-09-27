@@ -19,6 +19,7 @@ pnpm sample-eval-report   # bulk AI evaluation of sample DOCXs → HTML report (
 pnpm retrieval-eval       # attachment retrieval gold cases (default --dry-run; --from-gcs CI download+ingest+judge, generate if GCS stale; --live local PDFs; --report-id skip ingest)
 pnpm retrieval-eval:upload # laptop ADC only: write synthetic eval PDFs to RETRIEVAL_EVAL_GCS_BUCKET (CI never uploads)
 pnpm chat-eval            # chat quality floor (default --dry-run; --replay no LLM; --sync / --experiment push to Langfuse when keys exist)
+pnpm report-eval          # report-shaped floor (default --dry-run; --replay grounding; --capture <reportId> → gitignored overlay; --search --report-id; --sync / --experiment Langfuse)
 pnpm soak:pdf-ingest      # local PDF extract soak (Vertex; no DB/GCS writes)
 ```
 

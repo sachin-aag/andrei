@@ -1,0 +1,40 @@
+[
+  {
+    "id": "qsr-rtm-cover-capacity",
+    "passCriteria": "Example overlay: same public id replaces the public case. Copy to report-eval-cases.local.json (gitignored).",
+    "notes": "Keep customer PDFs, report ids, and Langfuse trace ids out of the public set. Capture with pnpm report-eval -- --capture <reportId>.",
+    "source": {
+      "documentNo": "EXAMPLE-ONLY",
+      "langfuseTraceId": "replace-with-production-trace-id"
+    },
+    "input": {
+      "documentType": "qualification_summary_report",
+      "section": "qsr_rtm_process",
+      "objective": "Draft the RTM process row for reactor capacity",
+      "query": "URS-1 reactor capacity 8000 L",
+      "kind": "identifier",
+      "text": "8000 L [User Requirement Specification.PDF, p. 1]",
+      "context": "URS-1\nReactor Capacity",
+      "pages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "pageNumber": 1,
+          "attachmentId": "urs",
+          "quote": "Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301 Page 1 of 12"
+        }
+      ]
+    },
+    "expected": {
+      "goldPages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "page": 1,
+          "mustContain": ["8000 L"]
+        }
+      ],
+      "blocked": false,
+      "mustContain": ["8000 L"],
+      "unsupportedMustBeEmpty": true
+    }
+  }
+]

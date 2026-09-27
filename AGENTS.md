@@ -53,6 +53,7 @@ Package manager is **pnpm**. Path alias `@/*` → `src/*`.
 
 ```bash
 pnpm test -- src/lib/ai/chat/tools.test.ts   # single Vitest file
+pnpm report-eval -- --replay                 # report-shaped quality floor
 pnpm typecheck
 pnpm lint
 pnpm precommit                               # lint + typecheck + Vitest (no E2E)
@@ -365,7 +366,13 @@ optionally `rm -rf .next`. Not a code bug.
   `edit_table` through `buildChatTools` (`qsr-rtm-draft-replay.test.ts`) and
   the git-owned quality floor (`pnpm chat-eval -- --replay`;
   `scripts/eval/chat-draft-cases.json`). Optional Langfuse dataset
-  `chat-draft-quality-floor` via `--sync` / `--experiment`. Playwright stub
+  `chat-draft-quality-floor` via `--sync` / `--experiment`. Report-shaped
+  cases (a finished section + its cited pages) live in
+  `scripts/eval/report-eval-cases.json`; `pnpm report-eval -- --replay` is
+  the merge gate, `--capture <reportId>` writes the gitignored overlay from
+  a live report, `--search --report-id` scores hybrid retrieval, and
+  `--sync` / `--experiment` push Langfuse dataset `report-quality-scenarios`.
+  Playwright stub
   chat cannot assert tools.
 - Playwright: `pnpm test:e2e` — needs `DATABASE_URL`, serves
   `http://127.0.0.1:3000` with stub flags. Catalog: `TESTING.md`.

@@ -120,6 +120,8 @@ scripts/eval/retrieval-runs/
 scripts/eval/retrieval-cases.local.json
 scripts/eval/chat-draft-runs/
 scripts/eval/chat-draft-cases.local.json
+scripts/eval/report-eval-runs/
+scripts/eval/report-eval-cases.local.json
 
 
 # Investor deck / screenshots (local-only marketing assets)
