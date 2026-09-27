@@ -4,6 +4,7 @@ import { extractHardFacts } from "@/lib/ai/chat/claim-facts";
 import { groundTableOperation } from "@/lib/ai/chat/ground-draft";
 import {
   descriptionSupportedNearKey,
+  protocolBodyQuote,
   documentFamilyFromContext,
   documentFamilyFromFilename,
   extraQsrUnsupported,
@@ -238,6 +239,28 @@ describe("descriptionSupportedNearKey", () => {
   });
 });
 
+describe("protocolBodyQuote", () => {
+  it("strips Capacity/Size running-header chrome so leftover reactor is not a topic match", () => {
+    const header =
+      "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 1 of 60 UNCONTROLLED COPY Equipment Name Glass Lined Reactor";
+    const body = protocolBodyQuote(header).toLowerCase();
+    expect(body).not.toContain("capacity");
+    expect(body).not.toMatch(/iqp/);
+    expect(body).not.toContain("reactor");
+    // Second call must not skip the start because of sticky /g lastIndex.
+    expect(protocolBodyQuote(header)).toBe(protocolBodyQuote(header));
+  });
+
+  it("keeps jacket spec body after the same running header", () => {
+    const page =
+      "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 22 of 60 UNCONTROLLED COPY 13.3.5.1. Jacket Specifications Temperature −28.8/220";
+    const body = protocolBodyQuote(page).toLowerCase();
+    expect(body).toContain("jacket");
+    expect(body).toContain("temperature");
+    expect(body).not.toContain("capacity");
+  });
+});
+
 describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
   it("blocks stock Complies unless the named stage protocol passes that URS ID", () => {
     const emptyPass = ledgerFromPages([
@@ -332,6 +355,60 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
       })
     ).toEqual([]);
   });
+
+  it("blocks IQ on URS-1 when the IQ page is only the running header", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote:
+          "URS-1 Reactor Capacity. Equipment Name Glass Lined Reactor Capacity 8000 L",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 1,
+        attachmentId: "iq",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 1 of 60 UNCONTROLLED COPY Equipment Name Glass Lined Reactor",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "IQ",
+        context:
+          "URS-1\nReactor Capacity\n8000 L [User Requirement Specification.PDF, p. 1]\nIQ",
+        section: "qsr_rtm_process",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("IQ");
+  });
+
+  it("keeps IQ when the IQ body describes jacket without a URS ID", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 22 of 60 UNCONTROLLED COPY 13.3.5.1. Jacket Specifications Temperature −28.8/220",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "IQ",
+        context: "URS-5\nJacket temperature\n20-25 °C\nIQ\n13.3.5.1",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
 });
 
 describe("qsrFailClosedReason", () => {
@@ -367,6 +444,16 @@ describe("row helpers", () => {
       "urs"
     );
     expect(documentFamilyFromContext("Design Qualification protocol")).toBe("dq");
+  });
+
+  it("maps IQP/DQP document numbers onto a family", () => {
+    expect(documentFamilyFromFilename("IQP-GLR-1301.pdf")).toBe("iq");
+    expect(documentFamilyFromFilename("DQP-GLR-1301.pdf")).toBe("dq");
+    expect(documentFamilyFromFilename("OQP-GLR-1301.pdf")).toBe("oq");
+    expect(documentFamilyFromFilename("PQP-GLR-1301.pdf")).toBe("pq");
+    expect(documentFamilyFromContext("IQP/GLR-1301 jacket specifications")).toBe(
+      "iq"
+    );
   });
 
   it("maps the live GLR-1301 protocol filenames to a family", () => {
@@ -497,6 +584,228 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[3]).toContain("IQ");
     expect(keptRow[4]).toContain("8.1");
     expect(keptRow[4]).not.toMatch(/Section 13/i);
+    expect(keptRow[5]).toMatch(/Complies/i);
+  });
+
+  it("keeps IQ / 13.3.5.1 when Installation Qualification describes the jacket without a URS ID", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 22 of 60 UNCONTROLLED COPY Shell thickness 12 mm. 13.3.5.1. Jacket Specifications Design Pressure Operating Pressure Temperature −28.8/220 Jacket Outer diameter Thickness 12 mm Volume 773 L Verification Verified By Date",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-5",
+            "Jacket temperature",
+            "20-25 °C",
+            "IQ",
+            "13.3.5.1",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-5");
+    expect(keptRow[3]).toContain("IQ");
+    expect(keptRow[4]).toContain("13.3.5.1");
+    expect(keptRow[5]).toBe("");
+  });
+
+  it("keeps Complies when the jacket IQ page records Verified as the result", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Jacket Outer diameter Thickness 12 mm Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-5",
+            "Jacket temperature",
+            "20-25 °C",
+            "IQ",
+            "13.3.5.1",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toContain("IQ");
+    expect(keptRow[4]).toContain("13.3.5.1");
+    expect(keptRow[5]).toMatch(/Complies/i);
+  });
+
+  it("clears Stage / Complies when the IQ page is only the running header", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote:
+          "URS-1 Reactor Capacity. Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 1,
+        attachmentId: "iq",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 1 of 60 UNCONTROLLED COPY Equipment Name Glass Lined Reactor",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          ["URS-1", "Reactor Capacity", "8000 L", "IQ", "Section 13", "Complies"],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-1");
+    expect(keptRow[1]).toBe("Reactor Capacity");
+    expect(keptRow[2]).toContain("8000 L");
+    expect(keptRow.slice(3)).toEqual(["", "", ""]);
+  });
+
+  it("clears Stage on edit_cells when IQ is only the running header", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote:
+          "URS-1 Reactor Capacity. Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 1,
+        attachmentId: "iq",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 1 of 60 UNCONTROLLED COPY Equipment Name Glass Lined Reactor",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 1, insertText: "Reactor Capacity" },
+          {
+            row: 1,
+            col: 2,
+            insertText: "8000 L [User Requirement Specification.PDF, p. 1]",
+          },
+          {
+            row: 1,
+            col: 3,
+            insertText: "IQ",
+            rowContext: "URS-1\nReactor Capacity",
+          },
+          {
+            row: 1,
+            col: 5,
+            insertText: "Complies",
+            rowContext: "URS-1\nReactor Capacity\nIQ",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.map((cell) => cell.insertText).join(" ")).toContain("8000 L");
+    expect(cells.map((cell) => cell.insertText).join(" ")).not.toMatch(/\bIQ\b/);
+    expect(cells.map((cell) => cell.insertText).join(" ")).not.toMatch(
+      /Complies/i
+    );
+  });
+
+  it("clears bare Section 13 even when the jacket IQ page topic-matches", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          ["URS-5", "Jacket temperature", "20-25 °C", "IQ", "Section 13", "Complies"],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toContain("IQ");
+    expect(keptRow[4]).toBe("");
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 

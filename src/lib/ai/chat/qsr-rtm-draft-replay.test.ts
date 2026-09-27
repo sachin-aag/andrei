@@ -598,6 +598,94 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(rows[0]?.[5]).toMatch(/Complies/i);
   });
 
+  it("keeps IQ / 13.3.5.1 from a jacket IQ page that never prints URS-5", async () => {
+    mockSection("qsr_rtm_process");
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 4);
+    await readIqPage(
+      tools,
+      22,
+      "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 22 of 60 UNCONTROLLED COPY 13.3.5.1. Jacket Specifications Temperature −28.8/220 Jacket Outer diameter Thickness 12 mm Verification Verified By Date"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-5 Stage/Section from the jacket IQ page.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            [
+              "URS-5",
+              "Jacket temperature",
+              "20-25 °C",
+              "IQ",
+              "13.3.5.1",
+              "Complies",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows[0]?.[0]).toContain("URS-5");
+    expect(rows[0]?.[3]).toContain("IQ");
+    expect(rows[0]?.[4]).toContain("13.3.5.1");
+    expect(rows[0]?.[5] ?? "").not.toMatch(/Complies/i);
+  });
+
+  it("does not fill URS-1 Stage from an IQ running header", async () => {
+    mockSection("qsr_rtm_process");
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 1);
+    await readIqPage(
+      tools,
+      1,
+      "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 1 of 60 UNCONTROLLED COPY Equipment Name Glass Lined Reactor"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-1 from the IQ header.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            { row: 1, col: 1, insertText: "Reactor Capacity" },
+            {
+              row: 1,
+              col: 2,
+              insertText: `8000 L [${URS_FILENAME}, p. 1]`,
+            },
+            { row: 1, col: 3, insertText: "IQ", rowContext: "URS-1\nReactor Capacity" },
+            {
+              row: 1,
+              col: 5,
+              insertText: "Complies",
+              rowContext: "URS-1\nReactor Capacity\nIQ",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    expect(cells.map((cell) => cell.insertText).join(" ")).toContain("8000 L");
+    expect(cells.map((cell) => cell.insertText).join(" ")).not.toMatch(/\bIQ\b/);
+    expect(cells.map((cell) => cell.insertText).join(" ")).not.toMatch(/Complies/i);
+  });
+
   it("proposes NLT 25.0 m² without treating the decimal as a measured zero", async () => {
     mockSection("qsr_rtm_process");
     const tools = buildTools({ section: "qsr_rtm_process" });

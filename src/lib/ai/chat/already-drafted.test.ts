@@ -337,6 +337,7 @@ describe("alreadyDraftedBlock", () => {
     expect(block).toContain("targeted propose_edit");
     expect(block).toContain("hint field is an expected format");
     expect(block).toContain("Material gap only");
+    expect(block).toContain("Empty cells they asked to fill");
     expect(block).toContain("Omit-if conflict");
   });
 
