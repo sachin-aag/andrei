@@ -50,7 +50,10 @@ DV mixes LLM criteria with deterministic `check()` functions.
   invalidates the earlier coordinates (`insert_rows` after the header shifts
   row 1; an append does not dismiss a disjoint `edit_cells` of row 1).
   `insert_rows` prefers `afterRowKey` (first-cell text) over `afterRow` so a
-  later insert in the same batch does not land on a stale index. Do not insert
+  later insert in the same batch does not land on a stale index. `edit_cells`
+  prefers `rowKey` (first-cell text, e.g. URS-13) over `row` the same way;
+  identity cells (`insertText` already equals the live cell) are
+  `already_present` (locatable, not applyable). Do not insert
   `{ banner }` group rows; existing template banners keep their colspan, and
   data rows never inherit a banner colspan. A newer `delete_rows` supersedes an older delete whose rows it
   deletes or would shift up (below the smallest deleted row). A newer

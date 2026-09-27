@@ -85,6 +85,7 @@ function applyOneInMemory(args: {
   skippedIds: string[];
   dismissedIds: string[];
   supersededById: Map<string, string>;
+  alreadyPresentIds: Set<string>;
   ignorePlaceBeforePairedBlock?: boolean;
   documentContents?: readonly DocumentTableContent[];
 }): Record<string, unknown> {
@@ -99,6 +100,11 @@ function applyOneInMemory(args: {
     documentContents: args.documentContents,
   });
   if (!result.ok || result.remainder === "conflict") {
+    if (!result.ok && result.reason === "noop") {
+      args.dismissedIds.push(args.comment.id);
+      args.alreadyPresentIds.add(args.comment.id);
+      return args.sectionContent;
+    }
     const supersededBy = appliedCommentThatSupersedesTableOp(
       args.appliedComments,
       args.comment
@@ -162,6 +168,7 @@ export async function acceptAllSuggestions(args: {
   const appliedIds: string[] = [];
   const appliedComments: CommentRecord[] = [];
   const dismissedIds: string[] = [...supersededIds];
+  const alreadyPresentIds = new Set<string>();
   // Leave unlocatable leftovers open. Dismissing them is a silent failure;
   // the toast reports the skip and the card stays so the engineer can act.
   const skippedIds: string[] = partition.unlocatableIds.filter(
@@ -200,6 +207,7 @@ export async function acceptAllSuggestions(args: {
     skippedIds,
     dismissedIds,
     supersededById,
+    alreadyPresentIds,
   };
 
   for (const comment of args.comments) {
@@ -317,8 +325,13 @@ export async function acceptAllSuggestions(args: {
   const dismissContent: Record<string, string> = {};
   for (const id of dismissedIds) {
     const row = commentById.get(id);
+    if (!row) continue;
+    if (alreadyPresentIds.has(id)) {
+      dismissContent[id] = withResolutionReason(row.content, "already_present");
+      continue;
+    }
     const by = supersededById.get(id);
-    if (!row || !by) continue;
+    if (!by) continue;
     dismissContent[id] = withResolutionReason(
       row.content,
       resolutionReasonSupersededBy(by)

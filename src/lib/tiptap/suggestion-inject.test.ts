@@ -5,6 +5,7 @@ import {
   injectSuggestionMarks,
   resolveSuggestionPreviewSyncDoc,
   richDocsMatchIgnoringAiPreview,
+  richFieldHasLocalTextEdits,
   shouldApplyExternalValueToEditor,
   shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
@@ -232,6 +233,42 @@ describe("shouldSkipSuggestionDocSync", () => {
         hasLocalEdits: false,
       })
     ).toBe(false);
+  });
+
+  it("does not treat table colwidth noise as local typing", () => {
+    const canonical: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  attrs: { colspan: 1, rowspan: 1, colwidth: null },
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "URS-13" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const live: JSONContent = structuredClone(canonical);
+    live.content![0]!.content![0]!.content![0]!.attrs = {
+      colspan: 1,
+      rowspan: 1,
+      colwidth: [120],
+    };
+    expect(richFieldHasLocalTextEdits(live, canonical)).toBe(false);
+    expect(richDocsMatchIgnoringAiPreview(live, canonical)).toBe(false);
   });
 
   it("does not inject over local edits even when the preview is missing", () => {

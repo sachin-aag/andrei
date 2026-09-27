@@ -818,6 +818,24 @@ describe("buildChatTools edit_table", () => {
       accepts(tools, "edit_table", {
         section: "define",
         targetField: "narrative",
+        reasoning: "Fill URS-13 Stage",
+        operation: {
+          kind: "edit_cells",
+          cells: [
+            {
+              row: 1,
+              col: 3,
+              rowKey: "URS-13",
+              insertText: "PQ",
+            },
+          ],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
         reasoning: "delete rows",
         operation: {
           kind: "delete_rows",

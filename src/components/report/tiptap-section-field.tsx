@@ -82,6 +82,7 @@ import {
   injectSuggestionMarks,
   resolveSuggestionPreviewSyncDoc,
   richDocsMatchIgnoringAiPreview,
+  richFieldHasLocalTextEdits,
   shouldApplyExternalValueToEditor,
   shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
@@ -1071,7 +1072,7 @@ export function TiptapSectionField({
           activeSuggestionId &&
             !narrativeHasSuggestionMarks(json, activeSuggestionId)
         ),
-        hasLocalEdits: !richDocsMatchIgnoringAiPreview(json, canonicalJson),
+        hasLocalEdits: richFieldHasLocalTextEdits(json, canonicalJson),
         needsStrip,
       })
     ) {

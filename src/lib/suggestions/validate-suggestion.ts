@@ -242,6 +242,15 @@ export function validateSuggestionLocate(
       targetField: path,
     });
     if (!result.ok) {
+      if (result.status === "already_present") {
+        return {
+          locateStatus: "locatable",
+          documentChanged: false,
+          canApply: false,
+          canPreview: false,
+          mergeStatus: "noop",
+        };
+      }
       return {
         locateStatus: "not_found",
         documentChanged: true,

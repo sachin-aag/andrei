@@ -253,7 +253,10 @@ export function applySuggestionToContent(
       documentContents: args.documentContents,
     });
     if (!result.ok) {
-      return { ok: false, reason: "not_found" };
+      return {
+        ok: false,
+        reason: result.status === "already_present" ? "noop" : "not_found",
+      };
     }
     let nextDoc = result.doc;
     if (payload.second) {

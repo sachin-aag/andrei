@@ -114,7 +114,12 @@ export function applyCommitToSectionContent(args: {
         documentContents: args.documentContents,
       });
       if (!applied.ok) {
-        return { ok: false, status: applied.status, hint: applied.hint };
+        return {
+          ok: false,
+          status:
+            applied.status === "already_present" ? "empty_edit" : applied.status,
+          hint: applied.hint,
+        };
       }
       return { ok: true, content: setRichFieldValue(content, targetField, applied.doc) };
     }

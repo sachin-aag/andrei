@@ -579,6 +579,40 @@ describe("validateSuggestionLocate table operations", () => {
     expect(stale.canApply).toBe(false);
     expect(stale.documentChanged).toBe(true);
   });
+
+  it("treats identity edit_cells as locatable but not applyable", () => {
+    const comment = aiFixComment({
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "",
+        reasoning: "URS-13 Stage already empty",
+        tableOperation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 1,
+              rowKey: "UUT-1",
+              expectedText: "Acme Corp",
+              insertText: "Acme Corp",
+            },
+          ],
+        },
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "define", {
+      narrative: equipmentTable("Acme Corp"),
+    });
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(false);
+    expect(v.canPreview).toBe(false);
+    expect(v.mergeStatus).toBe("noop");
+    expect(v.documentChanged).toBe(false);
+  });
 });
 
 describe("reviewOrderOpenSuggestions", () => {
