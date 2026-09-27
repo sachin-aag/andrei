@@ -1,6 +1,7 @@
 import type { HardFact } from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
+import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
 import { QSR_TABLE_HEADERS } from "@/lib/document-types/qsr/sections";
 import type { TableOperation } from "@/lib/suggestions/table-operation";
 
@@ -55,6 +56,7 @@ const REVISION_CELL_RE = /^0?\d{1,2}$/;
 const RPM_PARAMETER_RE = /\bagitator\b|\brpm\b/i;
 const RANGE_PARAMETER_RE =
   /\bpressure\b|\bvacuum\b|\btemperature\b|\bagitator\b|\brpm\b/i;
+const LEADING_QUANTITY_RE = /^(?:[~≈±]|[-−–])?\s*\d+(?:\.\d+)?/;
 
 export const QSR_RTM_SECTIONS = [
   "qsr_rtm_process",
@@ -885,11 +887,57 @@ export function qsrOperatingRangeUnsupported(
   const quotes = ledger.recordedPages().map((page) => page.quote);
   if (RPM_PARAMETER_RE.test(context)) {
     const hasRpm = quotes.some((quote) =>
-      /\b\d+(?:\.\d+)?\s*(?:±|\+\/-|plus\/minus)?\s*\d*\s*rpm\b/i.test(quote)
+      /(?<![A-Za-z0-9.])[-−–]?\s*\d+(?:\.\d+)?\s*(?:±|\+\/-|\+\-|plus\/minus)?\s*\d*\s*rpm\b/i.test(
+        quote
+      )
     );
     if (hasRpm && !/\brpm\b/i.test(trimmed) && !/\d/.test(trimmed)) {
       return syntheticUnsupportedFact(trimmed);
     }
+  }
+  return null;
+}
+
+/**
+ * Operating Range / RTM "15 °C" or "50 ± 10 RPM" when the URS prints −15 °C
+ * or −50 ± 10 RPM. A leading en-dash read as ~ / ± is the same miss.
+ */
+function unsignedQuantityWhenEvidenceIsNegative(
+  cell: string,
+  context: string,
+  quotes: readonly string[]
+): HardFact | null {
+  const isTemp = /\btemperature\b/i.test(context);
+  const isRpm = RPM_PARAMETER_RE.test(context);
+  if (!isTemp && !isRpm) return null;
+  const match = LEADING_QUANTITY_RE.exec(cell);
+  if (!match) return null;
+  const token = glueOcrMinusSigns(match[0].replace(/^[~≈±]+/, "").replace(/\s+/g, ""));
+  if (!token || token.startsWith("-")) return null;
+  const unit = isTemp ? " °C" : " RPM";
+  const kind = isTemp ? ("temperature" as const) : ("number" as const);
+  const normalizedUnit = isTemp ? "c" : "rpm";
+  const unsigned: HardFact = {
+    text: `${token}${unit}`,
+    kind,
+    start: 0,
+    end: token.length + unit.length,
+    normalized: `${token}${normalizedUnit}`,
+    cited: [],
+  };
+  const signed: HardFact = {
+    ...unsigned,
+    text: `-${token}${unit}`,
+    normalized: `-${token}${normalizedUnit}`,
+  };
+  const hasUnsigned = quotes.some((quote) =>
+    evidenceContainsFact(quote, unsigned)
+  );
+  const hasNegative = quotes.some((quote) =>
+    evidenceContainsFact(quote, signed)
+  );
+  if (hasNegative && !hasUnsigned) {
+    return syntheticUnsupportedFact(cell);
   }
   return null;
 }
@@ -952,6 +1000,13 @@ export function extraQsrUnsupported(input: {
   if (input.section === "qsr_operating_range") {
     add(qsrOperatingRangeUnsupported(input.cell, input.context, input.ledger));
   }
+  add(
+    unsignedQuantityWhenEvidenceIsNegative(
+      input.cell.trim(),
+      input.context,
+      input.ledger.recordedPages().map((page) => page.quote)
+    )
+  );
   add(
     qsrRevisionUnsupported(
       input.cell,

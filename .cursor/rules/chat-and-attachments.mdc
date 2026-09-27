@@ -153,7 +153,10 @@ parameter shares a word such as glass or thickness. URS-1 does not match
 URS-13. Digits in URS-N are not a measured number. A decimal such as 25.0 is
 not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
 to persist `<number>` or ask the engineer to type it. Integer `3` is not
-`3.5`.   Stock Complies / bare Section 13 still need a named-stage protocol page that
+`3.5`. A leading minus is part of the number (`−15 °C` is not `15 °C`;
+OCR-split `- 15` is evidence for `-15`). A ± window is not independent
+evidence for the setpoint (`50±10 RPM` is not `−50 ± 10 RPM`). The high end
+of a range is not evidence for the low end (`20 °C` is not `−20 °C to 150 °C`).   Stock Complies / bare Section 13 still need a named-stage protocol page that
   either names that URS ID or topic-matches that row's Parameters in the
   protocol body (not the running header). Verified on the result line counts
   as a pass; Verified By in a signature block does not. Unsupported Stage /

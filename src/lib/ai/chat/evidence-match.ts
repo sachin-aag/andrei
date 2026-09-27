@@ -1,5 +1,6 @@
 import uFuzzy from "@leeoniya/ufuzzy";
 import type { HardFact, HardFactKind } from "@/lib/ai/chat/claim-facts";
+import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
 
 const fuzzy = new uFuzzy({
   intraMode: 1,
@@ -39,12 +40,56 @@ function escapeRegExp(value: string): string {
 
 function numericForms(fact: HardFact): string[] {
   const raw = fact.text.replace(/,/g, "");
-  const compact = raw.replace(/\s+/g, "").replace(/°/g, "").toLowerCase();
-  const forms = new Set<string>([compact, fact.normalized]);
-  for (const token of compact.match(/\d+(?:\.\d+)?/g) ?? []) {
+  const compact = glueOcrMinusSigns(
+    raw.replace(/\s+/g, "").replace(/°/g, "").toLowerCase()
+  );
+  const forms = new Set<string>([
+    compact,
+    glueOcrMinusSigns(fact.normalized),
+  ]);
+  const re = /[-−–]?\d+(?:\.\d+)?/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(compact))) {
+    const before = compact.slice(0, match.index);
+    // The window after ± is not independent evidence for the setpoint
+    // (−50 ± 10 RPM must not verify a draft of 50 ± 10 RPM via the 10).
+    if (/[±]|(\+\/-)|(\+-)|(plus\/minus)$/i.test(before)) {
+      continue;
+    }
+    // "to 150" in −20 °C to 150 °C must not verify a draft of 20 °C.
+    if (/to$/i.test(before)) {
+      continue;
+    }
+    const token = glueOcrMinusSigns(match[0]);
+    const prev = compact[match.index - 1] ?? "";
+    // A dash after a digit is a range separator (15–130), not a sign and
+    // not independent evidence for the first number's sign.
+    if (token.startsWith("-") && /\d/.test(prev)) {
+      continue;
+    }
     forms.add(token);
   }
   return [...forms].filter(Boolean);
+}
+
+function isNegativeSignBefore(haystack: string, index: number): boolean {
+  return /(?<![\d.])[-−–]\s*$/.test(haystack.slice(0, index));
+}
+
+function hasSignedMatch(
+  haystack: string,
+  re: RegExp,
+  wantNegative: boolean
+): boolean {
+  re.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(haystack))) {
+    if (isNegativeSignBefore(haystack, match.index) === wantNegative) {
+      return true;
+    }
+    if (match[0].length === 0) break;
+  }
+  return false;
 }
 
 /**
@@ -52,22 +97,38 @@ function numericForms(fact: HardFact): string[] {
  * "1.0 Purpose", or "2024" is not evidence for contaminated-units 0. A
  * sentence-final "0." still matches — only `.` + digit is a decimal.
  * OCR-split "3 . 5" / "3. 5" is evidence for 3.5, not for integer 3.
+ * A leading minus is part of the number: 15 °C is not evidence for −15 °C.
+ * The high end of a range (150 in −20 to 150 °C) is not evidence for 20 °C.
  */
 function numericNeedlePresent(haystack: string, needle: string): boolean {
-  const n = needle.toLowerCase();
+  const n = glueOcrMinusSigns(needle.toLowerCase());
   if (!n) return false;
-  if (/^\d+\.\d+$/.test(n)) {
-    const [whole, frac] = n.split(".");
-    return new RegExp(
-      `(?<![\\d.])${escapeRegExp(whole!)}\\s*\\.\\s*${escapeRegExp(frac!)}(?!\\d)(?!\\.\\d)`,
-      "i"
-    ).test(haystack);
+  const parsed = /^(-)?(\d+(?:\.\d+)?)(.*)$/.exec(n);
+  if (!parsed) {
+    return haystack.includes(n);
   }
-  if (/^\d+$/.test(n)) {
-    return new RegExp(
-      `(?<![\\d.])${escapeRegExp(n)}(?!\\d)(?!\\s*\\.\\s*\\d)`,
-      "i"
-    ).test(haystack);
+  const wantNegative = Boolean(parsed[1]);
+  const digits = parsed[2]!;
+  if (/^\d+\.\d+$/.test(digits)) {
+    const [whole, frac] = digits.split(".");
+    return hasSignedMatch(
+      haystack,
+      new RegExp(
+        `(?<![\\d.])${escapeRegExp(whole!)}\\s*\\.\\s*${escapeRegExp(frac!)}(?!\\d)(?!\\.\\d)`,
+        "gi"
+      ),
+      wantNegative
+    );
+  }
+  if (/^\d+$/.test(digits)) {
+    return hasSignedMatch(
+      haystack,
+      new RegExp(
+        `(?<![\\d.])${escapeRegExp(digits)}(?!\\d)(?!\\s*\\.\\s*\\d)`,
+        "gi"
+      ),
+      wantNegative
+    );
   }
   if (haystack.includes(n)) return true;
   const spaced = n.replace(/(\d)([a-z%])/gi, "$1 $2");
@@ -140,12 +201,14 @@ export function evidenceContainsFact(haystack: string, fact: HardFact): boolean 
   const originalHay = collapseWs(haystack).toUpperCase();
   // URS-1 / URS-15 are identifiers. Their digits are not a measured
   // "1 mm" or "15 °C" sitting in that row's requirement text.
-  const numericHay = glueOcrDecimals(
-    hay
-      .replace(/°/g, "")
-      .replace(/,/g, "")
-      .replace(/\burs-\d+\b/gi, " ")
-      .replace(/\s+/g, " ")
+  const numericHay = glueOcrMinusSigns(
+    glueOcrDecimals(
+      hay
+        .replace(/°/g, "")
+        .replace(/,/g, "")
+        .replace(/\burs-\d+\b/gi, " ")
+        .replace(/\s+/g, " ")
+    )
   );
   for (const needle of kindNeedles(fact)) {
     if (!needle) continue;

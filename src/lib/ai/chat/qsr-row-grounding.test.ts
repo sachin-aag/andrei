@@ -338,6 +338,104 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toContain("VFD compatible");
   });
 
+  it("blocks unsigned 15 °C on Temperature Minimum when the URS shows −15 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15 °C",
+        context: "Temperature\nMinimum",
+        section: "qsr_operating_range",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15 °C");
+    expect(
+      extraQsrUnsupported({
+        cell: "15",
+        context: "Temperature\nMinimum",
+        section: "qsr_operating_range",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15");
+    expect(
+      extraQsrUnsupported({
+        cell: "−15 °C",
+        context: "Temperature\nMinimum",
+        section: "qsr_operating_range",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("blocks unsigned 20 °C on URS-37 when the URS shows −20 °C to 150 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote:
+          "URS-37 Temperature To measure the temperature - 20 °C to 150 °C",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "20 °C",
+        context: "URS-37\nTemperature",
+        section: "qsr_rtm_process",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("20 °C");
+    expect(
+      extraQsrUnsupported({
+        cell: "-20 °C to 150 °C",
+        context: "URS-37\nTemperature",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("blocks unsigned 50±10 RPM when the URS shows −50 ± 10 RPM", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 7,
+        attachmentId: "urs",
+        quote: "URS-10 RPM requirement –50 ± 10 RPM",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "50+-10 RPM",
+        context: "URS-10\nRPM requirement",
+        section: "qsr_rtm_process",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("50+-10 RPM");
+    expect(
+      extraQsrUnsupported({
+        cell: "~50 ± 10 RPM",
+        context: "Agitator RPM",
+        section: "qsr_operating_range",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("~50 ± 10 RPM");
+    expect(
+      extraQsrUnsupported({
+        cell: "–50 ± 10 RPM",
+        context: "URS-10\nRPM requirement",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
   it("does not extra-block a URS-1 capacity cell cited to the cover", () => {
     const ledger = ledgerFromPages([
       {

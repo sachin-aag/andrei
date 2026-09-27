@@ -74,8 +74,17 @@ const DATE_RE = new RegExp(
 const DURATION_RE =
   /\b\d{1,3}:\d{2}:\d{2}\b|\b\d+(?:\.\d+)?\s*(?:days?|d|hours?|hrs?|h|min(?:ute)?s?|sec(?:ond)?s?|weeks?|wk)\b/gi;
 
-const TEMPERATURE_RE =
-  /\b\d+(?:\.\d+)?\s*[–-]\s*\d+(?:\.\d+)?\s*°?\s*C\b|\b\d+(?:\.\d+)?\s*°\s*C\b/gi;
+/**
+ * Optional leading minus (ASCII, unicode minus, en-dash) so −15 °C is not
+ * extracted as 15 °C. `\b` before the digits would drop that sign.
+ * `−15 °C to 130 °C` keeps the unit on both ends.
+ */
+const SIGNED_NUMBER = String.raw`[-−–]?\s*\d+(?:\.\d+)?`;
+const TEMP_UNIT = String.raw`°?\s*C`;
+const TEMPERATURE_RE = new RegExp(
+  String.raw`(?<![A-Za-z0-9])${SIGNED_NUMBER}(?:\s*${TEMP_UNIT})?\s*(?:[–−-]|to)\s*${SIGNED_NUMBER}\s*${TEMP_UNIT}\b|(?<![A-Za-z0-9])${SIGNED_NUMBER}\s*${TEMP_UNIT}\b`,
+  "gi"
+);
 
 const IDENTIFIER_RE =
   /\b(?:URS-\d+|SOP\/[A-Z]{2,}\/[A-Z]{2,}\/\d{3}(?:\s*R\d+)?|[A-Z]\/[A-Z]{2}\/\d{3}|[A-Z]{2,5}-\d{2}-[A-Z0-9]+(?:-[A-Z0-9]+)+|[A-Z]{2,8}(?:\/[A-Z]{2,8})+\/\d{2,}(?:\/[A-Z0-9]+)*)\b/g;
@@ -90,8 +99,15 @@ const IDENTIFIER_RE =
 const INSTRUMENT_UNIT =
   "(?:mL|ml|µL|uL|(?<=\\s)L|CFU|cfu|units?|%|kg(?:\\/cm(?:²|2))?|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
 
+/** −50 ± 10 RPM must stay one signed fact; `\b50` would drop the minus. */
+const PLUS_MINUS_MARK = String.raw`(?:±|\+\/-|\+\-|plus\s*\/\s*minus)`;
+const PLUS_MINUS_QUANTITY_RE = new RegExp(
+  String.raw`(?<![A-Za-z0-9])${SIGNED_NUMBER}\s*${PLUS_MINUS_MARK}\s*\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}(?!\w)`,
+  "gi"
+);
+
 const NUMBER_WITH_UNIT_RE = new RegExp(
-  String.raw`\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*${INSTRUMENT_UNIT}?\b|\b\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}(?!\w)`,
+  String.raw`(?<![A-Za-z0-9])[-−–]?\s*\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*${INSTRUMENT_UNIT}?\b|(?<![A-Za-z0-9])[-−–]?\s*\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}(?!\w)`,
   "gi"
 );
 
@@ -267,6 +283,15 @@ export function extractHardFacts(text: string): HardFact[] {
   collectKind(facts, taken, citeSpans, text, DATE_RE, "date", sentenceCited);
   collectKind(facts, taken, citeSpans, text, TEMPERATURE_RE, "temperature", sentenceCited);
   collectKind(facts, taken, citeSpans, text, DURATION_RE, "duration", sentenceCited);
+  collectKind(
+    facts,
+    taken,
+    citeSpans,
+    text,
+    PLUS_MINUS_QUANTITY_RE,
+    "number",
+    sentenceCited
+  );
   collectKind(facts, taken, citeSpans, text, NUMBER_WITH_UNIT_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, BARE_THOUSANDS_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, BARE_ZERO_RE, "number", sentenceCited);
@@ -285,7 +310,12 @@ export function normalizeFactText(text: string, kind: HardFactKind): string {
     case "number":
     case "duration":
     case "temperature":
-      return collapsed.replace(/,/g, "").replace(/\s+/g, "").replace(/°/g, "").toLowerCase();
+      return collapsed
+        .replace(/,/g, "")
+        .replace(/\s+/g, "")
+        .replace(/°/g, "")
+        .replace(/^[−–]/, "-")
+        .toLowerCase();
     default: {
       const exhaustive: never = kind;
       return exhaustive;
