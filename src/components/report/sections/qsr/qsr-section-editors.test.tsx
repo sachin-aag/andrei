@@ -3,6 +3,10 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QSR_SECTION_EDITORS } from "@/components/report/sections/qsr/qsr-section-editors";
+import {
+  QSR_SECTION_KEYS,
+  QSR_SECTION_LABELS,
+} from "@/lib/document-types/qsr/sections";
 
 vi.mock("@/lib/analytics/events", () => ({
   captureEvent: vi.fn(),
@@ -71,33 +75,18 @@ function descriptionUnder(heading: string): string | undefined {
 }
 
 describe("QSR section editors", () => {
-  it("does not show helper copy under 6.1 or 6.2", () => {
-    const Volumetric = QSR_SECTION_EDITORS.qsr_volumetric_details;
-    const { unmount } = render(<Volumetric />);
-    expect(
-      screen.getByRole("heading", { name: "6.1 Volumetric Details" })
-    ).toBeInTheDocument();
-    expect(descriptionUnder("6.1 Volumetric Details")).toBeUndefined();
-    unmount();
-
-    const Operating = QSR_SECTION_EDITORS.qsr_operating_range;
-    render(<Operating />);
-    expect(
-      screen.getByRole("heading", { name: "6.2 Operating Range" })
-    ).toBeInTheDocument();
-    expect(descriptionUnder("6.2 Operating Range")).toBeUndefined();
-  });
-
-  it("keeps merge hints on other table sections", () => {
-    const QualDocs = QSR_SECTION_EDITORS.qsr_qualification_documents;
-    const { unmount } = render(<QualDocs />);
-    expect(descriptionUnder("3 Qualification Documents")).toMatch(/Merge/);
-    unmount();
-
-    const Process = QSR_SECTION_EDITORS.qsr_rtm_process;
-    render(<Process />);
-    expect(descriptionUnder("5.1 Process Requirements")).toMatch(
-      /Keep the header columns unchanged/
-    );
+  it("does not show merge helper copy under any section heading", () => {
+    for (const key of QSR_SECTION_KEYS) {
+      const Editor = QSR_SECTION_EDITORS[key];
+      const { unmount } = render(<Editor />);
+      const heading = QSR_SECTION_LABELS[key];
+      expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+      expect(descriptionUnder(heading)).toBeUndefined();
+      expect(screen.queryByText(/Merge/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Keep the header columns unchanged/)
+      ).not.toBeInTheDocument();
+      unmount();
+    }
   });
 });
