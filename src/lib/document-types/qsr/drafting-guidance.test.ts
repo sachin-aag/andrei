@@ -32,6 +32,9 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
     expect(QSR_DRAFTING_GUIDANCE).toContain("Prefer afterRowKey");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Prefer edit_cells rowKey");
     expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "Give every cell its own rowKey"
+    );
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
       "Do not write VFD compatible in place of an RPM number"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(

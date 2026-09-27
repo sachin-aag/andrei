@@ -728,9 +728,24 @@ function nextCellText(cell: TableCellEdit): string {
   return normalizeTableCellText(normalizeSuggestionInsertText(cell.insertText));
 }
 
+function agreedSiblingRowKey(
+  keysByOriginalRow: Map<number, Set<string>>,
+  originalRow: number
+): string {
+  const keys = keysByOriginalRow.get(originalRow);
+  if (!keys || keys.size !== 1) return "";
+  return [...keys][0] ?? "";
+}
+
 /**
- * Rematch edit_cells onto the live URS / first-cell row, then drop cells whose
- * insertText already equals the live cell (identity). Empty leftover → already_present.
+ * Rematch each edit_cells cell onto its own live URS / first-cell row, then
+ * drop cells whose insertText already equals the live cell (identity). Empty
+ * leftover → already_present.
+ *
+ * Do not group by the numeric `row` and reuse the first inferred key: the
+ * model often repeats one dummy row for every URS while `rowKey` differs.
+ * An unkeyed sibling on the same numeric row inherits a key only when every
+ * keyed sibling on that dummy row agrees.
  */
 export function resolveEditCells(
   rows: readonly JSONContent[],
@@ -745,25 +760,23 @@ export function resolveEditCells(
     };
   }
 
-  const groups = new Map<number, TableCellEdit[]>();
-  for (const cell of cells) {
-    const group = groups.get(cell.row) ?? [];
-    group.push(cell);
-    groups.set(cell.row, group);
-  }
+  const inferredKeys = cells.map((cell) => inferEditCellRowKey(cell, rows));
+  const keysByOriginalRow = new Map<number, Set<string>>();
+  cells.forEach((cell, index) => {
+    const inferred = inferredKeys[index];
+    if (!inferred) return;
+    const group = keysByOriginalRow.get(cell.row) ?? new Set<string>();
+    group.add(inferred);
+    keysByOriginalRow.set(cell.row, group);
+  });
 
   const remapped: TableCellEdit[] = [];
   const skipExpectedFor = new Set<string>();
-  for (const [originalRow, group] of groups) {
-    let key = "";
-    for (const cell of group) {
-      const inferred = inferEditCellRowKey(cell, rows);
-      if (inferred) {
-        key = inferred;
-        break;
-      }
-    }
-    let liveRow = originalRow;
+  for (let index = 0; index < cells.length; index += 1) {
+    const cell = cells[index]!;
+    const key =
+      inferredKeys[index] || agreedSiblingRowKey(keysByOriginalRow, cell.row);
+    let liveRow = cell.row;
     if (key) {
       const hits = rowsMatchingAfterKey(rows, key);
       if (hits.length === 0) {
@@ -789,16 +802,13 @@ export function resolveEditCells(
         hint: `Row ${liveRow} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`,
       };
     }
-    const rematchedAway = Boolean(key) && liveRow !== originalRow;
-    for (const cell of group) {
-      const next: TableCellEdit = {
-        ...cell,
-        row: liveRow,
-        ...(key ? { rowKey: key } : {}),
-      };
-      if (rematchedAway) skipExpectedFor.add(`${liveRow},${cell.col}`);
-      remapped.push(next);
-    }
+    const rematchedAway = Boolean(key) && liveRow !== cell.row;
+    remapped.push({
+      ...cell,
+      row: liveRow,
+      ...(key ? { rowKey: key } : {}),
+    });
+    if (rematchedAway) skipExpectedFor.add(`${liveRow},${cell.col}`);
   }
 
   const seen = new Set<string>();

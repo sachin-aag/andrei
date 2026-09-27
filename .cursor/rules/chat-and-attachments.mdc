@@ -129,7 +129,8 @@ and `truncated !== true`.
 
 `edit_table` `insert_rows` prefers `afterRowKey` (first-cell text) over
 `afterRow`. `edit_cells` prefers `rowKey` (first-cell text, e.g. URS-13)
-over `row`. Do not insert `{ banner }` group rows; existing template banners
+over `row`. Each `edit_cells` cell rematches by its own `rowKey` — do not
+group a batch by a reused dummy numeric row. Do not insert `{ banner }` group rows; existing template banners
 keep their colspan and data rows do not inherit it.
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
 against the citation ledger's served quotes (`groundDraftText`). That
