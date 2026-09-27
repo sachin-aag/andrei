@@ -45,6 +45,7 @@ import {
   filenameMatchesFamily,
   isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
+  rankRtmReferenceOperation,
   rowKeyFromContext,
   syntheticUnsupportedFact,
 } from "@/lib/ai/chat/qsr-row-grounding";
@@ -613,7 +614,11 @@ export function groundTableOperation(input: {
   unsupported: HardFact[];
   blocked: boolean;
 } {
-  const cited = rewriteTableOperationCitations(input.operation, input.ledger);
+  const cited = rankRtmReferenceOperation(
+    rewriteTableOperationCitations(input.operation, input.ledger),
+    input.ledger,
+    input.grounding?.section
+  );
   const failClosed = qsrFailClosedReason({
     section: input.grounding?.section,
     attachedFilenames: input.grounding?.attachedFilenames,

@@ -2,6 +2,7 @@ import type { HardFact } from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import { QSR_TABLE_HEADERS } from "@/lib/document-types/qsr/sections";
+import type { TableOperation } from "@/lib/suggestions/table-operation";
 
 const URS_ID_RE = /\bURS-\d+\b/gi;
 
@@ -74,6 +75,26 @@ export const QSR_IDENTITY_TABLE_SECTIONS = [
 export type QsrRtmSection = (typeof QSR_RTM_SECTIONS)[number];
 export type QualDocFamily = "urs" | "dq" | "iq" | "oq" | "pq" | "ds";
 
+/** Highest remaining-column Stage first. Single cell — not a compound list. */
+export const QSR_STAGE_RANK = ["pq", "oq", "iq", "dq"] as const;
+export type RtmStageFamily = (typeof QSR_STAGE_RANK)[number];
+
+const STAGE_LABEL: Record<RtmStageFamily, "PQ" | "OQ" | "IQ" | "DQ"> = {
+  pq: "PQ",
+  oq: "OQ",
+  iq: "IQ",
+  dq: "DQ",
+};
+
+export type RtmReferencePick = {
+  family: RtmStageFamily;
+  stageLabel: "PQ" | "OQ" | "IQ" | "DQ";
+  filename: string;
+  pageNumber: number;
+  sectionHeading: string | null;
+  remarks: string;
+};
+
 const FAMILY_FILENAME_NEEDLES: Record<QualDocFamily, readonly string[]> = {
   urs: ["urs", "user requirement"],
   dq: ["design qualification", "-dq", "dq-", " dq.", "dqp"],
@@ -121,6 +142,25 @@ export function isQsrRtmOptionalReferenceColumn(
     (name.includes("reference") && name.includes("section")) ||
     name === "remarks"
   );
+}
+
+export function rtmReferenceColumnIndexes(
+  section: string | null | undefined
+): { stage: number; section: number; remarks: number } | null {
+  if (!isQsrRtmSection(section)) return null;
+  const headers = QSR_TABLE_HEADERS[section];
+  let stage = -1;
+  let sectionCol = -1;
+  let remarks = -1;
+  for (let i = 0; i < headers.length; i++) {
+    const name = headers[i]!.toLowerCase();
+    if (name.includes("qualification stage")) stage = i;
+    else if (name.includes("reference") && name.includes("section")) {
+      sectionCol = i;
+    } else if (name === "remarks") remarks = i;
+  }
+  if (stage < 0 || sectionCol < 0 || remarks < 0) return null;
+  return { stage, section: sectionCol, remarks };
 }
 
 export function isQsrIdentityTableSection(
@@ -476,9 +516,40 @@ function protocolTopicTokens(context: string): string[] {
     );
 }
 
+function isRtmReferenceMetaLine(line: string): boolean {
+  const stripped = line.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped) return true;
+  if (/^URS-\d+$/i.test(stripped)) return true;
+  if (STAGE_ONLY_RE.test(stripped)) return true;
+  if (PASS_WORD_CELL_RE.test(stripped)) return true;
+  if (STOCK_BARE_SECTION_13_RE.test(stripped)) return true;
+  if (SECTION_NUMBER_CELL_RE.test(stripped)) return true;
+  return false;
+}
+
+/**
+ * Prefer User requirements / Purpose over a short Parameters label so
+ * `MOC` cannot topic-match a neighbour protocol row by itself.
+ */
+function protocolTopicSource(context: string): string {
+  const lines = context
+    .split(/\n/)
+    .map((line) => line.replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim())
+    .filter((line) => line && !isRtmReferenceMetaLine(line));
+  if (lines.length === 0) return context;
+  const longest = lines.reduce((best, line) =>
+    line.length >= best.length ? line : best
+  );
+  const tokens = protocolTopicTokens(longest);
+  if (tokens.length >= 2 || tokens.some((token) => token.length >= 8)) {
+    return longest;
+  }
+  return lines.join(" ");
+}
+
 function protocolTopicBody(quote: string, context: string): string | null {
   const body = protocolBodyQuote(quote);
-  const tokens = protocolTopicTokens(context);
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
   if (tokens.length === 0 || !body) return null;
   const hits = tokens.filter((token) => windowHasToken(body, token));
   if (hits.length >= 2) return body;
@@ -530,7 +601,7 @@ export function filenameMatchesFamily(
 export function stageFamilyFromCell(
   text: string | null | undefined
 ): QualDocFamily | null {
-  const trimmed = text?.trim().toUpperCase() ?? "";
+  const trimmed = text?.replace(/\[[^\]]*\]/g, "").trim().toUpperCase() ?? "";
   switch (trimmed) {
     case "DQ":
       return "dq";
@@ -575,6 +646,188 @@ function protocolMentionsKey(
     if (quoteWindowAroundKey(page.quote, key) != null) return true;
     return protocolTopicBody(page.quote, context) != null;
   });
+}
+
+function protocolSectionHeading(body: string): string | null {
+  const stripped = protocolBodyQuote(body);
+  const multi = stripped.match(/(?:^|[\s])(\d+(?:\.\d+){2,4})\.?(?:\s|$)/);
+  if (multi?.[1]) return multi[1];
+  const titled = stripped.match(/(?:^|[\s])(\d+\.\d+)\.?\s+[A-Z]/);
+  if (titled?.[1]) return titled[1];
+  const labeled = stripped.match(/\bsection\s+(\d+(?:\.\d+)*)/i);
+  return labeled?.[1] ?? null;
+}
+
+function matchingProtocolPages(
+  ledger: CitationPageLedger,
+  key: string,
+  family: RtmStageFamily,
+  context: string
+) {
+  return ledger.recordedPages().filter((page) => {
+    if (!filenameMatchesFamily(page.filename, family)) return false;
+    if (quoteWindowAroundKey(page.quote, key) != null) return true;
+    return protocolTopicBody(page.quote, context) != null;
+  });
+}
+
+function formatRtmStageCell(pick: RtmReferencePick): string {
+  return `${pick.stageLabel} [${pick.filename}, p. ${pick.pageNumber}]`;
+}
+
+export function pickRtmReference(
+  ledger: CitationPageLedger,
+  key: string,
+  context: string
+): RtmReferencePick | null {
+  for (const family of QSR_STAGE_RANK) {
+    const pages = matchingProtocolPages(ledger, key, family, context);
+    if (pages.length === 0) continue;
+    const passPage =
+      pages.find((page) => {
+        const window = quoteWindowAroundKey(page.quote, key);
+        if (window && hasProtocolPassToken(window)) return true;
+        const topic = protocolTopicBody(page.quote, context);
+        return topic != null && hasProtocolPassToken(topic);
+      }) ?? pages[0]!;
+    const body =
+      protocolTopicBody(passPage.quote, context) ??
+      quoteWindowAroundKey(passPage.quote, key) ??
+      protocolBodyQuote(passPage.quote);
+    return {
+      family,
+      stageLabel: STAGE_LABEL[family],
+      filename: passPage.filename,
+      pageNumber: passPage.pageNumber,
+      sectionHeading: body ? protocolSectionHeading(body) : null,
+      remarks: protocolPassWindow(ledger, key, family, context)
+        ? "Complies"
+        : "",
+    };
+  }
+  return null;
+}
+
+function rowTouchesReference(
+  row: readonly string[],
+  cols: { stage: number; section: number; remarks: number }
+): boolean {
+  return [cols.stage, cols.section, cols.remarks].some(
+    (col) => (row[col] ?? "").trim().length > 0
+  );
+}
+
+function applyPickToRow(
+  row: readonly string[],
+  cols: { stage: number; section: number; remarks: number },
+  pick: RtmReferencePick | null
+): string[] {
+  if (!rowTouchesReference(row, cols)) return [...row];
+  const next = [...row];
+  const last = Math.max(cols.stage, cols.section, cols.remarks);
+  while (next.length <= last) next.push("");
+  if (!pick) {
+    next[cols.stage] = "";
+    next[cols.section] = "";
+    next[cols.remarks] = "";
+    return next;
+  }
+  next[cols.stage] = formatRtmStageCell(pick);
+  next[cols.section] = pick.sectionHeading ?? "";
+  next[cols.remarks] = pick.remarks;
+  return next;
+}
+
+/** Rewrite Stage / Section / Remarks to the highest matching family. */
+export function rankRtmReferenceOperation(
+  operation: TableOperation,
+  ledger: CitationPageLedger,
+  section?: string
+): TableOperation {
+  const cols = rtmReferenceColumnIndexes(section);
+  if (!cols) return operation;
+  switch (operation.kind) {
+    case "insert_rows":
+      return {
+        ...operation,
+        rows: operation.rows.map((row) => {
+          const context = row.join("\n");
+          const key = rowKeyFromContext(context);
+          if (!key) return row;
+          return applyPickToRow(
+            row,
+            cols,
+            pickRtmReference(ledger, key, context)
+          );
+        }),
+      };
+    case "create_table":
+      return {
+        ...operation,
+        rows: operation.rows?.map((row) => {
+          const context = [...operation.headers, ...row].join("\n");
+          const key = rowKeyFromContext(context);
+          if (!key) return row;
+          return applyPickToRow(
+            row,
+            cols,
+            pickRtmReference(ledger, key, context)
+          );
+        }),
+      };
+    case "edit_cells": {
+      const byRow = new Map<number, typeof operation.cells>();
+      for (const cell of operation.cells) {
+        const list = byRow.get(cell.row) ?? [];
+        list.push(cell);
+        byRow.set(cell.row, list);
+      }
+      return {
+        ...operation,
+        cells: operation.cells.map((cell) => {
+          const siblings = byRow.get(cell.row) ?? [];
+          const touchesRef = siblings.some((sib) =>
+            isQsrRtmOptionalReferenceColumn(section, sib.col)
+          );
+          if (!touchesRef) return cell;
+          if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return cell;
+          const context = siblings
+            .flatMap((sib) => [
+              sib.insertText,
+              sib.expectedText,
+              sib.rowContext,
+            ])
+            .filter((part): part is string => Boolean(part?.trim()))
+            .join("\n");
+          const key = rowKeyFromContext(context);
+          if (!key) return cell;
+          const pick = pickRtmReference(ledger, key, context);
+          if (!pick) {
+            return { ...cell, insertText: "" };
+          }
+          if (cell.col === cols.stage) {
+            return { ...cell, insertText: formatRtmStageCell(pick) };
+          }
+          if (cell.col === cols.section) {
+            return { ...cell, insertText: pick.sectionHeading ?? "" };
+          }
+          if (cell.col === cols.remarks) {
+            return { ...cell, insertText: pick.remarks };
+          }
+          return cell;
+        }),
+      };
+    }
+    case "insert_column":
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      return operation;
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
 }
 
 export function syntheticUnsupportedFact(text: string): HardFact {

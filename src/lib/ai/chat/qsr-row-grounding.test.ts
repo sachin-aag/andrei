@@ -10,9 +10,11 @@ import {
   extraQsrUnsupported,
   factSupportedForRowKey,
   isQsrRtmOptionalReferenceColumn,
+  pickRtmReference,
   qsrFailClosedReason,
   quoteWindowAroundKey,
   rowKeyFromContext,
+  rtmReferenceColumnIndexes,
 } from "@/lib/ai/chat/qsr-row-grounding";
 
 const SHARED_URS_PAGE =
@@ -482,6 +484,16 @@ describe("row helpers", () => {
     expect(isQsrRtmOptionalReferenceColumn("qsr_operating_range", 3)).toBe(
       false
     );
+    expect(rtmReferenceColumnIndexes("qsr_rtm_process")).toEqual({
+      stage: 3,
+      section: 4,
+      remarks: 5,
+    });
+    expect(rtmReferenceColumnIndexes("qsr_rtm_control")).toEqual({
+      stage: 4,
+      section: 5,
+      remarks: 6,
+    });
   });
 
   it("still extracts a temperature that lives only in a neighbour window", () => {
@@ -508,7 +520,7 @@ describe("groundTableOperation optional RTM columns", () => {
         quote: SHARED_URS_PAGE,
       },
     ]);
-    const blocked = groundTableOperation({
+    const result = groundTableOperation({
       operation: {
         kind: "insert_rows",
         tableIndex: 0,
@@ -520,30 +532,13 @@ describe("groundTableOperation optional RTM columns", () => {
       policy: "block",
       grounding: { section: "qsr_rtm_process" },
     });
-    expect(blocked.blocked).toBe(true);
-
-    const cleared = groundTableOperation({
-      operation: {
-        kind: "insert_rows",
-        tableIndex: 0,
-        rows: [
-          ["URS-5", "Jacket temperature", "20-25 °C", "IQ", "Section 13", "Complies"],
-        ],
-      },
-      ledger,
-      policy: "block",
-      grounding: { section: "qsr_rtm_process" },
-      clearOptionalOnBlock: true,
-    });
-    expect(cleared.blocked).toBe(false);
-    const clearedRow =
-      cleared.operation.kind === "insert_rows"
-        ? cleared.operation.rows[0]!
-        : [];
-    expect(clearedRow[0]).toContain("URS-5");
-    expect(clearedRow[1]).toBe("Jacket temperature");
-    expect(clearedRow[2]).toContain("20-25 °C");
-    expect(clearedRow.slice(3)).toEqual(["", "", ""]);
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-5");
+    expect(keptRow[1]).toBe("Jacket temperature");
+    expect(keptRow[2]).toContain("20-25 °C");
+    expect(keptRow.slice(3)).toEqual(["", "", ""]);
   });
 
   it("keeps IQ / Complies when Installation Qualification names that URS ID", () => {
@@ -772,7 +767,7 @@ describe("groundTableOperation optional RTM columns", () => {
     );
   });
 
-  it("clears bare Section 13 even when the jacket IQ page topic-matches", () => {
+  it("rewrites stock Section 13 to the jacket IQ heading", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -805,7 +800,7 @@ describe("groundTableOperation optional RTM columns", () => {
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[3]).toContain("IQ");
-    expect(keptRow[4]).toBe("");
+    expect(keptRow[4]).toContain("13.3.5.1");
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 
@@ -863,5 +858,194 @@ describe("groundTableOperation optional RTM columns", () => {
     });
     expect(result.blocked).toBe(true);
     expect(result.operation).toMatchObject({ kind: "edit_cells", cells: [] });
+  });
+
+  it("rewrites DQ up to IQ when Installation Qualification also topic-matches", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "dq",
+        quote:
+          "12.1 Jacket Design Temperature −28.8/220 Jacket volume 773 L",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-5",
+            "Jacket temperature",
+            "20-25 °C",
+            "DQ",
+            "12.1",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toMatch(/^IQ\b/);
+    expect(keptRow[3]).toContain("Installation Qualification.PDF");
+    expect(keptRow[3]).not.toMatch(/\bDQ\b/);
+    expect(keptRow[4]).toContain("13.3.5.1");
+    expect(keptRow[5]).toMatch(/Complies/i);
+  });
+
+  it("prefers PQ over IQ when Performance Qualification also topic-matches", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 20,
+        attachmentId: "pq",
+        quote:
+          "8.2 Heating and cooling simulation Jacket temperature 20-25 °C Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-5",
+            "Jacket temperature",
+            "20-25 °C",
+            "IQ",
+            "13.3.5.1",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toMatch(/^PQ\b/);
+    expect(keptRow[3]).toContain("Performance Qualification.PDF");
+    expect(keptRow[3]).not.toMatch(/\bIQ\b/);
+    expect(keptRow[4]).toContain("8.2");
+    expect(keptRow[5]).toMatch(/Complies/i);
+  });
+
+  it("does not invent Stage when the URS copy left the three cells empty", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [["URS-5", "Jacket temperature", "20-25 °C", "", "", ""]],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow.slice(3)).toEqual(["", "", ""]);
+  });
+
+  it("does not let MOC alone pick a neighbour DQ material row", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: COLUMN_URS_PAGE,
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "dq",
+        quote:
+          "12.1 Material of Construction MOC SA 516 Gr.70 for the shell",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-2",
+        "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm\nDQ"
+      )
+    ).toBeNull();
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-2",
+            "MOC",
+            "High-quality Glass Lining and thickness should not be less than 1 mm",
+            "DQ",
+            "12.1",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-2");
+    expect(keptRow[2]).toContain("Glass Lining");
+    expect(keptRow.slice(3)).toEqual(["", "", ""]);
   });
 });

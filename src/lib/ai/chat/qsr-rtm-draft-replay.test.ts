@@ -242,6 +242,27 @@ async function readIqPage(
   expect(read).toMatchObject({ status: "found" });
 }
 
+async function readDqPage(
+  tools: ReturnType<typeof buildChatTools>,
+  pageNumber: number,
+  transcript: string
+) {
+  readDocumentPageMock.mockResolvedValueOnce({
+    attachmentId: DQ_ID,
+    filename: DQ_FILENAME,
+    pageNumber,
+    transcript,
+    visualInterpretation: "",
+    pageContext: null,
+    printedPageLabel: String(pageNumber),
+  });
+  const read = await tools.read_document_page!.execute!(
+    { attachmentId: DQ_ID, pageNumber },
+    TEST_TOOL_OPTIONS
+  );
+  expect(read).toMatchObject({ status: "found" });
+}
+
 function proposedTableOp(inserted: Array<{ content?: string }>): TableOperation {
   const comment = inserted.find((row) => {
     const parsed = parseAiFixCommentContent(String(row.content ?? ""));
@@ -638,6 +659,57 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(rows[0]?.[3]).toContain("IQ");
     expect(rows[0]?.[4]).toContain("13.3.5.1");
     expect(rows[0]?.[5] ?? "").not.toMatch(/Complies/i);
+  });
+
+  it("rewrites a DQ Stage up to IQ when both protocol bodies topic-match", async () => {
+    mockSection("qsr_rtm_process");
+    listReadyDocumentsForReportMock.mockResolvedValue([
+      ursDoc(),
+      dqDoc(),
+      iqDoc(),
+    ]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 4);
+    await readDqPage(
+      tools,
+      11,
+      "12.1 Jacket Design Temperature −28.8/220 Jacket volume 773 L"
+    );
+    await readIqPage(
+      tools,
+      22,
+      "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-5 remaining columns.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            [
+              "URS-5",
+              "Jacket temperature",
+              "20-25 °C",
+              "DQ",
+              "12.1",
+              "Complies",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows[0]?.[3]).toMatch(/^IQ\b/);
+    expect(rows[0]?.[3] ?? "").not.toMatch(/\bDQ\b/);
+    expect(rows[0]?.[4]).toContain("13.3.5.1");
+    expect(rows[0]?.[5] ?? "").toMatch(/Complies/i);
   });
 
   it("does not fill URS-1 Stage from an IQ running header", async () => {
