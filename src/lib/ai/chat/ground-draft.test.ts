@@ -6,6 +6,7 @@ import {
   groundTableOperation,
   NUMBER_MOVE_SMALL_LEDGER,
   tablePlaceholderLabels,
+  tableLookupPlaceholderLabels,
   tablePlaceholderLookupMessage,
   TABLE_PLACEHOLDER_LOOKUP_MESSAGE,
   unsupportedFactsToolResult,
@@ -710,6 +711,20 @@ describe("gated placeholder persist policy", () => {
     expect(tablePlaceholderLookupMessage(["<Units Filled>"])).toContain(
       "Missing: <Units Filled>."
     );
+  });
+
+  it("treats leftover angle-bracket cells as lookup tokens on any table kind", () => {
+    expect(
+      tableLookupPlaceholderLabels({
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 1, insertText: "Pass" },
+          { row: 1, col: 3, insertText: "<result>" },
+          { row: 1, col: 4, insertText: "<section>" },
+        ],
+      })
+    ).toEqual(["<result>", "<section>"]);
   });
 
   it("tells the model to fill real values, not invent them", () => {

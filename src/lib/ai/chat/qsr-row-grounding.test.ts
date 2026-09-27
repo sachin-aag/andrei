@@ -20,6 +20,7 @@ import {
   pickRtmReference,
   qsrFailClosedReason,
   quoteWindowAroundKey,
+  pageLevelTokenAroundKey,
   rowKeyFromContext,
   rtmReferenceColumnIndexes,
   dropQsrRtmPlaceholderCells,
@@ -61,6 +62,22 @@ describe("quoteWindowAroundKey", () => {
       "Vacuum gauge 0 to 760 mmHg. URS-36 Pressure Gauge for the shell.";
     expect(quoteWindowAroundKey(quote, "URS-36")).not.toContain("760");
     expect(quoteWindowAroundKey(quote, "URS-36")).toContain("Pressure Gauge");
+  });
+});
+
+describe("pageLevelTokenAroundKey", () => {
+  it("includes a pass token after the next URS ID on the same page", () => {
+    const quote =
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified";
+    expect(quoteWindowAroundKey(quote, "URS-41")).not.toMatch(/Verified/i);
+    expect(pageLevelTokenAroundKey(quote, "URS-41")).toMatch(/Verified/i);
+    expect(pageLevelTokenAroundKey(quote, "URS-41")).not.toContain("760");
+  });
+
+  it("does not steal a neighbour number from an earlier URS window", () => {
+    const quote =
+      "Vacuum gauge 0 to 760 mmHg. URS-36 Pressure Gauge for the shell.";
+    expect(pageLevelTokenAroundKey(quote, "URS-36")).not.toContain("760");
   });
 });
 
@@ -1614,6 +1631,108 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(remarksCell).toContain(suggestionInsertMarkName);
   });
 
+  it("does not stamp DQ Stage beside a filled Section heading from another family", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote:
+          "URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "DQ [Design Qualification.PDF, p. 13]",
+            rowContext: "URS-41\nGaskets\n13.6",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-41",
+            expectedText: "13.6",
+            insertText: "12.3",
+            rowContext: "URS-41\nGaskets\n13.6",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: {
+        type: "doc",
+        content: [
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [...QSR_RTM_HEADERS].map((header) => ({
+                  type: "tableHeader" as const,
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: header }],
+                    },
+                  ],
+                })),
+              },
+              {
+                type: "tableRow",
+                content: [
+                  "URS-41",
+                  "Gaskets",
+                  "PTFE or Equivalent [1]",
+                  "",
+                  "13.6",
+                  "",
+                ].map((text) => ({
+                  type: "tableCell" as const,
+                  content: text
+                    ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                    : [{ type: "paragraph" }],
+                })),
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const blob = cells.map((cell) => cell.insertText).join(" ");
+    expect(blob).not.toMatch(/\bDQ\b/);
+    expect(blob).not.toContain("12.3");
+    expect(cells.find((cell) => cell.col === 4)).toBeUndefined();
+  });
+
+  it("treats Verified after the next URS ID as a page-level pass token without topic match", () => {
+    const iqQuote =
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified";
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: iqQuote,
+      },
+    ]);
+    expect(quoteWindowAroundKey(iqQuote, "URS-41")).not.toMatch(/Verified/i);
+    const pick = pickRtmReference(ledger, "URS-41", "URS-41");
+    expect(pick?.stageLabel).toBe("IQ");
+    expect(pick?.remarks).toBe("Complies");
+  });
+
   it("paints Complies when URS-41 is on the IQ page but Verified sits outside the ID window", () => {
     const iqQuote =
       "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified";
@@ -1796,8 +1915,7 @@ describe("groundTableOperation optional RTM columns", () => {
             insertText: "<remarks>",
           },
         ],
-      },
-      "qsr_rtm_process"
+      }
     );
     expect(dropped).toMatchObject({
       kind: "edit_cells",
@@ -1821,11 +1939,34 @@ describe("shouldKeepRtmProtocolSearchOpen", () => {
     ).toBe(true);
   });
 
-  it("closes once IQ / OQ / PQ protocol terms were queried", () => {
+  it("keeps search open after an IQ hit until PQ and OQ are queried", () => {
     expect(
       shouldKeepRtmProtocolSearchOpen(
         ["URS-41", "installation qualification gaskets"],
         ["Design Qualification.PDF", "Installation Qualification.PDF"]
+      )
+    ).toBe(true);
+  });
+
+  it("closes once every higher protocol family than the best hit was queried", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        [
+          "URS-41",
+          "installation qualification gaskets",
+          "operational qualification gaskets",
+          "performance qualification gaskets",
+        ],
+        ["Installation Qualification.PDF"]
+      )
+    ).toBe(false);
+  });
+
+  it("closes when PQ is already the best hit", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["performance qualification gaskets"],
+        ["Performance Qualification.PDF"]
       )
     ).toBe(false);
   });

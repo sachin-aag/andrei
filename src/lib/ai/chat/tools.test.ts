@@ -4882,6 +4882,31 @@ describe("buildChatTools annexure continuation", () => {
     expect(result.keepSearchOpen).toBe(true);
   });
 
+  it("keeps search open after an identifier-only Installation Qualification hit", async () => {
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-iq",
+          filename: "Installation Qualification.PDF",
+          description: null,
+          pageNumber: 42,
+          chunkId: "c42",
+          sourceKind: "hybrid",
+          text: "URS-41 13.6 Gaskets",
+          quote: "URS-41 13.6 Gaskets",
+          citationId: "att:att-iq:p:42",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = (await tools.search_documents!.execute!(
+      { query: "URS-41" },
+      TEST_TOOL_OPTIONS
+    )) as { keepSearchOpen?: boolean };
+    expect(result.keepSearchOpen).toBe(true);
+  });
+
   it("attaches the next page when a read is Page N of M", async () => {
     readDocumentPageMock
       .mockResolvedValueOnce({

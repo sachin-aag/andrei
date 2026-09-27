@@ -76,7 +76,7 @@ describe("searchLoopDirective", () => {
     ).toBe("continue");
   });
 
-  it("keeps search open after reading that DQ page until an IQ protocol grep runs", () => {
+  it("keeps search open after reading that DQ page until higher protocol families are queried", () => {
     expect(
       searchLoopDirective([
         {
@@ -133,6 +133,38 @@ describe("searchLoopDirective", () => {
                     attachmentId: "iq",
                     pageNumber: 42,
                     filename: "Installation Qualification.PDF",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [
+            {
+              toolName: "search_documents",
+              input: {
+                queries: [
+                  "operational qualification gaskets",
+                  "performance qualification gaskets",
+                ],
+              },
+            },
+          ],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 1,
+                seenPages: [
+                  {
+                    attachmentId: "pq",
+                    pageNumber: 8,
+                    filename: "Performance Qualification.PDF",
                   },
                 ],
               },

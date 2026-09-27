@@ -3,8 +3,9 @@ import type { HardFact } from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import { QSR_TABLE_HEADERS } from "@/lib/document-types/qsr/sections";
-import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import {
+  isLeftoverPlaceholderCellText,
+  dropLeftoverPlaceholderCells,
   summarizeTablesInDoc,
   type TableCellEdit,
   type TableOperation,
@@ -298,53 +299,16 @@ export function attachLiveTableRowContext(
   };
 }
 
-/** Angle-bracket RTM tokens, including `<section>` (HTML-tag skip in live scan). */
+/** Angle-bracket leftover tokens, including `<section>` (HTML-tag skip in live scan). */
 export function isQsrRtmPlaceholderText(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  if (/^<[^<>]+>$/.test(trimmed)) return true;
-  return collectPlaceholderSpans(trimmed).length > 0;
+  return isLeftoverPlaceholderCellText(text);
 }
 
-/** Drop leftover Stage / Section / Remarks placeholders so they never persist. */
+/** Drop leftover placeholders so they never persist. */
 export function dropQsrRtmPlaceholderCells(
-  operation: TableOperation,
-  section?: string | null
+  operation: TableOperation
 ): TableOperation {
-  const cols = rtmReferenceColumnIndexes(section);
-  if (!cols) return operation;
-  switch (operation.kind) {
-    case "edit_cells":
-      return {
-        ...operation,
-        cells: operation.cells.filter((cell) => {
-          if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return true;
-          return !isQsrRtmPlaceholderText(cell.insertText);
-        }),
-      };
-    case "insert_rows":
-      return {
-        ...operation,
-        rows: operation.rows.map((row) => {
-          const next = [...row];
-          for (const col of [cols.stage, cols.section, cols.remarks]) {
-            const value = next[col] ?? "";
-            if (isQsrRtmPlaceholderText(value)) next[col] = "";
-          }
-          return next;
-        }),
-      };
-    case "create_table":
-    case "insert_column":
-    case "delete_rows":
-    case "delete_column":
-    case "delete_table":
-      return operation;
-    default: {
-      const exhaustive: never = operation;
-      return exhaustive;
-    }
-  }
+  return dropLeftoverPlaceholderCells(operation);
 }
 
 export function factIsRowKey(fact: HardFact, key: string): boolean {
@@ -458,6 +422,21 @@ export function quoteWindowAroundKey(quote: string, key: string): string | null 
   }
   if (end <= at) return null;
   return quote.slice(at, end);
+}
+
+/**
+ * Identifier slice plus the rest of the page after that ID.
+ * Pass / Verified tokens are page-level — they must not stop at the
+ * next URS ID the way neighbour-number isolation does.
+ */
+export function pageLevelTokenAroundKey(
+  quote: string,
+  key: string
+): string | null {
+  if (!quote.trim() || !key) return null;
+  const at = indexOfUrsId(quote, key);
+  if (at < 0) return null;
+  return quote.slice(at);
 }
 
 export function evidenceContainsFactNearKey(
@@ -755,8 +734,9 @@ const RTM_PROTOCOL_QUERY_RE: Record<RtmStageFamily, RegExp> = {
 };
 
 /**
- * Identifier-only greps often land on a DQ page that prints the URS ID.
- * Keep search open so IQ / OQ / PQ protocol bodies can still be grepped.
+ * Identifier-only greps often land on a DQ page that prints the URS ID, or
+ * on IQ before PQ / OQ have been searched. Keep search open while a higher
+ * protocol family than the best hit has not been queried.
  */
 export function shouldKeepRtmProtocolSearchOpen(
   queries: readonly string[],
@@ -770,10 +750,14 @@ export function shouldKeepRtmProtocolSearchOpen(
         (QSR_STAGE_RANK as readonly string[]).includes(family)
     );
   if (hitFamilies.length === 0) return false;
-  if (hitFamilies.some((family) => family !== "dq")) return false;
+  const bestHitRank = Math.min(
+    ...hitFamilies.map((family) => QSR_STAGE_RANK.indexOf(family))
+  );
+  if (bestHitRank <= 0) return false;
   const joined = queries.join("\n");
-  return !QSR_STAGE_RANK.some((family) =>
-    RTM_PROTOCOL_QUERY_RE[family].test(joined)
+  return QSR_STAGE_RANK.some(
+    (family, index) =>
+      index < bestHitRank && !RTM_PROTOCOL_QUERY_RE[family].test(joined)
   );
 }
 
@@ -808,7 +792,7 @@ function protocolPassWindow(
 ): string | null {
   for (const page of ledger.recordedPages()) {
     if (!filenameMatchesFamily(page.filename, family)) continue;
-    const window = quoteWindowAroundKey(page.quote, key);
+    const window = pageLevelTokenAroundKey(page.quote, key);
     if (window && hasProtocolPassToken(window)) return window;
     const topic = protocolTopicBody(page.quote, context);
     if (topic && hasProtocolPassToken(topic)) return topic;
@@ -914,8 +898,9 @@ function pickWouldReplaceFilledReference(
     pick.sectionHeading &&
     floor.sectionText !== pick.sectionHeading
   ) {
-    // Filled Section is skipped on fill-empty. A DQ pick must not still
-    // stamp Stage / Remarks; IQ / OQ / PQ may fill those empty cells.
+    // DQ pages print every URS ID. A heading clash with a filled Section
+    // means this pick must not stamp empty Stage / Remarks beside it.
+    // IQ / OQ / PQ protocol-body hits may still fill those empty cells.
     return pick.family === "dq";
   }
   return false;
@@ -943,7 +928,7 @@ export function pickRtmReference(
     if (pages.length === 0) continue;
     const passPage =
       pages.find((page) => {
-        const window = quoteWindowAroundKey(page.quote, key);
+        const window = pageLevelTokenAroundKey(page.quote, key);
         if (window && hasProtocolPassToken(window)) return true;
         const topic = protocolTopicBody(page.quote, context);
         return topic != null && hasProtocolPassToken(topic);

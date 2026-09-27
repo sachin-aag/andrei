@@ -14,6 +14,7 @@ import {
   parseTableOperation,
   prefixTableCaptionMarkdown,
   renumberFilledTableCaptions,
+  dropLeftoverPlaceholderCells,
   resolveEditCells,
   summarizeTableOperation,
   tableOperationInvalidHint,
@@ -908,6 +909,103 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 2, 3)).toBe("IQ");
     expect(cellText(result.doc, 2, 4)).toBe("13.3.5.1");
     expect(cellText(result.doc, 3, 3)).toBe("IQ");
+  });
+
+  it("skips rewriting a filled cell in a mixed fill-empty batch on any table", () => {
+    const doc = tableDoc(
+      [...ELR_MONITORING_HEADERS],
+      [
+        [
+          "1",
+          "Non-viable particles",
+          "1 Apr 2025 – 31 Mar 2026",
+          "PRQR-25-001",
+          "",
+          "",
+          "",
+        ],
+      ]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 2,
+          rowKey: "1",
+          expectedText: "1 Apr 2025 – 31 Mar 2026",
+          insertText: "Q2 only",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "1",
+          expectedText: "",
+          insertText: "Within limits [PRQR-25-001, p. 4]",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 2)).toBe("1 Apr 2025 – 31 Mar 2026");
+    expect(cellText(result.doc, 1, 4)).toContain("Within limits");
+  });
+
+  it("still rewrites a filled cell when the batch has no empty fills", () => {
+    const doc = tableDoc(
+      [...DV_TRACEABILITY_HEADERS],
+      [["DI-1", "Input A", "TM-1", "Pass", ""]]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "DI-1",
+          expectedText: "Pass",
+          insertText: "Fail",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("Fail");
+  });
+
+  it("drops leftover angle-bracket cells on any table kind", () => {
+    const dropped = dropLeftoverPlaceholderCells({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 1, rowKey: "DI-1", insertText: "Pass" },
+        { row: 1, col: 3, rowKey: "DI-1", insertText: "<result>" },
+      ],
+    });
+    expect(dropped).toMatchObject({
+      kind: "edit_cells",
+      cells: [{ col: 1, insertText: "Pass" }],
+    });
+  });
+
+  it("keeps gated leftover date tokens after a lookup bounce", () => {
+    const kept = dropLeftoverPlaceholderCells({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, insertText: "MF-24-PR-001" },
+        { row: 1, col: 1, insertText: "<date>" },
+      ],
+    });
+    expect(kept).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        { col: 0, insertText: "MF-24-PR-001" },
+        { col: 1, insertText: "<date>" },
+      ],
+    });
   });
 
   it("keeps a valid rowKey when a sibling rowKey is missing", () => {

@@ -135,6 +135,7 @@ import {
   coerceTableOperationInput,
   countFilledTablesInDocument,
   defaultTableCaptionTitle,
+  dropLeftoverPlaceholderCells,
   filledTableNumberInDocument,
   parseTableOperation,
   prefixTableCaptionMarkdown,
@@ -261,10 +262,7 @@ import {
   isQsrInventoryReviewObjective,
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
-import {
-  dropQsrRtmPlaceholderCells,
-  shouldKeepRtmProtocolSearchOpen,
-} from "@/lib/ai/chat/qsr-row-grounding";
+import { shouldKeepRtmProtocolSearchOpen } from "@/lib/ai/chat/qsr-row-grounding";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -3784,8 +3782,7 @@ export function buildChatTools(opts: {
           });
         }
         const leftoverLabels = tableLookupPlaceholderLabels(
-          groundedTable.operation,
-          section
+          groundedTable.operation
         );
         if (leftoverLabels.length > 0 && !tablePlaceholderLookupBounced) {
           tablePlaceholderLookupBounced = true;
@@ -3797,9 +3794,8 @@ export function buildChatTools(opts: {
           });
         }
         if (leftoverLabels.length > 0) {
-          const strippedPlaceholders = dropQsrRtmPlaceholderCells(
-            groundedTable.operation,
-            section
+          const strippedPlaceholders = dropLeftoverPlaceholderCells(
+            groundedTable.operation
           );
           groundedTable = {
             ...groundedTable,

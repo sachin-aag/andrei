@@ -7,7 +7,10 @@ import {
 } from "@/lib/suggestions/citations-at-end";
 import { citationSiteOffset, splitSentences } from "@/lib/citations/citation-site";
 import type { JSONContent } from "@tiptap/core";
-import type { TableOperation } from "@/lib/suggestions/table-operation";
+import {
+  isLeftoverPlaceholderCellText,
+  type TableOperation,
+} from "@/lib/suggestions/table-operation";
 import {
   citedPagesFromText,
   extractHardFacts,
@@ -49,7 +52,6 @@ import {
   qsrFailClosedReason,
   rankRtmReferenceOperation,
   rowKeyFromContext,
-  rtmReferenceColumnIndexes,
   editCellsGroupKey,
   syntheticUnsupportedFact,
 } from "@/lib/ai/chat/qsr-row-grounding";
@@ -825,11 +827,11 @@ export function tablePlaceholderLabels(operation: TableOperation): string[] {
 }
 
 /**
- * Leftover lookup tokens, including RTM `<section>` which live-scan skips as HTML.
+ * Leftover lookup tokens, including HTML-shaped labels such as `<section>`
+ * that live-scan skips.
  */
 export function tableLookupPlaceholderLabels(
-  operation: TableOperation,
-  section?: string | null
+  operation: TableOperation
 ): string[] {
   const labels = tablePlaceholderLabels(operation);
   const seen = new Set(labels.map((label) => label.toLowerCase()));
@@ -841,19 +843,15 @@ export function tableLookupPlaceholderLabels(
   };
   if (operation.kind === "edit_cells") {
     for (const cell of operation.cells) {
-      if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) continue;
       const trimmed = cell.insertText.trim();
-      if (/^<[^<>]+>$/.test(trimmed)) add(trimmed);
+      if (isLeftoverPlaceholderCellText(trimmed)) add(trimmed);
     }
   }
   if (operation.kind === "insert_rows") {
-    const cols = rtmReferenceColumnIndexes(section);
-    if (cols) {
-      for (const row of operation.rows) {
-        for (const col of [cols.stage, cols.section, cols.remarks]) {
-          const trimmed = (row[col] ?? "").trim();
-          if (/^<[^<>]+>$/.test(trimmed)) add(trimmed);
-        }
+    for (const row of operation.rows) {
+      for (const value of row) {
+        const trimmed = (value ?? "").trim();
+        if (isLeftoverPlaceholderCellText(trimmed)) add(trimmed);
       }
     }
   }

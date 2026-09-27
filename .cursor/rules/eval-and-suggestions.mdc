@@ -58,7 +58,10 @@ DV mixes LLM criteria with deterministic `check()` functions.
   `already_present` (locatable, not applyable). A sibling cell whose
   `expectedText` no longer matches (or whose `rowKey` is missing) is dropped
   from the batch so the remaining cells still preview — do not mark the
-  whole table card stale. Pending table-preview insert marks also keep the
+  whole table card stale. A mixed fill-empty batch also skips rewriting
+  filled cells so the empty remainder still lands; a batch that only
+  rewrites filled cells still applies. Leftover `<…>` cells are dropped
+  on apply for any table kind. Pending table-preview insert marks also keep the
   card previewable (`alreadyMarked` in validate, same as Apply). Do not insert
   `{ banner }` group rows; existing template banners keep their colspan, and
   data rows never inherit a banner colspan. A newer `delete_rows` supersedes an older delete whose rows it

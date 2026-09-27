@@ -7,6 +7,7 @@ import {
   elrTableHeadersForSection,
 } from "@/lib/document-types/elr/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
+import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
 import {
@@ -728,6 +729,85 @@ function nextCellText(cell: TableCellEdit): string {
   return normalizeTableCellText(normalizeSuggestionInsertText(cell.insertText));
 }
 
+/**
+ * Whole-cell leftover tokens, including HTML-shaped labels such as
+ * `<section>` that live placeholder scanning skips.
+ */
+export function isLeftoverPlaceholderCellText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/^<[^<>]+>$/.test(trimmed)) return true;
+  return collectPlaceholderSpans(trimmed).length > 0;
+}
+
+function liveCellIsEmpty(text: string): boolean {
+  const live = normalizeTableCellText(text);
+  return !live || isLeftoverPlaceholderCellText(live);
+}
+
+/** After a table-placeholder lookup bounce, these three may persist. */
+const PERSISTED_TABLE_LOOKUP_PLACEHOLDERS = new Set([
+  "<date>",
+  "<identifier>",
+  "<number>",
+]);
+
+function isPersistedLookupPlaceholder(text: string): boolean {
+  return PERSISTED_TABLE_LOOKUP_PLACEHOLDERS.has(text.trim().toLowerCase());
+}
+
+function isDroppableLeftoverPlaceholderCell(text: string): boolean {
+  return (
+    isLeftoverPlaceholderCellText(text) && !isPersistedLookupPlaceholder(text)
+  );
+}
+
+function blankLeftoverPlaceholderCells(values: readonly string[]): string[] {
+  return values.map((value) =>
+    isDroppableLeftoverPlaceholderCell(value) ? "" : value
+  );
+}
+
+/** Drop leftover `<…>` cells so they never persist, except gated lookup tokens. */
+export function dropLeftoverPlaceholderCells(
+  operation: TableOperation
+): TableOperation {
+  switch (operation.kind) {
+    case "edit_cells":
+      return {
+        ...operation,
+        cells: operation.cells.filter(
+          (cell) => !isDroppableLeftoverPlaceholderCell(cell.insertText)
+        ),
+      };
+    case "insert_rows":
+      return {
+        ...operation,
+        rows: operation.rows.map(blankLeftoverPlaceholderCells),
+      };
+    case "create_table":
+      return {
+        ...operation,
+        rows: operation.rows?.map(blankLeftoverPlaceholderCells),
+      };
+    case "insert_column":
+      return {
+        ...operation,
+        values: operation.values
+          ? blankLeftoverPlaceholderCells(operation.values)
+          : operation.values,
+      };
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      return operation;
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
+}
+
 function agreedSiblingRowKey(
   keysByOriginalRow: Map<number, Set<string>>,
   originalRow: number
@@ -750,6 +830,8 @@ function agreedSiblingRowKey(
  * One already-filled or stale cell must not fail the whole batch: a 23-cell
  * "fill missing" card that hits two live Stage values would otherwise mark
  * the suggestion stale and skip inline preview for the empty remainder.
+ * A mixed fill-empty batch also skips rewriting filled cells so the empty
+ * remainder still lands; a batch that only rewrites filled cells still applies.
  */
 export function resolveEditCells(
   rows: readonly JSONContent[],
@@ -887,7 +969,19 @@ export function resolveEditCells(
     }
     changing.push(cell);
   }
-  if (changing.length === 0) {
+  const fillsEmpty: TableCellEdit[] = [];
+  const rewritesFilled: TableCellEdit[] = [];
+  for (const cell of changing) {
+    const node = rowCells(rows[cell.row]!)[cell.col];
+    const live = node ? cellPlainText(node) : "";
+    if (liveCellIsEmpty(live)) fillsEmpty.push(cell);
+    else rewritesFilled.push(cell);
+  }
+  const applied =
+    fillsEmpty.length > 0 && rewritesFilled.length > 0
+      ? fillsEmpty
+      : changing;
+  if (applied.length === 0) {
     if (sawStale && !sawIdentity) {
       return {
         ok: false,
@@ -910,7 +1004,7 @@ export function resolveEditCells(
       hint: "Those cells already have the proposed text. Re-read with read_section and edit a cell that still needs a change.",
     };
   }
-  return { ok: true, cells: changing };
+  return { ok: true, cells: applied };
 }
 
 type TableLocation = {
