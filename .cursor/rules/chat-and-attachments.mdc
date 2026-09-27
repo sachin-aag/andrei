@@ -153,7 +153,9 @@ parameter shares a word such as glass or thickness. URS-1 does not match
 URS-13. Digits in URS-N are not a measured number. A decimal such as 25.0 is
 not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
 to persist `<number>` or ask the engineer to type it. Integer `3` is not
-`3.5`.   Stock Complies / bare Section 13 still need a named-stage protocol page that
+`3.5`. A named date column (Effective Date) must match the source value
+next to that same label — presence of a signature or observation date on
+the cited page is not that field.   Stock Complies / bare Section 13 still need a named-stage protocol page that
   either names that URS ID or topic-matches that row's Parameters in the
   protocol body (not the running header). Verified on the result line counts
   as a pass; Verified By in a signature block does not. Unsupported Stage /

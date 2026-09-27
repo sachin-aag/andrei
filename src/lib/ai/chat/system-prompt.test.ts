@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v146-edit-cells-per-rowkey");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v147-labeled-column-dates");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -40,6 +40,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
     expect(prompt).toContain(
       "Do not tell them to accept a card and type 3.5"
+    );
+    expect(prompt).toContain(
+      "When filling a named column, copy the value printed next to that same label"
     );
     expect(prompt).toContain(
       "Never quote attachment ids, analysis ids, or suggestion-card ids"

@@ -1,7 +1,13 @@
-import type { HardFact } from "@/lib/ai/chat/claim-facts";
+import {
+  extractHardFacts,
+  type HardFact,
+} from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
-import { QSR_TABLE_HEADERS } from "@/lib/document-types/qsr/sections";
+import {
+  isQsrTableSectionKey,
+  QSR_TABLE_HEADERS,
+} from "@/lib/document-types/qsr/sections";
 import type { TableOperation } from "@/lib/suggestions/table-operation";
 
 const URS_ID_RE = /\bURS-\d+\b/gi;
@@ -199,6 +205,88 @@ export function factIsRowKey(fact: HardFact, key: string): boolean {
 }
 
 const COLUMN_LABEL_GAP_MAX = 80;
+
+/** First date after a matching source label must sit in this span. */
+const LABELED_DATE_WINDOW = 80;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function dateColumnLabels(columnLabel: string): string[] {
+  return columnLabel
+    .split("/")
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .filter((part) => /date/i.test(part));
+}
+
+export function qsrTableColumnLabel(
+  section: string | null | undefined,
+  col: number | null | undefined
+): string | null {
+  if (!section || col == null || col < 0) return null;
+  if (!isQsrTableSectionKey(section)) return null;
+  return QSR_TABLE_HEADERS[section][col] ?? null;
+}
+
+export function isLabeledDateColumnLabel(
+  columnLabel: string | null | undefined
+): boolean {
+  return Boolean(columnLabel && dateColumnLabels(columnLabel).length > 0);
+}
+
+/**
+ * Slices immediately after each source occurrence of the destination
+ * column's date label (Effective Date, Approved date, …).
+ */
+export function labeledDateWindows(
+  quote: string,
+  columnLabel: string
+): string[] {
+  const labels = dateColumnLabels(columnLabel);
+  if (labels.length === 0 || !quote.trim()) return [];
+  const windows: string[] = [];
+  for (const label of labels) {
+    const re = new RegExp(escapeRegExp(label).replace(/\s+/g, "\\s+"), "gi");
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(quote))) {
+      const start = match.index + match[0].length;
+      windows.push(quote.slice(start, start + LABELED_DATE_WINDOW));
+    }
+  }
+  return windows;
+}
+
+function firstDateInWindow(window: string): HardFact | null {
+  const dates = extractHardFacts(window).filter((row) => row.kind === "date");
+  if (dates.length === 0) return null;
+  return dates.reduce((earliest, row) =>
+    row.start <= earliest.start ? row : earliest
+  );
+}
+
+/**
+ * When the page prints the destination column's own label next to a date,
+ * only that date supports the cell. Presence of another date on the same
+ * page (signature, observation) is not the same field.
+ * `null` = no labeled date on the page, so the caller fails open.
+ */
+export function dateSupportedAsLabeledField(
+  quote: string,
+  fact: HardFact,
+  columnLabel: string
+): boolean | null {
+  if (fact.kind !== "date") return null;
+  const labeledDates = labeledDateWindows(quote, columnLabel)
+    .map(firstDateInWindow)
+    .filter((row): row is HardFact => row != null);
+  if (labeledDates.length === 0) return null;
+  return labeledDates.some(
+    (labeled) =>
+      evidenceContainsFact(labeled.text, fact) ||
+      evidenceContainsFact(fact.text, labeled)
+  );
+}
 
 type UrsSpan = { id: string; at: number };
 
@@ -935,10 +1023,36 @@ export function qsrDescriptionUnsupported(
   return preview ? syntheticUnsupportedFact(preview) : null;
 }
 
+function labeledDateUnsupported(input: {
+  cell: string;
+  columnLabel?: string | null;
+  ledger: CitationPageLedger;
+}): HardFact | null {
+  const label = input.columnLabel?.trim();
+  if (!label || !isLabeledDateColumnLabel(label)) return null;
+  const dates = extractHardFacts(input.cell).filter((row) => row.kind === "date");
+  if (dates.length === 0) return null;
+  const quotes = input.ledger.recordedPages().map((page) => page.quote);
+  for (const fact of dates) {
+    const verdicts = quotes.map((quote) =>
+      dateSupportedAsLabeledField(quote, fact, label)
+    );
+    if (
+      verdicts.some((verdict) => verdict !== null) &&
+      !verdicts.some((verdict) => verdict === true)
+    ) {
+      return syntheticUnsupportedFact(fact.text);
+    }
+  }
+  return null;
+}
+
 export function extraQsrUnsupported(input: {
   cell: string;
   context: string;
   section?: string;
+  tableCol?: number;
+  tableColumnLabel?: string;
   ledger: CitationPageLedger;
 }): HardFact[] {
   const out: HardFact[] = [];
@@ -961,6 +1075,15 @@ export function extraQsrUnsupported(input: {
     )
   );
   add(qsrDescriptionUnsupported(input.cell, input.context, input.ledger));
+  add(
+    labeledDateUnsupported({
+      cell: input.cell,
+      columnLabel:
+        input.tableColumnLabel?.trim() ||
+        qsrTableColumnLabel(input.section, input.tableCol),
+      ledger: input.ledger,
+    })
+  );
   return out;
 }
 
