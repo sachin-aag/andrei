@@ -508,16 +508,15 @@ export function TiptapSectionField({
     [section, contentPath]
   );
 
-  const citationHighlightExtension = useMemo(
-    () =>
-      // eslint-disable-next-line react-hooks/refs -- ProseMirror calls this getter on click, not during render
-      createCitationHighlightExtension(
-        getCitationHandlers,
-        getKnownCitationFilenames,
-        getKnownAttachmentIds
-      ),
-    [getCitationHandlers, getKnownCitationFilenames, getKnownAttachmentIds]
-  );
+  const citationHighlightExtension = useMemo(() => {
+    /* eslint-disable react-hooks/refs -- ProseMirror calls these getters on click, not during render */
+    return createCitationHighlightExtension(
+      getCitationHandlers,
+      getKnownCitationFilenames,
+      getKnownAttachmentIds
+    );
+    /* eslint-enable react-hooks/refs */
+  }, [getCitationHandlers, getKnownCitationFilenames, getKnownAttachmentIds]);
 
   const filteredRanges = useMemo(() => {
     return comments

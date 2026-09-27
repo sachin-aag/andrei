@@ -25,6 +25,14 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 /** Client-sent user turn that continues a server-owned section queue. */
 export const CHAT_AUTO_CONTINUE_TEXT = "Continue the remaining sections.";
 
+function planItemWithoutAttempts<T extends { attempts?: number }>(
+  item: T
+): Omit<T, "attempts"> {
+  const { attempts, ...rest } = item;
+  void attempts;
+  return rest;
+}
+
 export const CHAT_PLAN_ITEM_STATES = [
   "queued",
   "in_progress",
@@ -454,8 +462,7 @@ export function resumeChatPendingPlan(
           ? { ...item, state: "queued" as const }
           : item;
       }
-      const { attempts: _attempts, ...rest } = item;
-      return { ...rest, state: "in_progress" as const };
+      return { ...planItemWithoutAttempts(item), state: "in_progress" as const };
     }),
   };
 }
@@ -860,8 +867,7 @@ export function advancePlanAfterTurn(input: {
       turnKeys.has(item.sectionKey) &&
       !incomplete.has(item.sectionKey)
     ) {
-      const { attempts: _attempts, ...rest } = item;
-      return { ...rest, state: "done" as const };
+      return { ...planItemWithoutAttempts(item), state: "done" as const };
     }
     if (turnKeys.has(item.sectionKey)) {
       return { ...item, attempts: (item.attempts ?? 0) + 1 };

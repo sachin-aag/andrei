@@ -24,7 +24,7 @@ import {
 } from "@/lib/document-types/elr/sections";
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] };
-const NOOP_DOC_CHANGE = (_doc: JSONContent) => {};
+const NOOP_DOC_CHANGE: (doc: JSONContent) => void = () => {};
 
 function label(section: ElrSectionKey): string {
   return ELR_SECTION_LABELS[section];

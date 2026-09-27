@@ -107,7 +107,6 @@ import {
   boxplotInputSchema,
   boxplotUpdateSchema,
   histogramInputSchema,
-  timeSeriesBodySchema,
   timeSeriesInputSchema,
   timeSeriesUpdateSchema,
   histogramUpdateSchema,

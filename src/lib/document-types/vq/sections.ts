@@ -115,13 +115,13 @@ export const VQ_DEFAULT_METADATA = {
   issuedOn: "",
 };
 
-function defaultAnswers(_key: VqSectionKey): VqAnswers {
+function defaultAnswers(): VqAnswers {
   return {};
 }
 
 function emptyFor(key: VqSectionKey): VqSectionContent {
   const spec = VQ_FORM[key];
-  const content: VqSectionContent = { answers: defaultAnswers(key) };
+  const content: VqSectionContent = { answers: defaultAnswers() };
   if (spec?.narrativeLabel) {
     content.narrative = emptyDoc();
   }

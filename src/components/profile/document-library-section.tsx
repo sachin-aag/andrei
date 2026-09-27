@@ -1224,7 +1224,9 @@ export function DocumentLibrarySection({
   }, [vaultScope]);
 
   useEffect(() => {
-    void loadLibrary();
+    queueMicrotask(() => {
+      void loadLibrary();
+    });
   }, [loadLibrary]);
 
   const hasIndexingAssets = (library?.assets ?? []).some(
