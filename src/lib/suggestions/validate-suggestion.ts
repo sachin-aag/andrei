@@ -21,6 +21,7 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { effectivePlainTextContentPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { resolveSuggestionMerge } from "@/lib/suggestions/resolve-merge";
+import { narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 
 export type SuggestionLocateStatus =
   | "locatable"
@@ -237,6 +238,18 @@ export function validateSuggestionLocate(
       };
     }
     const doc = getRichFieldValue(record, path);
+    // Painted table previews put insert marks in empty cells. cellPlainText
+    // includes those marks, so expectedText "" looks stale and inject never
+    // re-runs (canPreview false). Treat the live marks as the preview.
+    if (narrativeHasSuggestionMarks(doc, comment.id)) {
+      return {
+        locateStatus: "locatable",
+        documentChanged: false,
+        canApply: true,
+        canPreview: true,
+        mergeStatus: "legacy",
+      };
+    }
     const result = applyTableOperation(doc, payload.tableOperation, {
       section,
       targetField: path,
@@ -259,23 +272,9 @@ export function validateSuggestionLocate(
         mergeStatus: "legacy",
       };
     }
-    if (payload.second) {
-      const secondStatus = probeRichEdit(doc, {
-        anchorText: payload.second.anchorText,
-        deleteText: payload.second.deleteText,
-        insertText: payload.second.insertText,
-        scope: payload.second.scope,
-      });
-      if (!isApplyableStatus(secondStatus)) {
-        return {
-          locateStatus: mapProbeStatus(secondStatus),
-          documentChanged: true,
-          canApply: false,
-          canPreview: false,
-          mergeStatus: "legacy",
-        };
-      }
-    }
+    // Do not probe payload.second here. An empty-anchor Citations: append
+    // that fails locate used to mark the whole table card stale so inject
+    // never painted cells. Inject and Apply still try the second separately.
     return {
       locateStatus: "locatable",
       documentChanged: false,

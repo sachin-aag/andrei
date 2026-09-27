@@ -6,7 +6,11 @@ import {
   trailingIsCitationBlock,
 } from "@/lib/suggestions/citations-at-end";
 import { citationSiteOffset, splitSentences } from "@/lib/citations/citation-site";
-import type { TableOperation } from "@/lib/suggestions/table-operation";
+import type { JSONContent } from "@tiptap/core";
+import {
+  isLeftoverPlaceholderCellText,
+  type TableOperation,
+} from "@/lib/suggestions/table-operation";
 import {
   citedPagesFromText,
   extractHardFacts,
@@ -38,6 +42,7 @@ import {
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
 import {
+  attachLiveTableRowContext,
   documentFamilyFromContext,
   extraQsrUnsupported,
   factIsRowKey,
@@ -47,6 +52,7 @@ import {
   qsrFailClosedReason,
   rankRtmReferenceOperation,
   rowKeyFromContext,
+  editCellsGroupKey,
   syntheticUnsupportedFact,
 } from "@/lib/ai/chat/qsr-row-grounding";
 import {
@@ -608,6 +614,11 @@ export function groundTableOperation(input: {
    * instead of blocking the URS copy.
    */
   clearOptionalOnBlock?: boolean;
+  /**
+   * Live field JSON so `edit_cells` can topic-match protocol pages from
+   * Parameters / User requirements when the model omitted `rowContext`.
+   */
+  fieldDoc?: JSONContent | null;
 }): {
   operation: TableOperation;
   provenance: ClaimProvenance;
@@ -615,7 +626,10 @@ export function groundTableOperation(input: {
   blocked: boolean;
 } {
   const cited = rankRtmReferenceOperation(
-    rewriteTableOperationCitations(input.operation, input.ledger),
+    rewriteTableOperationCitations(
+      attachLiveTableRowContext(input.operation, input.fieldDoc),
+      input.ledger
+    ),
     input.ledger,
     input.grounding?.section
   );
@@ -678,8 +692,11 @@ export function groundTableOperation(input: {
         ...cited,
         cells: cited.cells.map((cell) => {
           const context = cited.cells
-            .filter((rowCell) => rowCell.row === cell.row)
+            .filter(
+              (rowCell) => editCellsGroupKey(rowCell) === editCellsGroupKey(cell)
+            )
             .flatMap((rowCell) => [
+              rowCell.rowKey,
               rowCell.insertText,
               rowCell.expectedText,
               rowCell.rowContext,
@@ -706,7 +723,7 @@ export function groundTableOperation(input: {
           return true;
         });
         operation = { ...operation, cells: kept };
-        if (kept.length === 0) blocked = true;
+        if (kept.length === 0 && cited.cells.length > 0) blocked = true;
       }
       break;
     case "insert_rows":
@@ -806,6 +823,38 @@ export function tablePlaceholderLabels(operation: TableOperation): string[] {
     }
     return value;
   });
+  return labels;
+}
+
+/**
+ * Leftover lookup tokens, including HTML-shaped labels such as `<section>`
+ * that live-scan skips.
+ */
+export function tableLookupPlaceholderLabels(
+  operation: TableOperation
+): string[] {
+  const labels = tablePlaceholderLabels(operation);
+  const seen = new Set(labels.map((label) => label.toLowerCase()));
+  const add = (text: string) => {
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    labels.push(text);
+  };
+  if (operation.kind === "edit_cells") {
+    for (const cell of operation.cells) {
+      const trimmed = cell.insertText.trim();
+      if (isLeftoverPlaceholderCellText(trimmed)) add(trimmed);
+    }
+  }
+  if (operation.kind === "insert_rows") {
+    for (const row of operation.rows) {
+      for (const value of row) {
+        const trimmed = (value ?? "").trim();
+        if (isLeftoverPlaceholderCellText(trimmed)) add(trimmed);
+      }
+    }
+  }
   return labels;
 }
 
