@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v144-qsr-stage-rank");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v145-qsr-edit-cells-rowkey");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -374,6 +374,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("A large rewrite is stored as a rewrite, not refused");
     expect(prompt).toContain("Never use that fallback for tables or images");
     expect(prompt).toContain("Row 0 is the header; the first data row is row 1");
+    expect(prompt).toContain("prefer rowKey");
     expect(prompt).toContain("never a single representative row");
     expect(prompt).toContain(
       "put every affected cell in one edit_cells call (source and destination together)"

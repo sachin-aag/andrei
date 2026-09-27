@@ -140,6 +140,42 @@ describe("buildTableOperationPreviewDoc", () => {
     expect(rowHasInsertMark(preview.doc, 3)).toBe(true);
   });
 
+  it("paints edit_cells on the rematched URS-13 row, not a stale numeric row", () => {
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(
+        ["URS ID", "Stage"],
+        [
+          ["URS-1", ""],
+          ["URS-8", ""],
+          ["URS-13", ""],
+        ]
+      ),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "PQ",
+          },
+        ],
+      },
+      PREVIEW_ATTRS
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(cellRuns(preview.doc, 1, 1)).toEqual([]);
+    expect(cellRuns(preview.doc, 3, 1)).toEqual([
+      { text: "PQ", insert: true, deleted: false },
+    ]);
+    expect(rowHasInsertMark(preview.doc, 1)).toBe(false);
+    expect(rowHasInsertMark(preview.doc, 3)).toBe(true);
+  });
+
   it("marks only the added suffix on edit_cells, not the original cell text", () => {
     const preview = buildTableOperationPreviewDoc(
       tableDoc(

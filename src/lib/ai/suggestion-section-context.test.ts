@@ -201,7 +201,9 @@ describe("suggestion vs eval section context isolation", () => {
     expect(grid).toContain(
       "[1,0] (banner, spans 2 cols) ANY SPECIFIC REQUIREMENTS"
     );
-    expect(grid).toContain("Prefer insert_rows afterRowKey");
+    expect(grid).toContain(
+      "Prefer edit_cells rowKey and insert_rows afterRowKey"
+    );
   });
 
   it("tagged cell coordinates resolve to the same cell the locator scopes", async () => {

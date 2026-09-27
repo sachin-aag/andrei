@@ -14,6 +14,7 @@ import {
   parseTableOperation,
   prefixTableCaptionMarkdown,
   renumberFilledTableCaptions,
+  resolveEditCells,
   summarizeTableOperation,
   tableOperationInvalidHint,
   type TableOperation,
@@ -684,6 +685,138 @@ describe("applyTableOperation", () => {
     });
   });
 
+  it("rematches edit_cells onto URS-13 when the numeric row is stale after banners", () => {
+    const doc = rtmDoc(["URS-1", "URS-8", "URS-9", "URS-13"], {
+      2: "ANY SPECIFIC REQUIREMENTS",
+    });
+    expect(cellText(doc, 1, 0)).toBe("URS-1");
+    expect(cellText(doc, 5, 0)).toBe("URS-13");
+
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "PQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 5, 3)).toBe("PQ");
+  });
+
+  it("rematches edit_cells from a URS-N in rowContext when rowKey is omitted", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"], { 2: "ANY SPECIFIC REQUIREMENTS" });
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowContext: "URS-13\nParameter\nURS-13 text",
+          expectedText: "stale URS-1 cell",
+          insertText: "OQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 3, 3)).toBe("OQ");
+  });
+
+  it("refuses identity edit_cells as already_present", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 2,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "",
+        },
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      status: "already_present",
+    });
+  });
+
+  it("drops identity cells and keeps a real change on the rematched row", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const resolved = resolveEditCells(
+      (doc.content![0]!.content ?? []).filter((n) => n.type === "tableRow"),
+      [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "",
+        },
+        {
+          row: 1,
+          col: 1,
+          rowKey: "URS-13",
+          expectedText: "Parameter",
+          insertText: "Jacket temperature",
+        },
+      ]
+    );
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.cells).toEqual([
+      {
+        row: 2,
+        col: 1,
+        rowKey: "URS-13",
+        expectedText: "Parameter",
+        insertText: "Jacket temperature",
+      },
+    ]);
+  });
+
+  it("captures rematched row and rowKey before persisting edit_cells", () => {
+    const doc = rtmDoc(["URS-1", "URS-8", "URS-13"], {
+      2: "ANY SPECIFIC REQUIREMENTS",
+    });
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          insertText: "PQ",
+        },
+      ],
+    });
+    expect(captured).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          row: 4,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "PQ",
+        },
+      ],
+    });
+  });
+
   it("captures omitted expectedText and appends a column when afterCol is omitted", () => {
     const doc = tableDoc(
       ["Component", "Description"],
@@ -1010,8 +1143,9 @@ describe("applyTableOperation", () => {
   });
 
   it("does not caption a still-empty seeded table", () => {
+    const doc = seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]);
     const result = applyTableOperation(
-      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      doc,
       {
         kind: "edit_cells",
         tableIndex: 0,
@@ -1023,10 +1157,8 @@ describe("applyTableOperation", () => {
         existingTableCount: 0,
       }
     );
-    expect(result.status).toBe("ok");
-    if (!result.ok) return;
-    expect(result.tableNumber).toBeUndefined();
-    expect(result.doc.content?.map((n) => n.type)).toEqual(["table"]);
+    expect(result.status).toBe("already_present");
+    expect(doc.content?.map((n) => n.type)).toEqual(["table"]);
   });
 
   it("reuses an existing caption instead of inserting a second one", () => {
@@ -1823,6 +1955,33 @@ describe("parseTableOperation", () => {
           row: 1,
           col: 2,
           insertText: "Major release number (e.g., 04)",
+        },
+      ],
+    });
+  });
+
+  it("round-trips edit_cells rowKey and afterRowKey alias", () => {
+    expect(
+      parseTableOperation({
+        kind: "edit_cells",
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            afterRowKey: "URS-13",
+            insertText: "PQ",
+          },
+        ],
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          insertText: "PQ",
         },
       ],
     });

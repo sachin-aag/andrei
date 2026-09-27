@@ -550,6 +550,19 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
           col: z.number().int().min(0),
           expectedText: z.string().optional(),
           insertText: z.string(),
+          rowKey: z
+            .string()
+            .min(1)
+            .optional()
+            .describe(
+              "First-cell text of the live row (e.g. URS-13). Prefer this over row — numeric indexes shift after banners or earlier inserts."
+            ),
+          rowContext: z
+            .string()
+            .optional()
+            .describe(
+              "Sibling cell text on this row. Optional; the server captures it when omitted."
+            ),
         })
       )
       .min(1),
@@ -3607,7 +3620,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For edit_cells prefer rowKey (first-cell text, e.g. URS-13) over row. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3808,6 +3821,9 @@ export function buildChatTools(opts: {
           };
         }
         if (!applied.ok) {
+          if (applied.status === "already_present") {
+            return { status: "empty_edit", hint: applied.hint };
+          }
           return { status: applied.status, hint: applied.hint };
         }
         const second = citationsAtEndOfSection
