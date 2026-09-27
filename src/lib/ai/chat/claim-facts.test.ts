@@ -118,6 +118,16 @@ describe("instrument quantities", () => {
     expect(kinds("held at 3.5 kg/cm2")).toContainEqual(["number", "3.5 kg/cm2"]);
   });
 
+  it("does not treat the trailing 0 in 25.0 as a measured zero", () => {
+    expect(extractHardFacts("NLT 25.0 m²").map((fact) => fact.text)).not.toContain(
+      "0"
+    );
+    expect(extractHardFacts("0.5 bar").map((fact) => fact.text)).not.toContain("0");
+    expect(
+      extractHardFacts("contaminated units 0").map((fact) => `${fact.kind}:${fact.text}`)
+    ).toContain("number:0");
+  });
+
   it("does not turn a section number into a quantity", () => {
     expect(extractHardFacts("5.1 System Trends")).toEqual([]);
   });

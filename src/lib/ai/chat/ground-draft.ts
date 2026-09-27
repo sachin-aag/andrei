@@ -43,6 +43,7 @@ import {
   factIsRowKey,
   factSupportedForRowKey,
   filenameMatchesFamily,
+  isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
   rowKeyFromContext,
   syntheticUnsupportedFact,
@@ -601,6 +602,11 @@ export function groundTableOperation(input: {
   grounding?: GroundDraftGrounding;
   /** Saved analyses whose computed values count as evidence. */
   analyses?: readonly AnalysisEvidence[];
+  /**
+   * After repair, empty unsupported RTM Stage / Section / Remarks
+   * instead of blocking the URS copy.
+   */
+  clearOptionalOnBlock?: boolean;
 }): {
   operation: TableOperation;
   provenance: ClaimProvenance;
@@ -633,7 +639,11 @@ export function groundTableOperation(input: {
   const claims: ClaimProvenanceRecord[] = [];
   const unsupported: HardFact[] = [];
   let blocked = false;
-  const groundValue = (value: string, context?: string): string => {
+  const groundValue = (
+    value: string,
+    context: string | undefined,
+    col?: number
+  ): string => {
     const grounded = groundDraftText({
       text: value,
       ledger: input.ledger,
@@ -642,6 +652,14 @@ export function groundTableOperation(input: {
       context,
       analyses: input.analyses,
     });
+    const clearOptional =
+      Boolean(input.clearOptionalOnBlock) &&
+      grounded.blocked &&
+      col != null &&
+      isQsrRtmOptionalReferenceColumn(input.grounding?.section, col);
+    if (clearOptional) {
+      return "";
+    }
     claims.push(...grounded.provenance.claims);
     unsupported.push(...grounded.unsupported);
     if (grounded.blocked) blocked = true;
@@ -663,16 +681,35 @@ export function groundTableOperation(input: {
             ])
             .filter((part): part is string => Boolean(part?.trim()))
             .join("\n");
-          return { ...cell, insertText: groundValue(cell.insertText, context) };
+          return {
+            ...cell,
+            insertText: groundValue(cell.insertText, context, cell.col),
+          };
         }),
       };
+      if (input.clearOptionalOnBlock) {
+        const kept = operation.cells.filter((cell) => {
+          if (
+            isQsrRtmOptionalReferenceColumn(
+              input.grounding?.section,
+              cell.col
+            ) &&
+            !cell.insertText.trim()
+          ) {
+            return false;
+          }
+          return true;
+        });
+        operation = { ...operation, cells: kept };
+        if (kept.length === 0) blocked = true;
+      }
       break;
     case "insert_rows":
       operation = {
         ...cited,
         rows: cited.rows.map((row) => {
           const context = row.join("\n");
-          return row.map((cell) => groundValue(cell, context));
+          return row.map((cell, col) => groundValue(cell, context, col));
         }),
       };
       break;
@@ -688,10 +725,12 @@ export function groundTableOperation(input: {
     case "create_table":
       operation = {
         ...cited,
-        headers: cited.headers.map((header) => groundValue(header)),
+        headers: cited.headers.map((header) =>
+          groundValue(header, cited.headers.join("\n"))
+        ),
         rows: cited.rows?.map((row) => {
           const context = [...cited.headers, ...row].join("\n");
-          return row.map((cell) => groundValue(cell, context));
+          return row.map((cell, col) => groundValue(cell, context, col));
         }),
       };
       break;

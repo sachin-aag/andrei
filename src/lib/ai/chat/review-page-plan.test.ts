@@ -221,6 +221,28 @@ describe("planReviewPages", () => {
     expect(
       coverageObjectiveDigest("qsr references for the qualification summary")
     ).toBe("qsr_references");
+    expect(
+      coverageObjectiveDigest(
+        "Extract all requirements for Control Philosophy (5.2), GMP Requirements (5.3), and Safety Requirements (5.4) from the URS."
+      )
+    ).toBe("qsr_rtm");
+    expect(objectiveTokens("5.1 Process Requirements")).toContain("process");
+    expect(objectiveTokens("5.1 Process Requirements")).not.toContain("qsr");
+  });
+
+  it("treats a prose RTM finish as covering 5.2–5.4", () => {
+    const langfuseKey =
+      "uspiy53ymhnfd9rktwo3u4g7:12:h0xk4yu7sl9rrds22xhvk43f|obj:extract all requirements for control philosophy (5.2), gmp requirements (5.3), a";
+    expect(coverageKeySatisfiesObjective(langfuseKey, "qsr_rtm_control")).toBe(
+      true
+    );
+    expect(coverageKeySatisfiesObjective(langfuseKey, "qsr_rtm_gmp")).toBe(true);
+    expect(coverageKeySatisfiesObjective(langfuseKey, "qsr_rtm_safety")).toBe(
+      true
+    );
+    expect(
+      coverageKeySatisfiesObjective(langfuseKey, "qsr_qualification_documents")
+    ).toBe(false);
   });
 
   it("queues schema-matching monitoring pages across files, not a protocol that only says monitoring", () => {

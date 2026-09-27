@@ -61,7 +61,13 @@ export function summarizeDocumentReviewProgress(
   const totalPages = numberField(output.totalPages) ?? numberField(latest.input?.totalPages) ?? 0;
   const reviewedPages =
     numberField(output.reviewedPages) ?? numberField(output.coveredPages) ?? 0;
-  const findingCount = numberField(output.findingCount) ?? 0;
+  const findingCount =
+    numberField(output.findingCount) ??
+    [...parts]
+      .reverse()
+      .map((part) => numberField(part.output?.findingCount))
+      .find((count) => count != null) ??
+    (Array.isArray(output.findings) ? output.findings.length : 0);
   const remainingBatches = numberField(output.remainingBatches) ?? 0;
   const status = typeof output.status === "string" ? output.status : "";
   const continuePending = parts.some(
@@ -181,37 +187,88 @@ const REVIEW_FILENAME_MAX = 48;
 
 export type ReviewDocumentUiRef = {
   filename: string;
+  pageCount?: number | null;
+  reviewed?: number;
+  queued?: number;
+  skipped?: boolean;
 };
+
+type ReviewDocumentRecord = {
+  filename?: unknown;
+  attachmentId?: unknown;
+  pageCount?: unknown;
+  reviewed?: unknown;
+  queued?: unknown;
+};
+
+function ingestReviewDocument(
+  seen: Map<string, ReviewDocumentUiRef>,
+  item: unknown,
+  skipped = false
+): void {
+  if (typeof item !== "object" || item === null) return;
+  const rec = item as ReviewDocumentRecord;
+  const filename = typeof rec.filename === "string" ? rec.filename.trim() : "";
+  if (!filename) return;
+  const id =
+    typeof rec.attachmentId === "string" && rec.attachmentId.trim()
+      ? rec.attachmentId
+      : filename;
+  const pageCount = numberField(rec.pageCount);
+  const reviewed = numberField(rec.reviewed);
+  const queued = numberField(rec.queued);
+  const existing = seen.get(id);
+  if (!existing) {
+    seen.set(id, {
+      filename,
+      ...(pageCount != null ? { pageCount } : {}),
+      ...(reviewed != null ? { reviewed } : {}),
+      ...(queued != null ? { queued } : {}),
+      ...(skipped ? { skipped: true } : {}),
+    });
+    return;
+  }
+  if (pageCount != null && existing.pageCount == null) {
+    existing.pageCount = pageCount;
+  }
+  if (reviewed != null) existing.reviewed = reviewed;
+  if (queued != null) existing.queued = queued;
+  if (skipped) existing.skipped = true;
+}
 
 /** Filenames from start_document_review (and later tools that echo them). */
 export function reviewDocumentsFromParts(
   parts: readonly DocumentReviewToolPart[]
 ): ReviewDocumentUiRef[] {
   const seen = new Map<string, ReviewDocumentUiRef>();
-  const absorb = (raw: unknown) => {
-    if (!Array.isArray(raw)) return;
-    for (const item of raw) {
-      if (typeof item !== "object" || item === null) continue;
-      const rec = item as {
-        filename?: unknown;
-        attachmentId?: unknown;
-      };
-      const filename =
-        typeof rec.filename === "string" ? rec.filename.trim() : "";
-      if (!filename) continue;
-      const id =
-        typeof rec.attachmentId === "string" && rec.attachmentId.trim()
-          ? rec.attachmentId
-          : filename;
-      if (seen.has(id)) continue;
-      seen.set(id, { filename });
-    }
-  };
   for (const part of parts) {
-    absorb(part.output?.documents ?? part.input?.documents);
-    absorb(part.output?.byAttachment);
+    const docs = part.output?.documents ?? part.input?.documents;
+    if (Array.isArray(docs)) {
+      for (const item of docs) ingestReviewDocument(seen, item);
+    }
+    const byAttachment = part.output?.byAttachment;
+    if (Array.isArray(byAttachment)) {
+      for (const item of byAttachment) ingestReviewDocument(seen, item);
+    }
+    const skipped = part.output?.skippedDocuments;
+    if (Array.isArray(skipped)) {
+      for (const item of skipped) ingestReviewDocument(seen, item, true);
+    }
   }
   return [...seen.values()];
+}
+
+export function reviewDocumentDetailLabel(doc: ReviewDocumentUiRef): string {
+  if (doc.skipped) return `Skipped ${doc.filename}`;
+  const pages =
+    typeof doc.reviewed === "number" &&
+    typeof doc.queued === "number" &&
+    doc.queued > 0
+      ? `${doc.reviewed}/${doc.queued} pages`
+      : typeof doc.pageCount === "number" && doc.pageCount > 0
+        ? `${doc.pageCount} page${doc.pageCount === 1 ? "" : "s"}`
+        : null;
+  return pages ? `${doc.filename} · ${pages}` : doc.filename;
 }
 
 export function fileScopeSuffix(docs: readonly ReviewDocumentUiRef[]): string {

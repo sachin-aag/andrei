@@ -25,6 +25,14 @@ export function normalizeHaystack(text: string): string {
   return latinize(collapseWs(text)).toLowerCase();
 }
 
+/** OCR often splits 3.5 into "3 . 5" / "3. 5". Do not glue "070. 5 units". */
+function glueOcrDecimals(text: string): string {
+  const dotted = text.replace(/[·•․．｡]/g, ".");
+  return dotted
+    .replace(/(?<![\d.])(\d{1,4})\s*\.\s+(\d{1,4})(?!\d)/g, "$1.$2")
+    .replace(/(?<![\d.])(\d{1,4})\s+\.\s*(\d{1,4})(?!\d)/g, "$1.$2");
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -43,13 +51,21 @@ function numericForms(fact: HardFact): string[] {
  * Integers and decimals must be whole tokens. Substring "0" inside E/PR/070,
  * "1.0 Purpose", or "2024" is not evidence for contaminated-units 0. A
  * sentence-final "0." still matches — only `.` + digit is a decimal.
+ * OCR-split "3 . 5" / "3. 5" is evidence for 3.5, not for integer 3.
  */
 function numericNeedlePresent(haystack: string, needle: string): boolean {
   const n = needle.toLowerCase();
   if (!n) return false;
-  if (/^\d+(?:\.\d+)?$/.test(n)) {
+  if (/^\d+\.\d+$/.test(n)) {
+    const [whole, frac] = n.split(".");
     return new RegExp(
-      `(?<![\\d.])${escapeRegExp(n)}(?!\\d)(?!\\.\\d)`,
+      `(?<![\\d.])${escapeRegExp(whole!)}\\s*\\.\\s*${escapeRegExp(frac!)}(?!\\d)(?!\\.\\d)`,
+      "i"
+    ).test(haystack);
+  }
+  if (/^\d+$/.test(n)) {
+    return new RegExp(
+      `(?<![\\d.])${escapeRegExp(n)}(?!\\d)(?!\\s*\\.\\s*\\d)`,
       "i"
     ).test(haystack);
   }
@@ -114,8 +130,9 @@ function kindAllowsFuzzy(kind: HardFactKind): boolean {
 
 /**
  * True when the served page text supports this hard fact.
- * Numbers match after comma/space normalization (OCR `[9]`/`[g]` via uFuzzy
- * on identifiers). Empty haystack never matches.
+ * Numbers match after comma/space normalization and OCR-split decimals
+ * (`3 . 5` → 3.5). OCR `[9]`/`[g]` via uFuzzy on identifiers.
+ * Empty haystack never matches.
  */
 export function evidenceContainsFact(haystack: string, fact: HardFact): boolean {
   if (!haystack.trim()) return false;
@@ -123,11 +140,13 @@ export function evidenceContainsFact(haystack: string, fact: HardFact): boolean 
   const originalHay = collapseWs(haystack).toUpperCase();
   // URS-1 / URS-15 are identifiers. Their digits are not a measured
   // "1 mm" or "15 °C" sitting in that row's requirement text.
-  const numericHay = hay
-    .replace(/°/g, "")
-    .replace(/,/g, "")
-    .replace(/\burs-\d+\b/gi, " ")
-    .replace(/\s+/g, " ");
+  const numericHay = glueOcrDecimals(
+    hay
+      .replace(/°/g, "")
+      .replace(/,/g, "")
+      .replace(/\burs-\d+\b/gi, " ")
+      .replace(/\s+/g, " ")
+  );
   for (const needle of kindNeedles(fact)) {
     if (!needle) continue;
     if (fact.kind === "identifier") {

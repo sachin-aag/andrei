@@ -519,6 +519,30 @@ describe("groundTableOperation", () => {
     });
   });
 
+  it("grounds create_table headers against sibling header text", () => {
+    const gold = GROUNDEDNESS_GOLD_CASES[0]!;
+    const result = groundTableOperation({
+      operation: {
+        kind: "create_table",
+        headers: ["Serial", "Result"],
+        rows: [["MF-25-VIAL-01", "Pass"]],
+      },
+      ledger: ledgerFromPages(gold.pages),
+      policy: "block",
+    });
+    expect(result.operation).toMatchObject({
+      kind: "create_table",
+      headers: ["Serial", "Result"],
+    });
+    expect(result.blocked).toBe(true);
+    const row =
+      result.operation.kind === "create_table"
+        ? result.operation.rows?.[0]
+        : undefined;
+    expect(row?.[0]).toContain("<identifier>");
+    expect(row?.[0]).not.toContain("MF-25-VIAL-01");
+  });
+
   it("keeps a CSV date on the VSR cited in documentRef instead of a colliding SOP page", () => {
     const vsr = "VSR-25-PR-001.pdf";
     const sop = "SOP-DP-QA-014.pdf";

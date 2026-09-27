@@ -5,7 +5,10 @@ import {
   sectionFillState,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
-import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
+import {
+  detectSectionIntentFromText,
+  detectSectionIntentsFromText,
+} from "@/lib/ai/chat/section-intent";
 import { coverageKeySatisfiesObjective, REVIEW_OBJECTIVE_PAGE_FLOOR } from "@/lib/ai/chat/review-page-plan";
 import {
   inventorySectionForObjective,
@@ -338,6 +341,43 @@ export function seedSectionQueuePlan(input: {
   };
 }
 
+/**
+ * Queue only the sections the engineer named ("draft 5.2, 5.3, 5.4"), not
+ * every empty `draftOrder` leftover.
+ */
+export function seedNamedSectionQueuePlan(input: {
+  userText: string;
+  documentType: DocumentType;
+  sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
+  promptVersion: string;
+  now?: Date;
+}): ChatPendingPlan | null {
+  const named = detectSectionIntentsFromText(input.userText, input.documentType);
+  const items: ChatPlanItem[] = [];
+  const seen = new Set<string>();
+  for (const section of named) {
+    if (seen.has(section)) continue;
+    seen.add(section);
+    const fill = sectionFillState(input.sections[section], section);
+    if (fill !== "empty") continue;
+    items.push({
+      sectionKey: section,
+      label: sectionLabel(section),
+      state: "queued",
+    });
+  }
+  if (items.length < 2) return null;
+  const first = items[0];
+  if (first) first.state = "in_progress";
+  return {
+    kind: "section_queue",
+    objective: input.userText.trim().slice(0, 500),
+    items,
+    createdAt: (input.now ?? new Date()).toISOString(),
+    promptVersion: input.promptVersion,
+  };
+}
+
 export function resolvePlanAtTurnStart(input: {
   existing: ChatPendingPlan | null;
   userText: string;
@@ -359,14 +399,24 @@ export function resolvePlanAtTurnStart(input: {
   ) {
     return resumeChatPendingPlan(existing);
   }
-  if (input.writeIntent && isMultiSectionDraftRequest(input.userText)) {
-    return seedSectionQueuePlan({
+  if (input.writeIntent) {
+    const named = seedNamedSectionQueuePlan({
       userText: input.userText,
       documentType: input.documentType,
       sections: input.sections,
       promptVersion: input.promptVersion,
       now: input.now,
     });
+    if (named) return named;
+    if (isMultiSectionDraftRequest(input.userText)) {
+      return seedSectionQueuePlan({
+        userText: input.userText,
+        documentType: input.documentType,
+        sections: input.sections,
+        promptVersion: input.promptVersion,
+        now: input.now,
+      });
+    }
   }
   if (existing && !input.autoContinue && !isPlanResumeRequest(input.userText)) {
     return pauseChatPendingPlan(existing, "new_user_message");
