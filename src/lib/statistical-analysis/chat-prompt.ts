@@ -28,7 +28,7 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v61-ragged-columns";
+  "analytics-chat-v62-hide-internal-ids";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
@@ -150,7 +150,7 @@ function documentIndex(documents: ReadyDocumentIndexItem[]): string {
     return "Ready documents: none uploaded (or still ingesting). Call list_attachments for the Attachments tree (folders, file types, including files still ingesting).";
   }
   return [
-    "Ready documents (index only — call list_attachments for counts, folders, file types, or status):",
+    "Ready documents (index only — call list_attachments for counts, folders, file types, or status). [id=…] is an internal handle — never show it; cite the filename:",
     ...documents.map((doc) => {
       const filename =
         quotePromptMetadata(

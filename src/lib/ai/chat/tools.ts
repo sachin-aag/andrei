@@ -202,7 +202,6 @@ type ReadSectionSuccess = {
   }>;
   images: ReadSectionImageRef[];
   pendingSuggestions?: Array<{
-    id: string;
     kind: string;
     targetField: string;
     preview: string;
@@ -1153,7 +1152,7 @@ function timeSeriesRunForChat(run: TimeSeriesExcursion) {
  * `[zbud2fet70yu88pvfpccjtko]`.
  */
 const CITE_SOURCES_NOT_IDS =
-  " Cite only the filenames and pages in 'sources'. analysisId is an internal handle for editing a plot — never write it into the document or a Citations list.";
+  " Cite only the filenames and pages in 'sources'. analysisId is an internal handle for editing a plot — never write it into the document, a Citations list, or a user-visible chat reply; name the plot by title.";
 
 function omittedNote(omitted: number): string {
   return omitted > 0
@@ -1690,7 +1689,6 @@ export function buildChatTools(opts: {
 
         const pendingRows = await db
           .select({
-            id: comments.id,
             kind: comments.kind,
             content: comments.content,
             contentPath: comments.contentPath,
@@ -1705,7 +1703,6 @@ export function buildChatTools(opts: {
           const targetField = row.contentPath ?? "narrative";
           return [
             {
-              id: row.id,
               kind: row.kind,
               targetField,
               preview: suggestionPreviewFromRow(row),
@@ -1806,7 +1803,7 @@ export function buildChatTools(opts: {
 
     list_suggestions: tool({
       description:
-        "List AI suggestion cards on this report: open (waiting for Apply/Dismiss), resolved (the engineer approved), and dismissed. Use this before claiming a prior proposal is still waiting or that nothing was proposed. Open cards are proposed, not landed in the document. read_section.pendingSuggestions is open cards on that section only.",
+        "List AI suggestion cards on this report: open (waiting for Apply/Dismiss), resolved (the engineer approved), and dismissed. Use this before claiming a prior proposal is still waiting or that nothing was proposed. Open cards are proposed, not landed in the document. read_section.pendingSuggestions is open cards on that section only. Never quote internal ids in user-visible replies — describe a card by section and preview.",
       inputSchema: z.object({
         status: z
           .enum(["all", "open", "resolved", "dismissed"])
@@ -1829,7 +1826,6 @@ export function buildChatTools(opts: {
         const cap = limit ?? LIST_SUGGESTIONS_MAX;
         const rows = await db
           .select({
-            id: comments.id,
             kind: comments.kind,
             content: comments.content,
             contentPath: comments.contentPath,
@@ -1845,7 +1841,6 @@ export function buildChatTools(opts: {
           if (section && row.section !== section) return [];
           return [
             {
-              id: row.id,
               section: row.section,
               targetField: row.contentPath ?? "narrative",
               status: row.status,
@@ -1869,7 +1864,7 @@ export function buildChatTools(opts: {
           counts,
           truncated: listed.length > cap,
           suggestions: listed.slice(0, cap),
-          note: "open = waiting for Apply/Dismiss (proposed, not landed). resolved = approved. dismissed = rejected. Never say a prior proposal is still waiting unless status is open.",
+          note: "open = waiting for Apply/Dismiss (proposed, not landed). resolved = approved. dismissed = rejected. Never say a prior proposal is still waiting unless status is open. Never quote internal ids; name the section and a short preview instead.",
         };
       },
     }),

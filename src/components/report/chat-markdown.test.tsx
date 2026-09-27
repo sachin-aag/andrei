@@ -202,4 +202,41 @@ describe("ChatMarkdown", () => {
     await userEvent.click(links[0]!);
     expect(onOpenCitation).toHaveBeenCalledWith("[E-PR-068]");
   });
+
+  it("rewrites attachment and plot ids into filenames and titles", () => {
+    const attachmentId = "me1q4zzhb1me0wwskpmqfw7i";
+    const analysisId = "zbud2fet70yu88pvfpccjtko";
+    const { container } = render(
+      <ChatMarkdown
+        filenameByAttachmentId={
+          new Map([[attachmentId, "Lab Results_20250320092518.pdf"]])
+        }
+        labelByInternalId={new Map([[analysisId, "Assay scatter"]])}
+      >
+        {`See id=${attachmentId} and [${analysisId}]. Output met spec [${attachmentId}, p. 3].`}
+      </ChatMarkdown>
+    );
+    const text = container.textContent ?? "";
+    expect(text).not.toContain(attachmentId);
+    expect(text).not.toContain(analysisId);
+    expect(text).toContain("Lab Results.pdf");
+    expect(text).toContain("Assay scatter");
+  });
+
+  it("linkifies a rewritten attachment-id citation", async () => {
+    const onOpenCitation = vi.fn();
+    const attachmentId = "me1q4zzhb1me0wwskpmqfw7i";
+    render(
+      <ChatMarkdown
+        onOpenCitation={onOpenCitation}
+        filenameByAttachmentId={
+          new Map([[attachmentId, "protocol.pdf"]])
+        }
+      >
+        {`Output met spec [${attachmentId}, p. 3] today.`}
+      </ChatMarkdown>
+    );
+    await userEvent.click(screen.getByTestId("citation-link"));
+    expect(onOpenCitation).toHaveBeenCalledWith("[protocol.pdf, p. 3]");
+  });
 });

@@ -63,6 +63,8 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("Documents (ready evidence attachments");
     expect(map).toContain("list_attachments");
     expect(map).toContain("an index only");
+    expect(map).toContain("id= is an internal handle");
+    expect(map).toContain("never show the id");
     expect(map).toContain("UNTRUSTED");
     expect(map).toContain('filename="Lab Results.pdf"');
     expect(map).toContain("id=att_123");
@@ -368,6 +370,7 @@ describe("buildReportContextMap", () => {
     });
 
     expect(map).toContain("insert_image source=analytics");
+    expect(map).toContain("never show the id");
     expect(map).toContain("create additional ones in Analytics");
     expect(map).toContain('"Torque scatter" [anl_1] kind=measurement_scatter');
     // A plot nobody has opened is still insertable: insert_image renders it
