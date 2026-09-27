@@ -19,6 +19,7 @@ import { applySuggestionToContent } from "@/lib/suggestions/accept-suggestion";
 import { withSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import { doc, para } from "@/lib/suggestions/merge-fixtures";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 
 function aiFixComment(
   overrides: Partial<CommentRecord> & { content: string }
@@ -611,6 +612,173 @@ describe("validateSuggestionLocate table operations", () => {
     expect(v.canApply).toBe(false);
     expect(v.canPreview).toBe(false);
     expect(v.mergeStatus).toBe("noop");
+    expect(v.documentChanged).toBe(false);
+  });
+
+  it("still previews edit_cells when some dummy-row cells are already filled", () => {
+    const comment = aiFixComment({
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "",
+        reasoning: "Fill missing Stage cells",
+        tableOperation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 1,
+              rowKey: "UUT-1",
+              expectedText: "",
+              insertText: "Acme Corp",
+            },
+            {
+              row: 2,
+              col: 1,
+              rowKey: "UUT-2",
+              expectedText: "",
+              insertText: "Beta Corp",
+            },
+          ],
+        },
+      }),
+    });
+    const twoRow = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  attrs: { colspan: 1, rowspan: 1, colwidth: null },
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Unit" }],
+                    },
+                  ],
+                },
+                {
+                  type: "tableHeader",
+                  attrs: { colspan: 1, rowspan: 1, colwidth: null },
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Maker" }],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  attrs: { colspan: 1, rowspan: 1, colwidth: null },
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "UUT-1" }],
+                    },
+                  ],
+                },
+                {
+                  type: "tableCell",
+                  attrs: { colspan: 1, rowspan: 1, colwidth: null },
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Acme Corp" }],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  attrs: { colspan: 1, rowspan: 1, colwidth: null },
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "UUT-2" }],
+                    },
+                  ],
+                },
+                {
+                  type: "tableCell",
+                  attrs: { colspan: 1, rowspan: 1, colwidth: null },
+                  content: [{ type: "paragraph" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const v = validateSuggestionLocate(comment, "define", {
+      narrative: twoRow,
+    });
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+    expect(v.canPreview).toBe(true);
+    expect(v.documentChanged).toBe(false);
+  });
+
+  it("still previews a painted edit_cells table instead of marking it stale", () => {
+    const operation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          rowKey: "UUT-1",
+          expectedText: "",
+          insertText: "Acme Corp",
+        },
+      ],
+    };
+    const preview = buildTableOperationPreviewDoc(
+      equipmentTable(""),
+      operation,
+      {
+        id: "c1",
+        authorId: "ai",
+        status: "pending",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        kind: "fix",
+      }
+    );
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const comment = aiFixComment({
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "",
+        reasoning: "Fill manufacturer",
+        tableOperation: operation,
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "define", {
+      narrative: preview.doc,
+    });
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+    expect(v.canPreview).toBe(true);
     expect(v.documentChanged).toBe(false);
   });
 });

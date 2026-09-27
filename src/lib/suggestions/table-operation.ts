@@ -746,6 +746,10 @@ function agreedSiblingRowKey(
  * model often repeats one dummy row for every URS while `rowKey` differs.
  * An unkeyed sibling on the same numeric row inherits a key only when every
  * keyed sibling on that dummy row agrees.
+ *
+ * One already-filled or stale cell must not fail the whole batch: a 23-cell
+ * "fill missing" card that hits two live Stage values would otherwise mark
+ * the suggestion stale and skip inline preview for the empty remainder.
  */
 export function resolveEditCells(
   rows: readonly JSONContent[],
@@ -772,6 +776,7 @@ export function resolveEditCells(
 
   const remapped: TableCellEdit[] = [];
   const skipExpectedFor = new Set<string>();
+  let lastScopeHint = "";
   for (let index = 0; index < cells.length; index += 1) {
     const cell = cells[index]!;
     const key =
@@ -780,27 +785,18 @@ export function resolveEditCells(
     if (key) {
       const hits = rowsMatchingAfterKey(rows, key);
       if (hits.length === 0) {
-        return {
-          ok: false,
-          status: "bad_scope",
-          hint: `rowKey "${key}" was not found. Copy the first-cell text from read_section (URS ID or banner label).`,
-        };
+        lastScopeHint = `rowKey "${key}" was not found. Copy the first-cell text from read_section (URS ID or banner label).`;
+        continue;
       }
       if (hits.length > 1) {
-        return {
-          ok: false,
-          status: "bad_scope",
-          hint: `rowKey "${key}" matches rows ${hits.join(", ")}. Quote a unique first-cell value.`,
-        };
+        lastScopeHint = `rowKey "${key}" matches rows ${hits.join(", ")}. Quote a unique first-cell value.`;
+        continue;
       }
       liveRow = hits[0]!;
     }
     if (liveRow < 0 || liveRow >= rows.length) {
-      return {
-        ok: false,
-        status: "bad_scope",
-        hint: `Row ${liveRow} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`,
-      };
+      lastScopeHint = `Row ${liveRow} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`;
+      continue;
     }
     const rematchedAway = Boolean(key) && liveRow !== cell.row;
     remapped.push({
@@ -811,34 +807,35 @@ export function resolveEditCells(
     if (rematchedAway) skipExpectedFor.add(`${liveRow},${cell.col}`);
   }
 
-  const seen = new Set<string>();
+  if (remapped.length === 0) {
+    return {
+      ok: false,
+      status: "bad_scope",
+      hint:
+        lastScopeHint ||
+        "No edit_cells target resolved to a live row. Copy the first-cell text from read_section.",
+    };
+  }
+
+  const firstNextByCoord = new Map<string, string>();
   const changing: TableCellEdit[] = [];
   const headers = rows[0] ? rowSnapshot(rows[0]) : [];
+  let sawIdentity = false;
+  let sawStale = false;
+  let sawMissing = false;
   for (const cell of remapped) {
     const coord = `${cell.row},${cell.col}`;
-    if (seen.has(coord)) {
-      return {
-        ok: false,
-        status: "invalid",
-        hint: `Duplicate cell target [${cell.row},${cell.col}].`,
-      };
-    }
-    seen.add(coord);
     const row = rows[cell.row];
     if (!row) {
-      return {
-        ok: false,
-        status: "bad_scope",
-        hint: `Row ${cell.row} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`,
-      };
+      sawMissing = true;
+      lastScopeHint = `Row ${cell.row} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`;
+      continue;
     }
     const node = rowCells(row)[cell.col];
     if (!node) {
-      return {
-        ok: false,
-        status: "bad_scope",
-        hint: `Cell [${cell.row},${cell.col}] does not exist. ${liveHeadersHint(headers)}`,
-      };
+      sawMissing = true;
+      lastScopeHint = `Cell [${cell.row},${cell.col}] does not exist. ${liveHeadersHint(headers)}`;
+      continue;
     }
     if (options?.fixedColumns && cell.row === 0) {
       const nextText = nextCellText(cell);
@@ -851,23 +848,62 @@ export function resolveEditCells(
         };
       }
     }
+    const live = cellPlainText(node);
+    const next = nextCellText(cell);
+    const firstNext = firstNextByCoord.get(coord);
+    if (firstNext !== undefined) {
+      if (firstNext === next) continue;
+      return {
+        ok: false,
+        status: "invalid",
+        hint: `Duplicate cell target [${cell.row},${cell.col}].`,
+      };
+    }
+    firstNextByCoord.set(coord, next);
+    if (next === live) {
+      sawIdentity = true;
+      continue;
+    }
+    const rematchedAway = skipExpectedFor.has(coord);
     // When rowKey rematched onto a different live row, expectedText was
     // snapshotted from the stale numeric index — the row key is the
     // concurrency token, not that leftover cell text.
-    if (cell.expectedText !== undefined && !skipExpectedFor.has(coord)) {
+    if (cell.expectedText !== undefined && !rematchedAway) {
       const expected = normalizeTableCellText(cell.expectedText);
-      if (cellPlainText(node) !== expected) {
-        return {
-          ok: false,
-          status: "stale",
-          hint: `Cell [${cell.row},${cell.col}] no longer matches expectedText. Re-read with read_section.`,
-        };
+      if (live !== expected) {
+        sawStale = true;
+        continue;
       }
     }
-    if (nextCellText(cell) === cellPlainText(node)) continue;
+    // Dummy-row fill (expectedText "") rematched onto a cell that already
+    // has different text — drop it; do not overwrite, and do not fail the
+    // rest of the batch.
+    if (rematchedAway) {
+      const expected = normalizeTableCellText(cell.expectedText ?? "");
+      if (expected === "" && live !== "") {
+        sawStale = true;
+        continue;
+      }
+    }
     changing.push(cell);
   }
   if (changing.length === 0) {
+    if (sawStale && !sawIdentity) {
+      return {
+        ok: false,
+        status: "stale",
+        hint: "Cell values no longer match expectedText. Re-read with read_section.",
+      };
+    }
+    if (!sawIdentity && sawMissing) {
+      return {
+        ok: false,
+        status: "bad_scope",
+        hint:
+          lastScopeHint ||
+          "No edit_cells target resolved to a live cell. Re-read with read_section.",
+      };
+    }
     return {
       ok: false,
       status: "already_present",

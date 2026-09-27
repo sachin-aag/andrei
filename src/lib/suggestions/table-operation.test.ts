@@ -842,6 +842,121 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 3, 5)).toBe("Complies");
   });
 
+  it("drops already-filled dummy-row cells and still edits the empty remainder", () => {
+    const seeded = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const filled = applyTableOperation(seeded, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-1",
+          expectedText: "",
+          insertText: "PQ [28]",
+        },
+      ],
+    });
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+
+    const result = applyTableOperation(filled.doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-1",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-1",
+          expectedText: "",
+          insertText: "2.4",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "13.3.5.1",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "IQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("PQ [28]");
+    expect(cellText(result.doc, 1, 4)).toBe("2.4");
+    expect(cellText(result.doc, 2, 3)).toBe("IQ");
+    expect(cellText(result.doc, 2, 4)).toBe("13.3.5.1");
+    expect(cellText(result.doc, 3, 3)).toBe("IQ");
+  });
+
+  it("keeps a valid rowKey when a sibling rowKey is missing", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-99",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 2, 3)).toBe("IQ");
+  });
+
+  it("still refuses a batch when every rowKey is missing", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    expect(
+      applyTableOperation(doc, {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-99",
+            expectedText: "",
+            insertText: "IQ",
+          },
+        ],
+      }).status
+    ).toBe("bad_scope");
+  });
+
   it("inherits a rowKey onto unkeyed siblings only when every keyed sibling agrees", () => {
     const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
     const rows = (doc.content![0]!.content ?? []).filter(
