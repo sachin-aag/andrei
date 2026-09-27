@@ -26,10 +26,11 @@ describe("unsupported chat tool fallback", () => {
     ]);
   });
 
-  it("steers table edits to retry on the next step", () => {
+  it("steers table edits to retry only when write tools will list again", () => {
     const hint = unsupportedChatToolHint("edit_table");
     expect(hint).toContain("edit_table is not available this step");
-    expect(hint).toContain("unlock after this signal");
+    expect(hint).toContain("Retry edit_table only if write tools are listed");
+    expect(hint).toContain("If no tools are listed, do not retry edit_table");
     expect(hint).not.toMatch(/The assistant hit an error/i);
   });
 

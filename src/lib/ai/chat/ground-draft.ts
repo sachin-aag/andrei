@@ -50,6 +50,7 @@ import {
   factIsRowKey,
   factSupportedForRowKey,
   filenameMatchesFamily,
+  isClearOnlyOptionalRtmEdit,
   isLabeledDateColumnLabel,
   isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
@@ -677,11 +678,16 @@ export function groundTableOperation(input: {
     input.ledger,
     input.grounding?.section
   );
-  const failClosed = qsrFailClosedReason({
-    section: input.grounding?.section,
-    attachedFilenames: input.grounding?.attachedFilenames,
-    ledger: input.ledger,
-  });
+  const failClosed = isClearOnlyOptionalRtmEdit(
+    cited,
+    input.grounding?.section
+  )
+    ? null
+    : qsrFailClosedReason({
+        section: input.grounding?.section,
+        attachedFilenames: input.grounding?.attachedFilenames,
+        ledger: input.ledger,
+      });
   if (failClosed) {
     return {
       operation: cited,
@@ -708,6 +714,13 @@ export function groundTableOperation(input: {
     col?: number,
     columnLabel?: string
   ): string => {
+    if (
+      col != null &&
+      isQsrRtmOptionalReferenceColumn(input.grounding?.section, col) &&
+      !value.trim()
+    ) {
+      return "";
+    }
     const grounded = groundDraftText({
       text: value,
       ledger: input.ledger,
@@ -771,6 +784,17 @@ export function groundTableOperation(input: {
         }),
       };
       if (input.clearOptionalOnBlock) {
+        const explicitClears = new Set(
+          cited.cells
+            .filter(
+              (cell) =>
+                isQsrRtmOptionalReferenceColumn(
+                  input.grounding?.section,
+                  cell.col
+                ) && !cell.insertText.trim()
+            )
+            .map((cell) => `${editCellsGroupKey(cell)}:${cell.col}`)
+        );
         const kept = operation.cells.filter((cell) => {
           if (
             isQsrRtmOptionalReferenceColumn(
@@ -779,7 +803,9 @@ export function groundTableOperation(input: {
             ) &&
             !cell.insertText.trim()
           ) {
-            return false;
+            return explicitClears.has(
+              `${editCellsGroupKey(cell)}:${cell.col}`
+            );
           }
           return true;
         });

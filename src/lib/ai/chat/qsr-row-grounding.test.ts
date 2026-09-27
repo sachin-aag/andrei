@@ -1013,6 +1013,128 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.operation).toMatchObject({ kind: "edit_cells", cells: [] });
   });
 
+  it("keeps an explicit clear of filled Stage / Section / Remarks as a card", () => {
+    const ledger = new CitationPageLedger();
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 2,
+            col: 3,
+            rowKey: "URS-9",
+            expectedText: "PQ [Performance Qualification.PDF, p. 8]",
+            insertText: "",
+            rowContext: "URS-9\nPQ\n8.1\nComplies",
+          },
+          {
+            row: 2,
+            col: 4,
+            rowKey: "URS-9",
+            expectedText: "8.1",
+            insertText: "",
+            rowContext: "URS-9\nPQ\n8.1\nComplies",
+          },
+          {
+            row: 2,
+            col: 5,
+            rowKey: "URS-9",
+            expectedText: "Complies",
+            insertText: "",
+            rowContext: "URS-9\nPQ\n8.1\nComplies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: {
+        section: "qsr_rtm_process",
+        attachedFilenames: ["User Requirement Specification.PDF"],
+      },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells).toHaveLength(3);
+    expect(cells.every((cell) => cell.insertText === "")).toBe(true);
+    expect(cells.map((cell) => cell.col).toSorted()).toEqual([3, 4, 5]);
+  });
+
+  it("sets DQ / Section 4 / NA from a Design Qualification N/A page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 9,
+        attachmentId: "urs",
+        quote: "URS-51 Spare parts list to be provided by the vendor.",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 18,
+        attachmentId: "dq",
+        quote:
+          "URS-51 Spare parts list. Section 4. Vendor documentation. Result: N/A not applicable for this protocol.",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-51",
+        "URS-51\nSpare parts list\nDQ\n4\nNA"
+      )
+    ).toMatchObject({
+      stageLabel: "DQ",
+      sectionHeading: "4",
+      remarks: "NA",
+    });
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 6,
+            col: 3,
+            rowKey: "URS-51",
+            expectedText: "",
+            insertText: "DQ",
+            rowContext: "URS-51\nSpare parts list",
+          },
+          {
+            row: 6,
+            col: 4,
+            rowKey: "URS-51",
+            expectedText: "",
+            insertText: "4",
+            rowContext: "URS-51\nSpare parts list",
+          },
+          {
+            row: 6,
+            col: 5,
+            rowKey: "URS-51",
+            expectedText: "",
+            insertText: "NA",
+            rowContext: "URS-51\nSpare parts list",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const byCol = new Map(cells.map((cell) => [cell.col, cell.insertText]));
+    expect(byCol.get(3)).toMatch(/^DQ\b/);
+    expect(byCol.get(3)).toContain("Design Qualification.PDF");
+    expect(byCol.get(4)).toBe("4");
+    expect(byCol.get(5)).toBe("NA");
+  });
+
   it("rewrites DQ up to IQ when Installation Qualification also topic-matches", () => {
     const ledger = ledgerFromPages([
       {
