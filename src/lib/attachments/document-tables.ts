@@ -80,10 +80,14 @@ export async function listDetectedTablesForReport(
     )
     .orderBy(asc(reportAttachments.filename), asc(documentTables.ordinal));
 
-  return rows.map(({ ordinal: _ordinal, ...row }) => ({
-    ...row,
-    columns: row.columns ?? [],
-  }));
+  return rows.map((entry) => {
+    const { ordinal, ...row } = entry;
+    void ordinal;
+    return {
+      ...row,
+      columns: row.columns ?? [],
+    };
+  });
 }
 
 /** Rows page-worth-at-a-time; the worksheet caps at `MAX_WORKSHEET_ROWS`. */

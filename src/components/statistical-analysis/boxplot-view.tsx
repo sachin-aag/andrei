@@ -21,7 +21,6 @@ import {
 } from "@/lib/statistical-analysis/row-selection";
 import type {
   BoxplotAnalysisSummary,
-  BoxplotGroupStats,
   ReportAnalyticsView,
 } from "@/lib/statistical-analysis/types";
 import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
