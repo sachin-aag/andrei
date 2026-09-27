@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { comments, reportSections } from "@/db/schema";
 import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
   DocumentReviewSession,
   extractReviewFindingsFromPages,
@@ -1322,5 +1324,99 @@ describe("QSR RTM section 5 draft replay", () => {
         String((retry as { draftWithPlaceholders?: string }).draftWithPlaceholders)
       ).toMatch(/<remarks>/);
     }
+  });
+
+  it("keeps Table 7 URS-41 IQ / 13.6 / Complies in preview when rowContext is only URS-41 / IQ / Complies", async () => {
+    const table7Rows = [
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "", ""],
+    ];
+    mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_gmp" });
+    await readIqPage(
+      tools,
+      42,
+      "13.6 Gaskets PTFE or equivalent Result: Verified"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_gmp",
+        targetField: "table",
+        reasoning: "Fill missing Stage / Section / Remarks for URS-41 in table 7.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 3,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: `IQ [${IQ_FILENAME}, p. 42]`,
+              rowContext: `URS-41\nIQ [${IQ_FILENAME}, p. 42]\n13.6\nComplies`,
+            },
+            {
+              row: 1,
+              col: 4,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: "13.6",
+              rowContext: `URS-41\nIQ [${IQ_FILENAME}, p. 42]\n13.6\nComplies`,
+            },
+            {
+              row: 1,
+              col: 5,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: "Complies",
+              rowContext: `URS-41\nIQ [${IQ_FILENAME}, p. 42]\n13.6\nComplies`,
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const comment = inserted.find((row) => {
+      const parsed = parseAiFixCommentContent(String(row.content ?? ""));
+      return parsed.tableOperation != null;
+    });
+    expect(comment).toBeTruthy();
+    const payload = parseAiFixCommentContent(String(comment!.content));
+    const op = payload.tableOperation!;
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    const urs41 = cells
+      .filter((cell) => cell.rowKey === "URS-41")
+      .map((cell) => cell.insertText)
+      .join(" ");
+    expect(urs41).toMatch(/\bIQ\b/);
+    expect(urs41).toContain("13.6");
+    expect(urs41).toMatch(/\[\d+\]/);
+    expect(urs41).toMatch(/Complies/i);
+    const parked = payload.second?.insertText ?? "";
+    expect(parked).toContain(IQ_FILENAME);
+
+    const preview = buildTableOperationPreviewDoc(
+      rtmTableDoc(table7Rows),
+      op,
+      {
+        id: "sug-table7-urs41",
+        authorId: "ai",
+        status: "pending",
+        createdAt: "2026-09-27T00:00:00.000Z",
+        kind: "fix",
+      }
+    );
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const urs41Row = JSON.stringify(rows[2]);
+    expect(urs41Row).toContain(suggestionInsertMarkName);
+    expect(urs41Row).toMatch(/\bIQ\b/);
+    expect(urs41Row).toContain("13.6");
+    expect(urs41Row).toMatch(/Complies/i);
   });
 });

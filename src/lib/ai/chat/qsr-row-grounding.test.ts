@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
 import { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { extractHardFacts } from "@/lib/ai/chat/claim-facts";
@@ -5,6 +6,9 @@ import {
   groundTableOperation,
   tablePlaceholderLabels,
 } from "@/lib/ai/chat/ground-draft";
+import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
   descriptionSupportedNearKey,
   protocolBodyQuote,
@@ -1185,6 +1189,139 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(urs4).toContain("Operational Qualification.PDF");
     expect(urs4).not.toContain("13.3.5.1");
     expect(urs4).not.toContain("<remarks>");
+  });
+
+  it("keeps Table 7 URS-41 IQ / 13.6 / Complies from live Gaskets when rowContext is only URS-41 / IQ / Complies", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-41 Gaskets PTFE or Equivalent for non-product contact.",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: "13.6 Gaskets PTFE or equivalent Result: Verified",
+      },
+    ]);
+    const table7: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...QSR_RTM_HEADERS].map((header) => ({
+                type: "tableHeader" as const,
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: header }] },
+                ],
+              })),
+            },
+            ...[
+              ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "", ""],
+            ].map((row) => ({
+              type: "tableRow" as const,
+              content: row.map((text) => ({
+                type: "tableCell" as const,
+                content: text
+                  ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                  : [{ type: "paragraph" }],
+              })),
+            })),
+          ],
+        },
+      ],
+    };
+    const cellsWithMetaRowContext = [
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-41",
+        expectedText: "",
+        insertText: "IQ [Installation Qualification.PDF, p. 42]",
+        rowContext: "URS-41\nIQ [Installation Qualification.PDF, p. 42]\n13.6\nComplies",
+      },
+      {
+        row: 1,
+        col: 4,
+        rowKey: "URS-41",
+        expectedText: "",
+        insertText: "13.6",
+        rowContext: "URS-41\nIQ [Installation Qualification.PDF, p. 42]\n13.6\nComplies",
+      },
+      {
+        row: 1,
+        col: 5,
+        rowKey: "URS-41",
+        expectedText: "",
+        insertText: "Complies",
+        rowContext: "URS-41\nIQ [Installation Qualification.PDF, p. 42]\n13.6\nComplies",
+      },
+    ];
+    const droppedWithoutLiveRow = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: cellsWithMetaRowContext,
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+    });
+    const droppedTexts =
+      droppedWithoutLiveRow.operation.kind === "edit_cells"
+        ? droppedWithoutLiveRow.operation.cells.map((cell) => cell.insertText)
+        : [];
+    expect(droppedTexts.join(" ")).toContain("13.6");
+    expect(droppedTexts.join(" ")).not.toMatch(/\bIQ\b/);
+    expect(droppedTexts.join(" ")).not.toMatch(/Complies/i);
+
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: cellsWithMetaRowContext,
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: table7,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const urs41 = cells
+      .filter((cell) => cell.rowKey === "URS-41")
+      .map((cell) => cell.insertText)
+      .join(" ");
+    expect(urs41).toMatch(/\bIQ\b/);
+    expect(urs41).toContain("13.6");
+    expect(urs41).toContain("Installation Qualification.PDF");
+    expect(urs41).toMatch(/Complies/i);
+
+    const preview = buildTableOperationPreviewDoc(table7, result.operation, {
+      id: "sug-table7-urs41",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const urs41Row = JSON.stringify(rows[2]);
+    expect(urs41Row).toContain(suggestionInsertMarkName);
+    expect(urs41Row).toMatch(/\bIQ\b/);
+    expect(urs41Row).toContain("13.6");
+    expect(urs41Row).toMatch(/Complies/i);
   });
 
   it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {

@@ -6,6 +6,7 @@ import {
   trailingIsCitationBlock,
 } from "@/lib/suggestions/citations-at-end";
 import { citationSiteOffset, splitSentences } from "@/lib/citations/citation-site";
+import type { JSONContent } from "@tiptap/core";
 import type { TableOperation } from "@/lib/suggestions/table-operation";
 import {
   citedPagesFromText,
@@ -38,6 +39,7 @@ import {
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
 import {
+  attachLiveTableRowContext,
   documentFamilyFromContext,
   extraQsrUnsupported,
   factIsRowKey,
@@ -610,6 +612,11 @@ export function groundTableOperation(input: {
    * instead of blocking the URS copy.
    */
   clearOptionalOnBlock?: boolean;
+  /**
+   * Live field JSON so `edit_cells` can topic-match protocol pages from
+   * Parameters / User requirements when the model omitted `rowContext`.
+   */
+  fieldDoc?: JSONContent | null;
 }): {
   operation: TableOperation;
   provenance: ClaimProvenance;
@@ -617,7 +624,10 @@ export function groundTableOperation(input: {
   blocked: boolean;
 } {
   const cited = rankRtmReferenceOperation(
-    rewriteTableOperationCitations(input.operation, input.ledger),
+    rewriteTableOperationCitations(
+      attachLiveTableRowContext(input.operation, input.fieldDoc),
+      input.ledger
+    ),
     input.ledger,
     input.grounding?.section
   );

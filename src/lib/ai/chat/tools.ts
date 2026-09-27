@@ -3724,6 +3724,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
           analyses: tableAnalysisFacts,
+          fieldDoc,
         });
         const tableNeedsRepair =
           citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
@@ -3742,6 +3743,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
+            fieldDoc,
           });
         }
         if (groundedTable.blocked) {
@@ -3752,6 +3754,7 @@ export function buildChatTools(opts: {
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
             clearOptionalOnBlock: true,
+            fieldDoc,
           });
           if (!clearedOptional.blocked) {
             groundedTable = clearedOptional;

@@ -1,11 +1,13 @@
+import type { JSONContent } from "@tiptap/core";
 import type { HardFact } from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import { QSR_TABLE_HEADERS } from "@/lib/document-types/qsr/sections";
 import { collectPlaceholderSpans } from "@/lib/placeholders/find";
-import type {
-  TableCellEdit,
-  TableOperation,
+import {
+  summarizeTablesInDoc,
+  type TableCellEdit,
+  type TableOperation,
 } from "@/lib/suggestions/table-operation";
 
 const URS_ID_RE = /\bURS-\d+\b/gi;
@@ -226,6 +228,74 @@ function editCellsSiblingContext(
   ]
     .filter((part): part is string => Boolean(part?.trim()))
     .join("\n");
+}
+
+function mergeRowContextLines(
+  live: string,
+  existing: string | undefined
+): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const part of [live, existing ?? ""]) {
+    for (const line of part.split("\n")) {
+      const trimmed = line.replace(/\s+/g, " ").trim();
+      if (!trimmed) continue;
+      const id = trimmed.toLowerCase();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      lines.push(trimmed);
+    }
+  }
+  return lines.join("\n");
+}
+
+/** First-cell → live Parameters / User requirements for that URS row. */
+export function liveTableRowContextByKey(
+  fieldDoc: JSONContent | null | undefined
+): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!fieldDoc) return map;
+  for (const table of summarizeTablesInDoc(fieldDoc)) {
+    const byRow = new Map<number, string[]>();
+    for (const cell of table.cells) {
+      if (cell.row === 0) continue;
+      const text = cell.text === "(empty)" ? "" : cell.text.trim();
+      const list = byRow.get(cell.row) ?? [];
+      list[cell.col] = text;
+      byRow.set(cell.row, list);
+    }
+    for (const cells of byRow.values()) {
+      const first = (cells[0] ?? "").replace(/\s+/g, " ").trim();
+      if (!first) continue;
+      const lines = cells.filter((part) => Boolean(part?.trim()));
+      if (lines.length === 0) continue;
+      map.set(first.toUpperCase(), lines.join("\n"));
+    }
+  }
+  return map;
+}
+
+/**
+ * Topic-match protocol pages from the live table even when the model
+ * stuffed `rowContext` with only URS-N / IQ / Complies.
+ */
+export function attachLiveTableRowContext(
+  operation: TableOperation,
+  fieldDoc: JSONContent | null | undefined
+): TableOperation {
+  if (operation.kind !== "edit_cells") return operation;
+  const live = liveTableRowContextByKey(fieldDoc);
+  if (live.size === 0) return operation;
+  return {
+    ...operation,
+    cells: operation.cells.map((cell) => {
+      const snapshot = live.get(editCellsGroupKey(cell));
+      if (!snapshot) return cell;
+      const merged = mergeRowContextLines(snapshot, cell.rowContext);
+      if (merged === (cell.rowContext ?? "").trim()) return cell;
+      return { ...cell, rowContext: merged };
+    }),
+  };
 }
 
 /** Angle-bracket RTM tokens, including `<section>` (HTML-tag skip in live scan). */
