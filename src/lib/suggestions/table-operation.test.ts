@@ -17,6 +17,8 @@ import {
   dropLeftoverPlaceholderCells,
   resolveEditCells,
   summarizeTableOperation,
+  alreadyPresentEditHint,
+  listEmptyTableCells,
   tableOperationInvalidHint,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
@@ -752,6 +754,40 @@ describe("applyTableOperation", () => {
       ok: false,
       status: "already_present",
     });
+  });
+
+  it("rematches rowKey URS-7 onto a cited first cell URS-7 [1]", () => {
+    const doc = tableDoc(
+      [...QSR_RTM_HEADERS],
+      [["URS-7 [1]", "Jacket", "20-25 °C", "IQ", "13.3", ""]]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 0,
+          col: 5,
+          rowKey: "URS-7",
+          expectedText: "",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 5)).toBe("Complies");
+  });
+
+  it("lists remaining empty cells instead of claiming the table is filled", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const empty = listEmptyTableCells(doc, 0);
+    expect(empty.some((cell) => cell.rowKey === "URS-13" && cell.col === 5)).toBe(
+      true
+    );
+    const hint = alreadyPresentEditHint(empty);
+    expect(hint).toContain("Remaining empty cells");
+    expect(hint).not.toMatch(/do not retry the same identity/i);
   });
 
   it("drops identity cells and keeps a real change on the rematched row", () => {
@@ -2102,6 +2138,35 @@ describe("parseTableOperation", () => {
       })
     ).toBeUndefined();
     expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
+  });
+
+  it("defaults row to 0 when edit_cells has rowKey and omits row", () => {
+    expect(
+      parseTableOperation({
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            col: 5,
+            rowKey: "URS-7",
+            expectedText: "",
+            insertText: "Complies",
+          },
+        ],
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 0,
+          col: 5,
+          expectedText: "",
+          insertText: "Complies",
+          rowKey: "URS-7",
+        },
+      ],
+    });
   });
 
   it("coerces Langfuse insert_rows aliases (nested array, isBanner/cells, cells matrix)", () => {

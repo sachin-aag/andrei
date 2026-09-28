@@ -10,7 +10,11 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import { renderStructuredFieldView } from "@/lib/ai/suggestion-section-context";
-import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
+import {
+  listEmptyTableCells,
+  summarizeTablesInDoc,
+  type EmptyTableCell,
+} from "@/lib/suggestions/table-operation";
 import {
   countImagesInDoc,
   flattenDocForChat,
@@ -149,19 +153,31 @@ function fieldImageCount(
 }
 
 /** Live tables in one rich field (headers from the section, not the pack recipe). */
-export function listFieldTables(
-  content: Record<string, unknown> | undefined,
-  section: SectionType,
-  targetField: string
-): Array<{ tableIndex: number; headers: string[]; dataRowCount: number }> {
-  if (!isRichTargetField(section, targetField)) return [];
-  return summarizeTablesInDoc(getRichFieldValue(content ?? {}, targetField)).map(
+export type ChatFieldTable = {
+  tableIndex: number;
+  headers: string[];
+  dataRowCount: number;
+  emptyCells: EmptyTableCell[];
+};
+
+function chatTablesFromDoc(doc: JSONContent): ChatFieldTable[] {
+  return summarizeTablesInDoc(doc).map(
     ({ tableIndex, headers, dataRowCount }) => ({
       tableIndex,
       headers,
       dataRowCount,
+      emptyCells: listEmptyTableCells(doc, tableIndex),
     })
   );
+}
+
+export function listFieldTables(
+  content: Record<string, unknown> | undefined,
+  section: SectionType,
+  targetField: string
+): ChatFieldTable[] {
+  if (!isRichTargetField(section, targetField)) return [];
+  return chatTablesFromDoc(getRichFieldValue(content ?? {}, targetField));
 }
 
 /** True when any editable rich field in the section already has a table. */
@@ -445,11 +461,7 @@ export function sectionFieldForChat(
   /** Coordinate-tagged view for table/list fields (present only when useful). */
   structuredText?: string;
   /** Existing tables in this field (present only when the field has one). */
-  tables?: Array<{
-    tableIndex: number;
-    headers: string[];
-    dataRowCount: number;
-  }>;
+  tables?: ChatFieldTable[];
 } {
   if (!isRichTargetField(section, targetField)) {
     const text = getPlainTextFieldValue(sectionContent, targetField);
@@ -468,13 +480,7 @@ export function sectionFieldForChat(
   const structuredText = /\[\d+,\d+\]|\n\[\d+\] /.test(structured)
     ? structured
     : undefined;
-  const tableInventory = summarizeTablesInDoc(doc).map(
-    ({ tableIndex, headers, dataRowCount }) => ({
-      tableIndex,
-      headers,
-      dataRowCount,
-    })
-  );
+  const tableInventory = chatTablesFromDoc(doc);
   return {
     text,
     readingText: chat.readingText,

@@ -631,6 +631,13 @@ function firstCellText(row: JSONContent): string {
   return cell ? cellPlainText(cell) : "";
 }
 
+const URS_ROW_KEY_RE = /\bURS-\d+\b/i;
+
+function ursIdFromCellText(text: string): string {
+  const match = text.match(URS_ROW_KEY_RE);
+  return match ? normalizeTableCellText(match[0]!) : "";
+}
+
 function rowsMatchingAfterKey(
   rows: readonly JSONContent[],
   key: string
@@ -640,6 +647,12 @@ function rowsMatchingAfterKey(
   const hits: number[] = [];
   rows.forEach((row, index) => {
     if (firstCellText(row) === wanted) hits.push(index);
+  });
+  if (hits.length > 0) return hits;
+  const urs = ursIdFromCellText(wanted);
+  if (!urs) return hits;
+  rows.forEach((row, index) => {
+    if (ursIdFromCellText(firstCellText(row)) === urs) hits.push(index);
   });
   return hits;
 }
@@ -682,8 +695,6 @@ export function resolveInsertAfterRow(
   }
   return { ok: true, afterRow };
 }
-
-const URS_ROW_KEY_RE = /\bURS-\d+\b/i;
 
 function firstContextLine(context: string): string {
   return normalizeTableCellText(context.split(/\n/)[0] ?? "");
@@ -1068,6 +1079,81 @@ export function summarizeTablesInDoc(doc: JSONContent): TableInventory[] {
       cells,
     };
   });
+}
+
+function inventoryCellIsEmpty(text: string): boolean {
+  if (!text || text === "(empty)") return true;
+  return liveCellIsEmpty(text);
+}
+
+export type EmptyTableCell = {
+  row: number;
+  col: number;
+  rowKey: string;
+  header: string;
+};
+
+function emptyCellsFromInventory(table: TableInventory): EmptyTableCell[] {
+  const byRow = new Map<number, string[]>();
+  for (const cell of table.cells) {
+    const list = byRow.get(cell.row) ?? [];
+    list[cell.col] = cell.text;
+    byRow.set(cell.row, list);
+  }
+  const empty: EmptyTableCell[] = [];
+  for (const [row, cells] of byRow) {
+    if (row === 0) continue;
+    const firstRaw = cells[0] ?? "";
+    const first =
+      firstRaw === "(empty)" ? "" : firstRaw.replace(/\s+/g, " ").trim();
+    const colCount = Math.max(cells.length, table.headers.length);
+    for (let col = 0; col < colCount; col += 1) {
+      if (!inventoryCellIsEmpty(cells[col] ?? "")) continue;
+      empty.push({
+        row,
+        col,
+        rowKey: first,
+        header: table.headers[col] ?? "",
+      });
+    }
+  }
+  return empty;
+}
+
+/** Blank data cells in one field (optional tableIndex) for fill-empty / empty_edit. */
+export function listEmptyTableCells(
+  doc: JSONContent | null | undefined,
+  tableIndex?: number
+): EmptyTableCell[] {
+  if (!doc) return [];
+  const tables = summarizeTablesInDoc(doc);
+  const selected =
+    tableIndex == null
+      ? tables
+      : tables.filter((table) => table.tableIndex === tableIndex);
+  return selected.flatMap(emptyCellsFromInventory);
+}
+
+/** Hint when edit_cells is a no-op. Remaining blanks must not read as "all filled". */
+export function alreadyPresentEditHint(
+  emptyCells: readonly EmptyTableCell[]
+): string {
+  if (emptyCells.length === 0) {
+    return "Those cells already have the proposed text. Re-read with read_section — emptyCells is empty, so do not retry the same identity cells.";
+  }
+  const shown = emptyCells.slice(0, 40);
+  const list = shown
+    .map((cell) => {
+      const key = cell.rowKey || "(no rowKey)";
+      const header = cell.header || `col ${cell.col}`;
+      return `[${cell.row},${cell.col}] ${key} ${header}`;
+    })
+    .join("; ");
+  const more =
+    emptyCells.length > shown.length
+      ? ` (+${emptyCells.length - shown.length} more)`
+      : "";
+  return `Those cells already have the proposed text. Remaining empty cells: ${list}${more}. Edit only those. Do not claim the table is filled.`;
 }
 
 function rowSnapshot(row: JSONContent): string[] {
@@ -1937,6 +2023,11 @@ function firstString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+function cellHasRowKey(item: Record<string, unknown>): boolean {
+  const rowKey = firstString(item.rowKey, item.afterRowKey);
+  return Boolean(rowKey?.trim());
+}
+
 function coerceEditCellsShape(next: Record<string, unknown>): void {
   if (!Array.isArray(next.cells) && isRecord(next.cells)) {
     next.cells = [next.cells];
@@ -1945,13 +2036,20 @@ function coerceEditCellsShape(next: Record<string, unknown>): void {
     const row = asInt(next.row);
     const col = asInt(next.col);
     const insertText = firstString(next.insertText, next.value, next.text, next.content);
-    if (row !== null && col !== null && insertText !== undefined) {
+    if (
+      col !== null &&
+      insertText !== undefined &&
+      (row !== null || cellHasRowKey(next))
+    ) {
       next.cells = [
         {
-          row,
+          row: row ?? 0,
           col,
           expectedText: next.expectedText,
           insertText,
+          ...(cellHasRowKey(next)
+            ? { rowKey: firstString(next.rowKey, next.afterRowKey) }
+            : {}),
         },
       ];
     }
@@ -1972,11 +2070,13 @@ function coerceEditCellsShape(next: Record<string, unknown>): void {
           ? item.expected
           : undefined;
     const rowKey = firstString(item.rowKey, item.afterRowKey);
+    const row = asInt(item.row);
     return {
       ...item,
       ...(insertText !== undefined ? { insertText } : {}),
       ...(expectedText !== undefined ? { expectedText } : {}),
       ...(rowKey !== undefined ? { rowKey } : {}),
+      ...(row === null && rowKey?.trim() ? { row: 0 } : {}),
     };
   });
 }
@@ -2008,8 +2108,8 @@ function looksLikeCellEdits(value: unknown): boolean {
   return value.every(
     (item) =>
       isRecord(item) &&
-      asInt(item.row) !== null &&
       asInt(item.col) !== null &&
+      (asInt(item.row) !== null || cellHasRowKey(item)) &&
       firstString(item.insertText, item.value, item.text, item.content) !==
         undefined
   );
@@ -2093,7 +2193,11 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
       const cells: TableCellEdit[] = [];
       for (const item of coerced.cells) {
         if (!isRecord(item)) return undefined;
-        const row = asInt(item.row);
+        const rowKey =
+          typeof item.rowKey === "string" && item.rowKey.trim()
+            ? item.rowKey
+            : undefined;
+        const row = asInt(item.row) ?? (rowKey ? 0 : null);
         const col = asInt(item.col);
         if (row === null || col === null || row < 0 || col < 0) return undefined;
         if (typeof item.insertText !== "string") return undefined;
@@ -2103,10 +2207,7 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
           expectedText:
             typeof item.expectedText === "string" ? item.expectedText : undefined,
           insertText: item.insertText,
-          rowKey:
-            typeof item.rowKey === "string" && item.rowKey.trim()
-              ? item.rowKey
-              : undefined,
+          rowKey,
           rowContext:
             typeof item.rowContext === "string" ? item.rowContext : undefined,
         });
@@ -2249,7 +2350,7 @@ export function tableOperationInvalidHint(raw: unknown): string {
     return `create_table needs kind: "create_table" with headers (and optional rows, title, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "edit_cells") {
-    return `edit_cells needs kind: "edit_cells" with cells: [{ row, col, insertText }]. Prefer rowKey (first-cell text, e.g. URS-13) over row. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
+    return `edit_cells needs kind: "edit_cells" with cells: [{ col, insertText, rowKey }]. Prefer rowKey (first-cell text, e.g. URS-13) over row — you may omit row when rowKey is set. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "insert_column") {
     return `insert_column needs kind: "insert_column" with header (and optional afterCol, values). Omit afterCol to append as the last column. ${TABLE_EDIT_RECOVERY}`;

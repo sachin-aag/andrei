@@ -3343,7 +3343,12 @@ describe("buildChatTools propose edits", () => {
       }>;
     };
     expect(result.fields[0]?.tables).toEqual([
-      { tableIndex: 0, headers: ["Component", "Description"], dataRowCount: 1 },
+      {
+        tableIndex: 0,
+        headers: ["Component", "Description"],
+        dataRowCount: 1,
+        emptyCells: [],
+      },
     ]);
     expect(result.fields[0]?.structuredText).toContain("tableIndex=0");
   });

@@ -130,6 +130,7 @@ import {
   withSourceCitation,
 } from "@/lib/suggestions/citations-at-end";
 import {
+  alreadyPresentEditHint,
   applyTableOperation,
   captureTableOperationSnapshots,
   coerceTableOperationInput,
@@ -137,10 +138,12 @@ import {
   defaultTableCaptionTitle,
   dropLeftoverPlaceholderCells,
   filledTableNumberInDocument,
+  listEmptyTableCells,
   parseTableOperation,
   prefixTableCaptionMarkdown,
   summarizeTableOperation,
   tableOperationInvalidHint,
+  type EmptyTableCell,
 } from "@/lib/suggestions/table-operation";
 import { loadDocumentContentsForTableNumber } from "@/lib/suggestions/load-document-table-contents";
 import {
@@ -320,7 +323,12 @@ type AgentCommitOutcome =
   | { status: "cross_cell"; hint: string }
   | { status: "bad_scope"; hint: string }
   | { status: "table_as_list"; hint: string }
-  | { status: "empty_edit"; hint: string }
+  | {
+      status: "empty_edit";
+      hint: string;
+      emptyCells?: EmptyTableCell[];
+      keepSearchOpen?: true;
+    }
   | { status: "placeholder_conflict"; hint: string }
   | { status: "section_changed"; message: string }
   | { status: "field_filled"; message: string }
@@ -548,8 +556,15 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
     cells: z
       .array(
         z.object({
-          row: z.number().int().min(0),
-          col: z.number().int().min(0),
+        row: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "0-based row from read_section. Omit when rowKey is set — the server rematches the live URS / first-cell row."
+          ),
+        col: z.number().int().min(0),
           expectedText: z.string().optional(),
           insertText: z.string(),
           rowKey: z
@@ -1635,7 +1650,7 @@ export function buildChatTools(opts: {
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section. Returns text, readingText ([image:N] markers), structuredText (tables[] with tableIndex and [row,col]), fillState, pendingSuggestions (open cards only), and suggestionCounts (open / approved / dismissed). Call list_suggestions to inspect approved or dismissed cards.${scopeHint}` +
+        `Read the current text of an editable section. Returns text, readingText ([image:N] markers), structuredText (tables[] with tableIndex and [row,col]), fillState, pendingSuggestions (open cards only), and suggestionCounts (open / approved / dismissed). tables[].emptyCells lists blank data cells — copy those for fill-empty. tableIndex is 0-based in that field, not the Word caption Table N. Call list_suggestions to inspect approved or dismissed cards.${scopeHint}` +
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
@@ -1693,8 +1708,10 @@ export function buildChatTools(opts: {
              */
             structuredText: chat.structuredText,
             /**
-             * Existing tables in this field. Copy tableIndex into edit_table.
-             * Present only when the field contains at least one table.
+             * Existing tables in this field. Copy tableIndex into edit_table
+             * (0-based in this field, not Word Table N). emptyCells lists
+             * blank data cells for fill-empty. Present only when the field
+             * contains at least one table.
              */
             tables: chat.tables,
           };
@@ -3628,7 +3645,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For edit_cells prefer rowKey (first-cell text, e.g. URS-13) over row — each cell needs its own rowKey; do not reuse one dummy row for every URS. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section (tableIndex is 0-based in that field, not Word Table N). On fill-empty, copy tables[].emptyCells and edit only those — skip filled cells. If this tool returns empty_edit, emptyCells are still blank: retry those, never claim the table is filled or locked. Row 0 is the header. For edit_cells prefer rowKey (first-cell text, e.g. URS-13); you may omit row when rowKey is set. Each cell needs its own rowKey; do not reuse one dummy row for every URS. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3813,6 +3830,22 @@ export function buildChatTools(opts: {
             });
           }
         }
+        if (
+          groundedTable.operation.kind === "edit_cells" &&
+          groundedTable.operation.cells.length === 0
+        ) {
+          const emptyCells = listEmptyTableCells(
+            fieldDoc,
+            groundedTable.operation.tableIndex
+          );
+          return {
+            status: "empty_edit" as const,
+            hint: alreadyPresentEditHint(emptyCells),
+            ...(emptyCells.length > 0
+              ? { emptyCells, keepSearchOpen: true as const }
+              : {}),
+          };
+        }
         // Cell text overclaims the same way prose does — a Remark column
         // reading "all batches compliant" is the case that prompted this.
         const tableOverclaims = checkOverclaims(
@@ -3855,7 +3888,18 @@ export function buildChatTools(opts: {
         }
         if (!applied.ok) {
           if (applied.status === "already_present") {
-            return { status: "empty_edit", hint: applied.hint };
+            const tableIndex =
+              "tableIndex" in stripped.operation
+                ? stripped.operation.tableIndex
+                : 0;
+            const emptyCells = listEmptyTableCells(fieldDoc, tableIndex);
+            return {
+              status: "empty_edit" as const,
+              hint: alreadyPresentEditHint(emptyCells),
+              ...(emptyCells.length > 0
+                ? { emptyCells, keepSearchOpen: true as const }
+                : {}),
+            };
           }
           return { status: applied.status, hint: applied.hint };
         }
