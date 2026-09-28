@@ -225,3 +225,21 @@ export function tableEditProposalMessage(meta: TableEditProposalMeta): string {
       : ` One edit_table call is one suggestion card that already holds every saved cell — not one card per URS row.`;
   return `${card}${mismatch} Wrap-up may name only proposedRowKeys.`;
 }
+
+/**
+ * Tool `summary` the wrap-up reads. When the card holds fewer rows than the
+ * model asked for, name the landed keys — do not echo a 42-cell reasoning
+ * line that only two cells actually preview.
+ */
+export function tableEditLandedSummary(
+  reasoning: string,
+  meta: TableEditProposalMeta
+): string {
+  const trimmed = reasoning.replace(/\s+/g, " ").trim();
+  if (meta.droppedRowKeys.length === 0) return trimmed;
+  const landed =
+    meta.proposedRowKeys.length === 0
+      ? `Landed ${meta.proposedCellCount} cell(s) and no named rowKeys.`
+      : `Landed ${meta.proposedCellCount} cell(s) on ${formatKeys(meta.proposedRowKeys)} only.`;
+  return `${landed} Dropped from the card: ${formatKeys(meta.droppedRowKeys)}. Do not list droppedRowKeys as updated. Wrap-up may name only proposedRowKeys.`;
+}

@@ -2531,3 +2531,66 @@ describe("summarizeTableOperation", () => {
     ).toBe("Update 3 table cells on URS-1, URS-6");
   });
 });
+
+describe("applyEditCells appliedOperation", () => {
+  it("omits identity Remarks so the card title matches the previewed cells", () => {
+    const doc = tableDoc(
+      [...QSR_RTM_HEADERS],
+      [
+        ["URS-1", "Reactor Capacity", "8000 L", "PQ", "8.2.3", "Complies"],
+        ["URS-63", "Agitator", "50 RPM", "PQ", "8.2.4", "Complies"],
+      ]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-1",
+          expectedText: "8.2.3",
+          insertText: "8.2.3 – Heating Trial",
+        },
+        {
+          row: 1,
+          col: 5,
+          rowKey: "URS-1",
+          expectedText: "Complies",
+          insertText: "Complies",
+        },
+        {
+          row: 2,
+          col: 4,
+          rowKey: "URS-63",
+          expectedText: "8.2.4",
+          insertText: "8.2.4 – Operational verification of agitator",
+        },
+        {
+          row: 2,
+          col: 5,
+          rowKey: "URS-63",
+          expectedText: "Complies",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.appliedOperation?.kind).toBe("edit_cells");
+    const cells =
+      result.appliedOperation?.kind === "edit_cells"
+        ? result.appliedOperation.cells
+        : [];
+    expect(cells).toHaveLength(2);
+    expect(cells.every((cell) => cell.col === 4)).toBe(true);
+    expect(summarizeTableOperation(result.appliedOperation!)).toBe(
+      "Update 2 table cells on URS-1, URS-63"
+    );
+    expect(cellText(result.doc, 1, 4)).toBe("8.2.3 – Heating Trial");
+    expect(cellText(result.doc, 1, 5)).toBe("Complies");
+    expect(cellText(result.doc, 2, 4)).toBe(
+      "8.2.4 – Operational verification of agitator"
+    );
+  });
+});
