@@ -25,6 +25,7 @@ import {
   uprightRotatePage,
 } from "@/lib/attachments/pdf-split";
 import {
+  numericSignLookScore,
   overlayLeadingMinuses,
   pageNeedsNumericSignLook,
 } from "@/lib/attachments/numeric-signs";
@@ -52,7 +53,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v9";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v10";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -1309,9 +1310,15 @@ function selectNumericSignOverlayPages(
   if (needed.length <= MAX_NUMERIC_SIGN_OVERLAY_PAGES) return needed;
   return needed
     .toSorted((left, right) => {
-      const leftCount = (ambiguousByPage.get(left.pageNumber) ?? []).length;
-      const rightCount = (ambiguousByPage.get(right.pageNumber) ?? []).length;
-      return rightCount - leftCount || left.pageNumber - right.pageNumber;
+      const leftScore = numericSignLookScore(
+        left.transcript,
+        ambiguousByPage.get(left.pageNumber) ?? []
+      );
+      const rightScore = numericSignLookScore(
+        right.transcript,
+        ambiguousByPage.get(right.pageNumber) ?? []
+      );
+      return rightScore - leftScore || left.pageNumber - right.pageNumber;
     })
     .slice(0, MAX_NUMERIC_SIGN_OVERLAY_PAGES)
     .toSorted((left, right) => left.pageNumber - right.pageNumber);
@@ -1319,8 +1326,9 @@ function selectNumericSignOverlayPages(
 
 /**
  * Restore a leading minus when insight visuals, OCR, or a page look already
- * saw a signed quantity. Used when a hyphen next to a number may be a minus
- * or a bullet. Overlay only — never invent a sign.
+ * saw a signed quantity. Used when a leftover hyphen may be a minus or a
+ * bullet, or when an unsigned `N unit to M` range may have dropped a drawn
+ * minus. Overlay only — never invent a sign.
  */
 async function overlayAmbiguousNumericSigns(
   input: ResolvedInput,
@@ -1384,8 +1392,9 @@ async function overlayAmbiguousNumericSignsFromDocumentAi(
 
 /**
  * Large text-layer batches skip the insight pass. Look at pages where a
- * hyphen next to a number may be a minus or a bullet, and copy a minus only
- * when the model reports a signed quantity.
+ * leftover hyphen may be a minus or a bullet, or where an unsigned quantity
+ * range may have dropped a drawn minus, and copy a minus only when the
+ * model reports a signed quantity.
  */
 async function overlayAmbiguousNumericSignsFromVision(
   input: ResolvedInput,
@@ -1581,9 +1590,9 @@ function buildSignedQuantityOverlayPrompt(input: {
   pageStart: number;
   filename: string;
 }): string {
-  return `Look at hyphens and dashes next to numbers on the page image of page ${input.pageStart} of ${input.filename}, not only the embedded text layer.
+  return `Look at the page image of page ${input.pageStart} of ${input.filename}, not the embedded text layer.
 
-A leading minus on a quantity (−15 °C, −20 °C, −50 RPM) is a sign.
+A leading minus on a quantity (−15 °C, −20 °C, −50 RPM) is a sign, including a short stroke drawn in a table cell that the text layer omitted.
 A bullet, list dash, or range separator (15–130 °C) is not a sign.
 
 List every visibly signed quantity. Empty list when none are visible.

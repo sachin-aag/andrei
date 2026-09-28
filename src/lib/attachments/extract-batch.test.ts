@@ -161,7 +161,7 @@ async function pdfWithBulletDashNumber(): Promise<Buffer> {
   return Buffer.from(await document.save());
 }
 
-/** 12-page URS-sized batch: insight is skipped; pages 6 and 9 drop the minus. */
+/** 12-page URS-sized batch: insight is skipped; pages 6 and 9 are unsigned ranges. */
 async function pdfWithTwelvePageUrsTemperatures(): Promise<Buffer> {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
@@ -189,8 +189,10 @@ async function pdfWithTwelvePageUrsTemperatures(): Promise<Buffer> {
       { length: 10 },
       (_, index) => `URS requirement line ${index} of verification evidence`
     ),
-    "URS-3 Shell Operating temperature – 15 °C to 130 °C",
-    "URS-5 Jacket Operating Temperature – 15 °C to 130 °C",
+    "URS-3 Shell Operating temperature",
+    "15 °C to 130 °C",
+    "URS-5 Jacket Operating Temperature",
+    "15 °C to 130 °C",
   ]);
   addFiller("p7");
   addFiller("p8");
@@ -199,7 +201,8 @@ async function pdfWithTwelvePageUrsTemperatures(): Promise<Buffer> {
       { length: 10 },
       (_, index) => `Process requirement line ${index} of verification evidence`
     ),
-    "URS-37 Temperature – 20 °C to 150 °C",
+    "URS-37 Temperature",
+    "20 °C to 150 °C",
   ]);
   addFiller("p10");
   addFiller("p11");
@@ -883,7 +886,45 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.pages[0]?.transcript).not.toMatch(/-15 samples/);
   });
 
-  it("does not OCR a page that has no leftover dash next to a number", async () => {
+  it("looks at an unsigned quantity range even when no leftover hyphen is in the text", async () => {
+    isDocumentAiConfiguredMock.mockReturnValue(true);
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(
+        {
+          pages: [insightPayload(1)],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      )
+    );
+    ocrPdfWithDocumentAiMock.mockResolvedValueOnce({
+      pages: [
+        {
+          pageNumber: 1,
+          transcript: "URS-3 Shell Operating temperature -15 °C to 130 °C",
+          confidence: 0.94,
+        },
+      ],
+      elapsedMs: 20,
+      chunks: [],
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(ocrPdfWithDocumentAiMock).toHaveBeenCalledTimes(1);
+    expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
+    expect(result.pages[0]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
+  });
+
+  it("does not OCR a page that has no leftover dash and no unsigned quantity range", async () => {
     isDocumentAiConfiguredMock.mockReturnValue(true);
     generateTextMock.mockResolvedValueOnce(
       resultWithOutput(
@@ -897,7 +938,7 @@ describe("extractPdfBatch with a text layer", () => {
     );
 
     const result = await extractPdfBatch({
-      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pdfBuffer: await pdfWithTextPages(1),
       pageStart: 1,
       pageEnd: 1,
       filename: "urs.pdf",
@@ -911,8 +952,7 @@ describe("extractPdfBatch with a text layer", () => {
         isSignedQuantityOverlayPrompt(userPrompt(call[0]))
       )
     ).toBe(false);
-    expect(result.pages[0]?.transcript).toContain("15 °C to 130 °C");
-    expect(result.pages[0]?.transcript).not.toContain("-15 °C to 130 °C");
+    expect(result.pages[0]?.transcript).toContain("slice 0 line 0");
   });
 
   it("does not OCR an en-dash process range and does not invent a minus", async () => {

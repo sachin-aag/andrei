@@ -6,6 +6,7 @@ import {
   hasAmbiguousNumericDash,
   overlayLeadingMinuses,
   pageNeedsNumericSignLook,
+  unsignedQuantityRangeCount,
 } from "./numeric-signs";
 
 describe("glueOcrMinusSigns", () => {
@@ -99,6 +100,18 @@ describe("overlayLeadingMinuses", () => {
   });
 });
 
+describe("unsignedQuantityRangeCount", () => {
+  it("counts unsigned unit ranges and ignores signed or en-dash ranges", () => {
+    expect(unsignedQuantityRangeCount("15 °C to 130 °C\n15 °C to 130 °C")).toBe(
+      2
+    );
+    expect(unsignedQuantityRangeCount("3 to 5 Kg/cm²")).toBe(1);
+    expect(unsignedQuantityRangeCount("-15 °C to 130 °C")).toBe(0);
+    expect(unsignedQuantityRangeCount("15–130 °C")).toBe(0);
+    expect(unsignedQuantityRangeCount("3 to 5 samples")).toBe(0);
+  });
+});
+
 describe("hasAmbiguousNumericDash", () => {
   it("detects a hyphen one space before a number", () => {
     expect(hasAmbiguousNumericDash("– 15 °C to 130 °C")).toBe(true);
@@ -133,6 +146,19 @@ describe("pageNeedsNumericSignLook", () => {
     ).toBe(true);
     expect(pageNeedsNumericSignLook("– 15 samples were taken")).toBe(true);
     expect(pageNeedsNumericSignLook("Setpoint - 50 RPM")).toBe(true);
+  });
+
+  it("looks at an unsigned quantity range with no leftover hyphen", () => {
+    expect(pageNeedsNumericSignLook("than 1 mm\n15 °C to 130 °C")).toBe(true);
+    expect(pageNeedsNumericSignLook("20 °C to 150\n°C")).toBe(true);
+    expect(pageNeedsNumericSignLook("3 to 5 Kg/cm²")).toBe(true);
+    expect(pageNeedsNumericSignLook("-15 °C to 130 °C")).toBe(false);
+    expect(pageNeedsNumericSignLook("Process temperature 15–130 °C")).toBe(
+      false
+    );
+    expect(
+      pageNeedsNumericSignLook("slice 0 line 0 of verification evidence")
+    ).toBe(false);
   });
 });
 

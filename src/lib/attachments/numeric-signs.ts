@@ -140,14 +140,42 @@ export function hasUnsignedMagnitude(text: string, magnitude: string): boolean {
   return re.test(hay);
 }
 
+/**
+ * A `N unit to M unit` range whose left bound has no leading minus. Live URS
+ * pages drop a drawn minus so the text is `15 °C to 130 °C` with no leftover
+ * hyphen — overlay looks at the page image; it still does not invent a sign.
+ */
+export function unsignedQuantityRangeCount(text: string): number {
+  const hay = glueImmediateMinusSigns(text);
+  const rangeRe = new RegExp(
+    `(?<![A-Za-z0-9.${DASH_CHARS}])(\\d+(?:\\.\\d+)?)(\\s*${QUANTITY_UNIT})?\\s+to\\s+(\\d+(?:\\.\\d+)?)(\\s*${QUANTITY_UNIT})?`,
+    "gi"
+  );
+  let count = 0;
+  for (const match of hay.matchAll(rangeRe)) {
+    if (!match[2] && !match[4]) continue;
+    count += 1;
+  }
+  return count;
+}
+
+export function numericSignLookScore(
+  text: string,
+  ambiguousMagnitudes: readonly string[] = []
+): number {
+  const leftover = hasAmbiguousNumericDash(text) ? 1 : 0;
+  const ranges = unsignedQuantityRangeCount(text);
+  const magnitudes = ambiguousMagnitudes.filter((magnitude) =>
+    hasUnsignedMagnitude(text, magnitude)
+  ).length;
+  return leftover + ranges + magnitudes;
+}
+
 export function pageNeedsNumericSignLook(
   text: string,
   ambiguousMagnitudes: readonly string[] = []
 ): boolean {
-  if (hasAmbiguousNumericDash(text)) return true;
-  return ambiguousMagnitudes.some((magnitude) =>
-    hasUnsignedMagnitude(text, magnitude)
-  );
+  return numericSignLookScore(text, ambiguousMagnitudes) > 0;
 }
 
 /**
