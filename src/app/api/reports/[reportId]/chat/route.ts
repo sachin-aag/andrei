@@ -559,23 +559,6 @@ async function handleChatPost(
     .filter((block) => block.trim().length > 0)
     .join("\n\n");
 
-  const system = buildChatSystemPrompt({
-    contextMap,
-    criteriaOutline: buildCriteriaOutline(sectionScope, report.documentType),
-    mode,
-    sectionScope,
-    documentType: report.documentType,
-    alreadyDrafted,
-    alreadyDraftedGapHints: alreadyDraftedGapHintsForPrompt,
-    mentionBlock: buildMentionBlock(mentions),
-    autoEvidenceBlock,
-    retrievalPolicy: retrieval.policy,
-    intent: userIntent.kind,
-    alsoLookup: userIntent.alsoLookup === true,
-    switchToAnalytics,
-    pendingPlan,
-  });
-
   const queueLive =
     mode === "agent" &&
     userIntent.kind === "write" &&
@@ -601,6 +584,24 @@ async function handleChatPost(
         context: remainingWorkContext,
       }
     : undefined;
+
+  const system = buildChatSystemPrompt({
+    contextMap,
+    criteriaOutline: buildCriteriaOutline(sectionScope, report.documentType),
+    mode,
+    sectionScope,
+    documentType: report.documentType,
+    alreadyDrafted,
+    alreadyDraftedGapHints: alreadyDraftedGapHintsForPrompt,
+    mentionBlock: buildMentionBlock(mentions),
+    autoEvidenceBlock,
+    retrievalPolicy: retrieval.policy,
+    intent: userIntent.kind,
+    alsoLookup: userIntent.alsoLookup === true,
+    switchToAnalytics,
+    pendingPlan,
+    livingWork: livingWorkSeed,
+  });
 
   const searchGate = createSearchGate();
   const allTools = buildChatTools({

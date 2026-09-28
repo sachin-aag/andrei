@@ -277,6 +277,7 @@ async function handleAnalyticsChatPost(
     mentionBlock: buildAnalyticsMentionBlock(mentions),
     intent: userIntent.kind,
     alsoLookup: userIntent.alsoLookup === true,
+    livingWork: livingWorkSeed,
   });
   const builtTools = buildAnalyticsChatTools({
         reportId,

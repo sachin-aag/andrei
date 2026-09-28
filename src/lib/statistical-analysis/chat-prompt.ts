@@ -10,6 +10,7 @@ import {
 import {
   remainingWorkPromptBlock,
   seedLivingTurnWork,
+  type LivingTurnWork,
 } from "@/lib/ai/chat/remaining-work";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import {
@@ -241,6 +242,8 @@ export function buildAnalyticsChatSystemPrompt(input: {
   /** Latest-turn intent. Read/social turns run without the write tools. */
   intent?: ChatUserIntentKind;
   alsoLookup?: boolean;
+  /** Kickoff remaining-work seed from the route. Omit in tests. */
+  livingWork?: LivingTurnWork;
 }): string {
   const canWrite = input.mode === "agent" && input.canEdit;
   const editLine = canWrite
@@ -251,10 +254,11 @@ export function buildAnalyticsChatSystemPrompt(input: {
 
   const mentionBlock = input.mentionBlock?.trim();
   const remainingBlock = remainingWorkPromptBlock(
-    seedLivingTurnWork({
-      intent: input.intent ?? "write",
-      alsoLookup: input.alsoLookup === true,
-    }),
+    input.livingWork ??
+      seedLivingTurnWork({
+        intent: input.intent ?? "write",
+        alsoLookup: input.alsoLookup === true,
+      }),
     { queueLive: false, surface: "analytics" }
   );
   return [

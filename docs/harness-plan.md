@@ -96,24 +96,9 @@ not fold "hi" vs "draft Purpose" into Gemini 3.7 Flash: that model is
 ~$21 of a ~$21.40 session, and write tools must already be hidden before
 it runs. The orchestrator **consumes** a `TurnPlan` and **advances
 remaining work** mid-turn (write this section, then answer the follow-up).
-It is not a second greeting classifier.
-
-### Today
-
-```mermaid
-flowchart TD
-  user["User message"] --> rules["Intent classifier<br/>classifyChatUserIntent · rules"]
-  rules -->|"ambiguous_agent_mode / polite leftover / worksheet dump"| lite["Flash-Lite<br/>resolveChatUserIntent"]
-  rules -->|social / explicit write / high-precision lookup| plan["TurnPlan<br/>intent + retrievalPolicy + scope"]
-  lite --> plan
-  plan --> gate["restrictToolsForIntent"]
-  gate --> orch["Orchestrator · Gemini 3.7 Flash"]
-  orch --> step["prepareStep<br/>search / review / draft / ask_user"]
-  step --> workers["Workers · pipelines not agents<br/>hybrid search · page extract · groundDraftText"]
-  workers --> orch
-```
-
-### Target (mixed intent, same orchestrator)
+It is not a second greeting classifier. Remaining-work (`remaining-work.ts`)
+has landed: mixed `alsoLookup`, mechanical draft completions, one-shot
+`update_plan` / `ask_user`.
 
 ```mermaid
 flowchart TD
@@ -136,7 +121,9 @@ from tool results, not a todo the orchestrator rewrites every step:
 completions are mechanical, `update_plan` is one-shot (skip queued N/A or
 add empty `draftOrder`), and unsure skip/add goes to `ask_user`. Lookups
 do not grow from retrieval. Cited-hit search stays open only while the
-write is still due; two empty greps always hide.
+write is still due; two empty greps always hide. `pending_plan` is still
+the persisted remaining-section queue across turns — remaining-work does
+not replace it.
 
 ## 3. Design rules for this plan
 

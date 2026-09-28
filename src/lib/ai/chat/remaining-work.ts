@@ -37,11 +37,11 @@ export const UPDATE_PLAN_SUCCESS_LIMIT = 1;
 /** Rejected retries burn the slot too, so a typo cannot loop. */
 export const UPDATE_PLAN_ATTEMPT_LIMIT = 2;
 
-export const REMAINING_WORK_ITEM_KINDS = ["section", "lookup"] as const;
+const REMAINING_WORK_ITEM_KINDS = ["section", "lookup"] as const;
 export type RemainingWorkItemKind =
   (typeof REMAINING_WORK_ITEM_KINDS)[number];
 
-export const REMAINING_WORK_ITEM_STATES = [
+const REMAINING_WORK_ITEM_STATES = [
   "queued",
   "in_progress",
   "done",
@@ -50,7 +50,7 @@ export const REMAINING_WORK_ITEM_STATES = [
 export type RemainingWorkItemState =
   (typeof REMAINING_WORK_ITEM_STATES)[number];
 
-export const REMAINING_WORK_ITEM_SOURCES = [
+const REMAINING_WORK_ITEM_SOURCES = [
   "pending_plan",
   "also_lookup",
   "update_plan",
@@ -98,7 +98,6 @@ export type UpdatePlanRejectReason =
   | "missing_section"
   | "skip_not_queued"
   | "skip_in_progress"
-  | "skip_not_section"
   | "add_already_present"
   | "add_not_empty"
   | "add_not_allowed"
@@ -225,7 +224,7 @@ export function seedLivingTurnWork(input: {
   };
 }
 
-export function livingWorkHasOpenLookups(work: LivingTurnWork): boolean {
+function livingWorkHasOpenLookups(work: LivingTurnWork): boolean {
   return work.items.some(
     (item) =>
       item.kind === "lookup" &&
@@ -366,13 +365,6 @@ export function applyUpdatePlanAction(
           status: "rejected",
           reason: "missing_section",
           message: `${action.sectionKey} is not in this turn's remaining work.`,
-        };
-      }
-      if (item.kind !== "section") {
-        return {
-          status: "rejected",
-          reason: "skip_not_section",
-          message: "Lookups are not skipped with update_plan.",
         };
       }
       if (item.state === "in_progress") {

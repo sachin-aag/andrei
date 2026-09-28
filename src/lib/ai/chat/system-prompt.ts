@@ -20,6 +20,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import {
   remainingWorkPromptBlock,
   seedLivingTurnWork,
+  type LivingTurnWork,
 } from "@/lib/ai/chat/remaining-work";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
@@ -386,6 +387,11 @@ export function buildChatSystemPrompt(opts: {
   switchToAnalytics?: boolean;
   /** Server-owned remaining-section queue for this thread. */
   pendingPlan?: ChatPendingPlan | null;
+  /**
+   * Kickoff remaining-work seed from the route. Omit in tests — the prompt
+   * re-seeds from intent / alsoLookup / pendingPlan.
+   */
+  livingWork?: LivingTurnWork;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
@@ -444,11 +450,12 @@ export function buildChatSystemPrompt(opts: {
   const queueLive =
     mode === "agent" && Boolean(opts.pendingPlan && !opts.pendingPlan.paused);
   const remainingBlock = remainingWorkPromptBlock(
-    seedLivingTurnWork({
-      intent: opts.intent ?? "write",
-      alsoLookup: opts.alsoLookup === true,
-      pendingPlan: opts.pendingPlan,
-    }),
+    opts.livingWork ??
+      seedLivingTurnWork({
+        intent: opts.intent ?? "write",
+        alsoLookup: opts.alsoLookup === true,
+        pendingPlan: opts.pendingPlan,
+      }),
     { queueLive }
   );
   const remainingWorkBlock = remainingBlock ? `\n\n${remainingBlock}` : "";
