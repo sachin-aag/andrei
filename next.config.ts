@@ -25,7 +25,6 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     "@google-cloud/storage",
     "@napi-rs/canvas",
-    "@napi-rs/canvas-linux-x64-gnu",
     "wmf",
   ],
   turbopack: {
@@ -38,11 +37,7 @@ const nextConfig: NextConfig = {
     },
   },
   outputFileTracingIncludes: {
-    "/api/*": [
-      "./templates/**/*",
-      "./src/lib/import/fonts/**/*.ttf",
-      "./node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
-    ],
+    "/api/*": ["./templates/**/*", "./src/lib/import/fonts/**/*.ttf"],
   },
   async headers() {
     return pdfjsAssetCacheHeaders();
