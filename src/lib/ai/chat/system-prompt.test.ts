@@ -538,6 +538,8 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("Never treat the index as ENOUGH");
     expect(plan).toContain("divider=true");
     expect(agent).toContain("divider=true");
+    expect(plan).toContain("identityIncomplete=true");
+    expect(agent).toContain("identityIncomplete=true");
     expect(agent).toContain("Never claim 100% on-time");
     expect(agent).toContain("Do not start a document review");
     expect(agent).toContain(
@@ -567,6 +569,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("omit attachmentIds");
     expect(prompt).toContain("Qualification Summary Report Table 3");
     expect(prompt).toContain("every attached URS / DS / DQ / IQ / OQ / PQ");
+    expect(prompt).toContain(
+      "If the same review also names another identity (SOP Number, Reference Number, Effective Date for those rows), do not treat it as a Table 3 cover walk"
+    );
     expect(prompt).toContain("the server keeps the URS");
     expect(prompt).toContain("A 12-page URS is a 12-page walk");
     expect(prompt).toContain("finish_document_review before draft_field");

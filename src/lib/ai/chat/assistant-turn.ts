@@ -300,6 +300,19 @@ function appendInterruptedNotice(parts: UIMessage["parts"]): UIMessage["parts"] 
   return appendNoticeIfMissing(parts, CHAT_ASSISTANT_INTERRUPTED_MESSAGE);
 }
 
+/** Gemini often leaves the last thought at `state: "streaming"` after the SSE ends. */
+function closeStreamingReasoningParts<T extends { type?: string; state?: unknown }>(
+  parts: readonly T[]
+): T[] {
+  let changed = false;
+  const next = parts.map((part) => {
+    if (part.type !== "reasoning" || part.state !== "streaming") return part;
+    changed = true;
+    return { ...part, state: "done" };
+  });
+  return changed ? next : [...parts];
+}
+
 /**
  * Persist a user-visible assistant row when the stream finishes empty, or
  * when it is aborted (explicit Cancel / deadline) so history is not an
@@ -321,7 +334,9 @@ export function partsForPersistedAssistantTurn(options: {
   interrupted: boolean;
   incomplete: boolean;
 } {
-  const parts = closeIncompleteChatToolParts(options.parts ?? []);
+  const parts = closeStreamingReasoningParts(
+    closeIncompleteChatToolParts(options.parts ?? [])
+  );
   const visible = assistantPartsHaveVisibleContent(parts);
   const hasVisibleText = parts.some((part) => partHasVisibleText(part));
 
