@@ -1,6 +1,9 @@
 import uFuzzy from "@leeoniya/ufuzzy";
 import type { HardFact, HardFactKind } from "@/lib/ai/chat/claim-facts";
-import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
+import {
+  glueOcrMinusSigns,
+  glueOcrUrsIds,
+} from "@/lib/attachments/numeric-signs";
 
 const fuzzy = new uFuzzy({
   intraMode: 1,
@@ -199,11 +202,13 @@ export function evidenceContainsFact(haystack: string, fact: HardFact): boolean 
   if (!haystack.trim()) return false;
   const hay = normalizeHaystack(haystack);
   const originalHay = collapseWs(haystack).toUpperCase();
+  const ursHay = glueOcrUrsIds(originalHay);
+  const ursNormalized = glueOcrUrsIds(hay);
   // URS-1 / URS-15 are identifiers. Their digits are not a measured
   // "1 mm" or "15 °C" sitting in that row's requirement text.
   const numericHay = glueOcrMinusSigns(
     glueOcrDecimals(
-      hay
+      ursNormalized
         .replace(/°/g, "")
         .replace(/,/g, "")
         .replace(/\burs-\d+\b/gi, " ")
@@ -213,8 +218,8 @@ export function evidenceContainsFact(haystack: string, fact: HardFact): boolean 
   for (const needle of kindNeedles(fact)) {
     if (!needle) continue;
     if (fact.kind === "identifier") {
-      if (originalHay.includes(needle.toUpperCase())) return true;
-      if (includesNormalized(hay, needle.toLowerCase())) return true;
+      if (ursHay.includes(needle.toUpperCase())) return true;
+      if (includesNormalized(ursNormalized, needle.toLowerCase())) return true;
       continue;
     }
     if (

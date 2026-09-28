@@ -162,10 +162,21 @@ describe("evidenceContainsFact", () => {
       )
     ).toBe(true);
     expect(
+      evidenceContainsFact("URS-4 Shell Operating pressure Full Vacuum to 3 · 5 Kg/cm2", pressure)
+    ).toBe(true);
+  });
+
+  it("matches URS-33 when OCR wraps the hyphen at a table footer", () => {
+    const id = fact("URS-33");
+    expect(id.kind).toBe("identifier");
+    expect(
       evidenceContainsFact(
-        "URS-4 Shell Operating pressure Full Vacuum to 3 · 5 Kg/cm2",
-        pressure
+        "URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00",
+        id
       )
+    ).toBe(true);
+    expect(
+      evidenceContainsFact("URS-32 Location URS-\n33 Stage and location", id)
     ).toBe(true);
   });
 

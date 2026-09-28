@@ -163,7 +163,8 @@ bounces. A column-major URS page (one or more blocks of IDs, then the requiremen
 sentences) keeps each block's sentences out of the last ID's window and
 still lets every ID in that block use them, even when another row's
 parameter shares a word such as glass or thickness. URS-1 does not match
-URS-13. Digits in URS-N are not a measured number. A decimal such as 25.0 is
+URS-13. OCR-split `URS- 33` / `URS-\n33` is URS-33 before windowing.
+Digits in URS-N are not a measured number. A decimal such as 25.0 is
 not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
 to persist `<number>` or ask the engineer to type it. Integer `3` is not
 `3.5`. A named date column (Effective Date) must match the source value

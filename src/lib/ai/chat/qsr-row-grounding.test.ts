@@ -122,6 +122,22 @@ describe("quoteWindowAroundKey column-major URS pages", () => {
     expect(quoteWindowAroundKey(page, "URS-20")).not.toContain("Limpet");
   });
 
+  it("finds URS-33 when OCR wraps the ID into the page footer", () => {
+    const page =
+      "URS ID # Parameters User requirements URS-30 Batch Size URS-31 Type of Operation URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00 Page 8 of 12 Equipment intended for intermediate stage manufacturing operations.";
+    expect(quoteWindowAroundKey(page, "URS-33")).not.toBeNull();
+    expect(
+      descriptionSupportedNearKey("Stage and location", [page], "URS-33")
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "Equipment intended for intermediate stage manufacturing operations.",
+        [page],
+        "URS-33"
+      )
+    ).toBe(true);
+  });
+
   it("still rejects a range that sits inside a neighbour URS sentence", () => {
     const fact = extractHardFacts("15–130 °C").find((row) =>
       row.text.includes("130")
@@ -235,6 +251,45 @@ describe("column-major descriptions across pages", () => {
     });
     expect(result.blocked).toBe(false);
     expect(result.unsupported).toEqual([]);
+  });
+
+  it("proposes URS-33 from a column-major page whose ID wraps at the footer", () => {
+    const page =
+      "URS ID # Parameters User requirements URS-30 Batch Size URS-31 Type of Operation URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00 Page 8 of 12 Equipment intended for intermediate stage manufacturing operations.";
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: page,
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-33",
+            "Stage and location",
+            "Equipment intended for intermediate stage manufacturing operations. [User Requirement Specification.PDF, p. 8]",
+            "",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.unsupported).toEqual([]);
+    expect(result.operation.kind).toBe("insert_rows");
+    if (result.operation.kind === "insert_rows") {
+      expect(result.operation.rows[0]?.[0]).toBe("URS-33");
+      expect(result.operation.rows[0]?.[1]).toContain("Stage and location");
+    }
   });
 });
 

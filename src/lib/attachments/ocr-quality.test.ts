@@ -83,6 +83,16 @@ describe("idRecall", () => {
     expect(isRequirementId("SW-SST-5.1.1")).toBe(true);
     expect(isRequirementId("SW-SST-")).toBe(false);
   });
+
+  it("indexes URS-33 when OCR wraps the ID at a table footer", () => {
+    expect(
+      requirementIds(
+        "URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00"
+      )
+    ).toEqual(
+      expect.arrayContaining(["URS-32", "URS-33", "QAD-SOP-FS-003-F03-00"])
+    );
+  });
 });
 
 describe("MJ slash document numbers", () => {
