@@ -17,9 +17,10 @@ import {
   type ChatUserIntentKind,
 } from "@/lib/ai/chat/user-intent";
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
+import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v161-qsr-section-elaborate";
+export const CHAT_PROMPT_VERSION = "chat-v162-ask-agent-rtm-section";
 
 export type ChatMode = "plan" | "agent";
 
@@ -94,7 +95,7 @@ The engineer may dictate or type in English, Hindi, or Marathi, including Devana
 Reply only in English. Drafts, proposed wording, questions, and user-visible tool arguments (insertText, field values) must be English. Quoted source text and proper names may stay in the original language.`;
 
 const USER_INTENT_RULES = `## User intent (required)
-Follow the latest user message. Agent mode means you MAY edit when they asked — not that you should draft because sections are empty, attachments exist, or drafting structure is in this prompt.
+Follow the latest user message. Ask vs Agent is chosen per send — not for the whole thread. When this prompt's Mode / This send block is AGENT, ignore an earlier assistant note that you were in Ask mode. Agent mode means you MAY edit when they asked — not that you should draft because sections are empty, attachments exist, or drafting structure is in this prompt.
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not draft or edit any section.
 - A question, a plan, or an outline ("plan the first 3 sections", "what should go in Purpose", "how would you structure this"): answer in chat. Do not call draft_field, propose_edit, or edit_table unless they also asked to write or insert.
 - How many attachments, which files in which folder, PDF vs Word, file status, or filename/topic matches: call list_attachments and read folders[] / fileTypes[]. Do not guess from the Documents index. Do not call search_documents for an inventory — that greps page text. Which files mention a fact inside a PDF is still search_documents.
@@ -224,12 +225,12 @@ function askRules(policy: RetrievalPolicy): string {
     }
   }
   return `## Mode: ASK (answer questions — do NOT edit the document)
-You are in Ask mode. You CANNOT edit the document in this mode; the edit tools are disabled. Answer the engineer's questions about the report, attachments, and quality criteria.
+You are in Ask mode THIS SEND. You CANNOT edit the document in this mode; the edit tools are disabled. Answer the engineer's questions about the report, attachments, and quality criteria. This is only this message — if they switch the Ask/Agent control to Agent and send again, the next turn can propose suggestion cards.
 
 Do this:
 ${firstStep}
 2. Answer directly in conversational prose. Cite retrieved evidence when you rely on it. If the question cannot be answered from the report or attachments, say what is missing — use ask_user only when you need their input to answer the question at hand.
-3. Do not propose section drafts, drafting outlines, or field-by-field plans unless they explicitly ask for writing advice. Do not invite them to switch to Agent mode unless they ask how to apply changes to the document. The document index (filenames/topics) is not enough information by itself. Call list_suggestions when they ask what was proposed, approved, or dismissed.
+3. Do not propose section drafts, drafting outlines, or field-by-field plans unless they explicitly ask for writing advice. If they asked you to write, fill, or populate the document, one sentence: switch the Ask/Agent control to Agent and send the request. Do not say the whole session is locked in Ask. The document index (filenames/topics) is not enough information by itself. Call list_suggestions when they ask what was proposed, approved, or dismissed.
 
 Keep prose conversational and concise. Do not dump the whole criteria list back at the engineer unless they ask about criteria coverage. Never fabricate regulated facts.`;
 }
@@ -270,7 +271,7 @@ function agentRules(opts: {
 
   if (!opts.writesLoaded) {
     return `## Mode: AGENT (read this turn — write tools start hidden)
-You are in Agent mode, but this message is a question or review, so draft_field / edit_table / propose_edit / insert_image / remove_image start hidden.
+You are in Agent mode THIS SEND — not Ask. Ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode or that they must switch. This message is a question or review, so draft_field / edit_table / propose_edit / insert_image / remove_image start hidden.
 ${reviewTools}
 ${searchFirst}
 
@@ -285,7 +286,7 @@ Delivery in this chrome is ALWAYS a suggestion card:
 - The only turns that end with no edit tool call are questions and small talk. If "Tools available this turn" is absent, deliver the write.
 - finish_document_review is a READ step, never the end of a write turn. Its findings are input to the draft, not the reply. When it returns deliverNow, call that write tool in the same turn. Composing the section and printing it in chat leaves the field empty — the engineer sees prose they cannot accept and a section still marked not started.`;
   return `## Mode: AGENT (draft and propose edits)
-You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.${proposeDeliveryRule}
+You are in Agent mode THIS SEND. Ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.${proposeDeliveryRule}
 
 Choosing the right tool:
 - edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns, or delete_table to remove the whole table (keeps surrounding prose, figures, and citations). Also create_table (headers plus rows) to add a NEW table in a rich field. Omit afterAnchor to append before a trailing Citations heading. Call read_section FIRST and copy the live headers from fields[].tables[] (also listed on the context map). Demo and Convergent matrices differ — never invent columns. Copy tableIndex and [row,col] from structuredText. Adding an example to a table is edit_cells or insert_column, never a bulleted list. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells. Do not use draft_field to create or delete a table.
@@ -436,6 +437,8 @@ export function buildChatSystemPrompt(opts: {
 
   return `${chat.persona}
 
+${composerModeTurnRule(mode)}
+
 ${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}${planBlock}
 
 ${LANGUAGE_RULES}
@@ -459,5 +462,7 @@ ${QUESTION_RULES}
 ${criteriaOutline}
 
 ## Current report
-${contextMap}`;
+${contextMap}
+
+${composerModeTurnRule(mode)}`;
 }

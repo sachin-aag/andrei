@@ -76,6 +76,59 @@ describe("classifyChatUserIntent", () => {
     ).toEqual({ kind: "social", reason: "ack_without_task" });
   });
 
+  it("treats an Agent follow-up after Ask-mode switch copy as a write", () => {
+    const askNote =
+      "(Note: We are currently in Ask mode. You can switch to Agent mode to have these rows populated directly into the document via suggestion cards.)";
+    expect(
+      classifyChatUserIntent({
+        userText: "yes",
+        mode: "agent",
+        recentAssistantTexts: [askNote],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "go ahead",
+        mode: "agent",
+        recentAssistantTexts: [askNote],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "I switched to Agent",
+        mode: "agent",
+        recentAssistantTexts: [askNote],
+      })
+    ).toEqual({ kind: "write", reason: "switched_to_agent" });
+    expect(
+      classifyChatUserIntent({
+        userText: "I switched to Agent — fill them",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "switched_to_agent" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "I switched to Agent",
+          mode: "agent",
+        })
+      )
+    ).toBe(false);
+    expect(
+      classifyChatUserIntent({
+        userText: "yes",
+        mode: "plan",
+        recentAssistantTexts: [askNote],
+      })
+    ).toEqual({ kind: "social", reason: "ack_without_task" });
+    expect(
+      classifyChatUserIntent({
+        userText: "I switched to Agent",
+        mode: "plan",
+      }).kind
+    ).toBe("read");
+  });
+
   it("sends do-the-same and leftover can-you to Flash-Lite, not a lookup", () => {
     expect(
       classifyChatUserIntent({
@@ -241,6 +294,8 @@ describe("classifyChatUserIntent", () => {
       "it is refusing to make an edit",
       "despite being in agent mode, it did not have write capabilities",
       "it is only summarising stuff in chat",
+      "still in ask mode",
+      "you said we are in ask mode",
     ]) {
       expect(classifyChatUserIntent({ userText: text, mode: "agent" })).toEqual({
         kind: "write",
@@ -522,6 +577,7 @@ describe("intentToolAvailabilityRule", () => {
     expect(rule).toContain("draft_field");
     expect(rule).toContain("start hidden");
     expect(rule).toContain("becomes available on the next step");
+    expect(rule).toContain("still in Ask mode");
     expect(rule).not.toContain("write_column");
   });
 
