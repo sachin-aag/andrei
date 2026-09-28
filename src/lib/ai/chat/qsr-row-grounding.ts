@@ -154,6 +154,9 @@ const PROTOCOL_RUNNING_HEADER_RES: readonly RegExp[] = [
   /(?:^|\n)\s*[a-z][a-z0-9 ]{2,60}(?=\s+(?:capacity\s*\/\s*size|dqp\s*\/|iqp\s*\/|oqp\s*\/|pqp\s*\/))/gi,
   /uncontrolled copy/gi,
   /page\s+\d+\s+of\s+\d+/gi,
+  /page\s*no\.?\s*\d{1,3}\s+of\s+\d+/gi,
+  // Printed "16 of 51" / "25 of 60" after the Page No. label (not "3 of 5").
+  /(?:^|\s)\d{1,3}\s+of\s+\d{2,3}(?=\s|$)/gi,
   /capacity\s*\/\s*size[:\s]*[0-9.,]+\s*l?/gi,
   /\b(?:dqp|iqp|oqp|pqp)\s*\/\s*[a-z0-9-]+/gi,
   /equipment name[:\s]+[a-z0-9 ]{0,48}/gi,
@@ -803,7 +806,9 @@ function isRtmSectionCellText(text: string): boolean {
   const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
   if (SECTION_NUMBER_CELL_RE.test(stripped)) return true;
   if (STOCK_BARE_SECTION_13_RE.test(stripped)) return true;
-  if (/^(?:section\s+)?\d+(?:\.\d+)*$/i.test(stripped)) return true;
+  // Labeled `Section 4` is a DQ chapter. A bare `16` is a page counter.
+  if (/^section\s+\d+(?:\.\d+)*$/i.test(stripped)) return true;
+  if (/^\d+(?:\.\d+)+$/i.test(stripped)) return true;
   return RTM_SECTION_DETAIL_CELL_RE.test(stripped);
 }
 
@@ -1123,17 +1128,37 @@ function cleanRtmSectionDescription(raw: string): string {
 
 /**
  * Protocol section number(s): `8.2.3`, `8.2.4 / 8.8`, `8.5 & 8.6`,
- * `Section 4`. A bare `16` is a page counter, not a section.
+ * DQ `Section 4`. A bare `16` / `14` is a printed page counter, not a
+ * PQ/OQ/IQ section — those families only accept a dotted number.
  */
-function rtmCellSectionNumber(text: string): string {
+function rtmCellSectionNumber(
+  text: string,
+  family?: RtmStageFamily | null
+): string {
   const trimmed = text.replace(/\[[^\]]*\]/g, "").trim();
   const labeled = trimmed.match(/^section\s+(\d+(?:\.\d+)*)/i);
-  if (labeled?.[1]) return labeled[1];
+  if (labeled?.[1]) {
+    if (/\./.test(labeled[1])) return labeled[1];
+    // `Section 4` is DQ. PQ/OQ/IQ never use a labeled integer chapter.
+    if (family == null || family === "dq") return labeled[1];
+    return "";
+  }
   const match = trimmed.match(
     new RegExp(`^(${RTM_DOTTED_SECTION_HEAD_RE.source})`)
   )?.[1];
-  if (!match || /^\s*of\s+\d/i.test(trimmed.slice(match.length))) return "";
-  return match.replace(/\s+/g, " ").trim();
+  if (match && !/^\s*of\s+\d/i.test(trimmed.slice(match.length))) {
+    return match.replace(/\s+/g, " ").trim();
+  }
+  if (family === "dq") {
+    const integer = trimmed.match(/^(\d{1,2})(?!\.\d)/);
+    if (
+      integer?.[1] &&
+      !/^\s*of\s+\d/i.test(trimmed.slice(integer[1].length))
+    ) {
+      return integer[1];
+    }
+  }
+  return "";
 }
 
 function rtmSectionNumbersCited(
@@ -1160,9 +1185,13 @@ function rtmSectionNumbersCited(
   return numbers.some((number) => quotes.some((quote) => quote.includes(number)));
 }
 
-function preferredRtmSectionNumber(requested: string, heading: string): string {
-  const fromHeading = rtmCellSectionNumber(heading);
-  const fromRequested = rtmCellSectionNumber(requested);
+function preferredRtmSectionNumber(
+  requested: string,
+  heading: string,
+  family?: RtmStageFamily | null
+): string {
+  const fromHeading = rtmCellSectionNumber(heading, family);
+  const fromRequested = rtmCellSectionNumber(requested, family);
   if (/[\/&]/.test(fromRequested)) {
     if (!fromHeading) return fromRequested;
     const parts = fromRequested.split(/\s*[\/&]\s*/);
@@ -1178,7 +1207,10 @@ function rtmCellDescription(text: string): string {
     .replace(
       new RegExp(`^${RTM_DOTTED_SECTION_HEAD_RE.source}\\.?`),
       ""
-    );
+    )
+    // Model prefix from Page N of M: `16 – Water batch`, `14. Thermal trial`.
+    .replace(/^\d{1,3}(?!\.\d)\s*(?:of\s+\d+\s*)?[–—:.-]+\s*/, "")
+    .replace(/^\d{1,3}(?!\.\d)\s+of\s+\d+\s*/, "");
   return cleanRtmSectionDescription(rest);
 }
 
@@ -1186,17 +1218,22 @@ function rtmCellDescription(text: string): string {
  * Reference – Section is `{protocol section number} – {one line about the
  * test}`. The number comes from the matched protocol heading when there is
  * one; the model's one-line description is kept when it is clean, else the
- * heading title. Page numbers and header blocks never persist.
+ * heading title. Printed page counters (`16`, `14`) never persist, even as
+ * a description-only cell.
  */
 export function rtmSectionCellText(
   requested: string,
-  pick: Pick<RtmReferencePick, "sectionHeading"> | null
+  pick: {
+    sectionHeading?: string | null;
+    family?: RtmStageFamily | null;
+  } | null
 ): string {
   const heading = pick?.sectionHeading ?? "";
-  const number = preferredRtmSectionNumber(requested, heading);
+  const family = pick?.family ?? null;
+  const number = preferredRtmSectionNumber(requested, heading, family);
   const description = rtmCellDescription(requested) || rtmCellDescription(heading);
   if (number && description) return `${number} – ${description}`;
-  return number || description;
+  return number;
 }
 
 function rtmSectionNumberParts(text: string): string[] {
@@ -1242,7 +1279,11 @@ function rowMatchedSectionHeading(stripped: string, context: string): string | n
   return formatRtmSectionHeading(best.number, best.block.replace(/^\.?\s+/, ""));
 }
 
-function protocolSectionHeading(body: string, context = ""): string | null {
+function protocolSectionHeading(
+  body: string,
+  context = "",
+  family?: RtmStageFamily | null
+): string | null {
   const stripped = protocolBodyQuote(body);
   const matched = context ? rowMatchedSectionHeading(stripped, context) : null;
   if (matched) return matched;
@@ -1264,6 +1305,11 @@ function protocolSectionHeading(body: string, context = ""): string | null {
     /\bsection\s+(\d+(?:\.\d+)*)\.?(?:\s+([\s\S]*))?/i
   );
   if (labeled?.[1]) {
+    const after = (labeled[2] ?? "").trim();
+    if (/^\s*of\s+\d/i.test(after)) return null;
+    // PQ/OQ/IQ print dotted 8.x / 13.x. A labeled integer is DQ `Section 4`,
+    // not printed page 16.
+    if (!/\./.test(labeled[1]) && family && family !== "dq") return null;
     return formatRtmSectionHeading(labeled[1], labeled[2] ?? "");
   }
   return null;
@@ -1364,6 +1410,66 @@ function stickyRtmPick(
   return pick;
 }
 
+function headingNumberOnPage(quote: string, number: string): boolean {
+  if (!number) return false;
+  const body = ` ${protocolBodyQuote(quote)} `;
+  return number
+    .split(/\s*[\/&]\s*/)
+    .filter(Boolean)
+    .some((part) => {
+      const escaped = part.replace(/\./g, "\\.");
+      return new RegExp(
+        `(?:^|\\s)(?:section\\s+)?${escaped}(?!\\.\\d)\\.?\\s`,
+        "i"
+      ).test(body);
+    });
+}
+
+function sectionHeadingFromQuote(
+  quote: string,
+  context: string,
+  family: RtmStageFamily
+): string | null {
+  const body = protocolBodyQuote(quote);
+  if (!body) return null;
+  const heading = protocolSectionHeading(body, context, family);
+  if (!heading) return null;
+  const number = rtmCellSectionNumber(heading, family);
+  if (!number) return null;
+  return heading;
+}
+
+function citePageForSectionHeading(
+  pages: readonly { filename: string; pageNumber: number; quote: string }[],
+  passPage: { filename: string; pageNumber: number; quote: string },
+  context: string,
+  family: RtmStageFamily
+): {
+  page: { filename: string; pageNumber: number; quote: string };
+  heading: string | null;
+} {
+  const passHeading = sectionHeadingFromQuote(passPage.quote, context, family);
+  if (passHeading) {
+    const number = rtmCellSectionNumber(passHeading, family);
+    if (number && headingNumberOnPage(passPage.quote, number)) {
+      return { page: passPage, heading: passHeading };
+    }
+    const home = pages.find(
+      (page) => number && headingNumberOnPage(page.quote, number)
+    );
+    if (home) return { page: home, heading: passHeading };
+  }
+  for (const page of pages) {
+    const heading = sectionHeadingFromQuote(page.quote, context, family);
+    if (!heading) continue;
+    const number = rtmCellSectionNumber(heading, family);
+    if (number && headingNumberOnPage(page.quote, number)) {
+      return { page, heading };
+    }
+  }
+  return { page: passPage, heading: passHeading };
+}
+
 export function pickRtmReference(
   ledger: CitationPageLedger,
   key: string,
@@ -1379,6 +1485,7 @@ export function pickRtmReference(
         const topic = protocolTopicBody(page.quote, context);
         return topic != null && hasProtocolPassToken(topic);
       }) ?? pages[0]!;
+    const cited = citePageForSectionHeading(pages, passPage, context, family);
     const body =
       protocolTopicBody(passPage.quote, context) ??
       quoteWindowAroundKey(passPage.quote, key) ??
@@ -1386,9 +1493,9 @@ export function pickRtmReference(
     return {
       family,
       stageLabel: STAGE_LABEL[family],
-      filename: passPage.filename,
-      pageNumber: passPage.pageNumber,
-      sectionHeading: body ? protocolSectionHeading(body, context) : null,
+      filename: cited.page.filename,
+      pageNumber: cited.page.pageNumber,
+      sectionHeading: cited.heading,
       remarks: rtmRemarksForPick(body, ledger, key, family, context),
     };
   }

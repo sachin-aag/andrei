@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v157-qsr-rtm-section-slash");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v158-qsr-rtm-section-not-page");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -29,6 +29,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("stock Complies / bare Section 13");
     expect(prompt).toContain("8.2.3 – Heating trial at 8000 L working volume");
     expect(prompt).toContain("Never copy the page number (Page 21 of 51)");
+    expect(prompt).toContain("never the printed page counter");
+    expect(prompt).toContain("page that prints that dotted heading");
     expect(prompt).toContain("one insert_rows");
     expect(prompt).toContain("Open cards stack");
     expect(prompt).toContain("Apply does not unlock the next insert");
