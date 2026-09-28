@@ -6,6 +6,10 @@ import {
   logoutFromApp,
   seedAuthUsers,
 } from "./helpers/auth";
+import {
+  gotoWithNavigationRetry,
+  reloadWithNavigationRetry,
+} from "./helpers/navigation";
 
 function authScope(testInfo: TestInfo): string {
   return testInfo.project.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
@@ -35,7 +39,7 @@ test.describe("authentication", () => {
   });
 
   test("redirects unauthenticated users to login", async ({ page }) => {
-    await page.goto("/");
+    await gotoWithNavigationRetry(page, "/");
     await expect(page).toHaveURL(/\/login/);
     await expect(
       page.getByRole("heading", { name: /sign in to your workspace/i })
@@ -44,7 +48,7 @@ test.describe("authentication", () => {
   });
 
   test("shows error for unknown email", async ({ page }) => {
-    await page.goto("/login");
+    await gotoWithNavigationRetry(page, "/login");
     const continueButton = await fillEmailAndWaitForContinue(
       page,
       "nobody@mjbiopharm.com"
@@ -62,7 +66,7 @@ test.describe("authentication", () => {
   });
 
   test("shows password step for known email with password", async ({ page }, testInfo) => {
-    await page.goto("/login");
+    await gotoWithNavigationRetry(page, "/login");
     const continueButton = await fillEmailAndWaitForContinue(
       page,
       scopedEmail("e2e.password@mjbiopharm.com", testInfo)
@@ -72,7 +76,7 @@ test.describe("authentication", () => {
   });
 
   test("shows error for wrong password", async ({ page }, testInfo) => {
-    await page.goto("/login");
+    await gotoWithNavigationRetry(page, "/login");
     const continueButton = await fillEmailAndWaitForContinue(
       page,
       scopedEmail("e2e.password@mjbiopharm.com", testInfo)
@@ -87,7 +91,7 @@ test.describe("authentication", () => {
   });
 
   test("locks an account after 3 wrong password attempts", async ({ page }, testInfo) => {
-    await page.goto("/login");
+    await gotoWithNavigationRetry(page, "/login");
     const continueButton = await fillEmailAndWaitForContinue(
       page,
       scopedEmail("e2e.lockout@mjbiopharm.com", testInfo)
@@ -111,7 +115,7 @@ test.describe("authentication", () => {
   });
 
   test("shows setup password link for no-password account", async ({ page }, testInfo) => {
-    await page.goto("/login");
+    await gotoWithNavigationRetry(page, "/login");
     const continueButton = await fillEmailAndWaitForContinue(
       page,
       scopedEmail("e2e.nopassword@mjbiopharm.com", testInfo)
@@ -126,7 +130,7 @@ test.describe("authentication", () => {
   });
 
   test("offers email sign-in link as a secondary option", async ({ page }, testInfo) => {
-    await page.goto("/login");
+    await gotoWithNavigationRetry(page, "/login");
     await expect(
       page.getByText(/sign in with your work email and password/i)
     ).toBeVisible();
@@ -151,7 +155,7 @@ test.describe("authentication", () => {
       email: scopedEmail("e2e.mustchange@mjbiopharm.com", testInfo),
       mustChangePassword: true,
     });
-    await page.goto("/");
+    await gotoWithNavigationRetry(page, "/");
     await expect(page).toHaveURL(/\/change-password/);
     await expect(
       page.getByRole("heading", { name: /choose your password/i })
@@ -163,7 +167,7 @@ test.describe("authentication", () => {
       email: scopedEmail("e2e.expired@mjbiopharm.com", testInfo),
       passwordExpired: true,
     });
-    await page.goto("/");
+    await gotoWithNavigationRetry(page, "/");
     await expect(page).toHaveURL(/\/change-password/);
     await expect(
       page.getByRole("heading", { name: /change your password/i })
@@ -175,7 +179,7 @@ test.describe("authentication", () => {
       email: scopedEmail("e2e.mustchange@mjbiopharm.com", testInfo),
       mustChangePassword: true,
     });
-    await page.goto("/change-password");
+    await gotoWithNavigationRetry(page, "/change-password");
     await page
       .getByRole("button", { name: /use a different account/i })
       .click();
@@ -186,7 +190,7 @@ test.describe("authentication", () => {
   });
 
   test("forgot password page renders", async ({ page }) => {
-    await page.goto("/forgot-password");
+    await gotoWithNavigationRetry(page, "/forgot-password");
     await expect(page.getByLabel(/work email/i)).toBeVisible();
   });
 
@@ -195,7 +199,7 @@ test.describe("authentication", () => {
       email: scopedEmail("e2e.password@mjbiopharm.com", testInfo),
       role: "engineer",
     });
-    await page.goto("/profile");
+    await gotoWithNavigationRetry(page, "/profile");
     await expect(page.getByRole("heading", { name: /^profile$/i })).toBeVisible();
     await expect(page.getByLabel(/current password/i)).toBeVisible();
     await expect(
@@ -218,7 +222,7 @@ test.describe("authentication", () => {
       email: scopedEmail("e2e.notify@mjbiopharm.com", testInfo),
       role: "engineer",
     });
-    await page.goto("/profile");
+    await gotoWithNavigationRetry(page, "/profile");
     await expect(
       page.getByRole("heading", { name: /assistant notifications/i })
     ).toBeVisible();
@@ -237,7 +241,7 @@ test.describe("authentication", () => {
     await expect(notifications).not.toBeChecked();
     await expect(sound).toBeChecked();
 
-    await page.reload();
+    await reloadWithNavigationRetry(page);
     await expect(
       page.getByRole("checkbox", {
         name: /show a notification when the assistant finishes/i,
@@ -255,7 +259,7 @@ test.describe("authentication", () => {
       email: scopedEmail("e2e.warning@mjbiopharm.com", testInfo),
       passwordWarning: true,
     });
-    await page.goto("/");
+    await gotoWithNavigationRetry(page, "/");
     await expect(page.getByText(/your password expires in/i)).toBeVisible({
       timeout: 15_000,
     });

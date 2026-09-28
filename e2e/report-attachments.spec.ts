@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 import { loginAsEngineer } from "./helpers/auth";
+import { reloadWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
 import { documentsPanel, expandDocumentsPanel, openReportAnalytics, openReportEditor, setReportChrome } from "./helpers/workspace";
 
@@ -202,7 +203,7 @@ test.describe("report PDF documents", () => {
 
     await expect(panel.getByText("Batch Records")).toBeVisible({ timeout: 15_000 });
 
-    await page.reload();
+    await reloadWithNavigationRetry(page);
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
       timeout: 30_000,
     });

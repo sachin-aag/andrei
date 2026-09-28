@@ -105,7 +105,7 @@ async function waitForHomeDashboard(page: Page, role: HomeRole): Promise<void> {
   const maxAttempts = 3;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    await gotoWithNavigationRetry(page, "/", { waitUntil: "load" });
+    await gotoWithNavigationRetry(page, "/");
     const url = page.url();
     if (url.includes("/login")) {
       if (attempt < maxAttempts) {
@@ -223,7 +223,10 @@ export async function logoutFromApp(page: Page): Promise<void> {
   await primaryNav(page).getByRole("link", { name: /profile/i }).click();
   await expect(page.getByRole("heading", { name: /^profile$/i })).toBeVisible();
   await Promise.all([
-    page.waitForURL(/\/login/, { timeout: 15_000 }),
+    page.waitForURL(/\/login/, {
+      timeout: 15_000,
+      waitUntil: "domcontentloaded",
+    }),
     page.getByRole("button", { name: /log out/i }).click(),
   ]);
   await expect(

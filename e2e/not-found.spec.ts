@@ -52,7 +52,10 @@ test.describe("branded 404", () => {
       page.getByRole("heading", { name: /this page isn’t here/i })
     ).toBeVisible();
     await Promise.all([
-      page.waitForURL((url) => url.pathname === "/", { timeout: 15_000 }),
+      page.waitForURL((url) => url.pathname === "/", {
+        timeout: 15_000,
+        waitUntil: "domcontentloaded",
+      }),
       page.getByRole("link", { name: /back to reports/i }).click(),
     ]);
     await expect(

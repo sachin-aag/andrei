@@ -7,15 +7,19 @@ function isNavigationRaceError(error: unknown): boolean {
   return error instanceof Error && NAVIGATION_RACE_ERROR.test(error.message);
 }
 
+/** Next + WebKit often never fire `load` (fonts, RSC stream, analytics). */
+const DEFAULT_WAIT_UNTIL = "domcontentloaded" as const;
+
 export async function gotoWithNavigationRetry(
   page: Page,
   url: string,
   options?: Parameters<Page["goto"]>[1],
   maxAttempts = 3
 ): Promise<Awaited<ReturnType<Page["goto"]>>> {
+  const navigation = { waitUntil: DEFAULT_WAIT_UNTIL, ...options };
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await page.goto(url, options);
+      return await page.goto(url, navigation);
     } catch (error) {
       if (!isNavigationRaceError(error) || attempt === maxAttempts) {
         throw error;

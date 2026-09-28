@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { loginAsEngineer, loginAsManagerWithResponse } from "./helpers/auth";
+import { gotoWithNavigationRetry } from "./helpers/navigation";
 import {
   createReport,
   deleteReport,
@@ -71,7 +72,7 @@ test.describe("create report", () => {
     const created = await createReport(page, { deviationNo });
     createdReportId = created.id;
 
-    await page.goto("/");
+    await gotoWithNavigationRetry(page, "/");
     await openDeviationsTemplate(page);
     await page.locator("#documentNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
@@ -103,7 +104,7 @@ test.describe("create report", () => {
   test("deletes report from dashboard", async ({ page }) => {
     const created = await createReport(page);
     createdReportId = created.id;
-    await page.goto("/");
+    await gotoWithNavigationRetry(page, "/");
     await page
       .getByRole("button", { name: new RegExp(`delete report ${created.deviationNo}`, "i") })
       .click();

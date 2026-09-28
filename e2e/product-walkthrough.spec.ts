@@ -22,7 +22,7 @@ async function loginWithTour(page: Page, productTour: boolean | "resume") {
     role: "engineer",
     productTour,
   });
-  await gotoWithNavigationRetry(page, "/", { waitUntil: "load" });
+  await gotoWithNavigationRetry(page, "/");
 }
 
 async function waitForWalkthroughProgress(
@@ -98,7 +98,7 @@ test.describe("product walkthrough", () => {
     await expect(dialog).toHaveCount(0);
     await waitForWalkthroughProgress(page, { status: "dismissed" });
 
-    await gotoWithNavigationRetry(page, "/profile", { waitUntil: "load" });
+    await gotoWithNavigationRetry(page, "/profile");
     await expect(page.getByRole("heading", { name: /^profile$/i })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.getByRole("button", { name: "Replay product tour" }).click();
@@ -128,9 +128,7 @@ test.describe("product walkthrough", () => {
 
       const created = await createReport(page);
       reportId = created.id;
-      await gotoWithNavigationRetry(page, `/reports/${created.id}/edit`, {
-        waitUntil: "load",
-      });
+      await gotoWithNavigationRetry(page, `/reports/${created.id}/edit`);
       await expect(
         page.getByRole("dialog").getByRole("heading", { name: /document or agent/i })
       ).toBeVisible({ timeout: 15_000 });
