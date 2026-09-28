@@ -178,7 +178,8 @@ to persist `<number>` or ask the engineer to type it. Integer `3` is not
 `3.5`. A named date column (Effective Date) must match the source value
 next to that same label — presence of a signature or observation date on
 the cited page is not that field. A leading minus is part of the number
-(`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A ±
+(`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A
+leading tilde is approximate (`~50±10 RPM` is not `−50 ± 10 RPM`). A ±
 window is not independent evidence for the setpoint (`50±10 RPM` is not
 `−50 ± 10 RPM`). The high end of a range is not evidence for the low end
 (`20 °C` is not `−20 °C to 150 °C`). Stock Complies / bare Section 13 still need a named-stage protocol page that

@@ -11,7 +11,7 @@ description: Architecture reference for Andrei's attachment evidence: PDF/DOCX i
 
 **Pipeline:**
 1. Upload stored via `src/lib/storage/` (GCS production; local only with `ATTACHMENT_STORAGE_BACKEND=local` + `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`)
-2. Vertex extract (`extract-batch.ts`, `DOCUMENT_EXTRACT_PROMPT_VERSION`) → `document_pages` (`pageContext` + transcript + `identifiers` / `outlineTitle` / nullable `hasTable`/`hasFigure`)
+2. Vertex extract (`extract-batch.ts`, `DOCUMENT_EXTRACT_PROMPT_VERSION`) → `document_pages` (`pageContext` + transcript + `identifiers` / `outlineTitle` / nullable `hasTable`/`hasFigure`). Born-digital transcript is the PDF parser. Unsigned Celsius ranges get a PNG overlay (cap 5 pages) that copies a minus onto matching °C text only when the look reports a signed temperature; `~50` RPM stays approximate.
 3. Outline spans persisted on the ingest run, then chunk (`chunk-pages.ts`) + embed (`embed-chunks.ts`, 768-d) → `document_chunks`
 4. `documentSummary` written on the ingest run; listed by `listReadyDocumentsForReport`
 
