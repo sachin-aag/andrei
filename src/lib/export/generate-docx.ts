@@ -41,7 +41,10 @@ import {
   createDocxExportContext,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
-import { loadDocxPageSetupFromZip } from "@/lib/export/docx-page-setup";
+import {
+  applyTableCaptionSectionBreaksToDocxZip,
+  loadDocxPageSetupFromZip,
+} from "@/lib/export/docx-page-setup";
 import {
   applyNumberingToDocxZip,
   loadListNumberingBasesFromZip,
@@ -613,6 +616,7 @@ export async function generateReportDocx({
   );
   delete data._signatureApprovals;
   doc.render(data);
+  applyTableCaptionSectionBreaksToDocxZip(doc.getZip());
   applySignatureBlockToDocxZip(doc.getZip(), signatureSnapshot);
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
   applyInvestigationToolCheckboxes(doc.getZip(), investigationToolsUsed(report));
@@ -693,6 +697,7 @@ async function generateGenericDocumentDocx({
     documentNo: report.documentNo,
     bodyXml,
   });
+  applyTableCaptionSectionBreaksToDocxZip(doc.getZip());
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);
@@ -807,6 +812,7 @@ async function generateDesignVerificationDocx({
       );
     }
   }
+  applyTableCaptionSectionBreaksToDocxZip(doc.getZip());
   const headingSpecs = tocHeadingSpecsForDocumentType(documentType);
   if (headingSpecs) {
     applyTocHeadingStylesToDocxZip(doc.getZip(), headingSpecs);

@@ -408,12 +408,30 @@ describe("ELR DOCX export", () => {
   });
 
   it("exports the 3.4 Qualification table on a landscape page", async () => {
+    const qualificationTable = tableDoc(
+      [...ELR_QUALIFICATION_HEADERS],
+      QUALIFICATION_ROWS
+    );
     const buf = await generateReportDocx({
       report: elrReport(),
       sections: elrSections({
         elr_qualification: {
           ...EMPTY_ELR_CONTENT.elr_qualification,
-          table: tableDoc([...ELR_QUALIFICATION_HEADERS], QUALIFICATION_ROWS),
+          table: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "Table 3. Qualification and periodic re-qualification history",
+                  },
+                ],
+              },
+              ...(qualificationTable.content ?? []),
+            ],
+          },
         },
       }),
     });
@@ -428,12 +446,18 @@ describe("ELR DOCX export", () => {
     expect(slice).toContain("Steriline S.r.l., Italy");
     expect(slice).toContain("Room GF-89");
 
+    const captionAt = slice.indexOf(
+      "Table 3. Qualification and periodic re-qualification history"
+    );
     const tableAt = slice.indexOf("<w:tbl");
     const landscapeAt = slice.indexOf('w:orient="landscape"');
-    const portraitBeforeTable = slice.slice(0, tableAt).includes("<w:pgSz");
+    const portraitBreakAt = slice.indexOf("<w:sectPr");
+    expect(captionAt).toBeGreaterThan(-1);
     expect(tableAt).toBeGreaterThan(-1);
+    expect(portraitBreakAt).toBeGreaterThan(-1);
+    expect(captionAt).toBeGreaterThan(portraitBreakAt);
+    expect(tableAt).toBeGreaterThan(captionAt);
     expect(landscapeAt).toBeGreaterThan(tableAt);
-    expect(portraitBeforeTable).toBe(true);
 
     const innerTables =
       slice.match(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g) ?? [];
