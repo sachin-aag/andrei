@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v154-identity-complete-hits");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v155-ask-to-agent-turn");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -364,6 +364,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("propose a short outline");
     expect(prompt).not.toContain("switch to Agent mode to generate");
     expect(prompt).not.toContain("Mode: AGENT");
+    expect(prompt).toContain("This send is Ask");
+    expect(prompt).toContain("Do not say the whole session is locked in Ask");
   });
 
   it("agent mode enables drafting with draft_field and placeholder heuristics", () => {
@@ -372,6 +374,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
     expect(prompt).not.toContain("Mode: ASK");
+    expect(prompt).toContain("This send is Agent");
+    expect(prompt).toContain("Do not write that you are still in Ask mode");
   });
 
   it("sends a small change in a filled field back to propose_edit", () => {

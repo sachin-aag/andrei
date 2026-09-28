@@ -86,7 +86,7 @@ const CONTINUE_RE =
  * mapped those turns to read so write tools never loaded.
  */
 const MISSING_WORK_RE =
-  /\b(?:nothing (?:(?:was|is|got) )?(?:filled|written|drafted|there|showing|showed up|in (?:the |this )?(?:table|section|document|grid|worksheet|report))|(?:still|remains?) (?:empty|blank)|(?:did(?:n'?t| not)|has(?:n'?t| not)|have(?:n'?t| not)|never) (?:fill|write|draft|show|appear|land|update)|i (?:don'?t|do not|can'?t|cannot) see|(?:is(?:n'?t| not)|not) (?:in the (?:document|table|section)|showing|the (?:table|section|document|grid|worksheet|report) (?:filled|written|there|showing))|you (?:said|claimed|told me) you (?:filled|wrote|drafted|added|updated|fill|write|draft|add|update)|where (?:is|did) (?:the|it)|didn'?t (?:land|show)|nothing happened|still blank|(?:suggestion|card)s? (?:are |is )?(?:not landing|did(?:n't| not) land|aren'?t landing)|refus(?:e|ing|ed) to (?:make |do |apply )?(?:an |the )?(?:edit|change|write)|(?:no|without|did(?:n't| not) have) write (?:capability|capabilities|tools|access)|only summar(?:ising|izing|ised|ized)|read-only mode)\b/i;
+  /\b(?:nothing (?:(?:was|is|got) )?(?:filled|written|drafted|there|showing|showed up|in (?:the |this )?(?:table|section|document|grid|worksheet|report))|(?:still|remains?) (?:empty|blank)|(?:did(?:n'?t| not)|has(?:n'?t| not)|have(?:n'?t| not)|never) (?:fill|write|draft|show|appear|land|update)|i (?:don'?t|do not|can'?t|cannot) see|(?:is(?:n'?t| not)|not) (?:in the (?:document|table|section)|showing|the (?:table|section|document|grid|worksheet|report) (?:filled|written|there|showing))|you (?:said|claimed|told me) you (?:filled|wrote|drafted|added|updated|fill|write|draft|add|update)|where (?:is|did) (?:the|it)|didn'?t (?:land|show)|nothing happened|still blank|(?:suggestion|card)s? (?:are |is )?(?:not landing|did(?:n't| not) land|aren'?t landing)|refus(?:e|ing|ed) to (?:make |do |apply )?(?:an |the )?(?:edit|change|write)|(?:no|without|did(?:n't| not) have) write (?:capability|capabilities|tools|access)|only summar(?:ising|izing|ised|ized)|read-only mode|still in ask mode|you (?:said|claimed) .{0,40}ask mode)\b/i;
 
 const POLITE_WRITE_RE =
   /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;
@@ -145,6 +145,14 @@ const ASSISTANT_WRITE_OFFER_RE =
 const SWITCH_TO_ANALYTICS_OFFER_RE =
   /Switch to Analytics button|belongs on the Analytics worksheet/i;
 
+/** Prior Ask-mode copy that told them to switch so the next send can write. */
+const SWITCH_TO_AGENT_OFFER_RE =
+  /\b(?:currently in Ask mode|You are in Ask mode|in Ask mode\b|cannot edit (?:the )?(?:document|worksheet) in this mode|edit tools are disabled|switch to Agent(?: mode)?|switch the Ask\/Agent control to Agent)\b/i;
+
+/** They flipped Ask → Agent and said so. Deliver the earlier fill. */
+const SWITCHED_TO_AGENT_RE =
+  /\b(?:(?:i(?:'ve| have)?\s+)?switched to agent|now (?:i(?:'m| am) )?(?:in )?agent(?: mode)?|i(?:'m| am) (?:now )?in agent|agent mode now)\b/i;
+
 /** Skip-all on an Analytics page-number form — search, do not placeholder. */
 const ASK_USER_ANSWERS_RE = /^Answers to your questions:/i;
 const SKIPPED_PLACEHOLDER_RE = /\(skipped — use a placeholder\)/i;
@@ -197,6 +205,16 @@ export function classifyChatUserIntent(
   const offeredWrite = (input.recentAssistantTexts ?? []).some((text) =>
     ASSISTANT_WRITE_OFFER_RE.test(text)
   );
+  const offeredAgentSwitch = (input.recentAssistantTexts ?? []).some((text) =>
+    SWITCH_TO_AGENT_OFFER_RE.test(text)
+  );
+
+  if (
+    (input.mode ?? "agent") === "agent" &&
+    SWITCHED_TO_AGENT_RE.test(latest)
+  ) {
+    return { kind: "write", reason: "switched_to_agent" };
+  }
 
   if (CONFIRM_RE.test(latest)) {
     if (offeredWrite) {
@@ -207,6 +225,9 @@ export function classifyChatUserIntent(
     );
     if (offeredAnalyticsSwitch) {
       return { kind: "write", reason: "confirm_analytics_switch" };
+    }
+    if ((input.mode ?? "agent") === "agent" && offeredAgentSwitch) {
+      return { kind: "write", reason: "confirm_write_offer" };
     }
     if ((input.mode ?? "agent") === "agent" && PROCEED_RE.test(latest)) {
       return { kind: "write", reason: "confirm_write_offer" };
@@ -373,7 +394,7 @@ None. This message is small talk — reply in one short sentence and call nothin
   ).join(", ");
   return `## Tools available this turn
 This message reads as a question, so the write tools (${hidden}) start hidden.
-Do not call them for a lookup. If they actually asked to change the ${target} (including "it's still empty", "nothing was filled", "I don't see the change", "suggestions are not landing", or "you said you filled it"), call the matching write tool anyway — it becomes available on the next step. Do not paste a draft, table, or worksheet block into chat as a stand-in for the edit. Do not say the tools are disabled, that this session is read-only, or that they should switch modes.`;
+Do not call them for a lookup. If they actually asked to change the ${target} (including "it's still empty", "nothing was filled", "I don't see the change", "suggestions are not landing", or "you said you filled it"), call the matching write tool anyway — it becomes available on the next step. Do not paste a draft, table, or worksheet block into chat as a stand-in for the edit. Do not say the tools are disabled, that this session is read-only, that you are still in Ask mode, or that they should switch modes.`;
 }
 
 export function restrictToolsForIntent<T extends Record<string, unknown>>(

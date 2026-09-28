@@ -30,6 +30,7 @@ import {
   isChatMode,
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
+import { messagesWithComposerModeReminder } from "@/lib/ai/chat/composer-mode-reminder";
 import {
   createChatSession,
   findChatSession,
@@ -305,7 +306,10 @@ async function handleAnalyticsChatPost(
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    const modelMessages = await convertToModelMessages(messages);
+    const modelMessages = messagesWithComposerModeReminder(
+      await convertToModelMessages(messages),
+      mode
+    );
     setRouteObservationIO({
       input: {
         reportId,

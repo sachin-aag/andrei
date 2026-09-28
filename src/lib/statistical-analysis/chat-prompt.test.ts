@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v62-hide-internal-ids"
+      "analytics-chat-v63-ask-to-agent-turn"
     );
   });
 
@@ -137,6 +137,8 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("## User intent (required)");
     expect(prompt).toContain("An empty worksheet is not a request to fill it");
     expect(prompt).toContain("Do not volunteer a fill or plot on a greeting");
+    expect(prompt).toContain("This send is Agent");
+    expect(prompt).toContain("Do not write that you are still in Ask mode");
     expect(prompt).not.toContain("draft_field");
   });
 
@@ -150,8 +152,9 @@ describe("analytics chat prompt", () => {
       mode: "plan",
     });
     expect(prompt).toContain("## Mode: ASK");
-    expect(prompt).toContain("switch to Agent");
+    expect(prompt).toContain("switch the Ask/Agent control to Agent");
     expect(prompt).toContain("Ask mode: search and extract only");
+    expect(prompt).toContain("Do not say the whole session is locked in Ask");
     expect(prompt).not.toContain("The engineer can save the worksheet");
   });
 

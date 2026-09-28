@@ -17,7 +17,10 @@ alwaysApply: false
 
 # Chat and attachments
 
-Follow the **latest user message**. Agent mode may edit when they asked to
+Follow the **latest user message**. Ask vs Agent is per send, not the
+whole thread — a prior "currently in Ask mode" assistant note is stale
+once the composer is Agent ("I switched to Agent" / yes after that copy
+is write). Agent mode may edit when they asked to
 write; empty sections and ready attachments are not a request to draft.
 Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Document `draft_field` / Analytics `write_column`). Classifier:
