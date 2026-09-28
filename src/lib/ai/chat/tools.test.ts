@@ -236,6 +236,27 @@ describe("mergeExcludePages cap", () => {
   });
 });
 
+describe("search_documents URS fan-out", () => {
+  it("runs requirement sets and protocol searches in one call", async () => {
+    searchReportDocumentsManyMock.mockResolvedValueOnce([[], [], [], [], [], [], [], []]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      userText: "draft table 5 with complete list of URSes",
+    });
+    const result = (await tools.search_documents!.execute!(
+      { query: "URS", limit: 4 },
+      TEST_TOOL_OPTIONS
+    )) as { retrievalGoals?: Array<{ goal: string }>; queriesRun?: string[] };
+    expect(result.retrievalGoals?.length).toBeGreaterThan(1);
+    expect(result.queriesRun?.some((query) => query.includes("OQ"))).toBe(true);
+    const calls = searchReportDocumentsManyMock.mock.calls as unknown as Array<
+      [{ queries?: string[] }]
+    >;
+    expect(calls.at(-1)?.[0]?.queries?.length).toBeGreaterThan(1);
+  });
+});
+
 describe("collectSearchQueries", () => {
   it("dedupes and caps complementary queries", () => {
     expect(

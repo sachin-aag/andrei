@@ -392,6 +392,27 @@ function pushDocumentActivityChild(
   children.push(documentActivityDetail(info, filenameById));
 }
 
+function retrievalGoalLines(info: ChatToolPartInfo): string[] {
+  const outputGoals = info.output?.retrievalGoals;
+  if (Array.isArray(outputGoals)) {
+    const lines: string[] = [];
+    for (const goal of outputGoals) {
+      if (!goal || typeof goal !== "object") continue;
+      const row = goal as { goal?: unknown; query?: unknown };
+      if (typeof row.query !== "string" || !row.query.trim()) continue;
+      const name = typeof row.goal === "string" && row.goal.trim() ? row.goal.trim() : "Query";
+      lines.push(`${name}: ${row.query.trim()}`);
+    }
+    if (lines.length > 0) return lines;
+  }
+  const inputQueries = info.input?.queries;
+  if (Array.isArray(inputQueries)) {
+    return inputQueries.filter((query): query is string => typeof query === "string" && query.trim().length > 0);
+  }
+  const query = info.input?.query;
+  return typeof query === "string" && query.trim() ? [query.trim()] : [];
+}
+
 function documentActivityDetail(
   info: ChatToolPartInfo,
   filenameById?: AttachmentFilenameLookup
@@ -406,18 +427,30 @@ function documentActivityDetail(
         label: pending ? "Listing attachments…" : "Listed attachments",
         pending,
       };
-    case "search_documents":
+    case "search_documents": {
+      const goals = retrievalGoalLines(info);
+      const queryCount = goals.length;
+      const queryLabel =
+        queryCount > 1
+          ? pending
+            ? `Searching ${queryCount} queries…`
+            : `Searched ${queryCount} queries`
+          : null;
       return {
         kind: "detail",
-        label: named
-          ? pending
-            ? `Searching ${named}…`
-            : `Searched ${named}`
-          : pending
-            ? "Searching attachments…"
-            : "Searched attachments",
+        label:
+          queryLabel ??
+          (named
+            ? pending
+              ? `Searching ${named}…`
+              : `Searched ${named}`
+            : pending
+              ? "Searching attachments…"
+              : "Searched attachments"),
+        detail: queryCount > 0 ? goals.join("\n") : undefined,
         pending,
       };
+    }
     case "scan_attachments":
       return {
         kind: "detail",

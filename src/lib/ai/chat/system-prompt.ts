@@ -25,7 +25,7 @@ import {
 import { makePlanPromptBlock } from "@/lib/ai/chat/task-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v158-execution-plan";
+export const CHAT_PROMPT_VERSION = "chat-v159-retrieval-goals";
 
 export type ChatMode = "plan" | "agent";
 
@@ -151,6 +151,7 @@ function documentRules(
 - Never claim 100% on-time, none overdue, or no OOT/OOS while the table still has <placeholders> or blank required cells.
 - After a cited data page, outline or read — do not grep again because truncated=true. truncated=true means more matching pages exist in this ranked list. Complementary greps are for sibling objects you have not searched yet. Never draft a table from a single truncated hit list.
 - For a single fact (one requirement ID, one date, one labelled page), one grep and one page read is enough. Exception: one requirement ID is not one grep when filling RTM Stage / Section / Remarks — the first search_documents queries[] must include Installation Qualification, Operational Qualification, Performance Qualification, and Design Qualification plus that row's Parameters from read_section, not only the URS ID. An IQ protocol hit is not enough while PQ or OQ have not been queried.
+- A complete URS list (table 5, RTM, "all URSes") is split by the server on the first search_documents call: requirement sets run in parallel with IQ, OQ, and PQ reference searches. The activity line lists those queries. A later round with excludePages stays on the query you send.
 - Do not start a document review. Every-row inventories use the comprehensive path.`;
       break;
     case "focused":

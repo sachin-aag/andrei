@@ -348,7 +348,7 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
   questions must call `list_attachments` — do not recount the Documents index
   or grep for an inventory. `searchLoopDirective` does not hide it. Which
   files mention a fact *inside* a PDF is still `search_documents`.
-- Hybrid search = vector + English FTS (`websearch_to_tsquery`: quoted phrases stay intact, AND across concepts, OR only inside a phrase family such as Media Fill).
+- Hybrid search = vector + English FTS (`websearch_to_tsquery`: quoted phrases stay intact, AND across concepts, OR only inside a phrase family such as Media Fill). A complete URS list fans the first `search_documents` call into parallel goals (requirement sets plus IQ, OQ, and PQ); the activity line lists those queries. Later rounds with `excludePages` stay on the model's query.
   Identifier queries also match `document_pages.identifiers` (legacy rows fall
   back to `ILIKE` on `raw_text`) and skip the query embedding when exact hits
   already fill `limit`. Hits collapse to one chunk per page. The report body is

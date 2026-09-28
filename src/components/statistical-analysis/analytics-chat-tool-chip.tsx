@@ -117,12 +117,24 @@ export function AnalyticsChatToolChip({
     info.state === "input-streaming" || info.state === "input-available";
 
   switch (info.toolName) {
-    case "search_documents":
+    case "search_documents": {
+      const goals = Array.isArray(info.output?.retrievalGoals)
+        ? info.output.retrievalGoals.length
+        : 0;
+      const label =
+        goals > 1
+          ? pending
+            ? `Searching ${goals} queries…`
+            : `Searched ${goals} queries`
+          : pending
+            ? "Searching attachments…"
+            : "Searched attachments";
       return (
         <ToolLine icon={<FileSearch className="size-3.5" />}>
-          {pending ? "Searching attachments…" : "Searched attachments"}
+          {label}
         </ToolLine>
       );
+    }
     case "read_document_page": {
       const page =
         typeof info.input?.pageNumber === "number"

@@ -650,6 +650,7 @@ async function handleChatPost(
   const allTools = buildChatTools({
     reportId,
     canEdit,
+    userText,
     sectionScope,
     documentType: report.documentType,
     actor: auditActorFromUser(user),

@@ -113,6 +113,7 @@ import {
   resolveReviewCoverageObjective,
 } from "@/lib/ai/chat/pending-plan";
 import { recapWriteNotReady } from "@/lib/ai/chat/plan-execution";
+import { retrievalQueriesForSearch } from "@/lib/ai/chat/retrieval-goals";
 import { liveTableHeadersMismatch } from "@/lib/ai/chat/table-schema";
 import {
   dataUrlToBase64,
@@ -947,6 +948,8 @@ function buildSearchDocumentsTool(opts: {
   searchGate?: SearchGate;
   sectionScope?: string | null;
   reviewCoverageObjective?: string | null;
+  /** Engineer text. A URS inventory fans out from this, not only the model query. */
+  userText?: string;
 }) {
   const {
     reportId,
@@ -985,7 +988,13 @@ function buildSearchDocumentsTool(opts: {
         trustBoundary: DOCUMENT_TRUST_BOUNDARY,
       };
     }
-    const queryList = collectSearchQueries(input);
+    const planned = retrievalQueriesForSearch({
+      userText: opts.userText,
+      query: input.query,
+      queries: input.queries,
+      excludePages: input.excludePages,
+    });
+    const queryList = collectSearchQueries({ queries: planned.queries });
     const queryPlan = queryList.map((query) => {
       const plan = planDocumentSearchQuery(query, familySection);
       return {
@@ -1040,6 +1049,7 @@ function buildSearchDocumentsTool(opts: {
     return {
       results: identity.results,
       queriesRun: queryList,
+      ...(planned.goals.length > 0 ? { retrievalGoals: planned.goals } : {}),
       mode: input.mode ?? "hybrid",
       returnedCount: merged.length,
       dividerHits: annotated.dividerHits,
@@ -1288,6 +1298,8 @@ export function buildChatTools(opts: {
   documentType?: import("@/db/schema").DocumentType;
   /** Acting user for audit events (e.g. select_analyze_method). */
   actor?: AuditActorSnapshot;
+  /** Engineer text for this turn. URS inventories fan out retrieval goals from it. */
+  userText?: string;
   /** Attachments the engineer tagged with @; biases search_documents. */
   pinnedAttachmentIds?: readonly string[];
   /** Sections the engineer tagged with @; readable even when out of scope. */
@@ -2113,6 +2125,7 @@ export function buildChatTools(opts: {
       searchGate: opts.searchGate,
       sectionScope: opts.sectionScope,
       reviewCoverageObjective: opts.reviewCoverageObjective,
+      userText: opts.userText,
     }),
 
     list_attachments: tool({

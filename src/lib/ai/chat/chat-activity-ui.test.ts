@@ -21,6 +21,30 @@ function toolPart(
 }
 
 describe("buildChatActivityBlocks", () => {
+  it("lists the retrieval queries a URS search ran", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart(
+        "search_documents",
+        "output-available",
+        { query: "URS" },
+        {
+          retrievalGoals: [
+            { goal: "Process requirement URS set", query: "process requirements URS" },
+            { goal: "Installation qualification references", query: "IQ installation qualification URS" },
+          ],
+        }
+      ),
+    ] as never);
+    expect(blocks[0]?.kind).toBe("activity");
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.children[0]).toMatchObject({
+      label: "Searched 2 queries",
+    });
+    expect(blocks[0].node.children[0]?.kind === "detail" && blocks[0].node.children[0].detail).toContain(
+      "Installation qualification references: IQ installation qualification URS"
+    );
+  });
+
   it("groups consecutive document tools into one surface line", () => {
     const blocks = buildChatActivityBlocks([
       toolPart("search_documents", "output-available", undefined, {
