@@ -199,7 +199,77 @@ describe("seedNamedSectionQueuePlan", () => {
   });
 });
 
+describe("parseChatPendingPlan source", () => {
+  it("keeps make_plan provenance and drops unknown sources", () => {
+    const base = plan([{ sectionKey: "define", label: "Define", state: "queued" }]);
+    expect(parseChatPendingPlan({ ...base, source: "make_plan" })?.source).toBe(
+      "make_plan"
+    );
+    expect(parseChatPendingPlan({ ...base, source: "other" })?.source).toBeUndefined();
+  });
+
+  it("names the orchestrator's objective in the prompt block", () => {
+    const block = planPromptBlock(
+      {
+        ...plan([
+          { sectionKey: "define", label: "Define", state: "in_progress" },
+          { sectionKey: "measure", label: "Measure", state: "queued" },
+        ]),
+        source: "make_plan",
+        objective: "Tighten define then measure",
+      },
+      "investigation_report"
+    );
+    expect(block).toContain("You planned this with make_plan: Tighten define then measure");
+  });
+});
+
 describe("advancePlanAfterTurn", () => {
+  it("does not pause a make_plan turn that only planned", () => {
+    const created = {
+      ...plan([
+        { sectionKey: "define", label: "Define", state: "in_progress" },
+        { sectionKey: "measure", label: "Measure", state: "queued" },
+      ]),
+      source: "make_plan" as const,
+    };
+    const planningOnly = advancePlanAfterTurn({
+      plan: created,
+      documentType: "investigation_report",
+      draftedSectionKeys: [],
+      createdThisTurn: true,
+    });
+    expect(planningOnly.plan.paused).not.toBe(true);
+    expect(planningOnly.continuation?.nextLabel).toBe("Define");
+
+    const rulesTurn = advancePlanAfterTurn({
+      plan: created,
+      documentType: "investigation_report",
+      draftedSectionKeys: [],
+    });
+    expect(rulesTurn.plan.pauseReason).toBe("no_progress");
+  });
+
+  it("counts every drafted step on the turn make_plan wrote the queue", () => {
+    const created = plan([
+      { sectionKey: "define", label: "Define", state: "in_progress" },
+      { sectionKey: "measure", label: "Measure", state: "queued" },
+      { sectionKey: "analyze", label: "Analyze", state: "queued" },
+    ]);
+    const result = advancePlanAfterTurn({
+      plan: created,
+      documentType: "investigation_report",
+      draftedSectionKeys: ["define", "analyze"],
+      createdThisTurn: true,
+    });
+    expect(result.plan.items.map((item) => `${item.sectionKey}:${item.state}`)).toEqual([
+      "define:done",
+      "measure:in_progress",
+      "analyze:done",
+    ]);
+    expect(result.continuation?.remaining).toBe(1);
+  });
+
   it("marks drafted items done and stamps a continuation", () => {
     const started = plan([
       { sectionKey: "elr_objective", label: "Objective", state: "in_progress" },

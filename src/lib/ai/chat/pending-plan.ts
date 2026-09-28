@@ -62,6 +62,8 @@ export const CHAT_PLAN_SAME_SECTION_TURN_LIMIT = 3;
 
 export type ChatPendingPlan = {
   kind: "section_queue";
+  /** Set when the orchestrator wrote the queue with make_plan; rules seeds omit it. */
+  source?: "make_plan";
   objective: string;
   items: ChatPlanItem[];
   createdAt: string;
@@ -138,6 +140,7 @@ export function parseChatPendingPlan(value: unknown): ChatPendingPlan | null {
   }
   return {
     kind: "section_queue",
+    ...(rec.source === "make_plan" ? { source: "make_plan" as const } : {}),
     objective: rec.objective.trim(),
     items,
     createdAt: rec.createdAt,
@@ -519,8 +522,12 @@ The remaining-section queue is paused${plan.pauseReason ? ` (${plan.pauseReason}
     documentType === "equipment_lifecycle_report"
       ? " Evidence tables are not done after edit_table alone — draft narrative in the same turn with a count from the rows (and trend for breakdowns/alarms). Access Control is not done until every annexure Sr. row is copied, including the continuation page of a Page N of M split. Risk overallGrade is low|medium|high (max of row priority and downtime/scrap floor). Conclusion recommendation is continue|early_requalification|capa|other."
       : "";
+  const origin =
+    plan.source === "make_plan"
+      ? `You planned this with make_plan: ${plan.objective}`
+      : "The engineer asked to draft several sections";
   return `## Multi-section plan
-The engineer asked to draft several sections (${done} of ${total} done). This turn: ${labels}.
+${origin} (${done} of ${total} done). This turn: ${labels}.
 Draft only ${turn.length === 1 ? "this section" : "these two sections"}. ${nextLine}${elrSiblingLine}`;
 }
 
@@ -851,6 +858,12 @@ export function advancePlanAfterTurn(input: {
   documentType: DocumentType;
   draftedSectionKeys: readonly string[];
   parts?: unknown;
+  /**
+   * make_plan wrote this queue during the turn. Every step it drafted counts
+   * (the model had not seen the per-turn pair yet), and a planning-only turn
+   * continues instead of pausing as no_progress.
+   */
+  createdThisTurn?: boolean;
 }): {
   plan: ChatPendingPlan;
   continuation: ChatTurnContinuation | null;
@@ -863,13 +876,21 @@ export function advancePlanAfterTurn(input: {
       : new Set<string>();
   const turn = currentPlanTurnSections(input.plan, input.documentType);
   const turnKeys = new Set(turn.map((item) => item.sectionKey));
-  const completedThisTurn = turn.filter(
-    (item) => drafted.has(item.sectionKey) && !incomplete.has(item.sectionKey)
+  const completableKeys = input.createdThisTurn
+    ? new Set(input.plan.items.map((item) => item.sectionKey))
+    : turnKeys;
+  const completedThisTurn = input.plan.items.filter(
+    (item) =>
+      completableKeys.has(item.sectionKey) &&
+      drafted.has(item.sectionKey) &&
+      !incomplete.has(item.sectionKey)
   );
-  const progressedThisTurn = turn.some((item) => drafted.has(item.sectionKey));
+  const progressedThisTurn = input.plan.items.some(
+    (item) => completableKeys.has(item.sectionKey) && drafted.has(item.sectionKey)
+  );
   const reviewed = partsUsedDocumentReview(input.parts);
 
-  if (!progressedThisTurn && !reviewed) {
+  if (!progressedThisTurn && !reviewed && !input.createdThisTurn) {
     const paused = pauseChatPendingPlan(input.plan, "no_progress");
     return { plan: paused, continuation: null, progressed: false };
   }
@@ -877,7 +898,7 @@ export function advancePlanAfterTurn(input: {
   const nextItems = input.plan.items.map((item) => {
     if (
       drafted.has(item.sectionKey) &&
-      turnKeys.has(item.sectionKey) &&
+      completableKeys.has(item.sectionKey) &&
       !incomplete.has(item.sectionKey)
     ) {
       return { ...planItemWithoutAttempts(item), state: "done" as const };

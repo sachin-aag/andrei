@@ -22,9 +22,10 @@ import {
   seedLivingTurnWork,
   type LivingTurnWork,
 } from "@/lib/ai/chat/remaining-work";
+import { makePlanPromptBlock } from "@/lib/ai/chat/task-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v153-living-remaining-work";
+export const CHAT_PROMPT_VERSION = "chat-v154-task-planner";
 
 export type ChatMode = "plan" | "agent";
 
@@ -392,6 +393,8 @@ export function buildChatSystemPrompt(opts: {
    * re-seeds from intent / alsoLookup / pendingPlan.
    */
   livingWork?: LivingTurnWork;
+  /** Multi-part Agent write ask with no live plan — make_plan is loaded. */
+  makePlanEligible?: boolean;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
@@ -459,10 +462,14 @@ export function buildChatSystemPrompt(opts: {
     { queueLive }
   );
   const remainingWorkBlock = remainingBlock ? `\n\n${remainingBlock}` : "";
+  const makePlanBlock =
+    mode === "agent" && opts.makePlanEligible === true && !queueLive
+      ? `\n\n${makePlanPromptBlock()}`
+      : "";
 
   return `${chat.persona}
 
-${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}${planBlock}${remainingWorkBlock}
+${USER_INTENT_RULES}${intentTools ? `\n\n${intentTools}` : ""}${switchBlock}${planBlock}${remainingWorkBlock}${makePlanBlock}
 
 ${LANGUAGE_RULES}
 

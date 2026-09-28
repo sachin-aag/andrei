@@ -94,6 +94,7 @@ import {
   seedLivingTurnWork,
   type RemainingWorkContext,
 } from "@/lib/ai/chat/remaining-work";
+import { makePlanEligible } from "@/lib/ai/chat/task-plan";
 import {
   clearAssistantTurn,
   drainSseStream,
@@ -563,6 +564,16 @@ async function handleChatPost(
     mode === "agent" &&
     userIntent.kind === "write" &&
     Boolean(pendingPlan && !pendingPlan.paused);
+  const planEligible = makePlanEligible({
+    mode,
+    intent: userIntent.kind,
+    canEdit,
+    planLive: Boolean(pendingPlan && !pendingPlan.paused),
+    userText,
+    documentType: report.documentType,
+    alsoLookup: userIntent.alsoLookup === true,
+    autoContinue,
+  });
   const remainingWorkContext: RemainingWorkContext = {
     surface: "document",
     documentType: report.documentType,
@@ -572,13 +583,16 @@ async function handleChatPost(
     ),
     queueLive,
     writeToolNames: documentWriteProgressTools(),
+    makePlanEligible: planEligible,
+    promptVersion: CHAT_PROMPT_VERSION,
   };
   const livingWorkSeed = seedLivingTurnWork({
     intent: userIntent.kind,
     alsoLookup: userIntent.alsoLookup === true,
     pendingPlan,
   });
-  const remainingWork = queueLive
+  const remainingWork =
+    queueLive || planEligible
     ? {
         work: cloneLivingTurnWork(livingWorkSeed),
         context: remainingWorkContext,
@@ -601,6 +615,7 @@ async function handleChatPost(
     switchToAnalytics,
     pendingPlan,
     livingWork: livingWorkSeed,
+    makePlanEligible: planEligible,
   });
 
   const searchGate = createSearchGate();
@@ -961,6 +976,9 @@ async function handleChatPost(
               documentType: report.documentType,
               draftedSectionKeys: live.draftedSectionKeys,
               parts: closed.parts,
+              createdThisTurn:
+                liveWork.createdPlan != null &&
+                planForAdvance === liveWork.createdPlan,
             })
           : null;
       const planContinuing = shouldAutoContinuePlan(advanced?.continuation);

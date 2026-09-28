@@ -255,6 +255,13 @@ import {
 } from "@/lib/ai/chat/document-review";
 import type { SearchGate } from "@/lib/ai/chat/search-loop";
 import {
+  MAKE_PLAN_MAX_STEPS,
+  MAKE_PLAN_MIN_STEPS,
+  MAKE_PLAN_STEP_KINDS,
+  MAKE_PLAN_TOOL,
+} from "@/lib/ai/chat/task-plan";
+import {
+  applyMakePlan,
   applyUpdatePlanAction,
   isUpdatePlanActionName,
   UPDATE_PLAN_ACTIONS,
@@ -1290,8 +1297,9 @@ export function buildChatTools(opts: {
    */
   userIntentKind?: ChatUserIntentKind;
   /**
-   * Live remaining-section queue. When queueLive, loads update_plan (at most
-   * once). Omit on Analytics embeddings and when there is no queue.
+   * In-turn remaining-work ledger. When queueLive, loads update_plan (at most
+   * once); when makePlanEligible, loads make_plan (at most once). Omit on
+   * Analytics embeddings and when neither applies.
    */
   remainingWork?: {
     work: LivingTurnWork;
@@ -4372,6 +4380,83 @@ export function buildChatTools(opts: {
             action: result.action,
             sectionKey: result.item.key,
             label: result.item.label,
+          };
+        }
+        return {
+          status: "rejected" as const,
+          reason: result.reason,
+          message: result.message,
+        };
+      },
+    });
+  }
+
+  if (
+    remainingWork &&
+    remainingWork.context.makePlanEligible === true &&
+    remainingWork.work.intent !== "social"
+  ) {
+    const kindEnum = MAKE_PLAN_STEP_KINDS as unknown as [
+      (typeof MAKE_PLAN_STEP_KINDS)[number],
+      ...(typeof MAKE_PLAN_STEP_KINDS)[number][],
+    ];
+    tools[MAKE_PLAN_TOOL] = tool({
+      description:
+        "Write an ordered plan once, before drafting, for a multi-part ask. section steps become the remaining-section queue (this turn drafts the first; the rest continue automatically). lookup steps are questions to answer this turn. Progress is automatic — never call this to mark a step done. For a single edit, just act.",
+      inputSchema: z.object({
+        objective: z
+          .string()
+          .trim()
+          .min(1)
+          .max(300)
+          .describe("One line: what the engineer asked for."),
+        steps: z
+          .array(
+            z.object({
+              kind: z
+                .enum(kindEnum)
+                .describe("section = draft or edit one section; lookup = answer one question from the files."),
+              section: z
+                .string()
+                .trim()
+                .max(80)
+                .optional()
+                .describe("Section key for a section step, e.g. measure or elr_media_fill."),
+              question: z
+                .string()
+                .trim()
+                .max(300)
+                .optional()
+                .describe("The question for a lookup step."),
+            })
+          )
+          .min(MAKE_PLAN_MIN_STEPS)
+          .max(MAKE_PLAN_MAX_STEPS)
+          .describe("Ordered steps. Each section appears once."),
+      }),
+      execute: async ({ objective, steps }) => {
+        const result = applyMakePlan(
+          remainingWork.work,
+          { objective, steps },
+          remainingWork.context
+        );
+        if (result.status === "planned") {
+          remainingWork.work = result.work;
+          const current = result.plan.items.find(
+            (item) => item.state === "in_progress"
+          );
+          return {
+            status: "planned" as const,
+            sections: result.plan.items.map((item) => ({
+              sectionKey: item.sectionKey,
+              label: item.label,
+            })),
+            lookups: steps.flatMap((step) =>
+              step.kind === "lookup" && step.question ? [step.question] : []
+            ),
+            next: current
+              ? `Answer the lookups while drafting, then draft ${current.label} now. Later sections continue automatically.`
+              : "Draft the first section now.",
           };
         }
         return {

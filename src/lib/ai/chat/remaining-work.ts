@@ -15,6 +15,15 @@ import {
   unwrapToolPayload,
 } from "@/lib/ai/chat/search-loop";
 import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
+import {
+  MAKE_PLAN_ATTEMPT_LIMIT,
+  MAKE_PLAN_SUCCESS_LIMIT,
+  MAKE_PLAN_TOOL,
+  parseMakePlanInput,
+  validateMakePlan,
+  type MakePlanInput,
+  type MakePlanRejectReason,
+} from "@/lib/ai/chat/task-plan";
 import { planEditToolLanded } from "@/lib/document-types/elr/plan-complete";
 import { getDocumentType } from "@/lib/document-types";
 
@@ -54,6 +63,7 @@ const REMAINING_WORK_ITEM_SOURCES = [
   "pending_plan",
   "also_lookup",
   "update_plan",
+  "make_plan",
 ] as const;
 export type RemainingWorkItemSource =
   (typeof REMAINING_WORK_ITEM_SOURCES)[number];
@@ -73,6 +83,8 @@ export type LivingTurnWork = {
   /** Write tools have not landed yet. Mixed follow-up search stays available. */
   writeOutstanding: boolean;
   items: RemainingWorkItem[];
+  /** Section queue make_plan wrote this turn; the route persists it at finish. */
+  createdPlan?: ChatPendingPlan;
 };
 
 export type RemainingWorkSurface = "document" | "analytics";
@@ -83,6 +95,9 @@ export type RemainingWorkContext = {
   emptySectionKeys: readonly string[];
   queueLive: boolean;
   writeToolNames: ReadonlySet<string>;
+  /** Agent write turn with a multi-part ask and no live plan (`makePlanEligible`). */
+  makePlanEligible?: boolean;
+  promptVersion?: string;
 };
 
 export type UpdatePlanAction = {
@@ -171,6 +186,7 @@ export function cloneLivingTurnWork(work: LivingTurnWork): LivingTurnWork {
     alsoLookup: work.alsoLookup,
     writeOutstanding: work.writeOutstanding,
     items: work.items.map((item) => ({ ...item })),
+    ...(work.createdPlan ? { createdPlan: work.createdPlan } : {}),
   };
 }
 
@@ -430,12 +446,88 @@ export function applyUpdatePlanAction(
   }
 }
 
+export type MakePlanApplyResult =
+  | { status: "planned"; work: LivingTurnWork; plan: ChatPendingPlan }
+  | {
+      status: "rejected";
+      reason: MakePlanRejectReason | "social" | "analytics_forbidden" | "not_eligible";
+      message: string;
+    };
+
+export function applyMakePlan(
+  work: LivingTurnWork,
+  input: MakePlanInput,
+  ctx: RemainingWorkContext
+): MakePlanApplyResult {
+  if (work.intent === "social") {
+    return {
+      status: "rejected",
+      reason: "social",
+      message: "This turn is small talk — there is nothing to plan.",
+    };
+  }
+  if (ctx.surface === "analytics") {
+    return {
+      status: "rejected",
+      reason: "analytics_forbidden",
+      message: "Analytics chat does not plan a section queue.",
+    };
+  }
+  if (!ctx.makePlanEligible) {
+    return {
+      status: "rejected",
+      reason: "not_eligible",
+      message: "Planning is not available this turn. Just act on the request.",
+    };
+  }
+  const result = validateMakePlan(input, {
+    documentType: ctx.documentType ?? "investigation_report",
+    planLive: ctx.queueLive || Boolean(work.createdPlan),
+    promptVersion: ctx.promptVersion ?? "",
+  });
+  if (result.status === "rejected") return result;
+  const next = cloneLivingTurnWork(work);
+  for (const item of result.plan.items) {
+    if (next.items.some((row) => row.kind === "section" && row.key === item.sectionKey)) {
+      continue;
+    }
+    next.items.push({
+      id: `section:${item.sectionKey}`,
+      kind: "section",
+      key: item.sectionKey,
+      label: item.label,
+      state: item.state === "in_progress" ? "in_progress" : "queued",
+      source: "make_plan",
+    });
+  }
+  result.lookups.forEach((question, index) => {
+    next.items.push({
+      id: `lookup:plan:${index + 1}`,
+      kind: "lookup",
+      key: `plan_lookup_${index + 1}`,
+      label: question,
+      state: "queued",
+      source: "make_plan",
+    });
+  });
+  next.createdPlan = result.plan;
+  return { status: "planned", work: next, plan: result.plan };
+}
+
 export function applyRemainingWorkEvents(
   seed: LivingTurnWork,
   events: readonly RemainingWorkEvent[],
-  ctx: Pick<RemainingWorkContext, "surface" | "documentType" | "emptySectionKeys" | "queueLive" | "writeToolNames">
+  ctx: RemainingWorkContext
 ): LivingTurnWork {
   let work = cloneLivingTurnWork(seed);
+  for (const event of events) {
+    if (event.toolName !== MAKE_PLAN_TOOL) continue;
+    if (payloadStatus(event) !== "planned") continue;
+    const input = parseMakePlanInput(event.input);
+    if (!input) continue;
+    const result = applyMakePlan(work, input, ctx);
+    if (result.status === "planned") work = result.work;
+  }
   const drafted = new Set<string>();
   for (const event of events) {
     if (!writeProgressLanded(event, ctx.writeToolNames)) continue;
@@ -454,13 +546,7 @@ export function applyRemainingWorkEvents(
     if (payloadStatus(event) !== "updated") continue;
     const action = parseUpdatePlanAction(event.input);
     if (!action) continue;
-    const result = applyUpdatePlanAction(work, action, {
-      surface: ctx.surface,
-      documentType: ctx.documentType,
-      emptySectionKeys: ctx.emptySectionKeys,
-      queueLive: ctx.queueLive,
-      writeToolNames: ctx.writeToolNames,
-    });
+    const result = applyUpdatePlanAction(work, action, ctx);
     if (result.status !== "updated") continue;
     work = result.work;
     if (
@@ -598,10 +684,33 @@ export function updatePlanLoopDirective(
   return "continue";
 }
 
+/**
+ * Hide make_plan after one plan, two attempts, any ask_user, or once a write
+ * has landed. A plan is written before drafting, not narrated afterwards.
+ */
+export function makePlanLoopDirective(
+  steps: readonly SearchLoopStep[],
+  writeToolNames: ReadonlySet<string>
+): UpdatePlanLoopDirective {
+  let attempts = 0;
+  let successes = 0;
+  for (const event of remainingWorkEventsFromSteps(steps)) {
+    if (event.toolName === "ask_user") return "hide";
+    if (writeProgressLanded(event, writeToolNames)) return "hide";
+    if (event.toolName !== MAKE_PLAN_TOOL) continue;
+    attempts += 1;
+    if (payloadStatus(event) === "planned") successes += 1;
+  }
+  if (successes >= MAKE_PLAN_SUCCESS_LIMIT) return "hide";
+  if (attempts >= MAKE_PLAN_ATTEMPT_LIMIT) return "hide";
+  return "continue";
+}
+
 export function mergeLivingWorkIntoPendingPlan(
   plan: ChatPendingPlan | null,
   work: LivingTurnWork
 ): ChatPendingPlan | null {
+  if (work.createdPlan && (!plan || plan.paused)) return work.createdPlan;
   if (!plan || plan.paused) return plan;
   const items: ChatPlanItem[] = plan.items.map((item) => {
     const living = work.items.find(

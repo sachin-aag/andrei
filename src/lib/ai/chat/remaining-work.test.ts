@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 import { searchLoopHideKind, type SearchLoopStep } from "@/lib/ai/chat/search-loop";
 import {
+  applyMakePlan,
   applyRemainingWorkEvents,
   applyStepsToLivingTurnWork,
   applyUpdatePlanAction,
@@ -9,6 +10,7 @@ import {
   documentWriteProgressTools,
   emptyDraftOrderKeys,
   livingWorkKeepsSearchOpen,
+  makePlanLoopDirective,
   mergeLivingWorkIntoPendingPlan,
   remainingWorkEventsFromSteps,
   remainingWorkPromptBlock,
@@ -20,6 +22,7 @@ import {
   type LivingTurnWork,
   type RemainingWorkContext,
 } from "./remaining-work";
+import { MAKE_PLAN_TOOL } from "./task-plan";
 
 function plan(items: ChatPendingPlan["items"]): ChatPendingPlan {
   return {
@@ -429,5 +432,125 @@ describe("cloneLivingTurnWork", () => {
     const copy = cloneLivingTurnWork(work);
     copy.items[0]!.state = "done";
     expect(work.items[0]?.state).toBe("queued");
+  });
+});
+
+const PLAN_INPUT = {
+  objective: "Draft define and measure, and find the batch number",
+  steps: [
+    { kind: "section" as const, section: "define" },
+    { kind: "lookup" as const, question: "What is the batch number?" },
+    { kind: "section" as const, section: "measure" },
+  ],
+};
+
+function makePlanStep(status: "planned" | "rejected", id = "p1"): SearchLoopStep {
+  return {
+    toolCalls: [{ toolName: MAKE_PLAN_TOOL, toolCallId: id, input: PLAN_INPUT }],
+    toolResults: [
+      { toolName: MAKE_PLAN_TOOL, toolCallId: id, output: { status } },
+    ],
+  };
+}
+
+const planCtx = () =>
+  ctx({ queueLive: false, makePlanEligible: true, promptVersion: "chat-test" });
+
+describe("applyMakePlan", () => {
+  it("adds section and lookup steps and records the created queue", () => {
+    const seed = seedLivingTurnWork({ intent: "write", alsoLookup: false });
+    const result = applyMakePlan(seed, PLAN_INPUT, planCtx());
+    if (result.status !== "planned") throw new Error("expected plan");
+    expect(result.work.items.map((item) => `${item.id}:${item.state}`)).toEqual([
+      "section:define:in_progress",
+      "section:measure:queued",
+      "lookup:plan:1:queued",
+    ]);
+    expect(result.work.createdPlan?.source).toBe("make_plan");
+    expect(seed.createdPlan).toBeUndefined();
+  });
+
+  it("refuses when not eligible, on a live queue, on Analytics, or a second time", () => {
+    const seed = seedLivingTurnWork({ intent: "write", alsoLookup: false });
+    expect(
+      applyMakePlan(seed, PLAN_INPUT, ctx({ queueLive: false }))
+    ).toMatchObject({ status: "rejected", reason: "not_eligible" });
+    expect(
+      applyMakePlan(seed, PLAN_INPUT, ctx({ queueLive: true, makePlanEligible: true }))
+    ).toMatchObject({ status: "rejected", reason: "plan_live" });
+    expect(
+      applyMakePlan(seed, PLAN_INPUT, { ...planCtx(), surface: "analytics" })
+    ).toMatchObject({ status: "rejected", reason: "analytics_forbidden" });
+    const first = applyMakePlan(seed, PLAN_INPUT, planCtx());
+    if (first.status !== "planned") throw new Error("expected plan");
+    expect(applyMakePlan(first.work, PLAN_INPUT, planCtx())).toMatchObject({
+      status: "rejected",
+      reason: "plan_live",
+    });
+  });
+
+  it("keeps search open for a planned lookup while the write is due", () => {
+    const seed = seedLivingTurnWork({ intent: "write", alsoLookup: false });
+    const result = applyMakePlan(seed, PLAN_INPUT, planCtx());
+    if (result.status !== "planned") throw new Error("expected plan");
+    expect(livingWorkKeepsSearchOpen(result.work, "cited_or_locate")).toBe(true);
+  });
+});
+
+describe("make_plan replay", () => {
+  it("replays the plan and marks drafted steps done", () => {
+    const seed = seedLivingTurnWork({ intent: "write", alsoLookup: false });
+    const work = applyStepsToLivingTurnWork(
+      seed,
+      [makePlanStep("planned"), draftStep("define")],
+      planCtx()
+    );
+    expect(work.items.find((item) => item.key === "define")?.state).toBe("done");
+    expect(work.items.find((item) => item.key === "measure")?.state).toBe("queued");
+    expect(work.createdPlan?.items).toHaveLength(2);
+  });
+
+  it("ignores a rejected make_plan", () => {
+    const seed = seedLivingTurnWork({ intent: "write", alsoLookup: false });
+    const work = applyStepsToLivingTurnWork(seed, [makePlanStep("rejected")], planCtx());
+    expect(work.createdPlan).toBeUndefined();
+    expect(work.items).toHaveLength(0);
+  });
+
+  it("persists the created queue when no plan was live (or the old one was paused)", () => {
+    const seed = seedLivingTurnWork({ intent: "write", alsoLookup: false });
+    const work = applyStepsToLivingTurnWork(seed, [makePlanStep("planned")], planCtx());
+    expect(mergeLivingWorkIntoPendingPlan(null, work)).toBe(work.createdPlan);
+    const paused = { ...plan([{ sectionKey: "analyze", label: "Analyze", state: "queued" }]), paused: true };
+    expect(mergeLivingWorkIntoPendingPlan(paused, work)).toBe(work.createdPlan);
+  });
+});
+
+describe("makePlanLoopDirective", () => {
+  const writes = documentWriteProgressTools();
+  it("hides after one plan, two attempts, ask_user, or a landed write", () => {
+    expect(makePlanLoopDirective([], writes)).toBe("continue");
+    expect(makePlanLoopDirective([makePlanStep("planned")], writes)).toBe("hide");
+    expect(makePlanLoopDirective([makePlanStep("rejected")], writes)).toBe("continue");
+    expect(
+      makePlanLoopDirective(
+        [makePlanStep("rejected", "a"), makePlanStep("rejected", "b")],
+        writes
+      )
+    ).toBe("hide");
+    expect(makePlanLoopDirective([draftStep("define")], writes)).toBe("hide");
+    expect(
+      makePlanLoopDirective(
+        [
+          {
+            toolCalls: [{ toolName: "ask_user", toolCallId: "q1" }],
+            toolResults: [
+              { toolName: "ask_user", toolCallId: "q1", output: { status: "awaiting_answers" } },
+            ],
+          },
+        ],
+        writes
+      )
+    ).toBe("hide");
   });
 });

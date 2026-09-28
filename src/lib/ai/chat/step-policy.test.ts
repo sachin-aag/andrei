@@ -301,6 +301,74 @@ describe("prepareReportChatStep (characterization)", () => {
     expect(decision.activeTools).not.toContain("update_plan");
   });
 
+  it("offers make_plan only while eligible and before a plan or a draft", () => {
+    const planCtx = {
+      surface: "document" as const,
+      documentType: "investigation_report" as const,
+      emptySectionKeys: ["define", "measure"],
+      queueLive: false,
+      writeToolNames: new Set(["draft_field"]),
+      makePlanEligible: true,
+    };
+    const seed = {
+      intent: "write" as const,
+      alsoLookup: false,
+      writeOutstanding: true,
+      items: [],
+    };
+    const advertised = [...ADVERTISED, "make_plan"];
+    expect(
+      prepareReportChatStep(
+        baseInput({ advertisedTools: advertised, remainingWorkContext: planCtx, livingWorkSeed: seed })
+      ).activeTools
+    ).toContain("make_plan");
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          advertisedTools: advertised,
+          remainingWorkContext: { ...planCtx, makePlanEligible: false },
+          livingWorkSeed: seed,
+        })
+      ).activeTools
+    ).not.toContain("make_plan");
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          advertisedTools: advertised,
+          remainingWorkContext: planCtx,
+          livingWorkSeed: seed,
+          steps: [
+            {
+              toolCalls: [{ toolName: "make_plan", toolCallId: "p1", input: {} }],
+              toolResults: [
+                { toolName: "make_plan", toolCallId: "p1", output: { status: "planned" } },
+              ],
+            },
+          ],
+        })
+      ).activeTools
+    ).not.toContain("make_plan");
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          advertisedTools: advertised,
+          remainingWorkContext: planCtx,
+          livingWorkSeed: seed,
+          steps: [
+            {
+              toolCalls: [
+                { toolName: "draft_field", toolCallId: "d1", input: { section: "define" } },
+              ],
+              toolResults: [
+                { toolName: "draft_field", toolCallId: "d1", output: { status: "drafted" } },
+              ],
+            },
+          ],
+        })
+      ).activeTools
+    ).not.toContain("make_plan");
+  });
+
   it("hides update_plan while a document review is running", () => {
     const decision = prepareReportChatStep(
       baseInput({

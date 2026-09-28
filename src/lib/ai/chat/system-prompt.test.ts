@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v153-living-remaining-work");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v154-task-planner");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -846,5 +846,21 @@ describe("claim strength", () => {
       });
       expect(prompt).toContain("## Claim strength (required)");
     }
+  });
+  it("adds the planning block only for an eligible Agent turn without a live queue", () => {
+    const base = {
+      contextMap: "ctx",
+      criteriaOutline: "",
+      intent: "write" as const,
+    };
+    expect(
+      buildChatSystemPrompt({ ...base, mode: "agent", makePlanEligible: true })
+    ).toContain("## Planning");
+    expect(
+      buildChatSystemPrompt({ ...base, mode: "plan", makePlanEligible: true })
+    ).not.toContain("## Planning");
+    expect(buildChatSystemPrompt({ ...base, mode: "agent" })).not.toContain(
+      "## Planning"
+    );
   });
 });

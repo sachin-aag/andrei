@@ -21,11 +21,13 @@ import {
 import {
   applyStepsToLivingTurnWork,
   livingWorkKeepsSearchOpen,
+  makePlanLoopDirective,
   updatePlanLoopDirective,
   UPDATE_PLAN_TOOL,
   type LivingTurnWork,
   type RemainingWorkContext,
 } from "@/lib/ai/chat/remaining-work";
+import { MAKE_PLAN_TOOL } from "@/lib/ai/chat/task-plan";
 import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import {
   tableEditLoopDirective,
@@ -359,6 +361,13 @@ export function prepareReportChatStep(
     reviewActive ||
     input.remainingWorkContext?.queueLive !== true ||
     updatePlanLoopDirective(input.steps) === "hide";
+  const hideMakePlan =
+    reviewActive ||
+    input.remainingWorkContext?.makePlanEligible !== true ||
+    makePlanLoopDirective(
+      input.steps,
+      input.remainingWorkContext.writeToolNames
+    ) === "hide";
   const applyLoopHides = (tools: readonly string[]): string[] => {
     let next = [...tools];
     if (!reviewActive && searchDirective === "read" && !keepSearchForLookup) {
@@ -369,6 +378,9 @@ export function prepareReportChatStep(
     }
     if (hideUpdatePlan) {
       next = next.filter((name) => name !== UPDATE_PLAN_TOOL);
+    }
+    if (hideMakePlan) {
+      next = next.filter((name) => name !== MAKE_PLAN_TOOL);
     }
     return next;
   };

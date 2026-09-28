@@ -19,6 +19,10 @@ import {
   serializeAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
 import type { PageEvidenceRow } from "@/lib/ai/chat/citation-grounding";
+import type {
+  LivingTurnWork,
+  RemainingWorkContext,
+} from "@/lib/ai/chat/remaining-work";
 import {
   DocumentReviewSession,
   extractReviewFindingsFromPages,
@@ -5440,5 +5444,101 @@ describe("buildChatTools update_plan", () => {
     expect(
       buildChatTools({ reportId: "report-1", canEdit: true }).update_plan
     ).toBeUndefined();
+  });
+});
+
+describe("buildChatTools make_plan", () => {
+  const work: LivingTurnWork = {
+    intent: "write" as const,
+    alsoLookup: false,
+    writeOutstanding: true,
+    items: [],
+  };
+  const context = {
+    surface: "document" as const,
+    documentType: "investigation_report" as const,
+    emptySectionKeys: ["define", "measure"],
+    queueLive: false,
+    writeToolNames: new Set(["draft_field"]),
+    makePlanEligible: true,
+    promptVersion: "chat-test",
+  };
+
+  it("loads only when eligible and never on greetings", () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      remainingWork: { work, context },
+    });
+    expect(tools.make_plan).toBeDefined();
+    expect(tools.update_plan).toBeUndefined();
+    expect(
+      accepts(tools, "make_plan", {
+        objective: "Draft define and measure",
+        steps: [
+          { kind: "section", section: "define" },
+          { kind: "section", section: "measure" },
+        ],
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "make_plan", {
+        objective: "x",
+        steps: [{ kind: "section", section: "define" }],
+      })
+    ).toBe(false);
+    expect(
+      accepts(tools, "make_plan", {
+        objective: "x",
+        steps: [
+          { kind: "mark_done", section: "define" },
+          { kind: "section", section: "measure" },
+        ],
+      })
+    ).toBe(false);
+    expect(
+      buildChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        remainingWork: { work, context: { ...context, makePlanEligible: false } },
+      }).make_plan
+    ).toBeUndefined();
+    expect(
+      buildChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        remainingWork: { work: { ...work, intent: "social" }, context },
+      }).make_plan
+    ).toBeUndefined();
+  });
+
+  it("writes the plan into the shared ledger once", async () => {
+    const remainingWork: { work: LivingTurnWork; context: RemainingWorkContext } = {
+      work,
+      context,
+    };
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true, remainingWork });
+    const execute = tools.make_plan?.execute as (
+      input: unknown,
+      options: unknown
+    ) => Promise<Record<string, unknown>>;
+    const input = {
+      objective: "Draft define and measure",
+      steps: [
+        { kind: "section", section: "define" },
+        { kind: "lookup", question: "Which batch?" },
+        { kind: "section", section: "measure" },
+      ],
+    };
+    const first = await execute(input, {});
+    expect(first).toMatchObject({ status: "planned", lookups: ["Which batch?"] });
+    expect(remainingWork.work.createdPlan?.items.map((item) => item.sectionKey)).toEqual([
+      "define",
+      "measure",
+    ]);
+    expect(await execute(input, {})).toMatchObject({
+      status: "rejected",
+      reason: "plan_live",
+    });
   });
 });
