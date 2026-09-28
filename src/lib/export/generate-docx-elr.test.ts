@@ -9,8 +9,11 @@ import { docxParagraphPlainText } from "@/lib/export/docx-toc-headings";
 import {
   ELR_ALARM_HEADERS,
   ELR_BREAKDOWN_HEADERS,
+  ELR_CLEANING_VALIDATION_HEADERS,
   ELR_DEFAULT_METADATA,
   ELR_MONITORING_HEADERS,
+  ELR_PROCESS_VALIDATION_HEADERS,
+  ELR_QRA_REVIEW_HEADERS,
   ELR_QUALIFICATION_HEADERS,
   ELR_SECTION_KEYS,
   EMPTY_ELR_CONTENT,
@@ -94,6 +97,30 @@ const QUALIFICATION_ROWS = [
 function qualificationTableSlice(xml: string): string {
   const start = xml.indexOf("3.4 QUALIFICATION");
   const end = xml.indexOf("3.5 PROCESS VALIDATION");
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return xml.slice(start, end);
+}
+
+function processValidationSlice(xml: string): string {
+  const start = xml.indexOf("3.5 PROCESS VALIDATION");
+  const end = xml.indexOf("3.6 CLEANING VALIDATION");
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return xml.slice(start, end);
+}
+
+function cleaningValidationSlice(xml: string): string {
+  const start = xml.indexOf("3.6 CLEANING VALIDATION");
+  const end = xml.indexOf("3.7 QUALITY RISK ASSESSMENT");
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return xml.slice(start, end);
+}
+
+function qraReviewSlice(xml: string): string {
+  const start = xml.indexOf("3.7 QUALITY RISK ASSESSMENT");
+  const end = xml.indexOf("3.8 MEDIA FILL");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
@@ -446,6 +473,115 @@ describe("ELR DOCX export", () => {
     const gridSum = widths.reduce((sum, w) => sum + w, 0);
     expect(gridSum).toBeGreaterThan(10469);
     expect(gridSum).toBeLessThanOrEqual(15394);
+  });
+
+  it("exports process, cleaning and QRA review tables on landscape pages", async () => {
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections({
+        elr_process_validation: {
+          ...EMPTY_ELR_CONTENT.elr_process_validation,
+          table: tableDoc(
+            [...ELR_PROCESS_VALIDATION_HEADERS],
+            [
+              [
+                "1",
+                "PPQ",
+                "PPQ-24-PR-011",
+                "Insulin vial fill",
+                "Vial",
+                "12.03.2025",
+                "Pass",
+                "Nil",
+                "NA",
+                "Current PPQ for this format.",
+              ],
+            ]
+          ),
+        },
+        elr_cleaning_validation: {
+          ...EMPTY_ELR_CONTENT.elr_cleaning_validation,
+          table: tableDoc(
+            [...ELR_CLEANING_VALIDATION_HEADERS],
+            [
+              [
+                "1",
+                "CV",
+                "CVP-24-PR-003",
+                "Insulin residue",
+                "WIP",
+                "Vial",
+                "12.03.2025",
+                "Pass",
+                "Nil",
+                "NA",
+                "Current cleaning validation.",
+              ],
+            ]
+          ),
+        },
+        elr_qra_review: {
+          ...EMPTY_ELR_CONTENT.elr_qra_review,
+          table: tableDoc(
+            [...ELR_QRA_REVIEW_HEADERS],
+            [
+              [
+                "1",
+                "QRA-ELR-070",
+                "Filling line QRA",
+                "12.03.2025",
+                "Medium",
+                "12.03.2027",
+                "N",
+                "",
+                "Current QRA.",
+              ],
+            ]
+          ),
+        },
+      }),
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+
+    const cases = [
+      {
+        slice: processValidationSlice(xml),
+        header: "Validation Stage",
+        columns: ELR_PROCESS_VALIDATION_HEADERS.length,
+        cell: "PPQ-24-PR-011",
+      },
+      {
+        slice: cleaningValidationSlice(xml),
+        header: "Cleaning Method",
+        columns: ELR_CLEANING_VALIDATION_HEADERS.length,
+        cell: "CVP-24-PR-003",
+      },
+      {
+        slice: qraReviewSlice(xml),
+        header: "QRA / Document No.",
+        columns: ELR_QRA_REVIEW_HEADERS.length,
+        cell: "QRA-ELR-070",
+      },
+    ] as const;
+
+    for (const { slice, header, columns, cell } of cases) {
+      expect(slice).toContain(header);
+      expect(slice).toContain(cell);
+      const tableAt = slice.indexOf("<w:tbl");
+      const landscapeAt = slice.indexOf('w:orient="landscape"');
+      expect(tableAt).toBeGreaterThan(-1);
+      expect(landscapeAt).toBeGreaterThan(tableAt);
+      const innerTables =
+        slice.match(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g) ?? [];
+      const inner = innerTables.find((table) => table.includes(header)) ?? "";
+      const widths = [...inner.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+        Number(m[1])
+      );
+      expect(widths).toHaveLength(columns);
+      const gridSum = widths.reduce((sum, w) => sum + w, 0);
+      expect(gridSum).toBeGreaterThan(10469);
+      expect(gridSum).toBeLessThanOrEqual(15394);
+    }
   });
 
   it("fills 7.0 Attachments from every live file and unifies citations at 10.0", async () => {
