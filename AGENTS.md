@@ -226,9 +226,12 @@ ledger (`remaining-work.ts`): landed drafts complete sections automatically.
 rewriting the queue. Lookups are kickoff `alsoLookup` only — do not grow
 them from retrieval. Mixed cited-hit search stays open only while the write
 is still due; two empty greps still hide. Not on the Plan allowlist.
-Analytics has no `update_plan`. A general-purpose planner (typed steps,
-gated `make_plan`, Plan-mode approval later) is specified in
-`docs/harness-plan.md` §2c — not shipped. After persist the
+Analytics has no `update_plan`. Multi-part Agent write asks with no live
+queue may call `make_plan` once (`task-plan.ts`, 2–8 steps): section steps
+become the `pending_plan` queue (`source: "make_plan"`), lookup steps stay
+in-turn only; hidden after `ask_user` or the first landed write. Not on the
+Plan allowlist; no Analytics. Typed table/review steps and Plan-mode
+approval are later (`docs/harness-plan.md` §2c). After persist the
 client POSTs `Continue the remaining sections.` with `autoContinue` (one
 live remaining-section widget **below the transcript**, not a user bubble and
 not in the auto-continue slot; collapsed is `N of M —

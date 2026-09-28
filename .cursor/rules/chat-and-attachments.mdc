@@ -309,9 +309,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   escape hatch (skip queued N/A or add empty `draftOrder`); hide after one
   success, two attempts, or `ask_user`. Mixed `alsoLookup` keeps search
   after a cited hit only while the write is still due; two empty greps
-  still hide. Analytics has no `update_plan`. A general-purpose
-  planner (typed steps, gated `make_plan`) is specified in
-  `docs/harness-plan.md` §2c — not shipped. The N of N chip
+  still hide. Analytics has no `update_plan`. Gated `make_plan`
+  (`task-plan.ts`, Agent write, multi-part ask, no live queue) runs once:
+  section steps persist as the `pending_plan` queue, lookup steps stay
+  in-turn; off the Plan allowlist (`docs/harness-plan.md` §2c). The N of N chip
   spins only while the turn is running; it shows Paused on Cancel and hides
   when every remaining section is drafted. MJ ELR evidence sections stay
   in progress after `edit_table` until the same turn drafts the assessment

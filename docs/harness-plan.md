@@ -33,7 +33,7 @@ Live report creation on the PR is still the layer-3 merge gate.
 | Live QMS vs calibration-planner walk | Landed. ELR inventory start no longer page-lists files typed as a different inventory (a calibration planner is not QMS). Page scoring ignores running-header `document no`. The planning chip names queued files, not the whole vault. |
 | Remaining-sections UI (plan slot, false error, done popup, idle Working… / N of N chip) | Landed. Plan progress sits below the transcript. Auto-continue rows stay hidden and do not resurrect the original user bubble. Successful section turns do not toast “hit an error”. Agent-done notice is `Assistant is done with {section}`. Working… hides when the stream is idle (stale optimistic send overlay after hydrate). The N of N chip spins only while the turn is running, shows Paused on Cancel, and hides when every remaining section is drafted. |
 | Remaining-sections seed miss (`dev 7` “go on to monitoring and sections after that”) | Landed. That phrasing is a write (`go on`) but was not a multi-section seed, so the first leftover-inventory turn had no queue and milled reviews until the 270s abort. Queue still does not cap start/finish loops inside one inventory turn — that abort cluster remains after an explicit `draft remaining sections`. |
-| General-purpose planner | **Specified (§2c). Not shipped.** Widen `pending_plan` beyond `kind: "section_queue"`, add gated `make_plan`, keep mechanical completions. Plan-mode approval is stage 2. |
+| General-purpose planner | **Stage 1 landed (§2c).** Gated `make_plan` (`task-plan.ts`) writes section steps into the existing `pending_plan` queue and lookup steps into the in-turn ledger; completions stay mechanical. Table / review / Analytics steps, extended `update_plan`, and Plan-mode approval are later. |
 
 ## 1. What `dev 6` actually cost (measured, not estimated)
 
@@ -127,7 +127,34 @@ the persisted remaining-section queue across turns — remaining-work does
 not replace it. A general-purpose planner (§2c) widens that queue; it
 does not replace the kickoff classifier or the in-turn ledger.
 
-## 2c. General-purpose planner (specified; not shipped)
+## 2c. General-purpose planner (stage 1 landed)
+
+**What landed (stage 1).** `src/lib/ai/chat/task-plan.ts` plus the
+`make_plan` chat tool. The orchestrator may call it once on an Agent
+write turn when `makePlanEligible` holds: `canEdit`, no live unpaused
+queue, not an auto-continue POST, and the ask looks multi-part
+(`alsoLookup`, two or more named sections, or a long request with at
+least two clause breaks). Steps are `section` (editable section key) or
+`lookup` (a question). The server takes 2–8 steps, at least one section,
+no duplicates, and rejects the call if a plan is already live. Section
+steps persist as the usual `pending_plan` section queue
+(`source: "make_plan"`, order preserved, first step `in_progress`), so
+the progress chip and auto-continue work unchanged. Lookup steps are
+in-turn ledger items only (`lookup:plan:N`); they keep search open while
+a write is still due and are not persisted. Budget: one success, two
+attempts, and the tool is hidden after `ask_user` or once any document
+write lands. A draft landing still marks its step done;
+`advancePlanAfterTurn({ createdThisTurn })` credits every plan section
+drafted on the planning turn and does not pause a planning-only turn
+as `no_progress`. Not on the Plan-mode allowlist; Analytics has no
+`make_plan`. `update_plan` is unchanged (it only loads once a queue is
+live). Harness cases: `harness-multi-part-offers-make-plan` and
+`harness-sentence-rewrite-no-make-plan` in
+`scripts/eval/chat-draft-cases.json`.
+
+The design below is the full target; the parts not listed above (table,
+review, and Analytics steps; extended `update_plan`; Plan-mode approval)
+are still to do.
 
 We already have most of a planner, just a narrow one. `pending_plan` is
 a saved plan that carries across turns, but it can only be
@@ -201,8 +228,9 @@ kickoff-seeded (`alsoLookup`); they do not grow from retrieval.
 
 Show the proposed steps in Plan mode for the engineer to approve or
 edit. Run them in Agent mode through the existing progress chip and
-auto-continue. Stage 1 is format + `make_plan` + extended `update_plan`
-+ step-policy / report-eval cases. Stage 2 is the Plan-mode approval
+auto-continue. Stage 1 (landed) is `make_plan` with section and lookup
+steps + step-policy / harness cases. Extended `update_plan` and typed
+table / review / Analytics steps follow. Stage 2 is the Plan-mode approval
 screen (separate UI). Prompt copy changes bump `CHAT_PROMPT_VERSION`
 (and Analytics only if that surface gains the tool).
 
@@ -212,7 +240,8 @@ Report-eval cases should score: whether the plan covered the ask, how
 many edits it took, how many turns until done, and whether any step
 closed without evidence. An LLM judge is reserved for "was this plan
 sensible for the ask"; coverage, edit count, and unearned completions
-are deterministic. Add those cases before `make_plan` merges.
+are deterministic. Stage 1 ships the replay cases that check whether
+`make_plan` is offered; the plan-quality scores come with stage 2.
 
 ### Risks
 
@@ -309,8 +338,8 @@ losing any grounded fact.
   let everything downstream consume it. Delete the per-consumer
   re-derivation. The orchestrator may **refine remaining work** as tools
   return (draft landed → still search for the follow-up); it must not
-  replace the kickoff classifier. Typed steps and gated `make_plan` are
-  §2c — they consume this `TurnPlan`, they do not re-classify greetings.
+  replace the kickoff classifier. Gated `make_plan` (§2c, stage 1 landed)
+  consumes this `TurnPlan`; it does not re-classify greetings.
 - **B4. Retire heuristics the eval cannot defend.** Candidates:
   APS/calibration-specific divider regexes in `attachment-divider.ts`,
   `requirementIndex` TOC demotion, the needle tables in
