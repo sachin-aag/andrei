@@ -18,8 +18,10 @@ import {
 import { isQsrRtmSection } from "@/lib/ai/chat/qsr-row-grounding";
 import { getDocumentType } from "@/lib/document-types";
 import {
+  compileChatExecutionPlan,
   isDependentRecapSection,
   orderPlanSectionItems,
+  PARALLEL_BATCH_CAP,
   planExecutionPromptLine,
   shouldPairPlanSections,
 } from "@/lib/ai/chat/plan-execution";
@@ -425,6 +427,8 @@ export function resolvePlanAtTurnStart(input: {
   userText: string;
   autoContinue: boolean;
   writeIntent: boolean;
+  alsoLookup?: boolean;
+  sectionScope?: string | null;
   documentType: DocumentType;
   sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
   promptVersion: string;
@@ -442,15 +446,27 @@ export function resolvePlanAtTurnStart(input: {
     return resumeChatPendingPlan(existing);
   }
   if (input.writeIntent) {
-    const named = seedNamedSectionQueuePlan({
+    const emptySectionKeys = getDocumentType(input.documentType).chat.draftOrder.filter(
+      (section) => sectionFillState(input.sections[section], section) === "empty"
+    );
+    const decision = compileChatExecutionPlan({
       userText: input.userText,
       documentType: input.documentType,
-      sections: input.sections,
-      promptVersion: input.promptVersion,
-      now: input.now,
+      intent: "write",
+      alsoLookup: input.alsoLookup,
+      sectionScope: input.sectionScope,
+      emptySectionKeys,
     });
-    if (named) return named;
-    if (isMultiSectionDraftRequest(input.userText)) {
+    if (decision.kind === "queue" && decision.scope === "named") {
+      return seedNamedSectionQueuePlan({
+        userText: input.userText,
+        documentType: input.documentType,
+        sections: input.sections,
+        promptVersion: input.promptVersion,
+        now: input.now,
+      });
+    }
+    if (decision.kind === "queue" && decision.scope === "document") {
       return seedSectionQueuePlan({
         userText: input.userText,
         documentType: input.documentType,
@@ -512,18 +528,23 @@ export function currentPlanTurnSections(
   if (isDependentRecapSection(current.sectionKey, documentType)) {
     return [current];
   }
-  const currentIndex = plan.items.findIndex(
-    (item) => item.sectionKey === current.sectionKey
-  );
-  const next = plan.items[currentIndex + 1];
-  if (
-    next &&
-    next.state === "queued" &&
-    shouldPairPlanSections(current.sectionKey, next.sectionKey, documentType)
-  ) {
-    return [current, next];
+  const turn = [current];
+  let index = plan.items.findIndex((item) => item.sectionKey === current.sectionKey);
+  while (turn.length < PARALLEL_BATCH_CAP) {
+    const next = plan.items[index + 1];
+    const previous = turn[turn.length - 1];
+    if (
+      !next ||
+      !previous ||
+      next.state !== "queued" ||
+      !shouldPairPlanSections(previous.sectionKey, next.sectionKey, documentType)
+    ) {
+      break;
+    }
+    turn.push(next);
+    index += 1;
   }
-  return [current];
+  return turn;
 }
 
 export function planPromptBlock(

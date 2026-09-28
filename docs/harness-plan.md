@@ -145,8 +145,14 @@ auto-continue work unchanged. "Draft the report" does not call
 `seedSectionQueuePlan` queues the empty `draftOrder` with conclusion
 last (`plan-execution.ts`). Same-turn siblings are QSR RTM (and adjacent
 non-inventory prose). A terminal conclusion never pairs, and write tools
-return `recap_not_ready` while earlier empty bodies remain. Page
-extracts stay the parallel worker pool — there is no LLM subagent. Lookup steps are
+return `recap_not_ready` while earlier empty bodies remain. Page extracts stay the worker pool inside one review. There is no
+second model and no LangGraph runtime. LangGraph would host this
+decision later; it would not fix intent or grounding. The decision
+(`single`, `queue`, or `require_model_plan`) is stamped on the Langfuse
+trace as `executionPlan` so a bad plan is visible. Independent siblings
+share a turn, up to three. A separate drafting model per section waits
+until that worker can see the same citation ledger — splitting the model
+first would make accuracy worse. Lookup steps are
 in-turn ledger items only (`lookup:plan:N`); they keep search open while
 a write is still due and are not persisted. Budget: one success, two
 attempts, and the tool is hidden after `ask_user` or once any document

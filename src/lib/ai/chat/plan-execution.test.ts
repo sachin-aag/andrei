@@ -1,10 +1,64 @@
 import { describe, expect, it } from "vitest";
 import {
+  compileChatExecutionPlan,
   isDependentRecapSection,
+  isDocumentWideWrite,
   planExecutionMode,
   recapWriteNotReady,
   shouldPairPlanSections,
 } from "./plan-execution";
+
+describe("compileChatExecutionPlan", () => {
+  const empty = ["qsr_objective", "qsr_scope", "qsr_conclusion"];
+
+  it("queues a document-wide write from the empty section list", () => {
+    expect(isDocumentWideWrite("draft the report")).toBe(true);
+    expect(isDocumentWideWrite("write this qualification summary from the attached protocols")).toBe(
+      true
+    );
+    expect(isDocumentWideWrite("fix the typo in the report")).toBe(false);
+    expect(
+      compileChatExecutionPlan({
+        userText: "write this qualification summary from the attached protocols",
+        documentType: "qualification_summary_report",
+        intent: "write",
+        emptySectionKeys: empty,
+      })
+    ).toMatchObject({ kind: "queue", scope: "document" });
+  });
+
+  it("requires a model plan when several sections also ask a question", () => {
+    expect(
+      compileChatExecutionPlan({
+        userText:
+          "tighten Define, then summarise Measure, and tell me which batch was affected",
+        documentType: "investigation_report",
+        intent: "write",
+        alsoLookup: true,
+        emptySectionKeys: ["define", "measure"],
+      }).kind
+    ).toBe("require_model_plan");
+  });
+
+  it("leaves a single section or a local edit as one action", () => {
+    expect(
+      compileChatExecutionPlan({
+        userText: "draft Purpose",
+        documentType: "investigation_report",
+        intent: "write",
+        emptySectionKeys: ["define", "measure"],
+      }).kind
+    ).toBe("single");
+    expect(
+      compileChatExecutionPlan({
+        userText: "fix the typo in the third paragraph",
+        documentType: "investigation_report",
+        intent: "write",
+        emptySectionKeys: ["define", "measure"],
+      }).kind
+    ).toBe("single");
+  });
+});
 
 describe("plan execution", () => {
   it("treats the last conclusion as a dependent recap and leaves QRA pre-conclusion mid-document", () => {

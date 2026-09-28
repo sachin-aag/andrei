@@ -209,9 +209,11 @@ same-named tab). Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
 abort still apply). Do not add a tool-call count limit. Report Agent may
 persist a remaining-section queue on `chat_sessions.pending_plan` when the
-engineer asks to fill several empty `draftOrder` sections. "Draft the
-report", "draft it", and "write this up" (no named section) seed that
-same whole empty section list from the context map — conclusion last.
+engineer asks to fill several empty `draftOrder` sections. Any document-wide write with no named section (not only "draft the
+report") seeds that same whole empty section list from the context map
+— conclusion last. A multi-part write the section list cannot compile
+must call `make_plan` before any draft (`require_model_plan` on the
+Langfuse trace). Independent siblings share a turn, up to three.
 Numbered TOC asks (`draft 5.2, 5.3, 5.4`) seed only those named empty
 sections before the whole-report leftover queue. Each turn drafts the
 current item. Adjacent non-inventory prose may share a turn; QSR RTM

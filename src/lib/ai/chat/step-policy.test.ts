@@ -381,6 +381,31 @@ describe("prepareReportChatStep (characterization)", () => {
     expect(decision.activeTools).not.toContain("update_plan");
   });
 
+  it("requires make_plan before any draft when the section list cannot compile the write", () => {
+    const decision = prepareReportChatStep(
+      baseInput({
+        advertisedTools: [...ADVERTISED, "make_plan"],
+        livingWorkSeed: {
+          intent: "write",
+          alsoLookup: true,
+          writeOutstanding: true,
+          items: [],
+        },
+        remainingWorkContext: {
+          surface: "document",
+          documentType: "investigation_report",
+          emptySectionKeys: ["define", "measure"],
+          queueLive: false,
+          writeToolNames: new Set(["draft_field"]),
+          makePlanEligible: true,
+          requireModelPlan: true,
+        },
+      })
+    );
+    expect(decision.activeTools).toEqual(["make_plan"]);
+    expect(decision.toolChoice).toEqual({ type: "tool", toolName: "make_plan" });
+  });
+
   it("offers make_plan only while eligible and before a plan or a draft", () => {
     const planCtx = {
       surface: "document" as const,

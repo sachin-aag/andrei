@@ -97,6 +97,7 @@ import {
   seedLivingTurnWork,
   type RemainingWorkContext,
 } from "@/lib/ai/chat/remaining-work";
+import { compileChatExecutionPlan } from "@/lib/ai/chat/plan-execution";
 import { makePlanEligible } from "@/lib/ai/chat/task-plan";
 import {
   clearAssistantTurn,
@@ -387,6 +388,8 @@ async function handleChatPost(
       userText,
       autoContinue,
       writeIntent: userIntent.kind === "write",
+      alsoLookup: userIntent.alsoLookup === true,
+      sectionScope,
       documentType: report.documentType,
       sections: mergedSections,
       promptVersion: CHAT_PROMPT_VERSION,
@@ -567,16 +570,31 @@ async function handleChatPost(
     mode === "agent" &&
     userIntent.kind === "write" &&
     Boolean(pendingPlan && !pendingPlan.paused);
+  const planLive = Boolean(pendingPlan && !pendingPlan.paused);
+  const executionPlan = compileChatExecutionPlan({
+    userText,
+    documentType: report.documentType,
+    intent: userIntent.kind,
+    alsoLookup: userIntent.alsoLookup === true,
+    sectionScope,
+    emptySectionKeys: emptyDraftOrderKeys(report.documentType, mergedSections),
+  });
   const planEligible = makePlanEligible({
     mode,
     intent: userIntent.kind,
     canEdit,
-    planLive: Boolean(pendingPlan && !pendingPlan.paused),
+    planLive,
     userText,
     documentType: report.documentType,
     alsoLookup: userIntent.alsoLookup === true,
     autoContinue,
   });
+  const requireModelPlan =
+    mode === "agent" &&
+    canEdit &&
+    !autoContinue &&
+    !planLive &&
+    executionPlan.kind === "require_model_plan";
   const remainingWorkContext: RemainingWorkContext = {
     surface: "document",
     documentType: report.documentType,
@@ -586,7 +604,8 @@ async function handleChatPost(
     ),
     queueLive,
     writeToolNames: documentWriteProgressTools(),
-    makePlanEligible: planEligible,
+    makePlanEligible: planEligible || requireModelPlan,
+    requireModelPlan,
     promptVersion: CHAT_PROMPT_VERSION,
     namedSectionKeys: detectSectionIntentsFromText(
       userText,
@@ -847,6 +866,8 @@ async function handleChatPost(
           retrievalPolicyReason: retrieval.reason,
           userIntent: userIntent.kind,
           userIntentReason: userIntent.reason,
+          executionPlan: executionPlan.kind,
+          executionPlanReason: executionPlan.reason,
           section_id: sectionScope ?? "",
           user_course_corrected: courseCorrection.detected,
         },

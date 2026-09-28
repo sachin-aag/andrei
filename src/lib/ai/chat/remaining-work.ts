@@ -101,6 +101,11 @@ export type RemainingWorkContext = {
   namedSectionKeys?: readonly string[];
   sectionScope?: string;
   pendingPlan?: ChatPendingPlan | null;
+  /**
+   * The section list cannot compile this write. make_plan must succeed
+   * before a draft. A seeded queue leaves this false.
+   */
+  requireModelPlan?: boolean;
 };
 
 export type UpdatePlanAction = {

@@ -652,6 +652,44 @@ describe("resolvePlanAtTurnStart", () => {
     expect(seeded?.objective).toBe("draft remaining report");
   });
 
+  it("does not seed a queue when the write also asks a question", () => {
+    expect(
+      resolvePlanAtTurnStart({
+        existing: null,
+        userText:
+          "tighten Define, then summarise Measure, and tell me which batch was affected",
+        autoContinue: false,
+        writeIntent: true,
+        alsoLookup: true,
+        documentType: "investigation_report",
+        sections: {
+          define: emptyNarrative,
+          measure: emptyNarrative,
+        },
+        promptVersion: "chat-v158-execution-plan",
+      })
+    ).toBeNull();
+  });
+
+  it("seeds a document-wide write that does not say draft the report", () => {
+    const seeded = resolvePlanAtTurnStart({
+      existing: null,
+      userText: "write this qualification summary from the attached protocols",
+      autoContinue: false,
+      writeIntent: true,
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_objective: emptyQsrContent("qsr_objective"),
+        qsr_scope: emptyQsrContent("qsr_scope"),
+        qsr_conclusion: emptyQsrContent("qsr_conclusion"),
+      },
+      promptVersion: "chat-v158-execution-plan",
+    });
+    const keys = seeded?.items.map((item) => item.sectionKey) ?? [];
+    expect(keys[0]).toBe("qsr_objective");
+    expect(keys.at(-1)).toBe("qsr_conclusion");
+  });
+
   it("seeds the whole empty section list for draft the report", () => {
     const seeded = resolvePlanAtTurnStart({
       existing: null,

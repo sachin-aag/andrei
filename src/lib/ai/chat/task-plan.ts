@@ -3,7 +3,10 @@ import { isChatEditableSection, sectionLabel } from "@/lib/ai/chat/fields";
 import type { ChatPendingPlan, ChatPlanItem } from "@/lib/ai/chat/pending-plan";
 import { detectSectionIntentsFromText } from "@/lib/ai/chat/section-intent";
 import { getDocumentType } from "@/lib/document-types";
-import { orderPlanSectionItems } from "@/lib/ai/chat/plan-execution";
+import {
+  orderPlanSectionItems,
+  PARALLEL_BATCH_CAP,
+} from "@/lib/ai/chat/plan-execution";
 
 /**
  * General-purpose planner (stage 1). The orchestrator may call `make_plan`
@@ -238,5 +241,5 @@ export function makePlanEligible(input: {
 
 export function makePlanPromptBlock(): string {
   return `## Planning
-This ask may have several parts, and rules could not seed the section list. Before drafting, call make_plan once with 2–${MAKE_PLAN_MAX_STEPS} ordered steps: section steps (section key from the context map) and lookup steps (the question to answer this turn). Section steps become the remaining-section queue — this turn drafts the first (or first two independent siblings) and later steps continue automatically. Put recap/conclusion last; the server moves it last if you do not. Independent inventory siblings (same evidence family, e.g. QSR RTM 5.1–5.6) may share a turn after one review. A whole-report ask ("draft the report") is already a queue when the section list has empty items — do not replan it. Page extracts already run as a parallel worker pool. Skip make_plan when one section edit covers the ask. Progress is automatic — never call it to mark a step done. If you are unsure which sections apply, ask_user once instead of planning.`;
+The section list could not compile this write, so call make_plan once before any draft. Use 2–${MAKE_PLAN_MAX_STEPS} ordered steps: section steps (section key from the context map) and lookup steps (the question to answer this turn). Section steps become the remaining-section queue. This turn drafts the first item, or an independent batch of up to ${PARALLEL_BATCH_CAP} siblings, and later items continue automatically. Put recap/conclusion last; the server moves it last if you do not. A document-wide write is already a queue when the section list has empty items — this tool is hidden then. Page extracts already run as a worker pool inside one review. Progress is automatic — never call it to mark a step done. If you are unsure which sections apply, ask_user once instead of planning.`;
 }

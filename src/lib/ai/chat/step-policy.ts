@@ -291,6 +291,32 @@ export function prepareReportChatStep(
     };
   }
 
+  const livingWork =
+    input.livingWorkSeed && input.remainingWorkContext
+      ? applyStepsToLivingTurnWork(
+          input.livingWorkSeed,
+          input.steps,
+          input.remainingWorkContext
+        )
+      : null;
+  const modelPlanDirective = input.remainingWorkContext
+    ? makePlanLoopDirective(
+        input.steps,
+        input.remainingWorkContext.writeToolNames
+      )
+    : "hide";
+  if (
+    input.remainingWorkContext?.requireModelPlan === true &&
+    !livingWork?.createdPlan &&
+    modelPlanDirective !== "hide" &&
+    input.advertisedTools.includes(MAKE_PLAN_TOOL)
+  ) {
+    return {
+      activeTools: [MAKE_PLAN_TOOL],
+      toolChoice: { type: "tool", toolName: MAKE_PLAN_TOOL },
+    };
+  }
+
   const alreadyDraftedStep = alreadyDraftedReadStep({
     stepsTaken: input.steps.length,
     alreadyDrafted: input.alreadyDrafted,
@@ -349,14 +375,6 @@ export function prepareReportChatStep(
     input.reviewPhase === "ready_to_finish";
   const hideKind = searchLoopHideKind(input.steps);
   const searchDirective = searchLoopDirective(input.steps);
-  const livingWork =
-    input.livingWorkSeed && input.remainingWorkContext
-      ? applyStepsToLivingTurnWork(
-          input.livingWorkSeed,
-          input.steps,
-          input.remainingWorkContext
-        )
-      : null;
   const keepSearchForLookup =
     livingWork != null && livingWorkKeepsSearchOpen(livingWork, hideKind);
   const keepSearchForIdentityCells =
