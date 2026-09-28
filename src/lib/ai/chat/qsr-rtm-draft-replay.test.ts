@@ -2095,4 +2095,109 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(cells.find((cell) => cell.col === 5)?.insertText).toBe("Complies");
     expect(cells.map((cell) => cell.insertText).join(" ")).not.toMatch(/\bNA\b/);
   });
+
+  it("proposes Table 5 Remarks Complies when rowKey omits row and Stage is already filled", async () => {
+    mockSection("qsr_rtm_process", {
+      table: rtmTableDoc([
+        [
+          "URS-13",
+          "Jacket Type",
+          "Limpet/Plain",
+          `IQ [${IQ_FILENAME}, p. 22]`,
+          "13.3.5.1",
+          "",
+        ],
+      ]),
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readIqPage(
+      tools,
+      22,
+      "13.3.5.1 Jacket Type Limpet Result: Verified"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill blank Remarks in table 5.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              col: 5,
+              rowKey: "URS-13",
+              expectedText: "",
+              insertText: "Complies",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    expect(cells.find((cell) => cell.col === 5)?.insertText).toBe("Complies");
+  });
+
+  it("returns remaining emptyCells instead of locking Table 5 on identity Complies", async () => {
+    mockSection("qsr_rtm_process", {
+      table: rtmTableDoc([
+        [
+          "URS-7",
+          "Jacket temperature",
+          "20-25 °C",
+          `IQ [${IQ_FILENAME}, p. 22]`,
+          "8.1",
+          "",
+        ],
+      ]),
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readIqPage(
+      tools,
+      22,
+      "URS-7 Jacket temperature Result: N/A not applicable"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill blank Remarks in table 5.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 5,
+              rowKey: "URS-7",
+              expectedText: "",
+              insertText: "Complies",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "empty_edit",
+      keepSearchOpen: true,
+    });
+    expect(String((result as { hint?: string }).hint)).toContain(
+      "Remaining empty cells"
+    );
+    expect(String((result as { hint?: string }).hint)).not.toMatch(/locked/i);
+    const emptyCells = (
+      result as { emptyCells?: Array<{ rowKey?: string; col: number }> }
+    ).emptyCells;
+    expect(emptyCells?.some((cell) => cell.rowKey === "URS-7" && cell.col === 5)).toBe(
+      true
+    );
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
 });

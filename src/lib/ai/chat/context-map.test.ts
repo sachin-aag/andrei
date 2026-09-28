@@ -246,7 +246,7 @@ describe("buildReportContextMap", () => {
     });
     expect(demo).toContain("Live table N headers are this report's schema");
     expect(demo).toContain(
-      `table 0 headers: ${DV_TRACEABILITY_HEADERS.join(" | ")} (1 data row)`
+      `table 0 headers: ${DV_TRACEABILITY_HEADERS.join(" | ")} (1 data row, 5 empty cells)`
     );
     expect(demo).toContain("Traceability [traceability] — empty");
     expect(demo).toContain("table: empty");

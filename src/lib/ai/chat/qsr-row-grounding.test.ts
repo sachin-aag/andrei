@@ -49,6 +49,37 @@ function ledgerFromPages(
   return ledger;
 }
 
+function rtmFieldDoc(rows: string[][]): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [...QSR_RTM_HEADERS].map((header) => ({
+              type: "tableHeader" as const,
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: header }] },
+              ],
+            })),
+          },
+          ...rows.map((row) => ({
+            type: "tableRow" as const,
+            content: row.map((text) => ({
+              type: "tableCell" as const,
+              content: text
+                ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                : [{ type: "paragraph" }],
+            })),
+          })),
+        ],
+      },
+    ],
+  };
+}
+
 describe("quoteWindowAroundKey", () => {
   it("stops at the next URS ID so a same-page neighbour does not leak", () => {
     const urs5 = quoteWindowAroundKey(SHARED_URS_PAGE, "URS-5");
@@ -2127,6 +2158,95 @@ describe("groundTableOperation optional RTM columns", () => {
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     expect(cells.find((cell) => cell.col === 5)?.insertText).toBe("Complies");
+  });
+
+  it("paints remaining empty Remarks from the live table on a fill-empty identity Stage", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: "URS-41 13.6 Gaskets PTFE or equivalent Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "IQ [Installation Qualification.PDF, p. 42]",
+            insertText: "IQ [Installation Qualification.PDF, p. 42]",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: rtmFieldDoc([
+        [
+          "URS-41 [1]",
+          "Gaskets",
+          "PTFE or Equivalent [1]",
+          "IQ [Installation Qualification.PDF, p. 42]",
+          "13.6",
+          "",
+        ],
+      ]),
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.find((cell) => cell.col === 5)?.insertText).toBe("Complies");
+  });
+
+  it("drops ranked-empty Complies instead of turning it into an identity clear", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote: "URS-7 Jacket temperature Result: N/A not applicable",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 0,
+            col: 5,
+            rowKey: "URS-7",
+            expectedText: "",
+            insertText: "Complies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+      fieldDoc: rtmFieldDoc([
+        [
+          "URS-7",
+          "Jacket temperature",
+          "20-25 °C",
+          "IQ [Installation Qualification.PDF, p. 22]",
+          "8.1",
+          "",
+        ],
+      ]),
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.find((cell) => cell.col === 5)).toBeUndefined();
+    expect(cells.every((cell) => cell.insertText.trim().length > 0)).toBe(true);
   });
 
   it("rewrites Remarks NA to Complies when this row's IQ result is Verified", () => {

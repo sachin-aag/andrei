@@ -100,6 +100,7 @@ describe("sectionFieldForChat", () => {
         tableIndex: 0,
         headers: ["Component", "Description"],
         dataRowCount: 1,
+        emptyCells: [],
       },
     ]);
     expect(chat.structuredText).toContain("tableIndex=0");
@@ -120,6 +121,12 @@ describe("listFieldTables", () => {
         tableIndex: 0,
         headers: [...DV_TRACEABILITY_HEADERS],
         dataRowCount: 1,
+        emptyCells: DV_TRACEABILITY_HEADERS.map((header, col) => ({
+          row: 1,
+          col,
+          rowKey: "",
+          header,
+        })),
       },
     ]);
     expect(

@@ -189,7 +189,11 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
           400
         );
         lines.push(
-          `    table ${table.tableIndex} headers: ${headerLine || "(empty)"} (${table.dataRowCount} data row${table.dataRowCount === 1 ? "" : "s"})`
+          `    table ${table.tableIndex} headers: ${headerLine || "(empty)"} (${table.dataRowCount} data row${table.dataRowCount === 1 ? "" : "s"}${
+            table.emptyCells.length > 0
+              ? `, ${table.emptyCells.length} empty cell${table.emptyCells.length === 1 ? "" : "s"}`
+              : ""
+          })`
         );
       }
     }

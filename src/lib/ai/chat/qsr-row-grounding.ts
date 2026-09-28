@@ -281,7 +281,10 @@ export function liveTableRowContextByKey(
       if (!first) continue;
       const lines = cells.filter((part) => Boolean(part?.trim()));
       if (lines.length === 0) continue;
-      map.set(first.toUpperCase(), lines.join("\n"));
+      const snapshot = lines.join("\n");
+      map.set(first.toUpperCase(), snapshot);
+      const urs = rowKeyFromContext(first);
+      if (urs && !map.has(urs)) map.set(urs, snapshot);
     }
   }
   return map;
@@ -1120,11 +1123,129 @@ function applyPickToRow(
   return next;
 }
 
+function isFillEmptyOrIdentityBatch(
+  cells: readonly TableCellEdit[]
+): boolean {
+  return cells.every((cell) => {
+    const expected = (cell.expectedText ?? "").trim();
+    const next = cell.insertText.trim();
+    if (!expected || isQsrRtmPlaceholderText(expected)) return true;
+    return expected === next;
+  });
+}
+
+function liveOptionalEmpty(text: string | undefined): boolean {
+  const live = (text ?? "").trim();
+  return !live || isQsrRtmPlaceholderText(live);
+}
+
+/**
+ * On fill-empty / identity batches, paint remaining empty Stage / Section /
+ * Remarks in this table from the ledger — do not wait for the model to name
+ * every blank cell.
+ */
+function liveRtmRowsByKey(
+  fieldDoc: JSONContent | null | undefined,
+  tableIndex: number
+): Map<string, { row: number; cells: string[] }> {
+  const map = new Map<string, { row: number; cells: string[] }>();
+  if (!fieldDoc) return map;
+  const table = summarizeTablesInDoc(fieldDoc)[tableIndex];
+  if (!table) return map;
+  const byRow = new Map<number, string[]>();
+  for (const cell of table.cells) {
+    const text = cell.text === "(empty)" ? "" : cell.text.trim();
+    const list = byRow.get(cell.row) ?? [];
+    list[cell.col] = text;
+    byRow.set(cell.row, list);
+  }
+  for (const [row, cells] of byRow) {
+    if (row === 0) continue;
+    const first = (cells[0] ?? "").replace(/\s+/g, " ").trim();
+    const key = rowKeyFromContext(first);
+    if (!key) continue;
+    map.set(key, { row, cells });
+  }
+  return map;
+}
+
+function expandEmptyRtmOptionalCells(
+  operation: Extract<TableOperation, { kind: "edit_cells" }>,
+  ledger: CitationPageLedger,
+  section: string | undefined,
+  cols: { stage: number; section: number; remarks: number },
+  fieldDoc: JSONContent | null | undefined,
+  present: Set<string>
+): TableCellEdit[] {
+  if (!fieldDoc || !isQsrRtmSection(section)) return [];
+  if (!isFillEmptyOrIdentityBatch(operation.cells)) return [];
+  const extra: TableCellEdit[] = [];
+  for (const [key, live] of liveRtmRowsByKey(fieldDoc, operation.tableIndex)) {
+    const liveContext = live.cells
+      .filter((part) => Boolean(part?.trim()))
+      .join("\n");
+    const siblings = operation.cells.filter(
+      (cell) => editCellsGroupKey(cell) === key
+    );
+    const context = mergeRowContextLines(
+      liveContext,
+      siblings[0]?.rowContext
+    );
+    const pick = stickyRtmPick(
+      pickRtmReference(ledger, key, context),
+      siblings,
+      cols
+    );
+    if (!pick) continue;
+    const template = siblings[0];
+    const add = (col: number, liveText: string | undefined, insertText: string) => {
+      if (!insertText.trim()) return;
+      if (!liveOptionalEmpty(liveText)) return;
+      const presentKey = `${key}:${col}`;
+      if (present.has(presentKey)) return;
+      present.add(presentKey);
+      extra.push({
+        row: template?.row ?? live.row,
+        col,
+        rowKey: template?.rowKey ?? key,
+        expectedText: "",
+        insertText,
+        rowContext: context,
+      });
+    };
+    add(cols.stage, live.cells[cols.stage], formatRtmStageCell(pick));
+    add(cols.section, live.cells[cols.section], pick.sectionHeading ?? "");
+    add(cols.remarks, live.cells[cols.remarks], pick.remarks);
+  }
+  return extra;
+}
+
+function rankedOptionalCell(
+  cell: TableCellEdit,
+  next: string
+): TableCellEdit[] {
+  if (next.trim()) return [{ ...cell, insertText: next }];
+  if (!cell.insertText.trim() || optionalRefExpectedFilled(cell)) {
+    return [cell];
+  }
+  if (isQsrRtmPlaceholderText(cell.insertText)) return [cell];
+  const trimmed = cell.insertText.trim();
+  if (
+    STOCK_COMPLIES_RE.test(trimmed) ||
+    /^(?:n\/?a\.?|not\s+applicable)$/i.test(trimmed) ||
+    STOCK_BARE_SECTION_13_RE.test(trimmed)
+  ) {
+    return [];
+  }
+  return [cell];
+}
+
 function rankEditCells(
   operation: Extract<TableOperation, { kind: "edit_cells" }>,
   ledger: CitationPageLedger,
   section: string | undefined,
-  cols: { stage: number; section: number; remarks: number }
+  cols: { stage: number; section: number; remarks: number },
+  fieldDoc?: JSONContent | null
 ): TableOperation {
   const byKey = new Map<string, TableCellEdit[]>();
   for (const cell of operation.cells) {
@@ -1160,13 +1281,13 @@ function rankEditCells(
       return [cell];
     }
     if (cell.col === cols.stage) {
-      return [{ ...cell, insertText: formatRtmStageCell(pick) }];
+      return rankedOptionalCell(cell, formatRtmStageCell(pick));
     }
     if (cell.col === cols.section) {
-      return [{ ...cell, insertText: pick.sectionHeading ?? "" }];
+      return rankedOptionalCell(cell, pick.sectionHeading ?? "");
     }
     if (cell.col === cols.remarks) {
-      return [{ ...cell, insertText: pick.remarks }];
+      return rankedOptionalCell(cell, pick.remarks);
     }
     return [cell];
   });
@@ -1174,6 +1295,7 @@ function rankEditCells(
     rewritten.map((cell) => `${editCellsGroupKey(cell)}:${cell.col}`)
   );
   const extra: TableCellEdit[] = [];
+  const liveRows = liveRtmRowsByKey(fieldDoc, operation.tableIndex);
   for (const [key, siblings] of byKey) {
     if (key.startsWith("__row:")) continue;
     const touchesRef = siblings.some((sib) =>
@@ -1189,11 +1311,13 @@ function rankEditCells(
     );
     if (!pick) continue;
     const template = siblings[0]!;
+    const liveCells = liveRows.get(key)?.cells;
     const liveFilled = (col: number) => {
       if (col === cols.section && floor.sectionText) return true;
       if (col === cols.stage && floor.stageFamily) return true;
       const sib = siblings.find((cell) => cell.col === col);
-      return sib != null && optionalRefExpectedFilled(sib);
+      if (sib != null && optionalRefExpectedFilled(sib)) return true;
+      return liveCells != null && !liveOptionalEmpty(liveCells[col]);
     };
     const add = (col: number, insertText: string) => {
       if (!insertText.trim()) return;
@@ -1213,6 +1337,16 @@ function rankEditCells(
     add(cols.section, pick.sectionHeading ?? "");
     add(cols.remarks, pick.remarks);
   }
+  extra.push(
+    ...expandEmptyRtmOptionalCells(
+      operation,
+      ledger,
+      section,
+      cols,
+      fieldDoc,
+      present
+    )
+  );
   return {
     ...operation,
     cells: extra.length > 0 ? [...rewritten, ...extra] : rewritten,
@@ -1223,7 +1357,8 @@ function rankEditCells(
 export function rankRtmReferenceOperation(
   operation: TableOperation,
   ledger: CitationPageLedger,
-  section?: string
+  section?: string,
+  fieldDoc?: JSONContent | null
 ): TableOperation {
   const cols = rtmReferenceColumnIndexes(section);
   if (!cols) return operation;
@@ -1257,7 +1392,7 @@ export function rankRtmReferenceOperation(
         }),
       };
     case "edit_cells":
-      return rankEditCells(operation, ledger, section, cols);
+      return rankEditCells(operation, ledger, section, cols, fieldDoc);
     case "insert_column":
     case "delete_rows":
     case "delete_column":
