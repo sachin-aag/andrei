@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  glueImmediateMinusSigns,
   glueOcrMinusSigns,
   glueOcrUrsIds,
+  hasAmbiguousNumericDash,
   overlayLeadingMinuses,
-  textLayerDroppedCelsiusSign,
+  pageNeedsNumericSignLook,
 } from "./numeric-signs";
 
 describe("glueOcrMinusSigns", () => {
@@ -26,6 +28,24 @@ describe("glueOcrMinusSigns", () => {
   });
 });
 
+describe("glueImmediateMinusSigns", () => {
+  it("converts an immediate unicode minus before a digit", () => {
+    expect(glueImmediateMinusSigns("−15 °C")).toBe("-15 °C");
+  });
+
+  it("leaves a dash one space before a number for sign-vs-bullet overlay", () => {
+    expect(glueImmediateMinusSigns("− 15 °C to 130 °C")).toBe(
+      "− 15 °C to 130 °C"
+    );
+    expect(glueImmediateMinusSigns("– 15 samples")).toBe("– 15 samples");
+    expect(glueImmediateMinusSigns("- 50 RPM")).toBe("- 50 RPM");
+  });
+
+  it("keeps an en-dash range between digits", () => {
+    expect(glueImmediateMinusSigns("15–130 °C")).toBe("15–130 °C");
+  });
+});
+
 describe("overlayLeadingMinuses", () => {
   it("copies a leading minus onto unsigned N °C when evidence has -N °C", () => {
     expect(
@@ -45,6 +65,18 @@ describe("overlayLeadingMinuses", () => {
     ).toBe("URS-37 Temperature\n-20 °C to 150\n°C\n0.1°C");
   });
 
+  it("copies a leading minus onto an RPM quantity", () => {
+    expect(overlayLeadingMinuses("Setpoint 50 RPM", "Signed −50 RPM")).toBe(
+      "Setpoint -50 RPM"
+    );
+  });
+
+  it("glues a dash-then-space quantity once evidence shows a sign", () => {
+    expect(
+      overlayLeadingMinuses("– 15 °C to 130 °C", "−15 °C to 130 °C")
+    ).toBe("-15 °C to 130 °C");
+  });
+
   it("does not invent a minus when evidence has none", () => {
     expect(
       overlayLeadingMinuses(
@@ -54,6 +86,12 @@ describe("overlayLeadingMinuses", () => {
     ).toBe("15 °C to 130 °C");
   });
 
+  it("does not treat a bullet leftover as a sign when evidence is empty", () => {
+    expect(overlayLeadingMinuses("– 15 samples were taken", "")).toBe(
+      "– 15 samples were taken"
+    );
+  });
+
   it("does not turn an en-dash process range into a signed temperature", () => {
     expect(
       overlayLeadingMinuses("Process temperature 15–130 °C", "-15 °C to 130 °C")
@@ -61,15 +99,40 @@ describe("overlayLeadingMinuses", () => {
   });
 });
 
-describe("textLayerDroppedCelsiusSign", () => {
-  it("detects unsigned N °C to after a dropped minus", () => {
-    expect(textLayerDroppedCelsiusSign("15 °C to 130 °C")).toBe(true);
-    expect(textLayerDroppedCelsiusSign("20 °C to 150\n°C")).toBe(true);
-    expect(textLayerDroppedCelsiusSign("-15 °C to 130 °C")).toBe(false);
-    expect(textLayerDroppedCelsiusSign("-20 °C to 150 °C")).toBe(false);
-    expect(textLayerDroppedCelsiusSign("Process temperature 15–130 °C")).toBe(
+describe("hasAmbiguousNumericDash", () => {
+  it("detects a hyphen one space before a number", () => {
+    expect(hasAmbiguousNumericDash("– 15 °C to 130 °C")).toBe(true);
+    expect(hasAmbiguousNumericDash("- 50 RPM")).toBe(true);
+    expect(
+      hasAmbiguousNumericDash(
+        "URS-3 Shell Operating temperature – 15 °C to 130 °C"
+      )
+    ).toBe(true);
+    expect(hasAmbiguousNumericDash("-15 °C to 130 °C")).toBe(false);
+    expect(hasAmbiguousNumericDash("15–130 °C")).toBe(false);
+    expect(hasAmbiguousNumericDash("15 – 130 °C")).toBe(false);
+    expect(hasAmbiguousNumericDash("URS-3 Shell")).toBe(false);
+    expect(hasAmbiguousNumericDash("URS- 3 Shell")).toBe(false);
+  });
+});
+
+describe("pageNeedsNumericSignLook", () => {
+  it("looks at unsigned magnitudes from unmapped glyphs", () => {
+    expect(pageNeedsNumericSignLook("15 °C to 130 °C", ["15"])).toBe(true);
+    expect(pageNeedsNumericSignLook("-15 °C to 130 °C", ["15"])).toBe(false);
+    expect(pageNeedsNumericSignLook("Process temperature 15–130 °C", ["15"])).toBe(
       false
     );
+  });
+
+  it("looks at a leftover dash that may be a minus or a bullet", () => {
+    expect(
+      pageNeedsNumericSignLook(
+        "URS-3 Shell Operating temperature – 15 °C to 130 °C"
+      )
+    ).toBe(true);
+    expect(pageNeedsNumericSignLook("– 15 samples were taken")).toBe(true);
+    expect(pageNeedsNumericSignLook("Setpoint - 50 RPM")).toBe(true);
   });
 });
 

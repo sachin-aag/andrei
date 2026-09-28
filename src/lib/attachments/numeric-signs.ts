@@ -1,7 +1,8 @@
 /**
  * OCR and PDF text layers often emit a unicode minus, an en/em/figure dash,
  * or a hyphen variant as the sign, or split "- 15". A dash between two digits
- * is a range and stays as-is.
+ * is a range and stays as-is. A dash one space before a number may be a
+ * leading minus or a bullet — that is not decided here.
  *
  * ASCII hyphen, unicode minus, en-dash, em-dash, figure dash, horizontal bar,
  * hyphen / non-breaking hyphen, small/fullwidth hyphen-minus.
@@ -11,20 +12,33 @@ export const UNICODE_MINUS_SIGN_RE = /[−–—‒―‐‑﹘﹣－]/g;
 /** Optional leading minus in a quantity, including OCR dash lookalikes. */
 export const LEADING_MINUS_CLASS = String.raw`[\-−–—‒―‐‑﹘﹣－]`;
 
+/** Hyphen-minus and unicode minus: these are signs, not bullets. */
+export const CERTAIN_MINUS_CLASS = String.raw`[\-−]`;
+
 const DASH_CHARS = String.raw`\-−–—‒―‐‑﹘﹣－`;
-const CELSIUS_UNIT = String.raw`°\s*C`;
-const UNSIGNED_CELSIUS_RE = new RegExp(
-  `(?<![A-Za-z0-9.${DASH_CHARS}])(\\d+(?:\\.\\d+)?)(\\s*${CELSIUS_UNIT})\\b`,
+const QUANTITY_UNIT =
+  String.raw`(?:°\s*C|kg\s*\/\s*cm²?|rpm\b|mbar\b|\bbar\b|%rh|%(?!\s*rh)|mm\b)`;
+
+const SIGNED_QUANTITY_RE = new RegExp(
+  `(?<![A-Za-z0-9.])${LEADING_MINUS_CLASS}\\s*(\\d+(?:\\.\\d+)?)\\s*(${QUANTITY_UNIT})?`,
   "gi"
 );
-const SIGNED_CELSIUS_RE = new RegExp(
-  `(?<![A-Za-z0-9.])${LEADING_MINUS_CLASS}\\s*(\\d+(?:\\.\\d+)?)\\s*${CELSIUS_UNIT}\\b`,
-  "gi"
-);
-const UNSIGNED_CELSIUS_TO_RE = new RegExp(
-  `(?<![A-Za-z0-9.${DASH_CHARS}])(\\d+(?:\\.\\d+)?)\\s*${CELSIUS_UNIT}\\s+to\\b`,
-  "gi"
-);
+
+/**
+ * Convert a minus-like glyph that sits immediately before a digit into `-`.
+ * Leave a dash that is one space away from the number — that may be a bullet.
+ * A dash between two digits stays a range.
+ */
+export function glueImmediateMinusSigns(text: string): string {
+  return text.replace(UNICODE_MINUS_SIGN_RE, (ch, offset, str) => {
+    const prev = str[offset - 1] ?? "";
+    const next = str[offset + 1] ?? "";
+    if (/\d/.test(prev)) return ch;
+    if (/\s/.test(next)) return ch;
+    if (/\d/.test(next)) return "-";
+    return ch;
+  });
+}
 
 export function glueOcrMinusSigns(text: string): string {
   const asHyphen = text.replace(UNICODE_MINUS_SIGN_RE, (ch, offset, str) => {
@@ -35,41 +49,105 @@ export function glueOcrMinusSigns(text: string): string {
   return asHyphen.replace(/(?<![\d.])-\s+(\d)/g, "-$1");
 }
 
-function signedCelsiusMagnitudes(text: string): Set<string> {
-  const magnitudes = new Set<string>();
-  for (const match of text.matchAll(SIGNED_CELSIUS_RE)) {
-    if (match[1]) magnitudes.add(match[1]);
+type SignedQuantity = {
+  magnitude: string;
+  unit: string;
+};
+
+function parseSignedQuantities(text: string): SignedQuantity[] {
+  const signed: SignedQuantity[] = [];
+  for (const match of glueOcrMinusSigns(text).matchAll(SIGNED_QUANTITY_RE)) {
+    if (!match[1]) continue;
+    signed.push({
+      magnitude: match[1],
+      unit: (match[2] ?? "").replace(/\s+/g, ""),
+    });
   }
-  return magnitudes;
+  return signed;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function unitPattern(unit: string): string {
+  if (!unit) return QUANTITY_UNIT;
+  if (unit.startsWith("°")) return String.raw`°\s*C`;
+  return escapeRegExp(unit);
 }
 
 /**
- * Copy a leading minus onto unsigned `N °C` in `base` only when `evidence`
- * already shows `-N °C`. Never invent a sign. An en-dash range (`15–130 °C`)
- * is not `N °C` and stays unsigned.
+ * Copy a leading minus onto an unsigned (or dash-then-space) quantity in
+ * `base` only when `evidence` already shows `-N` with the same unit. Never
+ * invent a sign. An en-dash range (`15–130 °C`) is not a signed quantity.
  */
 export function overlayLeadingMinuses(base: string, evidence: string): string {
-  const gluedBase = glueOcrMinusSigns(base);
-  const signed = signedCelsiusMagnitudes(glueOcrMinusSigns(evidence));
-  if (signed.size === 0) return gluedBase;
-  return gluedBase.replace(UNSIGNED_CELSIUS_RE, (full, magnitude: string) =>
-    signed.has(magnitude) ? `-${full}` : full
+  const signed = parseSignedQuantities(evidence);
+  let next = glueImmediateMinusSigns(base);
+  if (signed.length === 0) return next;
+  for (const quantity of signed) {
+    next = overlayOneQuantity(next, quantity);
+  }
+  return next;
+}
+
+function overlayOneQuantity(text: string, quantity: SignedQuantity): string {
+  const unit = unitPattern(quantity.unit);
+  const magnitude = escapeRegExp(quantity.magnitude);
+  const unsigned = new RegExp(
+    `(?<![A-Za-z0-9.${DASH_CHARS}])(?:${LEADING_MINUS_CLASS}\\s+)?(${magnitude})(\\s*${unit})`,
+    "gi"
   );
+  return text.replace(unsigned, (_full, mag: string, unitText: string) => {
+    return `-${mag}${unitText}`;
+  });
 }
 
 /**
- * True when the page still has an unsigned `N °C to` range whose magnitude is
- * not already signed on that page. That is the dropped-minus form on this URS
- * (`15 °C to 130 °C`, `20 °C to 150 °C`). A genuine en-dash range (`15–130 °C`,
- * no "to") does not match.
+ * True when a hyphen/dash sits one space before a number and is not a range
+ * separator (`15 – 130`) or an identifier wrap (`URS- 3`). That glyph may be
+ * a leading minus or a bullet.
  */
-export function textLayerDroppedCelsiusSign(text: string): boolean {
-  const glued = glueOcrMinusSigns(text);
-  const signed = signedCelsiusMagnitudes(glued);
-  for (const match of glued.matchAll(UNSIGNED_CELSIUS_TO_RE)) {
-    if (match[1] && !signed.has(match[1])) return true;
+export function hasAmbiguousNumericDash(text: string): boolean {
+  const hay = glueImmediateMinusSigns(text);
+  const re = new RegExp(`${LEADING_MINUS_CLASS}\\s+\\d`, "g");
+  for (const match of hay.matchAll(re)) {
+    const index = match.index ?? 0;
+    const immediatePrev = hay[index - 1] ?? "";
+    if (/[A-Za-z]/.test(immediatePrev)) continue;
+    const prev = previousNonSpace(hay, index);
+    if (/\d/.test(prev)) continue;
+    return true;
   }
   return false;
+}
+
+function previousNonSpace(text: string, index: number): string {
+  for (let i = index - 1; i >= 0; i--) {
+    const ch = text[i]!;
+    if (!/\s/.test(ch)) return ch;
+  }
+  return "";
+}
+
+export function hasUnsignedMagnitude(text: string, magnitude: string): boolean {
+  if (!magnitude) return false;
+  const hay = glueImmediateMinusSigns(text);
+  const re = new RegExp(
+    `(?<![A-Za-z0-9.${DASH_CHARS}])${escapeRegExp(magnitude)}(?!\\d)(?![${DASH_CHARS}]\\d)`,
+    "g"
+  );
+  return re.test(hay);
+}
+
+export function pageNeedsNumericSignLook(
+  text: string,
+  ambiguousMagnitudes: readonly string[] = []
+): boolean {
+  if (hasAmbiguousNumericDash(text)) return true;
+  return ambiguousMagnitudes.some((magnitude) =>
+    hasUnsignedMagnitude(text, magnitude)
+  );
 }
 
 /**

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { StructuredTextItem } from "unpdf";
 import {
   attachSpatialMinusSigns,
+  ambiguousNumericMagnitudes,
   classifyPdfExtractLayout,
   readPdfTextLayer,
   reconstructPageText,
@@ -109,23 +110,25 @@ function pdfItem(
 
 describe("reconstructPageText", () => {
   it("restores a minus that PDF.js emitted as an empty-width glyph before 15", () => {
-    expect(
-      reconstructPageText([
-        pdfItem("1 mm ", 10),
-        pdfItem("", 80, 200, { width: 4, fontSize: 10 }),
-        pdfItem("15 °C to 130 °C", 85),
-      ])
-    ).toContain("-15 °C to 130 °C");
+    const items = [
+      pdfItem("1 mm ", 10),
+      pdfItem("", 80, 200, { width: 4, fontSize: 10 }),
+      pdfItem("15 °C to 130 °C", 85),
+    ];
+    expect(reconstructPageText(items)).toContain("15 °C to 130 °C");
+    expect(reconstructPageText(items)).not.toMatch(/-15 °C/);
+    expect(ambiguousNumericMagnitudes(items)).toEqual(["15"]);
   });
 
   it("restores a minus that PDF.js emitted as a width-0 empty glyph before 15", () => {
-    expect(
-      reconstructPageText([
-        pdfItem("1 mm ", 10),
-        pdfItem("", 80, 200, { width: 0, fontSize: 10, height: 0 }),
-        pdfItem("15 °C to 130 °C", 85),
-      ])
-    ).toContain("-15 °C to 130 °C");
+    const items = [
+      pdfItem("1 mm ", 10),
+      pdfItem("", 80, 200, { width: 0, fontSize: 10, height: 0 }),
+      pdfItem("15 °C to 130 °C", 85),
+    ];
+    expect(reconstructPageText(items)).toContain("15 °C to 130 °C");
+    expect(reconstructPageText(items)).not.toMatch(/-15 °C/);
+    expect(ambiguousNumericMagnitudes(items)).toEqual(["15"]);
   });
 
   it("glues a minus item that is spatially left of 15 even if stream order is later", () => {
@@ -152,23 +155,36 @@ describe("reconstructPageText", () => {
   });
 
   it("restores a minus that PDF.js mapped to a space in the temperature cell", () => {
-    expect(
-      reconstructPageText([
-        pdfItem("Shell Operating temperature", 10, 200, { width: 160 }),
-        pdfItem(" ", 220, 200, { width: 5 }),
-        pdfItem("15 °C to 130 °C", 226),
-      ])
-    ).toMatch(/-15 °C to 130 °C/);
+    const items = [
+      pdfItem("Shell Operating temperature", 10, 200, { width: 160 }),
+      pdfItem(" ", 220, 200, { width: 5 }),
+      pdfItem("15 °C to 130 °C", 226),
+    ];
+    expect(reconstructPageText(items)).toBe(
+      "Shell Operating temperature 15 °C to 130 °C"
+    );
+    expect(ambiguousNumericMagnitudes(items)).toEqual(["15"]);
+  });
+
+  it("does not attach an en-dash one space before a number (bullet vs sign)", () => {
+    const items = [
+      pdfItem("Operating temperature ", 10, 200, { width: 120 }),
+      pdfItem("–", 140, 200, { width: 5 }),
+      pdfItem(" ", 146, 200, { width: 4 }),
+      pdfItem("15 °C to 130 °C", 151),
+    ];
+    expect(reconstructPageText(items)).toMatch(/– 15 °C to 130 °C/);
+    expect(ambiguousNumericMagnitudes(items)).toEqual(["15"]);
   });
 
   it("does not treat a word-space before 15 as a minus", () => {
-    expect(
-      reconstructPageText([
-        pdfItem("than 1 mm", 10, 200, { width: 50 }),
-        pdfItem(" ", 62, 200, { width: 3 }),
-        pdfItem("15 °C to 130 °C", 66),
-      ])
-    ).toBe("than 1 mm 15 °C to 130 °C");
+    const items = [
+      pdfItem("than 1 mm", 10, 200, { width: 50 }),
+      pdfItem(" ", 62, 200, { width: 3 }),
+      pdfItem("15 °C to 130 °C", 66),
+    ];
+    expect(reconstructPageText(items)).toBe("than 1 mm 15 °C to 130 °C");
+    expect(ambiguousNumericMagnitudes(items)).toEqual([]);
   });
 
   it("keeps an en-dash range between 15 and 130", () => {
@@ -183,7 +199,7 @@ describe("reconstructPageText", () => {
 });
 
 describe("readPdfTextLayer signed temperatures", () => {
-  it("keeps a minus drawn as its own glyph before 15 °C", async () => {
+  it("leaves a hyphen-minus that pdf.js merged with a space for sign overlay", async () => {
     const document = await PDFDocument.create();
     const font = await document.embedFont(StandardFonts.Helvetica);
     const page = document.addPage([600, 800]);
@@ -198,6 +214,7 @@ describe("readPdfTextLayer signed temperatures", () => {
     const layer = await readPdfTextLayer(
       Buffer.from(await document.save())
     );
-    expect(layer.pages[0]?.text).toMatch(/-15 C to 130 C/);
+    expect(layer.pages[0]?.text).toMatch(/- 15 C to 130 C/);
+    expect(layer.pages[0]?.text).not.toMatch(/-15 C to 130 C/);
   });
 });

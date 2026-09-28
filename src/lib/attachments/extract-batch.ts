@@ -26,7 +26,7 @@ import {
 } from "@/lib/attachments/pdf-split";
 import {
   overlayLeadingMinuses,
-  textLayerDroppedCelsiusSign,
+  pageNeedsNumericSignLook,
 } from "@/lib/attachments/numeric-signs";
 import {
   MIN_TEXT_LAYER_CHARS,
@@ -52,7 +52,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v8";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v9";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -117,6 +117,7 @@ const insightBatchSchema = z.object({
 });
 
 const SIGNED_QUANTITY_OVERLAY_MAX_OUTPUT_TOKENS = 1_000;
+const MAX_NUMERIC_SIGN_OVERLAY_PAGES = 5;
 
 const signedQuantityOverlaySchema = z.object({
   signedQuantities: z.array(z.string().max(80)).max(24).default([]),
@@ -296,6 +297,9 @@ async function extractFromTextLayer(
     (insights?.pages ?? []).map((page) => [page.pageNumber, page])
   );
 
+  const ambiguousByPage = new Map(
+    textLayer.pages.map((page) => [page.pageNumber, page.ambiguousMagnitudes])
+  );
   const pages: ExtractedPage[] = textLayer.pages.map((page) => {
     const insight = byPageNumber.get(page.pageNumber);
     const flags = visualPresenceFlags({
@@ -320,7 +324,7 @@ async function extractFromTextLayer(
     };
   });
 
-  await overlayDroppedCelsiusSigns(input, pages);
+  await overlayAmbiguousNumericSigns(input, pages, ambiguousByPage);
 
   return {
     pages,
@@ -454,7 +458,13 @@ async function extractMixedPagesWithDocumentAi(
     outputTokens += vision.usage?.outputTokens ?? 0;
   }
 
-  await overlayDroppedCelsiusSigns(input, pages);
+  await overlayAmbiguousNumericSigns(
+    input,
+    pages,
+    new Map(
+      textLayer.pages.map((page) => [page.pageNumber, page.ambiguousMagnitudes])
+    )
+  );
 
   return {
     pages,
@@ -1279,18 +1289,43 @@ function fillDerivedPageContext(page: ExtractedPage): ExtractedPage {
   return { ...page, pageContext: truncate(digest, MAX_PAGE_CONTEXT_CHARS) };
 }
 
-function pagesWithDroppedCelsiusSign(pages: ExtractedPage[]): ExtractedPage[] {
-  return pages.filter((page) => textLayerDroppedCelsiusSign(page.transcript));
+function pagesNeedingNumericSignLook(
+  pages: ExtractedPage[],
+  ambiguousByPage: ReadonlyMap<number, readonly string[]>
+): ExtractedPage[] {
+  return pages.filter((page) =>
+    pageNeedsNumericSignLook(
+      page.transcript,
+      ambiguousByPage.get(page.pageNumber) ?? []
+    )
+  );
+}
+
+function selectNumericSignOverlayPages(
+  pages: ExtractedPage[],
+  ambiguousByPage: ReadonlyMap<number, readonly string[]>
+): ExtractedPage[] {
+  const needed = pagesNeedingNumericSignLook(pages, ambiguousByPage);
+  if (needed.length <= MAX_NUMERIC_SIGN_OVERLAY_PAGES) return needed;
+  return needed
+    .toSorted((left, right) => {
+      const leftCount = (ambiguousByPage.get(left.pageNumber) ?? []).length;
+      const rightCount = (ambiguousByPage.get(right.pageNumber) ?? []).length;
+      return rightCount - leftCount || left.pageNumber - right.pageNumber;
+    })
+    .slice(0, MAX_NUMERIC_SIGN_OVERLAY_PAGES)
+    .toSorted((left, right) => left.pageNumber - right.pageNumber);
 }
 
 /**
- * Restore a leading minus on unsigned `N °C to` when insight visuals, OCR,
- * or a last-resort Gemini look at the page still saw `-N °C`. Overlay only —
- * the parser transcript stays canonical. Never invent a sign.
+ * Restore a leading minus when insight visuals, OCR, or a page look already
+ * saw a signed quantity. Used when a hyphen next to a number may be a minus
+ * or a bullet. Overlay only — never invent a sign.
  */
-async function overlayDroppedCelsiusSigns(
+async function overlayAmbiguousNumericSigns(
   input: ResolvedInput,
-  pages: ExtractedPage[]
+  pages: ExtractedPage[],
+  ambiguousByPage: ReadonlyMap<number, readonly string[]> = new Map()
 ): Promise<void> {
   for (const page of pages) {
     page.transcript = overlayLeadingMinuses(
@@ -1298,19 +1333,24 @@ async function overlayDroppedCelsiusSigns(
       page.visualInterpretation
     );
   }
-  if (pagesWithDroppedCelsiusSign(pages).length === 0) return;
+  if (pagesNeedingNumericSignLook(pages, ambiguousByPage).length === 0) return;
 
-  await overlayDroppedCelsiusSignsFromDocumentAi(input, pages);
-  if (pagesWithDroppedCelsiusSign(pages).length === 0) return;
+  await overlayAmbiguousNumericSignsFromDocumentAi(
+    input,
+    pages,
+    ambiguousByPage
+  );
+  if (pagesNeedingNumericSignLook(pages, ambiguousByPage).length === 0) return;
 
-  await overlayDroppedCelsiusSignsFromVision(input, pages);
+  await overlayAmbiguousNumericSignsFromVision(input, pages, ambiguousByPage);
 }
 
-async function overlayDroppedCelsiusSignsFromDocumentAi(
+async function overlayAmbiguousNumericSignsFromDocumentAi(
   input: ResolvedInput,
-  pages: ExtractedPage[]
+  pages: ExtractedPage[],
+  ambiguousByPage: ReadonlyMap<number, readonly string[]>
 ): Promise<void> {
-  const dropped = pagesWithDroppedCelsiusSign(pages);
+  const dropped = selectNumericSignOverlayPages(pages, ambiguousByPage);
   if (dropped.length === 0 || !isDocumentAiConfigured()) return;
 
   try {
@@ -1343,15 +1383,16 @@ async function overlayDroppedCelsiusSignsFromDocumentAi(
 }
 
 /**
- * 12-page URS ingest skips the insight pass, and Document AI native PDF
- * parsing can re-read the same unsigned text layer. Look at those 1–2 pages
- * and copy a minus only when the model reports a signed quantity.
+ * Large text-layer batches skip the insight pass. Look at pages where a
+ * hyphen next to a number may be a minus or a bullet, and copy a minus only
+ * when the model reports a signed quantity.
  */
-async function overlayDroppedCelsiusSignsFromVision(
+async function overlayAmbiguousNumericSignsFromVision(
   input: ResolvedInput,
-  pages: ExtractedPage[]
+  pages: ExtractedPage[],
+  ambiguousByPage: ReadonlyMap<number, readonly string[]>
 ): Promise<void> {
-  for (const page of pagesWithDroppedCelsiusSign(pages)) {
+  for (const page of selectNumericSignOverlayPages(pages, ambiguousByPage)) {
     const relative = page.pageNumber - input.pageStart + 1;
     try {
       const evidence = await requestSignedQuantityOverlay({
@@ -1540,11 +1581,13 @@ function buildSignedQuantityOverlayPrompt(input: {
   pageStart: number;
   filename: string;
 }): string {
-  return `Look at the page image of page ${input.pageStart} of ${input.filename}, not only the embedded text layer.
+  return `Look at hyphens and dashes next to numbers on the page image of page ${input.pageStart} of ${input.filename}, not only the embedded text layer.
 
-List every visibly signed quantity whose leading minus is drawn on the page (for example −15 °C, −20 °C, or −50 RPM).
+A leading minus on a quantity (−15 °C, −20 °C, −50 RPM) is a sign.
+A bullet, list dash, or range separator (15–130 °C) is not a sign.
 
-Do not invent a minus on an unsigned range such as 15–130 °C or 15 °C to 130 °C when no minus is visible.
+List every visibly signed quantity. Empty list when none are visible.
+Do not invent a minus.
 
 Return:
 - signedQuantities: the signed strings only. Empty list when none are visible.`;
@@ -1561,7 +1604,7 @@ function buildInsightPrompt(input: {
 
 The page text has already been extracted by a PDF parser. Do not transcribe or quote headings, paragraphs, or whole tables.
 
-Exception: if a table or label shows a signed quantity whose leading minus a text layer often drops (for example −15 °C, −20 °C, or −50 RPM), copy those signed values into visualInterpretation. Do not invent a minus on a range that has none.
+Exception: if a table or label shows a signed quantity whose leading minus a text layer often drops (for example −15 °C, −20 °C, or −50 RPM), copy those signed values into visualInterpretation. Do not treat a bullet or list dash as a minus. Do not invent a minus on a range that has none.
 
 For each page return:
 - pageNumber: absolute 1-based PDF page number.

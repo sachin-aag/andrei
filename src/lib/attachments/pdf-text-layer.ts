@@ -4,8 +4,9 @@ import {
   type StructuredTextItem,
 } from "unpdf";
 import {
-  glueOcrMinusSigns,
+  CERTAIN_MINUS_CLASS,
   LEADING_MINUS_CLASS,
+  glueImmediateMinusSigns,
 } from "@/lib/attachments/numeric-signs";
 
 /**
@@ -17,6 +18,12 @@ export const MIN_TEXT_LAYER_CHARS = 180;
 export type PdfPageText = {
   pageNumber: number;
   text: string;
+  /**
+   * Leading digits of numbers whose left-hand dash is not a certain minus
+   * (unmapped glyph, space-width run, or en-dash with a gap). Overlay looks
+   * at those pages; it does not invent a sign.
+   */
+  ambiguousMagnitudes: string[];
 };
 
 export type PdfTextLayer = {
@@ -54,6 +61,7 @@ export async function readPdfTextLayer(
   const pages = items.map((pageItems, index) => ({
     pageNumber: pageStart + index,
     text: reconstructPageText(pageItems),
+    ambiguousMagnitudes: ambiguousNumericMagnitudes(pageItems),
   }));
 
   return {
@@ -77,13 +85,14 @@ export function classifyPdfExtractLayout(
   return "mixed";
 }
 
+const CERTAIN_MINUS_GLYPH_RE = new RegExp(`^${CERTAIN_MINUS_CLASS}$`);
 const MINUS_GLYPH_RE = new RegExp(`^${LEADING_MINUS_CLASS}$`);
 const UNMAPPED_DASH_RE = /^[\u0000\uFFFD\uE000-\uF8FF]$/;
 
 /**
- * PDF.js often maps a subset-font minus to an empty string, a private-use
- * character, or a space-width run sitting one space left of the digits.
- * Naive concatenation drops those items, so URS-3 lands as `15 °C`.
+ * Attach a hyphen-minus or unicode minus that sits immediately left of a
+ * number, including one space away. An en-dash / unmapped glyph / space-width
+ * run is not attached here — that may be a bullet, and overlay decides.
  */
 export function attachSpatialMinusSigns(
   items: readonly StructuredTextItem[]
@@ -99,7 +108,7 @@ export function attachSpatialMinusSigns(
     const left = next[leftIndex]!;
     if (/\d$/.test(left.str.trim())) continue;
     const gap = numberItem.x - (left.x + Math.max(left.width, 0));
-    if (!isSpatialMinus(left, gap)) continue;
+    if (!isCertainSpatialMinus(left, gap)) continue;
     if (isPrecededByDigit(next, leftIndex, consumed)) continue;
     numberItem.str = `-${numberItem.str.replace(/^\s+/, "")}`;
     consumed.add(leftIndex);
@@ -116,6 +125,29 @@ export function reconstructPageText(
       .map((item) => item.str + (item.hasEOL ? "\n" : ""))
       .join("")
   );
+}
+
+export function ambiguousNumericMagnitudes(
+  items: readonly StructuredTextItem[]
+): string[] {
+  const consumed = new Set<number>();
+  const magnitudes = new Set<string>();
+  for (let i = 0; i < items.length; i++) {
+    const numberItem = items[i]!;
+    const trimmed = numberItem.str.trim();
+    if (!/^\d/.test(trimmed)) continue;
+    const leftIndex = nearestSignCandidateLeft(items, i, consumed);
+    if (leftIndex == null) continue;
+    const left = items[leftIndex]!;
+    if (/\d$/.test(left.str.trim())) continue;
+    if (isPrecededByDigit(items, leftIndex, consumed)) continue;
+    const gap = numberItem.x - (left.x + Math.max(left.width, 0));
+    if (isCertainSpatialMinus(left, gap)) continue;
+    if (!isAmbiguousSpatialDash(left, gap)) continue;
+    const magnitude = trimmed.match(/^\d+(?:\.\d+)?/)?.[0];
+    if (magnitude) magnitudes.add(magnitude);
+  }
+  return [...magnitudes];
 }
 
 function itemEm(item: StructuredTextItem): number {
@@ -210,6 +242,30 @@ function isWordAdjacentSpace(
   return gap <= itemEm(space) * 0.5;
 }
 
+function isCertainMinusGlyph(item: StructuredTextItem): boolean {
+  return CERTAIN_MINUS_GLYPH_RE.test(item.str.trim());
+}
+
+function isCertainSpatialMinus(item: StructuredTextItem, gap: number): boolean {
+  if (isCertainMinusGlyph(item)) return true;
+  const trimmed = item.str.trim();
+  if (!MINUS_GLYPH_RE.test(trimmed)) return false;
+  const size = itemEm(item);
+  return gap <= size * 0.45;
+}
+
+function isAmbiguousSpatialDash(item: StructuredTextItem, gap: number): boolean {
+  if (isCertainSpatialMinus(item, gap)) return false;
+  if (MINUS_GLYPH_RE.test(item.str.trim())) return true;
+  if (!isUnmappedDashItem(item) && !isWhitespaceItem(item)) return false;
+  const size = itemEm(item);
+  if (item.width > 0) {
+    const ratio = item.width / size;
+    return ratio >= 0.15 && ratio <= 0.8;
+  }
+  return gap >= -size * 0.2 && gap <= size * 2.5;
+}
+
 function isPrecededByDigit(
   items: readonly StructuredTextItem[],
   dashIndex: number,
@@ -220,23 +276,8 @@ function isPrecededByDigit(
   return /\d$/.test(items[leftIndex]!.str.trim());
 }
 
-function isSpatialMinus(item: StructuredTextItem, gap: number): boolean {
-  const trimmed = item.str.trim();
-  if (MINUS_GLYPH_RE.test(trimmed)) return true;
-  if (trimmed.length > 1) return false;
-  if (!isUnmappedDashItem(item) && !isWhitespaceItem(item)) return false;
-  const size = itemEm(item);
-  if (item.width > 0) {
-    const ratio = item.width / size;
-    return ratio >= 0.15 && ratio <= 0.8;
-  }
-  // PDF.js maps some subset-font minuses to an empty .notdef with width 0.
-  // A coincident item (gap ~ 0) or one space away still counts.
-  return gap >= -size * 0.2 && gap <= size * 2.5;
-}
-
 function normalizePageText(raw: string): string {
-  return glueOcrMinusSigns(
+  return glueImmediateMinusSigns(
     raw
       .replace(/\r\n/g, "\n")
       .replace(/[^\S\n]+/g, " ")
