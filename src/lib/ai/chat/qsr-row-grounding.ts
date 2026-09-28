@@ -65,9 +65,9 @@ const STOCK_COMPLIES_RE = /\bcomplies\b/i;
 const STOCK_BARE_SECTION_13_RE = /^section\s*13$/i;
 const PASS_WORD_CELL_RE = /^(?:complies|verified)$/i;
 const SECTION_NUMBER_CELL_RE = /^(?:section\s+)?\d+(?:\.\d+)+$/i;
-/** Titled Section cells: `8.2.3; Heating Trial` or `Section 4. Vendor documentation`. */
+/** Titled Section cells: `8.2.3 – Heating trial at 8000 L` or `Section 4. Vendor documentation`. */
 const RTM_SECTION_DETAIL_CELL_RE =
-  /^(?:section\s+\d+(?:\.\d+)*|(?:\d+\.)+\d+)(?:\s*[;:.]?\s+|\s+)[A-Za-z]/i;
+  /^(?:section\s+\d+(?:\.\d+)*|(?:\d+\.)+\d+)(?:\s*[;:.–—-]?\s+|\s+)[A-Za-z]/i;
 const SECTION_HEADING_STOP_RE =
   /\b(?:results?|verified|acceptance\s+criteria|design\s+pressure|operating\s+pressure|page\s+\d+|uncontrolled)\b/i;
 const SAME_AS_PROTOCOL_RE = /\bsame as that of\s+(DQ|IQ|OQ|PQ)\b/i;
@@ -1067,9 +1067,7 @@ function protocolMentionsKey(
 function headingTitleAfterNumber(rest: string): string {
   let text = rest;
   const same = SAME_AS_PROTOCOL_RE.exec(text);
-  if (same && same.index != null) {
-    text = text.slice(0, same.index + same[0].length);
-  }
+  if (same && same.index != null) text = text.slice(0, same.index);
   const sentence = text.search(/\.\s+[A-Z]/);
   if (sentence !== -1) text = text.slice(0, sentence);
   const cut = text.search(SECTION_HEADING_STOP_RE);
@@ -1077,19 +1075,83 @@ function headingTitleAfterNumber(rest: string): string {
   return raw.replace(/[.:;,-]+$/g, "").replace(/\s+/g, " ").trim();
 }
 
-function protocolSameAsClause(body: string, title: string): string {
-  const match = body.match(SAME_AS_PROTOCOL_RE);
-  if (!match?.[1]) return "";
-  const clause = `same as that of ${match[1].toUpperCase()}`;
-  if (title.toLowerCase().includes(clause.toLowerCase())) return "";
-  return clause;
+function formatRtmSectionHeading(number: string, rest: string): string {
+  const title = cleanRtmSectionDescription(headingTitleAfterNumber(rest));
+  return title ? `${number} – ${title}` : number;
 }
 
-function formatRtmSectionHeading(number: string, rest: string, body: string): string {
-  const title = headingTitleAfterNumber(rest);
-  const sameAs = protocolSameAsClause(body, title);
-  const detail = [title, sameAs].filter(Boolean).join(" ");
-  return detail ? `${number}; ${detail}` : number;
+const RTM_SECTION_DESCRIPTION_MAX_WORDS = 18;
+/**
+ * Page furniture a model or OCR heading can pick up instead of the test:
+ * `Page 21 of 51`, the Capacity/Size / Effective Date header block, signed
+ * dates, and a word cut off mid-token (`… Block S`).
+ */
+const RTM_SECTION_JUNK_RES: readonly RegExp[] = [
+  /\bof\s+\d+\b/i,
+  /\bpage\b/i,
+  /\beffective\s+date\b/i,
+  /\bcapacity\s*\/\s*size\b/i,
+  /\bproduction\s+block\b/i,
+  /\b(?:supersedes|uncontrolled|document\s+no|format\s+no)\b/i,
+  /\b(?:prepared|reviewed|approved|checked|verified)\s+by\b/i,
+  /\b\d{1,2}([-/.])\d{1,2}\1(?:\d{4}|\d{2})\b/,
+  // A lone trailing letter is a cut-off word unless it is a unit (8000 L).
+  /(?:^|[^\d\s])\s[A-Za-z]$/,
+];
+
+/** One plain line about the test performed, or "" when it is page furniture. */
+function cleanRtmSectionDescription(raw: string): string {
+  let text = raw
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[;:.,–—-]+\s*/, "");
+  // An ALL-CAPS protocol label (PROCEDURE, TEST) ahead of the sentence.
+  text = text.replace(/^(?:[A-Z]{4,}\s+)+(?=[A-Z][a-z])/, "");
+  const sentenceEnd = text.search(/[.;]\s/);
+  if (sentenceEnd !== -1) text = text.slice(0, sentenceEnd);
+  text = text.replace(/[.:;,–—-]+$/g, "").trim();
+  if (!text || !/[A-Za-z]{3,}/.test(text) || /[<>]/.test(text)) return "";
+  if (text.split(/\s+/).length > RTM_SECTION_DESCRIPTION_MAX_WORDS) return "";
+  if (RTM_SECTION_JUNK_RES.some((re) => re.test(text))) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** A protocol section number (8.2.3, 13.6, Section 4) — not a page number. */
+function rtmCellSectionNumber(text: string, allowInteger = false): string {
+  const trimmed = text.replace(/\[[^\]]*\]/g, "").trim();
+  const labeled = trimmed.match(/^section\s+(\d+(?:\.\d+)*)/i);
+  if (labeled?.[1]) return labeled[1];
+  const number = allowInteger ? /^(\d+(?:\.\d+)*)/ : /^(\d+(?:\.\d+)+)/;
+  const match = trimmed.match(number)?.[1] ?? "";
+  if (!match || /^\s*of\s+\d/i.test(trimmed.slice(match.length))) return "";
+  return match;
+}
+
+function rtmCellDescription(text: string): string {
+  const trimmed = text.replace(/\[[^\]]*\]/g, "").trim();
+  const rest = trimmed
+    .replace(/^section\s+\d+(?:\.\d+)*\.?/i, "")
+    .replace(/^\d+(?:\.\d+)*\.?/, "");
+  return cleanRtmSectionDescription(rest);
+}
+
+/**
+ * Reference – Section is `{protocol section number} – {one line about the
+ * test}`. The number comes from the matched protocol heading when there is
+ * one; the model's one-line description is kept when it is clean, else the
+ * heading title. Page numbers and header blocks never persist.
+ */
+export function rtmSectionCellText(
+  requested: string,
+  pick: Pick<RtmReferencePick, "sectionHeading"> | null
+): string {
+  const heading = pick?.sectionHeading ?? "";
+  const number =
+    rtmCellSectionNumber(heading, true) || rtmCellSectionNumber(requested);
+  const description = rtmCellDescription(requested) || rtmCellDescription(heading);
+  if (number && description) return `${number} – ${description}`;
+  return number || description;
 }
 
 const MULTI_LEVEL_HEADING_RE = /(?:^|\s)(\d+(?:\.\d+){2,4})\.?\s+(?=[A-Z])/g;
@@ -1118,11 +1180,7 @@ function rowMatchedSectionHeading(stripped: string, context: string): string | n
     }
   }
   if (!best) return null;
-  return formatRtmSectionHeading(
-    best.number,
-    best.block.replace(/^\.?\s+/, ""),
-    best.block
-  );
+  return formatRtmSectionHeading(best.number, best.block.replace(/^\.?\s+/, ""));
 }
 
 function protocolSectionHeading(body: string, context = ""): string | null {
@@ -1133,25 +1191,25 @@ function protocolSectionHeading(body: string, context = ""): string | null {
     /(?:^|[\s])(\d+(?:\.\d+){2,4})\.?\s+([A-Z][\s\S]*)/
   );
   if (multiTitle?.[1] && multiTitle[2]) {
-    return formatRtmSectionHeading(multiTitle[1], multiTitle[2], stripped);
+    return formatRtmSectionHeading(multiTitle[1], multiTitle[2]);
   }
   const multi = stripped.match(/(?:^|[\s])(\d+(?:\.\d+){2,4})\.?(?:\s|$)/);
   if (multi?.[1]) {
-    return formatRtmSectionHeading(multi[1], "", stripped);
+    return formatRtmSectionHeading(multi[1], "");
   }
   const titled = stripped.match(/(?:^|[\s])(\d+\.\d+)\.?\s+([A-Z][\s\S]*)/);
   if (titled?.[1] && titled[2]) {
-    return formatRtmSectionHeading(titled[1], titled[2], stripped);
+    return formatRtmSectionHeading(titled[1], titled[2]);
   }
   const labeled = stripped.match(
     /\bsection\s+(\d+(?:\.\d+)*)\.?(?:\s+([\s\S]*))?/i
   );
   if (labeled?.[1]) {
-    return formatRtmSectionHeading(labeled[1], labeled[2] ?? "", stripped);
+    return formatRtmSectionHeading(labeled[1], labeled[2] ?? "");
   }
   const titledInt = stripped.match(/(?:^|[\s])(\d+)\.\s+([A-Z][\s\S]*)/);
   if (titledInt?.[1] && titledInt[2]) {
-    return formatRtmSectionHeading(titledInt[1], titledInt[2], stripped);
+    return formatRtmSectionHeading(titledInt[1], titledInt[2]);
   }
   return null;
 }
@@ -1315,7 +1373,7 @@ function applyPickToRow(
     return next;
   }
   next[cols.stage] = formatRtmStageCell(pick);
-  next[cols.section] = pick.sectionHeading ?? "";
+  next[cols.section] = rtmSectionCellText(next[cols.section] ?? "", pick);
   next[cols.remarks] = pick.remarks;
   return next;
 }
@@ -1355,15 +1413,18 @@ function rankEditCells(
     if (!pick) {
       // ID-only DQ (or a lower family) must not rewrite a filled IQ Section.
       if (rawPick) return [];
-      return [cell];
+      if (cell.col !== cols.section) return [cell];
+      const text = rtmSectionCellText(cell.insertText, null);
+      if (!text && optionalRefExpectedFilled(cell)) return [];
+      return [{ ...cell, insertText: text }];
     }
     if (cell.col === cols.stage) {
       return [{ ...cell, insertText: formatRtmStageCell(pick) }];
     }
     if (cell.col === cols.section) {
-      const heading = pick.sectionHeading ?? "";
-      if (!heading.trim() && optionalRefExpectedFilled(cell)) return [];
-      return [{ ...cell, insertText: heading }];
+      const text = rtmSectionCellText(cell.insertText, pick);
+      if (!text.trim() && optionalRefExpectedFilled(cell)) return [];
+      return [{ ...cell, insertText: text }];
     }
     if (cell.col === cols.remarks) {
       return [{ ...cell, insertText: pick.remarks }];
@@ -1410,7 +1471,7 @@ function rankEditCells(
       });
     };
     add(cols.stage, formatRtmStageCell(pick));
-    add(cols.section, pick.sectionHeading ?? "");
+    add(cols.section, rtmSectionCellText("", pick));
     add(cols.remarks, pick.remarks);
   }
   return {

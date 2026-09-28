@@ -851,7 +851,7 @@ function qsrRtmReferenceColumns(
  * A mixed fill-empty batch also skips rewriting filled cells so the empty
  * remainder still lands; a batch that only rewrites filled cells still applies.
  * QSR RTM Stage / Section / Remarks are the exception: a follow-up may
- * overwrite a filled number with the cited heading (13.6 → 13.6; Gaskets).
+ * overwrite a filled number with the cited heading (13.6 → 13.6 – Gasket material verified as PTFE).
  */
 export function resolveEditCells(
   rows: readonly JSONContent[],

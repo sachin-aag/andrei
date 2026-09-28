@@ -16,9 +16,10 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
       "Never write Complies, bare Section 13, or a stock IQ page"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
-      "8.2.3; Heating Trial same as that of PQ"
+      "8.2.3 – Heating trial at 8000 L working volume"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain("13.6 → 13.6; Gaskets");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("13.6 → 13.6 – Gasket material verified as PTFE");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Never copy the page number (Page 21 of 51)");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Agitator");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Mechanical Seal");
     expect(QSR_DRAFTING_GUIDANCE).toContain(

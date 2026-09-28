@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v155-qsr-rtm-overwrite-section");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v156-qsr-rtm-section-one-liner");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -27,7 +27,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("do not copy URS-37's range onto URS-5");
     expect(prompt).toContain("URS cover");
     expect(prompt).toContain("stock Complies / bare Section 13");
-    expect(prompt).toContain("8.2.3; Heating Trial same as that of PQ");
+    expect(prompt).toContain("8.2.3 – Heating trial at 8000 L working volume");
+    expect(prompt).toContain("Never copy the page number (Page 21 of 51)");
     expect(prompt).toContain("one insert_rows");
     expect(prompt).toContain("Open cards stack");
     expect(prompt).toContain("Apply does not unlock the next insert");
@@ -42,7 +43,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("<qualification stage>");
     expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
     expect(prompt).toContain("fill or update RTM Reference cells");
-    expect(prompt).toContain("13.6 may become 13.6; Gaskets");
+    expect(prompt).toContain("13.6 may become 13.6 – Gasket material verified as PTFE");
     expect(prompt).toContain(
       "one requirement ID is not one grep when filling RTM Stage"
     );

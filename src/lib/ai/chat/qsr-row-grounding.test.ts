@@ -26,6 +26,7 @@ import {
   pageLevelTokenAroundKey,
   rowKeyFromContext,
   rtmReferenceColumnIndexes,
+  rtmSectionCellText,
   dropQsrRtmPlaceholderCells,
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
@@ -1143,7 +1144,7 @@ describe("groundTableOperation optional RTM columns", () => {
       )
     ).toMatchObject({
       stageLabel: "DQ",
-      sectionHeading: "4; Vendor documentation",
+      sectionHeading: "4 – Vendor documentation",
       remarks: "NA",
     });
     const result = groundTableOperation({
@@ -1188,7 +1189,7 @@ describe("groundTableOperation optional RTM columns", () => {
     const byCol = new Map(cells.map((cell) => [cell.col, cell.insertText]));
     expect(byCol.get(3)).toMatch(/^DQ\b/);
     expect(byCol.get(3)).toContain("Design Qualification.PDF");
-    expect(byCol.get(4)).toBe("4; Vendor documentation");
+    expect(byCol.get(4)).toBe("4 – Vendor documentation");
     expect(byCol.get(5)).toBe("NA");
   });
 
@@ -2194,7 +2195,7 @@ describe("groundTableOperation optional RTM columns", () => {
       )
     ).toMatchObject({
       stageLabel: "PQ",
-      sectionHeading: "8.2.3; Heating Trial same as that of PQ",
+      sectionHeading: "8.2.3 – Heating Trial",
     });
   });
 
@@ -2212,7 +2213,7 @@ describe("groundTableOperation optional RTM columns", () => {
       pickRtmReference(ledger, "URS-2", "URS-2\nMOC\nHigh-quality Glass Lining")
     ).toMatchObject({
       stageLabel: "IQ",
-      sectionHeading: "8.2.1; Physical verification same as that of PQ",
+      sectionHeading: "8.2.1 – Physical verification",
     });
   });
 
@@ -2229,14 +2230,56 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(
       pickRtmReference(ledger, "URS-1", "URS-1\nReactor Capacity\n8000 L")
         ?.sectionHeading
-    ).toBe("8.2.3; Heating Trial same as that of PQ");
+    ).toBe("8.2.3 – Heating Trial");
     expect(
       pickRtmReference(
         ledger,
         "URS-2",
         "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm"
       )?.sectionHeading
-    ).toBe("8.2.1; Physical verification");
+    ).toBe("8.2.1 – Physical verification");
+  });
+
+  describe("rtmSectionCellText", () => {
+    const pick = { sectionHeading: "8.2.3 – Heating Trial" };
+
+    it("keeps the model's one-line test description on the protocol section number", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.3 – Heating trial run with the reactor filled to 8000 L",
+          pick
+        )
+      ).toBe("8.2.3 – Heating trial run with the reactor filled to 8000 L");
+      expect(
+        rtmSectionCellText("8.2.1 – Heating trial at 8000 L working volume", pick)
+      ).toBe("8.2.3 – Heating trial at 8000 L working volume");
+    });
+
+    it("drops a page number and header block instead of persisting it", () => {
+      const junk =
+        "21; of 51 Capacity/Size Effective Date Production Block-2 8000 L 21-05-2026 S";
+      expect(rtmSectionCellText(junk, pick)).toBe("8.2.3 – Heating Trial");
+      expect(rtmSectionCellText(junk, null)).toBe("");
+      expect(rtmSectionCellText("Page 21 of 51", null)).toBe("");
+    });
+
+    it("strips an ALL-CAPS protocol label and keeps one line", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.2; PROCEDURE Conduct heating, cooling, and chilling operations. Record the jacket temperature every 15 minutes",
+          null
+        )
+      ).toBe("8.2.2 – Conduct heating, cooling, and chilling operations");
+    });
+
+    it("falls back to the section number when the text runs past one line", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.2 conduct heating cooling and chilling operations as per the standard operating procedure while recording the jacket and mass temperature at every fifteen minute interval",
+          null
+        )
+      ).toBe("8.2.2");
+    });
   });
 
   it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {
