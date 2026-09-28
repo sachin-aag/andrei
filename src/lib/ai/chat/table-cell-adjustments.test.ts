@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   tableCellAdjustments,
   tableCellAdjustmentsMessage,
+  tableEditProposalMessage,
+  tableEditProposalMeta,
 } from "@/lib/ai/chat/table-cell-adjustments";
 
 describe("tableCellAdjustments", () => {
@@ -134,5 +136,58 @@ describe("tableCellAdjustments", () => {
     expect(message).toContain(
       "do not list requested URS rows whose saved Section is empty"
     );
+  });
+
+  it("names only the rowKeys that remain on the suggestion card", () => {
+    const meta = tableEditProposalMeta(
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-1",
+            insertText: "8.2 – Simulation trials at 8000 L",
+          },
+          {
+            row: 6,
+            col: 4,
+            rowKey: "URS-6",
+            insertText: "10.5 – Jacket pressure test",
+          },
+          {
+            row: 12,
+            col: 4,
+            rowKey: "URS-12",
+            insertText: "13.7 – Jacket MOC",
+          },
+        ],
+      },
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-1",
+            insertText: "8.2 – Simulation trials at 8000 L",
+          },
+        ],
+      }
+    );
+    expect(meta).toMatchObject({
+      requestedCellCount: 3,
+      proposedCellCount: 1,
+      requestedRowKeys: ["URS-1", "URS-6", "URS-12"],
+      proposedRowKeys: ["URS-1"],
+      droppedRowKeys: ["URS-6", "URS-12"],
+    });
+    const message = tableEditProposalMessage(meta);
+    expect(message).toContain("URS-1");
+    expect(message).toContain("dropped from the card: URS-6, URS-12");
+    expect(message).toContain("Do not list droppedRowKeys as updated");
+    expect(message).toContain("Wrap-up may name only proposedRowKeys");
   });
 });

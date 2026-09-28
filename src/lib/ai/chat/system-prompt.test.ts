@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v159-qsr-rtm-section-not-reading");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v160-qsr-rtm-proposed-rows");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -40,6 +40,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("8.2.4 / 8.8");
     expect(prompt).toContain("Never paste a markdown table of RTM rows in chat");
     expect(prompt).toContain("Do not list URS-N rows as updated");
+    expect(prompt).toContain("proposedRowKeys");
+    expect(prompt).toContain("droppedRowKeys");
+    expect(prompt).toContain("not one card per URS row");
     expect(prompt).toContain("Do not write Stage as PQ/OQ or PQ/IQ");
     expect(prompt).toContain(
       "leave those three cells empty for that row"

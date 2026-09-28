@@ -2516,4 +2516,18 @@ describe("summarizeTableOperation", () => {
       summarizeTableOperation({ kind: "delete_table", tableIndex: 0 })
     ).toBe("Delete table");
   });
+
+  it("names the URS rows on an edit_cells card", () => {
+    expect(
+      summarizeTableOperation({
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2 – Simulation" },
+          { row: 1, col: 5, rowKey: "URS-1", insertText: "Complies" },
+          { row: 6, col: 4, rowKey: "URS-6", insertText: "10.5 – Jacket" },
+        ],
+      })
+    ).toBe("Update 3 table cells on URS-1, URS-6");
+  });
 });

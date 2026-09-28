@@ -2311,9 +2311,23 @@ export function summarizeTableOperation(operation: TableOperation): string {
   switch (operation.kind) {
     case "edit_cells": {
       const n = operation.cells.length;
+      const keys: string[] = [];
+      const seen = new Set<string>();
+      for (const cell of operation.cells) {
+        const key = cell.rowKey?.replace(/\s+/g, " ").trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        keys.push(key);
+      }
+      const shown = keys.slice(0, 3);
+      const extra = keys.length - shown.length;
+      const onRows =
+        shown.length === 0
+          ? ""
+          : ` on ${shown.join(", ")}${extra > 0 ? ` (+${extra} more)` : ""}`;
       return n === 1
-        ? `Update 1 table cell`
-        : `Update ${n} table cells`;
+        ? `Update 1 table cell${onRows}`
+        : `Update ${n} table cells${onRows}`;
     }
     case "insert_rows": {
       const n = operation.rows.length;

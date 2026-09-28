@@ -197,7 +197,9 @@ only at row level (labeled Result / Remarks N/A, `not applicable for this
 …`, or a bare N/A inside that URS-N window) — a stray `Model Number NA`
 spec cell does not. When a saved cell differs from the request, the
 `edit_table` `proposed` result carries `adjustedCells` (`requested` /
-`saved`) so the wrap-up reports what landed. Every pack uses `unsupportedFactPolicy: block`
+`saved`) plus `proposedRowKeys` / `proposedCellCount` / `droppedRowKeys`
+so the wrap-up names only the rows on the card (one `edit_table` is one
+card, not one card per URS row). Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover

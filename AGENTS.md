@@ -82,7 +82,8 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   `propose_edit` cards in Document and Agent chrome fold when locatable
   spans sit within 20 characters (no per-field card budget). Both chromes
   propose; nothing lands until Apply / Dismiss (Apply all / Dismiss all
-  show for one or more open suggestions). "Insert the suggestion" / "edit
+  show for one or more open suggestions). One `edit_table` is one card;
+  wrap-up names `proposedRowKeys` only. "Insert the suggestion" / "edit
   the document" reads the section, then calls `edit_table` or `propose_edit`
   — do not claim Agent mode is read-only or paste a markdown table. ELR
   section numbers in chat are the Contents outline (3.10 Monitoring, 3.12
