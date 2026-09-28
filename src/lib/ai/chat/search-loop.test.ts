@@ -205,6 +205,34 @@ describe("searchLoopDirective", () => {
     ).toBe("continue");
   });
 
+  it("does not treat a title list without identifiers as a cited page", () => {
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [{ toolName: "search_documents" }],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 1,
+                identityIncompleteHits: 1,
+                keepSearchOpen: true,
+                results: [
+                  {
+                    pageNumber: 49,
+                    identityIncomplete: true,
+                    quote:
+                      "Standard operating procedure for operation & cleaning",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+  });
+
   it("does not treat a TOC-only ID laundry list as a cited page", () => {
     expect(
       searchLoopDirective([
