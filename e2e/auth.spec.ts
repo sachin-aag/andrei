@@ -206,8 +206,15 @@ test.describe("authentication", () => {
       page.getByRole("button", { name: /verify current password/i })
     ).toBeVisible();
 
-    await page.getByLabel(/current password/i).fill("E2eTestPass123!");
-    await page.getByRole("button", { name: /verify current password/i }).click();
+    const currentPassword = page.getByLabel(/current password/i);
+    await expect(currentPassword).toBeEditable();
+    await currentPassword.fill("");
+    await currentPassword.pressSequentially("E2eTestPass123!");
+    const verifyButton = page.getByRole("button", {
+      name: /verify current password/i,
+    });
+    await expect(verifyButton).toBeEnabled({ timeout: 15_000 });
+    await verifyButton.click();
     await expect(page.getByLabel(/^new password$/i)).toBeVisible({
       timeout: 15_000,
     });

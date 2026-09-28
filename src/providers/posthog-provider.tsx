@@ -20,7 +20,9 @@ export function PostHogProvider({
   name?: string | null;
 }) {
   useEffect(() => {
-    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+    const key = process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim();
+    if (!key) return;
+    posthog.init(key, {
       api_host: POSTHOG_PROXY_PATH,
       ui_host: POSTHOG_UI_HOST,
       person_profiles: "identified_only",
@@ -29,6 +31,7 @@ export function PostHogProvider({
 
   useEffect(() => {
     if (!userId) return;
+    if (!process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim()) return;
 
     posthog.identify(userId, {
       email: email ?? undefined,
