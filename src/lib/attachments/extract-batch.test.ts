@@ -126,7 +126,7 @@ async function pdfWithUnsignedCelsiusRange(): Promise<Buffer> {
   return Buffer.from(await document.save());
 }
 
-/** 12-page URS-sized batch: insight is skipped; pages 6 and 9 drop the minus. */
+/** 12-page URS-sized batch: bulk insight is skipped; pages 6 and 9 are tables. */
 async function pdfWithTwelvePageUrsTemperatures(): Promise<Buffer> {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
@@ -172,8 +172,41 @@ async function pdfWithTwelvePageUrsTemperatures(): Promise<Buffer> {
   return Buffer.from(await document.save());
 }
 
+async function pdfWithTwelvePagesAndDvTable(): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const addFiller = (marker: string) => {
+    const page = document.addPage([600, 800]);
+    for (let line = 0; line < 12; line += 1) {
+      page.drawText(`${marker} line ${line} of verification evidence`, {
+        x: 40,
+        y: 740 - line * 16,
+        size: 11,
+        font,
+      });
+    }
+  };
+  addFiller("p1");
+  addFiller("p2");
+  const table = document.addPage([600, 800]);
+  for (let index = 0; index < 8; index += 1) {
+    table.drawText(`SW-PA-${index + 1} Pattern requirement Pass Fail comments`, {
+      x: 40,
+      y: 740 - index * 16,
+      size: 11,
+      font,
+    });
+  }
+  for (let index = 4; index <= 12; index += 1) addFiller(`p${index}`);
+  return Buffer.from(await document.save());
+}
+
 function isSignedQuantityOverlayPrompt(text: string): boolean {
   return text.includes("visibly signed quantity");
+}
+
+function isInsightPrompt(text: string): boolean {
+  return text.includes("Describe pages");
 }
 
 async function pdfWithEnDashCelsiusRange(): Promise<Buffer> {
@@ -745,19 +778,45 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
   });
 
-  it("overlays −15 and −20 on a 12-page URS batch that skipped the insight pass", async () => {
+  it("runs targeted insight on table pages of a 12-page URS and overlays −15 and −20", async () => {
     generateTextMock.mockImplementation(async (args) => {
       const text = userPrompt(args);
-      if (!isSignedQuantityOverlayPrompt(text)) {
-        throw new Error(`unexpected generateText prompt: ${text}`);
+      if (isSignedQuantityOverlayPrompt(text)) {
+        throw new Error("sign overlay should not run when table insight restored the minus");
       }
-      if (text.includes("page 6 of")) {
-        return resultWithOutput({ signedQuantities: ["−15 °C"] }, "stop");
+      if (text.includes("Describe pages 6-6")) {
+        return resultWithOutput(
+          {
+            pages: [
+              {
+                ...insightPayload(6),
+                visualInterpretation: "Signed range −15 °C to 130 °C",
+                tables: ["URS operating range"],
+              },
+            ],
+            batchSummary: "urs table",
+            continuationNote: "note",
+          },
+          "stop"
+        );
       }
-      if (text.includes("page 9 of")) {
-        return resultWithOutput({ signedQuantities: ["−20 °C"] }, "stop");
+      if (text.includes("Describe pages 9-9")) {
+        return resultWithOutput(
+          {
+            pages: [
+              {
+                ...insightPayload(9),
+                visualInterpretation: "Signed range −20 °C to 150 °C",
+                tables: ["URS process temperature"],
+              },
+            ],
+            batchSummary: "urs table",
+            continuationNote: "note",
+          },
+          "stop"
+        );
       }
-      return resultWithOutput({ signedQuantities: [] }, "stop");
+      throw new Error(`unexpected generateText prompt: ${text}`);
     });
 
     const result = await extractPdfBatch({
@@ -770,14 +829,52 @@ describe("extractPdfBatch with a text layer", () => {
     });
 
     expect(result.mode).toBe("text-layer");
-    expect(result.recovery).toBe("text-layer-only");
+    expect(result.recovery).toBe("none");
     expect(result.pages).toHaveLength(12);
     expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
     expect(generateTextMock).toHaveBeenCalledTimes(2);
+    expect(result.pages[0]?.hasTable).toBeNull();
+    expect(result.pages[5]?.hasTable).toBe(true);
     expect(result.pages[5]?.transcript).toContain("-15 °C to 130 °C");
     expect(result.pages[5]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
     expect(result.pages[8]?.transcript).toContain("-20 °C to 150 °C");
     expect(result.pages[8]?.transcript).not.toMatch(/(?<![-\d])20 °C to 150 °C/);
+  });
+
+  it("runs targeted insight on a DV requirement matrix in a large text-layer batch", async () => {
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (!isInsightPrompt(text) || !text.includes("Describe pages 3-3")) {
+        throw new Error(`unexpected generateText prompt: ${text}`);
+      }
+      return resultWithOutput(
+        {
+          pages: [
+            {
+              ...insightPayload(3),
+              tables: ["Requirements verified"],
+            },
+          ],
+          batchSummary: "dv table",
+          continuationNote: "note",
+        },
+        "stop"
+      );
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithTwelvePagesAndDvTable(),
+      pageStart: 1,
+      pageEnd: 12,
+      filename: "dv.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(generateTextMock).toHaveBeenCalledTimes(1);
+    expect(result.pages[0]?.hasTable).toBeNull();
+    expect(result.pages[2]?.hasTable).toBe(true);
+    expect(result.pages[2]?.transcript).toContain("SW-PA-1");
   });
 
   it("does not invent a minus when Gemini reports no signed quantities", async () => {
@@ -909,7 +1006,7 @@ describe("extractPdfBatch with a text layer", () => {
     expect(generateTextMock).toHaveBeenCalledTimes(1);
   });
 
-  it("skips the Gemini insight pass on Enterprise OCR-sized text-layer batches", async () => {
+  it("skips bulk Gemini insight on filler OCR-sized text-layer batches", async () => {
     const result = await extractPdfBatch({
       pdfBuffer: await pdfWithTextPages(6),
       pageStart: 1,
