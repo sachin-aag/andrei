@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v153-identity-no-cite");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v154-identity-capacity-units");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -221,6 +221,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Cover identity");
     expect(prompt).toContain("equipmentName");
     expect(prompt).toContain("draft_identity values never include citations");
+    expect(prompt).toContain("8000 L, 3.0 KL");
+    expect(prompt).toContain("keep printed unit");
     expect(prompt).toContain(
       "never put source brackets, numbered markers, or a Citations: list in those values"
     );

@@ -24,7 +24,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v153-identity-no-cite";
+export const CHAT_PROMPT_VERSION = "chat-v154-identity-capacity-units";
 
 export type ChatMode = "plan" | "agent";
 
@@ -45,13 +45,17 @@ function fieldTaxonomy(
     })
     .join("\n");
   if (scope !== "all" || !hasChatIdentity(documentType)) return body;
-  const keys = chatIdentityFields(documentType)
+  const fields = chatIdentityFields(documentType);
+  const keys = fields
     .map(
       (field) =>
-        `${field.key} (plain${field.required ? ", required" : ""})`
+        `${field.key} (plain${field.required ? ", required" : ""}${field.keepUnits ? ", keep printed unit" : ""})`
     )
     .join(", ");
-  const identityLine = `- ${chatIdentityLabel(documentType)} [identity]: ${keys} — fill with draft_identity, not draft_field. Plain scalars only — never [filename, p. N], numbered [n], or a Citations: list`;
+  const unitHint = fields.some((field) => field.keepUnits)
+    ? ". Capacity / Size keeps the printed unit (8000 L, 3.0 KL)"
+    : "";
+  const identityLine = `- ${chatIdentityLabel(documentType)} [identity]: ${keys} — fill with draft_identity, not draft_field. Plain scalars only — never [filename, p. N], numbered [n], or a Citations: list${unitHint}`;
   return body ? `${identityLine}\n${body}` : identityLine;
 }
 
@@ -254,13 +258,14 @@ function agentRules(opts: {
   includePlotMeasurements: boolean;
   writesLoaded: boolean;
   hasIdentity: boolean;
+  keepIdentityUnits: boolean;
 }): string {
   const priority = draftPriorityPhrase(opts.draftOrder);
   const analyzeToolLine = opts.analyzeInScope
     ? `\n- select_analyze_method — when drafting Analyze, call this ONCE before any Analyze draft_field / edit_table / propose_edit to lock in the single root-cause method (see the Analyze method-selection block when that section is in scope).`
     : "";
   const identityToolLine = opts.hasIdentity
-    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. This write lands immediately in the header — not a suggestion card. Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Pass the bare scalar — draft_identity values never include citations ([filename, p. N], numbered [n], or a Citations: list). Do not use draft_field for these keys.`
+    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. This write lands immediately in the header — not a suggestion card. Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Pass the bare scalar — draft_identity values never include citations ([filename, p. N], numbered [n], or a Citations: list).${opts.keepIdentityUnits ? " Capacity / Size includes the unit as printed (8000 L, 3.0 KL) — not a bare 8000." : ""} Do not use draft_field for these keys.`
     : "";
   const hiddenWriteTools = opts.hasIdentity
     ? "draft_field / edit_table / propose_edit / insert_image / remove_image / draft_identity"
@@ -433,6 +438,9 @@ export function buildChatSystemPrompt(opts: {
           includePlotMeasurements,
           writesLoaded,
           hasIdentity: hasChatIdentity(documentType),
+          keepIdentityUnits: chatIdentityFields(documentType).some(
+            (field) => field.keepUnits
+          ),
         });
   const draftedBlock = opts.alreadyDrafted
     ? `\n\n${alreadyDraftedBlock(

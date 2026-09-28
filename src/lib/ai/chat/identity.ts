@@ -124,6 +124,83 @@ export function sanitizeIdentityScalar(value: string): string {
     .slice(0, IDENTITY_VALUE_MAX);
 }
 
+const BARE_CAPACITY_NUMBER_RE = /^(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
+
+/** Longer tokens first so "litres" is not captured as "L" + "itres". */
+const CAPACITY_UNIT_TOKEN = String.raw`KL|kL|kl|m³|m3|mL|ml|litres?|liters?|L|l|kg`;
+
+const NUMBER_WITH_CAPACITY_UNIT_RE = new RegExp(
+  String.raw`(?<![A-Za-z0-9.])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d.])\s*(${CAPACITY_UNIT_TOKEN})\b`,
+  "gi"
+);
+
+const IDENTITY_HAS_CAPACITY_UNIT_RE = new RegExp(
+  String.raw`\d(?:\.\d+)?\s*(?:${CAPACITY_UNIT_TOKEN})\s*$`,
+  "i"
+);
+
+function canonicalCapacityUnit(unit: string): string {
+  const lower = unit.trim().toLowerCase();
+  if (lower === "kl") return "kl";
+  if (lower === "ml") return "ml";
+  if (lower === "m3" || unit.trim() === "m³") return "m3";
+  if (lower === "kg") return "kg";
+  if (lower === "l" || /^litres?$/.test(lower) || /^liters?$/.test(lower)) {
+    return "l";
+  }
+  return lower;
+}
+
+function parseCapacityNumber(raw: string): number | null {
+  const n = Number(raw.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * When Capacity / Size is a bare number, copy the unit printed next to that
+ * same figure on a cited page (`8000` + `Capacity 8000 L` → `8000 L`).
+ * Unique labeled Capacity/Size wins; conflicting units stay bare; 8000 is
+ * not converted to 8 KL.
+ */
+export function attachIdentityCapacityUnits(
+  value: string,
+  quotes: readonly string[]
+): string {
+  const trimmed = value.trim();
+  if (!trimmed || IDENTITY_HAS_CAPACITY_UNIT_RE.test(trimmed)) return trimmed;
+  if (!BARE_CAPACITY_NUMBER_RE.test(trimmed)) return trimmed;
+  const want = parseCapacityNumber(trimmed);
+  if (want === null) return trimmed;
+
+  const labeled = new Map<string, string>();
+  const unlabeled = new Map<string, string>();
+  for (const quote of quotes) {
+    if (!quote.trim()) continue;
+    const re = new RegExp(NUMBER_WITH_CAPACITY_UNIT_RE.source, "gi");
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(quote)) !== null) {
+      const rawNumber = match[1] ?? "";
+      const unit = match[2] ?? "";
+      if (!unit || parseCapacityNumber(rawNumber) !== want) continue;
+      const canonical = canonicalCapacityUnit(unit);
+      const lineStart = quote.lastIndexOf("\n", match.index);
+      const prefix = quote.slice(lineStart + 1, match.index);
+      const isLabeled = /capacity/i.test(prefix.slice(-80));
+      const target = isLabeled ? labeled : unlabeled;
+      if (!target.has(canonical)) target.set(canonical, unit);
+    }
+  }
+
+  const pick = (found: Map<string, string>): string | null => {
+    if (found.size !== 1) return null;
+    const unit = found.values().next().value;
+    return typeof unit === "string" ? unit : null;
+  };
+  const unit = pick(labeled) ?? (labeled.size > 0 ? null : pick(unlabeled));
+  if (!unit) return trimmed;
+  return `${trimmed} ${unit}`.slice(0, IDENTITY_VALUE_MAX);
+}
+
 export function parseIdentityDate(value: string): string | null {
   const trimmed = value.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
