@@ -324,6 +324,42 @@ describe("descriptionSupportedNearKey", () => {
       )
     ).toBe(true);
   });
+
+  it("grounds an RTM Section one-liner on the protocol number, not paraphrase words", () => {
+    const pqPage =
+      "8.2.4 Simulation Trial-3 followed by cleaning. Operate the agitator. Result: Complies.";
+    expect(
+      descriptionSupportedNearKey(
+        "8.2.4 – Verification of agitator speed stability (~50 ± 10 RPM) during PQ trials",
+        [pqPage],
+        "URS-10"
+      )
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)",
+        [pqPage, "8.8 Operation of Agitator at Different RPM (without load)"],
+        "URS-10"
+      )
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "8.5 & 8.6 – Pressure hold test at 3.5 kg/cm² and vacuum hold test",
+        ["8.5 Pressure hold test 8.6 Vacuum hold test Result: Complies"],
+        "URS-4"
+      )
+    ).toBe(true);
+  });
+
+  it("still rejects a Section one-liner whose protocol number was not retrieved", () => {
+    expect(
+      descriptionSupportedNearKey(
+        "9.9.9 – Invented verification of agitator speed",
+        ["8.2.4 Simulation Trial. Operate the agitator."],
+        "URS-10"
+      )
+    ).toBe(false);
+  });
 });
 
 describe("protocolBodyQuote", () => {
@@ -2270,6 +2306,53 @@ describe("groundTableOperation optional RTM columns", () => {
           null
         )
       ).toBe("8.2.2 – Conduct heating, cooling, and chilling operations");
+    });
+
+    it("keeps dual protocol section numbers joined with / or &", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)",
+          null
+        )
+      ).toBe(
+        "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)"
+      );
+      expect(
+        rtmSectionCellText(
+          "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)",
+          { sectionHeading: "8.2.4 – Simulation Trial" }
+        )
+      ).toBe(
+        "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)"
+      );
+      expect(
+        rtmSectionCellText(
+          "8.5 & 8.6 – Pressure hold test at 3.5 kg/cm² and vacuum hold test",
+          { sectionHeading: "8.5 – Pressure hold" }
+        )
+      ).toBe(
+        "8.5 & 8.6 – Pressure hold test at 3.5 kg/cm² and vacuum hold test"
+      );
+    });
+
+    it("does not treat Gr. 380 as the end of the line", () => {
+      expect(
+        rtmSectionCellText(
+          "13.7.1 – Verification of shell base material (ASME SA-516M Gr. 380) and insulation",
+          { sectionHeading: "8.2.1 – Physical verification" }
+        )
+      ).toBe(
+        "8.2.1 – Verification of shell base material (ASME SA-516M Gr. 380) and insulation"
+      );
+    });
+
+    it("keeps a dotted section number when the heading is a page counter", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.3 – Water batch trial verification at 8000 L capacity",
+          { sectionHeading: "16 – Water batch trial verification at 8000 L capacity" }
+        )
+      ).toBe("8.2.3 – Water batch trial verification at 8000 L capacity");
     });
 
     it("falls back to the section number when the text runs past one line", () => {

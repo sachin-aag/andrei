@@ -36,6 +36,10 @@ describe("tableCellAdjustments", () => {
       },
     ]);
     expect(tableCellAdjustmentsMessage(adjustments)).toMatch(/saved empty/);
+    expect(tableCellAdjustmentsMessage(adjustments)).toContain("URS-7 Remarks");
+    expect(tableCellAdjustmentsMessage(adjustments)).toContain(
+      "Do not paste a markdown table of requested RTM rows"
+    );
   });
 
   it("treats a dropped cell as saved empty", () => {

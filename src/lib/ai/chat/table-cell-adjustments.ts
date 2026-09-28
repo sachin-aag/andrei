@@ -99,11 +99,19 @@ export function tableCellAdjustments(
 export function tableCellAdjustmentsMessage(
   adjustments: readonly TableCellAdjustment[]
 ): string {
-  const cleared = adjustments.filter((adj) => !adj.saved).length;
-  const changed = adjustments.length - cleared;
+  const blanks = adjustments.filter((adj) => !adj.saved);
+  const changed = adjustments.length - blanks.length;
   const parts = [
-    cleared > 0 ? `${cleared} requested cell(s) were saved empty` : "",
+    blanks.length > 0 ? `${blanks.length} requested cell(s) were saved empty` : "",
     changed > 0 ? `${changed} were saved with different text` : "",
   ].filter(Boolean);
-  return `${parts.join(" and ")} because the retrieved pages did not support the requested value. Report the saved values in adjustedCells, not the requested ones; do not claim an empty cell was filled.`;
+  const named = blanks
+    .slice(0, 8)
+    .map((adj) => [adj.rowKey, adj.column].filter(Boolean).join(" "))
+    .filter(Boolean);
+  const blankList =
+    named.length > 0
+      ? ` Left blank: ${named.join("; ")}${blanks.length > named.length ? "…" : ""}.`
+      : "";
+  return `${parts.join(" and ")} because the retrieved pages did not support the requested value.${blankList} Report the saved values in adjustedCells, not the requested ones; do not claim an empty cell was filled. Do not paste a markdown table of requested RTM rows in chat.`;
 }

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v156-qsr-rtm-section-one-liner");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v157-qsr-rtm-section-slash");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -33,9 +33,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Open cards stack");
     expect(prompt).toContain("Apply does not unlock the next insert");
     expect(prompt).toContain("Installation Qualification");
-    expect(prompt).toContain(
-      "Do not paste a protocol-to-URS mapping in chat"
-    );
+    expect(prompt).toContain("8.2.4 / 8.8");
+    expect(prompt).toContain("Never paste a markdown table of RTM rows in chat");
+    expect(prompt).toContain("Do not write Stage as PQ/OQ or PQ/IQ");
     expect(prompt).toContain(
       "leave those three cells empty for that row"
     );
